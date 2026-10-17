@@ -22,6 +22,7 @@ import {
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
+import { Modal } from '../components/ui/Modal.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
@@ -503,42 +504,42 @@ export function TradesPage() {
       />
 
       {/* Bulk Tag Modal */}
-      {showBulkTagModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="rounded-xl border border-border bg-card p-6 shadow-xl w-full max-w-md space-y-4">
-            <h3 className="text-base font-bold text-foreground">Add Tags to Selected Trades</h3>
-            <p className="text-xs text-muted-foreground">
-              Add one or more tags (comma separated) to the {selectedIds.length} selected trades.
-            </p>
-            <input
-              type="text"
-              value={bulkTagInput}
-              onChange={(e) => setBulkTagInput(e.target.value)}
-              placeholder="e.g. TrendFollow, A-Plus, Volatile"
-              className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowBulkTagModal(false)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const tags = bulkTagInput.split(',').map((t) => t.trim()).filter(Boolean);
-                  if (tags.length > 0) {
-                    bulkTagMutation.mutate({ ids: selectedIds, tags });
-                  }
-                }}
-                className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
-              >
-                Apply Tags
-              </button>
-            </div>
+      <Modal
+        isOpen={showBulkTagModal}
+        onClose={() => setShowBulkTagModal(false)}
+        title="Add Tags to Selected Trades"
+        description={`Add one or more tags (comma separated) to the ${selectedIds.length} selected trades.`}
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <input
+            type="text"
+            value={bulkTagInput}
+            onChange={(e) => setBulkTagInput(e.target.value)}
+            placeholder="e.g. TrendFollow, A-Plus, Volatile"
+            className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setShowBulkTagModal(false)}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                const tags = bulkTagInput.split(',').map((t) => t.trim()).filter(Boolean);
+                if (tags.length > 0) {
+                  bulkTagMutation.mutate({ ids: selectedIds, tags });
+                }
+              }}
+              className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 shadow-sm"
+            >
+              Apply Tags
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Coins, Plus, Edit, Trash2, CheckCircle2, Shield, X, Search } from 'lucide-react';
 import { ASSET_CLASSES, MARKET_SEGMENTS } from '@tradevault/shared';
 import { api } from '../lib/api.js';
+import { Modal } from '../components/ui/Modal.js';
 
 export function InstrumentsPage() {
   const queryClient = useQueryClient();
@@ -175,15 +176,13 @@ export function InstrumentsPage() {
       </div>
 
       {/* Add Instrument Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="text-base font-bold text-foreground">Add Custom Instrument</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="Add Custom Instrument"
+        description="Define tick size, lot size, multiplier, and exchange specifications"
+        maxWidth="lg"
+      >
 
             <form onSubmit={handleCreate} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
@@ -305,9 +304,7 @@ export function InstrumentsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

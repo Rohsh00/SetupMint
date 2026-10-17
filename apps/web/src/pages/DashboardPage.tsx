@@ -28,11 +28,25 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../lib/api.js';
+import { useTheme } from '../context/ThemeContext.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 
 export function DashboardPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const [dateRange, setDateRange] = useState<string>('ALL');
+  const { resolvedTheme } = useTheme();
+
+  const isDark = resolvedTheme === 'dark';
+  const chartGridColor = isDark ? 'rgba(148, 163, 184, 0.1)' : 'rgba(100, 116, 139, 0.15)';
+  const chartAxisColor = isDark ? '#94A3B8' : '#64748B';
+  const chartTooltipStyle = {
+    backgroundColor: isDark ? '#0B0F19' : '#FFFFFF',
+    borderColor: isDark ? '#1F2937' : '#E2E8F0',
+    color: isDark ? '#F8FAFC' : '#0F172A',
+    borderRadius: '8px',
+    fontSize: '12px',
+    boxShadow: isDark ? '0 10px 15px -3px rgba(0, 0, 0, 0.5)' : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+  };
 
   // Compute startDate based on filter
   let startDate: string | undefined;
@@ -210,21 +224,18 @@ export function DashboardPage() {
                       <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.1)" />
-                  <XAxis dataKey="date" stroke="#64748B" fontSize={11} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                  <XAxis dataKey="date" stroke={chartAxisColor} fontSize={11} tickLine={false} />
                   <YAxis
-                    stroke="#64748B"
+                    stroke={chartAxisColor}
                     fontSize={11}
                     tickLine={false}
                     tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0F172A',
-                      borderColor: '#1E293B',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
+                    contentStyle={chartTooltipStyle}
+                    itemStyle={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
+                    labelStyle={{ color: isDark ? '#94A3B8' : '#64748B', fontWeight: 600 }}
                     formatter={(val: any) => [formatCurrency(val), 'Equity']}
                   />
                   <Area
@@ -258,16 +269,13 @@ export function DashboardPage() {
             {stats?.dailyPnL && stats.dailyPnL.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats.dailyPnL}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.1)" />
-                  <XAxis dataKey="date" stroke="#64748B" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#64748B" fontSize={10} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                  <XAxis dataKey="date" stroke={chartAxisColor} fontSize={10} tickLine={false} />
+                  <YAxis stroke={chartAxisColor} fontSize={10} tickLine={false} />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0F172A',
-                      borderColor: '#1E293B',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
+                    contentStyle={chartTooltipStyle}
+                    itemStyle={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
+                    labelStyle={{ color: isDark ? '#94A3B8' : '#64748B', fontWeight: 600 }}
                     formatter={(val: any) => [formatCurrency(val), 'Net P&L']}
                   />
                   <Bar dataKey="netPnL">

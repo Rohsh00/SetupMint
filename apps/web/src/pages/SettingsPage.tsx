@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Moon,
   Sun,
+  Laptop,
   KeyRound,
   ExternalLink,
 } from 'lucide-react';
@@ -149,12 +150,12 @@ export function SettingsPage() {
 
             <div className="flex items-center justify-between pt-2">
               <span className="text-muted-foreground">Theme Mode</span>
-              <div className="flex items-center rounded-lg border border-border bg-background p-1">
+              <div className="flex items-center rounded-lg border border-border bg-background p-1 gap-1">
                 <button
                   type="button"
                   onClick={() => setTheme('dark')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold ${
-                    theme === 'dark' ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                    theme === 'dark' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   <Moon className="h-3.5 w-3.5" /> Dark
@@ -162,11 +163,20 @@ export function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setTheme('light')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold ${
-                    theme === 'light' ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                    theme === 'light' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   <Sun className="h-3.5 w-3.5" /> Light
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme('system')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                    theme === 'system' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Laptop className="h-3.5 w-3.5" /> System
                 </button>
               </div>
             </div>

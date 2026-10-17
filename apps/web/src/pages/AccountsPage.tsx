@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatDateTime } from '../lib/utils.js';
+import { Modal } from '../components/ui/Modal.js';
 
 export function AccountsPage() {
   const queryClient = useQueryClient();
@@ -230,15 +231,13 @@ export function AccountsPage() {
       </div>
 
       {/* Add Account Modal */}
-      {isAddAccountModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-card shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="text-base font-bold text-foreground">Add Trading Account</h3>
-              <button onClick={() => setIsAddAccountModalOpen(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <Modal
+        isOpen={isAddAccountModalOpen}
+        onClose={() => setIsAddAccountModalOpen(false)}
+        title="Add Trading Account"
+        description="Configure a new brokerage sub-account with initial deposit balance"
+        maxWidth="md"
+      >
 
             <form onSubmit={handleCreateAccount} className="space-y-4 text-xs">
               <div>
@@ -337,24 +336,18 @@ export function AccountsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Cash Flow Transaction Modal */}
-      {isTxModalOpen && selectedAccountForTx && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-md rounded-xl border border-border bg-card shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="text-base font-bold text-foreground">
-                Record Cash Flow: {selectedAccountForTx.name}
-              </h3>
-              <button onClick={() => setIsTxModalOpen(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddTx} className="space-y-4 text-xs">
+      {selectedAccountForTx && (
+        <Modal
+          isOpen={isTxModalOpen}
+          onClose={() => setIsTxModalOpen(false)}
+          title={`Record Cash Flow: ${selectedAccountForTx.name}`}
+          description="Deposit additional capital or log a fund withdrawal"
+          maxWidth="md"
+        >
+          <form onSubmit={handleAddTx} className="space-y-4 text-xs">
               <div>
                 <label className="block text-muted-foreground mb-1 font-medium">Transaction Type</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -435,8 +428,7 @@ export function AccountsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

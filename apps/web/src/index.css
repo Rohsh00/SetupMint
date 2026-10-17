@@ -3,7 +3,9 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  :root,
+  :root.light,
+  html.light {
     --background: 210 40% 98%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -22,16 +24,25 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222 47% 11%;
+    --ring: 142.1 76.2% 36.3%; /* Emerald focus ring */
     --radius: 0.5rem;
+
+    /* Chart specific tokens for Light Mode */
+    --chart-grid: 214.3 31.8% 91.4%;
+    --chart-tooltip-bg: 0 0% 100%;
+    --chart-tooltip-border: 214.3 31.8% 88%;
+    --chart-tooltip-text: 222 47% 11%;
+    --chart-axis: 215.4 16.3% 46.9%;
   }
 
+  :root.dark,
+  html.dark,
   .dark {
     --background: 224 71% 4%;
     --foreground: 210 40% 98%;
-    --card: 224 71% 6%;
+    --card: 224 71% 7%;
     --card-foreground: 210 40% 98%;
-    --popover: 224 71% 6%;
+    --popover: 224 71% 7%;
     --popover-foreground: 210 40% 98%;
     --primary: 210 40% 98%;
     --primary-foreground: 222 47% 11%;
@@ -45,7 +56,24 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 212.7 26.8% 83.9%;
+    --ring: 142.1 70.6% 45.3%; /* Emerald focus ring */
+
+    /* Chart specific tokens for Dark Mode */
+    --chart-grid: 217 33% 17%;
+    --chart-tooltip-bg: 224 71% 7%;
+    --chart-tooltip-border: 217 33% 17%;
+    --chart-tooltip-text: 210 40% 98%;
+    --chart-axis: 215 20.2% 65.1%;
+  }
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

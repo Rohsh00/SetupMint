@@ -64,7 +64,7 @@ export function TradeCalculationBanner({
             </div>
             <div
               className={`text-2xl font-bold font-mono tracking-tight ${
-                isNetPositive ? 'text-emerald-400' : isNetNegative ? 'text-rose-400' : 'text-foreground'
+                isNetPositive ? 'text-emerald-600 dark:text-emerald-400' : isNetNegative ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'
               }`}
             >
               {formatCurrency(netPnL)}
@@ -76,7 +76,7 @@ export function TradeCalculationBanner({
         <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
           <div className="bg-background/80 px-3 py-1.5 rounded-md border border-border">
             <span className="text-muted-foreground text-[10px] block uppercase">Gross P&L</span>
-            <span className={grossPnL >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+            <span className={grossPnL >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
               {formatCurrency(grossPnL)}
             </span>
           </div>
@@ -93,10 +93,10 @@ export function TradeCalculationBanner({
             <span
               className={`font-semibold ${
                 outcome === 'WIN'
-                  ? 'text-emerald-400'
+                  ? 'text-emerald-600 dark:text-emerald-400'
                   : outcome === 'LOSS'
-                  ? 'text-rose-400'
-                  : 'text-amber-400'
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-amber-600 dark:text-amber-400'
               }`}
             >
               {outcome}
@@ -106,7 +106,7 @@ export function TradeCalculationBanner({
           {realizedR !== undefined && (
             <div className="bg-background/80 px-3 py-1.5 rounded-md border border-border">
               <span className="text-muted-foreground text-[10px] block uppercase">Realized R</span>
-              <span className={realizedR >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+              <span className={realizedR >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
                 {formatR(realizedR)}
               </span>
             </div>
@@ -124,7 +124,7 @@ export function TradeCalculationBanner({
       </div>
 
       {!isDirectionValid && (
-        <div className="mt-2 text-xs text-rose-400 flex items-center gap-1.5 font-medium">
+        <div className="mt-2 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1.5 font-medium">
           <AlertCircle className="h-3.5 w-3.5" />
           <span>Warning: Stop-loss is on the invalid side for the chosen direction.</span>
         </div>

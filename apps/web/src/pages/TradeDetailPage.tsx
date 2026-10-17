@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   History,
   Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatDateTime, formatR } from '../lib/utils.js';
@@ -490,13 +491,26 @@ export function TradeDetailPage() {
       {/* Full Screen Image Zoom Modal */}
       {selectedImage && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          role="dialog"
+          aria-label="Enlarged Chart View"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in"
           onClick={() => setSelectedImage(null)}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setSelectedImage(null);
+          }}
         >
+          <button
+            onClick={() => setSelectedImage(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-card/80 text-foreground hover:bg-card border border-border shadow-md"
+            aria-label="Close enlarged image"
+          >
+            <X className="h-6 w-6" />
+          </button>
           <img
             src={selectedImage}
             alt="Enlarged Chart"
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
           />
         </div>
       )}

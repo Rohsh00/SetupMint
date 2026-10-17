@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
+import { Modal } from '../components/ui/Modal.js';
 
 export function StrategyPlaybookPage() {
   const queryClient = useQueryClient();
@@ -227,17 +228,13 @@ export function StrategyPlaybookPage() {
       )}
 
       {/* Modal for Creating / Editing Strategy */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="relative w-full max-w-2xl rounded-xl border border-border bg-card shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="text-base font-bold text-foreground">
-                {editingStrategy ? 'Edit Strategy Setup' : 'Create Playbook Setup'}
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={editingStrategy ? 'Edit Strategy Setup' : 'Create Playbook Setup'}
+        description="Formalize setup rules, timeframe triggers, checklist confluences, and risk targets"
+        maxWidth="2xl"
+      >
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -333,9 +330,7 @@ export function StrategyPlaybookPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

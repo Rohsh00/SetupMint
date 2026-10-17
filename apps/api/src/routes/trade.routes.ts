@@ -9,6 +9,8 @@ import {
 import { createTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
 import { TradingAccount, Trade, Strategy, Instrument } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { AccountService } from '../services/account.service.js';
+import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -246,12 +248,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       ],
     });
 
-    // Update account realized P&L if closed
-    if (calculated.netPnL !== 0) {
-      const currentPnL = Number(account.realizedPnL.toString());
-      account.realizedPnL = mongoose.Types.Decimal128.fromString((currentPnL + calculated.netPnL).toFixed(2));
-      await account.save();
-    }
+    // Recalculate account realized P&L and balance authoritatively
+    await AccountService.recalculateAccountBalances(account._id, req.user!.id);
 
     return reply.status(201).send({
       success: true,
@@ -265,7 +263,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   });
 
   // Get trade details
-  app.get('/:id', async (req: any, reply) => {
+  app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id })
       .populate('accountId', 'name broker baseCurrency')
       .populate('strategyId', 'name checklist');
@@ -317,7 +315,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   });
 
   // Update trade
-  app.put('/:id', async (req: any, reply) => {
+  app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const existingTrade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!existingTrade) {
       return reply.status(404).send({
@@ -366,22 +364,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const updated = await Trade.findByIdAndUpdate(req.params.id, updatePayload, { new: true });
 
-    // Adjust account P&L difference
-    const pnlDiff = newCalculated.netPnL - oldNetPnL;
-    if (pnlDiff !== 0) {
-      const account = await TradingAccount.findById(existingTrade.accountId);
-      if (account) {
-        const cur = Number(account.realizedPnL.toString());
-        account.realizedPnL = mongoose.Types.Decimal128.fromString((cur + pnlDiff).toFixed(2));
-        await account.save();
-      }
+    // Recalculate account balances authoritatively
+    await AccountService.recalculateAccountBalances(existingTrade.accountId, req.user!.id);
+    if (parseResult.data.accountId && parseResult.data.accountId !== existingTrade.accountId.toString()) {
+      await AccountService.recalculateAccountBalances(parseResult.data.accountId, req.user!.id);
     }
 
     return reply.send({ success: true, data: updated });
   });
 
   // Delete trade
-  app.delete('/:id', async (req: any, reply) => {
+  app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!trade) {
       return reply.status(404).send({
@@ -390,22 +383,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
-    // Revert account P&L if closed
-    if (trade.calculated?.netPnL) {
-      const account = await TradingAccount.findById(trade.accountId);
-      if (account) {
-        const cur = Number(account.realizedPnL.toString());
-        account.realizedPnL = mongoose.Types.Decimal128.fromString((cur - trade.calculated.netPnL).toFixed(2));
-        await account.save();
-      }
-    }
-
+    const accountId = trade.accountId;
     await Trade.deleteOne({ _id: req.params.id });
+
+    // Reconcile account balance after deletion
+    await AccountService.recalculateAccountBalances(accountId, req.user!.id);
+
     return reply.send({ success: true, message: 'Trade deleted successfully' });
   });
 
   // Duplicate trade
-  app.post('/:id/duplicate', async (req: any, reply) => {
+  app.post('/:id/duplicate', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!trade) {
       return reply.status(404).send({
@@ -474,7 +462,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     return reply.send({ success: true, message: `Updated tags for ${tradeIds.length} trades` });
   });
 
-  // Bulk Delete
+  // Bulk Delete with comprehensive account reconciliation
   app.post('/bulk-delete', async (req: any, reply) => {
     const { tradeIds } = req.body;
     if (!Array.isArray(tradeIds)) {
@@ -484,7 +472,22 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
+    // 1. Find all affected accounts first
+    const tradesToDelete = await Trade.find(
+      { _id: { $in: tradeIds }, userId: req.user!.id },
+      { accountId: 1 }
+    );
+
+    const affectedAccountIds = Array.from(new Set(tradesToDelete.map((t) => t.accountId.toString())));
+
+    // 2. Perform deletion
     await Trade.deleteMany({ _id: { $in: tradeIds }, userId: req.user!.id });
-    return reply.send({ success: true, message: `Deleted ${tradeIds.length} trades` });
+
+    // 3. Reconcile all affected accounts
+    for (const accId of affectedAccountIds) {
+      await AccountService.recalculateAccountBalances(accId, req.user!.id);
+    }
+
+    return reply.send({ success: true, message: `Deleted ${tradesToDelete.length} trades and reconciled balances` });
   });
 };

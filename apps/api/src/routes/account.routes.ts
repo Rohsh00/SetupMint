@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { accountTransactionSchema, createAccountSchema } from '@tradevault/shared';
 import { AccountTransaction, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { AccountService } from '../services/account.service.js';
+import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -101,7 +103,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Get account details
-  app.get('/:id', async (req: any, reply) => {
+  app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const account = await TradingAccount.findOne({
       _id: req.params.id,
       userId: req.user!.id,
@@ -118,7 +120,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const pnl = Number(account.realizedPnL.toString());
     const deposits = Number(account.totalDeposits.toString());
     const withdrawals = Number(account.totalWithdrawals.toString());
-    const current = initial + pnl + deposits - withdrawals;
+    const current = Number(account.currentBalance?.toString() || (initial + pnl + deposits - withdrawals).toFixed(2));
 
     // Fetch trade count for this account
     const tradeCount = await Trade.countDocuments({ accountId: account._id, userId: req.user!.id });
@@ -148,7 +150,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Update account
-  app.put('/:id', async (req: any, reply) => {
+  app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const parseResult = createAccountSchema.partial().safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -174,7 +176,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Delete account (or archive)
-  app.delete('/:id', async (req: any, reply) => {
+  app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const tradeCount = await Trade.countDocuments({ accountId: req.params.id, userId: req.user!.id });
     if (tradeCount > 0) {
       // Archive instead of hard delete to preserve historical integrity
@@ -193,7 +195,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Add transaction (deposit/withdrawal/adjustment)
-  app.post('/:id/transactions', async (req: any, reply) => {
+  app.post('/:id/transactions', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const parseResult = accountTransactionSchema.safeParse({ ...req.body, accountId: req.params.id });
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -224,23 +226,14 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       notes,
     });
 
-    // Update account balances
-    if (type === 'DEPOSIT') {
-      account.totalDeposits = mongoose.Types.Decimal128.fromString(
-        (Number(account.totalDeposits.toString()) + amount).toFixed(2)
-      );
-    } else if (type === 'WITHDRAWAL') {
-      account.totalWithdrawals = mongoose.Types.Decimal128.fromString(
-        (Number(account.totalWithdrawals.toString()) + amount).toFixed(2)
-      );
-    }
-    await account.save();
+    // Authoritatively recalculate account balances
+    const updatedSummary = await AccountService.recalculateAccountBalances(account._id, req.user!.id);
 
-    return reply.status(201).send({ success: true, data: tx });
+    return reply.status(201).send({ success: true, data: tx, balanceSummary: updatedSummary });
   });
 
   // Get transactions for account
-  app.get('/:id/transactions', async (req: any, reply) => {
+  app.get('/:id/transactions', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const txs = await AccountTransaction.find({
       userId: req.user!.id,
       accountId: req.params.id,
@@ -257,5 +250,18 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     }));
 
     return reply.send({ success: true, data });
+  });
+
+  // Reconcile and recalculate account balance authoritatively from raw records
+  app.post('/:id/reconcile', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const summary = await AccountService.recalculateAccountBalances(req.params.id, req.user!.id);
+    if (!summary) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    return reply.send({ success: true, message: 'Account balance successfully reconciled', data: summary });
   });
 };

@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { dailyJournalSchema } from '@tradevault/shared';
 import { DailyJournal, Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateDateParam } from '../middleware/validate.js';
 
 export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -82,7 +83,7 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Get daily review for specific date
-  app.get('/:date', async (req: any, reply) => {
+  app.get('/:date', { preHandler: [validateDateParam('date')] }, async (req: any, reply) => {
     const { date } = req.params; // format YYYY-MM-DD
 
     const journal = await DailyJournal.findOne({ userId: req.user!.id, date })
@@ -114,7 +115,7 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Upsert daily review
-  app.post('/:date', async (req: any, reply) => {
+  app.post('/:date', { preHandler: [validateDateParam('date')] }, async (req: any, reply) => {
     const parseResult = dailyJournalSchema.safeParse({ ...req.body, date: req.params.date });
     if (!parseResult.success) {
       return reply.status(400).send({

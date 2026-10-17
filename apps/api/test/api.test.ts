@@ -228,4 +228,77 @@ describe('TradeVault API Integration Tests', () => {
     expect(body.success).toBe(true);
     expect(body.data.symbol).toBe('RELIANCE');
   });
+
+  it('GET /api/v1/trades/invalid-id rejects invalid ObjectId format with 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/trades/not-a-valid-id',
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('INVALID_ID');
+  });
+
+  it('POST /api/v1/accounts/:id/transactions adds deposit and authoritatively recalculates balance', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/accounts/${accountId}/transactions`,
+      headers: { cookie: authCookie },
+      payload: {
+        type: 'DEPOSIT',
+        amount: 50000,
+        currency: 'INR',
+        date: new Date().toISOString(),
+        notes: 'Monthly capital addition',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.balanceSummary.totalDeposits).toBe(50000);
+    // Initial 100,000 + 4,900 realized trade P&L + 50,000 deposit = 154,900
+    expect(body.balanceSummary.currentBalance).toBe(154900);
+  });
+
+  it('POST /api/v1/accounts/:id/reconcile returns authoritative account balance', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/accounts/${accountId}/reconcile`,
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.currentBalance).toBe(154900);
+    expect(body.data.closedTradesCount).toBe(1);
+  });
+
+  it('POST /api/v1/trades/bulk-delete deletes trades and reconciles account balance', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/trades/bulk-delete',
+      headers: { cookie: authCookie },
+      payload: {
+        tradeIds: [tradeId],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // Verify account balance reconciled after trade deletion (4,900 net P&L removed)
+    const accRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/accounts/${accountId}`,
+      headers: { cookie: authCookie },
+    });
+    const accBody = JSON.parse(accRes.body);
+    // 100,000 initial + 0 P&L + 50,000 deposit = 150,000
+    expect(accBody.data.currentBalance).toBe(150000);
+    expect(accBody.data.realizedPnL).toBe(0);
+  });
 });

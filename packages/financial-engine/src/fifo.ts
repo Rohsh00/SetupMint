@@ -108,6 +108,12 @@ export function calculateFIFOExecution(
           openLots.shift();
         }
       }
+
+      if (qtyToMatch.greaterThan(0)) {
+        throw new Error(
+          `Exit fill ${fill.fillId || ''} exceeds available open entry lots by ${qtyToMatch.toString()}`
+        );
+      }
     }
   }
 

@@ -6,12 +6,13 @@ import { pipeline } from 'stream/promises';
 import { Attachment, Trade } from '../db/models/index.js';
 import { config } from '../config.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
   // Upload attachment for a trade
-  app.post('/trades/:tradeId/upload', async (req: any, reply) => {
+  app.post('/trades/:tradeId/upload', { preHandler: [validateObjectIdParam('tradeId')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.tradeId, userId: req.user!.id });
     if (!trade) {
       return reply.status(404).send({
@@ -75,7 +76,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
   });
 
   // Authenticated stream download of private screenshot
-  app.get('/:id/download', async (req: any, reply) => {
+  app.get('/:id/download', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const attachment = await Attachment.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!attachment) {
       return reply.status(404).send({
@@ -98,7 +99,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
   });
 
   // Delete attachment
-  app.delete('/:id', async (req: any, reply) => {
+  app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const attachment = await Attachment.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!attachment) {
       return reply.status(404).send({

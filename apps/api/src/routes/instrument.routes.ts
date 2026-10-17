@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { createInstrumentSchema, PRESET_INSTRUMENTS } from '@tradevault/shared';
 import { Instrument } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -77,7 +78,7 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
   });
 
   // Update instrument
-  app.put('/:id', async (req: any, reply) => {
+  app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const parseResult = createInstrumentSchema.partial().safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -103,7 +104,7 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
   });
 
   // Delete custom instrument
-  app.delete('/:id', async (req: any, reply) => {
+  app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     await Instrument.deleteOne({ _id: req.params.id, userId: req.user!.id });
     return reply.send({ success: true, message: 'Instrument deleted successfully' });
   });

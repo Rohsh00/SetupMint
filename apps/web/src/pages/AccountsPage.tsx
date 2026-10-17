@@ -10,6 +10,7 @@ import {
   Layers,
   X,
   History,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatDateTime } from '../lib/utils.js';
@@ -58,6 +59,13 @@ export function AccountsPage() {
       setIsTxModalOpen(false);
       setTxAmount(10000);
       setTxNotes('');
+    },
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: (accountId: string) => api.accounts.reconcile(accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 
@@ -203,6 +211,16 @@ export function AccountsPage() {
                   >
                     <DollarSign className="h-3.5 w-3.5" />
                     <span>Deposit / Withdraw</span>
+                  </button>
+
+                  <button
+                    onClick={() => reconcileMutation.mutate(acc.id)}
+                    disabled={reconcileMutation.isPending}
+                    className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                    title="Authoritatively reconcile account balance and P&L from raw records"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${reconcileMutation.isPending ? 'animate-spin' : ''}`} />
+                    <span>Reconcile</span>
                   </button>
                 </div>
               </div>

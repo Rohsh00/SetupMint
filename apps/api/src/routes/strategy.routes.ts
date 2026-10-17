@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { createStrategySchema } from '@tradevault/shared';
 import { Strategy, Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -113,7 +114,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   });
 
   // Get strategy detail with linked trades
-  app.get('/:id', async (req: any, reply) => {
+  app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const strategy = await Strategy.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!strategy) {
       return reply.status(404).send({
@@ -136,7 +137,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   });
 
   // Update strategy
-  app.put('/:id', async (req: any, reply) => {
+  app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const parseResult = createStrategySchema.partial().safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -162,7 +163,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   });
 
   // Delete strategy
-  app.delete('/:id', async (req: any, reply) => {
+  app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     await Strategy.deleteOne({ _id: req.params.id, userId: req.user!.id });
     return reply.send({ success: true, message: 'Strategy deleted successfully' });
   });

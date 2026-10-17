@@ -4,6 +4,7 @@ import { stringify } from 'csv-stringify/sync';
 import { calculateSimpleExecutionPnL } from '@tradevault/financial-engine';
 import { Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { AccountService } from '../services/account.service.js';
 
 export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -276,6 +277,11 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       } catch (err: any) {
         errors.push(`Row ${i + 1}: ${err.message}`);
       }
+    }
+
+    // Reconcile target account if trades were imported
+    if (importedCount > 0) {
+      await AccountService.recalculateAccountBalances(account._id, req.user!.id);
     }
 
     return reply.send({

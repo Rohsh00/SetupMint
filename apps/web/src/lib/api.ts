@@ -64,6 +64,7 @@ export const api = {
     addTransaction: (id: string, tx: any) =>
       request(`/accounts/${id}/transactions`, { method: 'POST', body: JSON.stringify(tx) }),
     getTransactions: (id: string) => request<any[]>(`/accounts/${id}/transactions`),
+    reconcile: (id: string) => request<any>(`/accounts/${id}/reconcile`, { method: 'POST' }),
   },
 
   // Instruments

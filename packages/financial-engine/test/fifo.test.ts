@@ -57,4 +57,52 @@ describe('Financial Engine - FIFO Matching', () => {
     expect(result.realizedGrossPnL.toNumber()).toBe(2400);
     expect(result.matches.length).toBe(3);
   });
+
+  it('throws an error if exit quantity exceeds available open entry lots', () => {
+    const fills: ITradeFill[] = [
+      { fillId: 'f1', type: 'ENTRY', price: 100, quantity: 50, timestamp: '2026-10-10T10:00:00Z' },
+      { fillId: 'f2', type: 'EXIT', price: 110, quantity: 60, timestamp: '2026-10-10T11:00:00Z' },
+    ];
+
+    expect(() => calculateFIFOExecution('LONG', fills, 1)).toThrow(/exceeds available open entry lots/);
+  });
+
+  it('matches SHORT trade with contract multiplier and partial exits', () => {
+    // Short 2 lots of Crude Oil (qty = 2, multiplier = 100) @ 6000
+    // Cover 1 lot @ 5900 (gain: (6000 - 5900) * 1 * 100 = 10000)
+    // Cover 1 lot @ 6050 (loss: (6000 - 6050) * 1 * 100 = -5000)
+    // Net gross P&L = 10000 - 5000 = +5000
+    const fills: ITradeFill[] = [
+      { fillId: 'f1', type: 'ENTRY', price: 6000, quantity: 2, timestamp: '2026-10-10T10:00:00Z' },
+      { fillId: 'f2', type: 'EXIT', price: 5900, quantity: 1, timestamp: '2026-10-10T11:00:00Z' },
+      { fillId: 'f3', type: 'EXIT', price: 6050, quantity: 1, timestamp: '2026-10-10T12:00:00Z' },
+    ];
+
+    const result = calculateFIFOExecution('SHORT', fills, 100);
+
+    expect(result.isFullyClosed).toBe(true);
+    expect(result.closedQuantity.toNumber()).toBe(2);
+    expect(result.realizedGrossPnL.toNumber()).toBe(5000);
+    expect(result.outcome).toBe('WIN');
+  });
+
+  it('handles crypto fractional quantities with high precision', () => {
+    // Buy 0.05 BTC @ 60,000
+    // Buy 0.025 BTC @ 62,000
+    // Sell 0.075 BTC @ 65,000
+    // Gain 1: (65000 - 60000) * 0.05 = 250
+    // Gain 2: (65000 - 62000) * 0.025 = 75
+    // Total gross = 325
+    const fills: ITradeFill[] = [
+      { fillId: 'f1', type: 'ENTRY', price: 60000, quantity: 0.05, timestamp: '2026-10-10T10:00:00Z' },
+      { fillId: 'f2', type: 'ENTRY', price: 62000, quantity: 0.025, timestamp: '2026-10-10T10:30:00Z' },
+      { fillId: 'f3', type: 'EXIT', price: 65000, quantity: 0.075, timestamp: '2026-10-10T11:00:00Z' },
+    ];
+
+    const result = calculateFIFOExecution('LONG', fills, 1);
+
+    expect(result.isFullyClosed).toBe(true);
+    expect(result.closedQuantity.toNumber()).toBe(0.075);
+    expect(result.realizedGrossPnL.toNumber()).toBe(325);
+  });
 });

@@ -5,8 +5,18 @@ import { User } from '../db/models/index.js';
 import { clearSession, createSession, requireAuth, SESSION_COOKIE_NAME } from '../middleware/auth.js';
 
 export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
-  // Register
-  app.post('/register', async (req, reply) => {
+  // Register with stricter rate limiting
+  app.post(
+    '/register',
+    {
+      config: {
+        rateLimit: {
+          max: 15,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req, reply) => {
     const parseResult = registerSchema.safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -55,8 +65,18 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
   });
 
-  // Login
-  app.post('/login', async (req, reply) => {
+  // Login with stricter rate limiting
+  app.post(
+    '/login',
+    {
+      config: {
+        rateLimit: {
+          max: 15,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req, reply) => {
     const parseResult = loginSchema.safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({

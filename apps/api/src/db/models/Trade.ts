@@ -1,0 +1,321 @@
+import mongoose, { Document, Schema } from 'mongoose';
+import {
+  AssetClass,
+  Direction,
+  ExecutionMode,
+  MarketSegment,
+  TradeOutcome,
+  TradeStatus,
+  TradingSession,
+} from '@tradevault/shared';
+
+export interface ITradeDoc extends Document {
+  userId: mongoose.Types.ObjectId;
+  accountId: mongoose.Types.ObjectId;
+  instrumentId?: mongoose.Types.ObjectId;
+  symbol: string;
+  instrumentName?: string;
+  assetClass: AssetClass;
+  exchange: string;
+  marketSegment: MarketSegment;
+  currency: string;
+  direction: Direction;
+  status: TradeStatus;
+  strategyId?: mongoose.Types.ObjectId;
+  strategyName?: string;
+  tags: string[];
+  tradeDate: Date;
+  timeZone: string;
+  entryTime: Date;
+  exitTime?: Date;
+  session?: TradingSession;
+  tradeTitle?: string;
+  externalBrokerOrderRef?: string;
+
+  executionMode: ExecutionMode;
+  simpleExecution?: {
+    entryPrice: number;
+    exitPrice?: number;
+    quantity: number;
+    contractMultiplier: number;
+    brokerage: number;
+    exchangeFees: number;
+    regulatoryFees: number;
+    taxes: number;
+    otherFees: number;
+    explicitAdjustments: number;
+    adjustmentsReason?: string;
+  };
+  fills: Array<{
+    fillId: string;
+    type: 'ENTRY' | 'EXIT';
+    price: number;
+    quantity: number;
+    timestamp: Date;
+    fee?: number;
+    brokerage?: number;
+    exchangeFee?: number;
+    taxes?: number;
+    notes?: string;
+  }>;
+
+  risk: {
+    plannedEntryPrice?: number;
+    initialStopLoss?: number;
+    plannedTarget?: number;
+    riskBudgetAmount?: number;
+    riskPercentage?: number;
+    suggestedQuantity?: number;
+    actualQuantity?: number;
+    estimatedRiskAmount?: number;
+    riskAsPercentOfEquity?: number;
+    plannedRewardRiskRatio?: number;
+    realizedRMultiple?: number;
+    riskRuleViolations: string[];
+  };
+
+  thesis: {
+    preMarketBias?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    marketStructure?: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'VOLATILE';
+    entryRationale?: string;
+    entryConfirmation?: string;
+    stopLossRationale?: string;
+    targetRationale?: string;
+    exitRationale?: string;
+    invalidationConditions?: string;
+    higherTimeframeContext?: string;
+    confluences: string[];
+    customTechnicalLabels: string[];
+  };
+
+  psychology: {
+    emotionBefore?: string;
+    emotionDuring?: string;
+    emotionAfter?: string;
+    confidenceScore?: number;
+    disciplineScore: number;
+    checklistCompleted: boolean;
+    rulesFollowed: boolean;
+    mistakes: string[];
+    revengeTrading: boolean;
+    overtrading: boolean;
+    prematureExit: boolean;
+    stopLossMoved: boolean;
+    positionSizeViolation: boolean;
+    lessonsLearned?: string;
+    notes?: string;
+  };
+
+  calculated: {
+    grossPnL: number;
+    totalCosts: number;
+    netPnL: number;
+    realizedRMultiple?: number;
+    holdingTimeMinutes?: number;
+    outcome: TradeOutcome;
+    closedQuantity: number;
+    openQuantity: number;
+    averageEntryPrice: number;
+    averageExitPrice?: number;
+  };
+
+  screenshotIds: mongoose.Types.ObjectId[];
+  auditLog: Array<{
+    action: string;
+    timestamp: Date;
+    changedBy: string;
+    details?: Record<string, any>;
+  }>;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const TradeFillSchema = new Schema(
+  {
+    fillId: { type: String, required: true },
+    type: { type: String, enum: ['ENTRY', 'EXIT'], required: true },
+    price: { type: Number, required: true },
+    quantity: { type: Number, required: true },
+    timestamp: { type: Date, required: true },
+    fee: { type: Number, default: 0 },
+    brokerage: { type: Number, default: 0 },
+    exchangeFee: { type: Number, default: 0 },
+    taxes: { type: Number, default: 0 },
+    notes: { type: String },
+  },
+  { _id: false }
+);
+
+const TradeSchema = new Schema<ITradeDoc>(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    accountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'TradingAccount',
+      required: true,
+      index: true,
+    },
+    instrumentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Instrument',
+    },
+    symbol: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+      index: true,
+    },
+    instrumentName: { type: String },
+    assetClass: {
+      type: String,
+      enum: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+      required: true,
+      index: true,
+    },
+    exchange: { type: String, required: true },
+    marketSegment: {
+      type: String,
+      enum: ['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER'],
+      required: true,
+    },
+    currency: { type: String, default: 'INR' },
+    direction: {
+      type: String,
+      enum: ['LONG', 'SHORT'],
+      required: true,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED'],
+      default: 'CLOSED',
+      index: true,
+    },
+    strategyId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Strategy',
+      index: true,
+    },
+    strategyName: { type: String },
+    tags: [{ type: String, index: true }],
+    tradeDate: { type: Date, required: true, index: true },
+    timeZone: { type: String, default: 'Asia/Kolkata' },
+    entryTime: { type: Date, required: true },
+    exitTime: { type: Date },
+    session: {
+      type: String,
+      enum: ['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'],
+    },
+    tradeTitle: { type: String },
+    externalBrokerOrderRef: { type: String },
+
+    executionMode: {
+      type: String,
+      enum: ['SIMPLE', 'ADVANCED'],
+      default: 'SIMPLE',
+    },
+    simpleExecution: {
+      entryPrice: { type: Number },
+      exitPrice: { type: Number },
+      quantity: { type: Number },
+      contractMultiplier: { type: Number, default: 1 },
+      brokerage: { type: Number, default: 0 },
+      exchangeFees: { type: Number, default: 0 },
+      regulatoryFees: { type: Number, default: 0 },
+      taxes: { type: Number, default: 0 },
+      otherFees: { type: Number, default: 0 },
+      explicitAdjustments: { type: Number, default: 0 },
+      adjustmentsReason: { type: String },
+    },
+    fills: [TradeFillSchema],
+
+    risk: {
+      plannedEntryPrice: { type: Number },
+      initialStopLoss: { type: Number },
+      plannedTarget: { type: Number },
+      riskBudgetAmount: { type: Number },
+      riskPercentage: { type: Number },
+      suggestedQuantity: { type: Number },
+      actualQuantity: { type: Number },
+      estimatedRiskAmount: { type: Number },
+      riskAsPercentOfEquity: { type: Number },
+      plannedRewardRiskRatio: { type: Number },
+      realizedRMultiple: { type: Number },
+      riskRuleViolations: [{ type: String }],
+    },
+
+    thesis: {
+      preMarketBias: { type: String, enum: ['BULLISH', 'BEARISH', 'NEUTRAL'] },
+      marketStructure: { type: String, enum: ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'] },
+      entryRationale: { type: String },
+      entryConfirmation: { type: String },
+      stopLossRationale: { type: String },
+      targetRationale: { type: String },
+      exitRationale: { type: String },
+      invalidationConditions: { type: String },
+      higherTimeframeContext: { type: String },
+      confluences: [{ type: String }],
+      customTechnicalLabels: [{ type: String }],
+    },
+
+    psychology: {
+      emotionBefore: { type: String },
+      emotionDuring: { type: String },
+      emotionAfter: { type: String },
+      confidenceScore: { type: Number },
+      disciplineScore: { type: Number, default: 4 },
+      checklistCompleted: { type: Boolean, default: true },
+      rulesFollowed: { type: Boolean, default: true },
+      mistakes: [{ type: String }],
+      revengeTrading: { type: Boolean, default: false },
+      overtrading: { type: Boolean, default: false },
+      prematureExit: { type: Boolean, default: false },
+      stopLossMoved: { type: Boolean, default: false },
+      positionSizeViolation: { type: Boolean, default: false },
+      lessonsLearned: { type: String },
+      notes: { type: String },
+    },
+
+    calculated: {
+      grossPnL: { type: Number, default: 0 },
+      totalCosts: { type: Number, default: 0 },
+      netPnL: { type: Number, default: 0 },
+      realizedRMultiple: { type: Number },
+      holdingTimeMinutes: { type: Number },
+      outcome: {
+        type: String,
+        enum: ['WIN', 'LOSS', 'BREAKEVEN', 'OPEN', 'CANCELLED'],
+        default: 'BREAKEVEN',
+        index: true,
+      },
+      closedQuantity: { type: Number, default: 0 },
+      openQuantity: { type: Number, default: 0 },
+      averageEntryPrice: { type: Number, default: 0 },
+      averageExitPrice: { type: Number },
+    },
+
+    screenshotIds: [{ type: Schema.Types.ObjectId, ref: 'Attachment' }],
+    auditLog: [
+      {
+        action: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+        changedBy: { type: String, default: 'user' },
+        details: { type: Schema.Types.Mixed },
+      },
+    ],
+  },
+  { timestamps: true }
+);
+
+TradeSchema.index({ userId: 1, tradeDate: -1 });
+TradeSchema.index({ userId: 1, accountId: 1, tradeDate: -1 });
+TradeSchema.index({ userId: 1, 'calculated.netPnL': -1 });
+
+export const Trade = mongoose.model<ITradeDoc>('Trade', TradeSchema);

@@ -1,0 +1,79 @@
+import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import bcrypt from 'bcryptjs';
+import { User, Trade, TradingAccount, Attachment } from '../db/models/index.js';
+import { requireAuth } from '../middleware/auth.js';
+
+export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  app.addHook('preHandler', requireAuth);
+
+  // Update profile / base currency / theme
+  app.put('/profile', async (req: any, reply) => {
+    const { name, baseCurrency, theme } = req.body;
+
+    const update: any = {};
+    if (name) update.name = name;
+    if (baseCurrency) update.baseCurrency = baseCurrency;
+    if (theme) update.theme = theme;
+
+    const user = await User.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
+
+    return reply.send({
+      success: true,
+      data: {
+        id: user!._id.toString(),
+        name: user!.name,
+        email: user!.email,
+        baseCurrency: user!.baseCurrency,
+        theme: user!.theme,
+      },
+    });
+  });
+
+  // Change password
+  app.post('/change-password', async (req: any, reply) => {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword || newPassword.length < 8) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_PASSWORD', message: 'New password must be at least 8 characters' },
+      });
+    }
+
+    const user = await User.findById(req.user!.id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      return reply.status(401).send({
+        success: false,
+        error: { code: 'INCORRECT_PASSWORD', message: 'Current password is incorrect' },
+      });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    return reply.send({ success: true, message: 'Password updated successfully' });
+  });
+
+  // Get system statistics for settings overview
+  app.get('/system-status', async (req, reply) => {
+    const tradeCount = await Trade.countDocuments({ userId: req.user!.id });
+    const accountCount = await TradingAccount.countDocuments({ userId: req.user!.id });
+    const attachmentCount = await Attachment.countDocuments({ userId: req.user!.id });
+
+    return reply.send({
+      success: true,
+      data: {
+        tradeCount,
+        accountCount,
+        attachmentCount,
+        database: 'MongoDB Local (Community / Embedded)',
+        privacyMode: 'Local-first private trading journal',
+        appVersion: '1.0.0',
+      },
+    });
+  });
+};

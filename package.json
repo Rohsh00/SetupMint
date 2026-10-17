@@ -1,0 +1,30 @@
+{
+  "name": "tradevault-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeVault - Professional Trading Journal Application",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -n \"API,WEB\" -c \"cyan.bold,magenta.bold\" \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "build": "npm run build -w packages/shared && npm run build -w packages/financial-engine && npm run build -w apps/api && npm run build -w apps/web",
+    "test": "npm run test -w packages/financial-engine && npm run test -w apps/api",
+    "test:engine": "npm run test -w packages/financial-engine",
+    "test:api": "npm run test -w apps/api",
+    "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w packages/financial-engine && npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "lint": "eslint . --ext .ts,.tsx",
+    "db:seed": "npm run seed -w apps/api",
+    "db:clean": "npm run clean -w apps/api",
+    "db:backup": "node scripts/backup.js",
+    "db:restore": "node scripts/restore.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

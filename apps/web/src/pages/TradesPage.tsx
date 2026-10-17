@@ -1,32 +1,54 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useOutletContext } from 'react-router-dom';
-import {
-  Search,
-  Filter,
-  Download,
-  Trash2,
-  Copy,
-  Edit,
-  Eye,
-  Plus,
-  SlidersHorizontal,
-  ChevronLeft,
-  ChevronRight,
-  TrendingUp,
-  TrendingDown,
-  Tag,
-  CheckSquare,
-  Square,
-} from 'lucide-react';
+import { Link as RouterLink, useOutletContext } from 'react-router-dom';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import Paper from '@mui/material/Paper';
+import Chip from '@mui/material/Chip';
+import Checkbox from '@mui/material/Checkbox';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import InputAdornment from '@mui/material/InputAdornment';
+import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import SearchIcon from '@mui/icons-material/SearchRounded';
+import AddIcon from '@mui/icons-material/AddRounded';
+import DownloadIcon from '@mui/icons-material/DownloadRounded';
+import VisibilityIcon from '@mui/icons-material/VisibilityRounded';
+import ContentCopyIcon from '@mui/icons-material/ContentCopyRounded';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
+import LocalOfferIcon from '@mui/icons-material/LocalOfferRounded';
+import FilterAltOffIcon from '@mui/icons-material/FilterAltOffRounded';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
+
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
-import { Modal } from '../components/ui/Modal.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
 
   // Filter state
   const [page, setPage] = useState(1);
@@ -43,14 +65,10 @@ export function TradesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [showBulkTagModal, setShowBulkTagModal] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Modals
   const [isNewTradeModalOpen, setIsNewTradeModalOpen] = useState(false);
-  const [editTradeData, setEditTradeData] = useState<any>(null);
-
-  // Fetch accounts & strategies for filter dropdowns
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
-  const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
 
   // Query trades
   const { data, isLoading } = useQuery({
@@ -96,6 +114,7 @@ export function TradesPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.trades.delete(id),
     onSuccess: () => {
+      setDeleteConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     },
@@ -129,372 +148,523 @@ export function TradesPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === trades.length) {
+    if (selectedIds.length === trades.length && trades.length > 0) {
       setSelectedIds([]);
     } else {
       setSelectedIds(trades.map((t: any) => t.id));
     }
   };
 
-  return (
-    <div className="space-y-5 max-w-7xl mx-auto">
-      {/* Header bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Trade Log & Journal</h1>
-          <p className="text-xs text-muted-foreground">
-            Complete historical execution records, P&L, fees, and post-trade audits
-          </p>
-        </div>
+  const hasActiveFilters = Boolean(
+    search || directionFilter || outcomeFilter || statusFilter || assetClassFilter
+  );
 
-        <div className="flex items-center gap-2">
-          {/* Export button */}
-          <a
-            href={api.exportImport.csvUrl({ accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined })}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
+  const clearFilters = () => {
+    setSearch('');
+    setDirectionFilter('');
+    setOutcomeFilter('');
+    setStatusFilter('');
+    setAssetClassFilter('');
+    setPage(1);
+  };
+
+  return (
+    <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Header bar */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          pb: 2,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+        }}
+      >
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', color: muiTheme.palette.text.primary }}>
+            Trade Log & History
+          </Typography>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mt: 0.5 }}>
+            Comprehensive trade executions, P&L, transaction fees, and post-session audits
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {/* Export CSV button */}
+          <Button
+            component="a"
+            href={api.exportImport.csvUrl({
+              accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+            })}
             download
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
           >
-            <Download className="h-3.5 w-3.5" />
-            <span>Export CSV</span>
-          </a>
+            Export CSV
+          </Button>
 
           {/* New Trade button */}
-          <button
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
             onClick={() => setIsNewTradeModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 text-xs font-semibold shadow-md transition-all"
+            startIcon={<AddIcon />}
+            sx={{ fontWeight: 700, fontSize: '0.8125rem', px: 2 }}
           >
-            <Plus className="h-4 w-4" />
-            <span>Log Trade</span>
-          </button>
-        </div>
-      </div>
+            Log Trade
+          </Button>
+        </Box>
+      </Box>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 shadow-sm text-xs">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
+      <Card sx={{ p: 2 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}>
+          {/* Search Input */}
+          <TextField
+            size="small"
+            placeholder="Search symbol, notes, rationale..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }}
-            placeholder="Search symbol, notes, rationale..."
-            className="w-full h-9 rounded-lg border border-border bg-background pl-9 pr-3 text-xs focus:ring-1 focus:ring-emerald-500"
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" sx={{ color: muiTheme.palette.text.secondary }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
+            sx={{ flex: { xs: '1 1 100%', sm: '1 1 240px' }, minWidth: 200 }}
           />
-        </div>
 
-        {/* Filter Dropdowns */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Direction */}
-          <select
-            value={directionFilter}
-            onChange={(e) => {
-              setDirectionFilter(e.target.value);
-              setPage(1);
-            }}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="">All Directions</option>
-            <option value="LONG">Long (Buy)</option>
-            <option value="SHORT">Short (Sell)</option>
-          </select>
+          {/* Direction Filter */}
+          <FormControl size="small" sx={{ minWidth: 130 }}>
+            <Select
+              value={directionFilter}
+              onChange={(e) => {
+                setDirectionFilter(e.target.value);
+                setPage(1);
+              }}
+              displayEmpty
+            >
+              <MenuItem value="">
+                <em>All Sides</em>
+              </MenuItem>
+              <MenuItem value="LONG">Long (Buy)</MenuItem>
+              <MenuItem value="SHORT">Short (Sell)</MenuItem>
+            </Select>
+          </FormControl>
 
-          {/* Outcome */}
-          <select
-            value={outcomeFilter}
-            onChange={(e) => {
-              setOutcomeFilter(e.target.value);
-              setPage(1);
-            }}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="">All Outcomes</option>
-            <option value="WIN">Winners (Win)</option>
-            <option value="LOSS">Losers (Loss)</option>
-            <option value="BREAKEVEN">Breakeven</option>
-            <option value="OPEN">Open Positions</option>
-          </select>
+          {/* Outcome Filter */}
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <Select
+              value={outcomeFilter}
+              onChange={(e) => {
+                setOutcomeFilter(e.target.value);
+                setPage(1);
+              }}
+              displayEmpty
+            >
+              <MenuItem value="">
+                <em>All Outcomes</em>
+              </MenuItem>
+              <MenuItem value="WIN">Winners (Win)</MenuItem>
+              <MenuItem value="LOSS">Losers (Loss)</MenuItem>
+              <MenuItem value="BREAKEVEN">Breakeven</MenuItem>
+              <MenuItem value="OPEN">Open Positions</MenuItem>
+            </Select>
+          </FormControl>
 
-          {/* Status */}
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(1);
-            }}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="">All Statuses</option>
-            <option value="CLOSED">CLOSED</option>
-            <option value="OPEN">OPEN</option>
-            <option value="PLANNED">PLANNED</option>
-          </select>
+          {/* Status Filter */}
+          <FormControl size="small" sx={{ minWidth: 130 }}>
+            <Select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              displayEmpty
+            >
+              <MenuItem value="">
+                <em>All Status</em>
+              </MenuItem>
+              <MenuItem value="CLOSED">CLOSED</MenuItem>
+              <MenuItem value="OPEN">OPEN</MenuItem>
+              <MenuItem value="PLANNED">PLANNED</MenuItem>
+            </Select>
+          </FormControl>
 
           {/* Sort By */}
-          <select
-            value={`${sortBy}:${sortOrder}`}
-            onChange={(e) => {
-              const [sb, so] = e.target.value.split(':');
-              setSortBy(sb);
-              setSortOrder(so as any);
-              setPage(1);
-            }}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="tradeDate:desc">Date (Newest First)</option>
-            <option value="tradeDate:asc">Date (Oldest First)</option>
-            <option value="calculated.netPnL:desc">Highest Profit</option>
-            <option value="calculated.netPnL:asc">Largest Loss</option>
-            <option value="symbol:asc">Symbol (A-Z)</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Bulk action bar if trades selected */}
-      {selectedIds.length > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs text-foreground animate-fadeIn">
-          <span className="font-semibold text-emerald-400">
-            {selectedIds.length} trade{selectedIds.length > 1 ? 's' : ''} selected
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowBulkTagModal(true)}
-              className="flex items-center gap-1 rounded bg-background px-2.5 py-1 font-medium hover:bg-accent border border-border"
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <Select
+              value={`${sortBy}:${sortOrder}`}
+              onChange={(e) => {
+                const [sb, so] = e.target.value.split(':');
+                setSortBy(sb);
+                setSortOrder(so as any);
+                setPage(1);
+              }}
             >
-              <Tag className="h-3.5 w-3.5" /> Bulk Tag
-            </button>
-            <button
+              <MenuItem value="tradeDate:desc">Date (Newest First)</MenuItem>
+              <MenuItem value="tradeDate:asc">Date (Oldest First)</MenuItem>
+              <MenuItem value="calculated.netPnL:desc">Highest Profit</MenuItem>
+              <MenuItem value="calculated.netPnL:asc">Largest Loss</MenuItem>
+              <MenuItem value="symbol:asc">Symbol (A-Z)</MenuItem>
+            </Select>
+          </FormControl>
+
+          {hasActiveFilters && (
+            <Button
+              size="small"
+              onClick={clearFilters}
+              startIcon={<FilterAltOffIcon fontSize="small" />}
+              sx={{ color: muiTheme.palette.text.secondary, textTransform: 'none' }}
+            >
+              Reset
+            </Button>
+          )}
+        </Box>
+      </Card>
+
+      {/* Bulk action notification bar */}
+      {selectedIds.length > 0 && (
+        <Card
+          sx={{
+            p: 1.5,
+            px: 2,
+            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(5, 150, 105, 0.08)',
+            border: `1px solid ${isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.25)'}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 700, color: muiTheme.palette.primary.main }}>
+            {selectedIds.length} trade{selectedIds.length > 1 ? 's' : ''} selected
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setShowBulkTagModal(true)}
+              startIcon={<LocalOfferIcon fontSize="small" />}
+              sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600 }}
+            >
+              Bulk Tag
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="error"
               onClick={() => {
-                if (confirm(`Delete ${selectedIds.length} selected trades permanently?`)) {
+                if (window.confirm(`Delete ${selectedIds.length} selected trades permanently?`)) {
                   bulkDeleteMutation.mutate(selectedIds);
                 }
               }}
-              className="flex items-center gap-1 rounded bg-rose-600 px-2.5 py-1 font-semibold text-white hover:bg-rose-500"
+              startIcon={<DeleteOutlineIcon fontSize="small" />}
+              sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600 }}
             >
-              <Trash2 className="h-3.5 w-3.5" /> Delete Selected
-            </button>
-          </div>
-        </div>
+              Delete Selected
+            </Button>
+          </Box>
+        </Card>
       )}
 
-      {/* Trades Table */}
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-border bg-accent/20 text-muted-foreground font-mono">
-                <th className="py-3 px-4 w-10">
-                  <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
-                    {selectedIds.length > 0 && selectedIds.length === trades.length ? (
-                      <CheckSquare className="h-4 w-4 text-emerald-500" />
-                    ) : (
-                      <Square className="h-4 w-4" />
-                    )}
-                  </button>
-                </th>
-                <th className="py-3 px-3">Date</th>
-                <th className="py-3 px-3">Account</th>
-                <th className="py-3 px-3">Symbol</th>
-                <th className="py-3 px-3">Side</th>
-                <th className="py-3 px-3">Strategy</th>
-                <th className="py-3 px-3 text-right">Entry</th>
-                <th className="py-3 px-3 text-right">Exit</th>
-                <th className="py-3 px-3 text-right">Qty</th>
-                <th className="py-3 px-3 text-right">Fees</th>
-                <th className="py-3 px-3 text-right">Net P&L</th>
-                <th className="py-3 px-3 text-right">R-Multiple</th>
-                <th className="py-3 px-3 text-center">Score</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
+      {/* Main Trades Table */}
+      <Card sx={{ overflow: 'hidden' }}>
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    indeterminate={selectedIds.length > 0 && selectedIds.length < trades.length}
+                    checked={trades.length > 0 && selectedIds.length === trades.length}
+                    onChange={toggleSelectAll}
+                  />
+                </TableCell>
+                <TableCell>Date</TableCell>
+                <TableCell>Account</TableCell>
+                <TableCell>Symbol</TableCell>
+                <TableCell>Side</TableCell>
+                <TableCell>Setup</TableCell>
+                <TableCell align="right">Entry</TableCell>
+                <TableCell align="right">Exit</TableCell>
+                <TableCell align="right">Qty</TableCell>
+                <TableCell align="right">Fees</TableCell>
+                <TableCell align="right">Net P&L</TableCell>
+                <TableCell align="right">R-Mult</TableCell>
+                <TableCell align="center">Discipline</TableCell>
+                <TableCell align="center">Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={15} className="py-12 text-center text-muted-foreground font-mono">
-                    Loading trades...
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
+                    <CircularProgress size={28} color="primary" />
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, color: muiTheme.palette.text.secondary }}>
+                      Loading trades...
+                    </Typography>
+                  </TableCell>
+                </TableRow>
               ) : trades.length === 0 ? (
-                <tr>
-                  <td colSpan={15} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <SlidersHorizontal className="h-8 w-8 stroke-[1.5]" />
-                      <span className="font-semibold text-sm text-foreground">No trades found</span>
-                      <p className="text-xs">
-                        Try adjusting your filters or click &quot;Log Trade&quot; to record your first manual execution.
-                      </p>
-                      <button
-                        onClick={() => setIsNewTradeModalOpen(true)}
-                        className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow"
-                      >
-                        Log Trade
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: muiTheme.palette.text.primary }}>
+                      No trades match your criteria
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.5, mb: 2 }}>
+                      Adjust filters or log a new trade execution
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      size="small"
+                      onClick={() => setIsNewTradeModalOpen(true)}
+                      startIcon={<AddIcon />}
+                    >
+                      Log Trade
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ) : (
                 trades.map((t: any) => {
                   const isSelected = selectedIds.includes(t.id);
-                  const isWin = t.calculated.netPnL > 0;
-                  const isLoss = t.calculated.netPnL < 0;
+                  const isWin = (t.calculated?.netPnL || 0) > 0;
+                  const isLoss = (t.calculated?.netPnL || 0) < 0;
 
                   return (
-                    <tr
+                    <TableRow
                       key={t.id}
-                      className={`hover:bg-accent/30 transition-colors ${
-                        isSelected ? 'bg-emerald-500/5' : ''
-                      }`}
+                      hover
+                      selected={isSelected}
+                      sx={{
+                        '&:last-child td, &:last-child th': { border: 0 },
+                      }}
                     >
-                      <td className="py-3 px-4">
-                        <button onClick={() => toggleSelect(t.id)} className="text-muted-foreground hover:text-foreground">
-                          {isSelected ? (
-                            <CheckSquare className="h-4 w-4 text-emerald-500" />
-                          ) : (
-                            <Square className="h-4 w-4" />
-                          )}
-                        </button>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-muted-foreground whitespace-nowrap">
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          size="small"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(t.id)}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, whiteSpace: 'nowrap' }}>
                         {t.tradeDate}
-                      </td>
-                      <td className="py-3 px-3 text-muted-foreground truncate max-w-[110px]" title={t.accountName}>
+                      </TableCell>
+                      <TableCell sx={{ color: muiTheme.palette.text.secondary, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.accountName}>
                         {t.accountName}
-                      </td>
-                      <td className="py-3 px-3 font-bold font-mono text-foreground whitespace-nowrap">
-                        <Link to={`/trades/${t.id}`} className="hover:underline flex items-center gap-1">
-                          {t.symbol}
-                          <Eye className="h-3 w-3 text-muted-foreground opacity-60" />
-                        </Link>
-                      </td>
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            t.direction === 'LONG'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                          }`}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, whiteSpace: 'nowrap' }}>
+                        <RouterLink
+                          to={`/trades/${t.id}`}
+                          style={{
+                            color: muiTheme.palette.text.primary,
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
                         >
-                          {t.direction}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-muted-foreground truncate max-w-[120px]">
+                          {t.symbol}
+                        </RouterLink>
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        <Chip
+                          label={t.direction}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.6875rem',
+                            fontWeight: 700,
+                            backgroundColor:
+                              t.direction === 'LONG'
+                                ? muiTheme.palette.profit.bg
+                                : muiTheme.palette.loss.bg,
+                            color:
+                              t.direction === 'LONG'
+                                ? muiTheme.palette.profit.main
+                                : muiTheme.palette.loss.main,
+                            border: `1px solid ${
+                              t.direction === 'LONG'
+                                ? isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.25)'
+                                : isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'
+                            }`,
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ color: muiTheme.palette.text.secondary, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.strategyName || '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-foreground">
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
                         {t.simpleExecution?.entryPrice || t.calculated?.averageEntryPrice || '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-foreground">
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
                         {t.simpleExecution?.exitPrice || t.calculated?.averageExitPrice || '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-foreground">
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
                         {t.simpleExecution?.quantity || t.calculated?.closedQuantity || '—'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-muted-foreground">
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary }}>
                         {formatCurrency(t.calculated?.totalCosts)}
-                      </td>
-                      <td
-                        className={`py-3 px-3 text-right font-mono font-bold whitespace-nowrap ${
-                          isWin
-                            ? 'text-emerald-400'
+                      </TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                          color: isWin
+                            ? muiTheme.palette.profit.main
                             : isLoss
-                            ? 'text-rose-400'
-                            : 'text-muted-foreground'
-                        }`}
+                            ? muiTheme.palette.loss.main
+                            : muiTheme.palette.text.secondary,
+                        }}
                       >
                         {formatCurrency(t.calculated?.netPnL)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono">
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
                         {formatR(t.calculated?.realizedRMultiple)}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono">
-                        <span className="rounded bg-accent/60 px-1.5 py-0.5 text-[10px] font-semibold">
-                          {t.psychology?.disciplineScore ? `${t.psychology.disciplineScore}/5` : '—'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center whitespace-nowrap">
-                        <span className="rounded bg-accent px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {t.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Link
-                            to={`/trades/${t.id}`}
-                            className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-accent"
-                            title="View Trade Details"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </Link>
-                          <button
-                            onClick={() => duplicateMutation.mutate(t.id)}
-                            className="p-1 text-muted-foreground hover:text-emerald-400 rounded hover:bg-accent"
-                            title="Duplicate Setup"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`Delete trade for ${t.symbol}?`)) {
-                                deleteMutation.mutate(t.id);
-                              }
-                            }}
-                            className="p-1 text-muted-foreground hover:text-rose-400 rounded hover:bg-accent"
-                            title="Delete Trade"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={t.psychology?.disciplineScore ? `${t.psychology.disciplineScore}/5` : '—'}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.05)',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={t.status}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                            color: muiTheme.palette.text.secondary,
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          <Tooltip title="View Details" arrow>
+                            <IconButton
+                              component={RouterLink}
+                              to={`/trades/${t.id}`}
+                              size="small"
+                              sx={{ color: muiTheme.palette.text.secondary }}
+                            >
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Duplicate Setup" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => duplicateMutation.mutate(t.id)}
+                              sx={{
+                                color: muiTheme.palette.text.secondary,
+                                '&:hover': { color: muiTheme.palette.primary.main },
+                              }}
+                            >
+                              <ContentCopyIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete Trade" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => setDeleteConfirmId(t.id)}
+                              sx={{
+                                color: muiTheme.palette.text.secondary,
+                                '&:hover': { color: muiTheme.palette.error.main },
+                              }}
+                            >
+                              <DeleteOutlineIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
 
         {/* Pagination Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground gap-3">
-          <span>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            px: 2.5,
+            py: 1.5,
+            borderTop: `1px solid ${muiTheme.palette.divider}`,
+            gap: 2,
+          }}
+        >
+          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
             Showing {trades.length} of {pagination.totalCount} total trades (Page {pagination.page} of{' '}
             {pagination.totalPages || 1})
-          </span>
+          </Typography>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={limit}
-              onChange={(e) => {
-                setLimit(Number(e.target.value));
-                setPage(1);
-              }}
-              className="h-8 rounded border border-border bg-background px-2 text-xs"
-            >
-              <option value={25}>25 per page</option>
-              <option value={50}>50 per page</option>
-              <option value={100}>100 per page</option>
-            </select>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <FormControl size="small">
+              <Select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                }}
+                sx={{ height: 32, fontSize: '0.75rem' }}
+              >
+                <MenuItem value={25}>25 / page</MenuItem>
+                <MenuItem value={50}>50 / page</MenuItem>
+                <MenuItem value={100}>100 / page</MenuItem>
+              </Select>
+            </FormControl>
 
-            <button
+            <Button
+              size="small"
+              variant="outlined"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="flex h-8 items-center gap-1 rounded border border-border bg-background px-3 font-medium disabled:opacity-40 hover:bg-accent"
+              startIcon={<ChevronLeftIcon fontSize="small" />}
+              sx={{ height: 32, fontSize: '0.75rem', fontWeight: 600 }}
             >
-              <ChevronLeft className="h-3.5 w-3.5" /> Previous
-            </button>
-            <button
+              Previous
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
               onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
               disabled={page >= pagination.totalPages}
-              className="flex h-8 items-center gap-1 rounded border border-border bg-background px-3 font-medium disabled:opacity-40 hover:bg-accent"
+              endIcon={<ChevronRightIcon fontSize="small" />}
+              sx={{ height: 32, fontSize: '0.75rem', fontWeight: 600 }}
             >
-              Next <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+              Next
+            </Button>
+          </Box>
+        </Box>
+      </Card>
 
       {/* Manual Trade Entry Modal */}
       <TradeFormModal
@@ -503,43 +673,77 @@ export function TradesPage() {
         defaultAccountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
       />
 
-      {/* Bulk Tag Modal */}
-      <Modal
-        isOpen={showBulkTagModal}
+      {/* Bulk Tag Dialog */}
+      <Dialog
+        open={showBulkTagModal}
         onClose={() => setShowBulkTagModal(false)}
-        title="Add Tags to Selected Trades"
-        description={`Add one or more tags (comma separated) to the ${selectedIds.length} selected trades.`}
-        maxWidth="md"
+        maxWidth="sm"
+        fullWidth
+        slotProps={{
+          paper: { sx: { borderRadius: 3 } },
+        }}
       >
-        <div className="space-y-4">
-          <input
-            type="text"
+        <DialogTitle sx={{ fontWeight: 700 }}>Add Tags to Selected Trades</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mb: 2 }}>
+            Add comma-separated tags to the {selectedIds.length} selected trades:
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
             value={bulkTagInput}
             onChange={(e) => setBulkTagInput(e.target.value)}
-            placeholder="e.g. TrendFollow, A-Plus, Volatile"
-            className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
+            placeholder="e.g. TrendFollow, Breakout, A-Plus"
           />
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              onClick={() => setShowBulkTagModal(false)}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                const tags = bulkTagInput.split(',').map((t) => t.trim()).filter(Boolean);
-                if (tags.length > 0) {
-                  bulkTagMutation.mutate({ ids: selectedIds, tags });
-                }
-              }}
-              className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 shadow-sm"
-            >
-              Apply Tags
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </div>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setShowBulkTagModal(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => {
+              const tags = bulkTagInput.split(',').map((t) => t.trim()).filter(Boolean);
+              if (tags.length > 0) {
+                bulkTagMutation.mutate({ ids: selectedIds, tags });
+              }
+            }}
+          >
+            Apply Tags
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={Boolean(deleteConfirmId)}
+        onClose={() => setDeleteConfirmId(null)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: { sx: { borderRadius: 3 } },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete Trade</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+            Are you sure you want to permanently delete this trade record? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => {
+              if (deleteConfirmId) {
+                deleteMutation.mutate(deleteConfirmId);
+              }
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

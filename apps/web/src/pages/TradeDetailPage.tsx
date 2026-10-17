@@ -1,36 +1,56 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowLeft,
-  Copy,
-  Edit,
-  Trash2,
-  Calendar,
-  Clock,
-  Shield,
-  Brain,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
-  Upload,
-  CheckCircle2,
-  AlertTriangle,
-  History,
-  Image as ImageIcon,
-  X,
-} from 'lucide-react';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import Paper from '@mui/material/Paper';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Tooltip from '@mui/material/Tooltip';
+import CircularProgress from '@mui/material/CircularProgress';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import ArrowBackIcon from '@mui/icons-material/ArrowBackRounded';
+import ContentCopyIcon from '@mui/icons-material/ContentCopyRounded';
+import EditIcon from '@mui/icons-material/EditRounded';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoneyRounded';
+import SecurityIcon from '@mui/icons-material/SecurityRounded';
+import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
+import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
+import CloudUploadIcon from '@mui/icons-material/CloudUploadRounded';
+import CloseIcon from '@mui/icons-material/CloseRounded';
+
 import { api } from '../lib/api.js';
-import { formatCurrency, formatDateTime, formatR } from '../lib/utils.js';
+import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 
 export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: trade, isLoading, isError } = useQuery({
     queryKey: ['trade', id],
@@ -71,343 +91,435 @@ export function TradeDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
-          <span className="text-xs text-muted-foreground font-mono">Loading trade details...</span>
-        </div>
-      </div>
+      <Box sx={{ display: 'flex', height: 400, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
+        <CircularProgress size={32} color="primary" />
+        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+          Loading trade details...
+        </Typography>
+      </Box>
     );
   }
 
   if (isError || !trade) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 gap-3">
-        <span className="text-sm font-semibold text-foreground">Trade not found</span>
-        <button
-          onClick={() => navigate('/trades')}
-          className="rounded-lg bg-accent px-4 py-2 text-xs font-medium"
-        >
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 400, gap: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700 }}>Trade Not Found</Typography>
+        <Button variant="contained" onClick={() => navigate('/trades')} startIcon={<ArrowBackIcon />}>
           Back to Trades
-        </button>
-      </div>
+        </Button>
+      </Box>
     );
   }
 
-  const isWin = trade.calculated.netPnL > 0;
-  const isLoss = trade.calculated.netPnL < 0;
+  const isWin = (trade.calculated?.netPnL || 0) > 0;
+  const isLoss = (trade.calculated?.netPnL || 0) < 0;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Top Navigation & Actions */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
-          <button
+    <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      {/* Top Header & Actions */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          pb: 2,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <IconButton
             onClick={() => navigate('/trades')}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold font-mono text-foreground">{trade.symbol}</h1>
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
-                  trade.direction === 'LONG'
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                }`}
-              >
-                {trade.direction}
-              </span>
-              <span className="rounded bg-accent px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {trade.status}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground font-mono mt-0.5">
-              {trade.accountName} • {trade.exchange} ({trade.marketSegment}) • {trade.tradeDate}
-            </p>
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => duplicateMutation.mutate()}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            <span>Duplicate Setup</span>
-          </button>
-          <button
-            onClick={() => setIsEditModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            <Edit className="h-3.5 w-3.5" />
-            <span>Edit Trade</span>
-          </button>
-          <button
-            onClick={() => {
-              if (confirm('Delete this trade record permanently?')) {
-                deleteMutation.mutate();
-              }
+            size="small"
+            sx={{
+              border: `1px solid ${muiTheme.palette.divider}`,
+              borderRadius: 2,
+              color: muiTheme.palette.text.secondary,
             }}
-            className="flex items-center gap-1.5 rounded-lg bg-rose-600/10 border border-rose-500/20 text-rose-400 hover:bg-rose-600/20 px-3 py-2 text-xs font-semibold transition-colors"
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            <span>Delete</span>
-          </button>
-        </div>
-      </div>
+            <ArrowBackIcon fontSize="small" />
+          </IconButton>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>
+                {trade.symbol}
+              </Typography>
+              <Chip
+                label={trade.direction}
+                size="small"
+                sx={{
+                  height: 22,
+                  fontSize: '0.6875rem',
+                  fontWeight: 700,
+                  backgroundColor:
+                    trade.direction === 'LONG'
+                      ? muiTheme.palette.profit.bg
+                      : muiTheme.palette.loss.bg,
+                  color:
+                    trade.direction === 'LONG'
+                      ? muiTheme.palette.profit.main
+                      : muiTheme.palette.loss.main,
+                  border: `1px solid ${
+                    trade.direction === 'LONG'
+                      ? isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.25)'
+                      : isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'
+                  }`,
+                }}
+              />
+              <Chip
+                label={trade.status}
+                size="small"
+                sx={{
+                  height: 22,
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                  color: muiTheme.palette.text.secondary,
+                }}
+              />
+            </Box>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, mt: 0.25, display: 'block', fontFamily: `'JetBrains Mono', monospace` }}>
+              {trade.accountName} • {trade.exchange} ({trade.marketSegment}) • {trade.tradeDate}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Action Buttons */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => duplicateMutation.mutate()}
+            startIcon={<ContentCopyIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          >
+            Duplicate
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setIsEditModalOpen(true)}
+            startIcon={<EditIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            onClick={() => setShowDeleteConfirm(true)}
+            startIcon={<DeleteOutlineIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          >
+            Delete
+          </Button>
+        </Box>
+      </Box>
 
       {/* Summary KPI Banner */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 rounded-xl border border-border bg-card p-5 shadow-sm font-mono">
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Net Realized P&L</span>
-          <span
-            className={`text-2xl font-bold ${
-              isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-muted-foreground'
-            }`}
-          >
-            {formatCurrency(trade.calculated.netPnL)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Gross P&L</span>
-          <span className="text-xl font-semibold text-foreground">
-            {formatCurrency(trade.calculated.grossPnL)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Trading Costs</span>
-          <span className="text-xl font-semibold text-muted-foreground">
-            {formatCurrency(trade.calculated.totalCosts)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Realized R</span>
-          <span className="text-xl font-bold text-foreground">
-            {formatR(trade.calculated.realizedRMultiple)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Holding Duration</span>
-          <span className="text-xl font-semibold text-foreground">
-            {trade.calculated.holdingTimeMinutes ? `${trade.calculated.holdingTimeMinutes}m` : '—'}
-          </span>
-        </div>
-      </div>
-
-      {/* Main Grid: Execution Details & Risk */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Card 1: Execution & Fills */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-emerald-400" /> Execution Parameters
-            </h3>
-            <span className="text-xs text-muted-foreground uppercase font-mono">
-              {trade.executionMode} Mode
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Avg Entry</span>
-              <span className="font-bold text-foreground">
-                {trade.simpleExecution?.entryPrice || trade.calculated.averageEntryPrice}
-              </span>
-            </div>
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Avg Exit</span>
-              <span className="font-bold text-foreground">
-                {trade.simpleExecution?.exitPrice || trade.calculated.averageExitPrice || '—'}
-              </span>
-            </div>
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Quantity</span>
-              <span className="font-bold text-foreground">
-                {trade.simpleExecution?.quantity || trade.calculated.closedQuantity}
-              </span>
-            </div>
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Multiplier</span>
-              <span className="font-bold text-foreground">
-                x{trade.simpleExecution?.contractMultiplier || 1}
-              </span>
-            </div>
-          </div>
-
-          {/* Costs breakdown */}
-          <div className="rounded-lg border border-border bg-accent/10 p-3 space-y-2 text-xs">
-            <span className="font-semibold text-foreground block text-[11px] uppercase tracking-wider">
-              Costs & Charges Itemization
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
-              <div>
-                <span className="text-muted-foreground block">Brokerage:</span>
-                <span>{formatCurrency(trade.simpleExecution?.brokerage)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block">Exchange:</span>
-                <span>{formatCurrency(trade.simpleExecution?.exchangeFees)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block">Taxes (STT/GST):</span>
-                <span>{formatCurrency(trade.simpleExecution?.taxes)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block">Other Fees:</span>
-                <span>{formatCurrency(trade.simpleExecution?.otherFees)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Advanced Fills Table if present */}
-          {trade.fills && trade.fills.length > 0 && (
-            <div className="pt-2">
-              <span className="text-xs font-semibold text-foreground block mb-2">
-                Fills Breakdown ({trade.fills.length} fills)
-              </span>
-              <div className="overflow-x-auto rounded border border-border">
-                <table className="w-full text-left text-xs font-mono">
-                  <thead className="bg-accent/40 text-muted-foreground border-b border-border">
-                    <tr>
-                      <th className="p-2">Type</th>
-                      <th className="p-2 text-right">Price</th>
-                      <th className="p-2 text-right">Qty</th>
-                      <th className="p-2 text-right">Fee</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {trade.fills.map((fill: any, idx: number) => (
-                      <tr key={idx}>
-                        <td className="p-2 font-bold">{fill.type}</td>
-                        <td className="p-2 text-right">{fill.price}</td>
-                        <td className="p-2 text-right">{fill.quantity}</td>
-                        <td className="p-2 text-right text-muted-foreground">{fill.fee || 0}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Card 2: Risk Management */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Shield className="h-4 w-4 text-emerald-400" /> Planned Risk vs Actual Outcome
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 text-xs font-mono">
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Stop Loss</span>
-              <span className="font-bold text-rose-400">
-                {trade.risk?.initialStopLoss || '—'}
-              </span>
-            </div>
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Planned Target</span>
-              <span className="font-bold text-emerald-400">
-                {trade.risk?.plannedTarget || '—'}
-              </span>
-            </div>
-            <div className="rounded-lg bg-accent/30 p-2.5">
-              <span className="text-[10px] text-muted-foreground block font-sans">Risk Budget</span>
-              <span className="font-bold text-foreground">
-                {formatCurrency(trade.risk?.riskBudgetAmount)}
-              </span>
-            </div>
-          </div>
-
-          {/* Trade Thesis */}
-          <div className="space-y-2 text-xs pt-2">
-            <span className="font-semibold text-foreground block text-[11px] uppercase tracking-wider">
-              Technical Rationale & Thesis
-            </span>
-            <p className="rounded-lg border border-border bg-background p-3 text-muted-foreground leading-relaxed">
-              {trade.thesis?.entryRationale || 'No written entry rationale logged for this trade.'}
-            </p>
-
-            {trade.thesis?.confluences && trade.thesis.confluences.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {trade.thesis.confluences.map((c: string) => (
-                  <span
-                    key={c}
-                    className="rounded bg-accent/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground"
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Psychology & Discipline Section */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Brain className="h-4 w-4 text-purple-400" /> Psychology & Discipline Report
-          </h3>
-          <span className="text-xs font-mono font-bold text-emerald-400">
-            Discipline Rating: {trade.psychology?.disciplineScore || 4}/5
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-          <div className="rounded-lg border border-border bg-accent/20 p-3">
-            <span className="text-muted-foreground text-[10px] block">Emotion Before Entry</span>
-            <span className="font-semibold text-foreground">{trade.psychology?.emotionBefore || 'NEUTRAL'}</span>
-          </div>
-          <div className="rounded-lg border border-border bg-accent/20 p-3">
-            <span className="text-muted-foreground text-[10px] block">Emotion During Trade</span>
-            <span className="font-semibold text-foreground">{trade.psychology?.emotionDuring || 'CALM'}</span>
-          </div>
-          <div className="rounded-lg border border-border bg-accent/20 p-3">
-            <span className="text-muted-foreground text-[10px] block">Rule Adherence</span>
-            <span
-              className={`font-semibold ${
-                trade.psychology?.rulesFollowed ? 'text-emerald-400' : 'text-rose-400'
-              }`}
+      <Card sx={{ p: 2.5 }}>
+        <Grid container spacing={2.5}>
+          <Grid size={{ xs: 6, sm: 2.4 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Net Realized P&L
+            </Typography>
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 800,
+                fontFamily: `'JetBrains Mono', monospace`,
+                color: isWin ? muiTheme.palette.profit.main : isLoss ? muiTheme.palette.loss.main : muiTheme.palette.text.primary,
+                mt: 0.5,
+              }}
             >
-              {trade.psychology?.rulesFollowed ? 'Rules Followed Cleanly' : 'Rules Violated'}
-            </span>
-          </div>
-        </div>
+              {formatCurrency(trade.calculated?.netPnL)}
+            </Typography>
+          </Grid>
+
+          <Grid size={{ xs: 6, sm: 2.4 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Gross P&L
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
+              {formatCurrency(trade.calculated?.grossPnL)}
+            </Typography>
+          </Grid>
+
+          <Grid size={{ xs: 6, sm: 2.4 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Total Costs
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, mt: 0.5 }}>
+              {formatCurrency(trade.calculated?.totalCosts)}
+            </Typography>
+          </Grid>
+
+          <Grid size={{ xs: 6, sm: 2.4 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Realized R
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
+              {formatR(trade.calculated?.realizedRMultiple)}
+            </Typography>
+          </Grid>
+
+          <Grid size={{ xs: 6, sm: 2.4 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Duration
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
+              {trade.calculated?.holdingTimeMinutes ? `${trade.calculated.holdingTimeMinutes}m` : '—'}
+            </Typography>
+          </Grid>
+        </Grid>
+      </Card>
+
+      {/* Execution Parameters & Risk Management Row */}
+      <Grid container spacing={3}>
+        {/* Execution Parameters */}
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Card sx={{ p: 2.5, height: '100%' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <AttachMoneyIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+                Execution Parameters
+              </Typography>
+              <Chip
+                label={`${trade.executionMode} MODE`}
+                size="small"
+                sx={{ fontSize: '0.625rem', fontWeight: 700, height: 20 }}
+              />
+            </Box>
+
+            <Grid container spacing={2} sx={{ mb: 2.5 }}>
+              <Grid size={{ xs: 3 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Entry Price</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                    {trade.simpleExecution?.entryPrice || trade.calculated?.averageEntryPrice}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 3 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Exit Price</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                    {trade.simpleExecution?.exitPrice || trade.calculated?.averageExitPrice || '—'}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 3 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Quantity</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                    {trade.simpleExecution?.quantity || trade.calculated?.closedQuantity}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 3 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Multiplier</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                    x{trade.simpleExecution?.contractMultiplier || 1}
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+
+            {/* Itemized Charges */}
+            <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'block', mb: 1 }}>
+                Trading Costs Itemization
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Brokerage</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
+                    {formatCurrency(trade.simpleExecution?.brokerage)}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Exchange</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
+                    {formatCurrency(trade.simpleExecution?.exchangeFees)}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Taxes (STT/GST)</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
+                    {formatCurrency(trade.simpleExecution?.taxes)}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Other Fees</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
+                    {formatCurrency(trade.simpleExecution?.otherFees)}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Box>
+          </Card>
+        </Grid>
+
+        {/* Risk Management & Rationale */}
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Card sx={{ p: 2.5, height: '100%' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <SecurityIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+                Planned Risk vs Outcome
+              </Typography>
+            </Box>
+
+            <Grid container spacing={2} sx={{ mb: 2.5 }}>
+              <Grid size={{ xs: 4 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Initial Stop Loss</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                    {trade.risk?.initialStopLoss || '—'}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 4 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Planned Target</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                    {trade.risk?.plannedTarget || '—'}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 4 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Risk Budget</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                    {formatCurrency(trade.risk?.riskBudgetAmount)}
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+
+            {/* Technical Rationale */}
+            <Box>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'block', mb: 1 }}>
+                Technical Thesis & Entry Rationale
+              </Typography>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: `1px solid ${muiTheme.palette.divider}`,
+                  backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(248, 250, 252, 0.8)',
+                  color: muiTheme.palette.text.primary,
+                  fontSize: '0.8125rem',
+                  lineHeight: 1.6,
+                }}
+              >
+                {trade.thesis?.entryRationale || 'No written entry rationale logged for this trade.'}
+              </Box>
+
+              {trade.thesis?.confluences && trade.thesis.confluences.length > 0 && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
+                  {trade.thesis.confluences.map((c: string) => (
+                    <Chip key={c} label={c} size="small" sx={{ fontSize: '0.6875rem', fontWeight: 600, height: 22 }} />
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Psychology & Discipline Report */}
+      <Card sx={{ p: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
+            Psychology & Discipline Audit
+          </Typography>
+          <Chip
+            label={`Discipline Rating: ${trade.psychology?.disciplineScore || 4}/5`}
+            size="small"
+            color="primary"
+            sx={{ fontWeight: 700 }}
+          />
+        </Box>
+
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Emotion Before Entry</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.5 }}>{trade.psychology?.emotionBefore || 'NEUTRAL'}</Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Emotion During Trade</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.5 }}>{trade.psychology?.emotionDuring || 'CALM'}</Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Rule Adherence</Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 700,
+                  mt: 0.5,
+                  color: trade.psychology?.rulesFollowed ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                }}
+              >
+                {trade.psychology?.rulesFollowed ? 'Rules Followed Cleanly' : 'Rules Violated'}
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
 
         {trade.psychology?.notes && (
-          <div className="rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground block mb-1">Post-Trade Notes & Lessons Learned:</span>
-            {trade.psychology.notes}
-          </div>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              border: `1px solid ${muiTheme.palette.divider}`,
+              backgroundColor: isDark ? 'rgba(17, 24, 39, 0.4)' : 'rgba(248, 250, 252, 0.6)',
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 700, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+              Post-Trade Notes & Lessons:
+            </Typography>
+            <Typography variant="body2" sx={{ color: muiTheme.palette.text.primary, lineHeight: 1.6 }}>
+              {trade.psychology.notes}
+            </Typography>
+          </Box>
         )}
-      </div>
+      </Card>
 
-      {/* Chart Screenshots Gallery */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <ImageIcon className="h-4 w-4 text-emerald-400" /> Private Chart Screenshots
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Stored privately in local storage outside web root
-            </p>
-          </div>
+      {/* Private Chart Screenshots Gallery */}
+      <Card sx={{ p: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CollectionsIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+              Private Chart Screenshots
+            </Typography>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+              Stored locally and privately on your machine
+            </Typography>
+          </Box>
 
-          <label className="cursor-pointer flex items-center gap-1.5 rounded-lg bg-accent hover:bg-accent/80 px-3 py-1.5 text-xs font-medium text-foreground border border-border transition-colors">
-            <Upload className="h-3.5 w-3.5" />
-            <span>Upload Chart</span>
+          <Button
+            component="label"
+            variant="outlined"
+            size="small"
+            startIcon={<CloudUploadIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          >
+            Upload Chart
             <input
               type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
+              hidden
+              accept="image/*"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
@@ -415,105 +527,142 @@ export function TradeDetailPage() {
                 }
               }}
             />
-          </label>
-        </div>
+          </Button>
+        </Box>
 
-        {trade.screenshotIds && trade.screenshotIds.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {trade.screenshotIds.map((attId: string) => (
-              <div
-                key={attId}
-                className="group relative rounded-lg border border-border overflow-hidden bg-background aspect-video cursor-pointer"
-                onClick={() => setSelectedImage(api.attachments.downloadUrl(attId))}
-              >
-                <img
-                  src={api.attachments.downloadUrl(attId)}
-                  alt="Chart Screenshot"
-                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                />
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm('Delete screenshot?')) {
-                      deleteAttachmentMutation.mutate(attId);
-                    }
+        {trade.attachments && trade.attachments.length > 0 ? (
+          <Grid container spacing={2}>
+            {trade.attachments.map((att: any) => (
+              <Grid key={att.id} size={{ xs: 12, sm: 6, md: 4 }}>
+                <Box
+                  sx={{
+                    position: 'relative',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                    cursor: 'pointer',
+                    '&:hover .delete-btn': { opacity: 1 },
                   }}
-                  className="absolute top-1.5 right-1.5 p-1 rounded bg-black/70 text-rose-400 hover:text-rose-300 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Delete"
+                  onClick={() => setSelectedImage(api.attachments.downloadUrl(att.id))}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
+                  <Box
+                    component="img"
+                    src={api.attachments.downloadUrl(att.id)}
+                    alt="Chart Screenshot"
+                    sx={{
+                      width: '100%',
+                      height: 180,
+                      objectFit: 'cover',
+                      display: 'block',
+                      transition: 'transform 0.2s',
+                      '&:hover': { transform: 'scale(1.02)' },
+                    }}
+                  />
+                  <IconButton
+                    className="delete-btn"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm('Delete this chart screenshot?')) {
+                        deleteAttachmentMutation.mutate(att.id);
+                      }
+                    }}
+                    sx={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                      color: '#FFFFFF',
+                      '&:hover': { backgroundColor: 'rgba(220, 38, 38, 0.9)' },
+                    }}
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </Grid>
             ))}
-          </div>
+          </Grid>
         ) : (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-            No chart screenshots uploaded for this trade. Click &quot;Upload Chart&quot; to attach pre-entry or exit charts.
-          </div>
+          <Box sx={{ py: 4, textAlign: 'center' }}>
+            <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+              No chart screenshots attached yet. Click "Upload Chart" to attach trade execution snapshots.
+            </Typography>
+          </Box>
         )}
-      </div>
-
-      {/* Audit History Log */}
-      {trade.auditLog && trade.auditLog.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-3">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <History className="h-4 w-4 text-muted-foreground" /> Audit Trail
-          </h3>
-          <div className="space-y-1.5 font-mono text-[11px] text-muted-foreground">
-            {trade.auditLog.map((log: any, idx: number) => (
-              <div key={idx} className="flex items-center gap-2">
-                <span>{formatDateTime(log.timestamp)}</span>
-                <span className="font-bold text-foreground">[{log.action}]</span>
-                <span>by {log.changedBy}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </Card>
 
       {/* Edit Trade Modal */}
-      {isEditModalOpen && (
-        <TradeFormModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          editTradeId={trade.id}
-          initialValues={{
-            ...trade,
-            tradeDate: trade.tradeDate,
-            entryTime: trade.entryTime ? trade.entryTime.slice(0, 16) : undefined,
-            exitTime: trade.exitTime ? trade.exitTime.slice(0, 16) : undefined,
-            tagsInput: trade.tags?.join(', ') || '',
-          }}
-        />
-      )}
+      <TradeFormModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        editTradeId={id}
+        initialValues={trade}
+      />
 
-      {/* Full Screen Image Zoom Modal */}
-      {selectedImage && (
-        <div
-          role="dialog"
-          aria-label="Enlarged Chart View"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in"
-          onClick={() => setSelectedImage(null)}
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setSelectedImage(null);
-          }}
-        >
-          <button
+      {/* Image Preview Dialog */}
+      <Dialog
+        open={Boolean(selectedImage)}
+        onClose={() => setSelectedImage(null)}
+        maxWidth="lg"
+        fullWidth
+        slotProps={{
+          paper: { sx: { backgroundColor: 'transparent', boxShadow: 'none' } },
+        }}
+      >
+        <Box sx={{ position: 'relative', p: 1 }}>
+          <IconButton
             onClick={() => setSelectedImage(null)}
-            className="absolute top-4 right-4 p-2 rounded-full bg-card/80 text-foreground hover:bg-card border border-border shadow-md"
-            aria-label="Close enlarged image"
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              color: '#FFFFFF',
+              '&:hover': { backgroundColor: 'rgba(0,0,0,0.9)' },
+            }}
           >
-            <X className="h-6 w-6" />
-          </button>
-          <img
-            src={selectedImage}
-            alt="Enlarged Chart"
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
-          />
-        </div>
-      )}
-    </div>
+            <CloseIcon />
+          </IconButton>
+          {selectedImage && (
+            <Box
+              component="img"
+              src={selectedImage}
+              alt="Expanded Chart"
+              sx={{
+                width: '100%',
+                maxHeight: '85vh',
+                objectFit: 'contain',
+                borderRadius: 2,
+                boxShadow: 24,
+              }}
+            />
+          )}
+        </Box>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete Trade Record</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+            Are you sure you want to permanently delete this trade record for <strong>{trade.symbol}</strong>? This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={() => deleteMutation.mutate()}>
+            Delete Permanently
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

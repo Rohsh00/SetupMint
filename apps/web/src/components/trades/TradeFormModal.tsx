@@ -1,14 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  X,
-  Sliders,
-  DollarSign,
-  ShieldCheck,
-  Brain,
-  Sparkles,
-} from 'lucide-react';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import CircularProgress from '@mui/material/CircularProgress';
+import CloseIcon from '@mui/icons-material/Close';
+import TuneIcon from '@mui/icons-material/TuneRounded';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoneyRounded';
+import SecurityIcon from '@mui/icons-material/SecurityRounded';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
+import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
 import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
@@ -38,6 +49,9 @@ export function TradeFormModal({
   initialValues,
 }: TradeFormModalProps) {
   const queryClient = useQueryClient();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
+
   const [activeTab, setActiveTab] = useState<'IDENTITY' | 'EXECUTION' | 'RISK' | 'THESIS' | 'PSYCHOLOGY'>('IDENTITY');
   const [executionMode, setExecutionMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
 
@@ -130,19 +144,6 @@ export function TradeFormModal({
   const watchedStatus = watch('status');
   const watchedSimple = watch('simpleExecution');
   const watchedRisk = watch('risk');
-
-  // Handle escape key to close modal safely
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        if (!isDirty || window.confirm('You have unsaved changes. Discard and close?')) {
-          onClose();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isDirty, onClose]);
 
   // Load initial values or edit values when opening modal
   useEffect(() => {
@@ -249,82 +250,124 @@ export function TradeFormModal({
     }
   };
 
-  if (!isOpen) return null;
+  const handleClose = () => {
+    if (isDirty) {
+      if (window.confirm('You have unsaved changes. Discard and close?')) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="trade-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200"
+    <Dialog
+      open={isOpen}
+      onClose={handleClose}
+      maxWidth="md"
+      fullWidth
+      scroll="paper"
+      aria-labelledby="trade-dialog-title"
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 3,
+            maxHeight: '90vh',
+          },
+        },
+        backdrop: {
+          sx: { backdropFilter: 'blur(4px)' },
+        },
+      }}
     >
-      <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-card/60">
-          <div>
-            <h2 id="trade-modal-title" className="text-lg font-bold text-foreground flex items-center gap-2">
-              {editTradeId ? 'Edit Trade Entry' : 'Log New Manual Trade'}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Deterministic monetary calculations, risk controls, and execution audit log
-            </p>
-          </div>
+      {/* Dialog Title */}
+      <DialogTitle
+        id="trade-dialog-title"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 3,
+          py: 2,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+          backgroundColor: isDark ? 'rgba(17, 24, 39, 0.7)' : 'rgba(248, 250, 252, 0.8)',
+        }}
+      >
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.05rem', color: muiTheme.palette.text.primary }}>
+            {editTradeId ? 'Edit Trade Entry' : 'Log New Manual Trade'}
+          </Typography>
+          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+            Deterministic monetary calculations, risk controls, and execution audit log
+          </Typography>
+        </Box>
+        <IconButton
+          size="small"
+          onClick={handleClose}
+          sx={{ color: muiTheme.palette.text.secondary }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </DialogTitle>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            aria-label="Close dialog"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+      {/* Live Calculation Banner */}
+      <Box sx={{ px: 3, pt: 2 }}>
+        <TradeCalculationBanner
+          grossPnL={liveGross}
+          totalCosts={liveCosts}
+          netPnL={liveNet}
+          outcome={liveOutcome}
+          realizedR={liveRealizedR}
+          plannedRisk={plannedRiskAmount}
+          status={watchedStatus}
+          isDirectionValid={isDirectionValid}
+        />
+      </Box>
 
-        {/* Live Calculation Banner */}
-        <div className="px-6 pt-4">
-          <TradeCalculationBanner
-            grossPnL={liveGross}
-            totalCosts={liveCosts}
-            netPnL={liveNet}
-            outcome={liveOutcome}
-            realizedR={liveRealizedR}
-            plannedRisk={plannedRiskAmount}
-            status={watchedStatus}
-            isDirectionValid={isDirectionValid}
+      {/* Tab Selector */}
+      <Box sx={{ px: 3, pt: 1, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+        <Tabs
+          value={activeTab}
+          onChange={(_e, val) => setActiveTab(val)}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab
+            value="IDENTITY"
+            label="Trade Identity"
+            icon={<TuneIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
           />
-        </div>
+          <Tab
+            value="EXECUTION"
+            label="Execution & Fills"
+            icon={<AttachMoneyIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+          />
+          <Tab
+            value="RISK"
+            label="Risk Parameters"
+            icon={<SecurityIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+          />
+          <Tab
+            value="THESIS"
+            label="Thesis & Context"
+            icon={<AutoAwesomeIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+          />
+          <Tab
+            value="PSYCHOLOGY"
+            label="Psychology & Rules"
+            icon={<PsychologyIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+          />
+        </Tabs>
+      </Box>
 
-        {/* Tab Selector */}
-        <div className="flex border-b border-border px-6 pt-3 gap-2 overflow-x-auto text-xs font-medium">
-          {[
-            { id: 'IDENTITY', label: 'Trade Identity', icon: Sliders },
-            { id: 'EXECUTION', label: 'Execution & Fills', icon: DollarSign },
-            { id: 'RISK', label: 'Risk Parameters', icon: ShieldCheck },
-            { id: 'THESIS', label: 'Thesis & Confluences', icon: Sparkles },
-            { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: Brain },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 py-2 px-3 border-b-2 font-medium transition-all ${
-                  isActive
-                    ? 'border-emerald-500 text-emerald-400 font-semibold'
-                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Form Body */}
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto p-6 space-y-4">
+      {/* Form Body */}
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <DialogContent sx={{ p: 3 }}>
           {activeTab === 'IDENTITY' && (
             <TradeIdentityTab
               register={register}
@@ -357,37 +400,58 @@ export function TradeFormModal({
           {activeTab === 'PSYCHOLOGY' && (
             <TradePsychologyTab register={register} watch={watch} setValue={setValue} />
           )}
+        </DialogContent>
 
-          {/* Footer Actions */}
-          <div className="flex items-center justify-between pt-4 border-t border-border mt-6">
-            <span className="text-[11px] text-muted-foreground font-mono">
-              All financial values calculated with 30-digit decimal arithmetic.
-            </span>
+        {/* Footer Actions */}
+        <DialogActions
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            px: 3,
+            py: 2,
+            borderTop: `1px solid ${muiTheme.palette.divider}`,
+            backgroundColor: isDark ? 'rgba(17, 24, 39, 0.4)' : 'rgba(248, 250, 252, 0.5)',
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              fontFamily: `'JetBrains Mono', monospace`,
+              fontSize: '0.6875rem',
+              color: muiTheme.palette.text.secondary,
+              display: { xs: 'none', sm: 'inline' },
+            }}
+          >
+            All financial values calculated with 30-digit decimal arithmetic.
+          </Typography>
 
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-accent transition-colors"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
-                className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold shadow-sm transition-all disabled:opacity-50"
-              >
-                {isSubmitting || createMutation.isPending || updateMutation.isPending
-                  ? 'Saving Trade...'
-                  : editTradeId
-                  ? 'Update Trade'
-                  : 'Save Trade Entry'}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button
+              variant="outlined"
+              onClick={handleClose}
+              sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
+              sx={{ fontWeight: 700, fontSize: '0.8125rem', px: 3 }}
+            >
+              {isSubmitting || createMutation.isPending || updateMutation.isPending ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : editTradeId ? (
+                'Update Trade'
+              ) : (
+                'Save Trade Entry'
+              )}
+            </Button>
+          </Box>
+        </DialogActions>
+      </form>
+    </Dialog>
   );
 }

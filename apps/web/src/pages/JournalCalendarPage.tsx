@@ -1,22 +1,42 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Calendar as CalendarIcon,
-  CheckCircle2,
-  FileText,
-  TrendingUp,
-  TrendingDown,
-  X,
-  Sparkles,
-} from 'lucide-react';
+import { Link as RouterLink } from 'react-router-dom';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import TextField from '@mui/material/TextField';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import CircularProgress from '@mui/material/CircularProgress';
+import Tooltip from '@mui/material/Tooltip';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonthRounded';
+import CloseIcon from '@mui/icons-material/CloseRounded';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
+import CheckCircleIcon from '@mui/icons-material/CheckCircleRounded';
+
 import { api } from '../lib/api.js';
 import { formatCurrency } from '../lib/utils.js';
 
 export function JournalCalendarPage() {
   const queryClient = useQueryClient();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
+
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1-indexed
@@ -43,6 +63,7 @@ export function JournalCalendarPage() {
   const [disciplineRating, setDisciplineRating] = useState(5);
   const [lessonsLearned, setLessonsLearned] = useState('');
   const [nextDayPlan, setNextDayPlan] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Load day details into review form when date changes
   React.useEffect(() => {
@@ -62,11 +83,14 @@ export function JournalCalendarPage() {
       setLessonsLearned('');
       setNextDayPlan('');
     }
+    setSaveSuccess(false);
   }, [dayDetails]);
 
   const saveJournalMutation = useMutation({
     mutationFn: (review: any) => api.journal.saveDay(selectedDate!, review),
     onSuccess: () => {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
       queryClient.invalidateQueries({ queryKey: ['journal-calendar'] });
       queryClient.invalidateQueries({ queryKey: ['journal-day', selectedDate] });
     },
@@ -97,8 +121,6 @@ export function JournalCalendarPage() {
 
   // Calculate first day weekday and total days in month
   const firstDayWeekday = new Date(currentYear, currentMonth - 1, 1).getDay(); // 0 is Sun
-  const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-
   const days = calendarData?.days || [];
 
   // Monthly totals
@@ -108,73 +130,125 @@ export function JournalCalendarPage() {
   const losingDays = days.filter((d: any) => d.netPnL < 0).length;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
       {/* Header & Month Navigation */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          pb: 2,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+        }}
+      >
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', color: muiTheme.palette.text.primary }}>
             Journal Calendar
-          </h1>
-          <p className="text-xs text-muted-foreground">
+          </Typography>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mt: 0.5 }}>
             Monthly P&L heat map, daily reflections, and post-session trade audits
-          </p>
-        </div>
+          </Typography>
+        </Box>
 
         {/* Month Selector */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-lg border border-border bg-card p-1 shadow-sm">
-            <button
-              onClick={handlePrevMonth}
-              className="p-1 rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="font-semibold text-xs px-3 font-mono text-foreground">
-              {monthNames[currentMonth - 1]} {currentYear}
-            </span>
-            <button
-              onClick={handleNextMonth}
-              className="p-1 rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            backgroundColor: muiTheme.palette.background.paper,
+            borderRadius: 2,
+            p: 0.5,
+            border: `1px solid ${muiTheme.palette.divider}`,
+          }}
+        >
+          <IconButton size="small" onClick={handlePrevMonth}>
+            <ChevronLeftIcon fontSize="small" />
+          </IconButton>
+          <Typography variant="body2" sx={{ px: 2, fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+            {monthNames[currentMonth - 1]} {currentYear}
+          </Typography>
+          <IconButton size="small" onClick={handleNextMonth}>
+            <ChevronRightIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      </Box>
 
       {/* Monthly Summary Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 rounded-xl border border-border bg-card p-4 shadow-sm font-mono text-xs">
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Month Net P&L</span>
-          <span className={`text-xl font-bold ${totalMonthlyNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {formatCurrency(totalMonthlyNet)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Trades Taken</span>
-          <span className="text-xl font-semibold text-foreground">{totalMonthlyTrades}</span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Green vs Red Days</span>
-          <div className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <span className="text-emerald-400">{winningDays}W</span>
-            <span className="text-rose-400">{losingDays}L</span>
-          </div>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Day Win Rate</span>
-          <span className="text-xl font-semibold text-foreground">
-            {winningDays + losingDays > 0
-              ? `${Math.round((winningDays / (winningDays + losingDays)) * 100)}%`
-              : '—'}
-          </span>
-        </div>
-      </div>
+      <Card sx={{ p: 2.5 }}>
+        <Grid container spacing={2.5}>
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Month Net P&L
+            </Typography>
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 800,
+                fontFamily: `'JetBrains Mono', monospace`,
+                color: totalMonthlyNet >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                mt: 0.5,
+              }}
+            >
+              {formatCurrency(totalMonthlyNet)}
+            </Typography>
+          </Grid>
 
-      {/* Calendar Grid */}
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Total Executions
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
+              {totalMonthlyTrades}
+            </Typography>
+          </Grid>
+
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Green vs Red Days
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: muiTheme.palette.profit.main, fontFamily: `'JetBrains Mono', monospace` }}>
+                {winningDays}W
+              </Typography>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: muiTheme.palette.loss.main, fontFamily: `'JetBrains Mono', monospace` }}>
+                {losingDays}L
+              </Typography>
+            </Box>
+          </Grid>
+
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+              Day Win Rate
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
+              {winningDays + losingDays > 0
+                ? `${Math.round((winningDays / (winningDays + losingDays)) * 100)}%`
+                : '—'}
+            </Typography>
+          </Grid>
+        </Grid>
+      </Card>
+
+      {/* Calendar Grid Card */}
+      <Card sx={{ overflow: 'hidden' }}>
         {/* Weekday headers */}
-        <div className="grid grid-cols-7 border-b border-border bg-accent/20 text-center text-xs font-semibold text-muted-foreground py-2.5">
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            borderBottom: `1px solid ${muiTheme.palette.divider}`,
+            backgroundColor: isDark ? 'rgba(17, 24, 39, 0.7)' : 'rgba(248, 250, 252, 0.8)',
+            py: 1.5,
+            textAlign: 'center',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            color: muiTheme.palette.text.secondary,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+          }}
+        >
           <span>Sun</span>
           <span>Mon</span>
           <span>Tue</span>
@@ -182,16 +256,35 @@ export function JournalCalendarPage() {
           <span>Thu</span>
           <span>Fri</span>
           <span>Sat</span>
-        </div>
+        </Box>
 
-        {/* Calendar Day Cells */}
-        <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-border/60">
-          {/* Empty cells before month start */}
+        {/* Day Cells Grid */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            '& > div': {
+              borderRight: `1px solid ${muiTheme.palette.divider}`,
+              borderBottom: `1px solid ${muiTheme.palette.divider}`,
+              '&:nth-of-type(7n)': {
+                borderRight: 'none',
+              },
+            },
+          }}
+        >
+          {/* Pre-month Empty cells */}
           {Array.from({ length: firstDayWeekday }).map((_, i) => (
-            <div key={`empty-${i}`} className="min-h-[105px] bg-accent/5 p-2" />
+            <Box
+              key={`empty-${i}`}
+              sx={{
+                minHeight: 110,
+                p: 1.5,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.01)' : 'rgba(15, 23, 42, 0.01)',
+              }}
+            />
           ))}
 
-          {/* Month Days */}
+          {/* Month Day Cells */}
           {days.map((dayItem: any) => {
             const hasTrades = dayItem.tradesCount > 0;
             const isGreen = dayItem.netPnL > 0;
@@ -199,217 +292,322 @@ export function JournalCalendarPage() {
             const isSelected = selectedDate === dayItem.date;
 
             return (
-              <div
+              <Box
                 key={dayItem.date}
                 onClick={() => setSelectedDate(dayItem.date)}
-                className={`min-h-[105px] p-2 flex flex-col justify-between cursor-pointer transition-all ${
-                  isSelected ? 'ring-2 ring-emerald-500 bg-emerald-500/5' : 'hover:bg-accent/30'
-                } ${
-                  hasTrades && isGreen
-                    ? 'bg-emerald-500/5'
+                sx={{
+                  minHeight: 110,
+                  p: 1.5,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s',
+                  backgroundColor: isSelected
+                    ? isDark
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : 'rgba(5, 150, 105, 0.12)'
+                    : hasTrades && isGreen
+                    ? muiTheme.palette.profit.bg
                     : hasTrades && isRed
-                    ? 'bg-rose-500/5'
-                    : ''
-                }`}
+                    ? muiTheme.palette.loss.bg
+                    : 'transparent',
+                  outline: isSelected ? `2px solid ${muiTheme.palette.primary.main}` : 'none',
+                  outlineOffset: -2,
+                  '&:hover': {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.04)',
+                  },
+                }}
               >
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className={`font-semibold ${hasTrades ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: hasTrades ? muiTheme.palette.text.primary : muiTheme.palette.text.secondary,
+                    }}
+                  >
                     {dayItem.dayNumber}
-                  </span>
+                  </Typography>
                   {dayItem.hasJournal && (
-                    <span className="flex h-2 w-2 rounded-full bg-blue-400" title="Daily Review Saved" />
+                    <Tooltip title="Daily Reflection Saved" arrow>
+                      <Box
+                        sx={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          backgroundColor: '#3B82F6',
+                        }}
+                      />
+                    </Tooltip>
                   )}
-                </div>
+                </Box>
 
                 {hasTrades ? (
-                  <div className="space-y-1">
-                    <div
-                      className={`text-xs font-mono font-bold ${
-                        isGreen ? 'text-emerald-400' : isRed ? 'text-rose-400' : 'text-muted-foreground'
-                      }`}
+                  <Box sx={{ mt: 1 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 700,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        fontSize: '0.8125rem',
+                        color: isGreen ? muiTheme.palette.profit.main : isRed ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
+                      }}
                     >
                       {formatCurrency(dayItem.netPnL)}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground font-sans flex items-center gap-1">
-                      <span>{dayItem.tradesCount} trade{dayItem.tradesCount > 1 ? 's' : ''}</span>
-                      <span>({dayItem.winCount}W/{dayItem.lossCount}L)</span>
-                    </div>
-                  </div>
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem', display: 'block', mt: 0.25 }}>
+                      {dayItem.tradesCount} trades ({dayItem.winCount}W/{dayItem.lossCount}L)
+                    </Typography>
+                  </Box>
                 ) : (
-                  <div className="text-[10px] text-muted-foreground/40 font-mono">No trades</div>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.disabled, fontSize: '0.6875rem' }}>
+                    —
+                  </Typography>
                 )}
-              </div>
+              </Box>
             );
           })}
-        </div>
-      </div>
+        </Box>
+      </Card>
 
-      {/* Selected Date Detail Drawer / Modal */}
-      {selectedDate && (
-        <div className="rounded-xl border border-border bg-card p-6 shadow-xl space-y-6 animate-fadeIn">
-          <div className="flex items-center justify-between border-b border-border pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <CalendarIcon className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-foreground">
-                  Daily Review & Trades for {selectedDate}
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Reflect on market execution and prepare for the next trading day
-                </p>
-              </div>
-            </div>
+      {/* Daily Review & Day Details Dialog */}
+      <Dialog
+        open={Boolean(selectedDate)}
+        onClose={() => setSelectedDate(null)}
+        maxWidth="md"
+        fullWidth
+        scroll="paper"
+        slotProps={{
+          paper: { sx: { borderRadius: 3, maxHeight: '90vh' } },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            px: 3,
+            py: 2,
+            borderBottom: `1px solid ${muiTheme.palette.divider}`,
+            backgroundColor: isDark ? 'rgba(17, 24, 39, 0.7)' : 'rgba(248, 250, 252, 0.8)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <CalendarMonthIcon sx={{ color: muiTheme.palette.primary.main }} />
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.05rem' }}>
+                Daily Review for {selectedDate}
+              </Typography>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                Post-session audit, trade outcomes, and discipline reflection
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton size="small" onClick={() => setSelectedDate(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
 
-            <button
-              onClick={() => setSelectedDate(null)}
-              className="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Trades on this day */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                Executions on this Day ({dayDetails?.trades?.length || 0})
-              </h4>
+        <DialogContent sx={{ p: 3 }}>
+          <Grid container spacing={3}>
+            {/* Left: Day Executions */}
+            <Grid size={{ xs: 12, md: 5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'block', mb: 1.5 }}>
+                Trades Executed ({dayDetails?.trades?.length || 0})
+              </Typography>
 
               {isDayLoading ? (
-                <div className="text-xs text-muted-foreground">Loading day trades...</div>
+                <Box sx={{ py: 4, textAlign: 'center' }}>
+                  <CircularProgress size={24} />
+                </Box>
               ) : dayDetails?.trades?.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                  No trades recorded on {selectedDate}.
-                </div>
+                <Box sx={{ p: 3, textAlign: 'center', borderRadius: 2, border: `1px dashed ${muiTheme.palette.divider}` }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    No trades executed on this date.
+                  </Typography>
+                </Box>
               ) : (
-                <div className="space-y-2 max-h-72 overflow-y-auto">
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, maxHeight: 380, overflowY: 'auto' }}>
                   {dayDetails?.trades?.map((t: any) => (
-                    <Link
+                    <Box
                       key={t._id}
+                      component={RouterLink}
                       to={`/trades/${t._id}`}
-                      className="flex items-center justify-between p-3 rounded-lg border border-border bg-background hover:bg-accent/40 transition-colors text-xs"
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                        textDecoration: 'none',
+                        color: 'inherit',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        '&:hover': {
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.05)',
+                        },
+                      }}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className={`font-mono font-bold ${
-                            t.direction === 'LONG' ? 'text-emerald-400' : 'text-rose-400'
-                          }`}
-                        >
-                          {t.direction} {t.symbol}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">{t.strategyName || 'Discretionary'}</span>
-                      </div>
-                      <span
-                        className={`font-mono font-semibold ${
-                          t.calculated?.netPnL > 0
-                            ? 'text-emerald-400'
-                            : t.calculated?.netPnL < 0
-                            ? 'text-rose-400'
-                            : 'text-muted-foreground'
-                        }`}
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          <Box
+                            component="span"
+                            sx={{
+                              color: t.direction === 'LONG' ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                              mr: 0.75,
+                            }}
+                          >
+                            {t.direction}
+                          </Box>
+                          {t.symbol}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          {t.strategyName || 'Discretionary'}
+                        </Typography>
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: (t.calculated?.netPnL || 0) > 0 ? muiTheme.palette.profit.main : (t.calculated?.netPnL || 0) < 0 ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
+                        }}
                       >
                         {formatCurrency(t.calculated?.netPnL)}
-                      </span>
-                    </Link>
+                      </Typography>
+                    </Box>
                   ))}
-                </div>
+                </Box>
               )}
-            </div>
+            </Grid>
 
-            {/* Daily Review Form */}
-            <div className="space-y-4">
-              <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> Daily Performance Reflection
-              </h4>
+            {/* Right: Daily Reflection Form */}
+            <Grid size={{ xs: 12, md: 7 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <AutoAwesomeIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+                Daily Session Reflection
+              </Typography>
 
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="block text-muted-foreground mb-1">Market Bias</label>
-                  <select
-                    value={marketBias}
-                    onChange={(e: any) => setMarketBias(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3"
-                  >
-                    <option value="BULLISH">BULLISH</option>
-                    <option value="BEARISH">BEARISH</option>
-                    <option value="NEUTRAL">NEUTRAL</option>
-                  </select>
-                </div>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                      Market Bias
+                    </Typography>
+                    <FormControl size="small" fullWidth>
+                      <Select
+                        value={marketBias}
+                        onChange={(e: any) => setMarketBias(e.target.value)}
+                      >
+                        <MenuItem value="BULLISH">BULLISH</MenuItem>
+                        <MenuItem value="BEARISH">BEARISH</MenuItem>
+                        <MenuItem value="NEUTRAL">NEUTRAL</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
 
-                <div>
-                  <label className="block text-muted-foreground mb-1">Discipline Rating (1-5)</label>
-                  <select
-                    value={disciplineRating}
-                    onChange={(e) => setDisciplineRating(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 font-semibold"
-                  >
-                    <option value={5}>5 - Flawless Execution</option>
-                    <option value={4}>4 - Good Execution</option>
-                    <option value={3}>3 - Hesitant / Incomplete</option>
-                    <option value={2}>2 - Rule Violation</option>
-                    <option value={1}>1 - Completely Undisciplined</option>
-                  </select>
-                </div>
-              </div>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                      Discipline Rating (1-5)
+                    </Typography>
+                    <FormControl size="small" fullWidth>
+                      <Select
+                        value={disciplineRating}
+                        onChange={(e) => setDisciplineRating(Number(e.target.value))}
+                      >
+                        <MenuItem value={5}>5 - Flawless Execution</MenuItem>
+                        <MenuItem value={4}>4 - Good Execution</MenuItem>
+                        <MenuItem value={3}>3 - Hesitant / Incomplete</MenuItem>
+                        <MenuItem value={2}>2 - Rule Violation</MenuItem>
+                        <MenuItem value={1}>1 - Severe Tilt / Loss</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
 
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Market Conditions</label>
-                <input
-                  type="text"
-                  value={marketConditions}
-                  onChange={(e) => setMarketConditions(e.target.value)}
-                  placeholder="e.g. Trend day after gap up, heavy institutional volume"
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs"
-                />
-              </div>
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                    Market Conditions & Context
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={marketConditions}
+                    onChange={(e) => setMarketConditions(e.target.value)}
+                    placeholder="e.g. Range-bound morning session, clean trend reversal post-noon"
+                  />
+                </Box>
 
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Lessons Learned</label>
-                <textarea
-                  value={lessonsLearned}
-                  onChange={(e) => setLessonsLearned(e.target.value)}
-                  rows={2}
-                  placeholder="What went well today? What mistake must you avoid tomorrow?"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs"
-                />
-              </div>
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                    Lessons Learned & Psychological Feedback
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={3}
+                    size="small"
+                    value={lessonsLearned}
+                    onChange={(e) => setLessonsLearned(e.target.value)}
+                    placeholder="What did the market do right? What emotional state did I experience?"
+                  />
+                </Box>
 
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Plan for Next Session</label>
-                <textarea
-                  value={nextDayPlan}
-                  onChange={(e) => setNextDayPlan(e.target.value)}
-                  rows={2}
-                  placeholder="Key levels to watch, specific playbook setups, and risk limits"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs"
-                />
-              </div>
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                    Next Session Action Plan
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={nextDayPlan}
+                    onChange={(e) => setNextDayPlan(e.target.value)}
+                    placeholder="Key levels to monitor tomorrow, risk guardrails to enforce"
+                  />
+                </Box>
+              </Box>
+            </Grid>
+          </Grid>
+        </DialogContent>
 
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    saveJournalMutation.mutate({
-                      marketConditions,
-                      marketBias,
-                      emotionalState,
-                      disciplineRating,
-                      lessonsLearned,
-                      nextDayPlan,
-                    })
-                  }
-                  disabled={saveJournalMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-md"
-                >
-                  {saveJournalMutation.isPending ? 'Saving Review...' : 'Save Daily Review'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {saveSuccess ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: muiTheme.palette.primary.main }}>
+              <CheckCircleIcon fontSize="small" />
+              <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                Daily reflection saved successfully
+              </Typography>
+            </Box>
+          ) : (
+            <span />
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button variant="outlined" onClick={() => setSelectedDate(null)}>
+              Close
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              disabled={saveJournalMutation.isPending}
+              onClick={() => {
+                saveJournalMutation.mutate({
+                  marketConditions,
+                  marketBias,
+                  emotionalState,
+                  disciplineRating,
+                  lessonsLearned,
+                  nextDayPlan,
+                });
+              }}
+            >
+              {saveJournalMutation.isPending ? 'Saving...' : 'Save Reflection'}
+            </Button>
+          </Box>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

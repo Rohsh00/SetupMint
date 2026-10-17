@@ -1,22 +1,44 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Wallet,
-  Plus,
-  ArrowDownLeft,
-  ArrowUpRight,
-  DollarSign,
-  Shield,
-  Layers,
-  X,
-  History,
-  RefreshCw,
-} from 'lucide-react';
+  Box,
+  Typography,
+  Button,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+  Chip,
+  Divider,
+  TextField,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  ToggleButtonGroup,
+  ToggleButton,
+  IconButton,
+  Tooltip,
+  useTheme,
+  Alert,
+} from '@mui/material';
+import {
+  AccountBalanceWalletRounded,
+  AddRounded,
+  SouthWestRounded,
+  NorthEastRounded,
+  PaidRounded,
+  SyncRounded,
+  CloseRounded,
+  BusinessRounded,
+  TrendingUpRounded,
+} from '@mui/icons-material';
 import { api } from '../lib/api.js';
-import { formatCurrency, formatDateTime } from '../lib/utils.js';
-import { Modal } from '../components/ui/Modal.js';
+import { formatCurrency } from '../lib/utils.js';
 
 export function AccountsPage() {
+  const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
@@ -102,334 +124,478 @@ export function AccountsPage() {
   const totalConsolidatedPnL = accounts.reduce((sum: number, a: any) => sum + (a.realizedPnL || 0), 0);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, pb: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <AccountBalanceWalletRounded sx={{ color: 'primary.main', fontSize: 28 }} />
             Trading Accounts & Cash Flow
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Manage multiple broker accounts, cash deposits, withdrawals, and consolidated portfolio balances
-          </p>
-        </div>
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage brokerage sub-accounts, cash deposits, withdrawals, and consolidated portfolio balances
+          </Typography>
+        </Box>
 
-        <button
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddRounded />}
           onClick={() => setIsAddAccountModalOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 text-xs font-semibold shadow-md transition-all"
+          sx={{ fontWeight: 600, px: 2.5 }}
         >
-          <Plus className="h-4 w-4" />
-          <span>Add Trading Account</span>
-        </button>
-      </div>
+          Add Trading Account
+        </Button>
+      </Box>
 
       {/* Portfolio Totals Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-xl border border-border bg-card p-5 shadow-sm font-mono text-xs">
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Consolidated Total Equity</span>
-          <span className="text-2xl font-bold text-foreground">
-            {formatCurrency(totalConsolidatedEquity)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Total Realized P&L</span>
-          <span className={`text-2xl font-bold ${totalConsolidatedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {formatCurrency(totalConsolidatedPnL)}
-          </span>
-        </div>
-        <div>
-          <span className="text-[11px] font-sans text-muted-foreground block">Active Broker Accounts</span>
-          <span className="text-2xl font-bold text-foreground">{accounts.length}</span>
-        </div>
-      </div>
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <Card variant="outlined" sx={{ bgcolor: 'background.paper', p: 1 }}>
+            <CardContent>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                Consolidated Portfolio Equity
+              </Typography>
+              <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: '"JetBrains Mono", monospace' }}>
+                {formatCurrency(totalConsolidatedEquity)}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <Card variant="outlined" sx={{ bgcolor: 'background.paper', p: 1 }}>
+            <CardContent>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                Total Realized P&L
+              </Typography>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 800,
+                  fontFamily: '"JetBrains Mono", monospace',
+                  color: totalConsolidatedPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                }}
+              >
+                {formatCurrency(totalConsolidatedPnL)}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <Card variant="outlined" sx={{ bgcolor: 'background.paper', p: 1 }}>
+            <CardContent>
+              <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block', mb: 0.5 }}>
+                Active Broker Accounts
+              </Typography>
+              <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: '"JetBrains Mono", monospace' }}>
+                {accounts.length}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
       {/* Accounts List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <Grid container spacing={3}>
         {isLoading ? (
-          <div className="col-span-3 text-center py-12 text-xs text-muted-foreground">Loading accounts...</div>
+          <Grid size={{ xs: 12 }}>
+            <Box sx={{ py: 8, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">Loading brokerage accounts...</Typography>
+            </Box>
+          </Grid>
         ) : (
           accounts.map((acc: any) => {
             const isProfitable = (acc.realizedPnL || 0) >= 0;
 
             return (
-              <div
-                key={acc.id}
-                className="flex flex-col justify-between rounded-xl border border-border bg-card p-5 shadow-sm space-y-4 hover:border-emerald-500/30 transition-all"
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-base font-bold text-foreground leading-snug">{acc.name}</h3>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {acc.broker} • {acc.accountType} ({acc.baseCurrency})
+              <Grid size={{ xs: 12, md: 6, lg: 4 }} key={acc.id}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      boxShadow: muiTheme.palette.mode === 'dark' ? '0 8px 24px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.08)',
+                    },
+                  }}
+                >
+                  <CardContent sx={{ pb: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                      <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                          {acc.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                          <BusinessRounded sx={{ fontSize: 13 }} />
+                          {acc.broker} • {acc.accountType} ({acc.baseCurrency})
+                        </Typography>
+                      </Box>
+                      <Chip
+                        size="small"
+                        label={acc.status || 'ACTIVE'}
+                        color={acc.status === 'ARCHIVED' ? 'default' : 'success'}
+                        variant="outlined"
+                        sx={{ fontSize: '0.65rem', fontWeight: 700, height: 20 }}
+                      />
+                    </Box>
+
+                    {/* Account Balances Grid */}
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 2,
+                        p: 1.5,
+                        my: 2,
+                        borderRadius: 1.5,
+                        bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        border: 1,
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                          Current Equity
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                          {formatCurrency(acc.currentBalance, acc.baseCurrency)}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                          Realized P&L
+                        </Typography>
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            fontWeight: 700,
+                            fontFamily: '"JetBrains Mono", monospace',
+                            color: isProfitable ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {formatCurrency(acc.realizedPnL, acc.baseCurrency)}
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    {/* Cash Flow Details */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Opening Balance:</span>
+                        <Typography variant="caption" sx={{ fontFamily: 'inherit', fontWeight: 600, color: 'text.primary' }}>
+                          {formatCurrency(acc.initialBalance, acc.baseCurrency)}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Total Deposits:</span>
+                        <Typography variant="caption" sx={{ fontFamily: 'inherit', fontWeight: 600, color: muiTheme.palette.profit.main }}>
+                          +{formatCurrency(acc.totalDeposits, acc.baseCurrency)}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Total Withdrawals:</span>
+                        <Typography variant="caption" sx={{ fontFamily: 'inherit', fontWeight: 600, color: muiTheme.palette.loss.main }}>
+                          -{formatCurrency(acc.totalWithdrawals, acc.baseCurrency)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </CardContent>
+
+                  <Divider sx={{ my: 0.5 }} />
+
+                  <CardActions sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<PaidRounded sx={{ fontSize: 16 }} />}
+                      onClick={() => {
+                        setSelectedAccountForTx(acc);
+                        setIsTxModalOpen(true);
+                      }}
+                      sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                    >
+                      Deposit / Withdraw
+                    </Button>
+
+                    <Tooltip title="Authoritatively reconcile account balance and P&L from raw execution fills" arrow>
+                      <span>
+                        <Button
+                          size="small"
+                          color="inherit"
+                          disabled={reconcileMutation.isPending}
+                          onClick={() => reconcileMutation.mutate(acc.id)}
+                          startIcon={
+                            <SyncRounded
+                              sx={{
+                                fontSize: 16,
+                                animation: reconcileMutation.isPending ? 'spin 1s linear infinite' : 'none',
+                                '@keyframes spin': {
+                                  '0%': { transform: 'rotate(0deg)' },
+                                  '100%': { transform: 'rotate(360deg)' },
+                                },
+                              }}
+                            />
+                          }
+                          sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
+                        >
+                          Reconcile
+                        </Button>
                       </span>
-                    </div>
-                    <span className="rounded bg-accent px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                      {acc.status}
-                    </span>
-                  </div>
-
-                  {/* Account balances grid */}
-                  <div className="grid grid-cols-2 gap-3 rounded-lg bg-accent/20 p-3 mt-4 text-xs font-mono">
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block font-sans">Current Equity</span>
-                      <span className="text-lg font-bold text-foreground">
-                        {formatCurrency(acc.currentBalance, acc.baseCurrency)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block font-sans">Realized P&L</span>
-                      <span className={`text-lg font-bold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {formatCurrency(acc.realizedPnL, acc.baseCurrency)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Cash flow details */}
-                  <div className="mt-3 space-y-1 text-[11px] font-mono text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span className="font-sans">Opening Balance:</span>
-                      <span>{formatCurrency(acc.initialBalance, acc.baseCurrency)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-sans">Total Deposits:</span>
-                      <span className="text-emerald-400">+{formatCurrency(acc.totalDeposits, acc.baseCurrency)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-sans">Total Withdrawals:</span>
-                      <span className="text-rose-400">-{formatCurrency(acc.totalWithdrawals, acc.baseCurrency)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-border flex items-center justify-between">
-                  <button
-                    onClick={() => {
-                      setSelectedAccountForTx(acc);
-                      setIsTxModalOpen(true);
-                    }}
-                    className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent text-foreground transition-colors"
-                  >
-                    <DollarSign className="h-3.5 w-3.5" />
-                    <span>Deposit / Withdraw</span>
-                  </button>
-
-                  <button
-                    onClick={() => reconcileMutation.mutate(acc.id)}
-                    disabled={reconcileMutation.isPending}
-                    className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                    title="Authoritatively reconcile account balance and P&L from raw records"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${reconcileMutation.isPending ? 'animate-spin' : ''}`} />
-                    <span>Reconcile</span>
-                  </button>
-                </div>
-              </div>
+                    </Tooltip>
+                  </CardActions>
+                </Card>
+              </Grid>
             );
           })
         )}
-      </div>
+      </Grid>
 
       {/* Add Account Modal */}
-      <Modal
-        isOpen={isAddAccountModalOpen}
+      <Dialog
+        open={isAddAccountModalOpen}
         onClose={() => setIsAddAccountModalOpen(false)}
-        title="Add Trading Account"
-        description="Configure a new brokerage sub-account with initial deposit balance"
-        maxWidth="md"
+        maxWidth="sm"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              backgroundImage: 'none',
+              bgcolor: 'background.paper',
+              borderRadius: 2,
+            },
+          },
+        }}
       >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>Add Trading Account</Typography>
+            <Typography variant="caption" color="text.secondary">Configure a new brokerage sub-account with initial deposit balance</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setIsAddAccountModalOpen(false)}>
+            <CloseRounded />
+          </IconButton>
+        </DialogTitle>
 
-            <form onSubmit={handleCreateAccount} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">Account Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Zerodha F&O Primary"
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
+        <form onSubmit={handleCreateAccount}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+            <TextField
+              label="Account Name *"
+              placeholder="e.g. Zerodha F&O Primary"
+              size="small"
+              required
+              fullWidth
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Broker *</label>
-                  <input
-                    type="text"
-                    required
-                    value={broker}
-                    onChange={(e) => setBroker(e.target.value)}
-                    placeholder="e.g. Zerodha, Dhan, Fyers"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Account ID (Optional)</label>
-                  <input
-                    type="text"
-                    value={accountNumber}
-                    onChange={(e) => setAccountNumber(e.target.value)}
-                    placeholder="e.g. ZR1234"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
+                label="Broker *"
+                placeholder="Zerodha, Dhan, Fyers, ICICI"
+                size="small"
+                required
+                fullWidth
+                value={broker}
+                onChange={(e) => setBroker(e.target.value)}
+              />
+              <TextField
+                label="Account ID (Optional)"
+                placeholder="e.g. ZR1234"
+                size="small"
+                fullWidth
+                value={accountNumber}
+                onChange={(e) => setAccountNumber(e.target.value)}
+              />
+            </Box>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Account Type</label>
-                  <select
-                    value={accountType}
-                    onChange={(e) => setAccountType(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs"
-                  >
-                    <option value="EQUITY">Equity</option>
-                    <option value="FUTURES_OPTIONS">Futures & Options</option>
-                    <option value="COMMODITY">Commodity (MCX)</option>
-                    <option value="FOREX">Forex</option>
-                    <option value="CRYPTO">Crypto</option>
-                    <option value="PROP_FIRM">Prop Firm</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Base Currency</label>
-                  <select
-                    value={baseCurrency}
-                    onChange={(e) => setBaseCurrency(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs"
-                  >
-                    <option value="INR">INR (₹)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="GBP">GBP (£)</option>
-                    <option value="AED">AED</option>
-                  </select>
-                </div>
-              </div>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
+                select
+                label="Account Type"
+                size="small"
+                fullWidth
+                value={accountType}
+                onChange={(e) => setAccountType(e.target.value)}
+              >
+                <MenuItem value="EQUITY">Equity</MenuItem>
+                <MenuItem value="FUTURES_OPTIONS">Futures & Options</MenuItem>
+                <MenuItem value="COMMODITY">Commodity (MCX)</MenuItem>
+                <MenuItem value="FOREX">Forex</MenuItem>
+                <MenuItem value="CRYPTO">Crypto</MenuItem>
+                <MenuItem value="PROP_FIRM">Prop Firm</MenuItem>
+              </TextField>
 
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">Starting Initial Balance</label>
-                <input
-                  type="number"
-                  required
-                  value={initialBalance}
-                  onChange={(e) => setInitialBalance(Number(e.target.value))}
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
+              <TextField
+                select
+                label="Base Currency"
+                size="small"
+                fullWidth
+                value={baseCurrency}
+                onChange={(e) => setBaseCurrency(e.target.value)}
+              >
+                <MenuItem value="INR">INR (₹)</MenuItem>
+                <MenuItem value="USD">USD ($)</MenuItem>
+                <MenuItem value="EUR">EUR (€)</MenuItem>
+                <MenuItem value="GBP">GBP (£)</MenuItem>
+                <MenuItem value="AED">AED</MenuItem>
+              </TextField>
+            </Box>
 
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsAddAccountModalOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createAccountMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-md"
-                >
-                  {createAccountMutation.isPending ? 'Creating...' : 'Create Account'}
-                </button>
-              </div>
-            </form>
-      </Modal>
+            <TextField
+              label="Starting Initial Balance *"
+              type="number"
+              size="small"
+              required
+              fullWidth
+              value={initialBalance}
+              onChange={(e) => setInitialBalance(Number(e.target.value))}
+              slotProps={{ htmlInput: { min: 0, step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+            />
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button onClick={() => setIsAddAccountModalOpen(false)} color="inherit">
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              disabled={createAccountMutation.isPending}
+            >
+              {createAccountMutation.isPending ? 'Creating...' : 'Create Account'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
 
       {/* Cash Flow Transaction Modal */}
       {selectedAccountForTx && (
-        <Modal
-          isOpen={isTxModalOpen}
+        <Dialog
+          open={isTxModalOpen}
           onClose={() => setIsTxModalOpen(false)}
-          title={`Record Cash Flow: ${selectedAccountForTx.name}`}
-          description="Deposit additional capital or log a fund withdrawal"
-          maxWidth="md"
+          maxWidth="xs"
+          fullWidth
+          slotProps={{
+            paper: {
+              sx: {
+                backgroundImage: 'none',
+                bgcolor: 'background.paper',
+                borderRadius: 2,
+              },
+            },
+          }}
         >
-          <form onSubmit={handleAddTx} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">Transaction Type</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTxType('DEPOSIT')}
-                    className={`py-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 ${
-                      txType === 'DEPOSIT'
-                        ? 'bg-emerald-600 text-white shadow-md'
-                        : 'border border-border bg-background text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    <ArrowDownLeft className="h-4 w-4" /> Deposit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTxType('WITHDRAWAL')}
-                    className={`py-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 ${
-                      txType === 'WITHDRAWAL'
-                        ? 'bg-rose-600 text-white shadow-md'
-                        : 'border border-border bg-background text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    <ArrowUpRight className="h-4 w-4" /> Withdrawal
-                  </button>
-                </div>
-              </div>
+          <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>Record Cash Flow</Typography>
+              <Typography variant="caption" color="text.secondary">{selectedAccountForTx.name}</Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setIsTxModalOpen(false)}>
+              <CloseRounded />
+            </IconButton>
+          </DialogTitle>
 
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">
-                  Amount ({selectedAccountForTx.baseCurrency}) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  value={txAmount}
-                  onChange={(e) => setTxAmount(Number(e.target.value))}
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">Date *</label>
-                <input
-                  type="date"
-                  required
-                  value={txDate}
-                  onChange={(e) => setTxDate(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-muted-foreground mb-1 font-medium">Notes / Reference</label>
-                <input
-                  type="text"
-                  value={txNotes}
-                  onChange={(e) => setTxNotes(e.target.value)}
-                  placeholder="e.g. Added capital, bank transfer"
-                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsTxModalOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
+          <form onSubmit={handleAddTx}>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                  Transaction Type
+                </Typography>
+                <ToggleButtonGroup
+                  exclusive
+                  fullWidth
+                  size="small"
+                  value={txType}
+                  onChange={(_, val) => val && setTxType(val)}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={addTxMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-md"
-                >
-                  {addTxMutation.isPending ? 'Recording...' : 'Record Transaction'}
-                </button>
-              </div>
-            </form>
-        </Modal>
+                  <ToggleButton
+                    value="DEPOSIT"
+                    sx={{
+                      py: 1,
+                      fontWeight: 700,
+                      gap: 0.5,
+                      '&.Mui-selected': {
+                        bgcolor: `${muiTheme.palette.profit.main}20 !important`,
+                        color: `${muiTheme.palette.profit.main} !important`,
+                        borderColor: `${muiTheme.palette.profit.main} !important`,
+                      },
+                    }}
+                  >
+                    <SouthWestRounded sx={{ fontSize: 16 }} />
+                    Deposit
+                  </ToggleButton>
+                  <ToggleButton
+                    value="WITHDRAWAL"
+                    sx={{
+                      py: 1,
+                      fontWeight: 700,
+                      gap: 0.5,
+                      '&.Mui-selected': {
+                        bgcolor: `${muiTheme.palette.loss.main}20 !important`,
+                        color: `${muiTheme.palette.loss.main} !important`,
+                        borderColor: `${muiTheme.palette.loss.main} !important`,
+                      },
+                    }}
+                  >
+                    <NorthEastRounded sx={{ fontSize: 16 }} />
+                    Withdrawal
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+
+              <TextField
+                label={`Amount (${selectedAccountForTx.baseCurrency}) *`}
+                type="number"
+                size="small"
+                required
+                fullWidth
+                value={txAmount}
+                onChange={(e) => setTxAmount(Number(e.target.value))}
+                slotProps={{ htmlInput: { min: 0.01, step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+
+              <TextField
+                label="Date *"
+                type="date"
+                size="small"
+                required
+                fullWidth
+                value={txDate}
+                onChange={(e) => setTxDate(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+              />
+
+              <TextField
+                label="Notes / Reference"
+                placeholder="e.g. Capital injection, payout to bank"
+                size="small"
+                fullWidth
+                value={txNotes}
+                onChange={(e) => setTxNotes(e.target.value)}
+              />
+            </DialogContent>
+
+            <DialogActions sx={{ px: 3, pb: 2.5 }}>
+              <Button onClick={() => setIsTxModalOpen(false)} color="inherit">
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                color={txType === 'DEPOSIT' ? 'primary' : 'error'}
+                disabled={addTxMutation.isPending}
+              >
+                {addTxMutation.isPending ? 'Recording...' : `Record ${txType === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'}`}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
       )}
-    </div>
+    </Box>
   );
 }

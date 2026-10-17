@@ -1,22 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Calculator,
-  Shield,
-  TrendingUp,
-  TrendingDown,
-  ArrowRight,
-  AlertTriangle,
-  CheckCircle2,
-  DollarSign,
-  Sparkles,
-} from 'lucide-react';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import ButtonGroup from '@mui/material/ButtonGroup';
+import TextField from '@mui/material/TextField';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import Alert from '@mui/material/Alert';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import CalculateIcon from '@mui/icons-material/CalculateRounded';
+import SecurityIcon from '@mui/icons-material/SecurityRounded';
+import TrendingUpIcon from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownIcon from '@mui/icons-material/TrendingDownRounded';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForwardRounded';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineRounded';
+import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
+
 import { calculateRiskAndPositionSize } from '@tradevault/financial-engine';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 
 export function RiskCalculatorPage() {
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
+
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
 
@@ -80,6 +96,13 @@ export function RiskCalculatorPage() {
     estimatedCosts,
   });
 
+  const isValid = calcResult.isDirectionValid && !calcResult.isStopDistanceZero && calcResult.warnings.length === 0;
+  const lotsCount = lotSize > 0 ? Math.round(calcResult.roundedLotQuantity / lotSize) : calcResult.roundedLotQuantity;
+  const riskPerShare = calcResult.stopLossDistance;
+  const rewardToRiskRatio = calcResult.rewardRiskRatio;
+  const potentialMonetaryGain = calcResult.estimatedReward || 0;
+  const validationErrors = calcResult.warnings;
+
   const handleTransferToTrade = () => {
     setPrefilledTradeData({
       accountId: selectedAccountId,
@@ -108,331 +131,395 @@ export function RiskCalculatorPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
       {/* Header */}
-      <div className="border-b border-border pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+      <Box sx={{ pb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', color: muiTheme.palette.text.primary }}>
           Position Size & Risk Calculator
-        </h1>
-        <p className="text-xs text-muted-foreground">
+        </Typography>
+        <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mt: 0.5 }}>
           Calculate mathematically exact lot-rounded quantities and reward-to-risk ratios before entering the market
-        </p>
-      </div>
+        </Typography>
+      </Box>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <Grid container spacing={3}>
         {/* Input Parameters Column (7 Cols) */}
-        <div className="lg:col-span-7 rounded-xl border border-border bg-card p-6 shadow-sm space-y-5">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b border-border pb-3">
-            <Calculator className="h-4 w-4 text-emerald-400" /> Account & Trade Parameters
-          </h3>
+        <Grid size={{ xs: 12, lg: 7 }}>
+          <Card sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CalculateIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+              Account & Trade Parameters
+            </Typography>
+            <Divider />
 
-          {/* Account Selector */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Trading Account</label>
-              <select
-                value={selectedAccountId}
-                onChange={(e) => handleAccountChange(e.target.value)}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-              >
-                {accounts.map((acc: any) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.broker})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Account Equity (INR / USD)</label>
-              <input
-                type="number"
-                value={accountEquity}
-                onChange={(e) => setAccountEquity(Number(e.target.value))}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
-
-          {/* Risk Budget Mode */}
-          <div className="space-y-2">
-            <label className="block text-xs font-medium text-muted-foreground">Risk Budget Allocation</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setRiskMode('PERCENT')}
-                className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all ${
-                  riskMode === 'PERCENT'
-                    ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400'
-                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
-                }`}
-              >
-                Percentage of Equity (% Risk)
-              </button>
-              <button
-                type="button"
-                onClick={() => setRiskMode('FIXED')}
-                className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all ${
-                  riskMode === 'FIXED'
-                    ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400'
-                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
-                }`}
-              >
-                Fixed Monetary Amount (₹ / $)
-              </button>
-            </div>
-
-            {riskMode === 'PERCENT' ? (
-              <div className="flex items-center gap-3 pt-1">
-                <input
-                  type="number"
-                  step="0.1"
-                  value={riskPercent}
-                  onChange={(e) => setRiskPercent(Number(e.target.value))}
-                  className="w-28 h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-                />
-                <span className="text-xs text-muted-foreground">
-                  % of equity ={' '}
-                  <strong className="text-foreground font-mono">
-                    {formatCurrency((accountEquity * riskPercent) / 100)}
-                  </strong>{' '}
-                  budget
-                </span>
-              </div>
-            ) : (
-              <div className="pt-1">
-                <input
-                  type="number"
-                  step="100"
-                  value={fixedRiskAmount}
-                  onChange={(e) => setFixedRiskAmount(Number(e.target.value))}
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Instrument & Direction */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-1">
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Instrument Symbol</label>
-              <input
-                type="text"
-                value={selectedSymbol}
-                onChange={(e) => handleSymbolChange(e.target.value.toUpperCase())}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-bold uppercase font-mono focus:ring-1 focus:ring-emerald-500"
-              />
-              <div className="flex gap-1.5 mt-1.5 overflow-x-auto">
-                {['NIFTY', 'BANKNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD'].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => handleSymbolChange(s)}
-                    className="rounded bg-accent/60 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground hover:bg-accent hover:text-foreground"
+            {/* Account & Equity */}
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Trading Account
+                </Typography>
+                <FormControl size="small" fullWidth>
+                  <Select
+                    value={selectedAccountId}
+                    onChange={(e) => handleAccountChange(e.target.value)}
                   >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    {accounts.map((acc: any) => (
+                      <MenuItem key={acc.id} value={acc.id}>
+                        {acc.name} ({acc.broker})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
 
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Trade Direction</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDirection('LONG')}
-                  className={`h-10 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    direction === 'LONG'
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'border border-border bg-background text-muted-foreground hover:bg-accent'
-                  }`}
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Account Equity (INR / USD)
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={accountEquity}
+                  onChange={(e) => setAccountEquity(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
+                />
+              </Grid>
+            </Grid>
+
+            {/* Risk Mode Toggle */}
+            <Box>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 1 }}>
+                Risk Budget Allocation
+              </Typography>
+              <ButtonGroup fullWidth size="small" variant="outlined">
+                <Button
+                  variant={riskMode === 'PERCENT' ? 'contained' : 'outlined'}
+                  color="primary"
+                  onClick={() => setRiskMode('PERCENT')}
+                  sx={{ fontWeight: 600 }}
                 >
-                  <TrendingUp className="h-4 w-4" /> LONG
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDirection('SHORT')}
-                  className={`h-10 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    direction === 'SHORT'
-                      ? 'bg-rose-600 text-white shadow-md'
-                      : 'border border-border bg-background text-muted-foreground hover:bg-accent'
-                  }`}
+                  Percentage of Equity (% Risk)
+                </Button>
+                <Button
+                  variant={riskMode === 'FIXED' ? 'contained' : 'outlined'}
+                  color="primary"
+                  onClick={() => setRiskMode('FIXED')}
+                  sx={{ fontWeight: 600 }}
                 >
-                  <TrendingDown className="h-4 w-4" /> SHORT
-                </button>
-              </div>
-            </div>
-          </div>
+                  Fixed Amount (₹ / $)
+                </Button>
+              </ButtonGroup>
 
-          {/* Pricing parameters */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Entry Price *</label>
-              <input
-                type="number"
-                step="any"
-                value={entryPrice}
-                onChange={(e) => setEntryPrice(Number(e.target.value))}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Stop-Loss Price *</label>
-              <input
-                type="number"
-                step="any"
-                value={stopLossPrice}
-                onChange={(e) => setStopLossPrice(Number(e.target.value))}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Profit Target Price</label>
-              <input
-                type="number"
-                step="any"
-                value={targetPrice}
-                onChange={(e) => setTargetPrice(Number(e.target.value))}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
+              <Box sx={{ mt: 1.5 }}>
+                {riskMode === 'PERCENT' ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <TextField
+                      type="number"
+                      size="small"
+                      value={riskPercent}
+                      onChange={(e) => setRiskPercent(Number(e.target.value))}
+                      sx={{ width: 120 }}
+                      slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
+                    />
+                    <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+                      % of equity ={' '}
+                      <Box component="strong" sx={{ color: muiTheme.palette.text.primary, fontFamily: `'JetBrains Mono', monospace` }}>
+                        {formatCurrency((accountEquity * riskPercent) / 100)}
+                      </Box>{' '}
+                      budget
+                    </Typography>
+                  </Box>
+                ) : (
+                  <TextField
+                    fullWidth
+                    type="number"
+                    size="small"
+                    value={fixedRiskAmount}
+                    onChange={(e) => setFixedRiskAmount(Number(e.target.value))}
+                    slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
+                  />
+                )}
+              </Box>
+            </Box>
 
-          {/* Multipliers & Lot Size */}
-          <div className="grid grid-cols-3 gap-3 text-xs font-mono rounded-lg border border-border bg-accent/10 p-3">
-            <div>
-              <label className="block text-[11px] text-muted-foreground font-sans mb-1">Contract Multiplier</label>
-              <input
-                type="number"
-                step="any"
-                value={contractMultiplier}
-                onChange={(e) => setContractMultiplier(Number(e.target.value))}
-                className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-muted-foreground font-sans mb-1">Lot Size</label>
-              <input
-                type="number"
-                step="any"
-                value={lotSize}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setLotSize(val);
-                  setQuantityIncrement(val);
+            {/* Symbol & Direction */}
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Instrument Symbol
+                </Typography>
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={selectedSymbol}
+                  onChange={(e) => handleSymbolChange(e.target.value.toUpperCase())}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, textTransform: 'uppercase' } } }}
+                />
+                <Box sx={{ display: 'flex', gap: 0.75, mt: 1, overflowX: 'auto' }}>
+                  {['NIFTY', 'BANKNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD'].map((s) => (
+                    <Chip
+                      key={s}
+                      label={s}
+                      size="small"
+                      onClick={() => handleSymbolChange(s)}
+                      sx={{ height: 20, fontSize: '0.625rem', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}
+                    />
+                  ))}
+                </Box>
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Trade Direction
+                </Typography>
+                <ButtonGroup fullWidth size="small">
+                  <Button
+                    variant={direction === 'LONG' ? 'contained' : 'outlined'}
+                    color="primary"
+                    startIcon={<TrendingUpIcon />}
+                    onClick={() => setDirection('LONG')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    LONG
+                  </Button>
+                  <Button
+                    variant={direction === 'SHORT' ? 'contained' : 'outlined'}
+                    color="error"
+                    startIcon={<TrendingDownIcon />}
+                    onClick={() => setDirection('SHORT')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    SHORT
+                  </Button>
+                </ButtonGroup>
+              </Grid>
+            </Grid>
+
+            {/* Entry, Stop Loss, Target */}
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Entry Price
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={entryPrice}
+                  onChange={(e) => setEntryPrice(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Stop Loss Price
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={stopLossPrice}
+                  onChange={(e) => setStopLossPrice(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600, color: muiTheme.palette.loss.main } } }}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Target Price
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={targetPrice}
+                  onChange={(e) => setTargetPrice(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600, color: muiTheme.palette.profit.main } } }}
+                />
+              </Grid>
+            </Grid>
+
+            {/* Instrument Contract Specs */}
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Lot Size
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={lotSize}
+                  onChange={(e) => setLotSize(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace` } } }}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Contract Multiplier
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={contractMultiplier}
+                  onChange={(e) => setContractMultiplier(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace` } } }}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Est. Costs (₹/$)
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={estimatedCosts}
+                  onChange={(e) => setEstimatedCosts(Number(e.target.value))}
+                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace` } } }}
+                />
+              </Grid>
+            </Grid>
+          </Card>
+        </Grid>
+
+        {/* Calculation Output Column (5 Cols) */}
+        <Grid size={{ xs: 12, lg: 5 }}>
+          <Card
+            sx={{
+              p: 3,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              backgroundColor: isDark ? 'rgba(17, 24, 39, 0.7)' : 'rgba(255, 255, 255, 0.95)',
+              border: `1px solid ${
+                isValid
+                  ? isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.25)'
+                  : isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'
+              }`,
+            }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                  Risk & Sizing Verdict
+                </Typography>
+                <Chip
+                  label={isValid ? 'VALID RISK PROFILE' : 'INVALID PARAMETERS'}
+                  size="small"
+                  color={isValid ? 'success' : 'error'}
+                  sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                />
+              </Box>
+
+              {/* Primary Recommended Quantity Card */}
+              <Box
+                sx={{
+                  p: 2.5,
+                  borderRadius: 2.5,
+                  textAlign: 'center',
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(5, 150, 105, 0.08)',
+                  border: `1px solid ${isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(5, 150, 105, 0.2)'}`,
                 }}
-                className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-muted-foreground font-sans mb-1">Est. Fees (INR)</label>
-              <input
-                type="number"
-                step="any"
-                value={estimatedCosts}
-                onChange={(e) => setEstimatedCosts(Number(e.target.value))}
-                className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono"
-              />
-            </div>
-          </div>
-        </div>
+              >
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Recommended Position Size
+                </Typography>
+                <Typography
+                  variant="h3"
+                  sx={{
+                    fontWeight: 900,
+                    fontFamily: `'JetBrains Mono', monospace`,
+                    color: muiTheme.palette.primary.main,
+                    my: 0.5,
+                  }}
+                >
+                  {calcResult.roundedLotQuantity} Units
+                </Typography>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontFamily: `'JetBrains Mono', monospace` }}>
+                  = {lotsCount} lot{lotsCount !== 1 ? 's' : ''} (Lot Size: {lotSize})
+                </Typography>
+              </Box>
 
-        {/* Output & Sizing Summary Column (5 Cols) */}
-        <div className="lg:col-span-5 rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col justify-between space-y-6">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b border-border pb-3">
-              <Shield className="h-4 w-4 text-emerald-400" /> Sizing & Risk Verdict
-            </h3>
+              {/* Detailed Metrics Breakdown */}
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 6 }}>
+                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Risk per Share/Point</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                      {riskPerShare?.toFixed(2)} pts
+                    </Typography>
+                  </Box>
+                </Grid>
 
-            {/* Warnings list */}
-            {calcResult.warnings.length > 0 && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 my-4 space-y-1">
-                {calcResult.warnings.map((w, i) => (
-                  <div key={i} className="flex items-start gap-1.5 text-xs text-amber-400">
-                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{w}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+                <Grid size={{ xs: 6 }}>
+                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Estimated Total Risk</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                      {formatCurrency(calcResult.estimatedMonetaryLoss)}
+                    </Typography>
+                  </Box>
+                </Grid>
 
-            {/* Sizing Results Grid */}
-            <div className="space-y-4 pt-3 font-mono text-xs">
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-center">
-                <span className="text-[11px] font-sans text-muted-foreground uppercase tracking-wider block">
-                  Suggested Valid Lot Quantity
-                </span>
-                <span className="text-3xl font-extrabold text-emerald-400 mt-1 block">
-                  {calcResult.roundedLotQuantity}
-                </span>
-                <span className="text-[11px] text-muted-foreground font-sans block mt-1">
-                  (Raw: {calcResult.rawSuggestedQuantity} • Rounded down to lot of {lotSize})
-                </span>
-              </div>
+                <Grid size={{ xs: 6 }}>
+                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Reward-to-Risk (R:R)</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                      {rewardToRiskRatio ? `1 : ${rewardToRiskRatio.toFixed(2)}` : '—'}
+                    </Typography>
+                  </Box>
+                </Grid>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground font-sans block">Planned Risk Budget</span>
-                  <span className="text-base font-bold text-foreground">
-                    {formatCurrency(calcResult.plannedRiskAmount)}
-                  </span>
-                </div>
-                <div className="rounded-lg bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground font-sans block">Est. Loss at Stop</span>
-                  <span className="text-base font-bold text-rose-400">
-                    {formatCurrency(calcResult.estimatedMonetaryLoss)}
-                  </span>
-                </div>
-                <div className="rounded-lg bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground font-sans block">Estimated Reward</span>
-                  <span className="text-base font-bold text-emerald-400">
-                    {formatCurrency(calcResult.estimatedReward)}
-                  </span>
-                </div>
-                <div className="rounded-lg bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground font-sans block">Reward-to-Risk (R:R)</span>
-                  <span className="text-base font-bold text-foreground">
-                    {calcResult.rewardRiskRatio ? `${calcResult.rewardRiskRatio}:1` : '—'}
-                  </span>
-                </div>
-              </div>
+                <Grid size={{ xs: 6 }}>
+                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Potential Reward</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                      {formatCurrency(potentialMonetaryGain)}
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
 
-              <div className="rounded-lg border border-border p-3 text-[11px] font-sans text-muted-foreground space-y-1">
-                <div className="flex justify-between">
-                  <span>Stop Loss Distance:</span>
-                  <span className="font-mono text-foreground">{calcResult.stopLossDistance} points</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Actual Risk % of Equity:</span>
-                  <span className="font-mono text-foreground">{formatPercent(calcResult.actualRiskPercentage)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+              {/* Validation Warning / Success Banner */}
+              {validationErrors && validationErrors.length > 0 ? (
+                <Alert severity="error" sx={{ fontSize: '0.75rem' }}>
+                  {validationErrors[0]}
+                </Alert>
+              ) : (
+                <Alert severity="success" sx={{ fontSize: '0.75rem' }}>
+                  Position size respects the maximum risk ceiling of {formatCurrency(calcResult.plannedRiskAmount)}.
+                </Alert>
+              )}
+            </Box>
 
-          {/* Transfer button */}
-          <div className="pt-4 border-t border-border">
-            <button
-              type="button"
+            {/* Transfer to Trade CTA */}
+            <Button
+              fullWidth
+              variant="contained"
+              color="primary"
+              disabled={!isValid}
               onClick={handleTransferToTrade}
-              disabled={calcResult.roundedLotQuantity <= 0 || calcResult.isStopDistanceZero}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold py-3 text-sm shadow-md transition-all"
+              endIcon={<ArrowForwardIcon />}
+              sx={{ py: 1.25, fontWeight: 700, fontSize: '0.875rem', mt: 3 }}
             >
-              <Sparkles className="h-4 w-4" />
-              <span>Transfer to Trade Form</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
+              Transfer to Log Trade Entry
+            </Button>
+          </Card>
+        </Grid>
+      </Grid>
 
-      {/* Manual Trade Entry Modal pre-filled */}
+      {/* Prefilled Trade Modal */}
       <TradeFormModal
         isOpen={isTradeModalOpen}
         onClose={() => setIsTradeModalOpen(false)}
         initialValues={prefilledTradeData}
       />
-    </div>
+    </Box>
   );
 }

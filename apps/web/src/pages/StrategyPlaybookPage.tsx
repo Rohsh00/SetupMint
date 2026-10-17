@@ -1,26 +1,41 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  BookOpen,
-  Plus,
-  Edit,
-  Trash2,
-  CheckCircle2,
-  AlertTriangle,
-  Award,
-  TrendingUp,
-  TrendingDown,
-  Layers,
-  X,
-} from 'lucide-react';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import TextField from '@mui/material/TextField';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Tooltip from '@mui/material/Tooltip';
+import CircularProgress from '@mui/material/CircularProgress';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import MenuBookIcon from '@mui/icons-material/MenuBookRounded';
+import AddIcon from '@mui/icons-material/AddRounded';
+import EditIcon from '@mui/icons-material/EditRounded';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineRounded';
+import CloseIcon from '@mui/icons-material/CloseRounded';
+
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
-import { Modal } from '../components/ui/Modal.js';
 
 export function StrategyPlaybookPage() {
   const queryClient = useQueryClient();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<any>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const { data: strategies = [], isLoading } = useQuery({
     queryKey: ['strategies'],
@@ -79,6 +94,7 @@ export function StrategyPlaybookPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.strategies.delete(id),
     onSuccess: () => {
+      setDeleteConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
     },
   });
@@ -102,235 +118,301 @@ export function StrategyPlaybookPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            Strategy Playbook
-          </h1>
-          <p className="text-xs text-muted-foreground">
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          pb: 2,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+        }}
+      >
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', color: muiTheme.palette.text.primary }}>
+            Strategy Playbook & Setup Repository
+          </Typography>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mt: 0.5 }}>
             Codified rules, invalidation conditions, checklists, and real trade statistical edges
-          </p>
-        </div>
+          </Typography>
+        </Box>
 
-        <button
+        <Button
+          variant="contained"
+          color="primary"
+          size="small"
           onClick={openCreateModal}
-          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 text-xs font-semibold shadow-md transition-all"
+          startIcon={<AddIcon />}
+          sx={{ fontWeight: 700, px: 2 }}
         >
-          <Plus className="h-4 w-4" />
-          <span>New Playbook Setup</span>
-        </button>
-      </div>
+          New Setup
+        </Button>
+      </Box>
 
       {/* Strategies Grid */}
       {isLoading ? (
-        <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
-          Loading strategies...
-        </div>
+        <Box sx={{ py: 8, textAlign: 'center' }}>
+          <CircularProgress size={32} />
+        </Box>
       ) : strategies.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-12 text-center space-y-3">
-          <BookOpen className="h-10 w-10 text-muted-foreground mx-auto stroke-[1.5]" />
-          <h3 className="text-sm font-semibold text-foreground">No Strategies in Playbook</h3>
-          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+        <Card sx={{ p: 6, textAlign: 'center', borderStyle: 'dashed' }}>
+          <MenuBookIcon sx={{ fontSize: 48, color: muiTheme.palette.text.secondary, mb: 1.5 }} />
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            No Strategies in Playbook
+          </Typography>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, maxWidth: 440, mx: 'auto', mt: 0.5, mb: 2.5 }}>
             Codify your trading edge into concrete setups with strict entry rules, invalidation levels, and checklists.
-          </p>
-          <button
-            onClick={openCreateModal}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow"
-          >
+          </Typography>
+          <Button variant="contained" color="primary" onClick={openCreateModal} startIcon={<AddIcon />}>
             Create First Strategy
-          </button>
-        </div>
+          </Button>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Grid container spacing={3}>
           {strategies.map((strat: any) => {
             const isProfitable = (strat.netPnL || 0) >= 0;
 
             return (
-              <div
-                key={strat.id}
-                className="flex flex-col justify-between rounded-xl border border-border bg-card p-5 shadow-sm space-y-4 hover:border-emerald-500/30 transition-all"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-base font-bold text-foreground leading-snug">{strat.name}</h3>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openEditModal(strat)}
-                        className="p-1 text-muted-foreground hover:text-foreground rounded"
-                        title="Edit Strategy"
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete strategy ${strat.name}?`)) {
-                            deleteMutation.mutate(strat.id);
-                          }
-                        }}
-                        className="p-1 text-muted-foreground hover:text-rose-400 rounded"
-                        title="Delete Strategy"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
+              <Grid key={strat.id} size={{ xs: 12, md: 6, lg: 4 }}>
+                <Card
+                  sx={{
+                    p: 2.5,
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: 2,
+                    '&:hover': {
+                      borderColor: muiTheme.palette.primary.main,
+                    },
+                  }}
+                >
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem', color: muiTheme.palette.text.primary }}>
+                        {strat.name}
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Tooltip title="Edit Strategy" arrow>
+                          <IconButton size="small" onClick={() => openEditModal(strat)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete Strategy" arrow>
+                          <IconButton size="small" onClick={() => setDeleteConfirmId(strat.id)} sx={{ color: muiTheme.palette.error.main }}>
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
 
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                    {strat.description || 'No description provided.'}
-                  </p>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', mt: 0.5 }}>
+                      {strat.description || 'No description provided.'}
+                    </Typography>
 
-                  {/* Performance badge strip */}
-                  <div className="grid grid-cols-3 gap-2 rounded-lg bg-accent/20 p-2.5 mt-3 text-xs font-mono">
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block font-sans">Net P&L</span>
-                      <span className={`font-bold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {formatCurrency(strat.netPnL)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block font-sans">Win Rate</span>
-                      <span className="font-bold text-foreground">{formatPercent(strat.winRate)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block font-sans">Trades</span>
-                      <span className="font-bold text-foreground">{strat.totalTrades || 0}</span>
-                    </div>
-                  </div>
+                    {/* Performance strip */}
+                    <Grid container spacing={1.5} sx={{ mt: 2, p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', border: `1px solid ${muiTheme.palette.divider}` }}>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Net P&L</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: isProfitable ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
+                          {formatCurrency(strat.netPnL)}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Win Rate</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {formatPercent(strat.winRate)}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Trades</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {strat.totalTrades || 0}
+                        </Typography>
+                      </Grid>
+                    </Grid>
 
-                  {/* Rules preview */}
-                  <div className="mt-4 space-y-2 text-xs">
-                    <span className="font-semibold text-foreground text-[11px] block uppercase tracking-wider">
-                      Key Entry Criteria
-                    </span>
-                    <ul className="space-y-1 text-muted-foreground">
-                      {strat.entryRules?.slice(0, 3).map((rule: string, i: number) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                          <span className="line-clamp-1">{rule}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+                    {/* Rules preview */}
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'block', mb: 1 }}>
+                        Key Entry Criteria
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                        {strat.entryRules?.slice(0, 3).map((rule: string, i: number) => (
+                          <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                            <CheckCircleOutlineIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main, fontSize: 16, mt: 0.25 }} />
+                            <Typography variant="caption" noWrap sx={{ color: muiTheme.palette.text.secondary }}>
+                              {rule}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  </Box>
 
-                <div className="pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Min R:R: {strat.minRiskReward || 1.5}:1</span>
-                  <span className="font-mono text-[10px]">
-                    {strat.checklist?.length || 0} checklist items
-                  </span>
-                </div>
-              </div>
+                  <Box sx={{ pt: 1.5, borderTop: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
+                    <span>Min R:R: <strong>{strat.minRiskReward || 1.5}:1</strong></span>
+                    <span>{strat.checklist?.length || 0} checklist rules</span>
+                  </Box>
+                </Card>
+              </Grid>
             );
           })}
-        </div>
+        </Grid>
       )}
 
-      {/* Modal for Creating / Editing Strategy */}
-      <Modal
-        isOpen={isModalOpen}
+      {/* Create / Edit Strategy Dialog */}
+      <Dialog
+        open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingStrategy ? 'Edit Strategy Setup' : 'Create Playbook Setup'}
-        description="Formalize setup rules, timeframe triggers, checklist confluences, and risk targets"
-        maxWidth="2xl"
+        maxWidth="md"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              {editingStrategy ? 'Edit Strategy Setup' : 'Create Playbook Setup'}
+            </Typography>
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+              Formalize setup rules, invalidation conditions, and checklists
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setIsModalOpen(false)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Strategy Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. 15-Min Opening Range Breakout"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Min Planned R:R Ratio</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={minRiskReward}
-                    onChange={(e) => setMinRiskReward(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-mono focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="text-xs">
-                <label className="block text-muted-foreground mb-1 font-medium">Description</label>
-                <textarea
-                  rows={2}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Core thesis, market condition suitability, and timeframe context"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
+        <form onSubmit={handleSubmit}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 8 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Strategy Name
+                </Typography>
+                <TextField
+                  fullWidth
+                  size="small"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Morning Opening Range Breakout (ORB)"
                 />
-              </div>
+              </Grid>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">
-                    Entry Rules (one per line)
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={entryRulesInput}
-                    onChange={(e) => setEntryRulesInput(e.target.value)}
-                    placeholder="e.g. Clean 15m breakout close&#10;Volume > 1.5x 20 EMA&#10;Sector aligns"
-                    className="w-full rounded-lg border border-border bg-background p-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">
-                    Stop Loss & Invalidation Rules
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={stopRulesInput}
-                    onChange={(e) => setStopRulesInput(e.target.value)}
-                    placeholder="e.g. Opposite extreme of range&#10;Two closes back inside range"
-                    className="w-full rounded-lg border border-border bg-background p-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="text-xs">
-                <label className="block text-muted-foreground mb-1 font-medium">
-                  Pre-Trade Checklist Items (one per line)
-                </label>
-                <textarea
-                  rows={2}
-                  value={checklistInput}
-                  onChange={(e) => setChecklistInput(e.target.value)}
-                  placeholder="e.g. No high-impact news in next 15 mins&#10;Risk is strictly <= 1%&#10;Spread is normal"
-                  className="w-full rounded-lg border border-border bg-background p-2.5 text-xs focus:ring-1 focus:ring-emerald-500"
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Minimum R:R Target
+                </Typography>
+                <TextField
+                  fullWidth
+                  type="number"
+                  size="small"
+                  value={minRiskReward}
+                  onChange={(e) => setMinRiskReward(Number(e.target.value))}
+                  slotProps={{ htmlInput: { step: '0.1' } }}
                 />
-              </div>
+              </Grid>
+            </Grid>
 
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saveMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-md"
-                >
-                  {saveMutation.isPending ? 'Saving Setup...' : 'Save Strategy'}
-                </button>
-              </div>
-            </form>
-      </Modal>
-    </div>
+            <Box>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                Setup Description & Edge Hypothesis
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                size="small"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="High-probability setup context, market conditions, and timeframes"
+              />
+            </Box>
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Entry Rules (One per line)
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  size="small"
+                  value={entryRulesInput}
+                  onChange={(e) => setEntryRulesInput(e.target.value)}
+                  placeholder="15m candle closes above VWAP&#10;Volume > 1.5x 20-period average"
+                />
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                  Stop Loss & Invalidation Rules (One per line)
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  size="small"
+                  value={stopRulesInput}
+                  onChange={(e) => setStopRulesInput(e.target.value)}
+                  placeholder="Close below previous swing low&#10;Invalidate if VWAP broken on 5m"
+                />
+              </Grid>
+            </Grid>
+
+            <Box>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                Pre-Execution Checklist Items (One per line)
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                size="small"
+                value={checklistInput}
+                onChange={(e) => setChecklistInput(e.target.value)}
+                placeholder="Check high-impact economic news releases&#10;Verify position sizing within 1% risk budget"
+              />
+            </Box>
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${muiTheme.palette.divider}` }}>
+            <Button variant="outlined" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="contained" color="primary" disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? 'Saving...' : editingStrategy ? 'Update Strategy' : 'Save Strategy'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={Boolean(deleteConfirmId)}
+        onClose={() => setDeleteConfirmId(null)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete Strategy Setup</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+            Are you sure you want to delete this strategy setup from your playbook? Historical trades will remain intact.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

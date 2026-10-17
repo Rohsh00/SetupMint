@@ -1,11 +1,41 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Coins, Plus, Edit, Trash2, CheckCircle2, Shield, X, Search } from 'lucide-react';
+import {
+  Box,
+  Typography,
+  Button,
+  Card,
+  TableContainer,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Chip,
+  IconButton,
+  Tooltip,
+  TextField,
+  InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem,
+  useTheme,
+} from '@mui/material';
+import {
+  ShowChartRounded,
+  AddRounded,
+  SearchRounded,
+  DeleteOutlineRounded,
+  CloseRounded,
+  TuneRounded,
+} from '@mui/icons-material';
 import { ASSET_CLASSES, MARKET_SEGMENTS } from '@tradevault/shared';
 import { api } from '../lib/api.js';
-import { Modal } from '../components/ui/Modal.js';
 
 export function InstrumentsPage() {
+  const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,241 +100,285 @@ export function InstrumentsPage() {
   );
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, pb: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TuneRounded sx={{ color: 'primary.main', fontSize: 28 }} />
             Instrument Specifications
-          </h1>
-          <p className="text-xs text-muted-foreground">
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
             Contract multipliers, lot sizes, tick sizes, and precision configurations across markets
-          </p>
-        </div>
+          </Typography>
+        </Box>
 
-        <button
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddRounded />}
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 text-xs font-semibold shadow-md transition-all"
+          sx={{ fontWeight: 600, px: 2.5 }}
         >
-          <Plus className="h-4 w-4" />
-          <span>New Custom Instrument</span>
-        </button>
-      </div>
+          New Custom Instrument
+        </Button>
+      </Box>
 
       {/* Search Bar */}
-      <div className="relative max-w-xs">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-        <input
-          type="text"
+      <Box sx={{ maxWidth: 360 }}>
+        <TextField
+          size="small"
+          fullWidth
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search symbol, exchange, or name..."
-          className="w-full h-9 rounded-lg border border-border bg-card pl-9 pr-3 text-xs focus:ring-1 focus:ring-emerald-500"
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchRounded sx={{ fontSize: 18, color: 'text.secondary' }} />
+                </InputAdornment>
+              ),
+            },
+          }}
         />
-      </div>
+      </Box>
 
       {/* Instruments Table */}
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono">
-            <thead>
-              <tr className="border-b border-border bg-accent/20 text-muted-foreground">
-                <th className="py-3 px-4 font-sans font-medium">Symbol</th>
-                <th className="py-3 px-3 font-sans font-medium">Display Name</th>
-                <th className="py-3 px-3 font-sans font-medium">Asset Class</th>
-                <th className="py-3 px-3 font-sans font-medium">Exchange</th>
-                <th className="py-3 px-3 text-right">Multiplier</th>
-                <th className="py-3 px-3 text-right">Lot Size</th>
-                <th className="py-3 px-3 text-right">Tick Size</th>
-                <th className="py-3 px-3 font-sans text-center">Type</th>
-                <th className="py-3 px-4 text-right font-sans">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
+      <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+        <TableContainer>
+          <Table size="small">
+            <TableHead sx={{ bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Symbol</TableCell>
+                <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Display Name</TableCell>
+                <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Asset Class</TableCell>
+                <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Exchange</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Multiplier</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Lot Size</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Tick Size</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 600, py: 1.5 }}>Type</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-12 text-center text-muted-foreground">
-                    Loading instruments...
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={9} align="center" sx={{ py: 6, color: 'text.secondary' }}>
+                    Loading instrument specifications...
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center" sx={{ py: 6, color: 'text.secondary' }}>
+                    No instruments found matching &ldquo;{search}&rdquo;
+                  </TableCell>
+                </TableRow>
               ) : (
                 filtered.map((inst: any) => (
-                  <tr key={inst.id} className="hover:bg-accent/30 transition-colors">
-                    <td className="py-3 px-4 font-bold text-foreground">{inst.symbol}</td>
-                    <td className="py-3 px-3 font-sans text-muted-foreground">{inst.displayName}</td>
-                    <td className="py-3 px-3 font-sans">
-                      <span className="rounded bg-accent/60 px-2 py-0.5 text-[10px] text-muted-foreground">
-                        {inst.assetClass}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 font-sans text-muted-foreground">{inst.exchange}</td>
-                    <td className="py-3 px-3 text-right text-emerald-400 font-bold">x{inst.contractMultiplier}</td>
-                    <td className="py-3 px-3 text-right text-foreground">{inst.lotSize}</td>
-                    <td className="py-3 px-3 text-right text-muted-foreground">{inst.tickSize}</td>
-                    <td className="py-3 px-3 text-center font-sans">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                          inst.isPreset
-                            ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        }`}
-                      >
-                        {inst.isPreset ? 'Preset' : 'Custom'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-sans">
-                      {!inst.isPreset && (
-                        <button
-                          onClick={() => {
-                            if (confirm(`Delete custom instrument ${inst.symbol}?`)) {
-                              deleteMutation.mutate(inst.id);
-                            }
-                          }}
-                          className="p-1 text-muted-foreground hover:text-rose-400 rounded hover:bg-accent"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                  <TableRow key={inst.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                    <TableCell sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                      {inst.symbol}
+                    </TableCell>
+                    <TableCell sx={{ color: 'text.secondary' }}>
+                      {inst.displayName}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={inst.assetClass}
+                        variant="outlined"
+                        sx={{ fontSize: '0.65rem', fontWeight: 600, height: 20 }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                      {inst.exchange}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: 'primary.main' }}>
+                      x{inst.contractMultiplier}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace' }}>
+                      {inst.lotSize}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace', color: 'text.secondary' }}>
+                      {inst.tickSize}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Chip
+                        size="small"
+                        label={inst.isPreset ? 'Preset' : 'Custom'}
+                        color={inst.isPreset ? 'info' : 'primary'}
+                        variant={inst.isPreset ? 'outlined' : 'filled'}
+                        sx={{ fontSize: '0.65rem', fontWeight: 700, height: 20 }}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      {!inst.isPreset ? (
+                        <Tooltip title="Delete custom instrument" arrow>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => {
+                              if (confirm(`Delete custom instrument ${inst.symbol}?`)) {
+                                deleteMutation.mutate(inst.id);
+                              }
+                            }}
+                          >
+                            <DeleteOutlineRounded sx={{ fontSize: 18 }} />
+                          </IconButton>
+                        </Tooltip>
+                      ) : (
+                        <Typography variant="caption" color="text.disabled">—</Typography>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
 
-      {/* Add Instrument Modal */}
-      <Modal
-        isOpen={isModalOpen}
+      {/* Add Custom Instrument Modal */}
+      <Dialog
+        open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Add Custom Instrument"
-        description="Define tick size, lot size, multiplier, and exchange specifications"
-        maxWidth="lg"
+        maxWidth="sm"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              backgroundImage: 'none',
+              bgcolor: 'background.paper',
+              borderRadius: 2,
+            },
+          },
+        }}
       >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>Add Custom Instrument</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Define multiplier, lot size, tick size, and exchange parameters
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setIsModalOpen(false)}>
+            <CloseRounded />
+          </IconButton>
+        </DialogTitle>
 
-            <form onSubmit={handleCreate} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Symbol *</label>
-                  <input
-                    type="text"
-                    required
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                    placeholder="e.g. SENSEX, SILVER"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm font-bold uppercase font-mono focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Display Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g. BSE Sensex Index Futures"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
+        <form onSubmit={handleCreate}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
+                label="Symbol *"
+                placeholder="e.g. SENSEX, SILVER"
+                size="small"
+                required
+                fullWidth
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                slotProps={{ htmlInput: { style: { textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
+              />
+              <TextField
+                label="Display Name *"
+                placeholder="e.g. BSE Sensex Futures"
+                size="small"
+                required
+                fullWidth
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </Box>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Asset Class</label>
-                  <select
-                    value={assetClass}
-                    onChange={(e) => setAssetClass(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs"
-                  >
-                    {ASSET_CLASSES.map((a) => (
-                      <option key={a.value} value={a.value}>
-                        {a.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Exchange</label>
-                  <input
-                    type="text"
-                    value={exchange}
-                    onChange={(e) => setExchange(e.target.value)}
-                    placeholder="NSE, MCX, BSE"
-                    className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs uppercase"
-                  />
-                </div>
-                <div>
-                  <label className="block text-muted-foreground mb-1 font-medium">Currency</label>
-                  <input
-                    type="text"
-                    value={quoteCurrency}
-                    onChange={(e) => setQuoteCurrency(e.target.value)}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs uppercase"
-                  />
-                </div>
-              </div>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
+              <TextField
+                select
+                label="Asset Class"
+                size="small"
+                fullWidth
+                value={assetClass}
+                onChange={(e) => setAssetClass(e.target.value)}
+              >
+                {ASSET_CLASSES.map((a) => (
+                  <MenuItem key={a.value} value={a.value}>
+                    {a.label}
+                  </MenuItem>
+                ))}
+              </TextField>
 
-              <div className="grid grid-cols-3 gap-3 font-mono">
-                <div>
-                  <label className="block text-[11px] font-sans text-muted-foreground mb-1">
-                    Contract Multiplier *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={contractMultiplier}
-                    onChange={(e) => setContractMultiplier(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-sans text-muted-foreground mb-1">
-                    Lot Size *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={lotSize}
-                    onChange={(e) => setLotSize(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-sans text-muted-foreground mb-1">
-                    Tick Size
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={tickSize}
-                    onChange={(e) => setTickSize(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-border bg-background px-2 text-xs"
-                  />
-                </div>
-              </div>
+              <TextField
+                label="Exchange"
+                placeholder="NSE, MCX, BSE"
+                size="small"
+                fullWidth
+                value={exchange}
+                onChange={(e) => setExchange(e.target.value.toUpperCase())}
+                slotProps={{ htmlInput: { style: { textTransform: 'uppercase' } } }}
+              />
 
-              <div className="flex justify-end gap-2.5 pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-md"
-                >
-                  {createMutation.isPending ? 'Saving...' : 'Save Instrument'}
-                </button>
-              </div>
-            </form>
-      </Modal>
-    </div>
+              <TextField
+                label="Currency"
+                placeholder="INR, USD"
+                size="small"
+                fullWidth
+                value={quoteCurrency}
+                onChange={(e) => setQuoteCurrency(e.target.value.toUpperCase())}
+                slotProps={{ htmlInput: { style: { textTransform: 'uppercase' } } }}
+              />
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
+              <TextField
+                label="Contract Multiplier *"
+                type="number"
+                size="small"
+                required
+                fullWidth
+                value={contractMultiplier}
+                onChange={(e) => setContractMultiplier(Number(e.target.value))}
+                slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+
+              <TextField
+                label="Lot Size *"
+                type="number"
+                size="small"
+                required
+                fullWidth
+                value={lotSize}
+                onChange={(e) => setLotSize(Number(e.target.value))}
+                slotProps={{ htmlInput: { step: 'any', min: 1, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+
+              <TextField
+                label="Tick Size *"
+                type="number"
+                size="small"
+                required
+                fullWidth
+                value={tickSize}
+                onChange={(e) => setTickSize(Number(e.target.value))}
+                slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+            </Box>
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button onClick={() => setIsModalOpen(false)} color="inherit">
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              disabled={createMutation.isPending}
+            >
+              {createMutation.isPending ? 'Saving...' : 'Save Instrument'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+    </Box>
   );
 }

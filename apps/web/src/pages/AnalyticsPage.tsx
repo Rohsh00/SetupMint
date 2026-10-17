@@ -1,17 +1,27 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useOutletContext } from 'react-router-dom';
-import {
-  LineChart as LineChartIcon,
-  Brain,
-  Calendar,
-  Layers,
-  AlertCircle,
-  TrendingUp,
-  TrendingDown,
-  Clock,
-  ShieldCheck,
-} from 'lucide-react';
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import ButtonGroup from '@mui/material/ButtonGroup';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import Paper from '@mui/material/Paper';
+import Skeleton from '@mui/material/Skeleton';
+import Alert from '@mui/material/Alert';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import ShowChartIcon from '@mui/icons-material/ShowChartRounded';
+import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
+import AccessTimeIcon from '@mui/icons-material/AccessTimeRounded';
+import SecurityIcon from '@mui/icons-material/SecurityRounded';
+import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+
 import {
   Area,
   AreaChart,
@@ -20,29 +30,29 @@ import {
   CartesianGrid,
   Cell,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { api } from '../lib/api.js';
-import { useTheme } from '../context/ThemeContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 
 export function AnalyticsPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME'>('OVERVIEW');
-  const { resolvedTheme } = useTheme();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
 
-  const isDark = resolvedTheme === 'dark';
-  const chartGridColor = isDark ? 'rgba(148, 163, 184, 0.1)' : 'rgba(100, 116, 139, 0.15)';
+  const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.08)';
   const chartAxisColor = isDark ? '#94A3B8' : '#64748B';
   const chartTooltipStyle = {
-    backgroundColor: isDark ? '#0B0F19' : '#FFFFFF',
-    borderColor: isDark ? '#1F2937' : '#E2E8F0',
-    color: isDark ? '#F8FAFC' : '#0F172A',
-    borderRadius: '8px',
+    backgroundColor: muiTheme.palette.background.paper,
+    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.15)',
+    color: muiTheme.palette.text.primary,
+    borderRadius: '10px',
     fontSize: '12px',
-    boxShadow: isDark ? '0 10px 15px -3px rgba(0, 0, 0, 0.5)' : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    boxShadow: isDark ? '0 10px 25px -5px rgba(0, 0, 0, 0.6)' : '0 10px 25px -5px rgba(15, 23, 42, 0.15)',
+    padding: '8px 12px',
   };
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
@@ -63,80 +73,128 @@ export function AnalyticsPage() {
 
   if (isStatsLoading || isPsychLoading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
-          <span className="text-xs text-muted-foreground font-mono">Analyzing trading performance...</span>
-        </div>
-      </div>
+      <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Skeleton variant="rounded" height={60} />
+        <Skeleton variant="rounded" height={320} />
+        <Grid container spacing={3}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Skeleton variant="rounded" height={280} />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Skeleton variant="rounded" height={280} />
+          </Grid>
+        </Grid>
+      </Box>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            Advanced Analytics
-          </h1>
-          <p className="text-xs text-muted-foreground">
+    <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      {/* Top Header & Tab Controls */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          pb: 2,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+        }}
+      >
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', color: muiTheme.palette.text.primary }}>
+            Advanced Analytics & Edge Review
+          </Typography>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mt: 0.5 }}>
             Quantitative edge analysis, drawdown tracking, and behavioral performance correlations
-          </p>
-        </div>
+          </Typography>
+        </Box>
 
-        {/* Tab switcher */}
-        <div className="flex rounded-lg border border-border bg-card p-1 text-xs">
+        {/* Tab Switcher */}
+        <ButtonGroup
+          variant="outlined"
+          size="small"
+          sx={{
+            backgroundColor: muiTheme.palette.background.paper,
+            borderRadius: 2,
+            p: 0.5,
+            border: `1px solid ${muiTheme.palette.divider}`,
+            '& .MuiButtonGroup-grouped': {
+              border: 'none !important',
+              borderRadius: '6px !important',
+              px: 1.5,
+              py: 0.6,
+              fontSize: '0.75rem',
+              fontWeight: 600,
+            },
+          }}
+        >
           {[
-            { id: 'OVERVIEW', label: 'Curve & Distribution', icon: LineChartIcon },
-            { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: Brain },
-            { id: 'TIME', label: 'Time & Session Breakdown', icon: Clock },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+            { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
+            { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
+            { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
+          ].map((tab) => (
+            <Button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              startIcon={tab.icon}
+              sx={{
+                backgroundColor:
+                  activeTab === tab.id
+                    ? `${muiTheme.palette.primary.main} !important`
+                    : 'transparent',
+                color:
+                  activeTab === tab.id
+                    ? '#FFFFFF !important'
+                    : `${muiTheme.palette.text.secondary} !important`,
+                '&:hover': {
+                  color: `${muiTheme.palette.text.primary} !important`,
+                },
+              }}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </ButtonGroup>
+      </Box>
 
       {/* TAB 1: OVERVIEW & DISTRIBUTION */}
       {activeTab === 'OVERVIEW' && (
-        <div className="space-y-6">
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Equity & Peak-to-Trough Drawdown Curve */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">Peak-to-Trough Drawdown Curve</h3>
-                <p className="text-xs text-muted-foreground">
+          <Card sx={{ p: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                  Peak-to-Trough Drawdown Curve
+                </Typography>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                   Percentage drawdown from historical high equity mark
-                </p>
-              </div>
-              <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded border border-rose-500/20">
-                Max DD: -{formatPercent(stats?.maxDrawdownPercent)} ({formatCurrency(stats?.maxDrawdownAmount)})
-              </span>
-            </div>
+                </Typography>
+              </Box>
+              <Chip
+                label={`Max DD: -${formatPercent(stats?.maxDrawdownPercent)} (${formatCurrency(stats?.maxDrawdownAmount)})`}
+                size="small"
+                sx={{
+                  fontFamily: `'JetBrains Mono', monospace`,
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  backgroundColor: muiTheme.palette.loss.bg,
+                  color: muiTheme.palette.loss.main,
+                  border: `1px solid ${isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'}`,
+                }}
+              />
+            </Box>
 
-            <div className="h-64 w-full">
+            <Box sx={{ height: 280, width: '100%' }}>
               {stats?.equityCurve && stats.equityCurve.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={stats.equityCurve}>
                     <defs>
-                      <linearGradient id="drawdownGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#EF4444" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#EF4444" stopOpacity={0.0} />
+                      <linearGradient id="stratumDrawdownGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
@@ -147,242 +205,418 @@ export function AnalyticsPage() {
                       tickLine={false}
                       tickFormatter={(v) => `-${v}%`}
                     />
-                    <Tooltip
+                    <RechartsTooltip
                       contentStyle={chartTooltipStyle}
-                      itemStyle={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
-                      labelStyle={{ color: isDark ? '#94A3B8' : '#64748B', fontWeight: 600 }}
+                      itemStyle={{ color: muiTheme.palette.text.primary }}
+                      labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
                       formatter={(val: any) => [`-${formatPercent(val)}`, 'Drawdown']}
                     />
                     <Area
                       type="monotone"
                       dataKey="drawdownPercent"
-                      stroke="#EF4444"
+                      stroke="#F43F5E"
                       strokeWidth={2}
                       fillOpacity={1}
-                      fill="url(#drawdownGradient)"
+                      fill="url(#stratumDrawdownGradient)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  No trades to compute drawdown curve.
-                </div>
+                <Box sx={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    No trades recorded yet to compute drawdown curve.
+                  </Typography>
+                </Box>
               )}
-            </div>
-          </div>
+            </Box>
+          </Card>
 
-          {/* P&L Distribution Histogram */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-semibold text-foreground">Trade P&L Distribution</h3>
-              <p className="text-xs text-muted-foreground">Frequency of trade profits and losses by range</p>
+          {/* P&L Distribution Histogram & Consistency */}
+          <Grid container spacing={3}>
+            {/* P&L Distribution Histogram */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card sx={{ p: 2.5, height: '100%' }}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Trade P&L Distribution
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    Frequency of trade profits and losses by range
+                  </Typography>
+                </Box>
 
-              <div className="h-60 w-full">
-                {stats?.pnlDistribution && stats.pnlDistribution.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stats.pnlDistribution}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                      <XAxis dataKey="range" stroke={chartAxisColor} fontSize={9} tickLine={false} />
-                      <YAxis stroke={chartAxisColor} fontSize={10} tickLine={false} />
-                      <Tooltip
-                        contentStyle={chartTooltipStyle}
-                        itemStyle={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
-                        labelStyle={{ color: isDark ? '#94A3B8' : '#64748B', fontWeight: 600 }}
-                      />
-                      <Bar dataKey="count">
-                        {stats.pnlDistribution.map((entry: any, index: number) => (
-                          <Cell
-                            key={`pnl-cell-${index}`}
-                            fill={entry.isProfit ? '#10B981' : '#EF4444'}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No distribution data.
-                  </div>
-                )}
-              </div>
-            </div>
+                <Box sx={{ height: 260, width: '100%' }}>
+                  {stats?.pnlDistribution && stats.pnlDistribution.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={stats.pnlDistribution}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                        <XAxis dataKey="range" stroke={chartAxisColor} fontSize={9} tickLine={false} />
+                        <YAxis stroke={chartAxisColor} fontSize={10} tickLine={false} />
+                        <RechartsTooltip
+                          contentStyle={chartTooltipStyle}
+                          itemStyle={{ color: muiTheme.palette.text.primary }}
+                          labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
+                        />
+                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                          {stats.pnlDistribution.map((entry: any, index: number) => (
+                            <Cell
+                              key={`pnl-cell-${index}`}
+                              fill={entry.isProfit ? '#10B981' : '#F43F5E'}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box sx={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                        No distribution data available.
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Card>
+            </Grid>
 
             {/* Streak & Ratio Summary Card */}
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-semibold text-foreground">Consistency & Streaks</h3>
-              <p className="text-xs text-muted-foreground">Consecutive run metrics and trade outcome ratios</p>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Consistency & Run Streaks
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    Consecutive execution patterns and outcome ratios
+                  </Typography>
 
-              <div className="grid grid-cols-2 gap-3 text-xs font-mono pt-2">
-                <div className="rounded-lg border border-border bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground block font-sans">Current Streak</span>
-                  <span
-                    className={`text-xl font-bold ${
-                      (stats?.currentStreak || 0) > 0
-                        ? 'text-emerald-400'
-                        : (stats?.currentStreak || 0) < 0
-                        ? 'text-rose-400'
-                        : 'text-foreground'
-                    }`}
-                  >
-                    {stats?.currentStreak ? `${Math.abs(stats.currentStreak)} ${stats.currentStreak > 0 ? 'Wins' : 'Losses'}` : 'None'}
-                  </span>
-                </div>
-                <div className="rounded-lg border border-border bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground block font-sans">Max Win Streak</span>
-                  <span className="text-xl font-bold text-emerald-400">
-                    {stats?.maxConsecutiveWins || 0} Trades
-                  </span>
-                </div>
-                <div className="rounded-lg border border-border bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground block font-sans">Max Loss Streak</span>
-                  <span className="text-xl font-bold text-rose-400">
-                    {stats?.maxConsecutiveLosses || 0} Trades
-                  </span>
-                </div>
-                <div className="rounded-lg border border-border bg-accent/20 p-3">
-                  <span className="text-[10px] text-muted-foreground block font-sans">Avg Winner / Loser</span>
-                  <span className="text-xl font-bold text-foreground">
-                    {stats?.avgLosingTrade ? (stats.avgWinningTrade / stats.avgLosingTrade).toFixed(2) : '—'}x
-                  </span>
-                </div>
-              </div>
+                  <Grid container spacing={2} sx={{ mt: 1 }}>
+                    <Grid size={{ xs: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Current Run</Typography>
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            fontWeight: 800,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: (stats?.currentStreak || 0) > 0 ? muiTheme.palette.profit.main : (stats?.currentStreak || 0) < 0 ? muiTheme.palette.loss.main : muiTheme.palette.text.primary,
+                            mt: 0.5,
+                          }}
+                        >
+                          {stats?.currentStreak ? `${Math.abs(stats.currentStreak)} ${stats.currentStreak > 0 ? 'Wins' : 'Losses'}` : 'None'}
+                        </Typography>
+                      </Box>
+                    </Grid>
 
-              <div className="rounded-lg border border-border bg-accent/10 p-3 text-xs text-muted-foreground flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>
+                    <Grid size={{ xs: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Max Win Streak</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                          {stats?.maxConsecutiveWins || 0} Trades
+                        </Typography>
+                      </Box>
+                    </Grid>
+
+                    <Grid size={{ xs: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Max Loss Streak</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                          {stats?.maxConsecutiveLosses || 0} Trades
+                        </Typography>
+                      </Box>
+                    </Grid>
+
+                    <Grid size={{ xs: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Avg Win / Loss Ratio</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                          {stats?.avgLosingTrade ? (stats.avgWinningTrade / stats.avgLosingTrade).toFixed(2) : '—'}x
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+                </Box>
+
+                <Alert severity="info" icon={<InfoOutlinedIcon fontSize="small" />} sx={{ mt: 2, py: 0.5, fontSize: '0.75rem' }}>
                   Descriptive statistics represent historical closed journal records and are independent of live broker execution.
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+                </Alert>
+              </Card>
+            </Grid>
+          </Grid>
+        </Box>
       )}
 
       {/* TAB 2: PSYCHOLOGY & DISCIPLINE */}
       {activeTab === 'PSYCHOLOGY' && (
-        <div className="space-y-6">
-          {/* Discipline Score vs Win Rate Correlation */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" /> Discipline Rating vs Performance
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Correlation between execution discipline rating (1 to 5) and trading results
-              </p>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Grid container spacing={3}>
+            {/* Discipline Rating vs Performance */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card sx={{ p: 2.5, height: '100%' }}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <SecurityIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+                    Discipline Rating vs Performance
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    Correlation between execution discipline rating (1 to 5) and trading results
+                  </Typography>
+                </Box>
 
-              <div className="space-y-3 font-mono text-xs">
-                {psychologyData?.performanceByDiscipline?.map((d: any) => (
-                  <div key={d.score} className="flex items-center justify-between border-b border-border/50 pb-2">
-                    <span className="font-semibold text-foreground">Score {d.score}/5</span>
-                    <span className="text-muted-foreground">{d.tradesCount} trades</span>
-                    <span className="text-blue-400">{d.winRate}% Win</span>
-                    <span className={d.netPnL >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {formatCurrency(d.netPnL)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {psychologyData?.performanceByDiscipline?.map((d: any) => (
+                    <Box
+                      key={d.score}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        py: 1.25,
+                        px: 1.5,
+                        borderRadius: 1.5,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                        Score {d.score}/5
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                        {d.tradesCount} trades
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                        {d.winRate}% Win
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(d.netPnL)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Card>
+            </Grid>
 
             {/* Performance by Emotional State */}
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Brain className="h-4 w-4 text-purple-400" /> Emotional State at Entry vs P&L
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                How emotional mindset at entry impacts your bottom-line profitability
-              </p>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card sx={{ p: 2.5, height: '100%' }}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
+                    Emotional State at Entry vs P&L
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    How emotional mindset at entry impacts your bottom-line profitability
+                  </Typography>
+                </Box>
 
-              <div className="space-y-3 font-mono text-xs">
-                {psychologyData?.performanceByEmotion?.map((e: any) => (
-                  <div key={e.emotion} className="flex items-center justify-between border-b border-border/50 pb-2">
-                    <span className="font-semibold text-foreground font-sans">{e.emotion}</span>
-                    <span className="text-muted-foreground">{e.tradesCount} trades</span>
-                    <span className="text-blue-400">{e.winRate}% Win</span>
-                    <span className={e.netPnL >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {formatCurrency(e.netPnL)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {psychologyData?.performanceByEmotion?.map((e: any) => (
+                    <Box
+                      key={e.emotion}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        py: 1.25,
+                        px: 1.5,
+                        borderRadius: 1.5,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {e.emotion}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                        {e.tradesCount} trades
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                        {e.winRate}% Win
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: e.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(e.netPnL)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Card>
+            </Grid>
+          </Grid>
 
           {/* Cost of Trading Mistakes */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <h3 className="text-sm font-semibold text-foreground text-rose-400">
-              The Real Cost of Discipline Mistakes
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Direct monetary loss incurred from specific psychological violations
-            </p>
+          <Card sx={{ p: 2.5 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', color: muiTheme.palette.loss.main }}>
+                The Monetary Cost of Discipline Mistakes
+              </Typography>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                Direct monetary loss incurred from specific psychological violations
+              </Typography>
+            </Box>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <Grid container spacing={2}>
               {psychologyData?.mistakeAnalysis?.map((m: any) => (
-                <div key={m.mistake} className="rounded-lg border border-border bg-background p-3 text-xs">
-                  <span className="font-semibold block text-foreground truncate">{m.label}</span>
-                  <span className="text-[11px] text-muted-foreground block mt-1">
-                    Occurred: {m.occurrences} times
-                  </span>
-                  <span className="text-sm font-mono font-bold text-rose-400 block mt-2">
-                    -{formatCurrency(m.totalLoss)}
-                  </span>
-                </div>
+                <Grid key={m.mistake} size={{ xs: 12, sm: 6, md: 2.4 }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                      backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(248, 250, 252, 0.8)',
+                    }}
+                  >
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: muiTheme.palette.text.primary }}>
+                      {m.label}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.5 }}>
+                      Occurred: {m.occurrences} times
+                    </Typography>
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: muiTheme.palette.loss.main,
+                        mt: 1,
+                      }}
+                    >
+                      -{formatCurrency(m.totalLoss)}
+                    </Typography>
+                  </Box>
+                </Grid>
               ))}
-            </div>
-          </div>
-        </div>
+            </Grid>
+          </Card>
+        </Box>
       )}
 
       {/* TAB 3: TIME & SESSION */}
       {activeTab === 'TIME' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Grid container spacing={3}>
           {/* Weekday Breakdown */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <h3 className="text-sm font-semibold text-foreground">Performance by Day of Week</h3>
-            <p className="text-xs text-muted-foreground">Identify which trading weekdays provide maximum edge</p>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card sx={{ p: 2.5, height: '100%' }}>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                  Performance by Day of Week
+                </Typography>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                  Identify which trading weekdays provide maximum discretionary edge
+                </Typography>
+              </Box>
 
-            <div className="space-y-3 font-mono text-xs">
-              {stats?.performanceByWeekday?.map((day: any) => (
-                <div key={day.day} className="flex items-center justify-between border-b border-border/50 pb-2">
-                  <span className="font-semibold text-foreground font-sans">{day.day}</span>
-                  <span className="text-muted-foreground">{day.tradesCount} trades</span>
-                  <span className="text-blue-400">{day.winRate}% Win</span>
-                  <span className={day.netPnL >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                    {formatCurrency(day.netPnL)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {stats?.performanceByWeekday?.map((day: any) => (
+                  <Box
+                    key={day.day}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      py: 1.25,
+                      px: 1.5,
+                      borderRadius: 1.5,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      {day.day}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                      {day.tradesCount} trades
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                      {day.winRate}% Win
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 700,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: day.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                      }}
+                    >
+                      {formatCurrency(day.netPnL)}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Card>
+          </Grid>
 
           {/* Session Breakdown */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <h3 className="text-sm font-semibold text-foreground">Performance by Trading Session</h3>
-            <p className="text-xs text-muted-foreground">
-              NSE Regular market vs MCX Evening commodity session
-            </p>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card sx={{ p: 2.5, height: '100%' }}>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                  Performance by Trading Session
+                </Typography>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                  NSE Regular equity market vs MCX Commodity evening session
+                </Typography>
+              </Box>
 
-            <div className="space-y-3 font-mono text-xs">
-              {stats?.performanceBySession && stats.performanceBySession.length > 0 ? (
-                stats.performanceBySession.map((sess: any) => (
-                  <div key={sess.session} className="flex items-center justify-between border-b border-border/50 pb-2">
-                    <span className="font-semibold text-foreground font-sans">{sess.session}</span>
-                    <span className="text-muted-foreground">{sess.tradesCount} trades</span>
-                    <span className="text-blue-400">{sess.winRate}% Win</span>
-                    <span className={sess.netPnL >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {formatCurrency(sess.netPnL)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <span className="text-xs text-muted-foreground">No session records logged.</span>
-              )}
-            </div>
-          </div>
-        </div>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {stats?.performanceBySession && stats.performanceBySession.length > 0 ? (
+                  stats.performanceBySession.map((sess: any) => (
+                    <Box
+                      key={sess.session}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        py: 1.25,
+                        px: 1.5,
+                        borderRadius: 1.5,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {sess.session}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                        {sess.tradesCount} trades
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                        {sess.winRate}% Win
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: sess.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(sess.netPnL)}
+                      </Typography>
+                    </Box>
+                  ))
+                ) : (
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    No session records logged.
+                  </Typography>
+                )}
+              </Box>
+            </Card>
+          </Grid>
+        </Grid>
       )}
-    </div>
+    </Box>
   );
 }

@@ -1,26 +1,40 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
-  Settings as SettingsIcon,
-  User,
-  Lock,
-  Shield,
-  Layers,
-  Database,
-  CheckCircle2,
-  Moon,
-  Sun,
-  Laptop,
-  KeyRound,
-  ExternalLink,
-} from 'lucide-react';
+  Box,
+  Typography,
+  Button,
+  Grid,
+  Card,
+  CardContent,
+  TextField,
+  MenuItem,
+  ToggleButtonGroup,
+  ToggleButton,
+  Alert,
+  Divider,
+  useTheme as useMuiTheme,
+} from '@mui/material';
+import {
+  SettingsRounded,
+  PersonRounded,
+  LockRounded,
+  StorageRounded,
+  KeyRounded,
+  DarkModeRounded,
+  LightModeRounded,
+  SettingsBrightnessRounded,
+  CheckCircleRounded,
+  ShieldRounded,
+} from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { api } from '../lib/api.js';
 
 export function SettingsPage() {
+  const muiTheme = useMuiTheme();
   const { user, refreshUser } = useAuth();
-  const { theme, toggleTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
 
   // Profile state
   const [name, setName] = useState(user?.name || '');
@@ -93,237 +107,318 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="border-b border-border pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+    <Box sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Top Header */}
+      <Box sx={{ pb: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SettingsRounded sx={{ color: 'primary.main', fontSize: 28 }} />
           Settings & Local Security
-        </h1>
-        <p className="text-xs text-muted-foreground">
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
           Trader profile preferences, appearance theme, security credentials, and future broker integration layer
-        </p>
-      </div>
+        </Typography>
+      </Box>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <Grid container spacing={3}>
         {/* Profile Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b border-border pb-3">
-            <User className="h-4 w-4 text-emerald-400" /> Trader Profile & Preferences
-          </h3>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <PersonRounded sx={{ color: 'primary.main' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Trader Profile & Preferences
+                </Typography>
+              </Box>
 
-          <form onSubmit={handleProfileSubmit} className="space-y-4 text-xs">
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Full Name</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
+              <form onSubmit={handleProfileSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <TextField
+                  label="Full Name *"
+                  size="small"
+                  required
+                  fullWidth
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
 
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Email Address (Read-only)</label>
-              <input
-                type="email"
-                disabled
-                value={user?.email || ''}
-                className="w-full h-9 rounded-lg border border-border bg-accent/40 px-3 text-sm font-mono text-muted-foreground cursor-not-allowed"
-              />
-            </div>
+                <TextField
+                  label="Email Address"
+                  size="small"
+                  disabled
+                  fullWidth
+                  value={user?.email || ''}
+                  helperText="Local database login identity (read-only)"
+                  slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                />
 
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Default Base Currency</label>
-              <select
-                value={baseCurrency}
-                onChange={(e) => setBaseCurrency(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs"
-              >
-                <option value="INR">Indian Rupee (INR ₹)</option>
-                <option value="USD">US Dollar (USD $)</option>
-                <option value="EUR">Euro (EUR €)</option>
-                <option value="GBP">British Pound (GBP £)</option>
-                <option value="AED">UAE Dirham (AED)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between pt-2">
-              <span className="text-muted-foreground">Theme Mode</span>
-              <div className="flex items-center rounded-lg border border-border bg-background p-1 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setTheme('dark')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
-                    theme === 'dark' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                <TextField
+                  select
+                  label="Default Base Currency"
+                  size="small"
+                  fullWidth
+                  value={baseCurrency}
+                  onChange={(e) => setBaseCurrency(e.target.value)}
                 >
-                  <Moon className="h-3.5 w-3.5" /> Dark
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTheme('light')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
-                    theme === 'light' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Sun className="h-3.5 w-3.5" /> Light
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTheme('system')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
-                    theme === 'system' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Laptop className="h-3.5 w-3.5" /> System
-                </button>
-              </div>
-            </div>
+                  <MenuItem value="INR">Indian Rupee (INR ₹)</MenuItem>
+                  <MenuItem value="USD">US Dollar (USD $)</MenuItem>
+                  <MenuItem value="EUR">Euro (EUR €)</MenuItem>
+                  <MenuItem value="GBP">British Pound (GBP £)</MenuItem>
+                  <MenuItem value="AED">UAE Dirham (AED)</MenuItem>
+                </TextField>
 
-            {profileSuccess && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Profile updated successfully
-              </div>
-            )}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                    Theme Mode
+                  </Typography>
+                  <ToggleButtonGroup
+                    exclusive
+                    fullWidth
+                    size="small"
+                    value={theme}
+                    onChange={(_, val) => val && setTheme(val)}
+                  >
+                    <ToggleButton value="dark" sx={{ py: 0.75, fontWeight: 600, gap: 0.5 }}>
+                      <DarkModeRounded sx={{ fontSize: 16 }} />
+                      Dark
+                    </ToggleButton>
+                    <ToggleButton value="light" sx={{ py: 0.75, fontWeight: 600, gap: 0.5 }}>
+                      <LightModeRounded sx={{ fontSize: 16 }} />
+                      Light
+                    </ToggleButton>
+                    <ToggleButton value="system" sx={{ py: 0.75, fontWeight: 600, gap: 0.5 }}>
+                      <SettingsBrightnessRounded sx={{ fontSize: 16 }} />
+                      System
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={profileMutation.isPending}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-md"
-              >
-                Save Preferences
-              </button>
-            </div>
-          </form>
-        </div>
+                {profileSuccess && (
+                  <Alert severity="success" icon={<CheckCircleRounded />}>
+                    Profile updated successfully
+                  </Alert>
+                )}
+
+                <Box sx={{ pt: 1 }}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    color="primary"
+                    disabled={profileMutation.isPending}
+                    sx={{ fontWeight: 600, px: 3 }}
+                  >
+                    {profileMutation.isPending ? 'Saving...' : 'Save Preferences'}
+                  </Button>
+                </Box>
+              </form>
+            </CardContent>
+          </Card>
+        </Grid>
 
         {/* Password Security Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b border-border pb-3">
-            <Lock className="h-4 w-4 text-emerald-400" /> Security & Passwords
-          </h3>
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LockRounded sx={{ color: 'primary.main' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Security & Password
+                </Typography>
+              </Box>
 
-          <form onSubmit={handlePasswordSubmit} className="space-y-4 text-xs">
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">Current Password</label>
-              <input
-                type="password"
-                required
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
+              <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <TextField
+                  label="Current Password *"
+                  type="password"
+                  size="small"
+                  required
+                  fullWidth
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
 
-            <div>
-              <label className="block text-muted-foreground mb-1 font-medium">New Password (Min 8 chars)</label>
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
+                <TextField
+                  label="New Password (Min 8 chars) *"
+                  type="password"
+                  size="small"
+                  required
+                  fullWidth
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  slotProps={{ htmlInput: { minLength: 8 } }}
+                />
 
-            {passwordMsg && (
-              <div
-                className={`text-xs ${
-                  passwordMsg.type === 'success' ? 'text-emerald-400' : 'text-rose-400'
-                }`}
-              >
-                {passwordMsg.text}
-              </div>
-            )}
+                {passwordMsg && (
+                  <Alert severity={passwordMsg.type === 'success' ? 'success' : 'error'}>
+                    {passwordMsg.text}
+                  </Alert>
+                )}
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={passwordMutation.isPending}
-                className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-foreground hover:bg-accent/80 border border-border"
-              >
-                Change Password
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+                <Box sx={{ pt: 1 }}>
+                  <Button
+                    type="submit"
+                    variant="outlined"
+                    color="inherit"
+                    disabled={passwordMutation.isPending}
+                    sx={{ fontWeight: 600, px: 3 }}
+                  >
+                    {passwordMutation.isPending ? 'Updating...' : 'Change Password'}
+                  </Button>
+                </Box>
+              </form>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
       {/* System Status & Local Privacy Panel */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
-        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b border-border pb-3">
-          <Database className="h-4 w-4 text-emerald-400" /> Local Storage & Zero-Telemetry Privacy
-        </h3>
+      <Card variant="outlined" sx={{ p: 1 }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <StorageRounded sx={{ color: 'primary.main' }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Local Storage & Zero-Telemetry Privacy
+            </Typography>
+          </Box>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
-          <div className="rounded-lg border border-border bg-accent/20 p-3">
-            <span className="text-[10px] text-muted-foreground font-sans block">Database Engine</span>
-            <span className="font-bold text-foreground">MongoDB Community (Local)</span>
-          </div>
-          <div className="rounded-lg border border-border bg-accent/20 p-3">
-            <span className="text-[10px] text-muted-foreground font-sans block">Private Data Privacy</span>
-            <span className="font-bold text-emerald-400">100% Local / MacBook Only</span>
-          </div>
-          <div className="rounded-lg border border-border bg-accent/20 p-3">
-            <span className="text-[10px] text-muted-foreground font-sans block">Total Stored Records</span>
-            <span className="font-bold text-foreground">
-              {systemStatus?.tradeCount || 0} Trades • {systemStatus?.attachmentCount || 0} Screenshots
-            </span>
-          </div>
-        </div>
-      </div>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 1.5,
+                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Database Engine
+                </Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                  MongoDB Community (Local)
+                </Typography>
+              </Box>
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 1.5,
+                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Private Data Privacy
+                </Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main', fontFamily: '"JetBrains Mono", monospace' }}>
+                  100% Local / MacBook Only
+                </Typography>
+              </Box>
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 1.5,
+                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Total Stored Records
+                </Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                  {systemStatus?.tradeCount || 0} Trades • {systemStatus?.attachmentCount || 0} Screenshots
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
       {/* Future FYERS Integration Architecture Card */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
-        <div className="border-b border-border pb-3 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-emerald-400" /> Future FYERS Broker Integration
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Clean broker adapter abstraction ready for automated execution synchronization
-            </p>
-          </div>
-          <span className="rounded bg-accent px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
-            Status: {fyersStatus?.status || 'DISABLED'}
-          </span>
-        </div>
+      <Card variant="outlined" sx={{ p: 1 }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <KeyRounded sx={{ color: 'primary.main' }} />
+                Future FYERS Broker Integration
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Decoupled broker adapter abstraction ready for automated execution synchronization
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 1,
+                bgcolor: 'action.hover',
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: '0.75rem',
+                color: 'text.secondary',
+              }}
+            >
+              Status: {fyersStatus?.status || 'DISABLED'}
+            </Box>
+          </Box>
 
-        <div className="space-y-3 text-xs">
-          <p className="text-muted-foreground leading-relaxed">
-            TradeVault is architected with a decoupled <strong>BrokerAdapter</strong> interface and <strong>NormalizedExecution</strong> schema. In future releases, FYERS API orders and fills will synchronize without altering your manual trade journal core.
-          </p>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            Stratum is architected with a decoupled <strong>BrokerAdapter</strong> interface and <strong>NormalizedExecution</strong> schema. In future updates, FYERS API orders and fills will synchronize without altering your manual trade journal core.
+          </Typography>
 
-          <div className="rounded-lg border border-border bg-accent/10 p-3 font-mono text-[11px] space-y-1">
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 1.5,
+              bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+              border: 1,
+              borderColor: 'divider',
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: '0.75rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+            }}
+          >
             <div>Adapter Version: <strong>v3-compatible (REST / WebSocket)</strong></div>
             <div>Normalized Execution Schema: <strong>INormalizedExecution</strong></div>
             <div>Duplicate Reconciliation Engine: <strong>IdempotencyKey & Manual Review Ready</strong></div>
-          </div>
+          </Box>
 
-          <div className="flex items-center gap-3 pt-2">
-            <input
-              type="text"
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <TextField
+              size="small"
+              placeholder="FYERS App ID (e.g. XC12345-100)"
               value={fyersAppId}
               onChange={(e) => setFyersAppId(e.target.value)}
-              placeholder="FYERS App ID (e.g. XC12345-100)"
-              className="flex-1 h-9 rounded-lg border border-border bg-background px-3 text-xs font-mono"
+              sx={{ flex: 1 }}
+              slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
             />
-            <button
-              onClick={() => fyersMutation.mutate(fyersAppId)}
+            <Button
+              variant="contained"
+              color="primary"
               disabled={fyersMutation.isPending}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 shadow-sm"
+              onClick={() => fyersMutation.mutate(fyersAppId)}
+              sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}
             >
               Save Configuration
-            </button>
-          </div>
+            </Button>
+          </Box>
+
           {fyersSuccess && (
-            <span className="text-xs text-emerald-400 block">Configuration saved in integration layer</span>
+            <Alert severity="success" icon={<CheckCircleRounded />}>
+              Configuration saved in integration layer
+            </Alert>
           )}
-        </div>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </Box>
   );
 }

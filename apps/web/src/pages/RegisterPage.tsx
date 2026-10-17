@@ -1,9 +1,25 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Shield, ArrowRight, AlertCircle } from 'lucide-react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  TextField,
+  MenuItem,
+  Button,
+  Alert,
+  Link,
+  useTheme,
+} from '@mui/material';
+import {
+  ArrowForwardRounded,
+} from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
+import { StratumLogo } from '../components/brand/StratumLogo.js';
 
 export function RegisterPage() {
+  const muiTheme = useTheme();
   const { register: registerUser } = useAuth();
   const navigate = useNavigate();
 
@@ -30,94 +46,121 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-md space-y-8 rounded-2xl border border-border bg-card p-8 shadow-2xl">
-        {/* Brand */}
-        <div className="text-center space-y-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shadow-md">
-            <Shield className="h-6 w-6" />
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Create TradeVault Account</h2>
-          <p className="text-xs text-muted-foreground">
-            Set up your local-first private trading journal
-          </p>
-        </div>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        p: 2,
+        bgcolor: 'background.default',
+      }}
+    >
+      <Card
+        variant="outlined"
+        sx={{
+          width: '100%',
+          maxWidth: 440,
+          p: { xs: 2, sm: 3 },
+          boxShadow: muiTheme.palette.mode === 'dark' ? '0 24px 64px rgba(0,0,0,0.6)' : '0 16px 40px rgba(0,0,0,0.08)',
+        }}
+      >
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Brand Header */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
+            <StratumLogo size="lg" />
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+                Create Stratum Account
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Set up your local-first private trading journal
+              </Typography>
+            </Box>
+          </Box>
 
-        {error && (
-          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+          {error && (
+            <Alert severity="error">
+              {error}
+            </Alert>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block text-muted-foreground mb-1 font-medium">Full Name</label>
-            <input
+          {/* Register Form */}
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <TextField
+              label="Full Name"
               type="text"
+              size="small"
               required
+              fullWidth
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Komal Trader"
-              className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
             />
-          </div>
 
-          <div>
-            <label className="block text-muted-foreground mb-1 font-medium">Email Address</label>
-            <input
+            <TextField
+              label="Email Address"
               type="email"
+              size="small"
               required
+              fullWidth
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="trader@domain.com"
-              className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
+              autoComplete="email"
             />
-          </div>
 
-          <div>
-            <label className="block text-muted-foreground mb-1 font-medium">Password (Min 8 chars)</label>
-            <input
+            <TextField
+              label="Password (Min 8 chars)"
               type="password"
+              size="small"
               required
-              minLength={8}
+              fullWidth
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm focus:ring-1 focus:ring-emerald-500"
+              slotProps={{ htmlInput: { minLength: 8 } }}
+              autoComplete="new-password"
             />
-          </div>
 
-          <div>
-            <label className="block text-muted-foreground mb-1 font-medium">Default Currency</label>
-            <select
+            <TextField
+              select
+              label="Default Base Currency"
+              size="small"
+              fullWidth
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
-              className="w-full h-10 rounded-lg border border-border bg-background px-3 text-xs"
             >
-              <option value="INR">Indian Rupee (INR ₹)</option>
-              <option value="USD">US Dollar (USD $)</option>
-              <option value="EUR">Euro (EUR €)</option>
-              <option value="GBP">British Pound (GBP £)</option>
-            </select>
-          </div>
+              <MenuItem value="INR">Indian Rupee (INR ₹)</MenuItem>
+              <MenuItem value="USD">US Dollar (USD $)</MenuItem>
+              <MenuItem value="EUR">Euro (EUR €)</MenuItem>
+              <MenuItem value="GBP">British Pound (GBP £)</MenuItem>
+              <MenuItem value="AED">UAE Dirham (AED)</MenuItem>
+            </TextField>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold py-2.5 text-xs shadow-md transition-all"
-          >
-            <span>{loading ? 'Creating account...' : 'Create Account'}</span>
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </form>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              fullWidth
+              size="large"
+              disabled={loading}
+              endIcon={<ArrowForwardRounded />}
+              sx={{ fontWeight: 700, mt: 1 }}
+            >
+              {loading ? 'Creating account...' : 'Create Account'}
+            </Button>
+          </form>
 
-        <div className="text-center text-xs text-muted-foreground">
-          Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-emerald-400 hover:underline">
-            Sign In
-          </Link>
-        </div>
-      </div>
-    </div>
+          <Box sx={{ textAlign: 'center', pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Already have an account?{' '}
+              <Link component={RouterLink} to="/login" sx={{ fontWeight: 600, color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                Sign In
+              </Link>
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
+    </Box>
   );
 }

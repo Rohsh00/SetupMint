@@ -1,13 +1,24 @@
-import React, { useEffect, useRef } from 'react';
-import { X } from 'lucide-react';
+import React from 'react';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
+import Box from '@mui/material/Box';
+import CloseIcon from '@mui/icons-material/Close';
+import { useTheme } from '@mui/material/styles';
+
+export type ModalMaxWidth = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | false;
 
 export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   description?: string;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+  maxWidth?: ModalMaxWidth;
   children: React.ReactNode;
+  actions?: React.ReactNode;
 }
 
 export function Modal({
@@ -15,125 +26,133 @@ export function Modal({
   onClose,
   title,
   description,
-  maxWidth = 'md',
+  maxWidth = 'sm',
   children,
+  actions,
 }: ModalProps) {
-  const modalRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
 
-  // Focus restoration & Escape key handler
-  useEffect(() => {
-    if (!isOpen) return;
-
-    // Save previous active element to restore later
-    previousActiveElement.current = document.activeElement as HTMLElement | null;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-        return;
-      }
-
-      // Trap focus inside modal
-      if (e.key === 'Tab' && modalRef.current) {
-        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusableElements.length === 0) return;
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
-            e.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          if (document.activeElement === lastElement) {
-            e.preventDefault();
-            firstElement.focus();
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-
-    // Initial focus on the first input or modal container
-    const timer = setTimeout(() => {
-      if (modalRef.current) {
-        const firstInput = modalRef.current.querySelector<HTMLElement>('input:not([disabled]), textarea:not([disabled]), select:not([disabled])');
-        if (firstInput) {
-          firstInput.focus();
-        } else {
-          modalRef.current.focus();
-        }
-      }
-    }, 50);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      clearTimeout(timer);
-      if (previousActiveElement.current) {
-        previousActiveElement.current.focus();
-      }
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
-  const maxWidthClasses = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-    '2xl': 'max-w-2xl',
-    '3xl': 'max-w-3xl',
-    '4xl': 'max-w-4xl',
-  }[maxWidth];
+  // Map custom maxWidth names to standard MUI Dialog maxWidth
+  const muiMaxWidth =
+    maxWidth === '2xl' || maxWidth === '3xl'
+      ? 'md'
+      : maxWidth === '4xl'
+      ? 'lg'
+      : (maxWidth as 'xs' | 'sm' | 'md' | 'lg' | 'xl' | false);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-dialog-title"
-      aria-describedby={description ? 'modal-dialog-description' : undefined}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 dark:bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={onClose}
+    <Dialog
+      open={isOpen}
+      onClose={(_event, reason) => {
+        if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+          onClose();
+        }
+      }}
+      maxWidth={muiMaxWidth}
+      fullWidth
+      scroll="paper"
+      aria-labelledby="stratum-modal-title"
+      aria-describedby={description ? 'stratum-modal-description' : undefined}
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 3,
+            backgroundColor: theme.palette.background.paper,
+            backgroundImage: 'none',
+            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.1)'}`,
+            boxShadow: isDark
+              ? '0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+              : '0 20px 40px -12px rgba(15, 23, 42, 0.18)',
+            overflow: 'hidden',
+          },
+        },
+        backdrop: {
+          sx: {
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(4px)',
+          },
+        },
+      }}
     >
-      <div
-        ref={modalRef}
-        tabIndex={-1}
-        className={`relative w-full ${maxWidthClasses} max-h-[90vh] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden focus:outline-none animate-in zoom-in-95 duration-150`}
-        onClick={(e) => e.stopPropagation()}
+      {/* Dialog Header */}
+      <DialogTitle
+        id="stratum-modal-title"
+        sx={{
+          m: 0,
+          p: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          backgroundColor: isDark ? 'rgba(17, 24, 39, 0.7)' : 'rgba(248, 250, 252, 0.8)',
+        }}
       >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-card/60 shrink-0">
-          <div>
-            <h2 id="modal-dialog-title" className="text-base font-bold text-foreground">
-              {title}
-            </h2>
-            {description && (
-              <p id="modal-dialog-description" className="text-xs text-muted-foreground mt-0.5">
-                {description}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors focus:ring-1 focus:ring-ring"
-            aria-label="Close dialog"
+        <Box sx={{ pr: 2 }}>
+          <Typography
+            variant="h6"
+            component="div"
+            sx={{
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              color: theme.palette.text.primary,
+            }}
           >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+            {title}
+          </Typography>
+          {description && (
+            <Typography
+              id="stratum-modal-description"
+              variant="caption"
+              sx={{
+                color: theme.palette.text.secondary,
+                display: 'block',
+                mt: 0.25,
+                fontSize: '0.75rem',
+              }}
+            >
+              {description}
+            </Typography>
+          )}
+        </Box>
+        <IconButton
+          aria-label="close dialog"
+          onClick={onClose}
+          size="small"
+          sx={{
+            color: theme.palette.text.secondary,
+            '&:hover': {
+              color: theme.palette.text.primary,
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+            },
+          }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </DialogTitle>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto">{children}</div>
-      </div>
-    </div>
+      {/* Dialog Body */}
+      <DialogContent
+        sx={{
+          p: '20px',
+          '&:first-of-type': { pt: '20px' },
+        }}
+      >
+        {children}
+      </DialogContent>
+
+      {/* Dialog Actions if provided */}
+      {actions && (
+        <DialogActions
+          sx={{
+            p: '12px 20px',
+            borderTop: `1px solid ${theme.palette.divider}`,
+            backgroundColor: isDark ? 'rgba(17, 24, 39, 0.4)' : 'rgba(248, 250, 252, 0.5)',
+          }}
+        >
+          {actions}
+        </DialogActions>
+      )}
+    </Dialog>
   );
 }

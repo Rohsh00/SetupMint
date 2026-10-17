@@ -1,41 +1,65 @@
 import React, { useState } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import {
-  LayoutDashboard,
-  TableProperties,
-  Calendar,
-  LineChart,
-  BookOpen,
-  Calculator,
-  Wallet,
-  Coins,
-  FileSpreadsheet,
-  Settings,
-  Plus,
-  Moon,
-  Sun,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
-  Shield,
-  Layers,
-  Menu,
-  X,
-} from 'lucide-react';
+import Box from '@mui/material/Box';
+import Drawer from '@mui/material/Drawer';
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import Button from '@mui/material/Button';
+import Tooltip from '@mui/material/Tooltip';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import Avatar from '@mui/material/Avatar';
+import Divider from '@mui/material/Divider';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme as useMuiTheme } from '@mui/material/styles';
+
+// Icons
+import LayoutDashboardIcon from '@mui/icons-material/DashboardRounded';
+import TableViewIcon from '@mui/icons-material/TableViewRounded';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonthRounded';
+import ShowChartIcon from '@mui/icons-material/ShowChartRounded';
+import MenuBookIcon from '@mui/icons-material/MenuBookRounded';
+import CalculateIcon from '@mui/icons-material/CalculateRounded';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWalletRounded';
+import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchangeRounded';
+import AssessmentIcon from '@mui/icons-material/AssessmentRounded';
+import SettingsIcon from '@mui/icons-material/SettingsRounded';
+import AddIcon from '@mui/icons-material/AddRounded';
+import LightModeIcon from '@mui/icons-material/LightModeRounded';
+import DarkModeIcon from '@mui/icons-material/DarkModeRounded';
+import MenuIcon from '@mui/icons-material/MenuRounded';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
+import LogoutIcon from '@mui/icons-material/LogoutRounded';
+
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
+import { StratumLogo } from '../brand/StratumLogo.js';
+
+const DRAWER_WIDTH = 250;
+const COLLAPSED_DRAWER_WIDTH = 72;
 
 export function AppLayout() {
   const { user, logout } = useAuth();
-  const { theme, resolvedTheme, toggleTheme } = useTheme();
-  const navigate = useNavigate();
+  const { resolvedTheme, toggleTheme } = useTheme();
+  const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
   const location = useLocation();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
 
@@ -46,180 +70,450 @@ export function AppLayout() {
   });
 
   const navItems = [
-    { to: '/', label: 'Overview', icon: LayoutDashboard },
-    { to: '/trades', label: 'Trades', icon: TableProperties },
-    { to: '/journal', label: 'Journal Calendar', icon: Calendar },
-    { to: '/analytics', label: 'Analytics', icon: LineChart },
-    { to: '/strategies', label: 'Strategy Playbook', icon: BookOpen },
-    { to: '/risk-calculator', label: 'Risk Calculator', icon: Calculator },
-    { to: '/accounts', label: 'Accounts', icon: Wallet },
-    { to: '/instruments', label: 'Instruments', icon: Coins },
-    { to: '/reports', label: 'Reports & Exports', icon: FileSpreadsheet },
-    { to: '/settings', label: 'Settings', icon: Settings },
+    { to: '/', label: 'Overview', icon: LayoutDashboardIcon },
+    { to: '/trades', label: 'Trades', icon: TableViewIcon },
+    { to: '/journal', label: 'Journal Calendar', icon: CalendarMonthIcon },
+    { to: '/analytics', label: 'Analytics', icon: ShowChartIcon },
+    { to: '/strategies', label: 'Strategy Playbook', icon: MenuBookIcon },
+    { to: '/risk-calculator', label: 'Risk Calculator', icon: CalculateIcon },
+    { to: '/accounts', label: 'Accounts', icon: AccountBalanceWalletIcon },
+    { to: '/instruments', label: 'Instruments', icon: CurrencyExchangeIcon },
+    { to: '/reports', label: 'Reports & Exports', icon: AssessmentIcon },
+    { to: '/settings', label: 'Settings', icon: SettingsIcon },
   ];
 
-  return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      {/* Desktop Sidebar */}
-      <aside
-        className={`hidden md:flex flex-col border-r border-border bg-card/60 backdrop-blur-md transition-all duration-200 select-none ${
-          sidebarCollapsed ? 'w-16' : 'w-64'
-        }`}
+  const currentDrawerWidth = sidebarCollapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
+
+  const drawerContent = (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        backgroundColor: muiTheme.palette.background.paper,
+        borderRight: `1px solid ${muiTheme.palette.divider}`,
+      }}
+    >
+      {/* Brand Header */}
+      <Box
+        sx={{
+          height: 64,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+          px: sidebarCollapsed ? 1 : 2.5,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+        }}
       >
-        {/* Brand header */}
-        <div className="flex h-16 items-center justify-between px-4 border-b border-border">
-          {!sidebarCollapsed && (
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 shadow-sm">
-                <Shield className="h-5 w-5" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-base font-bold tracking-tight text-foreground flex items-center gap-1.5">
-                  TradeVault
-                  <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
-                    PRO
-                  </span>
-                </span>
-                <span className="text-[11px] text-muted-foreground font-mono">Discretionary Journal</span>
-              </div>
-            </div>
-          )}
-
-          {sidebarCollapsed && (
-            <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500">
-              <Shield className="h-5 w-5" />
-            </div>
-          )}
-
-          <button
+        <StratumLogo
+          size={sidebarCollapsed ? 'sm' : 'md'}
+          collapsed={sidebarCollapsed}
+          showSubtitle={!sidebarCollapsed}
+        />
+        {!isMobile && (
+          <IconButton
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="hidden md:flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            size="small"
+            sx={{
+              display: sidebarCollapsed ? 'none' : 'inline-flex',
+              color: muiTheme.palette.text.secondary,
+              border: `1px solid ${muiTheme.palette.divider}`,
+              borderRadius: 1.5,
+              '&:hover': {
+                backgroundColor: muiTheme.palette.action.hover,
+                color: muiTheme.palette.text.primary,
+              },
+            }}
           >
-            {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </button>
-        </div>
+            <ChevronLeftIcon fontSize="small" />
+          </IconButton>
+        )}
+      </Box>
 
-        {/* Quick action button */}
-        <div className="p-3">
-          <button
-            onClick={() => setIsTradeModalOpen(true)}
-            className={`w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-md shadow-emerald-950/20 transition-all ${
-              sidebarCollapsed ? 'h-10 px-0' : 'h-10 px-4'
-            }`}
-            title="Log New Trade"
-          >
-            <Plus className="h-4 w-4 stroke-[2.5]" />
-            {!sidebarCollapsed && <span className="text-sm">Log New Trade</span>}
-          </button>
-        </div>
+      {/* Log Trade CTA */}
+      <Box sx={{ p: sidebarCollapsed ? 1 : 2 }}>
+        <Button
+          fullWidth
+          variant="contained"
+          color="primary"
+          onClick={() => {
+            setIsTradeModalOpen(true);
+            if (isMobile) setMobileOpen(false);
+          }}
+          startIcon={<AddIcon />}
+          sx={{
+            py: 1,
+            borderRadius: 2,
+            fontWeight: 700,
+            fontSize: '0.8125rem',
+            minWidth: sidebarCollapsed ? 0 : 'auto',
+            px: sidebarCollapsed ? 0 : 2,
+            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+            '& .MuiButton-startIcon': {
+              mr: sidebarCollapsed ? 0 : 1,
+              ml: sidebarCollapsed ? 0 : 0,
+            },
+          }}
+        >
+          {!sidebarCollapsed && 'Log New Trade'}
+        </Button>
+      </Box>
 
-        {/* Navigation list */}
-        <nav className="flex-1 space-y-1 px-2 py-2 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
-            return (
-              <NavLink
-                key={item.to}
+      {/* Navigation Links */}
+      <List sx={{ px: 1, py: 0.5, flex: 1, overflowY: 'auto' }}>
+        {navItems.map((item) => {
+          const IconComponent = item.icon;
+          const isActive =
+            location.pathname === item.to ||
+            (item.to !== '/' && location.pathname.startsWith(item.to));
+
+          const listItem = (
+            <ListItem key={item.to} disablePadding sx={{ mb: 0.5 }}>
+              <ListItemButton
+                component={NavLink}
                 to={item.to}
-                className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-                title={sidebarCollapsed ? item.label : undefined}
+                onClick={() => {
+                  if (isMobile) setMobileOpen(false);
+                }}
+                sx={{
+                  borderRadius: 2,
+                  py: 1,
+                  px: sidebarCollapsed ? 1.5 : 2,
+                  justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                  backgroundColor: isActive
+                    ? isDark
+                      ? 'rgba(16, 185, 129, 0.12)'
+                      : 'rgba(5, 150, 105, 0.1)'
+                    : 'transparent',
+                  color: isActive
+                    ? muiTheme.palette.primary.main
+                    : muiTheme.palette.text.secondary,
+                  border: isActive
+                    ? `1px solid ${isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(5, 150, 105, 0.2)'}`
+                    : '1px solid transparent',
+                  '&:hover': {
+                    backgroundColor: isActive
+                      ? isDark
+                        ? 'rgba(16, 185, 129, 0.18)'
+                        : 'rgba(5, 150, 105, 0.15)'
+                      : muiTheme.palette.action.hover,
+                    color: muiTheme.palette.text.primary,
+                  },
+                }}
               >
-                <Icon className={`h-4 w-4 shrink-0 transition-colors ${isActive ? 'text-emerald-400' : 'text-muted-foreground group-hover:text-foreground'}`} />
-                {!sidebarCollapsed && <span>{item.label}</span>}
-              </NavLink>
-            );
-          })}
-        </nav>
+                <ListItemIcon
+                  sx={{
+                    minWidth: sidebarCollapsed ? 0 : 36,
+                    color: isActive
+                      ? muiTheme.palette.primary.main
+                      : muiTheme.palette.text.secondary,
+                    justifyContent: 'center',
+                  }}
+                >
+                  <IconComponent sx={{ fontSize: 20 }} />
+                </ListItemIcon>
+                {!sidebarCollapsed && (
+                  <ListItemText
+                    primary={
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: '0.8125rem',
+                          fontWeight: isActive ? 600 : 500,
+                          color: isActive
+                            ? muiTheme.palette.primary.main
+                            : muiTheme.palette.text.secondary,
+                        }}
+                      >
+                        {item.label}
+                      </Typography>
+                    }
+                  />
+                )}
+              </ListItemButton>
+            </ListItem>
+          );
 
-        {/* User profile footer */}
-        <div className="border-t border-border p-3">
-          <div className="flex items-center justify-between">
-            {!sidebarCollapsed && (
-              <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground font-semibold text-xs border border-border">
-                  {user?.name?.slice(0, 2).toUpperCase() || 'TR'}
-                </div>
-                <div className="flex flex-col truncate">
-                  <span className="text-xs font-semibold truncate text-foreground">{user?.name}</span>
-                  <span className="text-[10px] text-muted-foreground truncate font-mono">{user?.email}</span>
-                </div>
-              </div>
-            )}
-            <button
-              onClick={() => logout()}
-              className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-              title="Logout"
+          return sidebarCollapsed ? (
+            <Tooltip key={item.to} title={item.label} placement="right" arrow>
+              {listItem}
+            </Tooltip>
+          ) : (
+            listItem
+          );
+        })}
+      </List>
+
+      {/* Expand Button for Collapsed State */}
+      {!isMobile && sidebarCollapsed && (
+        <Box sx={{ p: 1, display: 'flex', justifyContent: 'center' }}>
+          <IconButton
+            onClick={() => setSidebarCollapsed(false)}
+            size="small"
+            sx={{
+              color: muiTheme.palette.text.secondary,
+              border: `1px solid ${muiTheme.palette.divider}`,
+              borderRadius: 1.5,
+              '&:hover': {
+                backgroundColor: muiTheme.palette.action.hover,
+                color: muiTheme.palette.text.primary,
+              },
+            }}
+          >
+            <ChevronRightIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      )}
+
+      {/* Footer Profile & Logout */}
+      <Divider />
+      <Box
+        sx={{
+          p: sidebarCollapsed ? 1 : 1.75,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+        }}
+      >
+        {!sidebarCollapsed && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, mr: 1 }}>
+            <Avatar
+              sx={{
+                width: 32,
+                height: 32,
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(5, 150, 105, 0.15)',
+                color: muiTheme.palette.primary.main,
+                border: `1px solid ${isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.3)'}`,
+              }}
             >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top Navbar */}
-        <header className="flex h-16 items-center justify-between border-b border-border bg-card/40 px-4 md:px-6 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden flex h-9 w-9 items-center justify-center rounded-md border border-border text-foreground hover:bg-accent"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-
-            {/* Global Account Selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground hidden sm:inline">Account:</span>
-              <select
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="h-9 rounded-md border border-border bg-background px-3 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              {user?.name?.slice(0, 2).toUpperCase() || 'TR'}
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography
+                variant="body2"
+                noWrap
+                sx={{ fontWeight: 600, fontSize: '0.8125rem', color: muiTheme.palette.text.primary }}
               >
-                <option value="ALL">All Accounts (Consolidated)</option>
-                {accounts.map((acc: any) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.broker} - {acc.baseCurrency})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+                {user?.name || 'Trader'}
+              </Typography>
+              <Typography
+                variant="caption"
+                noWrap
+                sx={{
+                  color: muiTheme.palette.text.secondary,
+                  display: 'block',
+                  fontSize: '0.6875rem',
+                  fontFamily: `'JetBrains Mono', monospace`,
+                }}
+              >
+                {user?.email || 'trader@stratum'}
+              </Typography>
+            </Box>
+          </Box>
+        )}
+        <Tooltip title="Sign Out" arrow>
+          <IconButton
+            size="small"
+            onClick={() => logout()}
+            sx={{
+              color: muiTheme.palette.text.secondary,
+              '&:hover': {
+                color: muiTheme.palette.error.main,
+                backgroundColor: isDark ? 'rgba(244, 63, 94, 0.1)' : 'rgba(220, 38, 38, 0.08)',
+              },
+            }}
+          >
+            <LogoutIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    </Box>
+  );
 
-          <div className="flex items-center gap-2.5">
-            {/* Quick Add Trade in top bar for tablet/mobile */}
-            <button
-              onClick={() => setIsTradeModalOpen(true)}
-              className="md:hidden flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white shadow-sm"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Trade</span>
-            </button>
+  return (
+    <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {/* Mobile Drawer */}
+      {isMobile ? (
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            display: { xs: 'block', md: 'none' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DRAWER_WIDTH },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
+      ) : (
+        /* Desktop Persistent Collapsible Drawer */
+        <Drawer
+          variant="permanent"
+          sx={{
+            display: { xs: 'none', md: 'block' },
+            width: currentDrawerWidth,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: currentDrawerWidth,
+              boxSizing: 'border-box',
+              transition: muiTheme.transitions.create('width', {
+                easing: muiTheme.transitions.easing.sharp,
+                duration: muiTheme.transitions.duration.enteringScreen,
+              }),
+              overflowX: 'hidden',
+            },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
+      )}
 
-            {/* Theme Toggle */}
-            <button
-              id="theme-toggle-btn"
-              onClick={toggleTheme}
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              title={resolvedTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              aria-label={resolvedTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {resolvedTheme === 'dark' ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-slate-700" />}
-            </button>
-          </div>
-        </header>
+      {/* Main Execution Shell */}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
+          overflow: 'hidden',
+          backgroundColor: muiTheme.palette.background.default,
+        }}
+      >
+        {/* Top Header / App Bar */}
+        <AppBar
+          position="static"
+          elevation={0}
+          sx={{
+            height: 64,
+            justifyContent: 'center',
+            backgroundColor: isDark
+              ? 'rgba(11, 15, 25, 0.85)'
+              : 'rgba(248, 250, 252, 0.85)',
+            backdropFilter: 'blur(10px)',
+            borderBottom: `1px solid ${muiTheme.palette.divider}`,
+            color: muiTheme.palette.text.primary,
+            px: { xs: 2, md: 3 },
+          }}
+        >
+          <Toolbar disableGutters sx={{ minHeight: '64px !important', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {isMobile && (
+                <IconButton
+                  color="inherit"
+                  aria-label="open drawer"
+                  edge="start"
+                  onClick={() => setMobileOpen(true)}
+                  size="small"
+                  sx={{ mr: 0.5 }}
+                >
+                  <MenuIcon />
+                </IconButton>
+              )}
 
-        {/* Page Content Body */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+              {/* Global Account Selector */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: muiTheme.palette.text.secondary,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    display: { xs: 'none', sm: 'inline' },
+                  }}
+                >
+                  Account:
+                </Typography>
+                <FormControl size="small">
+                  <Select
+                    value={selectedAccountId}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    sx={{
+                      height: 36,
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(255, 255, 255, 0.9)',
+                      borderRadius: 2,
+                    }}
+                  >
+                    <MenuItem value="ALL">
+                      <em>All Accounts (Consolidated)</em>
+                    </MenuItem>
+                    {accounts.map((acc: any) => (
+                      <MenuItem key={acc.id} value={acc.id}>
+                        {acc.name} ({acc.broker} • {acc.baseCurrency})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            </Box>
+
+            {/* Top Bar Actions */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              {/* Mobile Quick Trade Button */}
+              {isMobile && (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  onClick={() => setIsTradeModalOpen(true)}
+                  startIcon={<AddIcon />}
+                  sx={{ borderRadius: 2, fontWeight: 700, fontSize: '0.75rem', py: 0.75 }}
+                >
+                  Trade
+                </Button>
+              )}
+
+              {/* Theme Toggle Button */}
+              <Tooltip
+                title={resolvedTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                arrow
+              >
+                <IconButton
+                  id="theme-toggle-btn"
+                  onClick={toggleTheme}
+                  size="small"
+                  aria-label={resolvedTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                    backgroundColor: isDark ? 'rgba(17, 24, 39, 0.5)' : 'rgba(255, 255, 255, 0.8)',
+                    color: resolvedTheme === 'dark' ? '#F59E0B' : '#475569',
+                    '&:hover': {
+                      backgroundColor: muiTheme.palette.action.hover,
+                      borderColor: muiTheme.palette.primary.main,
+                    },
+                  }}
+                >
+                  {resolvedTheme === 'dark' ? (
+                    <LightModeIcon sx={{ fontSize: 19 }} />
+                  ) : (
+                    <DarkModeIcon sx={{ fontSize: 19 }} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </Toolbar>
+        </AppBar>
+
+        {/* Dynamic Page Workspace */}
+        <Box
+          sx={{
+            flex: 1,
+            overflowY: 'auto',
+            p: { xs: 2, sm: 3, md: 4 },
+          }}
+        >
           <Outlet context={{ selectedAccountId }} />
-        </main>
-      </div>
+        </Box>
+      </Box>
 
       {/* Manual Trade Entry Modal */}
       <TradeFormModal
@@ -227,6 +521,6 @@ export function AppLayout() {
         onClose={() => setIsTradeModalOpen(false)}
         defaultAccountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
       />
-    </div>
+    </Box>
   );
 }

@@ -1,37 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import Tabs from '@mui/material/Tabs';
-import Tab from '@mui/material/Tab';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
-import CircularProgress from '@mui/material/CircularProgress';
-import CloseIcon from '@mui/icons-material/Close';
-import TuneIcon from '@mui/icons-material/TuneRounded';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoneyRounded';
-import SecurityIcon from '@mui/icons-material/SecurityRounded';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
-import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
-
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Box,
+  Typography,
+  Button,
+  IconButton,
+  CircularProgress,
+  Chip,
+  ToggleButtonGroup,
+  ToggleButton,
+  Divider,
+  Alert,
+  Tooltip,
+  useTheme as useMuiTheme,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+} from '@mui/material';
+import {
+  CloseRounded,
+  BoltRounded,
+  MenuBookRounded,
+  LayersRounded,
+  CheckCircleRounded,
+  WarningAmberRounded,
+  ExpandMoreRounded,
+  PsychologyRounded,
+  ReceiptLongRounded,
+  SwapHorizRounded,
+} from '@mui/icons-material';
 import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
+  calculateFIFOExecution,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { TradeCalculationBanner } from './form/TradeCalculationBanner.js';
-import { TradeIdentityTab } from './form/TradeIdentityTab.js';
-import { TradeExecutionTab } from './form/TradeExecutionTab.js';
-import { TradeRiskTab } from './form/TradeRiskTab.js';
-import { TradeThesisTab } from './form/TradeThesisTab.js';
-import { TradePsychologyTab } from './form/TradePsychologyTab.js';
+import { TradeTemplateSelector } from './form/TradeTemplateSelector.js';
+import { TradeQuickSection } from './form/TradeQuickSection.js';
+import { TradeAdvancedFills } from './form/TradeAdvancedFills.js';
+import { TradeJournalDetails } from './form/TradeJournalDetails.js';
+import {
+  getRememberedTradePreferences,
+  saveRememberedTradePreferences,
+  TradeSetupTemplate,
+} from './tradeTemplates.js';
 
 interface TradeFormModalProps {
   isOpen: boolean;
@@ -52,15 +71,24 @@ export function TradeFormModal({
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
-  const [activeTab, setActiveTab] = useState<'IDENTITY' | 'EXECUTION' | 'RISK' | 'THESIS' | 'PSYCHOLOGY'>('IDENTITY');
+  // Workflow mode: 'QUICK' for express trade logging; 'COMPREHENSIVE' for deep journaling
+  const [workflowMode, setWorkflowMode] = useState<'QUICK' | 'COMPREHENSIVE'>('QUICK');
   const [executionMode, setExecutionMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [templateNotice, setTemplateNotice] = useState<string | null>(null);
 
-  // Fetch accounts, instruments, strategies
+  // Reference data
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
   const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
 
-  const defaultAccount = defaultAccountId || accounts[0]?.id || '';
+  // Determine initial account default safely
+  const rememberedPrefs = useMemo(() => getRememberedTradePreferences(), []);
+  const initialAccountId =
+    defaultAccountId ||
+    rememberedPrefs.preferredAccountId ||
+    accounts[0]?.id ||
+    '';
 
   const {
     register,
@@ -72,8 +100,8 @@ export function TradeFormModal({
     formState: { errors, isSubmitting, isDirty },
   } = useForm<any>({
     defaultValues: {
-      accountId: defaultAccount,
-      symbol: 'NIFTY',
+      accountId: initialAccountId,
+      symbol: rememberedPrefs.preferredSymbol || 'NIFTY',
       assetClass: 'FUTURES',
       exchange: 'NSE',
       marketSegment: 'NSE_FNO',
@@ -139,81 +167,161 @@ export function TradeFormModal({
     name: 'fills',
   });
 
-  // Watch fields for live calculation preview
-  const watchedDirection = watch('direction');
-  const watchedStatus = watch('status');
+  // Watch form fields for live calculation previews
+  const watchedDirection = watch('direction') || 'LONG';
+  const watchedStatus = watch('status') || 'CLOSED';
   const watchedSimple = watch('simpleExecution');
+  const watchedFills = watch('fills') || [];
   const watchedRisk = watch('risk');
+  const watchedSymbol = watch('symbol');
+  const watchedAccountId = watch('accountId');
 
-  // Load initial values or edit values when opening modal
+  // Handle edit values or initial opening
   useEffect(() => {
     if (initialValues) {
       reset({
         ...initialValues,
-        tagsInput: initialValues.tags?.join(', ') || '',
+        tagsInput: Array.isArray(initialValues.tags)
+          ? initialValues.tags.join(', ')
+          : (initialValues.tagsInput || ''),
+        tradeDate: initialValues.tradeDate
+          ? initialValues.tradeDate.split('T')[0]
+          : new Date().toISOString().split('T')[0],
+        entryTime: initialValues.entryTime
+          ? initialValues.entryTime.slice(0, 16)
+          : new Date().toISOString().slice(0, 16),
+        exitTime: initialValues.exitTime
+          ? initialValues.exitTime.slice(0, 16)
+          : new Date().toISOString().slice(0, 16),
       });
       if (initialValues.executionMode) {
         setExecutionMode(initialValues.executionMode);
       }
+      // If editing a trade with journal fields, open in COMPREHENSIVE mode
+      if (
+        initialValues.thesis?.entryRationale ||
+        initialValues.psychology?.notes ||
+        (initialValues.fills && initialValues.fills.length > 0)
+      ) {
+        setWorkflowMode('COMPREHENSIVE');
+      }
+    } else if (!editTradeId) {
+      // Fresh trade: establish clean defaults with remembered preferences
+      const prefs = getRememberedTradePreferences();
+      if (prefs.preferredWorkflow) {
+        setWorkflowMode(prefs.preferredWorkflow);
+      }
+      if (prefs.preferredAccountId && (!watch('accountId') || watch('accountId') === '')) {
+        setValue('accountId', prefs.preferredAccountId);
+      }
+      if (prefs.preferredSymbol && (!watch('symbol') || watch('symbol') === '')) {
+        setValue('symbol', prefs.preferredSymbol);
+      }
     }
-  }, [initialValues, reset]);
+  }, [initialValues, editTradeId, reset, setValue]);
 
-  // Live P&L and Risk computation
+  // Persist preferences safely when user actively changes symbol or account
+  useEffect(() => {
+    if (!editTradeId && watchedAccountId && watchedSymbol) {
+      saveRememberedTradePreferences({
+        preferredAccountId: watchedAccountId,
+        preferredSymbol: watchedSymbol,
+        preferredWorkflow: workflowMode,
+      });
+    }
+  }, [watchedAccountId, watchedSymbol, workflowMode, editTradeId]);
+
+  // Live P&L, Execution & Risk Computation using financial-engine
   let liveGross = 0;
   let liveCosts = 0;
   let liveNet = 0;
   let liveOutcome: any = 'BREAKEVEN';
+  let positionExposure = 0;
+  const multiplier = Number(watchedSimple?.contractMultiplier || 1);
 
   if (executionMode === 'SIMPLE' && watchedSimple) {
     try {
+      const entryP = Number(watchedSimple.entryPrice) || 0;
+      const exitP = watchedStatus === 'OPEN' ? undefined : (Number(watchedSimple.exitPrice) || undefined);
+      const qty = Number(watchedSimple.quantity) || 1;
+
+      positionExposure = entryP * qty * multiplier;
+
       const calc = calculateSimpleExecutionPnL(watchedDirection, {
-        entryPrice: watchedSimple.entryPrice || 0,
-        exitPrice: watchedSimple.exitPrice || undefined,
-        quantity: watchedSimple.quantity || 1,
-        contractMultiplier: watchedSimple.contractMultiplier || 1,
-        brokerage: watchedSimple.brokerage || 0,
-        exchangeFees: watchedSimple.exchangeFees || 0,
-        regulatoryFees: watchedSimple.regulatoryFees || 0,
-        taxes: watchedSimple.taxes || 0,
-        otherFees: watchedSimple.otherFees || 0,
-        explicitAdjustments: watchedSimple.explicitAdjustments || 0,
+        entryPrice: entryP,
+        exitPrice: exitP,
+        quantity: qty,
+        contractMultiplier: multiplier,
+        brokerage: Number(watchedSimple.brokerage) || 0,
+        exchangeFees: Number(watchedSimple.exchangeFees) || 0,
+        regulatoryFees: Number(watchedSimple.regulatoryFees) || 0,
+        taxes: Number(watchedSimple.taxes) || 0,
+        otherFees: Number(watchedSimple.otherFees) || 0,
+        explicitAdjustments: Number(watchedSimple.explicitAdjustments) || 0,
       });
+
       liveGross = calc.grossPnLNumber;
       liveCosts = calc.totalCostsNumber;
       liveNet = calc.netPnLNumber;
       liveOutcome = watchedStatus === 'OPEN' ? 'OPEN' : calc.outcome;
     } catch {
-      // Incomplete fields
+      // Incomplete values during typing
+    }
+  } else if (executionMode === 'ADVANCED' && watchedFills.length > 0) {
+    try {
+      const fifo = calculateFIFOExecution(watchedDirection, watchedFills, multiplier);
+      liveGross = Number(fifo.realizedGrossPnL.toFixed(2));
+      liveCosts = Number(fifo.totalCosts.toFixed(2));
+      liveNet = Number(fifo.realizedNetPnL.toFixed(2));
+      liveOutcome = watchedStatus === 'OPEN' ? 'OPEN' : fifo.outcome;
+      positionExposure = Number(fifo.weightedAvgEntryPrice.toFixed(2)) * fifo.closedQuantity.plus(fifo.openQuantity).toNumber() * multiplier;
+    } catch {
+      // Incomplete fills
     }
   }
 
-  // Calculate live R
-  let plannedRiskAmount = watchedRisk?.riskBudgetAmount || 0;
-  if (!plannedRiskAmount && watchedRisk?.plannedEntryPrice && watchedRisk?.initialStopLoss) {
-    const dist = Math.abs(watchedRisk.plannedEntryPrice - watchedRisk.initialStopLoss);
-    const qty = watchedSimple?.quantity || 1;
-    const mult = watchedSimple?.contractMultiplier || 1;
-    plannedRiskAmount = dist * qty * mult;
+  // Calculate live planned risk
+  let plannedRiskAmount = Number(watchedRisk?.riskBudgetAmount) || 0;
+  const pEntry = Number(watchedRisk?.plannedEntryPrice || watchedSimple?.entryPrice) || 0;
+  const pStop = Number(watchedRisk?.initialStopLoss) || 0;
+  const pTarget = Number(watchedRisk?.plannedTarget) || 0;
+
+  if (!plannedRiskAmount && pEntry > 0 && pStop > 0) {
+    const dist = Math.abs(pEntry - pStop);
+    const qty = Number(watchedSimple?.quantity) || 1;
+    plannedRiskAmount = dist * qty * multiplier;
   }
+
   const liveRealizedR = calculateRealizedRMultiple(liveNet, plannedRiskAmount);
 
-  // Direction validity
+  // Direction validity audit (prevents buying high with a stop above entry or selling low with stop below entry)
   let isDirectionValid = true;
-  if (watchedRisk?.plannedEntryPrice && watchedRisk?.initialStopLoss) {
-    if (watchedDirection === 'LONG' && watchedRisk.initialStopLoss >= watchedRisk.plannedEntryPrice) {
+  if (pEntry > 0 && pStop > 0) {
+    if (watchedDirection === 'LONG' && pStop >= pEntry) {
       isDirectionValid = false;
-    } else if (watchedDirection === 'SHORT' && watchedRisk.initialStopLoss <= watchedRisk.plannedEntryPrice) {
+    } else if (watchedDirection === 'SHORT' && pStop <= pEntry) {
       isDirectionValid = false;
     }
   }
 
-  // Submit mutations
+  // Potential Reward-to-Risk ratio preview
+  let plannedRewardRiskRatio: number | undefined;
+  if (pEntry > 0 && pStop > 0 && pTarget > 0) {
+    const riskDist = Math.abs(pEntry - pStop);
+    const rewardDist = Math.abs(pTarget - pEntry);
+    if (riskDist > 0) {
+      plannedRewardRiskRatio = Number((rewardDist / riskDist).toFixed(2));
+    }
+  }
+
+  // Mutations
   const createMutation = useMutation({
     mutationFn: (tradeData: any) => api.trades.create(tradeData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['strategies'] });
       onClose();
     },
   });
@@ -224,10 +332,144 @@ export function TradeFormModal({
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['strategies'] });
       onClose();
     },
   });
 
+  // Template handling: never copies prices, timestamps, or P&L
+  const handleSelectTemplate = (template: TradeSetupTemplate) => {
+    setValue('symbol', template.symbol, { shouldDirty: true });
+    setValue('assetClass', template.assetClass, { shouldDirty: true });
+    setValue('direction', template.direction, { shouldDirty: true });
+    if (template.session) setValue('session', template.session, { shouldDirty: true });
+    if (template.strategyId) setValue('strategyId', template.strategyId, { shouldDirty: true });
+    if (template.riskBudgetAmount) setValue('risk.riskBudgetAmount', template.riskBudgetAmount, { shouldDirty: true });
+    if (template.confluences) setValue('thesis.confluences', template.confluences, { shouldDirty: true });
+    if (template.preMarketBias) setValue('thesis.preMarketBias', template.preMarketBias, { shouldDirty: true });
+    if (template.marketStructure) setValue('thesis.marketStructure', template.marketStructure, { shouldDirty: true });
+    if (template.tags && template.tags.length > 0) {
+      setValue('tagsInput', template.tags.join(', '), { shouldDirty: true });
+    }
+
+    // Auto-update lot size and instrument metadata
+    const match = instruments.find((i: any) => i.symbol === template.symbol);
+    if (match) {
+      if (match.exchange) setValue('exchange', match.exchange);
+      if (match.marketSegment) setValue('marketSegment', match.marketSegment);
+      if (match.lotSize) setValue('simpleExecution.quantity', match.lotSize);
+      if (match.contractMultiplier) setValue('simpleExecution.contractMultiplier', match.contractMultiplier);
+    }
+
+    setTemplateNotice(`Setup template applied: "${template.name}". Set your execution prices.`);
+    setTimeout(() => setTemplateNotice(null), 4000);
+  };
+
+  const handleResetDefaults = () => {
+    const prefs = getRememberedTradePreferences();
+    const acc = defaultAccountId || prefs.preferredAccountId || accounts[0]?.id || '';
+    reset({
+      accountId: acc,
+      symbol: 'NIFTY',
+      assetClass: 'FUTURES',
+      exchange: 'NSE',
+      marketSegment: 'NSE_FNO',
+      direction: 'LONG',
+      status: 'CLOSED',
+      strategyId: '',
+      tradeDate: new Date().toISOString().split('T')[0],
+      entryTime: new Date().toISOString().slice(0, 16),
+      exitTime: new Date().toISOString().slice(0, 16),
+      session: 'NSE_REGULAR',
+      tradeTitle: '',
+      tagsInput: '',
+
+      simpleExecution: {
+        entryPrice: 24000,
+        exitPrice: 24100,
+        quantity: 25,
+        contractMultiplier: 1,
+        brokerage: 40,
+        exchangeFees: 30,
+        regulatoryFees: 5,
+        taxes: 80,
+        otherFees: 0,
+        explicitAdjustments: 0,
+      },
+
+      fills: [],
+
+      risk: {
+        plannedEntryPrice: 24000,
+        initialStopLoss: 23940,
+        plannedTarget: 24150,
+        riskBudgetAmount: 2500,
+      },
+
+      thesis: {
+        preMarketBias: 'BULLISH',
+        marketStructure: 'TRENDING_UP',
+        entryRationale: '',
+        confluences: ['BOS', 'FVG'],
+      },
+
+      psychology: {
+        emotionBefore: 'CALM',
+        emotionDuring: 'CONFIDENT',
+        emotionAfter: 'DISCIPLINED',
+        disciplineScore: 5,
+        rulesFollowed: true,
+        checklistCompleted: true,
+        revengeTrading: false,
+        overtrading: false,
+        prematureExit: false,
+        stopLossMoved: false,
+        positionSizeViolation: false,
+        mistakes: [],
+        notes: '',
+      },
+    });
+    setExecutionMode('SIMPLE');
+    setWorkflowMode('QUICK');
+  };
+
+  const getCurrentFormStateForTemplate = (): Omit<TradeSetupTemplate, 'id' | 'isBuiltIn'> => {
+    const vals = watch();
+    return {
+      name: vals.tradeTitle || `${vals.symbol} Setup`,
+      description: `Setup template for ${vals.symbol} ${vals.direction}`,
+      symbol: vals.symbol || 'NIFTY',
+      assetClass: vals.assetClass || 'FUTURES',
+      exchange: vals.exchange || 'NSE',
+      marketSegment: vals.marketSegment || 'NSE_FNO',
+      direction: vals.direction || 'LONG',
+      session: vals.session || 'NSE_REGULAR',
+      strategyId: vals.strategyId || '',
+      riskBudgetAmount: Number(vals.risk?.riskBudgetAmount) || 2000,
+      confluences: vals.thesis?.confluences || [],
+      tags: vals.tagsInput
+        ? vals.tagsInput.split(',').map((t: string) => t.trim().toUpperCase()).filter(Boolean)
+        : [],
+      preMarketBias: vals.thesis?.preMarketBias || 'BULLISH',
+      marketStructure: vals.thesis?.marketStructure || 'TRENDING_UP',
+    };
+  };
+
+  // Safe dismiss with unsaved changes verification
+  const handleRequestClose = () => {
+    if (isDirty) {
+      setDiscardConfirmOpen(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    setDiscardConfirmOpen(false);
+    onClose();
+  };
+
+  // Submission handler
   const onSubmit = async (data: any) => {
     const tags = data.tagsInput
       ? data.tagsInput
@@ -236,8 +478,24 @@ export function TradeFormModal({
           .filter(Boolean)
       : [];
 
+    // In advanced execution mode, ensure simpleExecution holds the calculated average prices
+    let simpleExecPayload = { ...data.simpleExecution };
+    if (executionMode === 'ADVANCED' && watchedFills.length > 0) {
+      try {
+        const fifo = calculateFIFOExecution(data.direction, watchedFills, multiplier);
+        simpleExecPayload.entryPrice = Number(fifo.weightedAvgEntryPrice.toFixed(4));
+        if (fifo.weightedAvgExitPrice) {
+          simpleExecPayload.exitPrice = Number(fifo.weightedAvgExitPrice.toFixed(4));
+        }
+        simpleExecPayload.quantity = fifo.closedQuantity.plus(fifo.openQuantity).toNumber();
+      } catch {
+        // Fallback to existing
+      }
+    }
+
     const payload = {
       ...data,
+      simpleExecution: simpleExecPayload,
       tags,
       executionMode,
     };
@@ -250,126 +508,196 @@ export function TradeFormModal({
     }
   };
 
-  const handleClose = () => {
-    if (isDirty) {
-      if (window.confirm('You have unsaved changes. Discard and close?')) {
-        onClose();
-      }
-    } else {
-      onClose();
-    }
-  };
-
   return (
-    <Dialog
-      open={isOpen}
-      onClose={handleClose}
-      maxWidth="md"
-      fullWidth
-      scroll="paper"
-      aria-labelledby="trade-dialog-title"
-      slotProps={{
-        paper: {
-          sx: {
-            borderRadius: 3,
-            maxHeight: '90vh',
+    <>
+      <Dialog
+        open={isOpen}
+        onClose={handleRequestClose}
+        maxWidth="lg"
+        fullWidth
+        scroll="paper"
+        aria-labelledby="trade-entry-dialog-title"
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 3,
+              maxHeight: '94vh',
+              border: `1px solid ${muiTheme.palette.divider}`,
+              backgroundImage: 'none',
+              boxShadow: isDark
+                ? '0 24px 48px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)'
+                : '0 24px 48px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+            },
           },
-        },
-        backdrop: {
-          sx: { backdropFilter: 'blur(4px)' },
-        },
-      }}
-    >
-      {/* Dialog Title */}
-      <DialogTitle
-        id="trade-dialog-title"
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          px: 3,
-          py: 2,
-          borderBottom: `1px solid ${muiTheme.palette.divider}`,
-          backgroundColor: isDark ? 'rgba(17, 24, 39, 0.7)' : 'rgba(248, 250, 252, 0.8)',
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(6px)',
+              backgroundColor: isDark ? 'rgba(3, 7, 18, 0.75)' : 'rgba(15, 23, 42, 0.5)',
+            },
+          },
         }}
       >
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.05rem', color: muiTheme.palette.text.primary }}>
-            {editTradeId ? 'Edit Trade Entry' : 'Log New Manual Trade'}
-          </Typography>
-          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-            Deterministic monetary calculations, risk controls, and execution audit log
-          </Typography>
+        {/* Modal Header */}
+        <DialogTitle
+          id="trade-entry-dialog-title"
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 1.5,
+            px: 3,
+            py: 2,
+            borderBottom: `1px solid ${muiTheme.palette.divider}`,
+            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(248, 250, 252, 0.95)',
+          }}
+        >
+          {/* Title & Badge */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 38,
+                height: 38,
+                borderRadius: 2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                color: muiTheme.palette.primary.main,
+                border: `1px solid ${isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)'}`,
+              }}
+            >
+              <BoltRounded sx={{ fontSize: 22 }} />
+            </Box>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1.125rem', letterSpacing: '-0.02em' }}>
+                  {editTradeId ? 'Edit Trade Record' : 'Record New Trade'}
+                </Typography>
+                <Chip
+                  size="small"
+                  label={executionMode === 'ADVANCED' ? 'FIFO Multi-Fill' : 'Simple Fill'}
+                  sx={{
+                    height: 20,
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    fontFamily: `'JetBrains Mono', monospace`,
+                    backgroundColor: executionMode === 'ADVANCED' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    color: executionMode === 'ADVANCED' ? '#818cf8' : '#34d399',
+                    border: `1px solid ${executionMode === 'ADVANCED' ? 'rgba(99, 102, 241, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                  }}
+                />
+              </Box>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                High-precision execution auditing, live risk metrics & psychological tracking
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Header Controls: Workflow Mode Toggle + Templates + Execution Switch */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            {/* Express vs Comprehensive Workflow Switcher */}
+            <ToggleButtonGroup
+              size="small"
+              value={workflowMode}
+              exclusive
+              onChange={(_e, val) => val && setWorkflowMode(val)}
+              sx={{
+                height: 32,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)',
+                border: `1px solid ${muiTheme.palette.divider}`,
+                borderRadius: 2,
+                '& .MuiToggleButton-root': {
+                  px: 1.5,
+                  py: 0.5,
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  gap: 0.75,
+                  border: 'none',
+                  '&.Mui-selected': {
+                    backgroundColor: muiTheme.palette.primary.main,
+                    color: '#fff',
+                    '&:hover': {
+                      backgroundColor: muiTheme.palette.primary.dark,
+                    },
+                  },
+                },
+              }}
+            >
+              <ToggleButton value="QUICK">
+                <BoltRounded sx={{ fontSize: 16 }} />
+                Express Entry
+              </ToggleButton>
+              <ToggleButton value="COMPREHENSIVE">
+                <MenuBookRounded sx={{ fontSize: 16 }} />
+                Comprehensive Journal
+              </ToggleButton>
+            </ToggleButtonGroup>
+
+            {/* Template Selector */}
+            <TradeTemplateSelector
+              onSelectTemplate={handleSelectTemplate}
+              onResetDefaults={handleResetDefaults}
+              getCurrentFormStateForTemplate={getCurrentFormStateForTemplate}
+            />
+
+            {/* Close Button */}
+            <IconButton
+              size="small"
+              onClick={handleRequestClose}
+              sx={{
+                color: muiTheme.palette.text.secondary,
+                '&:hover': {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                  color: muiTheme.palette.text.primary,
+                },
+              }}
+            >
+              <CloseRounded fontSize="small" />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+
+        {/* Real-Time Financial Calculations Ribbon */}
+        <Box sx={{ px: 3, pt: 2.5, pb: 1 }}>
+          <TradeCalculationBanner
+            grossPnL={liveGross}
+            totalCosts={liveCosts}
+            netPnL={liveNet}
+            outcome={liveOutcome}
+            realizedR={liveRealizedR}
+            plannedRisk={plannedRiskAmount}
+            status={watchedStatus}
+            isDirectionValid={isDirectionValid}
+            rewardRiskRatio={plannedRewardRiskRatio}
+            positionValue={positionExposure}
+          />
+
+          {templateNotice && (
+            <Alert
+              severity="success"
+              icon={<CheckCircleRounded fontSize="small" />}
+              sx={{ mt: 1.5, py: 0.5, borderRadius: 2, fontSize: '0.8125rem' }}
+            >
+              {templateNotice}
+            </Alert>
+          )}
         </Box>
-        <IconButton
-          size="small"
-          onClick={handleClose}
-          sx={{ color: muiTheme.palette.text.secondary }}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
 
-      {/* Live Calculation Banner */}
-      <Box sx={{ px: 3, pt: 2 }}>
-        <TradeCalculationBanner
-          grossPnL={liveGross}
-          totalCosts={liveCosts}
-          netPnL={liveNet}
-          outcome={liveOutcome}
-          realizedR={liveRealizedR}
-          plannedRisk={plannedRiskAmount}
-          status={watchedStatus}
-          isDirectionValid={isDirectionValid}
-        />
-      </Box>
-
-      {/* Tab Selector */}
-      <Box sx={{ px: 3, pt: 1, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
-        <Tabs
-          value={activeTab}
-          onChange={(_e, val) => setActiveTab(val)}
-          variant="scrollable"
-          scrollButtons="auto"
-        >
-          <Tab
-            value="IDENTITY"
-            label="Trade Identity"
-            icon={<TuneIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-          />
-          <Tab
-            value="EXECUTION"
-            label="Execution & Fills"
-            icon={<AttachMoneyIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-          />
-          <Tab
-            value="RISK"
-            label="Risk Parameters"
-            icon={<SecurityIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-          />
-          <Tab
-            value="THESIS"
-            label="Thesis & Context"
-            icon={<AutoAwesomeIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-          />
-          <Tab
-            value="PSYCHOLOGY"
-            label="Psychology & Rules"
-            icon={<PsychologyIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-          />
-        </Tabs>
-      </Box>
-
-      {/* Form Body */}
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <DialogContent sx={{ p: 3 }}>
-          {activeTab === 'IDENTITY' && (
-            <TradeIdentityTab
+        {/* Modal Body / Scrollable Form */}
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <DialogContent
+            sx={{
+              p: 3,
+              pt: 1.5,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2.5,
+            }}
+          >
+            {/* Primary Express Trade Entry Section */}
+            <TradeQuickSection
               register={register}
               watch={watch}
               setValue={setValue}
@@ -377,81 +705,212 @@ export function TradeFormModal({
               instruments={instruments}
               strategies={strategies}
             />
-          )}
 
-          {activeTab === 'EXECUTION' && (
-            <TradeExecutionTab
-              register={register}
-              watch={watch}
-              executionMode={executionMode}
-              setExecutionMode={setExecutionMode}
-              fillsFieldArray={fillsFieldArray}
-            />
-          )}
+            {/* Execution Mode Toggle Bar */}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                px: 2,
+                py: 1.25,
+                borderRadius: 2,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                border: `1px dashed ${muiTheme.palette.divider}`,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LayersRounded sx={{ fontSize: 18, color: muiTheme.palette.text.secondary }} />
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Execution Engine Mode:
+                </Typography>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                  {executionMode === 'SIMPLE'
+                    ? 'Single Entry & Exit Price (Standard)'
+                    : 'Real-time FIFO Matching with multiple scaled entries & partial profit scales'}
+                </Typography>
+              </Box>
 
-          {activeTab === 'RISK' && (
-            <TradeRiskTab register={register} watch={watch} />
-          )}
+              <Button
+                size="small"
+                variant={executionMode === 'ADVANCED' ? 'contained' : 'outlined'}
+                color={executionMode === 'ADVANCED' ? 'secondary' : 'inherit'}
+                onClick={() => setExecutionMode((prev) => (prev === 'SIMPLE' ? 'ADVANCED' : 'SIMPLE'))}
+                startIcon={<SwapHorizRounded />}
+                sx={{
+                  textTransform: 'none',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  borderRadius: 1.5,
+                }}
+              >
+                {executionMode === 'SIMPLE' ? 'Switch to Multi-Fill (FIFO)' : 'Switch to Simple Fill'}
+              </Button>
+            </Box>
 
-          {activeTab === 'THESIS' && (
-            <TradeThesisTab register={register} watch={watch} setValue={setValue} />
-          )}
+            {/* Advanced Multi-Fill Section (if executionMode === 'ADVANCED') */}
+            {executionMode === 'ADVANCED' && (
+              <TradeAdvancedFills
+                register={register}
+                watch={watch}
+                fillsFieldArray={fillsFieldArray}
+              />
+            )}
 
-          {activeTab === 'PSYCHOLOGY' && (
-            <TradePsychologyTab register={register} watch={watch} setValue={setValue} />
-          )}
-        </DialogContent>
+            {/* Comprehensive Journal Section (Progressive disclosure or when workflowMode === 'COMPREHENSIVE') */}
+            {workflowMode === 'COMPREHENSIVE' ? (
+              <TradeJournalDetails
+                register={register}
+                watch={watch}
+                setValue={setValue}
+              />
+            ) : (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  p: 2,
+                  borderRadius: 2,
+                  border: `1px dashed ${muiTheme.palette.divider}`,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(0, 0, 0, 0.01)',
+                }}
+              >
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => setWorkflowMode('COMPREHENSIVE')}
+                  startIcon={<PsychologyRounded />}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.8125rem',
+                    color: muiTheme.palette.text.secondary,
+                    '&:hover': { color: muiTheme.palette.primary.main },
+                  }}
+                >
+                  Expand Comprehensive Post-Trade Journal (Confluences, Psychology, Mistakes & Notes) ➔
+                </Button>
+              </Box>
+            )}
+          </DialogContent>
 
-        {/* Footer Actions */}
-        <DialogActions
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            px: 3,
-            py: 2,
-            borderTop: `1px solid ${muiTheme.palette.divider}`,
-            backgroundColor: isDark ? 'rgba(17, 24, 39, 0.4)' : 'rgba(248, 250, 252, 0.5)',
-          }}
-        >
-          <Typography
-            variant="caption"
+          {/* Sticky Dialog Footer */}
+          <DialogActions
             sx={{
-              fontFamily: `'JetBrains Mono', monospace`,
-              fontSize: '0.6875rem',
-              color: muiTheme.palette.text.secondary,
-              display: { xs: 'none', sm: 'inline' },
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              px: 3,
+              py: 2,
+              borderTop: `1px solid ${muiTheme.palette.divider}`,
+              backgroundColor: isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(248, 250, 252, 0.95)',
             }}
           >
-            All financial values calculated with 30-digit decimal arithmetic.
-          </Typography>
+            {/* Trust and precision note */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ReceiptLongRounded sx={{ fontSize: 16, color: muiTheme.palette.text.secondary }} />
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: `'JetBrains Mono', monospace`,
+                  fontSize: '0.75rem',
+                  color: muiTheme.palette.text.secondary,
+                  display: { xs: 'none', sm: 'inline' },
+                }}
+              >
+                Monetary calculations verified with 30-digit precision arithmetic.
+              </Typography>
+            </Box>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Button
-              variant="outlined"
-              onClick={handleClose}
-              sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
-              sx={{ fontWeight: 700, fontSize: '0.8125rem', px: 3 }}
-            >
-              {isSubmitting || createMutation.isPending || updateMutation.isPending ? (
-                <CircularProgress size={18} color="inherit" />
-              ) : editTradeId ? (
-                'Update Trade'
-              ) : (
-                'Save Trade Entry'
-              )}
-            </Button>
-          </Box>
+            {/* Action Buttons */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                variant="outlined"
+                color="inherit"
+                onClick={handleRequestClose}
+                sx={{
+                  fontWeight: 600,
+                  fontSize: '0.8125rem',
+                  borderRadius: 2,
+                  textTransform: 'none',
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '0.8125rem',
+                  px: 3.5,
+                  py: 1,
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                {isSubmitting || createMutation.isPending || updateMutation.isPending ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : editTradeId ? (
+                  'Update Trade Record'
+                ) : (
+                  'Save Trade Entry'
+                )}
+              </Button>
+            </Box>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* Unsaved Changes Confirmation Modal */}
+      <Dialog
+        open={discardConfirmOpen}
+        onClose={() => setDiscardConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 3,
+              p: 1,
+              border: `1px solid ${muiTheme.palette.divider}`,
+            },
+          },
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.25, pb: 1 }}>
+          <WarningAmberRounded color="warning" />
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem' }}>
+            Discard Unsaved Trade?
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ py: 1 }}>
+          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+            You have unsaved changes in this trade entry. Discarding will permanently lose any entered prices, confluences, or notes.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 2, pb: 1.5 }}>
+          <Button
+            variant="text"
+            onClick={() => setDiscardConfirmOpen(false)}
+            sx={{ fontWeight: 600, textTransform: 'none' }}
+          >
+            Keep Editing
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleConfirmDiscard}
+            sx={{ fontWeight: 700, textTransform: 'none', borderRadius: 2 }}
+          >
+            Discard & Close
+          </Button>
         </DialogActions>
-      </form>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }

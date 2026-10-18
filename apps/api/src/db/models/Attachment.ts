@@ -7,9 +7,12 @@ export interface IAttachmentDoc extends Document {
   storedFilename: string;
   mimeType: string;
   sizeBytes: number;
-  category: 'BEFORE_ENTRY' | 'ENTRY' | 'EXIT' | 'ANNOTATED' | 'ATTACHMENT';
+  category: 'SETUP' | 'ENTRY' | 'EXIT' | 'REVIEW' | 'OTHER' | 'BEFORE_ENTRY' | 'ANNOTATED' | 'ATTACHMENT';
   description?: string;
+  timeframe?: string;
+  chartTimestamp?: string;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const AttachmentSchema = new Schema<IAttachmentDoc>(
@@ -31,14 +34,17 @@ const AttachmentSchema = new Schema<IAttachmentDoc>(
     sizeBytes: { type: Number, required: true },
     category: {
       type: String,
-      enum: ['BEFORE_ENTRY', 'ENTRY', 'EXIT', 'ANNOTATED', 'ATTACHMENT'],
+      enum: ['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT'],
       default: 'ENTRY',
     },
     description: { type: String },
+    timeframe: { type: String },
+    chartTimestamp: { type: String },
   },
   { timestamps: true }
 );
 
 AttachmentSchema.index({ userId: 1, tradeId: 1 });
+AttachmentSchema.index({ tradeId: 1, category: 1 });
 
 export const Attachment = mongoose.model<IAttachmentDoc>('Attachment', AttachmentSchema);

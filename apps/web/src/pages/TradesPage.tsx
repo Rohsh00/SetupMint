@@ -39,6 +39,7 @@ import LocalOfferIcon from '@mui/icons-material/LocalOfferRounded';
 import FilterAltOffIcon from '@mui/icons-material/FilterAltOffRounded';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
+import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
@@ -474,10 +475,32 @@ export function TradesPage() {
                             textDecoration: 'none',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '4px',
+                            gap: '6px',
                           }}
                         >
                           {t.symbol}
+                          {t.screenshotIds && t.screenshotIds.length > 0 && (
+                            <Tooltip title={`${t.screenshotIds.length} chart screenshot${t.screenshotIds.length > 1 ? 's' : ''} attached`}>
+                              <Box
+                                component="span"
+                                sx={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '2px',
+                                  color: muiTheme.palette.primary.main,
+                                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                                  px: 0.6,
+                                  py: 0.15,
+                                  borderRadius: 1,
+                                  fontSize: '0.625rem',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <CollectionsIcon sx={{ fontSize: 12 }} />
+                                {t.screenshotIds.length}
+                              </Box>
+                            </Tooltip>
+                          )}
                         </RouterLink>
                       </TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>

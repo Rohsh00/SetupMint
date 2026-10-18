@@ -162,14 +162,25 @@ export const api = {
 
   // Attachments
   attachments: {
-    upload: (tradeId: string, file: File) => {
+    upload: (
+      tradeId: string,
+      file: File,
+      meta?: { category?: string; caption?: string; timeframe?: string; chartTimestamp?: string }
+    ) => {
       const formData = new FormData();
       formData.append('file', file);
+      if (meta?.category) formData.append('category', meta.category);
+      if (meta?.caption) formData.append('caption', meta.caption);
+      if (meta?.timeframe) formData.append('timeframe', meta.timeframe);
+      if (meta?.chartTimestamp) formData.append('chartTimestamp', meta.chartTimestamp);
       return request<any>(`/attachments/trades/${tradeId}/upload`, {
         method: 'POST',
         body: formData,
       });
     },
+    listForTrade: (tradeId: string) => request<any[]>(`/attachments/trades/${tradeId}`),
+    update: (id: string, updates: { category?: string; caption?: string; timeframe?: string }) =>
+      request<any>(`/attachments/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
     downloadUrl: (id: string) => `${BASE_URL}/attachments/${id}/download`,
     delete: (id: string) => request(`/attachments/${id}`, { method: 'DELETE' }),
   },

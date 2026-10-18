@@ -272,16 +272,30 @@ export interface ICalculatedDetails {
   averageExitPrice?: number;
 }
 
+export type AttachmentCategory =
+  | 'SETUP'
+  | 'ENTRY'
+  | 'EXIT'
+  | 'REVIEW'
+  | 'OTHER'
+  | 'BEFORE_ENTRY'
+  | 'ANNOTATED'
+  | 'ATTACHMENT';
+
 export interface IAttachment {
   id: string;
   userId: string;
   tradeId?: string;
   originalName: string;
-  storedFilename: string;
+  storedFilename?: string;
   mimeType: string;
   sizeBytes: number;
-  category: 'BEFORE_ENTRY' | 'ENTRY' | 'EXIT' | 'ANNOTATED' | 'ATTACHMENT';
+  category: AttachmentCategory;
+  caption?: string;
   description?: string;
+  timeframe?: string;
+  chartTimestamp?: string;
+  downloadUrl?: string;
   createdAt: string;
 }
 
@@ -328,6 +342,7 @@ export interface ITrade {
   calculated: ICalculatedDetails;
 
   screenshotIds: string[];
+  attachments?: IAttachment[];
   auditLog: IAuditEntry[];
 
   createdAt: string;

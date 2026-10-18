@@ -1,5 +1,6 @@
 import {
   AssetClass,
+  AttachmentCategory,
   Confluence,
   Emotion,
   IInstrument,
@@ -259,3 +260,55 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     isActive: true,
   },
 ];
+
+export const CHART_ATTACHMENT_CATEGORIES: {
+  value: AttachmentCategory;
+  label: string;
+  description: string;
+  badgeColor: string;
+}[] = [
+  {
+    value: 'SETUP',
+    label: 'Trade Setup',
+    description: 'Higher timeframe opportunity, market structure, pre-entry context',
+    badgeColor: '#3b82f6',
+  },
+  {
+    value: 'ENTRY',
+    label: 'Entry Trigger',
+    description: 'Execution candle, lower timeframe entry confirmation, order fill point',
+    badgeColor: '#10b981',
+  },
+  {
+    value: 'EXIT',
+    label: 'Exit / Target',
+    description: 'Take profit target, stop loss hit, trailing stop or scale-out execution',
+    badgeColor: '#f59e0b',
+  },
+  {
+    value: 'REVIEW',
+    label: 'Post-Trade Review',
+    description: 'Annotated chart, lessons learned, and trade execution review',
+    badgeColor: '#8b5cf6',
+  },
+  {
+    value: 'OTHER',
+    label: 'Reference / Other',
+    description: 'Macro correlation, orderbook depth, news catalyst, or alternate timeframe',
+    badgeColor: '#64748b',
+  },
+];
+
+export const CHART_TIMEFRAMES = [
+  '1m',
+  '3m',
+  '5m',
+  '15m',
+  '30m',
+  '1h',
+  '2h',
+  '4h',
+  'Daily',
+  'Weekly',
+] as const;
+

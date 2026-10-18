@@ -6,8 +6,11 @@ import {
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
 } from '@tradevault/financial-engine';
+import fs from 'fs';
+import path from 'path';
 import { createTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
-import { TradingAccount, Trade, Strategy, Instrument } from '../db/models/index.js';
+import { TradingAccount, Trade, Strategy, Instrument, Attachment } from '../db/models/index.js';
+import { config } from '../config.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
@@ -275,6 +278,22 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
+    const attachments = await Attachment.find({ tradeId: trade._id, userId: req.user!.id }).sort({ createdAt: 1 });
+    const formattedAttachments = attachments.map((att) => ({
+      id: att._id.toString(),
+      tradeId: trade._id.toString(),
+      originalName: att.originalName,
+      category: att.category,
+      caption: att.description,
+      description: att.description,
+      timeframe: att.timeframe,
+      chartTimestamp: att.chartTimestamp,
+      sizeBytes: att.sizeBytes,
+      mimeType: att.mimeType,
+      downloadUrl: `/api/v1/attachments/${att._id}/download`,
+      uploadedAt: att.createdAt.toISOString(),
+    }));
+
     return reply.send({
       success: true,
       data: {
@@ -307,6 +326,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         psychology: trade.psychology,
         calculated: trade.calculated,
         screenshotIds: trade.screenshotIds.map((id) => id.toString()),
+        attachments: formattedAttachments,
         auditLog: trade.auditLog,
         createdAt: trade.createdAt.toISOString(),
         updatedAt: trade.updatedAt.toISOString(),
@@ -384,12 +404,27 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
 
     const accountId = trade.accountId;
+
+    // Safely remove associated attachments and unlink files from disk
+    const attachments = await Attachment.find({ tradeId: req.params.id, userId: req.user!.id });
+    for (const att of attachments) {
+      const filePath = path.join(config.uploadDir, att.storedFilename);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    await Attachment.deleteMany({ tradeId: req.params.id, userId: req.user!.id });
+
     await Trade.deleteOne({ _id: req.params.id });
 
     // Reconcile account balance after deletion
     await AccountService.recalculateAccountBalances(accountId, req.user!.id);
 
-    return reply.send({ success: true, message: 'Trade deleted successfully' });
+    return reply.send({ success: true, message: 'Trade and associated screenshots deleted successfully' });
   });
 
   // Duplicate trade
@@ -480,10 +515,24 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const affectedAccountIds = Array.from(new Set(tradesToDelete.map((t) => t.accountId.toString())));
 
-    // 2. Perform deletion
+    // 2. Safely remove associated attachments and files from disk
+    const attachments = await Attachment.find({ tradeId: { $in: tradeIds }, userId: req.user!.id });
+    for (const att of attachments) {
+      const filePath = path.join(config.uploadDir, att.storedFilename);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    await Attachment.deleteMany({ tradeId: { $in: tradeIds }, userId: req.user!.id });
+
+    // 3. Perform trade deletion
     await Trade.deleteMany({ _id: { $in: tradeIds }, userId: req.user!.id });
 
-    // 3. Reconcile all affected accounts
+    // 4. Reconcile all affected accounts
     for (const accId of affectedAccountIds) {
       await AccountService.recalculateAccountBalances(accId, req.user!.id);
     }

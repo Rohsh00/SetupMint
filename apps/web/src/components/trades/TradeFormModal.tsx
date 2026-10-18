@@ -33,7 +33,9 @@ import {
   PsychologyRounded,
   ReceiptLongRounded,
   SwapHorizRounded,
+  CollectionsRounded,
 } from '@mui/icons-material';
+import { IAttachment } from '@tradevault/shared';
 import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
@@ -46,6 +48,10 @@ import { TradeTemplateSelector } from './form/TradeTemplateSelector.js';
 import { TradeQuickSection } from './form/TradeQuickSection.js';
 import { TradeAdvancedFills } from './form/TradeAdvancedFills.js';
 import { TradeJournalDetails } from './form/TradeJournalDetails.js';
+import {
+  TradeAttachmentUploader,
+  StagedAttachment,
+} from './attachments/TradeAttachmentUploader.js';
 import {
   getRememberedTradePreferences,
   saveRememberedTradePreferences,
@@ -76,6 +82,11 @@ export function TradeFormModal({
   const [executionMode, setExecutionMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
+
+  // Staged chart screenshots (ready to be uploaded on save)
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<IAttachment[]>([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
 
   // Reference data
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
@@ -201,9 +212,14 @@ export function TradeFormModal({
       if (
         initialValues.thesis?.entryRationale ||
         initialValues.psychology?.notes ||
-        (initialValues.fills && initialValues.fills.length > 0)
+        (initialValues.fills && initialValues.fills.length > 0) ||
+        (initialValues.attachments && initialValues.attachments.length > 0)
       ) {
         setWorkflowMode('COMPREHENSIVE');
+      }
+
+      if (initialValues.attachments && Array.isArray(initialValues.attachments)) {
+        setExistingAttachments(initialValues.attachments);
       }
     } else if (!editTradeId) {
       // Fresh trade: establish clean defaults with remembered preferences
@@ -217,8 +233,21 @@ export function TradeFormModal({
       if (prefs.preferredSymbol && (!watch('symbol') || watch('symbol') === '')) {
         setValue('symbol', prefs.preferredSymbol);
       }
+      setExistingAttachments([]);
+      setStagedAttachments([]);
     }
   }, [initialValues, editTradeId, reset, setValue]);
+
+  const handleDeleteExistingAttachment = async (attId: string) => {
+    try {
+      await api.attachments.delete(attId);
+      setExistingAttachments((prev) => prev.filter((a) => a.id !== attId));
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['trade', editTradeId] });
+    } catch (err: any) {
+      alert(`Failed to delete chart screenshot: ${err.message}`);
+    }
+  };
 
   // Persist preferences safely when user actively changes symbol or account
   useEffect(() => {
@@ -317,24 +346,10 @@ export function TradeFormModal({
   // Mutations
   const createMutation = useMutation({
     mutationFn: (tradeData: any) => api.trades.create(tradeData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['trades'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['strategies'] });
-      onClose();
-    },
   });
 
   const updateMutation = useMutation({
     mutationFn: (tradeData: any) => api.trades.update(editTradeId!, tradeData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['trades'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['strategies'] });
-      onClose();
-    },
   });
 
   // Template handling: never copies prices, timestamps, or P&L
@@ -501,10 +516,53 @@ export function TradeFormModal({
     };
     delete payload.tagsInput;
 
-    if (editTradeId) {
-      updateMutation.mutate(payload);
-    } else {
-      createMutation.mutate(payload);
+    try {
+      setIsUploadingAttachments(true);
+      let targetTradeId = editTradeId;
+      if (editTradeId) {
+        await updateMutation.mutateAsync(payload);
+      } else {
+        const res = await createMutation.mutateAsync(payload);
+        targetTradeId = res?.data?.id || res?.id;
+      }
+
+      // Upload staged chart screenshots linked to this trade
+      if (targetTradeId && stagedAttachments.length > 0) {
+        for (const staged of stagedAttachments) {
+          try {
+            await api.attachments.upload(targetTradeId, staged.file, {
+              category: staged.category,
+              caption: staged.caption,
+              timeframe: staged.timeframe,
+            });
+          } catch (uploadErr) {
+            console.error('Failed to upload chart screenshot:', uploadErr);
+          }
+        }
+      }
+
+      // Clean up object URLs
+      stagedAttachments.forEach((s) => {
+        try {
+          URL.revokeObjectURL(s.previewUrl);
+        } catch {
+          // ignore
+        }
+      });
+      setStagedAttachments([]);
+
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      if (targetTradeId) {
+        queryClient.invalidateQueries({ queryKey: ['trade', targetTradeId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['strategies'] });
+      onClose();
+    } catch (err: any) {
+      console.error('Error saving trade:', err);
+    } finally {
+      setIsUploadingAttachments(false);
     }
   };
 
@@ -793,6 +851,70 @@ export function TradeFormModal({
                 </Button>
               </Box>
             )}
+
+            {/* Chart Screenshots & Visual Review Section */}
+            <Accordion
+              defaultExpanded={
+                workflowMode === 'COMPREHENSIVE' ||
+                stagedAttachments.length > 0 ||
+                existingAttachments.length > 0
+              }
+              sx={{
+                borderRadius: 2.5,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                backgroundColor: isDark ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.7)',
+                '&:before': { display: 'none' },
+                overflow: 'hidden',
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreRounded />}
+                sx={{
+                  px: 2.5,
+                  py: 1,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+                  borderBottom: `1px solid ${muiTheme.palette.divider}`,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                  <CollectionsRounded sx={{ fontSize: 20, color: muiTheme.palette.primary.main }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Chart Screenshots & Visual Attachments
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={`${stagedAttachments.length + existingAttachments.length} attached`}
+                    sx={{
+                      height: 20,
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                    }}
+                  />
+                </Box>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 2.5 }}>
+                <TradeAttachmentUploader
+                  stagedAttachments={stagedAttachments}
+                  onAddStaged={(newItems) => setStagedAttachments((prev) => [...prev, ...newItems])}
+                  onUpdateStaged={(id, updates) =>
+                    setStagedAttachments((prev) =>
+                      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+                    )
+                  }
+                  onRemoveStaged={(id) => {
+                    setStagedAttachments((prev) => {
+                      const item = prev.find((i) => i.id === id);
+                      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+                      return prev.filter((i) => i.id !== id);
+                    });
+                  }}
+                  existingAttachments={existingAttachments}
+                  onDeleteExisting={handleDeleteExistingAttachment}
+                  symbol={watchedSymbol}
+                />
+              </AccordionDetails>
+            </Accordion>
           </DialogContent>
 
           {/* Sticky Dialog Footer */}
@@ -842,7 +964,7 @@ export function TradeFormModal({
                 type="submit"
                 variant="contained"
                 color="primary"
-                disabled={isSubmitting || createMutation.isPending || updateMutation.isPending}
+                disabled={isSubmitting || isUploadingAttachments || createMutation.isPending || updateMutation.isPending}
                 sx={{
                   fontWeight: 800,
                   fontSize: '0.8125rem',
@@ -853,7 +975,7 @@ export function TradeFormModal({
                   boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
                 }}
               >
-                {isSubmitting || createMutation.isPending || updateMutation.isPending ? (
+                {isSubmitting || isUploadingAttachments || createMutation.isPending || updateMutation.isPending ? (
                   <CircularProgress size={18} color="inherit" />
                 ) : editTradeId ? (
                   'Update Trade Record'

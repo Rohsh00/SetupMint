@@ -35,11 +35,10 @@ import SecurityIcon from '@mui/icons-material/SecurityRounded';
 import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CloudUploadIcon from '@mui/icons-material/CloudUploadRounded';
-import CloseIcon from '@mui/icons-material/CloseRounded';
-
 import { api } from '../lib/api.js';
 import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
+import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
 
 export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -495,103 +494,13 @@ export function TradeDetailPage() {
         )}
       </Card>
 
-      {/* Private Chart Screenshots Gallery */}
-      <Card sx={{ p: 2.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CollectionsIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
-              Private Chart Screenshots
-            </Typography>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Stored locally and privately on your machine
-            </Typography>
-          </Box>
-
-          <Button
-            component="label"
-            variant="outlined"
-            size="small"
-            startIcon={<CloudUploadIcon fontSize="small" />}
-            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-          >
-            Upload Chart
-            <input
-              type="file"
-              hidden
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  uploadAttachmentMutation.mutate(file);
-                }
-              }}
-            />
-          </Button>
-        </Box>
-
-        {trade.attachments && trade.attachments.length > 0 ? (
-          <Grid container spacing={2}>
-            {trade.attachments.map((att: any) => (
-              <Grid key={att.id} size={{ xs: 12, sm: 6, md: 4 }}>
-                <Box
-                  sx={{
-                    position: 'relative',
-                    borderRadius: 2,
-                    overflow: 'hidden',
-                    border: `1px solid ${muiTheme.palette.divider}`,
-                    cursor: 'pointer',
-                    '&:hover .delete-btn': { opacity: 1 },
-                  }}
-                  onClick={() => setSelectedImage(api.attachments.downloadUrl(att.id))}
-                >
-                  <Box
-                    component="img"
-                    src={api.attachments.downloadUrl(att.id)}
-                    alt="Chart Screenshot"
-                    sx={{
-                      width: '100%',
-                      height: 180,
-                      objectFit: 'cover',
-                      display: 'block',
-                      transition: 'transform 0.2s',
-                      '&:hover': { transform: 'scale(1.02)' },
-                    }}
-                  />
-                  <IconButton
-                    className="delete-btn"
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (window.confirm('Delete this chart screenshot?')) {
-                        deleteAttachmentMutation.mutate(att.id);
-                      }
-                    }}
-                    sx={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      opacity: 0,
-                      transition: 'opacity 0.2s',
-                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                      color: '#FFFFFF',
-                      '&:hover': { backgroundColor: 'rgba(220, 38, 38, 0.9)' },
-                    }}
-                  >
-                    <DeleteOutlineIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              </Grid>
-            ))}
-          </Grid>
-        ) : (
-          <Box sx={{ py: 4, textAlign: 'center' }}>
-            <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
-              No chart screenshots attached yet. Click "Upload Chart" to attach trade execution snapshots.
-            </Typography>
-          </Box>
-        )}
-      </Card>
+      {/* Chart Screenshots & Visual Review Gallery */}
+      <TradeScreenshotGallery
+        tradeId={id!}
+        attachments={trade.attachments || []}
+        symbol={trade.symbol}
+        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
+      />
 
       {/* Edit Trade Modal */}
       <TradeFormModal
@@ -600,47 +509,6 @@ export function TradeDetailPage() {
         editTradeId={id}
         initialValues={trade}
       />
-
-      {/* Image Preview Dialog */}
-      <Dialog
-        open={Boolean(selectedImage)}
-        onClose={() => setSelectedImage(null)}
-        maxWidth="lg"
-        fullWidth
-        slotProps={{
-          paper: { sx: { backgroundColor: 'transparent', boxShadow: 'none' } },
-        }}
-      >
-        <Box sx={{ position: 'relative', p: 1 }}>
-          <IconButton
-            onClick={() => setSelectedImage(null)}
-            sx={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              backgroundColor: 'rgba(0,0,0,0.7)',
-              color: '#FFFFFF',
-              '&:hover': { backgroundColor: 'rgba(0,0,0,0.9)' },
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
-          {selectedImage && (
-            <Box
-              component="img"
-              src={selectedImage}
-              alt="Expanded Chart"
-              sx={{
-                width: '100%',
-                maxHeight: '85vh',
-                objectFit: 'contain',
-                borderRadius: 2,
-                boxShadow: 24,
-              }}
-            />
-          )}
-        </Box>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog

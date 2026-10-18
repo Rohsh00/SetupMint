@@ -23,6 +23,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 // Icons
@@ -50,6 +51,8 @@ export function TradeDetailPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data: trade, isLoading, isError } = useQuery({
     queryKey: ['trade', id],
@@ -59,32 +62,54 @@ export function TradeDetailPage() {
 
   const duplicateMutation = useMutation({
     mutationFn: () => api.trades.duplicate(id!),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
-      navigate(`/trades/${data.data.id}`);
+      const newId = data?.id || data?.data?.id || data?._id;
+      if (newId) {
+        navigate(`/trades/${newId}`);
+      } else {
+        navigate('/trades');
+      }
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Failed to duplicate trade setup');
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => api.trades.delete(id!),
     onSuccess: () => {
+      setShowDeleteConfirm(false);
+      setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       navigate('/trades');
+    },
+    onError: (err: any) => {
+      setDeleteError(err.message || 'Failed to delete trade record');
     },
   });
 
   const uploadAttachmentMutation = useMutation({
     mutationFn: (file: File) => api.attachments.upload(id!, file),
     onSuccess: () => {
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['trade', id] });
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Failed to upload attachment');
     },
   });
 
   const deleteAttachmentMutation = useMutation({
     mutationFn: (attId: string) => api.attachments.delete(attId),
     onSuccess: () => {
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['trade', id] });
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Failed to delete attachment');
     },
   });
 
@@ -115,6 +140,11 @@ export function TradeDetailPage() {
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      {actionError && (
+        <Alert severity="error" onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
       {/* Top Header & Actions */}
       <Box
         sx={{
@@ -513,21 +543,45 @@ export function TradeDetailPage() {
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
+        onClose={() => {
+          if (!deleteMutation.isPending) {
+            setShowDeleteConfirm(false);
+            setDeleteError(null);
+          }
+        }}
         maxWidth="xs"
         fullWidth
         slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <DialogTitle sx={{ fontWeight: 700 }}>Delete Trade Record</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {deleteError && (
+            <Alert severity="error" onClose={() => setDeleteError(null)}>
+              {deleteError}
+            </Alert>
+          )}
           <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
             Are you sure you want to permanently delete this trade record for <strong>{trade.symbol}</strong>? This cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
-          <Button variant="contained" color="error" onClick={() => deleteMutation.mutate()}>
-            Delete Permanently
+          <Button
+            onClick={() => {
+              setShowDeleteConfirm(false);
+              setDeleteError(null);
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={deleteMutation.isPending}
+            startIcon={deleteMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
+            onClick={() => deleteMutation.mutate()}
+          >
+            {deleteMutation.isPending ? 'Deleting...' : 'Delete Permanently'}
           </Button>
         </DialogActions>
       </Dialog>

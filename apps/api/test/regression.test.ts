@@ -5,7 +5,7 @@ import path from 'path';
 import Decimal from 'decimal.js';
 import { buildApp } from '../src/server.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
-import { Attachment, Trade, TradingAccount, Strategy, DailyJournal } from '../src/db/models/index.js';
+import { Attachment, Trade, TradingAccount, Strategy, DailyJournal, Session } from '../src/db/models/index.js';
 import { config } from '../src/config.js';
 
 describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
@@ -1113,6 +1113,212 @@ describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
       const body = JSON.parse(res.body);
       expect(body.data.theme).toBe('dark');
       expect(body.data.name).toBe('QA Pro Trader');
+    });
+
+    it('S8: POST /auth/logout completely invalidates session in DB, clears cookie, and blocks protected routes', async () => {
+      // 1. Register a dedicated test user
+      const email = `logout_test_${Date.now()}@tradevault.local`;
+      const regRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/register',
+        payload: {
+          email,
+          password: 'Password123!',
+          name: 'Logout Tester',
+          baseCurrency: 'INR',
+        },
+      });
+      expect(regRes.statusCode).toBe(201);
+      const authCookie = regRes.headers['set-cookie'] as string;
+      const tokenMatch = authCookie.match(/tv_session=([a-f0-9]+)/);
+      expect(tokenMatch).toBeTruthy();
+      const token = tokenMatch![1];
+
+      // 2. Verify session exists in DB
+      const sessionBefore = await Session.findOne({ token });
+      expect(sessionBefore).not.toBeNull();
+
+      // 3. Confirm protected route succeeds before logout
+      const beforeRes = await app.inject({
+        method: 'GET',
+        url: '/api/v1/trades',
+        headers: { cookie: authCookie },
+      });
+      expect(beforeRes.statusCode).toBe(200);
+
+      // 4. Perform Logout
+      const logoutRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/logout',
+        headers: { cookie: authCookie },
+      });
+      expect(logoutRes.statusCode).toBe(200);
+      const logoutBody = JSON.parse(logoutRes.body);
+      expect(logoutBody.success).toBe(true);
+
+      // Verify cookie is cleared in response
+      const clearCookie = logoutRes.headers['set-cookie'] as string;
+      expect(clearCookie).toBeTruthy();
+      expect(clearCookie.toLowerCase()).toContain('tv_session=;');
+
+      // 5. Verify session is deleted from database
+      const sessionAfter = await Session.findOne({ token });
+      expect(sessionAfter).toBeNull();
+
+      // 6. Verify subsequent protected request is immediately rejected with 401
+      const afterRes = await app.inject({
+        method: 'GET',
+        url: '/api/v1/trades',
+        headers: { cookie: authCookie },
+      });
+      expect(afterRes.statusCode).toBe(401);
+    });
+
+    it('S9: POST /auth/logout is idempotent and safely clears cookie even without an active session token', async () => {
+      // Logout without any credentials
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/logout',
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.success).toBe(true);
+
+      // Clear cookie header is still issued
+      const clearCookie = res.headers['set-cookie'] as string;
+      expect(clearCookie).toBeTruthy();
+      expect(clearCookie.toLowerCase()).toContain('tv_session=;');
+    });
+
+    it('S10: Strategy update accepts valid strategy ID and updates setup rules without INVALID_ID error', async () => {
+      // Create strategy
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/strategies',
+        headers: { cookie: userAAuthCookie },
+        payload: {
+          name: `Test Playbook Setup ${Date.now()}`,
+          description: 'Initial description',
+          minRiskReward: 2.0,
+          entryRules: ['Rule 1'],
+        },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const createBody = JSON.parse(createRes.body);
+      const strategyId = createBody.data._id || createBody.data.id;
+      expect(strategyId).toBeTruthy();
+
+      // Update strategy
+      const updateRes = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/strategies/${strategyId}`,
+        headers: { cookie: userAAuthCookie },
+        payload: {
+          description: 'Updated setup edge hypothesis',
+          minRiskReward: 2.5,
+        },
+      });
+      expect(updateRes.statusCode).toBe(200);
+      const updateBody = JSON.parse(updateRes.body);
+      expect(updateBody.data.description).toBe('Updated setup edge hypothesis');
+      expect(updateBody.data.minRiskReward).toBe(2.5);
+    });
+
+    it('S11: Daily journal save updates reflection data and returns success', async () => {
+      const todayIso = new Date().toISOString().split('T')[0];
+      const saveRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/journal/${todayIso}`,
+        headers: { cookie: userAAuthCookie },
+        payload: {
+          marketConditions: 'Strong trend day with clean follow-through',
+          marketBias: 'BULLISH',
+          emotionalState: 'DISCIPLINED',
+          disciplineRating: 5,
+          lessonsLearned: 'Stuck to daily risk limit',
+          nextDayPlan: 'Watch morning balance area',
+        },
+      });
+      expect(saveRes.statusCode).toBe(200);
+      const saveBody = JSON.parse(saveRes.body);
+      expect(saveBody.success).toBe(true);
+
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/journal/${todayIso}`,
+        headers: { cookie: userAAuthCookie },
+      });
+      expect(getRes.statusCode).toBe(200);
+      const getBody = JSON.parse(getRes.body);
+      expect(getBody.data.journal.marketBias).toBe('BULLISH');
+      expect(getBody.data.journal.disciplineRating).toBe(5);
+    });
+
+    it('S12: Strategy deletion succeeds when invoked with DELETE without body', async () => {
+      // Create a test strategy
+      const stratRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/strategies',
+        headers: { cookie: userAAuthCookie },
+        payload: {
+          name: 'Strategy To Delete 1',
+          assetClasses: ['EQUITY'],
+          timeframes: ['5m'],
+          minRiskReward: 2.0,
+        },
+      });
+      expect(stratRes.statusCode).toBe(201);
+      const stratId = JSON.parse(stratRes.body).data._id || JSON.parse(stratRes.body).data.id;
+
+      // Delete without body
+      const delRes = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/strategies/${stratId}`,
+        headers: { cookie: userAAuthCookie },
+      });
+      expect(delRes.statusCode).toBe(200);
+      const delBody = JSON.parse(delRes.body);
+      expect(delBody.success).toBe(true);
+      expect(delBody.message).toBe('Strategy deleted successfully');
+
+      // Verify deletion
+      const checkRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/strategies/${stratId}`,
+        headers: { cookie: userAAuthCookie },
+      });
+      expect(checkRes.statusCode).toBe(404);
+    });
+
+    it('S13: Strategy deletion succeeds even when client sends Content-Type: application/json with empty body', async () => {
+      // Create a test strategy
+      const stratRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/strategies',
+        headers: { cookie: userAAuthCookie },
+        payload: {
+          name: 'Strategy To Delete 2',
+          assetClasses: ['FUTURES'],
+          timeframes: ['15m'],
+          minRiskReward: 1.5,
+        },
+      });
+      expect(stratRes.statusCode).toBe(201);
+      const stratId = JSON.parse(stratRes.body).data._id || JSON.parse(stratRes.body).data.id;
+
+      // Delete with Content-Type: application/json and empty body
+      const delRes = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/strategies/${stratId}`,
+        headers: {
+          cookie: userAAuthCookie,
+          'content-type': 'application/json',
+        },
+        payload: '',
+      });
+      expect(delRes.statusCode).toBe(200);
+      const delBody = JSON.parse(delRes.body);
+      expect(delBody.success).toBe(true);
     });
   });
 });

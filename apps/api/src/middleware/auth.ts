@@ -46,10 +46,16 @@ export async function createSession(
 }
 
 export async function clearSession(
-  token: string,
+  token: string | undefined,
   reply: FastifyReply
 ): Promise<void> {
-  await Session.deleteOne({ token });
+  if (token) {
+    try {
+      await Session.deleteOne({ token });
+    } catch {
+      // ignore
+    }
+  }
   reply.clearCookie(SESSION_COOKIE_NAME, {
     path: '/',
     httpOnly: true,

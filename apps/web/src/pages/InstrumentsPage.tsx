@@ -22,6 +22,7 @@ import {
   DialogActions,
   MenuItem,
   useTheme,
+  Alert,
 } from '@mui/material';
 import {
   ShowChartRounded,
@@ -39,6 +40,8 @@ export function InstrumentsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // New instrument state
   const [symbol, setSymbol] = useState('');
@@ -60,17 +63,25 @@ export function InstrumentsPage() {
   const createMutation = useMutation({
     mutationFn: (payload: any) => api.instruments.create(payload),
     onSuccess: () => {
+      setCreateError(null);
       queryClient.invalidateQueries({ queryKey: ['instruments'] });
       setIsModalOpen(false);
       setSymbol('');
       setDisplayName('');
+    },
+    onError: (err: any) => {
+      setCreateError(err.message || 'Failed to save instrument');
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.instruments.delete(id),
     onSuccess: () => {
+      setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ['instruments'] });
+    },
+    onError: (err: any) => {
+      setDeleteError(err.message || 'Failed to delete custom instrument');
     },
   });
 
@@ -124,7 +135,12 @@ export function InstrumentsPage() {
         </Button>
       </Box>
 
-      {/* Search Bar */}
+      {/* Search Bar & Alerts */}
+      {deleteError && (
+        <Alert severity="error" onClose={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      )}
       <Box sx={{ maxWidth: 360 }}>
         <TextField
           size="small"
@@ -218,9 +234,10 @@ export function InstrumentsPage() {
                           <IconButton
                             size="small"
                             color="error"
+                            disabled={deleteMutation.isPending}
                             onClick={() => {
                               if (confirm(`Delete custom instrument ${inst.symbol}?`)) {
-                                deleteMutation.mutate(inst.id);
+                                deleteMutation.mutate(inst.id || inst._id);
                               }
                             }}
                           >
@@ -269,6 +286,11 @@ export function InstrumentsPage() {
 
         <form onSubmit={handleCreate}>
           <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+            {createError && (
+              <Alert severity="error" onClose={() => setCreateError(null)}>
+                {createError}
+              </Alert>
+            )}
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
               <TextField
                 label="Symbol *"

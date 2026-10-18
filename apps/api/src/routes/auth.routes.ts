@@ -131,9 +131,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       token = req.headers.authorization.slice(7);
     }
 
-    if (token) {
-      await clearSession(token, reply);
-    }
+    await clearSession(token, reply);
 
     return reply.send({ success: true, message: 'Logged out successfully' });
   });

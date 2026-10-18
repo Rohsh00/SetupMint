@@ -43,6 +43,9 @@ export function AccountsPage() {
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [selectedAccountForTx, setSelectedAccountForTx] = useState<any>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [txError, setTxError] = useState<string | null>(null);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
 
   // New Account state
   const [name, setName] = useState('');
@@ -66,11 +69,16 @@ export function AccountsPage() {
   const createAccountMutation = useMutation({
     mutationFn: (payload: any) => api.accounts.create(payload),
     onSuccess: () => {
+      setCreateError(null);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       setIsAddAccountModalOpen(false);
       setName('');
       setBroker('');
       setAccountNumber('');
+      setInitialBalance(100000);
+    },
+    onError: (err: any) => {
+      setCreateError(err.message || 'Failed to create trading account');
     },
   });
 
@@ -78,17 +86,25 @@ export function AccountsPage() {
     mutationFn: ({ accountId, payload }: { accountId: string; payload: any }) =>
       api.accounts.addTransaction(accountId, payload),
     onSuccess: () => {
+      setTxError(null);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       setIsTxModalOpen(false);
       setTxAmount(10000);
       setTxNotes('');
+    },
+    onError: (err: any) => {
+      setTxError(err.message || 'Failed to record cash flow transaction');
     },
   });
 
   const reconcileMutation = useMutation({
     mutationFn: (accountId: string) => api.accounts.reconcile(accountId),
     onSuccess: () => {
+      setReconcileError(null);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+    onError: (err: any) => {
+      setReconcileError(err.message || 'Failed to reconcile account balance');
     },
   });
 
@@ -109,7 +125,7 @@ export function AccountsPage() {
     if (!selectedAccountForTx) return;
 
     addTxMutation.mutate({
-      accountId: selectedAccountForTx.id,
+      accountId: selectedAccountForTx.id || selectedAccountForTx._id,
       payload: {
         type: txType,
         amount: Number(txAmount),
@@ -125,6 +141,11 @@ export function AccountsPage() {
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {reconcileError && (
+        <Alert severity="error" onClose={() => setReconcileError(null)}>
+          {reconcileError}
+        </Alert>
+      )}
       {/* Top Header */}
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, pb: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Box>
@@ -327,7 +348,7 @@ export function AccountsPage() {
                           size="small"
                           color="inherit"
                           disabled={reconcileMutation.isPending}
-                          onClick={() => reconcileMutation.mutate(acc.id)}
+                          onClick={() => reconcileMutation.mutate(acc.id || acc._id)}
                           startIcon={
                             <SyncRounded
                               sx={{
@@ -382,6 +403,11 @@ export function AccountsPage() {
 
         <form onSubmit={handleCreateAccount}>
           <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+            {createError && (
+              <Alert severity="error" onClose={() => setCreateError(null)}>
+                {createError}
+              </Alert>
+            )}
             <TextField
               label="Account Name *"
               placeholder="e.g. Zerodha F&O Primary"
@@ -502,6 +528,11 @@ export function AccountsPage() {
 
           <form onSubmit={handleAddTx}>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+              {txError && (
+                <Alert severity="error" onClose={() => setTxError(null)}>
+                  {txError}
+                </Alert>
+              )}
               <Box>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
                   Transaction Type

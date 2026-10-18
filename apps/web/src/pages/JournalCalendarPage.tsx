@@ -19,6 +19,7 @@ import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import CircularProgress from '@mui/material/CircularProgress';
 import Tooltip from '@mui/material/Tooltip';
+import Alert from '@mui/material/Alert';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 // Icons
@@ -64,6 +65,7 @@ export function JournalCalendarPage() {
   const [lessonsLearned, setLessonsLearned] = useState('');
   const [nextDayPlan, setNextDayPlan] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Load day details into review form when date changes
   React.useEffect(() => {
@@ -84,15 +86,21 @@ export function JournalCalendarPage() {
       setNextDayPlan('');
     }
     setSaveSuccess(false);
+    setSaveError(null);
   }, [dayDetails]);
 
   const saveJournalMutation = useMutation({
     mutationFn: (review: any) => api.journal.saveDay(selectedDate!, review),
     onSuccess: () => {
+      setSaveError(null);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
       queryClient.invalidateQueries({ queryKey: ['journal-calendar'] });
       queryClient.invalidateQueries({ queryKey: ['journal-day', selectedDate] });
+      // Close the modal cleanly upon successful save
+      setSelectedDate(null);
+    },
+    onError: (err: any) => {
+      setSaveError(err.message || 'Failed to save daily reflection');
     },
   });
 
@@ -411,6 +419,11 @@ export function JournalCalendarPage() {
         </DialogTitle>
 
         <DialogContent sx={{ p: 3 }}>
+          {saveError && (
+            <Alert severity="error" sx={{ mb: 2.5 }} onClose={() => setSaveError(null)}>
+              {saveError}
+            </Alert>
+          )}
           <Grid container spacing={3}>
             {/* Left: Day Executions */}
             <Grid size={{ xs: 12, md: 5 }}>

@@ -46,25 +46,34 @@ export function ReportsPage() {
   const [previewData, setPreviewData] = useState<any>(null);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const previewMutation = useMutation({
     mutationFn: (file: File) => api.exportImport.previewCsv(file),
     onSuccess: (data) => {
+      setImportError(null);
       setPreviewData(data);
       setColumnMapping(data.suggestedMapping || {});
       setImportResult(null);
+    },
+    onError: (err: any) => {
+      setImportError(err.message || 'Failed to preview CSV file');
     },
   });
 
   const commitMutation = useMutation({
     mutationFn: (payload: any) => api.exportImport.commitImport(payload),
     onSuccess: (data) => {
+      setImportError(null);
       setImportResult(data);
       setPreviewData(null);
       setImportFile(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+    onError: (err: any) => {
+      setImportError(err.message || 'Failed to commit trade import');
     },
   });
 
@@ -283,6 +292,12 @@ export function ReportsPage() {
               Import past trades from Zerodha, Dhan, Fyers, TradingView, or custom spreadsheets with column mapping
             </Typography>
           </Box>
+
+          {importError && (
+            <Alert severity="error" onClose={() => setImportError(null)}>
+              {importError}
+            </Alert>
+          )}
 
           {/* Upload Dropzone */}
           {!previewData && (

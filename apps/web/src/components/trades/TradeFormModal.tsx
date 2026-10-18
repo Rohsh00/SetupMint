@@ -82,6 +82,7 @@ export function TradeFormModal({
   const [executionMode, setExecutionMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Staged chart screenshots (ready to be uploaded on save)
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
@@ -236,6 +237,7 @@ export function TradeFormModal({
       setExistingAttachments([]);
       setStagedAttachments([]);
     }
+    setSubmitError(null);
   }, [initialValues, editTradeId, reset, setValue]);
 
   const handleDeleteExistingAttachment = async (attId: string) => {
@@ -518,12 +520,13 @@ export function TradeFormModal({
 
     try {
       setIsUploadingAttachments(true);
+      setSubmitError(null);
       let targetTradeId = editTradeId;
       if (editTradeId) {
         await updateMutation.mutateAsync(payload);
       } else {
         const res = await createMutation.mutateAsync(payload);
-        targetTradeId = res?.data?.id || res?.id;
+        targetTradeId = res?.data?.id || res?.data?._id || res?.id || res?._id;
       }
 
       // Upload staged chart screenshots linked to this trade
@@ -558,9 +561,13 @@ export function TradeFormModal({
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
+
+      // Reset form state so isDirty becomes false and close modal cleanly
+      reset();
       onClose();
     } catch (err: any) {
       console.error('Error saving trade:', err);
+      setSubmitError(err.message || 'Failed to save trade record');
     } finally {
       setIsUploadingAttachments(false);
     }
@@ -754,6 +761,11 @@ export function TradeFormModal({
               gap: 2.5,
             }}
           >
+            {submitError && (
+              <Alert severity="error" onClose={() => setSubmitError(null)}>
+                {submitError}
+              </Alert>
+            )}
             {/* Primary Express Trade Entry Section */}
             <TradeQuickSection
               register={register}

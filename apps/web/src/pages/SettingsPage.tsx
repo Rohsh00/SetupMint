@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Typography,
@@ -26,6 +27,7 @@ import {
   SettingsBrightnessRounded,
   CheckCircleRounded,
   ShieldRounded,
+  LogoutRounded,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
@@ -33,13 +35,32 @@ import { api } from '../lib/api.js';
 
 export function SettingsPage() {
   const muiTheme = useMuiTheme();
-  const { user, refreshUser } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user, refreshUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      queryClient.clear();
+      navigate('/login', { replace: true });
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   // Profile state
   const [name, setName] = useState(user?.name || '');
   const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'INR');
   const [profileSuccess, setProfileSuccess] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Password state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -49,6 +70,7 @@ export function SettingsPage() {
   // FYERS Integration state
   const [fyersAppId, setFyersAppId] = useState('');
   const [fyersSuccess, setFyersSuccess] = useState(false);
+  const [fyersError, setFyersError] = useState<string | null>(null);
 
   const { data: systemStatus } = useQuery({
     queryKey: ['system-status'],
@@ -70,8 +92,12 @@ export function SettingsPage() {
     mutationFn: (payload: any) => api.settings.updateProfile(payload),
     onSuccess: () => {
       refreshUser();
+      setProfileError(null);
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
+    },
+    onError: (err: any) => {
+      setProfileError(err.message || 'Failed to update profile');
     },
   });
 
@@ -91,8 +117,12 @@ export function SettingsPage() {
   const fyersMutation = useMutation({
     mutationFn: (appId: string) => api.integrations.fyersConfig({ appId }),
     onSuccess: () => {
+      setFyersError(null);
       setFyersSuccess(true);
       setTimeout(() => setFyersSuccess(false), 3000);
+    },
+    onError: (err: any) => {
+      setFyersError(err.message || 'Failed to save Fyers configuration');
     },
   });
 
@@ -195,6 +225,12 @@ export function SettingsPage() {
                 {profileSuccess && (
                   <Alert severity="success" icon={<CheckCircleRounded />}>
                     Profile updated successfully
+                  </Alert>
+                )}
+
+                {profileError && (
+                  <Alert severity="error" onClose={() => setProfileError(null)}>
+                    {profileError}
                   </Alert>
                 )}
 
@@ -417,6 +453,61 @@ export function SettingsPage() {
               Configuration saved in integration layer
             </Alert>
           )}
+
+          {fyersError && (
+            <Alert severity="error" onClose={() => setFyersError(null)}>
+              {fyersError}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Active Session & Account Security Card */}
+      <Card variant="outlined" sx={{ p: 1 }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ShieldRounded sx={{ color: 'primary.main' }} />
+                Active Session & Account Security
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Manage your authenticated journal session on this device
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 1,
+                bgcolor: 'rgba(16, 185, 129, 0.1)',
+                color: 'primary.main',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                fontFamily: '"JetBrains Mono", monospace',
+              }}
+            >
+              AUTHENTICATED
+            </Box>
+          </Box>
+
+          <Typography variant="body2" color="text.secondary">
+            Logged in as <strong>{user?.name}</strong> ({user?.email}). Stratum uses secure, HttpOnly session cookies isolated to your local environment.
+          </Typography>
+
+          <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <Button
+              id="settings-logout-btn"
+              variant="outlined"
+              color="error"
+              disabled={isLoggingOut}
+              onClick={handleLogout}
+              startIcon={<LogoutRounded />}
+              sx={{ fontWeight: 700 }}
+            >
+              {isLoggingOut ? 'Signing Out...' : 'Sign Out of Stratum'}
+            </Button>
+          </Box>
         </CardContent>
       </Card>
     </Box>

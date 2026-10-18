@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Drawer from '@mui/material/Drawer';
 import AppBar from '@mui/material/AppBar';
@@ -11,6 +11,7 @@ import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
+import Menu from '@mui/material/Menu';
 import FormControl from '@mui/material/FormControl';
 import Avatar from '@mui/material/Avatar';
 import Divider from '@mui/material/Divider';
@@ -19,6 +20,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import CircularProgress from '@mui/material/CircularProgress';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
@@ -57,11 +59,30 @@ export function AppLayout() {
   const isDark = muiTheme.palette.mode === 'dark';
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      queryClient.clear();
+      navigate('/login', { replace: true });
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setIsLoggingOut(false);
+      setUserMenuAnchor(null);
+    }
+  };
 
   // Fetch user accounts for global account switcher
   const { data: accounts = [] } = useQuery({
@@ -315,8 +336,11 @@ export function AppLayout() {
         )}
         <Tooltip title="Sign Out" arrow>
           <IconButton
+            id="sidebar-logout-btn"
             size="small"
-            onClick={() => logout()}
+            disabled={isLoggingOut}
+            onClick={handleLogout}
+            aria-label="Sign Out"
             sx={{
               color: muiTheme.palette.text.secondary,
               '&:hover': {
@@ -325,7 +349,7 @@ export function AppLayout() {
               },
             }}
           >
-            <LogoutIcon fontSize="small" />
+            {isLoggingOut ? <CircularProgress size={16} color="inherit" /> : <LogoutIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
       </Box>
@@ -499,6 +523,98 @@ export function AppLayout() {
                   )}
                 </IconButton>
               </Tooltip>
+
+              {/* User Session & Sign Out Menu */}
+              <Tooltip title="User Profile & Session" arrow>
+                <IconButton
+                  id="header-user-menu-btn"
+                  onClick={(e) => setUserMenuAnchor(e.currentTarget)}
+                  size="small"
+                  aria-label="User account and session"
+                  sx={{
+                    p: 0.5,
+                    borderRadius: 2,
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                    backgroundColor: isDark ? 'rgba(17, 24, 39, 0.5)' : 'rgba(255, 255, 255, 0.8)',
+                    '&:hover': {
+                      borderColor: muiTheme.palette.primary.main,
+                    },
+                  }}
+                >
+                  <Avatar
+                    sx={{
+                      width: 26,
+                      height: 26,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(5, 150, 105, 0.15)',
+                      color: muiTheme.palette.primary.main,
+                    }}
+                  >
+                    {user?.name?.slice(0, 2).toUpperCase() || 'TR'}
+                  </Avatar>
+                </IconButton>
+              </Tooltip>
+
+              <Menu
+                id="header-user-menu"
+                anchorEl={userMenuAnchor}
+                open={Boolean(userMenuAnchor)}
+                onClose={() => setUserMenuAnchor(null)}
+                slotProps={{
+                  paper: {
+                    sx: {
+                      minWidth: 220,
+                      borderRadius: 2.5,
+                      mt: 1,
+                      backgroundImage: 'none',
+                      p: 1,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                    },
+                  },
+                }}
+              >
+                <Box sx={{ px: 1.5, py: 1 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {user?.name || 'Trader'}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'text.secondary', fontFamily: '"JetBrains Mono", monospace', display: 'block' }}
+                  >
+                    {user?.email || 'trader@stratum'}
+                  </Typography>
+                </Box>
+                <Divider sx={{ my: 0.75 }} />
+                <MenuItem
+                  component={NavLink}
+                  to="/settings"
+                  onClick={() => setUserMenuAnchor(null)}
+                  sx={{ borderRadius: 1.5 }}
+                >
+                  <ListItemIcon>
+                    <SettingsIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Settings & Profile" />
+                </MenuItem>
+                <MenuItem
+                  id="header-logout-btn"
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  sx={{
+                    borderRadius: 1.5,
+                    color: 'error.main',
+                    '&:hover': {
+                      backgroundColor: isDark ? 'rgba(244, 63, 94, 0.1)' : 'rgba(220, 38, 38, 0.08)',
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ color: 'error.main' }}>
+                    {isLoggingOut ? <CircularProgress size={18} color="inherit" /> : <LogoutIcon fontSize="small" />}
+                  </ListItemIcon>
+                  <ListItemText primary={isLoggingOut ? 'Signing Out...' : 'Sign Out'} />
+                </MenuItem>
+              </Menu>
             </Box>
           </Toolbar>
         </AppBar>

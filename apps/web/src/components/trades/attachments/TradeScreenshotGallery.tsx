@@ -106,6 +106,22 @@ export function TradeScreenshotGallery({
     }
   };
 
+  const closeUploadModal = () => {
+    if (isUploading) return;
+    if (filePreview) {
+      try {
+        URL.revokeObjectURL(filePreview);
+      } catch {
+        // ignore
+      }
+      setFilePreview(null);
+    }
+    setSelectedFile(null);
+    setCaption('');
+    setUploadError(null);
+    setUploadModalOpen(false);
+  };
+
   const handleSaveUpload = async () => {
     if (!selectedFile) {
       setUploadError('Please select an image file to upload.');
@@ -120,7 +136,7 @@ export function TradeScreenshotGallery({
         caption,
         timeframe: selectedTimeframe,
       });
-      setUploadModalOpen(false);
+      closeUploadModal();
       if (onRefresh) onRefresh();
     } catch (err: any) {
       setUploadError(err.message || 'Failed to upload chart screenshot.');
@@ -140,7 +156,7 @@ export function TradeScreenshotGallery({
   };
 
   const openViewerAt = (attId: string) => {
-    const index = attachments.findIndex((a) => a.id === attId);
+    const index = attachments.findIndex((a) => a.id === attId || (a as any)._id === attId);
     if (index !== -1) {
       setViewerIndex(index);
       setViewerOpen(true);
@@ -442,7 +458,7 @@ export function TradeScreenshotGallery({
                               color="error"
                               onClick={() => {
                                 if (window.confirm('Permanently delete this chart screenshot?')) {
-                                  handleDeleteAttachment(att.id);
+                                  handleDeleteAttachment(att.id || (att as any)._id);
                                 }
                               }}
                             >
@@ -520,7 +536,7 @@ export function TradeScreenshotGallery({
       {/* Upload Screenshot Dialog */}
       <Dialog
         open={uploadModalOpen}
-        onClose={() => !isUploading && setUploadModalOpen(false)}
+        onClose={closeUploadModal}
         maxWidth="sm"
         fullWidth
         slotProps={{
@@ -531,7 +547,7 @@ export function TradeScreenshotGallery({
           <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1.05rem' }}>
             Attach Chart Screenshot
           </Typography>
-          <IconButton size="small" onClick={() => setUploadModalOpen(false)} disabled={isUploading}>
+          <IconButton size="small" onClick={closeUploadModal} disabled={isUploading}>
             <CloseRounded fontSize="small" />
           </IconButton>
         </DialogTitle>
@@ -654,7 +670,7 @@ export function TradeScreenshotGallery({
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button variant="outlined" color="inherit" onClick={() => setUploadModalOpen(false)} disabled={isUploading}>
+          <Button variant="outlined" color="inherit" onClick={closeUploadModal} disabled={isUploading}>
             Cancel
           </Button>
           <Button

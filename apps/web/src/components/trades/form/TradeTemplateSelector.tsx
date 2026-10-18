@@ -83,6 +83,8 @@ export function TradeTemplateSelector({
     });
 
     setTemplates(getAllTemplates());
+    setTemplateName('');
+    setTemplateDesc('');
     setIsSaveModalOpen(false);
   };
 

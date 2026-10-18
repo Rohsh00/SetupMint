@@ -22,6 +22,7 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import InputAdornment from '@mui/material/InputAdornment';
 import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -67,6 +68,8 @@ export function TradesPage() {
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [showBulkTagModal, setShowBulkTagModal] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Modals
   const [isNewTradeModalOpen, setIsNewTradeModalOpen] = useState(false);
@@ -108,7 +111,11 @@ export function TradesPage() {
   const duplicateMutation = useMutation({
     mutationFn: (id: string) => api.trades.duplicate(id),
     onSuccess: () => {
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Failed to duplicate trade setup');
     },
   });
 
@@ -116,8 +123,12 @@ export function TradesPage() {
     mutationFn: (id: string) => api.trades.delete(id),
     onSuccess: () => {
       setDeleteConfirmId(null);
+      setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    },
+    onError: (err: any) => {
+      setDeleteError(err.message || 'Failed to delete trade record');
     },
   });
 
@@ -125,8 +136,12 @@ export function TradesPage() {
     mutationFn: (ids: string[]) => api.trades.bulkDelete(ids),
     onSuccess: () => {
       setSelectedIds([]);
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Failed to delete selected trades');
     },
   });
 
@@ -137,7 +152,11 @@ export function TradesPage() {
       setSelectedIds([]);
       setShowBulkTagModal(false);
       setBulkTagInput('');
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
+    },
+    onError: (err: any) => {
+      setActionError(err.message || 'Failed to apply tags to selected trades');
     },
   });
 
@@ -152,7 +171,7 @@ export function TradesPage() {
     if (selectedIds.length === trades.length && trades.length > 0) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(trades.map((t: any) => t.id));
+      setSelectedIds(trades.map((t: any) => t.id || t._id));
     }
   };
 
@@ -365,18 +384,25 @@ export function TradesPage() {
               size="small"
               variant="contained"
               color="error"
+              disabled={bulkDeleteMutation.isPending}
               onClick={() => {
                 if (window.confirm(`Delete ${selectedIds.length} selected trades permanently?`)) {
                   bulkDeleteMutation.mutate(selectedIds);
                 }
               }}
-              startIcon={<DeleteOutlineIcon fontSize="small" />}
+              startIcon={bulkDeleteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <DeleteOutlineIcon fontSize="small" />}
               sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600 }}
             >
-              Delete Selected
+              {bulkDeleteMutation.isPending ? 'Deleting...' : 'Delete Selected'}
             </Button>
           </Box>
         </Card>
+      )}
+
+      {actionError && (
+        <Alert severity="error" onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
       )}
 
       {/* Main Trades Table */}
@@ -441,13 +467,14 @@ export function TradesPage() {
                 </TableRow>
               ) : (
                 trades.map((t: any) => {
-                  const isSelected = selectedIds.includes(t.id);
+                  const tradeId = t.id || t._id;
+                  const isSelected = selectedIds.includes(tradeId);
                   const isWin = (t.calculated?.netPnL || 0) > 0;
                   const isLoss = (t.calculated?.netPnL || 0) < 0;
 
                   return (
                     <TableRow
-                      key={t.id}
+                      key={tradeId}
                       hover
                       selected={isSelected}
                       sx={{
@@ -458,7 +485,7 @@ export function TradesPage() {
                         <Checkbox
                           size="small"
                           checked={isSelected}
-                          onChange={() => toggleSelect(t.id)}
+                          onChange={() => toggleSelect(tradeId)}
                         />
                       </TableCell>
                       <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, whiteSpace: 'nowrap' }}>
@@ -469,7 +496,7 @@ export function TradesPage() {
                       </TableCell>
                       <TableCell sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, whiteSpace: 'nowrap' }}>
                         <RouterLink
-                          to={`/trades/${t.id}`}
+                          to={`/trades/${tradeId}`}
                           style={{
                             color: muiTheme.palette.text.primary,
                             textDecoration: 'none',
@@ -600,7 +627,8 @@ export function TradesPage() {
                           <Tooltip title="Duplicate Setup" arrow>
                             <IconButton
                               size="small"
-                              onClick={() => duplicateMutation.mutate(t.id)}
+                              onClick={() => duplicateMutation.mutate(tradeId)}
+                              disabled={duplicateMutation.isPending}
                               sx={{
                                 color: muiTheme.palette.text.secondary,
                                 '&:hover': { color: muiTheme.palette.primary.main },
@@ -612,7 +640,10 @@ export function TradesPage() {
                           <Tooltip title="Delete Trade" arrow>
                             <IconButton
                               size="small"
-                              onClick={() => setDeleteConfirmId(t.id)}
+                              onClick={() => {
+                                setDeleteError(null);
+                                setDeleteConfirmId(tradeId);
+                              }}
                               sx={{
                                 color: muiTheme.palette.text.secondary,
                                 '&:hover': { color: muiTheme.palette.error.main },
@@ -739,7 +770,12 @@ export function TradesPage() {
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={Boolean(deleteConfirmId)}
-        onClose={() => setDeleteConfirmId(null)}
+        onClose={() => {
+          if (!deleteMutation.isPending) {
+            setDeleteConfirmId(null);
+            setDeleteError(null);
+          }
+        }}
         maxWidth="xs"
         fullWidth
         slotProps={{
@@ -747,23 +783,38 @@ export function TradesPage() {
         }}
       >
         <DialogTitle sx={{ fontWeight: 700 }}>Delete Trade</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {deleteError && (
+            <Alert severity="error" onClose={() => setDeleteError(null)}>
+              {deleteError}
+            </Alert>
+          )}
           <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
             Are you sure you want to permanently delete this trade record? This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setDeleteConfirmId(null);
+              setDeleteError(null);
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
             color="error"
+            disabled={deleteMutation.isPending}
+            startIcon={deleteMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
             onClick={() => {
               if (deleteConfirmId) {
                 deleteMutation.mutate(deleteConfirmId);
               }
             }}
           >
-            Delete
+            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>

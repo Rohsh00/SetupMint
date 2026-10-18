@@ -69,6 +69,21 @@ export async function buildApp() {
     },
   });
 
+  // Support empty JSON body gracefully (e.g. DELETE or POST without payload)
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body: string | Buffer, done) => {
+    const strBody = typeof body === 'string' ? body : body.toString('utf-8');
+    if (!strBody || strBody.trim() === '') {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(strBody));
+    } catch (err: any) {
+      err.statusCode = 400;
+      done(err, undefined);
+    }
+  });
+
   // OpenAPI Documentation
   await app.register(swagger, {
     openapi: {

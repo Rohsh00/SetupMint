@@ -15,6 +15,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 // Icons
@@ -36,6 +37,8 @@ export function StrategyPlaybookPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<any>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const { data: strategies = [], isLoading } = useQuery({
     queryKey: ['strategies'],
@@ -62,6 +65,7 @@ export function StrategyPlaybookPage() {
     setTargetRulesInput('');
     setInvalidationInput('');
     setChecklistInput('');
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
@@ -75,19 +79,25 @@ export function StrategyPlaybookPage() {
     setTargetRulesInput(strat.targetRules?.join('\n') || '');
     setInvalidationInput(strat.invalidationCriteria?.join('\n') || '');
     setChecklistInput(strat.checklist?.join('\n') || '');
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
   const saveMutation = useMutation({
     mutationFn: (payload: any) => {
       if (editingStrategy) {
-        return api.strategies.update(editingStrategy.id, payload);
+        const stratId = editingStrategy.id || editingStrategy._id;
+        return api.strategies.update(stratId, payload);
       }
       return api.strategies.create(payload);
     },
     onSuccess: () => {
+      setSaveError(null);
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
       setIsModalOpen(false);
+    },
+    onError: (err: any) => {
+      setSaveError(err.message || 'Failed to save strategy setup');
     },
   });
 
@@ -95,7 +105,11 @@ export function StrategyPlaybookPage() {
     mutationFn: (id: string) => api.strategies.delete(id),
     onSuccess: () => {
       setDeleteConfirmId(null);
+      setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
+    },
+    onError: (err: any) => {
+      setDeleteError(err.message || 'Failed to delete strategy setup');
     },
   });
 
@@ -176,7 +190,7 @@ export function StrategyPlaybookPage() {
             const isProfitable = (strat.netPnL || 0) >= 0;
 
             return (
-              <Grid key={strat.id} size={{ xs: 12, md: 6, lg: 4 }}>
+              <Grid key={strat.id || strat._id} size={{ xs: 12, md: 6, lg: 4 }}>
                 <Card
                   sx={{
                     p: 2.5,
@@ -202,7 +216,14 @@ export function StrategyPlaybookPage() {
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete Strategy" arrow>
-                          <IconButton size="small" onClick={() => setDeleteConfirmId(strat.id)} sx={{ color: muiTheme.palette.error.main }}>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setDeleteError(null);
+                              setDeleteConfirmId(strat.id || strat._id);
+                            }}
+                            sx={{ color: muiTheme.palette.error.main }}
+                          >
                             <DeleteOutlineIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -288,6 +309,11 @@ export function StrategyPlaybookPage() {
 
         <form onSubmit={handleSubmit}>
           <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            {saveError && (
+              <Alert severity="error" sx={{ mb: 1 }} onClose={() => setSaveError(null)}>
+                {saveError}
+              </Alert>
+            )}
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, sm: 8 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
@@ -395,21 +421,49 @@ export function StrategyPlaybookPage() {
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={Boolean(deleteConfirmId)}
-        onClose={() => setDeleteConfirmId(null)}
+        onClose={() => {
+          if (!deleteMutation.isPending) {
+            setDeleteConfirmId(null);
+            setDeleteError(null);
+          }
+        }}
         maxWidth="xs"
         fullWidth
         slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <DialogTitle sx={{ fontWeight: 700 }}>Delete Strategy Setup</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {deleteError && (
+            <Alert severity="error" onClose={() => setDeleteError(null)}>
+              {deleteError}
+            </Alert>
+          )}
           <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
             Are you sure you want to delete this strategy setup from your playbook? Historical trades will remain intact.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
-          <Button variant="contained" color="error" onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
-            Delete
+          <Button
+            onClick={() => {
+              setDeleteConfirmId(null);
+              setDeleteError(null);
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={deleteMutation.isPending}
+            startIcon={deleteMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
+            onClick={() => {
+              if (deleteConfirmId) {
+                deleteMutation.mutate(deleteConfirmId);
+              }
+            }}
+          >
+            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>

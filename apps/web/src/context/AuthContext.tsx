@@ -50,8 +50,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
-    await api.auth.logout();
-    setUser(null);
+    try {
+      await api.auth.logout();
+    } catch (err) {
+      console.warn('Backend logout request error, clearing local authenticated state:', err);
+    } finally {
+      setUser(null);
+    }
   }
 
   return (

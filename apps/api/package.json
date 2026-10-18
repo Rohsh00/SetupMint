@@ -8,6 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
+    "seed:demo": "tsx src/scripts/seed.ts",
+    "seed:reset": "tsx src/scripts/reset-demo.ts",
+    "seed:validate": "tsx src/scripts/validate-seed.ts",
     "clean": "tsx src/scripts/clean.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

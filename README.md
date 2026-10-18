@@ -1,6 +1,6 @@
-# TradeVault — Professional Discretionary Trading Journal
+# SetupMint — Professional Discretionary Trading Journal
 
-A local-first, privacy-focused trading journal application engineered for serious discretionary traders. Built with **React 19**, **Vite**, **Tailwind CSS**, **Fastify**, **TypeScript**, and **MongoDB**.
+A cloud-native, privacy-respecting trading journal application engineered for serious discretionary traders. Built with **React 19**, **Vite**, **MUI v9 + Tailwind CSS**, **Fastify v5**, **TypeScript**, **MongoDB Atlas**, and **Cloudflare R2**.
 
 ---
 
@@ -30,44 +30,59 @@ A local-first, privacy-focused trading journal application engineered for seriou
 - **Interactive Risk Calculator:**
   - Position sizing calculator with automatic contract multiplier and lot size rounding
   - One-click **"Transfer to Trade Form"** to push calculated parameters directly into a new trade entry
-- **Private Chart Screenshots:**
-  - Chart uploads stored locally outside the web root (`./data/uploads`) and served through authenticated endpoints
-- **Data Portability & Local Backups:**
+- **Private Cloud Chart Screenshots:**
+  - Chart uploads stored in private Cloudflare R2 object storage and served exclusively through authenticated Fastify streaming endpoints
+- **Data Portability & Cloud Backups:**
   - Full CSV export and JSON backup
   - Interactive CSV import with automatic column mapping and duplicate detection
-  - One-command local backup and restore scripts
-- **Future FYERS Integration Architecture:**
-  - Decoupled `BrokerAdapter` interface and `NormalizedExecution` schema ready for automated sync
+  - One-command cloud backup and restore scripts for Atlas and R2
+- **Broker Integration Architecture:**
+  - Decoupled `BrokerAdapter` interface and `NormalizedExecution` schema ready for automated broker synchronization
 
 ---
 
 ## 🛠 Technology Stack
 
 - **Monorepo:** npm workspaces (`apps/web`, `apps/api`, `packages/shared`, `packages/financial-engine`)
-- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Lucide icons, TanStack Query, React Hook Form, Zod, Recharts
+- **Frontend:** React 19, TypeScript, Vite, Material UI (MUI v9), Tailwind CSS, TanStack Query, React Hook Form, Zod, Recharts
 - **Backend:** Node.js LTS, Fastify v5, TypeScript, Mongoose ODM, Zod, Pino structured logging
-- **Database:** MongoDB Community Server (local) or embedded persistent engine (`./data/db`)
-- **Testing:** Vitest, Fastify injection integration testing
+- **Database:** MongoDB Atlas cloud cluster (`mongodb+srv://`)
+- **Storage:** Cloudflare R2 private bucket via S3 API (`@aws-sdk/client-s3`)
+- **Testing:** Vitest, Fastify injection integration testing with isolated in-memory test mocks
 
 ---
 
-## 🚀 Quick Start Guide (Local MacBook Setup)
+## 🚀 Quick Start Guide
 
 ### 1. Prerequisites
 - **Node.js:** v20.0.0 or higher (`node -v`)
 - **npm:** v10.0.0 or higher (`npm -v`)
-- **macOS:** Apple Silicon or Intel MacBook
+- **Internet Access:** Required for connecting to MongoDB Atlas and Cloudflare R2
+- **MongoDB Atlas Cluster:** Dedicated free (M0) or paid Atlas cluster URI
+- **Cloudflare R2 Bucket:** Private R2 bucket and S3 API credentials
 
-### 2. Install Dependencies
-Clone the repository and install all workspace packages:
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env` and fill in your Atlas and Cloudflare R2 credentials:
 
 ```bash
-cd "Trading Vault"
+cp .env.example .env
+```
+
+Ensure the following variables are set in `.env`:
+- `MONGODB_URI` — Your Atlas connection string (URL-encode special characters in password)
+- `S3_ENDPOINT` — `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
+- `S3_REGION` — `auto`
+- `S3_BUCKET` — `setupmint`
+- `S3_ACCESS_KEY_ID` — Your R2 API Token Access Key ID
+- `S3_SECRET_ACCESS_KEY` — Your R2 API Token Secret Access Key
+
+### 3. Install Dependencies
+```bash
 npm install
 ```
 
-### 3. Seed Demo Trading Records (Optional)
-Populate your local journal with realistic demo Indian stock, F&O, and MCX commodity trades:
+### 4. Seed Demo Trading Records (Optional)
+Populate your Atlas journal and R2 bucket with realistic demo Indian stock, F&O, and MCX commodity trades:
 
 ```bash
 npm run db:seed
@@ -77,14 +92,14 @@ npm run db:seed
 - **Email:** `trader@tradevault.local`
 - **Password:** `TradeVault@123`
 
-### 4. Start Development Server
+### 5. Start Development Server
 Launch both the Fastify backend API (port 4000) and the Vite frontend (port 5173) concurrently:
 
 ```bash
 npm run dev
 ```
 
-Open your browser at **[http://localhost:5173](http://localhost:5173)** to start using TradeVault.
+Open your browser at **[http://localhost:5173](http://localhost:5173)** to start using SetupMint.
 
 ---
 
@@ -96,10 +111,10 @@ Execute comprehensive unit and integration test suites:
 # Run standalone financial engine calculation tests (40 unit tests)
 npm run test:engine
 
-# Run Fastify API integration tests (79 endpoint and regression tests)
+# Run Fastify API integration tests (104 endpoint, storage, and regression tests)
 npm run test:api
 
-# Run all test suites across the monorepo (119 tests)
+# Run all test suites across the monorepo (144 tests)
 npm run test
 ```
 
@@ -119,28 +134,14 @@ This compiles:
 
 ---
 
-## 💾 Local Backups and Restoration
+## 💾 Cloud Backups and Restoration
 
 ```bash
-# Create a full local backup of database collections and screenshots
+# Create a full backup of Atlas database collections and Cloudflare R2 screenshots
 npm run db:backup
 
-# Restore your journal from the latest local backup
-npm run db:restore
-```
-
----
-
-## 🐳 Optional Docker Setup
-
-If you prefer running MongoDB Community Server inside Docker, a container configuration is provided:
-
-```bash
-# Start local MongoDB bound strictly to 127.0.0.1:27017
-docker compose up -d
-
-# Start backend and frontend
-npm run dev
+# Restore your journal from a backup archive (requires explicit confirmation)
+npm run db:restore -- --yes-i-am-sure
 ```
 
 ---
@@ -148,6 +149,6 @@ npm run dev
 ## 📄 Licensing & Privacy
 
 - Core application code is licensed under the **MIT License**.
-- No paid subscriptions, commercial UI kits, or cloud databases are required.
-- Trading data is maintained strictly on your local machine.
+- Trading data is maintained strictly within your personal MongoDB Atlas database and Cloudflare R2 bucket.
+- No third-party behavioral trackers or external telemetry are present.
 - For complete dependency license details, see [`docs/LICENSE_INVENTORY.md`](docs/LICENSE_INVENTORY.md).

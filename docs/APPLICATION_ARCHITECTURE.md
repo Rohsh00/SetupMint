@@ -2,7 +2,7 @@
 
 ## 1. Executive Architecture Summary
 
-SetupMint is architected as a **local-first, privacy-focused, TypeScript monorepo**. It is engineered to operate completely offline or in self-hosted environments with zero recurring third-party subscriptions, commercial UI kits, or external cloud databases.
+SetupMint is architected as a **cloud-only, privacy-focused, TypeScript monorepo**. It is engineered to persist trading records in the user's dedicated MongoDB Atlas cluster and chart screenshots in a private Cloudflare R2 bucket with zero local fallbacks.
 
 ```mermaid
 graph TB
@@ -17,7 +17,7 @@ graph TB
     subgraph API["Backend API Layer (apps/api)"]
         Fastify["Fastify v5 Server (Port 4000)"]
         AuthMiddleware["Cookie Auth & Rate Limiting"]
-        Multer["Fastify Multipart (Local Storage)"]
+        StorageProvider["Storage Provider (@aws-sdk/client-s3)"]
         Swagger["OpenAPI Swagger Documentation"]
         PinoLogger["Pino Structured Redacting Logger"]
     end
@@ -27,10 +27,10 @@ graph TB
         Shared["@tradevault/shared\n(Types, Zod Schemas, Presets)"]
     end
 
-    subgraph Data["Persistence & Storage Layer"]
+    subgraph Data["Cloud Persistence & Object Storage Layer"]
         Mongoose["Mongoose ODM v8"]
-        MongoDB[("MongoDB Local / Embedded Persistence\n./apps/api/data/db")]
-        DiskStorage[("Private Attachments Storage\n./data/uploads")]
+        MongoDB[("MongoDB Atlas Cloud Cluster\n(mongodb+srv://)")]
+        R2Storage[("Cloudflare R2 Private Bucket\n(S3-Compatible)")]
     end
 
     Client -->|REST API v1 / HttpOnly Session Cookie| Fastify
@@ -39,8 +39,8 @@ graph TB
     Fastify --> Shared
     Fastify --> Mongoose
     Mongoose --> MongoDB
-    Fastify --> Multer
-    Multer --> DiskStorage
+    Fastify --> StorageProvider
+    StorageProvider --> R2Storage
     Client -.->|Bundled Client Calculations| FE
 ```
 
@@ -59,10 +59,10 @@ graph TB
 | **Charting** | Recharts (`recharts` 2.15.1) | Declarative SVG financial charts (equity curve, P&L distributions, weekday bars). |
 | **Backend Server** | Fastify v5 (`fastify` 5.2.1), TypeScript, Node.js LTS (>=20.0.0) | High-performance asynchronous HTTP server with native schema compilation. |
 | **Security & Headers** | `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/cookie`, `bcryptjs` | Defense-in-depth, brute-force mitigation, HttpOnly SameSite cookie handling. |
-| **File Uploads** | `@fastify/multipart` (10MB max limit) | Safe local streaming to disk with magic-bytes signature verification. |
-| **Database & ODM** | MongoDB Community Server / `mongodb-memory-server` v10, Mongoose ODM v8 | Flexible document modeling, compound indexes, and Decimal128 exact monetary storage. |
+| **File Uploads** | `@fastify/multipart` (10MB limit) + `@aws-sdk/client-s3` | In-memory magic-bytes verification with direct upload to private Cloudflare R2 bucket. |
+| **Database & ODM** | MongoDB Atlas, Mongoose ODM v8 | Flexible document modeling, compound indexes, and Decimal128 exact monetary storage. |
 | **Financial Engine** | `decimal.js` v10.5.0 | 30-digit precision arithmetic, eliminating IEEE-754 binary floating-point round-off errors. |
-| **Testing** | Vitest (`vitest` 3.0.6) | Lightning-fast test runner sharing Vite configuration, 119 passing test cases. |
+| **Testing** | Vitest (`vitest` 3.0.6) | Lightning-fast test runner sharing Vite configuration, with in-memory test mocks. |
 
 ---
 
@@ -122,31 +122,24 @@ All routes are prefixed under `/api/v1/`:
 
 ---
 
-## 5. Database Architecture & Resilient Connection Hierarchy
+## 5. Database Architecture & Fail-Fast Atlas Connection
 
-SetupMint uses **Mongoose ODM v8** with a multi-stage connection strategy in [`apps/api/src/db/connection.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/connection.ts) that allows the application to run out-of-the-box on a fresh machine without pre-installing MongoDB:
+SetupMint connects exclusively to **MongoDB Atlas** using Mongoose ODM v8 in [`apps/api/src/db/connection.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/connection.ts):
 
 ```mermaid
 graph TD
     Start["connectDatabase()"] --> IsTest{"Is Vitest Test?"}
-    IsTest -->|Yes| TestMem["Spawn Ephemeral MongoMemoryServer (tradevault-test)"]
-    IsTest -->|No| CheckConfig{"1. Try configured MONGODB_URI (e.g. Docker localhost:27017)"}
+    IsTest -->|Yes| TestMem["Connect to In-Memory Test Server"]
+    IsTest -->|No| CheckAtlas{"Verify MONGODB_URI is Atlas (mongodb+srv:// or *.mongodb.net)"}
     
-    CheckConfig -->|Connected| ReturnURI["Connected Successfully"]
-    CheckConfig -->|Timeout / Fails| CheckActiveFile{"2. Check current_uri.txt for existing instance"}
+    CheckAtlas -->|Valid Atlas URI| ConnectAtlas["Single Connection Attempt (10s timeout)"]
+    CheckAtlas -->|Missing or Non-Atlas| ThrowErr["Fail Fast: Throw Clear Configuration Error"]
     
-    CheckActiveFile -->|Reachable| ReturnURI
-    CheckActiveFile -->|Missing/Stale| CheckProc{"3. Inspect running mongod processes for local dbPath"}
-    
-    CheckProc -->|Process Found| ReturnURI
-    CheckProc -->|No Process| CheckLock{"4. Is mongod.lock free?"}
-    
-    CheckLock -->|Free| SpawnPersistent["Spawn MongoMemoryServer with WiredTiger\npersistence in ./apps/api/data/db"]
-    CheckLock -->|Locked / Failed| SpawnInMemory["5. Fallback: Pure in-memory MongoMemoryServer"]
-    
-    SpawnPersistent --> ReturnURI
-    SpawnInMemory --> ReturnURI
+    ConnectAtlas -->|Connected| ReturnURI["Connected: DB: Atlas (<host>) | Storage: R2 (<bucket>)"]
+    ConnectAtlas -->|Unreachable / Timeout| ExitFatal["Log Host Only (Mask Credentials) & Exit Non-Zero"]
 ```
+
+All legacy multi-stage fallback mechanisms (embedded `mongodb-memory-server`, `current_uri.txt`, process inspection, `mongod.lock`) have been completely removed from production runtime paths.
 
 ### Exact Monetary Persistence
 All balances and cumulative ledger numbers in `TradingAccount` and `AccountTransaction` are stored using `mongoose.Schema.Types.Decimal128`. This guarantees that monetary amounts are persisted as exact 128-bit decimal floating points rather than IEEE-754 double floats.

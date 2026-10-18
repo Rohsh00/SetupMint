@@ -1,22 +1,20 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import crypto from 'crypto';
-import fs from 'fs';
 import path from 'path';
-import { pipeline } from 'stream/promises';
 import { Attachment, Trade } from '../db/models/index.js';
-import { config } from '../config.js';
+import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 
 /**
- * Validates file signature (magic bytes) to protect against disguised binary payloads
+ * Validates file signature (magic bytes) directly against the in-memory buffer
+ * to protect against disguised binary payloads before sending anything to cloud storage.
  */
-function verifyImageMagicBytes(filePath: string, mimeType: string): boolean {
+function verifyImageMagicBytes(buffer: Buffer, mimeType: string): boolean {
   try {
-    const buffer = Buffer.alloc(12);
-    const fd = fs.openSync(filePath, 'r');
-    fs.readSync(fd, buffer, 0, 12, 0);
-    fs.closeSync(fd);
+    if (!buffer || buffer.length < 12) {
+      return false;
+    }
 
     if (mimeType === 'image/png') {
       return (
@@ -73,7 +71,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
       });
     }
 
-    // Validate MIME type
+    // Validate MIME type against strict allow-list
     const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!allowedMimeTypes.includes(data.mimetype)) {
       return reply.status(400).send({
@@ -82,29 +80,26 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
       });
     }
 
-    // Server-controlled random UUID filename prevents path traversal
-    const ext = path.extname(data.filename).toLowerCase() || (data.mimetype === 'image/jpeg' ? '.jpg' : '.png');
-    const safeFilename = `${crypto.randomUUID()}${ext}`;
-    const targetFilePath = path.join(config.uploadDir, safeFilename);
+    // Buffer the file directly into memory for signature inspection
+    const fileBuffer = await data.toBuffer();
 
-    // Stream file to disk
-    await pipeline(data.file, fs.createWriteStream(targetFilePath));
-
-    const stat = fs.statSync(targetFilePath);
-
-    // Validate file magic bytes signature
-    const isValidSignature = verifyImageMagicBytes(targetFilePath, data.mimetype);
+    // Validate file magic bytes signature BEFORE saving to Cloudflare R2
+    const isValidSignature = verifyImageMagicBytes(fileBuffer, data.mimetype);
     if (!isValidSignature) {
-      try {
-        fs.unlinkSync(targetFilePath);
-      } catch {
-        // ignore
-      }
       return reply.status(400).send({
         success: false,
         error: { code: 'INVALID_IMAGE_SIGNATURE', message: 'Uploaded file signature does not match image header' },
       });
     }
+
+    // Server-controlled random UUID filename prevents path traversal
+    const ext = path.extname(data.filename).toLowerCase() || (data.mimetype === 'image/jpeg' ? '.jpg' : '.png');
+    const safeFilename = `${crypto.randomUUID()}${ext}`;
+
+    const storage = getStorage();
+
+    // Save directly to cloud storage (Cloudflare R2 / S3)
+    await storage.save(safeFilename, fileBuffer, data.mimetype);
 
     // Extract form metadata from multipart fields
     const rawCategory = (data.fields.category as any)?.value;
@@ -115,41 +110,51 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     const timeframe = (data.fields.timeframe as any)?.value || '';
     const chartTimestamp = (data.fields.chartTimestamp as any)?.value || '';
 
-    // Save attachment record in MongoDB
-    const attachment = await Attachment.create({
-      userId: req.user!.id,
-      tradeId: trade._id,
-      originalName: path.basename(data.filename),
-      storedFilename: safeFilename,
-      mimeType: data.mimetype,
-      sizeBytes: stat.size,
-      category,
-      description,
-      timeframe,
-      chartTimestamp,
-    });
+    try {
+      // Save attachment record in MongoDB Atlas
+      const attachment = await Attachment.create({
+        userId: req.user!.id,
+        tradeId: trade._id,
+        originalName: path.basename(data.filename),
+        storedFilename: safeFilename,
+        mimeType: data.mimetype,
+        sizeBytes: fileBuffer.length,
+        category,
+        description,
+        timeframe,
+        chartTimestamp,
+      });
 
-    // Link attachment to trade
-    trade.screenshotIds.push(attachment._id as any);
-    await trade.save();
+      // Link attachment to trade
+      trade.screenshotIds.push(attachment._id as any);
+      await trade.save();
 
-    return reply.status(201).send({
-      success: true,
-      data: {
-        id: attachment._id.toString(),
-        tradeId: trade._id.toString(),
-        originalName: attachment.originalName,
-        category: attachment.category,
-        caption: attachment.description,
-        description: attachment.description,
-        timeframe: attachment.timeframe,
-        chartTimestamp: attachment.chartTimestamp,
-        sizeBytes: attachment.sizeBytes,
-        mimeType: attachment.mimeType,
-        downloadUrl: `/api/v1/attachments/${attachment._id}/download`,
-        uploadedAt: attachment.createdAt.toISOString(),
-      },
-    });
+      return reply.status(201).send({
+        success: true,
+        data: {
+          id: attachment._id.toString(),
+          tradeId: trade._id.toString(),
+          originalName: attachment.originalName,
+          category: attachment.category,
+          caption: attachment.description,
+          description: attachment.description,
+          timeframe: attachment.timeframe,
+          chartTimestamp: attachment.chartTimestamp,
+          sizeBytes: attachment.sizeBytes,
+          mimeType: attachment.mimeType,
+          downloadUrl: `/api/v1/attachments/${attachment._id}/download`,
+          uploadedAt: attachment.createdAt.toISOString(),
+        },
+      });
+    } catch (dbErr) {
+      // Avoid orphan objects in R2 if DB persistence fails
+      try {
+        await storage.delete(safeFilename);
+      } catch {
+        // ignore delete failure on rollback
+      }
+      throw dbErr;
+    }
   });
 
   // Get all attachments for a specific trade
@@ -212,7 +217,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     });
   });
 
-  // Authenticated stream / download of private screenshot
+  // Authenticated stream / download of private screenshot via Cloudflare R2
   const handleAttachmentStream = async (req: any, reply: any) => {
     const attachment = await Attachment.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!attachment) {
@@ -222,24 +227,29 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
       });
     }
 
-    const filePath = path.join(config.uploadDir, attachment.storedFilename);
-    if (!fs.existsSync(filePath)) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'FILE_NOT_FOUND', message: 'File missing from private storage' },
-      });
-    }
+    const storage = getStorage();
 
-    reply.header('Content-Type', attachment.mimeType);
-    reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(attachment.originalName)}"`);
-    reply.header('Cache-Control', 'private, max-age=86400');
-    return reply.send(fs.createReadStream(filePath));
+    try {
+      const stream = await storage.read(attachment.storedFilename);
+      reply.header('Content-Type', attachment.mimeType);
+      reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(attachment.originalName)}"`);
+      reply.header('Cache-Control', 'private, max-age=86400');
+      return reply.send(stream);
+    } catch (storageErr: any) {
+      if (storageErr.code === 'FILE_NOT_FOUND' || storageErr.name === 'NoSuchKey') {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'FILE_NOT_FOUND', message: 'File missing from cloud storage' },
+        });
+      }
+      throw storageErr;
+    }
   };
 
   app.get('/:id/download', { preHandler: [validateObjectIdParam('id')] }, handleAttachmentStream);
   app.get('/:id/stream', { preHandler: [validateObjectIdParam('id')] }, handleAttachmentStream);
 
-  // Delete attachment
+  // Delete attachment: removes from R2, removes from Attachment collection, pulls from Trade.screenshotIds
   app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const attachment = await Attachment.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!attachment) {
@@ -249,14 +259,12 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
       });
     }
 
-    // Safely unlink from disk
-    const filePath = path.join(config.uploadDir, attachment.storedFilename);
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (err: any) {
-        req.log.warn('Failed to delete file from disk: %s', err.message);
-      }
+    // Delete from Cloudflare R2
+    const storage = getStorage();
+    try {
+      await storage.delete(attachment.storedFilename);
+    } catch (err: any) {
+      req.log.warn('Failed to delete object from cloud storage: %s', err.message);
     }
 
     // Remove reference from trade

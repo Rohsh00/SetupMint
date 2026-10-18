@@ -1,6 +1,6 @@
 # SetupMint — Local Setup & Developer Guide
 
-This guide provides practical instructions for setting up, developing, testing, and troubleshooting **SetupMint** on your local machine (macOS, Linux, or Windows).
+This guide provides practical instructions for setting up, developing, testing, and operating **SetupMint** in its cloud-only architecture (MongoDB Atlas + Cloudflare R2).
 
 ---
 
@@ -10,15 +10,16 @@ Before running SetupMint, verify that your environment meets the engine requirem
 - **Node.js:** `v20.0.0` or higher (`node -v`)
 - **npm:** `v10.0.0` or higher (`npm -v`)
 - **Git:** Installed and configured
-- **Operating System:** macOS (Apple Silicon or Intel), Linux (Ubuntu/Debian/Fedora), or Windows (WSL2 recommended)
-- **Optional:** Docker Desktop (if you prefer running MongoDB in a container)
+- **Internet Access:** Persistent connection required to communicate with MongoDB Atlas and Cloudflare R2.
+- **MongoDB Atlas Cluster:** A free (M0) or paid MongoDB Atlas cluster with your local public IP whitelisted in Atlas Network Access.
+- **Cloudflare R2 Bucket:** A private bucket (`setupmint`) with S3 API tokens (Access Key ID & Secret Access Key).
 
 ---
 
-## 2. Quick Setup (Under 2 Minutes)
+## 2. Quick Setup
 
 ### Step 1: Clone and Install Monorepo Dependencies
-Navigate to the project root and install all dependencies across all workspaces:
+Navigate to the project root and install all workspace dependencies:
 
 ```bash
 cd "Trading Vault"
@@ -31,10 +32,16 @@ Copy the template configuration file:
 ```bash
 cp .env.example .env
 ```
-*(The default settings in `.env.example` work out-of-the-box for local development.)*
 
-### Step 3: Populate Demo Trading Records (Optional but Recommended)
-Populate your local journal with realistic demo Indian stock, F&O, and MCX commodity trades:
+Open `.env` and fill in your cloud credentials:
+- `MONGODB_URI` — Atlas connection URI (e.g. `mongodb+srv://<USER>:<PASSWORD>@<CLUSTER>.mongodb.net/tradevault?retryWrites=true&w=majority`)
+- `S3_ENDPOINT` — Cloudflare R2 endpoint (`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`)
+- `S3_BUCKET` — `setupmint`
+- `S3_ACCESS_KEY_ID` — Your R2 API Token Access Key ID
+- `S3_SECRET_ACCESS_KEY` — Your R2 API Token Secret Access Key
+
+### Step 3: Populate Demo Trading Records (Optional)
+Populate your Atlas database and R2 bucket with realistic demo Indian stock, F&O, and MCX commodity trades:
 
 ```bash
 npm run db:seed
@@ -56,24 +63,12 @@ API documentation is available at **[http://localhost:4000/api/docs](http://loca
 
 ---
 
-## 3. Database Options: Embedded vs. Docker
+## 3. Cloud-Only Architecture (Zero Fallbacks)
 
-SetupMint supports two database modes:
-
-### Option A: Zero-Config Embedded Database (Default)
-You do **not** need to install or run MongoDB manually.
-If no external MongoDB daemon is detected on port 27017, the application automatically launches an embedded MongoDB engine (`mongodb-memory-server`) with local persistence enabled in `./apps/api/data/db`. Your data is permanently preserved across server restarts.
-
-### Option B: Docker Containerized MongoDB (Optional)
-If you prefer running a dedicated MongoDB 7.0 container:
-
-```bash
-# Start MongoDB container bound to 127.0.0.1:27017
-docker compose up -d
-
-# Check container status
-docker compose ps
-```
+SetupMint operates in a **strictly cloud-native mode**:
+- **Database:** MongoDB Atlas is the sole database target. All legacy fallbacks (local mongod, embedded WiredTiger, `current_uri.txt`, process inspection) have been removed.
+- **Storage:** Cloudflare R2 is the sole attachment storage target. All uploads are validated via in-memory magic-byte inspection before being saved directly to R2.
+- **Fail-Fast Startup:** If Atlas or R2 is unreachable or misconfigured, the server logs only the target host/bucket (never passwords) and terminates immediately with a non-zero exit code.
 
 ---
 
@@ -85,59 +80,45 @@ All commands are executed from the repository root:
 | :--- | :--- |
 | `npm run dev` | Runs Fastify backend and Vite frontend concurrently with live reloading. |
 | `npm run build` | Compiles `@tradevault/shared`, `@tradevault/financial-engine`, backend API, and frontend bundle. |
-| `npm run test` | Executes all Vitest test suites (119 tests across financial engine + API). |
+| `npm run test` | Executes all Vitest test suites (144 tests across financial engine + API with in-memory test mocks). |
 | `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (40 tests). |
-| `npm run test:api` | Runs Fastify API integration, regression, and attachment test suites (79 tests). |
+| `npm run test:api` | Runs Fastify API integration, regression, storage, and attachment test suites (104 tests). |
 | `npm run typecheck` | Validates TypeScript types across all 4 packages (`shared`, `financial-engine`, `api`, `web`). |
-| `npm run db:seed` | Populates database with default active-trader demo profile. |
-| `npm run seed:reset` | Wipes only demo user records (`trader@tradevault.local`), preserving real users. |
-| `npm run seed:validate`| Executes 10 automated assertion checks validating demo data integrity. |
-| `npm run db:backup` | Dumps database collections to JSON and copies chart images to `./backups/`. |
-| `npm run db:restore` | Restores database collections and chart images from the latest local backup. |
-| `npm run db:reconcile` | Recalculates and persists authoritative balances across all accounts. |
+| `npm run migrate:cloud` | Runs one-time migration of local data to Atlas and R2 (`--dry-run` default). |
+| `npm run db:seed` | Populates Atlas and R2 with default active-trader demo profile. |
+| `npm run seed:reset` | Wipes demo user records (`trader@tradevault.local`) from Atlas and removes demo R2 objects. |
+| `npm run seed:validate`| Executes automated assertion checks validating demo data integrity. |
+| `npm run db:backup` | Dumps Atlas collections to JSON and downloads R2 screenshots to `./backups/`. |
+| `npm run db:restore` | Restores Atlas collections and uploads screenshots to R2 (requires `--yes-i-am-sure`). |
+| `npm run db:reconcile` | Authoritatively recalculates and persists ledger balances on Atlas. |
 
 ---
 
-## 5. Seeding Specific Trader Profiles
+## 5. Troubleshooting Common Issues
 
-To test specific market scenarios, supply arguments to `npm run db:seed`:
-
-```bash
-# Profile A: Beginner Trader (35 trades, simple executions)
-npm run db:seed -- --profile=beginner --density=minimal
-
-# Profile C: Options Specialist (500+ trades, NIFTY/BANKNIFTY CE/PE)
-npm run db:seed -- --profile=options-specialist --density=rich
-
-# Profile D: MCX Commodity Trader (Crude Oil, Natural Gas, Gold)
-npm run db:seed -- --profile=commodity-trader --density=standard
-
-# Profile F: Psychology & Discipline (FOMO, revenge trading, mistake flags)
-npm run db:seed -- --profile=psychology --density=standard
-
-# Profile H: Edge Cases & Boundaries (Breakeven streaks, zero loss days)
-npm run db:seed -- --profile=edge-cases --density=minimal
+### 1. Atlas Connection Failure / IP Whitelist Error
+If the server reports:
+```text
+Could not connect to any servers in your MongoDB Atlas cluster...
 ```
+- Open MongoDB Atlas Dashboard -> **Security** -> **Network Access**.
+- Add your current IP address (or `0.0.0.0/0` for universal development access).
+- Ensure your database password does not contain unencoded special characters (e.g. encode `@` as `%40`).
 
----
+### 2. Cloudflare R2 Configuration Error
+If the server reports:
+```text
+Cloudflare R2 (S3) configuration missing: [S3_ENDPOINT, S3_BUCKET, ...]
+```
+- Check that your `.env` contains `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`.
+- Verify your R2 API Token has **Object Read & Write** permissions.
 
-## 6. Troubleshooting Common Issues
-
-### 1. Port 4000 or 5173 Already in Use
+### 3. Port 4000 or 5173 Already in Use
 If another process holds port 4000:
 ```bash
-# Find process on port 4000
 lsof -i :4000
-# Terminate process
 kill -9 <PID>
 ```
 
-### 2. Lock File in Embedded Database (`mongod.lock`)
-If the server crashed abruptly and an embedded instance left a lock file:
-```bash
-# Remove stale lock file
-rm -f ./apps/api/data/db/mongod.lock
-```
-
-### 3. Session Cookies Not Saved
+### 4. Session Cookies Not Saved
 Verify that your browser allows cookies on `localhost`. Ensure `CORS_ORIGIN` in `.env` matches your browser URL (`http://localhost:5173`).

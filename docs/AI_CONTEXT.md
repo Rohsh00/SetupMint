@@ -9,8 +9,8 @@
 
 - **Product Name:** **SetupMint — Trade. Track. Improve.** (PRO)
 - **Codebase / Monorepo Name:** `tradevault-monorepo` (`@tradevault/api`, `@tradevault/web`, `@tradevault/financial-engine`, `@tradevault/shared`)
-- **Product Vision:** A local-first, privacy-respecting trading journal and quantitative performance analytics platform engineered primarily for serious Indian retail traders (Equities, F&O, MCX Commodities) and global discretionary traders.
-- **Privacy Standard:** 100% private local storage. No commercial UI kit subscriptions, paid cloud databases, or third-party behavioral trackers. Data stays on the trader's local machine.
+- **Product Vision:** A cloud-native, privacy-respecting trading journal and quantitative performance analytics platform engineered primarily for serious Indian retail traders (Equities, F&O, MCX Commodities) and global discretionary traders.
+- **Privacy Standard:** 100% private cloud storage in the trader's dedicated MongoDB Atlas cluster and Cloudflare R2 bucket. No commercial UI kit subscriptions, telemetry, or third-party behavioral trackers. Data is stored strictly in the trader's personal cloud infrastructure.
 
 ---
 
@@ -34,9 +34,9 @@
 - **Frontend SPA (`apps/web`):** React 19, TypeScript, Vite 6, Material UI (MUI v9), Emotion, Tailwind CSS v3, TanStack React Query v5, React Hook Form v7, Zod v3, Recharts v2.
 - **Financial Calculation Engine (`packages/financial-engine`):** Pure mathematical library using **`decimal.js`** with **30-digit precision** (`ROUND_HALF_UP`). Zero floating-point round-off errors.
 - **Shared Package (`packages/shared`):** Shared TypeScript types, Zod schemas, market constants, instrument presets.
-- **Persistence:** MongoDB Community Server or persistent embedded WiredTiger engine in `./apps/api/data/db`.
-- **Private Attachment Storage:** Local filesystem storage in `./data/uploads`.
-- **Testing:** Vitest v3 (119 automated unit and integration tests passing).
+- **Persistence:** MongoDB Atlas dedicated cloud cluster (`mongodb+srv://`). Strictly cloud-only with zero local/in-memory fallbacks.
+- **Private Attachment Storage:** Cloudflare R2 private bucket via S3 API (`@aws-sdk/client-s3`), streamed through authenticated endpoints.
+- **Testing:** Vitest v3 with isolated in-memory test storage and database mocks.
 
 ---
 
@@ -99,7 +99,7 @@ Trading Vault/
    $$\text{Current Balance} = \text{Initial Balance} + \sum \text{Closed Trades Net P&L} + \sum \text{Deposits} - \sum \text{Withdrawals} + \sum \text{Adjustments}$$
    *Never modify account balances via client-side calculations. Always trigger `AccountService.recalculateAccountBalances(accountId, userId)`.*
 3. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
-4. **Physical Disk Cleanup:** Deleting a trade or attachment physically unlinks the image file from `./data/uploads/` via `fs.unlinkSync()`.
+4. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
 
 ---
 
@@ -176,8 +176,9 @@ npm run db:reconcile
 3. **Preserve Financial Integrity:**
    - Always invoke `AccountService.recalculateAccountBalances()` after any trade creation, update, deletion, or CSV import.
    - Never use IEEE-754 floating point arithmetic for monetary balances; use `decimal.js` or `Decimal128`.
-4. **Preserve Privacy & Local-First Design:**
-   - Keep chart screenshot storage in `./data/uploads`. Do not introduce required external cloud storage services (e.g. S3, Cloudinary) unless explicitly requested by the user.
+4. **Preserve Cloud-Only Architecture & Privacy:**
+   - Chart screenshots are stored exclusively in Cloudflare R2 via `@tradevault/api` storage provider and streamed through authenticated endpoints. Never reintroduce local disk storage or fallbacks.
+   - Database persistence runs exclusively against MongoDB Atlas. Fail-fast on startup with clear diagnostic errors if credentials or network are unreachable. Never reintroduce embedded or in-memory MongoDB fallbacks in production.
    - Do not add telemetry or external analytics beacons.
 5. **Protect Secrets & Broker Credentials:**
    - Never commit API keys, FYERS app secrets, or session secrets.

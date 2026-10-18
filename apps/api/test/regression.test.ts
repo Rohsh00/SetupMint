@@ -6,7 +6,7 @@ import Decimal from 'decimal.js';
 import { buildApp } from '../src/server.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
 import { Attachment, Trade, TradingAccount, Strategy, DailyJournal, Session } from '../src/db/models/index.js';
-import { config } from '../src/config.js';
+import { getStorage } from '../src/storage/index.js';
 
 describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
   let app: FastifyInstance;
@@ -660,11 +660,11 @@ describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
       expect(streamRes.rawPayload.length).toBe(validPngBuffer.length);
     });
 
-    it('D3: Deleting trade cascades and permanently deletes attachment record and private disk file', async () => {
+    it('D3: Deleting trade cascades and permanently deletes attachment record and cloud storage object', async () => {
       const attRecord = await Attachment.findById(attachmentDId);
       expect(attRecord).toBeDefined();
-      const filePath = path.join(config.uploadDir, attRecord!.storedFilename);
-      expect(fs.existsSync(filePath)).toBe(true);
+      const storage = getStorage();
+      expect(await storage.exists(attRecord!.storedFilename)).toBe(true);
 
       // Delete the trade
       const delRes = await app.inject({
@@ -678,8 +678,8 @@ describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
       const attAfter = await Attachment.findById(attachmentDId);
       expect(attAfter).toBeNull();
 
-      // Verify disk file deleted
-      expect(fs.existsSync(filePath)).toBe(false);
+      // Verify storage object deleted
+      expect(await storage.exists(attRecord!.storedFilename)).toBe(false);
     });
   });
 

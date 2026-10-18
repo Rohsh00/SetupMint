@@ -11,6 +11,8 @@ import {
   User,
 } from '../db/models/index.js';
 
+import { getStorage } from '../storage/index.js';
+
 export async function resetDemoData() {
   console.log('[ResetDemo] Connecting to database...');
   await connectDatabase();
@@ -26,6 +28,23 @@ export async function resetDemoData() {
   }
 
   const userId = demoUser._id;
+
+  // Clean up chart screenshot objects from Cloudflare R2
+  const demoAttachments = await Attachment.find({ userId });
+  if (demoAttachments.length > 0) {
+    try {
+      const storage = getStorage();
+      for (const att of demoAttachments) {
+        try {
+          await storage.delete(att.storedFilename);
+        } catch {
+          // ignore individual deletion errors
+        }
+      }
+    } catch (storageErr: any) {
+      console.warn(`[ResetDemo] Cloud storage cleanup warning: ${storageErr.message}`);
+    }
+  }
 
   const tRes = await Trade.deleteMany({ userId });
   const aRes = await TradingAccount.deleteMany({ userId });

@@ -1,32 +1,31 @@
 # SetupMint — File Storage & Chart Attachments Architecture
 
-This document details the file upload pipeline, storage mechanisms, attachment categorization, image validation, and streaming protocols implemented in **SetupMint**.
+This document details the file upload pipeline, cloud object storage mechanisms, attachment categorization, image validation, and authenticated streaming protocols implemented in **SetupMint**.
 
 ---
 
-## 1. Storage Architecture: Local Disk vs. Cloudinary
+## 1. Storage Architecture: Cloudflare R2 (Private Bucket)
 
-### Local-First Privacy Design
-SetupMint implements **100% private local disk storage** for chart screenshot attachments.
+### Cloud-Native Private Object Storage
+SetupMint implements **100% cloud-only object storage** for chart screenshot attachments using **Cloudflare R2** (S3-compatible object storage). Local disk storage and in-memory fallbacks have been permanently removed.
 
-| Architecture Characteristic | SetupMint Implementation (Local Disk) | Cloud-Hosted Storage (e.g. Cloudinary / S3) |
+| Architecture Characteristic | SetupMint Cloud-Only Implementation (Cloudflare R2) | Legacy Local Disk Storage |
 | :--- | :--- | :--- |
-| **Storage Location** | `./data/uploads/` on the trader's local filesystem | Remote cloud vendor servers |
-| **Financial Privacy** | Complete offline privacy. Trade setups and sizes never leave the computer. | Proprietary charts and entries are uploaded to third-party cloud infrastructure. |
-| **Recurring Costs** | **Zero cost**. No paid subscription or API bandwidth billing. | Bandwidth overage fees, paid monthly storage tiers. |
-| **Network Independence** | Operates with zero internet connectivity. | Requires persistent internet access to upload and render charts. |
-| **Backup Integration** | Single command (`npm run db:backup`) archives database and charts together. | Requires separate cloud snapshot tooling. |
-
-*Note: While cloud providers like Cloudinary can be integrated in future web-hosted SaaS deployments, local disk storage is the intentional, verified default of the SetupMint local-first product.*
+| **Storage Location** | Dedicated private Cloudflare R2 bucket (`setupmint`) | Local filesystem directory |
+| **Bucket Privacy** | **100% Private**. Public development URL and public access are disabled. | Local filesystem permissions |
+| **Client Access** | **Zero direct R2 URLs**. Browser never receives direct bucket URLs or S3 signed links. | Authenticated Fastify streams |
+| **Streaming Mechanism** | Authenticated Fastify proxy endpoints stream object streams directly from R2 to the browser. | Direct disk streams |
+| **Image Validation** | Raw in-memory magic-bytes inspection BEFORE any cloud upload occurs. | Post-upload disk inspection |
+| **Fail-Fast Policy** | App startup fails fast with non-zero exit if R2 credentials or bucket are unreachable. | Silent fallback |
 
 ---
 
 ## 2. Supported Formats & Upload Specifications
 
-- **Accepted MIME Types:** `image/png`, `image/jpeg`, `image/webp`.
+- **Accepted MIME Types:** `image/png`, `image/jpeg`, `image/webp` (and synthetic demo charts in `image/svg+xml`).
 - **Maximum File Size:** Configured via `MAX_FILE_SIZE_MB` in `.env` (default: **10 MB**).
 - **Maximum Screenshots per Trade:** **12 images**.
-- **Attachment Storage Directory:** Configured via `UPLOAD_DIR` in `.env` (default: `./data/uploads`). Automatically created on server boot if absent.
+- **Key Pattern:** Enforced by `assertValidKey()` allowing only `<uuid>.(png|jpe?g|webp|svg)` and synthetic demo charts. Path traversal (`..`, `/`, `\`) is strictly rejected.
 - **Client Capture Modes:**
   - Multi-file drag-and-drop onto [`TradeAttachmentUploader`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeAttachmentUploader.tsx).
   - Direct clipboard paste (`Ctrl+V` / `Cmd+V`) from system screenshot tools (e.g. macOS `Cmd+Ctrl+Shift+4`).
@@ -42,21 +41,20 @@ sequenceDiagram
     actor Trader
     participant Browser as React Uploader
     participant Fastify as Fastify Server (/api/v1/attachments)
-    participant Disk as Local Disk (./data/uploads)
-    participant DB as MongoDB (Attachment / Trade)
+    participant R2 as Cloudflare R2 (Private Bucket)
+    participant DB as MongoDB Atlas (Attachment / Trade)
 
     Trader->>Browser: Selects image & sets metadata (category, timeframe, caption)
     Browser->>Fastify: POST /attachments/trades/:tradeId/upload (Multipart stream)
     Fastify->>Fastify: 1. Validate session & verify trade ownership
     Fastify->>Fastify: 2. Assert trade.screenshotIds.length < 12
     Fastify->>Fastify: 3. Verify MIME type in [image/png, image/jpeg, image/webp]
-    Fastify->>Fastify: 4. Generate random UUID filename: <uuid>.<ext>
-    Fastify->>Disk: 5. Stream file to ./data/uploads/<uuid>.<ext>
-    Fastify->>Fastify: 6. Inspect file header (first 12 bytes) for magic-bytes signature
+    Fastify->>Fastify: 4. Buffer into memory & verify magic-bytes header
     alt Signature Mismatch
-        Fastify->>Disk: fs.unlinkSync(targetFilePath)
-        Fastify-->>Browser: 400 INVALID_IMAGE_SIGNATURE
+        Fastify-->>Browser: 400 INVALID_IMAGE_SIGNATURE (Never touches R2)
     else Valid Image
+        Fastify->>Fastify: 5. Generate random UUID key: <uuid>.<ext>
+        Fastify->>R2: 6. storage.save(key, buffer, mime) (PutObjectCommand)
         Fastify->>DB: 7. Attachment.create({ tradeId, storedFilename, sizeBytes, category, ... })
         Fastify->>DB: 8. Trade.updateOne({ $push: { screenshotIds: attachment._id } })
         Fastify-->>Browser: 201 Created { id, downloadUrl: '/api/v1/attachments/:id/download' }
@@ -67,7 +65,7 @@ sequenceDiagram
 
 ## 4. Binary Magic-Bytes Signature Verification
 
-To guarantee that uploaded files are genuine images rather than disguised binary payloads or executable scripts, [`verifyImageMagicBytes`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/attachment.routes.ts#L14-L45) inspects the raw file buffer:
+To guarantee that uploaded files are genuine images rather than disguised binary payloads or executable scripts, `verifyImageMagicBytes` inspects the raw in-memory buffer before any network call to Cloudflare R2:
 
 ```typescript
 // PNG Header: 89 50 4E 47 0D 0A 1A 0A
@@ -80,7 +78,7 @@ buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff
 buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP'
 ```
 
-If the signature fails verification, the file is deleted from disk immediately.
+If the signature fails verification, the request immediately terminates with HTTP 400 `INVALID_IMAGE_SIGNATURE`.
 
 ---
 
@@ -107,14 +105,14 @@ Attachments are **not** served as public static assets. Instead, streaming is gu
 - **Endpoints:**
   - `GET /api/v1/attachments/:id/download`
   - `GET /api/v1/attachments/:id/stream`
-- **Ownership Check:** Queries `Attachment.findOne({ _id: req.params.id, userId: req.user.id })`.
+- **Ownership Check:** Queries `Attachment.findOne({ _id: req.params.id, userId: req.user.id })`. An unauthenticated request yields 401, while another user's attachment yields 404.
 - **Response Headers:**
   ```http
   Content-Type: image/png
   Content-Disposition: inline; filename="Nifty_5m_Entry.png"
   Cache-Control: private, max-age=86400
   ```
-- **Stream:** Node.js readable stream piped directly from disk (`fs.createReadStream(filePath)`).
+- **Stream:** Node.js readable stream piped directly from Cloudflare R2 (`storage.read(key)`).
 
 ---
 
@@ -122,11 +120,11 @@ Attachments are **not** served as public static assets. Instead, streaming is gu
 
 When an attachment is removed:
 1. **Via `DELETE /api/v1/attachments/:id`:**
-   - Physical file unlinked from `./data/uploads/<storedFilename>` via `fs.unlinkSync()`.
-   - Removed from `Attachment` collection.
+   - Object removed from Cloudflare R2 bucket via `storage.delete(storedFilename)`.
+   - Record removed from `Attachment` collection in MongoDB Atlas.
    - Reference removed from `Trade.screenshotIds`.
 2. **Via Trade Deletion (`DELETE /api/v1/trades/:id`):**
    - Queries all attachments linked to the trade.
-   - Unlinks each file from disk.
-   - Deletes all attachment records from MongoDB.
-   *Eliminates orphaned files and disk space leaks.*
+   - Deletes each object from Cloudflare R2.
+   - Deletes all attachment records from MongoDB Atlas.
+   *Eliminates orphaned cloud storage objects.*

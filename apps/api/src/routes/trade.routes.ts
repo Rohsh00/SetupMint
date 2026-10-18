@@ -6,11 +6,9 @@ import {
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
 } from '@tradevault/financial-engine';
-import fs from 'fs';
-import path from 'path';
 import { createTradeSchema, updateTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
 import { TradingAccount, Trade, Strategy, Instrument, Attachment } from '../db/models/index.js';
-import { config } from '../config.js';
+import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
@@ -431,16 +429,14 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const accountId = trade.accountId;
 
-    // Safely remove associated attachments and unlink files from disk
+    // Safely remove associated attachments from cloud storage and database
+    const storage = getStorage();
     const attachments = await Attachment.find({ tradeId: req.params.id, userId: req.user!.id });
     for (const att of attachments) {
-      const filePath = path.join(config.uploadDir, att.storedFilename);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-        } catch {
-          // ignore
-        }
+      try {
+        await storage.delete(att.storedFilename);
+      } catch (err: any) {
+        req.log.warn('Failed to delete attachment object from storage: %s', err.message);
       }
     }
     await Attachment.deleteMany({ tradeId: req.params.id, userId: req.user!.id });
@@ -541,16 +537,14 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const affectedAccountIds = Array.from(new Set(tradesToDelete.map((t) => t.accountId.toString())));
 
-    // 2. Safely remove associated attachments and files from disk
+    // 2. Safely remove associated attachments from cloud storage and database
+    const storage = getStorage();
     const attachments = await Attachment.find({ tradeId: { $in: tradeIds }, userId: req.user!.id });
     for (const att of attachments) {
-      const filePath = path.join(config.uploadDir, att.storedFilename);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-        } catch {
-          // ignore
-        }
+      try {
+        await storage.delete(att.storedFilename);
+      } catch (err: any) {
+        req.log.warn('Failed to delete attachment object from storage: %s', err.message);
       }
     }
     await Attachment.deleteMany({ tradeId: { $in: tradeIds }, userId: req.user!.id });

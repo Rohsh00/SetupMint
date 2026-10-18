@@ -34,8 +34,8 @@ graph TD
     Client["Browser UI (React 19 / Vite / Tailwind)"] -->|REST API & HttpOnly Cookie| API["Fastify API Server (Port 4000)"]
     API -->|Deterministic Calculations| FE["@tradevault/financial-engine (Decimal.js)"]
     API -->|Shared Types & Zod Validation| Shared["@tradevault/shared"]
-    API -->|Mongoose ODM| DB[("MongoDB Local / Embedded Persistence")]
-    API -->|Private Local Streaming| Storage[("Private Attachment Storage ./data/uploads")]
+    API -->|Mongoose ODM| DB[("MongoDB Atlas Cloud Database")]
+    API -->|Private S3 Streaming| Storage[("Cloudflare R2 Object Storage")]
     API -.->|Future Broker Sync Disabled| Fyers["Future FYERS Adapter Layer"]
 ```
 
@@ -43,19 +43,18 @@ graph TD
 
 ## 4. Key Architectural Decisions
 
-### A. Local-First & Zero Recurring Cost
-- The application binds to localhost by default (`127.0.0.1`).
-- No commercial UI kits, paid cloud databases, or third-party tracking services are included.
-- Private screenshot attachments are stored in `./data/uploads` and served strictly through authenticated endpoints.
+### A. Cloud-Only Architecture with Zero Fallbacks
+- The application connects strictly to the user's dedicated MongoDB Atlas cluster and Cloudflare R2 private bucket.
+- Fails fast on startup with clear errors if cloud credentials or network connectivity are missing.
+- Private screenshot attachments are stored in private Cloudflare R2 buckets and served strictly through authenticated stream/download endpoints (`/api/v1/attachments/:id/stream`).
 
 ### B. Standalone Financial Engine
 - Monetary numbers and R-multiples are calculated using `decimal.js` with 30-digit precision to avoid IEEE-754 floating-point inaccuracies.
 - No React or DOM dependencies in the calculation engine; fully covered by independent Vitest test suites.
 
-### C. Resilient MongoDB Persistence
-- Connects to local MongoDB Community Server (`mongodb://127.0.0.1:27017/tradevault`) by default.
-- If a standalone MongoDB daemon is not running, the application seamlessly spins up an embedded instance storing data persistently in `./data/db`.
-- Docker Compose is also provided for containerized workflows.
+### C. Cloud MongoDB Persistence
+- Connects exclusively to MongoDB Atlas (`mongodb+srv://...`).
+- Single connection attempt with strict timeout and fail-fast termination. Local embedded and in-memory MongoDB fallbacks have been permanently removed from production code.
 
 ### D. Security & Ownership
 - Session tokens are stored in HttpOnly, SameSite cookies.

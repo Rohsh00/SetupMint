@@ -2,24 +2,68 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import readline from 'readline';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { extractMongoHost, validateAndFormatAtlasUri } from '../apps/api/src/db/connection.js';
+import { AccountService } from '../apps/api/src/services/account.service.js';
 
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/tradevault';
-const UPLOAD_DIR = path.resolve(process.cwd(), process.env.UPLOAD_DIR || './data/uploads');
 const BACKUP_DIR = path.resolve(process.cwd(), './backups');
 
-async function restore() {
-  console.log('[Restore] Starting TradeVault restore...');
+function promptConfirmation(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    return Promise.resolve(true);
+  }
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
 
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('[Restore Error] No backups directory found at ./backups');
+  return new Promise((resolve) => {
+    rl.question(`${question} (type 'YES' to proceed): `, (answer) => {
+      rl.close();
+      resolve(answer.trim() === 'YES');
+    });
+  });
+}
+
+async function restore() {
+  console.log('\n======================================================');
+  console.log('🔄 SetupMint Cloud Restore Tool (Atlas + Cloudflare R2)');
+  console.log('======================================================\n');
+
+  const args = process.argv.slice(2);
+  const hasConfirmationFlag = args.includes('--yes-i-am-sure');
+
+  if (!hasConfirmationFlag) {
+    console.error(
+      '❌ [Restore Aborted] Restoring replaces records in your Atlas database.\n' +
+        'To proceed, you must explicitly pass the confirmation flag:\n\n' +
+        '  npm run db:restore -- --yes-i-am-sure\n' +
+        '  node scripts/restore.js <path-to-backup> --yes-i-am-sure\n'
+    );
     process.exit(1);
   }
 
+  const confirmed = await promptConfirmation(
+    '⚠️  WARNING: This will overwrite existing trading records on your Atlas cluster. Are you sure?'
+  );
+
+  if (!confirmed) {
+    console.log('[Restore] Operation cancelled by user.');
+    process.exit(0);
+  }
+
   // Find latest backup folder or specified argument
-  let targetBackup = process.argv[2];
+  let targetBackup = args.find((a) => !a.startsWith('--'));
   if (!targetBackup) {
+    if (!fs.existsSync(BACKUP_DIR)) {
+      console.error('[Restore Error] No backups directory found at ./backups');
+      process.exit(1);
+    }
+
     const backupFolders = fs
       .readdirSync(BACKUP_DIR)
       .filter((f) => f.startsWith('tradevault-backup-'))
@@ -35,9 +79,34 @@ async function restore() {
     targetBackup = path.resolve(targetBackup);
   }
 
-  console.log(`[Restore] Restoring from: ${targetBackup}`);
+  console.log(`[Restore] Restoring from backup folder: ${targetBackup}`);
 
-  await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+  const rawUri = process.env.MONGODB_URI;
+  const { uri: atlasUri, host: atlasHost } = validateAndFormatAtlasUri(rawUri);
+
+  const s3Endpoint = process.env.S3_ENDPOINT;
+  const s3Bucket = process.env.S3_BUCKET;
+  const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  const s3Region = process.env.S3_REGION || 'auto';
+  const s3Prefix = process.env.S3_PREFIX ? process.env.S3_PREFIX.replace(/^\/+|\/+$/g, '') : '';
+
+  if (!s3Endpoint || !s3Bucket || !s3AccessKeyId || !s3SecretAccessKey) {
+    throw new Error('Cloudflare R2 configuration missing. Ensure S3_* variables are set in .env.');
+  }
+
+  const s3Client = new S3Client({
+    region: s3Region,
+    endpoint: s3Endpoint,
+    credentials: {
+      accessKeyId: s3AccessKeyId,
+      secretAccessKey: s3SecretAccessKey,
+    },
+    forcePathStyle: true,
+  });
+
+  console.log(`[Restore] Connecting to Atlas MongoDB (${atlasHost})...`);
+  await mongoose.connect(atlasUri, { serverSelectionTimeoutMS: 10000 });
   const db = mongoose.connection.db;
 
   const files = fs.readdirSync(targetBackup);
@@ -59,21 +128,48 @@ async function restore() {
     }
   }
 
-  // Restore attachments
+  // Restore and re-upload attachments into Cloudflare R2
   const backupUploads = path.join(targetBackup, 'uploads');
+  let filesUploadedToR2 = 0;
+
   if (fs.existsSync(backupUploads)) {
-    if (!fs.existsSync(UPLOAD_DIR)) {
-      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    }
     const uploadFiles = fs.readdirSync(backupUploads);
+    console.log(`[Restore] Re-uploading ${uploadFiles.length} attachments to Cloudflare R2 (${s3Bucket})...`);
+
     for (const f of uploadFiles) {
-      fs.copyFileSync(path.join(backupUploads, f), path.join(UPLOAD_DIR, f));
+      const filePath = path.join(backupUploads, f);
+      const ext = path.extname(f).toLowerCase();
+      let mime = 'image/png';
+      if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+      else if (ext === '.webp') mime = 'image/webp';
+      else if (ext === '.svg') mime = 'image/svg+xml';
+
+      const fileBuffer = fs.readFileSync(filePath);
+      const s3Key = s3Prefix ? `${s3Prefix}/${f}` : f;
+
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket: s3Bucket,
+          Key: s3Key,
+          Body: fileBuffer,
+          ContentType: mime,
+        })
+      );
+      filesUploadedToR2++;
     }
-    console.log(`[Restore] Restored ${uploadFiles.length} private attachments into ${UPLOAD_DIR}`);
+  }
+
+  // Reconcile account balances after restore
+  console.log('[Restore] Reconciling authoritative balances across all trading accounts...');
+  const accounts = await db.collection('tradingaccounts').find({}).toArray();
+  for (const acc of accounts) {
+    await AccountService.recalculateAccountBalances(acc._id.toString(), acc.userId.toString());
   }
 
   console.log(`\n======================================================`);
-  console.log(`✅ TradeVault restored successfully! Total records: ${totalRestored}`);
+  console.log(`✅ TradeVault restored successfully!`);
+  console.log(`Database records restored to Atlas: ${totalRestored}`);
+  console.log(`Chart attachments uploaded to R2: ${filesUploadedToR2}`);
   console.log(`======================================================\n`);
 
   await mongoose.disconnect();

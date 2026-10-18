@@ -2,6 +2,7 @@
   "name": "tradevault-monorepo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "TradeVault - Professional Trading Journal Application",
   "workspaces": [
     "packages/*",

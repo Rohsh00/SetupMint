@@ -1,6 +1,6 @@
 # SetupMint — Deployment & Operations Guide
 
-This document describes the production build pipeline, hosting requirements, containerized execution, backup operations, and operational limits for **SetupMint**.
+This document describes the production build pipeline, hosting requirements, cloud persistence architecture, backup operations, and operational limits for **SetupMint**.
 
 ---
 
@@ -20,33 +20,30 @@ This sequentially compiles all workspaces in strict dependency order:
 
 ---
 
-## 2. Deployment Topology Options
+## 2. Deployment Topology
 
-SetupMint supports three primary deployment configurations:
+SetupMint is architected for cloud-native persistence with zero local fallbacks:
 
 ```mermaid
 graph TD
-    subgraph OptionA["Option 1: Local MacBook / Workstation (Default)"]
-        BrowserA["Local Browser"] --> ViteA["Vite Dev / Static Server (Port 5173)"]
-        ViteA --> FastifyA["Fastify Server (Port 4000)"]
-        FastifyA --> EmbedDB["Embedded WiredTiger MongoDB (./apps/api/data/db)"]
-        FastifyA --> LocalDiskA["Local Storage (./data/uploads)"]
+    subgraph Client["Browser Client (Desktop / Mobile)"]
+        Browser["Trader Browser"]
     end
 
-    subgraph OptionB["Option 2: Docker Compose (Local Containerized)"]
-        BrowserB["Local Browser"] --> NginxB["Reverse Proxy / Web"]
-        NginxB --> FastifyB["Fastify API Container"]
-        FastifyB --> MongoB[("Docker MongoDB 7.0 Container\n127.0.0.1:27017")]
-        FastifyB --> VolumeB[("Persistent Volume ./data/uploads")]
+    subgraph Hosting["Application Hosting (Local or Cloud VPS)"]
+        WebStatic["apps/web/dist/ (Static Web Server / Nginx / Caddy)"]
+        FastifyAPI["Fastify API Server (Port 4000)"]
     end
 
-    subgraph OptionC["Option 3: Self-Hosted Cloud VPS (Ubuntu / Debian)"]
-        ClientC["Remote Trader Browser"] -->|HTTPS| Caddy["Reverse Proxy (Caddy / Nginx)"]
-        Caddy -->|Static Assets| WebDist["apps/web/dist/"]
-        Caddy -->|Proxy /api| PM2["Fastify API (PM2 Process Manager)"]
-        PM2 --> MongoC[("MongoDB Service / Atlas")]
-        PM2 --> DiskC[("VPS Disk Storage /data/uploads")]
+    subgraph CloudServices["Dedicated Cloud Services"]
+        Atlas[("MongoDB Atlas Cloud Cluster\n(mongodb+srv://)")]
+        R2[("Cloudflare R2 Object Storage\n(Private S3 Bucket)")]
     end
+
+    Browser -->|HTTPS / Port 443| WebStatic
+    Browser -->|/api/* Requests + HttpOnly Cookie| FastifyAPI
+    FastifyAPI -->|Mongoose ODM v8| Atlas
+    FastifyAPI -->|@aws-sdk/client-s3| R2
 ```
 
 ---
@@ -61,18 +58,18 @@ cd apps/api
 NODE_ENV=production node dist/server.js
 ```
 
-Or using PM2 for process monitoring:
+Or using PM2 for process management:
 ```bash
 pm2 start apps/api/dist/server.js --name "setupmint-api"
 ```
 
-The frontend production bundle in `apps/web/dist/` can be served via Nginx, Caddy, or any static file server:
+The frontend production bundle in `apps/web/dist/` can be served via Nginx, Caddy, or Cloudflare Pages:
 
 **Sample Nginx Configuration:**
 ```nginx
 server {
     listen 80;
-    server_name trading.local;
+    server_name setupmint.yourdomain.com;
 
     # Serve static frontend
     location / {
@@ -98,24 +95,25 @@ server {
 
 ## 4. Backup & Disaster Recovery Runbook
 
-SetupMint includes native disaster recovery scripts:
+> [!IMPORTANT]
+> Because MongoDB Atlas M0 (Free Tier) does not provide continuous automated backups, running `npm run db:backup` regularly is critical.
 
 ### A. Performing an Immediate Backup
 ```bash
 npm run db:backup
 ```
 - Creates `./backups/tradevault-backup-<timestamp>/`.
-- Dumps JSON records for all database collections.
-- Recursively copies all private screenshot attachments.
-- Writes `manifest.json` validating collection record counts.
+- Dumps JSON records for all database collections from MongoDB Atlas.
+- Downloads all private screenshot attachments from Cloudflare R2.
+- Writes `manifest.json` validating collection record counts and file counts.
 
 ### B. Restoring from Backup
 ```bash
-# Restore latest backup
-npm run db:restore
+# Restore latest backup (requires explicit confirmation flag)
+npm run db:restore -- --yes-i-am-sure
 
 # Or restore specific archive folder
-npm run db:restore ./backups/tradevault-backup-2026-10-18T09-00-00-000Z
+node scripts/restore.js ./backups/tradevault-backup-2026-10-18T17-04-17-360Z --yes-i-am-sure
 ```
 
 ### C. Post-Restore Integrity Audit
@@ -128,8 +126,7 @@ npm run db:reconcile
 
 ## 5. Operational Limits & Resource Sizing
 
-- **Memory:** Node.js process requires ~150MB RAM at baseline; ~500MB under heavy analytical chart rendering.
-- **CPU:** Modest dual-core processor is sufficient. Calculation engine processes 5,000 trades in <100ms.
-- **Disk Storage:**
-  - Database: ~10MB per 10,000 trades.
-  - Screenshots: Approximately 200KB – 800KB per chart image. 1,000 uploaded screenshots consume ~500MB disk space.
+- **Memory:** Node.js API process requires ~150MB RAM at baseline; ~300MB under peak load.
+- **CPU:** Calculation engine processes 5,000 trades in <100ms.
+- **Cloud Database (MongoDB Atlas):** Atlas Free (M0) provides 512MB storage, accommodating ~100,000 trades.
+- **Object Storage (Cloudflare R2):** Cloudflare R2 includes 10GB free monthly storage with zero egress fees. Screenshots are served through Fastify authenticated streams.

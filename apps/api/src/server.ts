@@ -8,7 +8,9 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import mongoose from 'mongoose';
 import { config } from './config.js';
-import { connectDatabase, disconnectDatabase } from './db/connection.js';
+import { connectDatabase, disconnectDatabase, extractMongoHost } from './db/connection.js';
+import { getStorage } from './storage/index.js';
+import { S3Storage } from './storage/s3.storage.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { accountRoutes } from './routes/account.routes.js';
 import { instrumentRoutes } from './routes/instrument.routes.js';
@@ -162,16 +164,28 @@ if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.
   async function start() {
     try {
       await connectDatabase();
+
+      // Cloud storage health check (probes Cloudflare R2 bucket)
+      const storage = getStorage();
+      if (storage instanceof S3Storage) {
+        await storage.healthCheck();
+      }
+
+      const mongoHost = extractMongoHost(config.mongodbUri || process.env.MONGODB_URI || '');
+      const s3Bucket = process.env.S3_BUCKET || 'unknown';
+
+      console.log(`DB: Atlas (${mongoHost}) | Storage: R2 (${s3Bucket})`);
+
       const app = await buildApp();
 
       await app.listen({ port: config.port, host: config.host });
       console.log(`\n======================================================`);
-      console.log(`🚀 TradeVault API Server listening on http://${config.host}:${config.port}`);
+      console.log(`🚀 SetupMint API Server listening on http://${config.host}:${config.port}`);
       console.log(`📖 API OpenAPI Docs available at http://${config.host}:${config.port}/api/docs`);
       console.log(`======================================================\n`);
 
       const shutdown = async () => {
-        console.log('\nShutting down TradeVault gracefully...');
+        console.log('\nShutting down SetupMint gracefully...');
         await app.close();
         await disconnectDatabase();
         process.exit(0);

@@ -1,18 +1,20 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { FastifyInstance } from 'fastify';
-import fs from 'fs';
-import path from 'path';
 import { buildApp } from '../src/server.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
 import { Attachment, Trade } from '../src/db/models/index.js';
-import { config } from '../src/config.js';
+import { setStorageForTests } from '../src/storage/index.js';
+import { InMemoryStorage } from './in-memory-storage.js';
 
-describe('TradeVault Attachments & Chart Screenshot Tests', () => {
+describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provider)', () => {
   let app: FastifyInstance;
+  let testStorage: InMemoryStorage;
   let authCookie: string;
+  let otherUserAuthCookie: string;
   let accountId: string;
   let tradeId: string;
   let attachmentId: string;
+  let storedFilename: string;
 
   // 12-byte valid PNG header
   const validPngBuffer = Buffer.from([
@@ -21,11 +23,14 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
   ]);
 
   beforeAll(async () => {
+    testStorage = new InMemoryStorage();
+    setStorageForTests(testStorage);
+
     await connectDatabase();
     app = await buildApp();
     await app.ready();
 
-    // Register user
+    // Register User 1
     const regRes = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/register',
@@ -37,7 +42,19 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     });
     authCookie = regRes.headers['set-cookie'] as string;
 
-    // Create Account
+    // Register User 2 (to test ownership 404)
+    const regRes2 = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        email: `other_user_${Date.now()}@tradevault.local`,
+        password: 'Password@123',
+        name: 'Other Trader',
+      },
+    });
+    otherUserAuthCookie = regRes2.headers['set-cookie'] as string;
+
+    // Create Account for User 1
     const accRes = await app.inject({
       method: 'POST',
       url: '/api/v1/accounts',
@@ -52,7 +69,7 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     });
     accountId = JSON.parse(accRes.body).data.id;
 
-    // Create Trade
+    // Create Trade for User 1
     const tradeRes = await app.inject({
       method: 'POST',
       url: '/api/v1/trades',
@@ -82,6 +99,7 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
   afterAll(async () => {
     await app.close();
     await disconnectDatabase();
+    setStorageForTests(null);
   });
 
   it('rejects upload with invalid magic bytes (fake png)', async () => {
@@ -107,6 +125,8 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
     expect(body.error.code).toBe('INVALID_IMAGE_SIGNATURE');
+    // Ensure invalid file never reached storage
+    expect(testStorage.count()).toBe(0);
   });
 
   it('successfully uploads valid chart screenshot with category and caption', async () => {
@@ -141,6 +161,12 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     expect(body.data.downloadUrl).toContain('/api/v1/attachments/');
 
     attachmentId = body.data.id;
+
+    // Verify stored in cloud storage provider
+    const attDoc = await Attachment.findById(attachmentId);
+    expect(attDoc).toBeDefined();
+    storedFilename = attDoc!.storedFilename;
+    expect(await testStorage.exists(storedFilename)).toBe(true);
 
     // Verify Trade screenshotIds array contains this attachment
     const trade = await Trade.findById(tradeId);
@@ -190,6 +216,42 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     expect(res.rawPayload.length).toBeGreaterThanOrEqual(validPngBuffer.length);
   });
 
+  it('GET /api/v1/attachments/:id/stream serves authenticated image stream', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/attachments/${attachmentId}/stream`,
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.rawPayload.length).toBeGreaterThanOrEqual(validPngBuffer.length);
+  });
+
+  it('enforces tenant isolation and returns 404 when another user requests the attachment', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/attachments/${attachmentId}/stream`,
+      headers: { cookie: otherUserAuthCookie },
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = JSON.parse(res.body);
+    expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('enforces tenant isolation and returns 404 when another user tries to delete the attachment', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/attachments/${attachmentId}`,
+      headers: { cookie: otherUserAuthCookie },
+    });
+
+    expect(res.statusCode).toBe(404);
+    // Ensure attachment was NOT deleted from storage
+    expect(await testStorage.exists(storedFilename)).toBe(true);
+  });
+
   it('PUT /api/v1/attachments/:id updates caption and category metadata', async () => {
     const res = await app.inject({
       method: 'PUT',
@@ -209,7 +271,9 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     expect(body.data.timeframe).toBe('15m');
   });
 
-  it('DELETE /api/v1/attachments/:id deletes attachment and updates trade', async () => {
+  it('DELETE /api/v1/attachments/:id deletes attachment and updates trade and removes from storage', async () => {
+    expect(await testStorage.exists(storedFilename)).toBe(true);
+
     const res = await app.inject({
       method: 'DELETE',
       url: `/api/v1/attachments/${attachmentId}`,
@@ -222,32 +286,64 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     const att = await Attachment.findById(attachmentId);
     expect(att).toBeNull();
 
+    // Verify deleted from Cloudflare R2 / test storage provider
+    expect(await testStorage.exists(storedFilename)).toBe(false);
+
     // Verify pulled from Trade.screenshotIds
     const trade = await Trade.findById(tradeId);
     expect(trade?.screenshotIds.map((id) => id.toString())).not.toContain(attachmentId);
   });
 
-  it('DELETE /api/v1/trades/:id cleans up all linked attachments', async () => {
-    // 1. Upload another attachment to this trade
-    const boundary = '----TestBoundaryCleanup';
-    const payload = Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="cleanup_test.png"\r\nContent-Type: image/png\r\n\r\n`),
+  it('enforces 12-image cap per trade', async () => {
+    // Fill trade up to 12 screenshots
+    const boundary = '----TestBoundaryCap';
+    for (let i = 0; i < 12; i++) {
+      const payload = Buffer.concat([
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="cap_${i}.png"\r\nContent-Type: image/png\r\n\r\n`),
+        validPngBuffer,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+
+      const uploadRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/attachments/trades/${tradeId}/upload`,
+        headers: {
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+          cookie: authCookie,
+        },
+        payload,
+      });
+      expect(uploadRes.statusCode).toBe(201);
+    }
+
+    // 13th upload should be rejected
+    const excessPayload = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="cap_13.png"\r\nContent-Type: image/png\r\n\r\n`),
       validPngBuffer,
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]);
 
-    const uploadRes = await app.inject({
+    const excessRes = await app.inject({
       method: 'POST',
       url: `/api/v1/attachments/trades/${tradeId}/upload`,
       headers: {
         'content-type': `multipart/form-data; boundary=${boundary}`,
         cookie: authCookie,
       },
-      payload,
+      payload: excessPayload,
     });
-    const newAttId = JSON.parse(uploadRes.body).data.id;
 
-    // 2. Delete the trade
+    expect(excessRes.statusCode).toBe(400);
+    const body = JSON.parse(excessRes.body);
+    expect(body.error.code).toBe('ATTACHMENT_LIMIT_EXCEEDED');
+  });
+
+  it('DELETE /api/v1/trades/:id cleans up all linked attachments in DB and storage', async () => {
+    const tradeBefore = await Trade.findById(tradeId);
+    const countBefore = tradeBefore?.screenshotIds.length || 0;
+    expect(countBefore).toBe(12);
+
+    // Delete the trade
     const delTradeRes = await app.inject({
       method: 'DELETE',
       url: `/api/v1/trades/${tradeId}`,
@@ -255,8 +351,11 @@ describe('TradeVault Attachments & Chart Screenshot Tests', () => {
     });
     expect(delTradeRes.statusCode).toBe(200);
 
-    // 3. Verify attachment was deleted from DB
-    const attAfter = await Attachment.findById(newAttId);
-    expect(attAfter).toBeNull();
+    // Verify all 12 attachments were deleted from DB
+    const remainingAtts = await Attachment.find({ tradeId });
+    expect(remainingAtts.length).toBe(0);
+
+    // Verify storage cleanup
+    expect(testStorage.count()).toBe(0);
   });
 });

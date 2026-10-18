@@ -25,6 +25,7 @@ import { SEED_INSTRUMENTS, SeedInstrumentSpec } from './instrument-catalog.js';
 import { SEED_STRATEGY_PLAYBOOKS } from './playbooks.js';
 import { ChartGenerator } from './chart-generator.js';
 import { ProfileDefinition, SEED_PROFILES } from './profiles.js';
+import { getStorage } from '../storage/index.js';
 
 export class SetupMintSeedEngine {
   /**
@@ -72,6 +73,21 @@ export class SetupMintSeedEngine {
 
     // 2. Safe cleanup strictly for demo user (Real user isolation)
     console.log(`[SeedEngine] Resetting previous demo records for user ${email}...`);
+    const oldAttachments = await Attachment.find({ userId });
+    if (oldAttachments.length > 0) {
+      try {
+        const storage = getStorage();
+        for (const att of oldAttachments) {
+          try {
+            await storage.delete(att.storedFilename);
+          } catch {
+            // ignore individual deletion errors
+          }
+        }
+      } catch {
+        // ignore if storage not configured during isolated test mocks
+      }
+    }
     await Trade.deleteMany({ userId });
     await TradingAccount.deleteMany({ userId });
     await AccountTransaction.deleteMany({ userId });

@@ -1,8 +1,6 @@
-import fs from 'fs';
-import path from 'path';
 import mongoose from 'mongoose';
-import { config } from '../config.js';
 import { Attachment, IAttachmentDoc } from '../db/models/Attachment.js';
+import { getStorage } from '../storage/index.js';
 
 export interface GeneratedChartSpec {
   tradeSymbol: string;
@@ -17,7 +15,7 @@ export interface GeneratedChartSpec {
 
 export class ChartGenerator {
   /**
-   * Generates a sleek, dark-themed TradingView-style SVG chart and persists to disk and DB.
+   * Generates a sleek, dark-themed TradingView-style SVG chart and persists directly to cloud storage (R2/S3) and DB.
    */
   static async createSyntheticChart(
     userId: mongoose.Types.ObjectId,
@@ -25,7 +23,6 @@ export class ChartGenerator {
     spec: GeneratedChartSpec
   ): Promise<IAttachmentDoc> {
     const filename = `demo_chart_${tradeId.toString()}_${spec.category.toLowerCase()}_${Date.now()}.svg`;
-    const fullPath = path.resolve(config.uploadDir, filename);
 
     const isBullish = spec.themeColor === 'emerald' || spec.themeColor === 'blue';
     const mainColor = isBullish ? '#10b981' : '#f43f5e';
@@ -106,13 +103,11 @@ export class ChartGenerator {
   <text x="80" y="412" font-family="system-ui, sans-serif" font-size="12" fill="#cbd5e1">${spec.description}</text>
 </svg>`;
 
-    // Ensure upload dir exists and write file
-    if (!fs.existsSync(config.uploadDir)) {
-      fs.mkdirSync(config.uploadDir, { recursive: true });
-    }
-    fs.writeFileSync(fullPath, svgContent, 'utf-8');
+    const svgBuffer = Buffer.from(svgContent, 'utf-8');
+    const storage = getStorage();
 
-    const stat = fs.statSync(fullPath);
+    // Persist to cloud storage
+    await storage.save(filename, svgBuffer, 'image/svg+xml');
 
     const doc = await Attachment.create({
       userId,
@@ -120,7 +115,7 @@ export class ChartGenerator {
       originalName: `${spec.tradeSymbol}_${spec.category}_${spec.timeframe}.svg`,
       storedFilename: filename,
       mimeType: 'image/svg+xml',
-      sizeBytes: stat.size,
+      sizeBytes: svgBuffer.length,
       category: spec.category,
       description: spec.description,
       timeframe: spec.timeframe,

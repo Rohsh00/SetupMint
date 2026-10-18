@@ -69,8 +69,9 @@ apps/api/
 ├── src/
 │   ├── config.ts                  # Configuration loader from environment variables
 │   ├── server.ts                  # Fastify application factory (buildApp) and server bootstrap
+│   ├── storage/                   # Cloudflare R2 object storage provider (IStorageProvider, S3Storage)
 │   ├── db/
-│   │   ├── connection.ts          # Resilient MongoDB connection manager (Docker / Embedded / Memory)
+│   │   ├── connection.ts          # MongoDB Atlas connection manager with fail-fast validation
 │   │   └── models/                # Mongoose ODM schemas & models
 │   │       ├── User.ts            # User identity, password hash, base currency, theme, riskSettings
 │   │       ├── Session.ts         # User sessions with 30-day TTL expiration index
@@ -80,7 +81,7 @@ apps/api/
 │   │       ├── Instrument.ts      # Multi-asset instrument catalog with contract multipliers
 │   │       ├── Strategy.ts        # Strategy playbooks with rules and checklists
 │   │       ├── DailyJournal.ts    # Daily reflection reviews and market bias ratings
-│   │       ├── Attachment.ts      # Screenshot attachment records linked to disk files
+│   │       ├── Attachment.ts      # Screenshot attachment records in Cloudflare R2
 │   │       ├── BrokerIntegration.ts # FYERS connection status and sync history
 │   │       ├── BrokerImportMapping.ts # Saved per-broker CSV column mapping configurations
 │   │       ├── AuditLog.ts        # Immutable system audit trail entries

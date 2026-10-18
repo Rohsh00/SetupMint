@@ -16,10 +16,10 @@ This document records confirmed limitations, incomplete features, architectural 
 - **Limitation:** There is no automatic live Forex rate feeder daemon polling central bank exchange rates.
 - **Mitigation:** Most retail traders in the target audience trade within their domestic currency (`INR`). When logging Forex/Crypto trades, users operate in native account currencies.
 
-### 3. Local Storage vs. Cloud Storage (Cloudinary)
-- **Current Behavior:** Chart screenshots are stored exclusively on local disk (`./data/uploads`).
-- **Limitation:** There is no built-in sync to commercial cloud image hosts (e.g. Cloudinary or AWS S3).
-- **Mitigation:** Single-command local backup (`npm run db:backup`) bundles all image files alongside the database.
+### 3. Cloud-Only Storage & Internet Dependency
+- **Current Behavior:** SetupMint requires an active internet connection to communicate with your dedicated MongoDB Atlas cluster and Cloudflare R2 bucket.
+- **Limitation:** The application does not function offline without internet access. Local disk storage and embedded databases have been permanently removed.
+- **Mitigation:** Zero egress fees on Cloudflare R2 and high availability across MongoDB Atlas regions ensure high uptime and performance.
 
 ### 4. No Real-Time WebSocket Order Feed
 - **Current Behavior:** The frontend synchronizes state via TanStack Query refetching and mutation invalidation.
@@ -32,9 +32,9 @@ This document records confirmed limitations, incomplete features, architectural 
 | Item | Location | Description | Priority |
 | :--- | :--- | :--- | :--- |
 | **Legacy Namespace References** | Monorepo package naming (`@tradevault/*`) | Packages are named `@tradevault/api`, `@tradevault/web`, `@tradevault/financial-engine`, and `@tradevault/shared` while user-facing branding is **SetupMint Pro**. Maintain alias `StratumLogo` -> `SetupMintLogo`. | Low |
-| **E2E Automated Browser Tests** | `apps/web` | The application has 119 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
+| **E2E Automated Browser Tests** | `apps/web` | The application has 144 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
 | **Mobile Drawer Gesture Polish** | `AppLayout.tsx` | Mobile navigation uses an off-canvas drawer; edge swipe gesture support on iOS Safari could be improved. | Low |
-| **Database Lock Recovery Automation** | `connection.ts` | If an abrupt system crash leaves `mongod.lock` with non-zero bytes, manual removal of the lock file may be required. | Low |
+| **Atlas Free Tier Backup Discipline** | `scripts/backup.js` | MongoDB Atlas M0 free tier lacks automated snapshot backups. Users must run `npm run db:backup` regularly. | Medium |
 
 ---
 

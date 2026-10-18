@@ -1,14 +1,15 @@
 # SetupMint — Open Source Dependency & Licensing Inventory
 
-All software dependencies in SetupMint are free to use locally without recurring software subscriptions or commercial fees.
+All software dependencies in SetupMint are free to use without commercial UI kit fees or proprietary software lock-in.
 
 ---
 
-## 1. Important Licensing Distinction (SSPL vs OSI Open Source)
+## 1. Cloud Infrastructure & Service Models
 
 > [!NOTE]
-> **MongoDB Community Server Licensing:**
-> MongoDB Community Server is licensed under the **Server Side Public License (SSPL v1)**. The SSPL is **not** an OSI-approved open-source license. It allows free local execution, private self-hosting, and development on your MacBook without cost, provided you do not offer MongoDB as a commercial cloud service to third parties. SetupMint does not misrepresent SSPL as OSI-approved open source.
+> **MongoDB Atlas & Cloudflare R2:**
+> - **MongoDB Atlas:** Hosted cloud database service provided by MongoDB, Inc. SetupMint connects via standard Mongoose ODM drivers under the Apache-2.0 / MIT client library licenses. Atlas provides a permanent free M0 tier.
+> - **Cloudflare R2:** S3-compatible cloud object storage service provided by Cloudflare. SetupMint interacts with R2 using the official open-source `@aws-sdk/client-s3` (Apache-2.0) library. Cloudflare R2 includes a 10GB free tier with zero egress fees.
 
 ---
 
@@ -16,10 +17,12 @@ All software dependencies in SetupMint are free to use locally without recurring
 
 | Package / Library | License | Usage Scope |
 | :--- | :--- | :--- |
+| **@aws-sdk/client-s3** | Apache-2.0 | S3-compatible client for Cloudflare R2 private object storage |
 | **Fastify** | MIT | Core backend HTTP web framework |
 | **React** | MIT | Frontend UI rendering library |
 | **React DOM** | MIT | Web DOM bindings |
 | **Vite** | MIT | Frontend compilation and dev server |
+| **Material UI (MUI v9)** | MIT | Core UI component design system |
 | **Tailwind CSS** | MIT | Utility-first styling system |
 | **TypeScript** | Apache-2.0 | Static type system |
 | **Mongoose** | MIT | MongoDB object modeling |
@@ -29,7 +32,6 @@ All software dependencies in SetupMint are free to use locally without recurring
 | **TanStack Query** | MIT | Asynchronous state management |
 | **React Router** | MIT | Client-side routing |
 | **React Hook Form** | MIT | Form handling |
-| **Lucide Icons** | ISC | Vector icon collection |
 | **Pino & Pino-Pretty**| MIT | Structured JSON logging |
 | **Bcryptjs** | MIT | Password hashing |
 | **CSV-Parse / Stringify** | MIT | Data import and export |
@@ -37,8 +39,7 @@ All software dependencies in SetupMint are free to use locally without recurring
 
 ---
 
-## 3. Commercial Subscription Audit
-- **Commercial UI Kits:** None. Sourced custom Tailwind CSS components.
-- **Paid Cloud Services:** None. Runs 100% locally on macOS.
-- **Paid Analytics / Telemetry:** None. All charts calculate directly from local MongoDB records.
-- **Paid APIs:** None required for core trade logging and journal functionality.
+## 3. Commercial Audit
+- **Commercial UI Kits:** None. Uses open-source MUI v9 and Tailwind CSS.
+- **Paid Analytics / Telemetry:** None. All charts calculate directly from your private database records.
+- **Data Privacy:** Your trading setups, sizes, and charts reside exclusively in your personal MongoDB Atlas database and Cloudflare R2 bucket.

@@ -9,7 +9,7 @@ This document records confirmed limitations, incomplete features, architectural 
 ### 1. Live Automated Broker Polling is Disabled by Design
 - **Current Behavior:** The FYERS integration is architecturally modeled with `IBrokerAdapter`, `INormalizedExecution`, and database tracking, but live OAuth automated sync is intentionally disabled in release 1.0.
 - **Rationale:** To protect trader privacy, eliminate external cloud dependencies, and avoid dealing with mandatory daily 24-hour token invalidation mandated by Indian market regulations.
-- **Status:** Broker executions can currently be imported via the high-fidelity CSV Import engine (`/reports`). Automated live polling is planned for future releases.
+- **Status:** Broker executions can be imported via the Smart CSV Import engine (`/reports`) supporting Zerodha, FYERS, Angel One, and Upstox tradebooks with automatic FIFO round-trip execution grouping and statutory charges. Automated live polling is planned for future releases.
 
 ### 2. Multi-Currency Live Feed Omission
 - **Current Behavior:** The currency conversion engine ([`currency.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/currency.ts)) enforces that cross-currency conversions (e.g. USD to INR) fail cleanly (`isAvailable: false`) unless an explicit exchange rate is passed.
@@ -32,7 +32,7 @@ This document records confirmed limitations, incomplete features, architectural 
 | Item | Location | Description | Priority |
 | :--- | :--- | :--- | :--- |
 | **Legacy Namespace References** | Monorepo package naming (`@tradevault/*`) | Packages are named `@tradevault/api`, `@tradevault/web`, `@tradevault/financial-engine`, and `@tradevault/shared` while user-facing branding is **SetupMint Pro**. Maintain alias `StratumLogo` -> `SetupMintLogo`. | Low |
-| **E2E Automated Browser Tests** | `apps/web` | The application has 102 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
+| **E2E Automated Browser Tests** | `apps/web` | The application has 107 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
 | **Mobile Drawer Gesture Polish** | `AppLayout.tsx` | Mobile navigation uses an off-canvas drawer; edge swipe gesture support on iOS Safari could be improved. | Low |
 | **Database Lock Recovery Automation** | `connection.ts` | If an abrupt system crash leaves `mongod.lock` with non-zero bytes, manual removal of the lock file may be required. | Low |
 

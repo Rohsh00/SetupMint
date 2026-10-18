@@ -234,18 +234,25 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 12. `/reports` — Reports & Data Portability Page
 - **Page Component:** [`ReportsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/ReportsPage.tsx)
-- **Purpose:** Data export (CSV/JSON), interactive broker CSV import with column mapping, and backup verification.
+- **Purpose:** Data export (CSV/JSON), smart broker tradebook import with auto-detection (Zerodha, FYERS, Angel One, Upstox), FIFO round-trip matching, automated fee calculations, saved column mappings, and reversible batch imports.
 - **Main Components:**
-  - Export Section: Account filter, date range filter, "Download CSV" and "Download JSON" buttons.
-  - Import Section: File dropzone, account selector, CSV parsing preview, interactive column mapping dropdowns, "Commit Import" button with progress spinner.
-  - Import Results Summary: Count of imported trades, skipped duplicates, and validation errors.
-- **Available Actions:** Download exports, upload CSV, map columns, execute import.
+  - Export Section: Account filter, date range filter, "Export CSV" and "Export JSON" action buttons.
+  - Smart Import Section: File dropzone, auto-detected broker badge (`ZERODHA`, `FYERS`, `ANGEL_ONE`, `UPSTOX`, `CUSTOM`), execution mode indicator (Raw Executions / FIFO vs Completed Trades), saved custom mapping chip, broker preset switcher, "Save as default mapping" checkbox.
+  - Column Mapping Grid: 10 field selectors (`tradeDate`, `symbol`, `direction`, `price`, `quantity`, `entryPrice`, `exitPrice`, `orderId`, `tradeId`, `notes`).
+  - Preview Table: Top 10 parsed CSV rows.
+  - Import Results Banner: Displays unique `batchId`, imported trade count, duplicate skipped count, per-row error list, and an immediate "Undo Import" button.
+  - Recent Import Batches: Interactive table showing past import batches with trade counts, timestamps, symbols, net P&L, and an "Undo Batch" action with confirmation dialog.
+- **Available Actions:** Export CSV/JSON, upload tradebook CSV, map columns, commit import with FIFO grouping, undo import batch.
 - **API Calls:**
   - `GET /api/v1/export/csv`
   - `GET /api/v1/export/json`
   - `POST /api/v1/export/import/preview`
   - `POST /api/v1/export/import/commit`
-- **Database Models:** `Trade`, `TradingAccount`.
+  - `POST /api/v1/export/import/undo`
+  - `GET /api/v1/export/import/batches`
+  - `GET /api/v1/export/mappings`
+  - `POST /api/v1/export/mappings`
+- **Database Models:** `Trade`, `TradingAccount`, `BrokerImportMapping`.
 - **Status:** **IMPLEMENTED**.
 
 ---

@@ -18,6 +18,10 @@ import {
   TableBody,
   useTheme,
   Divider,
+  Chip,
+  FormControlLabel,
+  Checkbox,
+  Collapse,
 } from '@mui/material';
 import {
   DownloadRounded,
@@ -28,9 +32,15 @@ import {
   CheckCircleRounded,
   ArrowForwardRounded,
   CloudUploadRounded,
+  UndoRounded,
+  AutoAwesomeRounded,
+  HistoryRounded,
+  WarningAmberRounded,
 } from '@mui/icons-material';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
+import { formatCurrency } from '../lib/utils.js';
 
 export function ReportsPage() {
   const muiTheme = useTheme();
@@ -45,18 +55,32 @@ export function ReportsPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importTargetAccount, setImportTargetAccount] = useState('');
   const [previewData, setPreviewData] = useState<any>(null);
+  const [selectedBroker, setSelectedBroker] = useState<string>('CUSTOM');
+  const [saveMapping, setSaveMapping] = useState<boolean>(true);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [undoTargetBatch, setUndoTargetBatch] = useState<string | null>(null);
+
+  // Recent import batches query
+  const { data: batches = [], refetch: refetchBatches } = useQuery({
+    queryKey: ['import-batches'],
+    queryFn: () => api.exportImport.getBatches(),
+  });
 
   const previewMutation = useMutation({
     mutationFn: (file: File) => api.exportImport.previewCsv(file),
     onSuccess: (data) => {
       setImportError(null);
       setPreviewData(data);
+      setSelectedBroker(data.detectedBroker || 'CUSTOM');
       setColumnMapping(data.suggestedMapping || {});
       setImportResult(null);
-      toast.info(`CSV parsed: ${data.previewRows?.length || 0} trade rows detected.`);
+      toast.info(
+        `CSV analyzed: ${data.totalRows} rows. Format: ${data.detectedBroker} (${
+          data.isRawExecutionLog ? 'Raw Executions / FIFO' : 'Completed Trades'
+        }).`
+      );
     },
     onError: (err: any) => {
       const msg = err.message || 'Failed to preview CSV file';
@@ -76,11 +100,30 @@ export function ReportsPage() {
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      refetchBatches();
     },
     onError: (err: any) => {
       const msg = err.message || 'Failed to commit trade import';
       setImportError(msg);
       toast.error(msg);
+    },
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (batchId?: string) => api.exportImport.undoImport(batchId),
+    onSuccess: (data) => {
+      toast.success(`Undo successful! Removed ${data.deletedCount} imported trades and reconciled balance.`);
+      setImportResult(null);
+      setUndoTargetBatch(null);
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      refetchBatches();
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to undo import';
+      toast.error(msg);
+      setUndoTargetBatch(null);
     },
   });
 
@@ -96,8 +139,10 @@ export function ReportsPage() {
     if (!importTargetAccount || !previewData) return;
     commitMutation.mutate({
       accountId: importTargetAccount,
-      rows: previewData.previewRows,
+      rows: previewData.allRows || previewData.previewRows,
       mapping: columnMapping,
+      broker: selectedBroker,
+      saveMapping,
     });
   };
 
@@ -110,7 +155,7 @@ export function ReportsPage() {
           Reports & Data Portability
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Export your journal in CSV/JSON, import historical broker trades with column mapping, and manage local backups
+          Export journal data, import broker tradebooks with auto-format detection and FIFO matching, and manage local backups
         </Typography>
       </Box>
 
@@ -210,7 +255,7 @@ export function ReportsPage() {
               </Box>
 
               <Typography variant="body2" color="text.secondary">
-                SetupMint runs locally on your MacBook with all personal records in MongoDB and chart screenshots in private disk storage.
+                SetupMint runs locally on your machine with personal records in MongoDB and chart screenshots in private disk storage.
               </Typography>
 
               <Box
@@ -292,14 +337,16 @@ export function ReportsPage() {
       {/* CSV Import Section */}
       <Card variant="outlined" sx={{ p: 1 }}>
         <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <UploadFileRounded sx={{ color: 'primary.main' }} />
-              Import External Trade History (CSV)
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Import past trades from Zerodha, Dhan, Fyers, TradingView, or custom spreadsheets with column mapping
-            </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <UploadFileRounded sx={{ color: 'primary.main' }} />
+                Smart Broker CSV Import
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Auto-detects Zerodha, FYERS, Angel One, and Upstox tradebooks. Groups raw executions into FIFO round-trip trades with auto-charges.
+              </Typography>
+            </Box>
           </Box>
 
           {importError && (
@@ -335,24 +382,51 @@ export function ReportsPage() {
                 Click or drag & drop CSV file to upload
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                Select any CSV containing Date, Symbol, Entry Price, Exit Price, Quantity
+                Supports Zerodha Console, FYERS Tradebook, Angel One, Upstox, or custom spreadsheet exports
               </Typography>
               <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: 'none' }} />
             </Box>
           )}
 
-          {/* Import Results Banner */}
+          {/* Import Results Banner with Undo Action */}
           {importResult && (
-            <Alert severity="success" icon={<CheckCircleRounded />}>
+            <Alert
+              severity={importResult.errorCount > 0 && importResult.importedCount === 0 ? 'error' : 'success'}
+              icon={<CheckCircleRounded />}
+              action={
+                importResult.batchId && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    startIcon={<UndoRounded />}
+                    onClick={() => setUndoTargetBatch(importResult.batchId)}
+                    disabled={undoMutation.isPending}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Undo Import
+                  </Button>
+                )
+              }
+            >
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Import Completed Successfully!
+                Import Processed! Batch ID: <code>{importResult.batchId}</code>
               </Typography>
               <Box sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', mt: 0.5 }}>
                 <div>Successfully imported: <strong>{importResult.importedCount} trades</strong></div>
                 <div>Duplicates skipped: <strong>{importResult.duplicateCount} trades</strong></div>
-                {importResult.errors?.length > 0 && (
+                {importResult.errorCount > 0 && (
                   <div style={{ color: muiTheme.palette.error.main, marginTop: 4 }}>
-                    Errors ({importResult.errors.length}): {importResult.errors.join(', ')}
+                    Errors / Warnings ({importResult.errorCount}):
+                    <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                      {importResult.errors.slice(0, 5).map((e: any, idx: number) => (
+                        <li key={idx}>
+                          {e.row > 0 ? `Row ${e.row}: ` : ''}{e.symbol ? `[${e.symbol}] ` : ''}{e.message}
+                        </li>
+                      ))}
+                      {importResult.errors.length > 5 && (
+                        <li>...and {importResult.errors.length - 5} more</li>
+                      )}
+                    </ul>
                   </div>
                 )}
               </Box>
@@ -362,6 +436,70 @@ export function ReportsPage() {
           {/* Column Mapping & Preview */}
           {previewData && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {/* Auto-Detection & Format Header */}
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 1.5,
+                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 2,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <AutoAwesomeRounded sx={{ color: 'primary.main', fontSize: 24 }} />
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                        Detected Format:
+                      </Typography>
+                      <Chip
+                        label={previewData.detectedBroker}
+                        color="primary"
+                        size="small"
+                        sx={{ fontWeight: 700, letterSpacing: '0.02em' }}
+                      />
+                      {previewData.hasSavedMapping && (
+                        <Chip
+                          label="Saved Custom Mapping"
+                          color="info"
+                          variant="outlined"
+                          size="small"
+                          sx={{ fontWeight: 600 }}
+                        />
+                      )}
+                    </Box>
+                    <Typography variant="caption" color="text.secondary">
+                      {previewData.isRawExecutionLog
+                        ? 'Raw executions detected — will be matched into round-trip trades using FIFO with automated statutory charges'
+                        : 'Completed trade rows detected — will be imported with automated statutory fee calculation'}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <TextField
+                    select
+                    size="small"
+                    label="Broker Preset"
+                    value={selectedBroker}
+                    onChange={(e) => setSelectedBroker(e.target.value)}
+                    sx={{ minWidth: 150 }}
+                  >
+                    {previewData.availableBrokers?.map((b: string) => (
+                      <MenuItem key={b} value={b}>
+                        {b}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Box>
+              </Box>
+
               <TextField
                 select
                 size="small"
@@ -393,19 +531,38 @@ export function ReportsPage() {
                   gap: 2,
                 }}
               >
-                <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
-                  Map CSV Columns to SetupMint Fields
-                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
+                    Map CSV Columns to SetupMint Fields
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={saveMapping}
+                        onChange={(e) => setSaveMapping(e.target.checked)}
+                      />
+                    }
+                    label={
+                      <Typography variant="caption" color="text.secondary">
+                        Save as default mapping for {selectedBroker}
+                      </Typography>
+                    }
+                  />
+                </Box>
+
                 <Grid container spacing={2}>
                   {[
-                    { field: 'tradeDate', label: 'Trade Date' },
-                    { field: 'symbol', label: 'Symbol / Instrument' },
-                    { field: 'direction', label: 'Direction (Buy/Sell)' },
-                    { field: 'entryPrice', label: 'Entry Price' },
-                    { field: 'exitPrice', label: 'Exit Price' },
-                    { field: 'quantity', label: 'Quantity' },
-                    { field: 'totalCosts', label: 'Fees / Costs' },
-                    { field: 'notes', label: 'Notes' },
+                    { field: 'tradeDate', label: 'Trade Date / Time *' },
+                    { field: 'symbol', label: 'Symbol / Instrument *' },
+                    { field: 'direction', label: 'Direction / Side (Buy/Sell) *' },
+                    { field: 'price', label: 'Execution Price / Rate *' },
+                    { field: 'quantity', label: 'Quantity / Lots *' },
+                    { field: 'entryPrice', label: 'Entry Price (Simple Mode)' },
+                    { field: 'exitPrice', label: 'Exit Price (Simple Mode)' },
+                    { field: 'orderId', label: 'Order ID' },
+                    { field: 'tradeId', label: 'Trade ID' },
+                    { field: 'notes', label: 'Notes / Comments' },
                   ].map((item) => (
                     <Grid size={{ xs: 12, sm: 6, md: 3 }} key={item.field}>
                       <TextField
@@ -418,7 +575,7 @@ export function ReportsPage() {
                           setColumnMapping({ ...columnMapping, [item.field]: e.target.value })
                         }
                       >
-                        <MenuItem value="">(Select column)</MenuItem>
+                        <MenuItem value="">(Not mapped)</MenuItem>
                         {previewData.headers.map((h: string) => (
                           <MenuItem key={h} value={h}>
                             {h}
@@ -436,7 +593,7 @@ export function ReportsPage() {
                   Preview Rows ({previewData.previewRows.length} of {previewData.totalRows} rows)
                 </Typography>
                 <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-                  <TableContainer sx={{ maxHeight: 300 }}>
+                  <TableContainer sx={{ maxHeight: 260 }}>
                     <Table size="small" stickyHeader>
                       <TableHead>
                         <TableRow>
@@ -463,7 +620,7 @@ export function ReportsPage() {
                 </Card>
               </Box>
 
-              {/* Commit Button */}
+              {/* Actions */}
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, pt: 1 }}>
                 <Button variant="outlined" color="inherit" onClick={() => setPreviewData(null)}>
                   Cancel
@@ -476,13 +633,96 @@ export function ReportsPage() {
                   onClick={handleCommit}
                   sx={{ fontWeight: 600, px: 3 }}
                 >
-                  {commitMutation.isPending ? 'Importing...' : 'Commit Import'}
+                  {commitMutation.isPending ? 'Processing FIFO Fills...' : `Commit Import (${previewData.totalRows} Rows)`}
                 </Button>
               </Box>
             </Box>
           )}
         </CardContent>
       </Card>
+
+      {/* Recent Import Batches & Undo Section */}
+      {batches.length > 0 && (
+        <Card variant="outlined" sx={{ p: 1 }}>
+          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <HistoryRounded sx={{ color: 'primary.main' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Recent Import Batches
+                </Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                You can undo any batch. Deleting a batch removes its trades and reconciles account balances.
+              </Typography>
+            </Box>
+
+            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Batch ID</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Trades</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Symbols</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Total Realized P&L</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {batches.map((b: any) => (
+                    <TableRow key={b.batchId}>
+                      <TableCell sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem' }}>
+                        {b.batchId}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                        {new Date(b.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
+                        {b.tradeCount} trades
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {b.symbols?.join(', ') || '—'}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem', color: b.totalNetPnL >= 0 ? 'success.main' : 'error.main' }}>
+                        {formatCurrency(b.totalNetPnL)}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          startIcon={<UndoRounded />}
+                          onClick={() => setUndoTargetBatch(b.batchId)}
+                          disabled={undoMutation.isPending}
+                          sx={{ textTransform: 'none', py: 0.25, fontSize: '0.75rem' }}
+                        >
+                          Undo Batch
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Undo Confirmation Dialog */}
+      <ConfirmDialog
+        open={Boolean(undoTargetBatch)}
+        title="Undo Import Batch"
+        message={`Are you sure you want to undo import batch "${undoTargetBatch}"? All trades created in this batch will be permanently removed and your account balance will be automatically recalculated.`}
+        confirmLabel="Undo Batch"
+        severity="error"
+        onConfirm={() => {
+          if (undoTargetBatch) {
+            undoMutation.mutate(undoTargetBatch);
+          }
+        }}
+        onCancel={() => setUndoTargetBatch(null)}
+      />
     </Box>
   );
 }

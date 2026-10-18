@@ -81,6 +81,7 @@ apps/api/
 │   │       ├── DailyJournal.ts    # Daily reflection reviews and market bias ratings
 │   │       ├── Attachment.ts      # Screenshot attachment records linked to disk files
 │   │       ├── BrokerIntegration.ts # FYERS connection status and sync history
+│   │       ├── BrokerImportMapping.ts # Saved per-broker CSV column mapping configurations
 │   │       ├── AuditLog.ts        # Immutable system audit trail entries
 │   │       └── index.ts           # Models barrel export
 │   ├── middleware/
@@ -118,7 +119,7 @@ apps/api/
 │       ├── reset-demo.ts          # Safe reset script for demo user data (npm run seed:reset)
 │       ├── validate-seed.ts       # CLI validator script (npm run seed:validate)
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (69 tests)
+└── test/                          # Vitest API and Seed Engine integration test suites (74 tests)
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests
     ├── regression.test.ts         # Comprehensive 38-case QA regression test suite

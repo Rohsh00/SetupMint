@@ -346,4 +346,208 @@ describe('TradeVault API Integration Tests', () => {
     expect(accBody.data.currentBalance).toBe(150000);
     expect(accBody.data.realizedPnL).toBe(0);
   });
+
+  it('POST /api/v1/export/mappings saves broker mapping and GET /api/v1/export/mappings returns it', async () => {
+    const saveRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/mappings',
+      headers: { cookie: authCookie },
+      payload: {
+        broker: 'ZERODHA',
+        name: 'Zerodha Kite Custom Mapping',
+        mapping: {
+          tradeDate: 'trade_date',
+          symbol: 'symbol',
+          direction: 'trade_type',
+          price: 'price',
+          quantity: 'quantity',
+        },
+      },
+    });
+
+    expect(saveRes.statusCode).toBe(200);
+    const saveBody = JSON.parse(saveRes.body);
+    expect(saveBody.success).toBe(true);
+    expect(saveBody.data.broker).toBe('ZERODHA');
+
+    const getRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/export/mappings/ZERODHA',
+      headers: { cookie: authCookie },
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = JSON.parse(getRes.body);
+    expect(getBody.data.broker).toBe('ZERODHA');
+    expect(getBody.data.mapping.symbol).toBe('symbol');
+  });
+
+  it('POST /api/v1/export/import/preview detects Zerodha tradebook format from CSV headers', async () => {
+    const boundary = '----TestBoundaryPreview';
+    const csvData = [
+      'trade_date,tradeno,order_execution_time,symbol,series,isin,trade_type,quantity,price,order_id,trade_id',
+      '2026-10-15 09:20:00,101,2026-10-15 09:20:00,RELIANCE,EQ,INE002A01018,buy,100,2500,ord1,trd1',
+      '2026-10-15 11:30:00,102,2026-10-15 11:30:00,RELIANCE,EQ,INE002A01018,sell,100,2550,ord2,trd2',
+    ].join('\n');
+
+    const payload = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="tradebook.csv"\r\nContent-Type: text/csv\r\n\r\n`),
+      Buffer.from(csvData),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/preview',
+      headers: {
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        cookie: authCookie,
+      },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.detectedBroker).toBe('ZERODHA');
+    expect(body.data.totalRows).toBe(2);
+    expect(body.data.isRawExecutionLog).toBe(true);
+  });
+
+  let importedBatchId: string;
+
+  it('POST /api/v1/export/import/commit groups raw executions into round-trip trades using FIFO matching with auto-charges', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/commit',
+      headers: { cookie: authCookie },
+      payload: {
+        accountId,
+        broker: 'ZERODHA',
+        mapping: {
+          tradeDate: 'trade_date',
+          symbol: 'symbol',
+          direction: 'trade_type',
+          price: 'price',
+          quantity: 'quantity',
+        },
+        rows: [
+          {
+            trade_date: '2026-10-15 09:20:00',
+            symbol: 'RELIANCE',
+            trade_type: 'buy',
+            price: '2500',
+            quantity: '100',
+          },
+          {
+            trade_date: '2026-10-15 11:30:00',
+            symbol: 'RELIANCE',
+            trade_type: 'sell',
+            price: '2550',
+            quantity: '100',
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.importedCount).toBe(1);
+    expect(body.data.duplicateCount).toBe(0);
+    expect(body.data.batchId).toBeDefined();
+    importedBatchId = body.data.batchId;
+
+    // Verify Trade created in DB
+    const tradesRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/trades?accountId=${accountId}`,
+      headers: { cookie: authCookie },
+    });
+    const tradesBody = JSON.parse(tradesRes.body);
+    const importedTrade = tradesBody.data.find((t: any) => t.importBatchId === importedBatchId);
+    expect(importedTrade).toBeDefined();
+    expect(importedTrade.executionMode).toBe('ADVANCED');
+    expect(importedTrade.status).toBe('CLOSED');
+    expect(importedTrade.tags).toContain('IMPORTED');
+    expect(importedTrade.calculated.grossPnL).toBe(5000); // 100 * (2550 - 2500)
+    expect(importedTrade.calculated.totalCosts).toBeGreaterThan(0);
+    expect(importedTrade.calculated.netPnL).toBe(
+      importedTrade.calculated.grossPnL - importedTrade.calculated.totalCosts
+    );
+
+    // Verify account balance reconciled with new realized P&L
+    const accRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/accounts/${accountId}`,
+      headers: { cookie: authCookie },
+    });
+    const accBody = JSON.parse(accRes.body);
+    expect(accBody.data.currentBalance).toBe(150000 + importedTrade.calculated.netPnL);
+  });
+
+  it('POST /api/v1/export/import/commit skips duplicates when identical trades are imported', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/commit',
+      headers: { cookie: authCookie },
+      payload: {
+        accountId,
+        broker: 'ZERODHA',
+        mapping: {
+          tradeDate: 'trade_date',
+          symbol: 'symbol',
+          direction: 'trade_type',
+          price: 'price',
+          quantity: 'quantity',
+        },
+        rows: [
+          {
+            trade_date: '2026-10-15 09:20:00',
+            symbol: 'RELIANCE',
+            trade_type: 'buy',
+            price: '2500',
+            quantity: '100',
+          },
+          {
+            trade_date: '2026-10-15 11:30:00',
+            symbol: 'RELIANCE',
+            trade_type: 'sell',
+            price: '2550',
+            quantity: '100',
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.importedCount).toBe(0);
+    expect(body.data.duplicateCount).toBe(1);
+  });
+
+  it('POST /api/v1/export/import/undo deletes imported batch and reconciles account balances', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/undo',
+      headers: { cookie: authCookie },
+      payload: { batchId: importedBatchId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.deletedCount).toBe(1);
+
+    // Verify account balance restored to pre-import state (150,000)
+    const accRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/accounts/${accountId}`,
+      headers: { cookie: authCookie },
+    });
+    const accBody = JSON.parse(accRes.body);
+    expect(accBody.data.currentBalance).toBe(150000);
+    expect(accBody.data.realizedPnL).toBe(0);
+  });
 });
+

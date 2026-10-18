@@ -331,6 +331,7 @@ export interface ITrade {
   tradeTitle?: string;
   externalBrokerOrderRef?: string;
   externalExecutionId?: string;
+  importBatchId?: string;
 
   executionMode: ExecutionMode;
   simpleExecution?: ISimpleExecution;
@@ -527,4 +528,16 @@ export interface IReconciliationItem {
   matchedTradeId?: string;
   matchConfidence: 'EXACT' | 'HIGH' | 'AMBIGUOUS' | 'NEW';
   status: 'PENDING_REVIEW' | 'MERGED' | 'CREATED_NEW' | 'IGNORED';
+}
+
+export type SupportedImportBroker = 'ZERODHA' | 'FYERS' | 'ANGEL_ONE' | 'UPSTOX' | 'CUSTOM';
+
+export interface IBrokerImportMapping {
+  id: string;
+  userId: string;
+  broker: SupportedImportBroker;
+  name: string;
+  mapping: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
 }

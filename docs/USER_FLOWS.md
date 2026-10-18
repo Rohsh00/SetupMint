@@ -220,19 +220,34 @@ sequenceDiagram
     end
 
     rect rgb(255, 250, 240)
-        Note over User,DB: Import Workflow
-        User->>Page: Uploads broker CSV file (e.g. FYERS or Zerodha tradebook)
+        Note over User,DB: Smart Broker Import & FIFO Grouping Workflow
+        User->>Page: Uploads broker CSV tradebook (Zerodha, FYERS, Angel One, Upstox)
         Page->>API: POST /api/v1/export/import/preview (Multipart file)
-        API->>API: Parses CSV headers and suggests column mapping
-        API-->>Page: Returns { headers, suggestedMapping, previewRows: [5] }
-        Page->>User: Displays preview table with mapping dropdowns
-        User->>Page: Verifies mappings (Symbol -> Scrip, Date -> Trade Date, Price -> Avg Price)
+        API->>DB: Checks BrokerImportMapping for saved custom mapping
+        API->>API: Heuristically detects broker format & suggests column mapping
+        API-->>Page: Returns { detectedBroker, suggestedMapping, isRawExecutionLog, previewRows, allRows }
+        Page->>User: Displays detected broker badge, mapping selectors, and FIFO indicator
+        User->>Page: Adjusts mappings & checks "Save as default mapping for Broker"
         User->>Page: Selects Target Account -> Clicks "Commit Import"
-        Page->>API: POST /api/v1/export/import/commit { accountId, rows, mapping }
-        API->>DB: Loops rows, checks duplicates, inserts valid Trade records
+        Page->>API: POST /api/v1/export/import/commit { accountId, rows, mapping, broker, saveMapping }
+        API->>DB: If saveMapping: upserts BrokerImportMapping (userId + broker)
+        API->>API: Groups raw fills by symbol & matches round-trips via calculateFIFOExecution()
+        API->>API: Computes statutory charges via IndianChargesCalculator (Decimal.js)
+        API->>DB: Inserts Trade records with importBatchId, tags: ['IMPORTED'], ADVANCED mode
         API->>AccSvc: AccountService.recalculateAccountBalances(accountId, userId)
-        API-->>Page: Returns { importedCount: 42, duplicateCount: 2, errors: [] }
-        Page->>User: Displays success alert and refreshes global trade queries
+        API-->>Page: Returns { batchId, importedCount, duplicateCount, errorCount, errors }
+        Page->>User: Displays success banner with "Undo Import" action and per-row error report
+    end
+
+    rect rgb(255, 240, 245)
+        Note over User,DB: Undo Import Batch Workflow
+        User->>Page: Clicks "Undo Import" (or "Undo Batch" in Recent Batches table)
+        Page->>API: POST /api/v1/export/import/undo { batchId }
+        API->>DB: Trade.find({ userId, importBatchId }) -> Identifies affected accounts
+        API->>DB: Trade.deleteMany({ userId, importBatchId })
+        API->>AccSvc: AccountService.recalculateAccountBalances(accountId, userId)
+        API-->>Page: Returns { batchId, deletedCount, affectedAccounts }
+        Page->>User: Confirms reversal and restores original account balances
     end
 ```
 

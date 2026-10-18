@@ -96,10 +96,10 @@ Execute comprehensive unit and integration test suites:
 # Run standalone financial engine calculation tests (33 unit tests)
 npm run test:engine
 
-# Run Fastify API integration tests (69 endpoint and regression tests)
+# Run Fastify API integration tests (74 endpoint and regression tests)
 npm run test:api
 
-# Run all test suites across the monorepo (102 tests)
+# Run all test suites across the monorepo (107 tests)
 npm run test
 ```
 

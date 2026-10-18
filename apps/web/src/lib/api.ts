@@ -223,10 +223,28 @@ export const api = {
         body: formData,
       });
     },
-    commitImport: (payload: { accountId: string; rows: any[]; mapping: any }) =>
+    commitImport: (payload: {
+      accountId: string;
+      rows: any[];
+      mapping: any;
+      broker?: string;
+      saveMapping?: boolean;
+    }) =>
       request<any>('/export/import/commit', {
         method: 'POST',
         body: JSON.stringify(payload),
+      }),
+    undoImport: (batchId?: string) =>
+      request<any>('/export/import/undo', {
+        method: 'POST',
+        body: JSON.stringify({ batchId }),
+      }),
+    getBatches: () => request<any>('/export/import/batches'),
+    getMappings: () => request<any>('/export/mappings'),
+    saveMapping: (data: { broker: string; name?: string; mapping: any }) =>
+      request<any>('/export/mappings', {
+        method: 'POST',
+        body: JSON.stringify(data),
       }),
   },
 

@@ -122,3 +122,24 @@ graph TD
 1. **FYERS Daily Token Expiration:** Under current SEBI / Indian exchange regulations, broker API access tokens expire every 24 hours. Users must re-authenticate daily if live polling is enabled.
 2. **Rate Limits:** FYERS API v3 imposes rate limits (typically 10 requests/second for historical orders and trade books).
 3. **Execution Splitting:** A single market order of 500 shares may generate multiple fills at fractional microsecond differences; the FIFO reconciliation engine merges these into a single logical trade position.
+
+---
+
+## 7. Tradebook CSV Formats & Multi-Broker Import Mapping
+
+SetupMint provides first-class support for importing historical tradebook CSV files from India's major discount and full-service brokers:
+
+| Broker | Tradebook Identifier Headers | Direction Column | Execution Pricing | Supported Segments |
+| :--- | :--- | :--- | :--- | :--- |
+| **Zerodha** | `isin`, `trade_type`, `series`, `order_execution_time` | `trade_type` (`buy`/`sell`) | `price` | Equity, F&O, Currency, Commodity |
+| **FYERS** | `trade no`, `order no`, `side`, `trade value` | `side` (`buy`/`sell` or `1`/`-1`) | `price` / `trade price` | Equity Cash, F&O, Commodities |
+| **Angel One** | `scrip / contract`, `client code`, `net rate` | `buy/sell` | `rate` / `net rate` | NSE/BSE Equity, F&O, MCX |
+| **Upstox** | `scrip`, `product`, `side` / `type`, `order no` | `side` (`BUY`/`SELL`) | `price` | Equity Intraday/Delivery, F&O |
+| **Custom** | Heuristic matching (`Date`, `Symbol`, `Price`, `Qty`, `Exit`) | Direction or Side | Entry / Exit or Execution Rate | Any market or manual sheet |
+
+### Smart Import Engine Workflow:
+1. **Auto-Detection:** Inspects uploaded CSV headers and immediately identifies the originating broker.
+2. **Saved User Mapping:** Loads the user's custom `BrokerImportMapping` configuration if previously saved, or provides broker-specific default mappings.
+3. **FIFO Round-Trip Grouping:** Raw fills are chronologically ordered and matched into complete round-trip trades using `calculateFIFOExecution` in `@tradevault/financial-engine`.
+4. **Auto-Charges:** Automatically calculates statutory exchange turnover fees, SEBI charges, stamp duty, STT/CTT, and GST via `IndianChargesCalculator`.
+5. **Batch Undo:** Every import is tracked via `importBatchId` allowing 1-click batch reversal and balance re-reconciliation.

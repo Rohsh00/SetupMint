@@ -446,16 +446,42 @@ Authentication is handled via stateful sessions:
 - **Auth:** **Required**.
 
 ### `POST /api/v1/export/import/preview`
-- **Purpose:** Upload broker CSV, parse headers, and generate suggested column mappings.
+- **Purpose:** Upload broker CSV, detect broker tradebook format (Zerodha, FYERS, Angel One, Upstox), load saved user column mappings or defaults, and inspect execution log mode.
 - **Auth:** **Required**.
 - **Content-Type:** `multipart/form-data` (`file`).
-- **Response:** `{ totalRows, headers, suggestedMapping, previewRows: [5] }`.
+- **Response:** `{ totalRows, headers, detectedBroker, availableBrokers, suggestedMapping, isRawExecutionLog, hasSavedMapping, previewRows, allRows }`.
 
 ### `POST /api/v1/export/import/commit`
-- **Purpose:** Commit parsed rows to target account with duplicate detection.
+- **Purpose:** Commit parsed trade rows or raw execution fills. Groups raw executions into round-trip trades using `calculateFIFOExecution` (ADVANCED mode), auto-calculates statutory charges via `IndianChargesCalculator`, flags with `importBatchId` and `['IMPORTED']` tag, skips duplicates, and authoritatively recalculates account balances.
 - **Auth:** **Required**.
-- **Request Body:** `{ "accountId": "...", "rows": [...], "mapping": { "tradeDate": "...", "symbol": "...", ... } }`.
-- **Response:** `{ importedCount, duplicateCount, errors: [] }`.
+- **Request Body:** `{ "accountId": "...", "rows": [...], "mapping": { "tradeDate": "...", "symbol": "...", ... }, "broker": "ZERODHA", "saveMapping": true }`.
+- **Response:** `{ batchId, importedCount, duplicateCount, errorCount, errors: [{ row, symbol, message }] }`.
+
+### `POST /api/v1/export/import/undo`
+- **Purpose:** Undo an imported trade batch, deleting all associated trades and reconciling authoritative account balances.
+- **Auth:** **Required**.
+- **Request Body:** `{ "batchId": "batch_..." }` (omitting batchId automatically undos the user's most recent import batch).
+- **Response:** `{ batchId, deletedCount, affectedAccounts: ["..."] }`.
+
+### `GET /api/v1/export/import/batches`
+- **Purpose:** List recent import batches for the user with trade counts, timestamps, symbols, and net P&L.
+- **Auth:** **Required**.
+- **Response:** Array of `{ batchId, tradeCount, accountId, createdAt, symbols, totalNetPnL }`.
+
+### `GET /api/v1/export/mappings`
+- **Purpose:** List all saved broker column mappings for the authenticated user.
+- **Auth:** **Required**.
+- **Response:** Array of `{ id, broker, name, mapping, createdAt, updatedAt }`.
+
+### `GET /api/v1/export/mappings/:broker`
+- **Purpose:** Retrieve saved column mapping for a specific broker (`ZERODHA`, `FYERS`, `ANGEL_ONE`, `UPSTOX`, `CUSTOM`).
+- **Auth:** **Required**.
+
+### `POST /api/v1/export/mappings`
+- **Purpose:** Upsert a custom column mapping for a broker (`userId`-scoped, unique per `userId+broker`).
+- **Auth:** **Required**.
+- **Request Body:** `{ "broker": "ZERODHA", "name": "Zerodha Kite Mapping", "mapping": { ... } }`.
+- **Response:** `{ id, broker, name, mapping }`.
 
 ---
 

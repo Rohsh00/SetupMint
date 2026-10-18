@@ -16,6 +16,7 @@ erDiagram
     USER ||--o{ DAILY_JOURNAL : "writes"
     USER ||--o{ ATTACHMENT : "uploads"
     USER ||--o{ BROKER_INTEGRATION : "configures"
+    USER ||--o{ BROKER_IMPORT_MAPPING : "saves"
     USER ||--o{ AUDIT_LOG : "triggers"
 
     TRADING_ACCOUNT ||--o{ ACCOUNT_TRANSACTION : "contains"
@@ -78,6 +79,7 @@ erDiagram
         object simpleExecution
         array fills
         object calculated
+        string importBatchId
         array screenshotIds FK
     }
 
@@ -113,6 +115,14 @@ erDiagram
         string broker "FYERS"
         string status
         string appId
+    }
+
+    BROKER_IMPORT_MAPPING {
+        ObjectId _id PK
+        ObjectId userId FK
+        string broker UK
+        string name
+        object mapping
     }
 ```
 
@@ -167,6 +177,7 @@ SetupMint enforces business rules via MongoDB unique compound indexes:
 | `Strategy` | `{ userId: 1, name: 1 }` | `unique: true` | Prevents duplicate strategy names for the same user. |
 | `DailyJournal` | `{ userId: 1, date: 1 }` | `unique: true` | Enforces strictly one reflection journal entry per user per date (`YYYY-MM-DD`). |
 | `BrokerIntegration` | `{ userId: 1, broker: 1 }` | `unique: true` | Exactly one configuration record per broker per user. |
+| `BrokerImportMapping` | `{ userId: 1, broker: 1 }` | `unique: true` | Exactly one saved CSV column mapping configuration per broker per user. |
 | `Attachment` | `{ storedFilename: 1 }` | `unique: true` | Prevents disk filename collisions. |
 
 ---

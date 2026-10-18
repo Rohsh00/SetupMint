@@ -132,27 +132,50 @@ The core ledger architecture enforces that **the database is the authoritative s
 
 ---
 
-## 8. CSV Import & Duplicate Prevention Logic
+## 8. CSV Import, Broker Format Detection & FIFO Grouping Logic
 
-1. **Column Name Normalization:** The import preview engine strips all non-alphanumeric characters and lowercases headers to detect common broker patterns:
-   - Date: `date`, `tradedate`, `entrydate`, `time`
-   - Symbol: `symbol`, `ticker`, `instrument`, `scrip`
-   - Direction: `direction`, `side`, `type`, `buysell`
-   - Price: `entryprice`, `buyprice`, `openprice`, `price`
-   - Quantity: `quantity`, `qty`, `shares`, `lots`
-   - Costs: `fee`, `fees`, `brokerage`, `costs`, `charges`
-2. **Duplicate Invariant:** Before inserting each row, the system checks:
-   ```typescript
-   await Trade.findOne({
-     userId,
-     accountId,
-     symbol,
-     tradeDate,
-     'simpleExecution.entryPrice': entryPrice,
-     'simpleExecution.quantity': quantity,
-   });
-   ```
-   If a matching record exists, the row is flagged as duplicate and skipped, preventing duplicate balance inflation.
+1. **Broker Tradebook Auto-Detection:**
+   The preview engine inspects uploaded CSV headers using signature heuristic patterns:
+   - **Zerodha (Console / Kite):** Detects `isin`, `trade_type`, `series`, or `order_execution_time`. Default mapping maps `trade_type` -> direction, `quantity` -> quantity, `price` -> price, `trade_date` -> tradeDate.
+   - **FYERS (Tradebook):** Detects `trade no` / `tradeno`, `order no`, `side`, and `trade value`. Maps `side` -> direction, `qty` -> quantity, `trade date` -> tradeDate.
+   - **Angel One:** Detects `scrip / contract`, `client code`, `net rate`. Maps `buy/sell` -> direction, `rate` -> price, `trade date` -> tradeDate.
+   - **Upstox:** Detects `scrip`, `product`, `side` / `type`. Maps `side` -> direction, `price` -> price, `date` -> tradeDate.
+   - **Custom / Generic:** Flexible regex matching supporting both completed trade sheets (with `entryPrice` + `exitPrice`) and raw execution logs.
+
+2. **Saved User Column Mappings:**
+   - Saved in `BrokerImportMapping` (`userId`-scoped, unique per `userId+broker`).
+   - When a broker tradebook is detected, any saved mapping for that broker is automatically retrieved and applied; users can customize and save mappings per broker.
+
+3. **FIFO Round-Trip Execution Grouping (Advanced Mode):**
+   - When importing raw broker execution fills (one row per BUY/SELL order):
+     1. Raw fills are chronologically ordered per symbol.
+     2. An initial BUY fill establishes a `LONG` trade; an initial SELL fill establishes a `SHORT` trade.
+     3. Subsequent fills on the same side scale into the position (`type: 'ENTRY'`).
+     4. Opposite-side fills exit open lots (`type: 'EXIT'`). When open lots reach zero, the round-trip trade is closed.
+     5. If an exit fill exceeds the open quantity, the position is split: the open lots close the current trade, and the remainder opens a new trade in the reversed direction.
+     6. Fills are matched and evaluated via `calculateFIFOExecution()` in `@tradevault/financial-engine`.
+
+4. **Automated Regulatory Fee Calculation:**
+   - Statutory Indian transaction charges are computed via `IndianChargesCalculator.calculate()` (Decimal.js 30-digit precision) based on asset class (`EQUITY`, `FUTURES`, `OPTIONS`, `MCX`), broker flat fee, and turnover.
+   - Fees are populated into `brokerage`, `exchangeFees`, `regulatoryFees`, and `taxes`.
+
+5. **Duplicate Prevention Invariant:**
+   - Before inserting imported trades, the system queries:
+     ```typescript
+     await Trade.findOne({
+       userId,
+       accountId,
+       symbol,
+       tradeDate,
+       'calculated.averageEntryPrice': avgEntry,
+       'calculated.closedQuantity': closedQty,
+     });
+     ```
+   - Matches are counted as duplicates and safely skipped without re-inflating account balances.
+
+6. **Batch Undo Invariant:**
+   - Every imported batch generates a unique `importBatchId` (e.g. `batch_<timestamp>_<rand>`) stamped on all created trades and recorded in their audit logs.
+   - The user can undo any batch via `POST /api/v1/export/import/undo`. Undoing deletes all trades associated with that `importBatchId` and triggers `AccountService.recalculateAccountBalances(accountId, userId)` for all affected accounts.
 
 ---
 

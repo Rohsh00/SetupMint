@@ -17,7 +17,8 @@ SetupMint defines 10 core Mongoose models:
 8. `DailyJournal` — Daily session reviews, market biases, and reflection ratings.
 9. `Attachment` — Metadata for chart screenshots stored on local disk.
 10. `BrokerIntegration` — Broker connectivity status and sync history logs.
-11. `AuditLog` — General audit trail entries for administrative tracking.
+11. `BrokerImportMapping` — Saved per-broker CSV column mapping configurations with unique `userId+broker` indexing.
+12. `AuditLog` — General audit trail entries for administrative tracking.
 
 ---
 
@@ -134,6 +135,7 @@ SetupMint defines 10 core Mongoose models:
 | `session` | `String` | No | — | Enum: `['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS']` | Market trading session |
 | `tradeTitle` | `String` | No | — | — | Optional custom title |
 | `externalBrokerOrderRef` | `String` | No | — | — | External broker order ID |
+| `importBatchId` | `String` | No | — | Indexed | Unique batch ID for bulk CSV import tracking and undo |
 | `executionMode` | `String` | No | `'SIMPLE'` | Enum: `['SIMPLE', 'ADVANCED']` | Execution mode |
 
 #### Embedded Subdocuments in Trade:
@@ -354,7 +356,26 @@ SetupMint defines 10 core Mongoose models:
 
 ---
 
-### 2.11 AuditLog Model (`AuditLog.ts`)
+### 2.11 BrokerImportMapping Model (`BrokerImportMapping.ts`)
+- **Collection Name:** `brokerimportmappings`
+- **File:** [`apps/api/src/db/models/BrokerImportMapping.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/BrokerImportMapping.ts)
+
+| Field Name | Type | Required | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Primary Key | Mapping document ID |
+| `userId` | `ObjectId` | **Yes** | Ref: `'User'`, Indexed | Owning user |
+| `broker` | `String` | **Yes** | Enum: `['ZERODHA', 'FYERS', 'ANGEL_ONE', 'UPSTOX', 'CUSTOM']` | Target broker identifier |
+| `name` | `String` | **Yes** | Trim | Display title for saved preset |
+| `mapping` | `Map<String>` | **Yes** | Key-value pairs | CSV column header to model field mapping |
+| `createdAt` | `Date` | Auto | Timestamp | Document creation timestamp |
+| `updatedAt` | `Date` | Auto | Timestamp | Document update timestamp |
+
+**Compound Indexes:**
+- `{ userId: 1, broker: 1 }` (Unique constraint — one mapping per user per broker)
+
+---
+
+### 2.12 AuditLog Model (`AuditLog.ts`)
 - **Collection Name:** `auditlogs`
 - **File:** [`apps/api/src/db/models/AuditLog.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/AuditLog.ts)
 

@@ -274,26 +274,37 @@ This document provides a comprehensive, verified feature inventory of all module
 
 ---
 
-## 11. Reports, CSV Import & Export, and Data Portability
+## 11. Reports, Smart Broker CSV Import & Export, and Data Portability
 
 - **Status:** **IMPLEMENTED**
-- **Purpose:** Complete data ownership, backup, and historical migration.
-- **Problem Solved:** Prevents vendor lock-in and allows importing past trade history from broker CSV exports.
+- **Purpose:** Complete data ownership, backup, historical migration, and frictionless broker tradebook import.
+- **Problem Solved:** Prevents vendor lock-in, eliminates manual entry of historical broker executions, automatically aggregates raw fills into round-trip trades, computes statutory regulatory charges, and offers reversible batch imports.
 - **Main User Interactions:**
   - Export filtered trades to CSV or full JSON.
-  - Upload broker CSV, preview detected rows, and map columns interactively.
-  - Commit import with automatic duplicate detection.
-- **Frontend Components:** [`ReportsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/ReportsPage.tsx).
+  - Upload broker CSV tradebooks (Zerodha, FYERS, Angel One, Upstox, or custom).
+  - Review auto-detected broker format, execution mode (FIFO fills vs completed trades), and saved column mapping.
+  - Option to save customized column mappings per broker.
+  - Commit import with automatic FIFO position matching and duplicate detection.
+  - One-click "Undo Last Import" or historical batch undo with instant account balance recalculation.
+- **Frontend Components:** [`ReportsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/ReportsPage.tsx), [`ConfirmDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/ConfirmDialog.tsx).
 - **Backend APIs & Services:**
   - `GET /api/v1/export/csv`
   - `GET /api/v1/export/json`
   - `POST /api/v1/export/import/preview`
   - `POST /api/v1/export/import/commit`
-- **Database Entities:** `Trade`, `TradingAccount`.
+  - `POST /api/v1/export/import/undo`
+  - `GET /api/v1/export/import/batches`
+  - `GET /api/v1/export/mappings`
+  - `POST /api/v1/export/mappings`
+  - `AccountService.recalculateAccountBalances()`
+- **Database Entities:** `Trade`, `TradingAccount`, `BrokerImportMapping`.
 - **Business Rules & Calculations:**
-  - Automatically maps common column headers (Date, TradeDate, Symbol, Ticker, BuySell, Price, Qty, Fees).
+  - Heuristic broker format detection from tradebook CSV header signatures.
+  - Sequential FIFO fill matching for scale-ins and exits using `@tradevault/financial-engine`.
+  - Regulatory charges computed via `IndianChargesCalculator` (exchange turnover charges, SEBI fees, stamp duty, STT/CTT, GST).
   - Duplicate check prevents importing identical executions.
-  - Reconciles account balances authoritatively after import completion.
+  - Batch tracking via `importBatchId` enables atomic reversals.
+  - Reconciles account balances authoritatively after import completion or batch undo.
 
 ---
 

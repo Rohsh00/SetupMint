@@ -31,6 +31,7 @@ export interface ITradeDoc extends Document {
   session?: TradingSession;
   tradeTitle?: string;
   externalBrokerOrderRef?: string;
+  importBatchId?: string;
 
   executionMode: ExecutionMode;
   simpleExecution?: {
@@ -215,6 +216,7 @@ const TradeSchema = new Schema<ITradeDoc>(
     },
     tradeTitle: { type: String },
     externalBrokerOrderRef: { type: String },
+    importBatchId: { type: String, index: true },
 
     executionMode: {
       type: String,

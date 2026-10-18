@@ -1069,7 +1069,7 @@ export function TradeFormModal({
         </Box>
 
         {/* Modal Body / Scrollable Form */}
-        <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)} noValidate>
           <DialogContent
             sx={{
               p: 3,

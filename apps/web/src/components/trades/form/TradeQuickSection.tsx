@@ -110,7 +110,7 @@ export function TradeQuickSection({
     const l = Number(valStr);
     if (!isNaN(l) && l >= 0) {
       const step = lotSize > 0 ? lotSize : 1;
-      const computed = Math.max(1, Math.round(l * step));
+      const computed = step >= 1 ? Math.max(step, Math.round(l * step)) : Math.max(step, Number((l * step).toFixed(6)));
       setValue('simpleExecution.quantity', computed);
     }
   };
@@ -399,7 +399,7 @@ export function TradeQuickSection({
           fullWidth
           value={Number.isInteger(lotsValue) ? lotsValue : Number(lotsValue.toFixed(2))}
           onChange={(e) => handleLotsChange(e.target.value)}
-          slotProps={{ htmlInput: { step: 1, min: 0.01, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
+          slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
           helperText={lotSize > 1 ? `1 lot = ${lotSize}` : '1 lot = 1'}
         />
 
@@ -414,7 +414,7 @@ export function TradeQuickSection({
               fullWidth
               value={quantity}
               onChange={(e) => setValue('simpleExecution.quantity', Number(e.target.value))}
-              slotProps={{ htmlInput: { step: lotSize || 1, min: 1, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
+              slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
             />
             <Tooltip title={`Subtract 1 lot (${lotSize} units)`} arrow>
               <span>

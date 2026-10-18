@@ -98,7 +98,9 @@ export function DashboardPage() {
       }),
   });
 
-  const recentTrades = recentTradesData?.data || [];
+  const recentTrades = Array.isArray(recentTradesData)
+    ? recentTradesData
+    : recentTradesData?.data || [];
 
   if (isLoading) {
     return (

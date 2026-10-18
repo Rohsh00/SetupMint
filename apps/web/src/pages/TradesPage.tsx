@@ -108,8 +108,8 @@ export function TradesPage() {
       }),
   });
 
-  const trades = data?.data || [];
-  const pagination = data?.pagination || { page: 1, limit: 25, totalCount: 0, totalPages: 1 };
+  const trades = Array.isArray(data) ? data : data?.data || [];
+  const pagination = data?.pagination || { page: 1, limit: 25, totalCount: trades.length, totalPages: 1 };
 
   // Mutations
   const duplicateMutation = useMutation({

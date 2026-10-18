@@ -40,6 +40,10 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     throw new ApiError(error.message || 'An error occurred with your request', error.code, error.details);
   }
 
+  if (data.pagination !== undefined && data.data !== undefined) {
+    return { data: data.data, pagination: data.pagination } as T;
+  }
+
   return data.data !== undefined ? data.data : (data as T);
 }
 

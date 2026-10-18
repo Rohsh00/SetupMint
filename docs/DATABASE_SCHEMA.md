@@ -1,0 +1,371 @@
+# SetupMint — Database Schema Specification
+
+This document provides the exhaustive specification for all MongoDB collections and Mongoose ODM models in **SetupMint**, grounded directly in the source models located under [`apps/api/src/db/models/`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/).
+
+---
+
+## 1. Schema Overview
+
+SetupMint defines 10 core Mongoose models:
+1. `User` — Trader identity, password hash, and preferences.
+2. `Session` — Stateful authentication tokens with automatic 30-day MongoDB TTL expiration.
+3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
+4. `AccountTransaction` — Capital deposits, withdrawals, transfers, and adjustments.
+5. `Trade` — Master trade ledger recording execution fills, risk metrics, SMC thesis, psychology, and audit logs.
+6. `Instrument` — Multi-asset instrument catalog with contract multipliers and lot sizes.
+7. `Strategy` — Discretionary strategy playbooks with rules, invalidation, and checklists.
+8. `DailyJournal` — Daily session reviews, market biases, and reflection ratings.
+9. `Attachment` — Metadata for chart screenshots stored on local disk.
+10. `BrokerIntegration` — Broker connectivity status and sync history logs.
+11. `AuditLog` — General audit trail entries for administrative tracking.
+
+---
+
+## 2. Model Specifications
+
+### 2.1 User Model (`User.ts`)
+- **Collection Name:** `users`
+- **File:** [`apps/api/src/db/models/User.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/User.ts)
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Unique user identifier |
+| `email` | `String` | **Yes** | — | Unique, lowercase, trim | User login email address |
+| `passwordHash` | `String` | **Yes** | — | — | Bcrypt hashed password (cost: 10) |
+| `name` | `String` | **Yes** | — | Trim | User display name |
+| `baseCurrency` | `String` | No | `'INR'` | Trim | Account baseline reporting currency |
+| `theme` | `String` | No | `'dark'` | Enum: `['dark', 'light', 'system']` | User interface color theme |
+| `createdAt` | `Date` | Auto | Current Time | — | Mongoose timestamp |
+| `updatedAt` | `Date` | Auto | Current Time | — | Mongoose timestamp |
+
+---
+
+### 2.2 Session Model (`Session.ts`)
+- **Collection Name:** `sessions`
+- **File:** [`apps/api/src/db/models/Session.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/Session.ts)
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Session identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Associated user ID |
+| `token` | `String` | **Yes** | — | Unique, Indexed | 64-char hex random token (`crypto.randomBytes(32)`) |
+| `expiresAt` | `Date` | **Yes** | — | **TTL Index (`expires: '30d'`)** | Auto-purged by MongoDB after expiration |
+| `userAgent` | `String` | No | — | — | Client user-agent string |
+| `ipAddress` | `String` | No | — | — | Client IP address |
+| `createdAt` | `Date` | Auto | Current Time | — | Session creation timestamp |
+
+---
+
+### 2.3 TradingAccount Model (`TradingAccount.ts`)
+- **Collection Name:** `tradingaccounts`
+- **File:** [`apps/api/src/db/models/TradingAccount.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/TradingAccount.ts)
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Account identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Account owner ID |
+| `name` | `String` | **Yes** | — | Trim, Compound unique (`userId` + `name`) | Account display name |
+| `broker` | `String` | **Yes** | — | Trim | Broker name (e.g. FYERS, Zerodha) |
+| `accountNumber` | `String` | No | — | Trim | Broker account/client ID |
+| `accountType` | `String` | No | `'EQUITY'` | Enum: `['EQUITY', 'COMMODITY', 'FUTURES_OPTIONS', 'FOREX', 'CRYPTO', 'PROP_FIRM', 'DEMO', 'OTHER']` | Segment classification |
+| `baseCurrency` | `String` | No | `'INR'` | Trim | Account currency |
+| `initialBalance` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Starting capital balance |
+| `currentBalance` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Current authoritative balance |
+| `realizedPnL` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative net realized P&L |
+| `totalDeposits` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative cash deposits |
+| `totalWithdrawals`| `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative cash withdrawals |
+| `status` | `String` | No | `'ACTIVE'` | Enum: `['ACTIVE', 'ARCHIVED']`, Indexed | Lifecycle status |
+| `riskRules` | `Object` | No | — | Embedded subdocument | Account-level risk parameters |
+| `riskRules.maxDailyLoss` | `Number` | No | — | — | Max allowable daily loss limit |
+| `riskRules.maxRiskPerTradePercent` | `Number` | No | — | — | Max risk % per position |
+| `riskRules.maxOpenTrades` | `Number` | No | — | — | Max concurrent open positions |
+| `notes` | `String` | No | — | — | User notes |
+
+**Compound Indexes:**
+- `{ userId: 1, name: 1 }` (Unique constraint)
+
+---
+
+### 2.4 AccountTransaction Model (`AccountTransaction.ts`)
+- **Collection Name:** `accounttransactions`
+- **File:** [`apps/api/src/db/models/AccountTransaction.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/AccountTransaction.ts)
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Transaction identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Transaction owner ID |
+| `accountId` | `ObjectId` | **Yes** | — | Ref: `'TradingAccount'`, Indexed | Target trading account |
+| `type` | `String` | **Yes** | — | Enum: `['DEPOSIT', 'WITHDRAWAL', 'TRANSFER', 'ADJUSTMENT']` | Transaction classification |
+| `amount` | `Decimal128` | **Yes** | — | Exact 128-bit decimal | Monetary transaction amount |
+| `currency` | `String` | No | `'INR'` | — | Transaction currency |
+| `date` | `Date` | **Yes** | — | Indexed | Effective date |
+| `notes` | `String` | No | — | — | User notes |
+
+**Compound Indexes:**
+- `{ userId: 1, accountId: 1, date: -1 }`
+
+---
+
+### 2.5 Trade Model (`Trade.ts`)
+- **Collection Name:** `trades`
+- **File:** [`apps/api/src/db/models/Trade.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/Trade.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Trade identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Trade owner ID |
+| `accountId` | `ObjectId` | **Yes** | — | Ref: `'TradingAccount'`, Indexed | Associated trading account |
+| `instrumentId` | `ObjectId` | No | — | Ref: `'Instrument'` | Linked instrument ID |
+| `symbol` | `String` | **Yes** | — | Uppercase, trim, Indexed | Trading symbol (e.g. NIFTY) |
+| `instrumentName` | `String` | No | — | — | Long description name |
+| `assetClass` | `String` | **Yes** | — | Enum: `['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX']`, Indexed | Asset class category |
+| `exchange` | `String` | **Yes** | — | — | Exchange code (NSE, MCX, etc.) |
+| `marketSegment` | `String` | **Yes** | — | Enum: `['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER']` | Market segment |
+| `currency` | `String` | No | `'INR'` | — | Quote currency |
+| `direction` | `String` | **Yes** | — | Enum: `['LONG', 'SHORT']`, Indexed | Trade side |
+| `status` | `String` | No | `'CLOSED'` | Enum: `['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED']`, Indexed | Trade lifecycle status |
+| `strategyId` | `ObjectId` | No | — | Ref: `'Strategy'`, Indexed | Associated playbook ID |
+| `strategyName` | `String` | No | — | — | Denormalized strategy name |
+| `tags` | `[String]` | No | `[]` | Indexed | Custom search tags |
+| `tradeDate` | `Date` | **Yes** | — | Indexed | Primary trade session date |
+| `timeZone` | `String` | No | `'Asia/Kolkata'` | — | Session timezone |
+| `entryTime` | `Date` | **Yes** | — | — | First entry timestamp |
+| `exitTime` | `Date` | No | — | — | Final exit timestamp |
+| `session` | `String` | No | — | Enum: `['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS']` | Market trading session |
+| `tradeTitle` | `String` | No | — | — | Optional custom title |
+| `externalBrokerOrderRef` | `String` | No | — | — | External broker order ID |
+| `executionMode` | `String` | No | `'SIMPLE'` | Enum: `['SIMPLE', 'ADVANCED']` | Execution mode |
+
+#### Embedded Subdocuments in Trade:
+
+##### A. `simpleExecution`
+- `entryPrice` (`Number`): Simple execution entry price.
+- `exitPrice` (`Number`, optional): Simple execution exit price.
+- `quantity` (`Number`): Total trade quantity.
+- `contractMultiplier` (`Number`, default `1`): Multiplier per point move.
+- `brokerage` (`Number`, default `0`): Brokerage fee.
+- `exchangeFees` (`Number`, default `0`): Exchange turnover fees.
+- `regulatoryFees` (`Number`, default `0`): SEBI & stamp duty charges.
+- `taxes` (`Number`, default `0`): STT/CTT and GST charges.
+- `otherFees` (`Number`, default `0`): Miscellaneous fees.
+- `explicitAdjustments` (`Number`, default `0`): Explicit manual P&L adjustments.
+- `adjustmentsReason` (`String`, optional): Reason for adjustments.
+
+##### B. `fills` (Array of Execution Fills)
+- `fillId` (`String`, required): Unique fill identifier.
+- `type` (`String`, enum: `['ENTRY', 'EXIT']`, required): Execution direction.
+- `price` (`Number`, required): Execution price.
+- `quantity` (`Number`, required): Execution quantity.
+- `timestamp` (`Date`, required): Timestamp of fill execution.
+- `fee` (`Number`, default `0`): Fee attributable to fill.
+- `brokerage` (`Number`, default `0`): Brokerage.
+- `exchangeFee` (`Number`, default `0`): Exchange fee.
+- `taxes` (`Number`, default `0`): Taxes.
+- `notes` (`String`): Fill notes.
+
+##### C. `risk` (Pre-Trade Risk Management)
+- `plannedEntryPrice` (`Number`)
+- `initialStopLoss` (`Number`)
+- `plannedTarget` (`Number`)
+- `riskBudgetAmount` (`Number`)
+- `riskPercentage` (`Number`)
+- `suggestedQuantity` (`Number`)
+- `actualQuantity` (`Number`)
+- `estimatedRiskAmount` (`Number`)
+- `riskAsPercentOfEquity` (`Number`)
+- `plannedRewardRiskRatio` (`Number`)
+- `realizedRMultiple` (`Number`)
+- `riskRuleViolations` (`[String]`)
+
+##### D. `thesis` (Technical Confluences & Structure)
+- `preMarketBias` (`String`, enum: `['BULLISH', 'BEARISH', 'NEUTRAL']`)
+- `marketStructure` (`String`, enum: `['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE']`)
+- `entryRationale` (`String`)
+- `entryConfirmation` (`String`)
+- `stopLossRationale` (`String`)
+- `targetRationale` (`String`)
+- `exitRationale` (`String`)
+- `invalidationConditions` (`String`)
+- `higherTimeframeContext` (`String`)
+- `confluences` (`[String]`): SMC confluences (e.g. `BOS`, `CHOCH`, `FVG`, `ORDER_BLOCK`, `LIQUIDITY_SWEEP`)
+- `customTechnicalLabels` (`[String]`)
+
+##### E. `psychology` (Behavioral & Discipline Discipline)
+- `emotionBefore` (`String`): Emotion prior to entry (e.g. `CALM`, `ANXIOUS`, `GREEDY`)
+- `emotionDuring` (`String`): Emotion during position hold
+- `emotionAfter` (`String`): Emotion post-exit
+- `confidenceScore` (`Number`, min 1, max 5)
+- `disciplineScore` (`Number`, default `4`, min 1, max 5)
+- `checklistCompleted` (`Boolean`, default `true`)
+- `rulesFollowed` (`Boolean`, default `true`)
+- `mistakes` (`[String]`): Mistake tags
+- `revengeTrading` (`Boolean`, default `false`)
+- `overtrading` (`Boolean`, default `false`)
+- `prematureExit` (`Boolean`, default `false`)
+- `stopLossMoved` (`Boolean`, default `false`)
+- `positionSizeViolation` (`Boolean`, default `false`)
+- `lessonsLearned` (`String`)
+- `notes` (`String`)
+
+##### F. `calculated` (Authoritative Deterministic Metrics)
+- `grossPnL` (`Number`, default `0`)
+- `totalCosts` (`Number`, default `0`)
+- `netPnL` (`Number`, default `0`)
+- `realizedRMultiple` (`Number`, optional)
+- `holdingTimeMinutes` (`Number`, optional)
+- `outcome` (`String`, enum: `['WIN', 'LOSS', 'BREAKEVEN', 'OPEN', 'CANCELLED']`, default `'BREAKEVEN'`, Indexed)
+- `closedQuantity` (`Number`, default `0`)
+- `openQuantity` (`Number`, default `0`)
+- `averageEntryPrice` (`Number`, default `0`)
+- `averageExitPrice` (`Number`, optional)
+
+##### G. `screenshotIds` & `auditLog`
+- `screenshotIds` (`[ObjectId]`, ref: `'Attachment'`): Associated chart screenshots.
+- `auditLog`: Array of `{ action: String, timestamp: Date, changedBy: String, details: Mixed }`.
+
+**Compound Indexes:**
+- `{ userId: 1, tradeDate: -1 }`
+- `{ userId: 1, accountId: 1, tradeDate: -1 }`
+- `{ userId: 1, 'calculated.netPnL': -1 }`
+
+---
+
+### 2.6 Instrument Model (`Instrument.ts`)
+- **Collection Name:** `instruments`
+- **File:** [`apps/api/src/db/models/Instrument.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/Instrument.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Instrument identifier |
+| `userId` | `ObjectId` | No | — | Ref: `'User'`, Indexed | Null if global preset |
+| `symbol` | `String` | **Yes** | — | Uppercase, trim, Indexed | Trading symbol |
+| `displayName` | `String` | **Yes** | — | Trim | Human-readable name |
+| `assetClass` | `String` | **Yes** | — | Enum, Indexed | Instrument category |
+| `exchange` | `String` | **Yes** | — | Trim | Exchange identifier |
+| `marketSegment` | `String` | **Yes** | — | Enum | Market segment |
+| `quoteCurrency` | `String` | No | `'INR'` | — | Pricing currency |
+| `contractMultiplier` | `Number` | **Yes** | `1` | Positive | Point value multiplier |
+| `lotSize` | `Number` | **Yes** | `1` | Positive | Minimum order lot size |
+| `tickSize` | `Number` | **Yes** | `0.05` | Positive | Minimum price variation |
+| `quantityIncrement` | `Number` | **Yes** | `1` | Positive | Increment step size |
+| `pricePrecision` | `Number` | **Yes** | `2` | Non-negative integer | Decimal display precision |
+| `isActive` | `Boolean` | No | `true` | Indexed | Active flag |
+| `expiryDate` | `Date` | No | — | — | Derivatives expiry date |
+| `optionType` | `String` | No | — | Enum: `['CALL', 'PUT']` | Options type |
+| `strikePrice` | `Number` | No | — | — | Options strike price |
+
+**Compound Indexes:**
+- `{ userId: 1, symbol: 1 }`
+
+---
+
+### 2.7 Strategy Model (`Strategy.ts`)
+- **Collection Name:** `strategies`
+- **File:** [`apps/api/src/db/models/Strategy.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/Strategy.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Strategy identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Strategy owner ID |
+| `name` | `String` | **Yes** | — | Trim, Compound unique | Strategy name |
+| `description` | `String` | No | `''` | — | Detailed explanation |
+| `assetClasses` | `[String]` | No | `[]` | Enum array | Target asset classes |
+| `timeframes` | `[String]` | No | `[]` | — | Execution timeframes |
+| `entryRules` | `[String]` | No | `[]` | — | Step-by-step entry triggers |
+| `stopLossRules` | `[String]` | No | `[]` | — | Stop placement rules |
+| `targetRules` | `[String]` | No | `[]` | — | Take profit criteria |
+| `invalidationCriteria`| `[String]` | No | `[]` | — | Invalidation conditions |
+| `checklist` | `[String]` | No | `[]` | — | Pre-trade checklist items |
+| `minRiskReward` | `Number` | No | `1.5` | Non-negative | Minimum acceptable R:R |
+| `tags` | `[String]` | No | `[]` | — | Custom labels |
+| `isActive` | `Boolean` | No | `true` | Indexed | Active status |
+
+**Compound Indexes:**
+- `{ userId: 1, name: 1 }` (Unique constraint)
+
+---
+
+### 2.8 DailyJournal Model (`DailyJournal.ts`)
+- **Collection Name:** `dailyjournals`
+- **File:** [`apps/api/src/db/models/DailyJournal.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/DailyJournal.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Journal entry identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Journal owner ID |
+| `date` | `String` | **Yes** | — | Format: `'YYYY-MM-DD'` | Trading session date string |
+| `marketConditions` | `String` | No | — | — | Session macro conditions |
+| `marketBias` | `String` | No | — | Enum: `['BULLISH', 'BEARISH', 'NEUTRAL']` | Daily trading bias |
+| `bestTradeId` | `ObjectId` | No | — | Ref: `'Trade'` | Best trade of the session |
+| `worstTradeId` | `ObjectId` | No | — | Ref: `'Trade'` | Worst trade of the session |
+| `mistakes` | `[String]` | No | `[]` | — | List of mistakes made |
+| `emotionalState` | `String` | No | — | — | Predominant daily emotion |
+| `disciplineRating` | `Number` | No | — | Min 1, max 5 | Daily discipline score |
+| `lessonsLearned` | `String` | No | — | — | Key takeaways |
+| `nextDayPlan` | `String` | No | — | — | Tomorrow's action plan |
+| `notes` | `String` | No | — | — | General daily notes |
+
+**Compound Indexes:**
+- `{ userId: 1, date: 1 }` (Unique constraint: exactly one journal entry per user per date)
+
+---
+
+### 2.9 Attachment Model (`Attachment.ts`)
+- **Collection Name:** `attachments`
+- **File:** [`apps/api/src/db/models/Attachment.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/Attachment.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Attachment identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Attachment owner ID |
+| `tradeId` | `ObjectId` | No | — | Ref: `'Trade'`, Indexed | Linked trade record |
+| `originalName` | `String` | **Yes** | — | — | Original uploaded filename |
+| `storedFilename` | `String` | **Yes** | — | Unique | Server UUID filename on disk |
+| `mimeType` | `String` | **Yes** | — | Validated magic bytes | `image/png`, `image/jpeg`, `image/webp` |
+| `sizeBytes` | `Number` | **Yes** | — | Max 10MB | File size in bytes |
+| `category` | `String` | No | `'ENTRY'` | Enum: `['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT']` | Screenshot trade phase |
+| `description` | `String` | No | — | — | Caption or description |
+| `timeframe` | `String` | No | — | — | Chart timeframe (e.g. 5m, 1h) |
+| `chartTimestamp`| `String` | No | — | — | Timestamp on the chart |
+
+**Compound Indexes:**
+- `{ userId: 1, tradeId: 1 }`
+- `{ tradeId: 1, category: 1 }`
+
+---
+
+### 2.10 BrokerIntegration Model (`BrokerIntegration.ts`)
+- **Collection Name:** `brokerintegrations`
+- **File:** [`apps/api/src/db/models/BrokerIntegration.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/BrokerIntegration.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Record identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owner user ID |
+| `broker` | `String` | **Yes** | `'FYERS'` | Enum: `['FYERS']` | Broker identifier |
+| `status` | `String` | No | `'DISABLED'` | Enum: `['DISABLED', 'IDLE', 'SYNCING', 'ERROR']` | Integration status |
+| `appId` | `String` | No | — | — | FYERS registered App ID |
+| `authCodeExpiresAt` | `Date` | No | — | — | Auth token expiration |
+| `lastSyncAt` | `Date` | No | — | — | Timestamp of last sync attempt |
+| `syncHistory` | `Array` | No | `[]` | Embedded subdocuments | Log of past sync runs |
+
+**Compound Indexes:**
+- `{ userId: 1, broker: 1 }` (Unique constraint)
+
+---
+
+### 2.11 AuditLog Model (`AuditLog.ts`)
+- **Collection Name:** `auditlogs`
+- **File:** [`apps/api/src/db/models/AuditLog.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/AuditLog.ts)
+
+| Field Name | Type | Required | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Primary Key | Audit log ID |
+| `userId` | `ObjectId` | **Yes** | Ref: `'User'`, Indexed | User performing action |
+| `entityType` | `String` | **Yes** | Indexed | e.g. `'Trade'`, `'TradingAccount'` |
+| `entityId` | `String` | **Yes** | Indexed | ID of affected entity |
+| `action` | `String` | **Yes** | — | e.g. `'CREATED'`, `'UPDATED'`, `'DELETED'` |
+| `diff` | `Mixed` | No | — | Before/after state snapshot |
+| `ipAddress` | `String` | No | — | Client IP address |
+| `userAgent` | `String` | No | — | Client User-Agent |
+| `createdAt` | `Date` | Auto | Timestamp | Timestamp of audit entry |

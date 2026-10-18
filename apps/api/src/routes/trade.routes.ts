@@ -49,7 +49,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       grossPnL = Number(fifo.realizedGrossPnL.toFixed(2));
       totalCosts = Number(fifo.totalCosts.toFixed(2));
       netPnL = Number(fifo.realizedNetPnL.toFixed(2));
-      outcome = fifo.outcome;
+      outcome = body.status === 'OPEN' ? 'OPEN' : fifo.outcome;
       closedQty = fifo.closedQuantity.toNumber();
       openQty = fifo.openQuantity.toNumber();
       avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(4));
@@ -367,6 +367,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const updatePayload: any = {
       ...parseResult.data,
+      risk: mergedData.risk,
+      thesis: mergedData.thesis,
+      psychology: mergedData.psychology,
+      simpleExecution: mergedData.simpleExecution,
+      fills: mergedData.fills,
       calculated: newCalculated,
       $push: {
         auditLog: {
@@ -382,7 +387,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (parseResult.data.entryTime) updatePayload.entryTime = new Date(parseResult.data.entryTime);
     if (parseResult.data.exitTime) updatePayload.exitTime = new Date(parseResult.data.exitTime);
 
-    const updated = await Trade.findByIdAndUpdate(req.params.id, updatePayload, { new: true });
+    const updated = await Trade.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user!.id },
+      updatePayload,
+      { new: true }
+    );
 
     // Recalculate account balances authoritatively
     await AccountService.recalculateAccountBalances(existingTrade.accountId, req.user!.id);

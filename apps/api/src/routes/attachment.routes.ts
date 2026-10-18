@@ -212,8 +212,8 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     });
   });
 
-  // Authenticated stream download of private screenshot
-  app.get('/:id/download', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+  // Authenticated stream / download of private screenshot
+  const handleAttachmentStream = async (req: any, reply: any) => {
     const attachment = await Attachment.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!attachment) {
       return reply.status(404).send({
@@ -234,7 +234,10 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(attachment.originalName)}"`);
     reply.header('Cache-Control', 'private, max-age=86400');
     return reply.send(fs.createReadStream(filePath));
-  });
+  };
+
+  app.get('/:id/download', { preHandler: [validateObjectIdParam('id')] }, handleAttachmentStream);
+  app.get('/:id/stream', { preHandler: [validateObjectIdParam('id')] }, handleAttachmentStream);
 
   // Delete attachment
   app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {

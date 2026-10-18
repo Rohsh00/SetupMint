@@ -119,6 +119,8 @@ const PREF_INSTRUMENT_KEY = 'setupmint_pref_instrument';
 const LEGACY_PREF_INSTRUMENT_KEY = 'stratum_pref_instrument';
 const PREF_WORKFLOW_MODE_KEY = 'setupmint_pref_trade_mode';
 const LEGACY_PREF_WORKFLOW_MODE_KEY = 'stratum_pref_trade_mode';
+const PREF_STRATEGY_KEY = 'setupmint_pref_strategy';
+const PREF_EXECUTION_MODE_KEY = 'setupmint_pref_execution_mode';
 
 export function getCustomTemplates(): TradeSetupTemplate[] {
   if (typeof window === 'undefined') return [];
@@ -164,6 +166,8 @@ export interface TradePreferences {
   preferredAccountId?: string;
   preferredSymbol?: string;
   preferredWorkflow?: 'QUICK' | 'COMPREHENSIVE';
+  preferredStrategyId?: string;
+  preferredExecutionMode?: 'SIMPLE' | 'ADVANCED';
 }
 
 export function getRememberedTradePreferences(): TradePreferences {
@@ -173,6 +177,8 @@ export function getRememberedTradePreferences(): TradePreferences {
       preferredAccountId: localStorage.getItem(PREF_ACCOUNT_KEY) || localStorage.getItem(LEGACY_PREF_ACCOUNT_KEY) || undefined,
       preferredSymbol: localStorage.getItem(PREF_INSTRUMENT_KEY) || localStorage.getItem(LEGACY_PREF_INSTRUMENT_KEY) || undefined,
       preferredWorkflow: (localStorage.getItem(PREF_WORKFLOW_MODE_KEY) || localStorage.getItem(LEGACY_PREF_WORKFLOW_MODE_KEY)) as 'QUICK' | 'COMPREHENSIVE' | undefined,
+      preferredStrategyId: localStorage.getItem(PREF_STRATEGY_KEY) || undefined,
+      preferredExecutionMode: (localStorage.getItem(PREF_EXECUTION_MODE_KEY) as 'SIMPLE' | 'ADVANCED') || undefined,
     };
   } catch {
     return {};
@@ -182,9 +188,11 @@ export function getRememberedTradePreferences(): TradePreferences {
 export function saveRememberedTradePreferences(prefs: TradePreferences): void {
   if (typeof window === 'undefined') return;
   try {
-    if (prefs.preferredAccountId) localStorage.setItem(PREF_ACCOUNT_KEY, prefs.preferredAccountId);
-    if (prefs.preferredSymbol) localStorage.setItem(PREF_INSTRUMENT_KEY, prefs.preferredSymbol);
-    if (prefs.preferredWorkflow) localStorage.setItem(PREF_WORKFLOW_MODE_KEY, prefs.preferredWorkflow);
+    if (prefs.preferredAccountId !== undefined) localStorage.setItem(PREF_ACCOUNT_KEY, prefs.preferredAccountId);
+    if (prefs.preferredSymbol !== undefined) localStorage.setItem(PREF_INSTRUMENT_KEY, prefs.preferredSymbol);
+    if (prefs.preferredWorkflow !== undefined) localStorage.setItem(PREF_WORKFLOW_MODE_KEY, prefs.preferredWorkflow);
+    if (prefs.preferredStrategyId !== undefined) localStorage.setItem(PREF_STRATEGY_KEY, prefs.preferredStrategyId);
+    if (prefs.preferredExecutionMode !== undefined) localStorage.setItem(PREF_EXECUTION_MODE_KEY, prefs.preferredExecutionMode);
   } catch {
     // ignore
   }

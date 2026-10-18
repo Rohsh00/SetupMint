@@ -67,12 +67,17 @@ This document provides a comprehensive, verified feature inventory of all module
   - Switch between **Simple Mode** (single trade leg with auto-calculation) and **Advanced Mode** (FIFO multiple entry and exit fills).
   - Toggle between **Quick Mode** (express entry) and **Comprehensive Mode** (full thesis, psychology, confluences).
   - Select quick templates (e.g. Nifty Breakout, BankNifty Mean Reversion).
+  - Instrument selection with instant metadata autofill: exchange, market segment, currency, contract multiplier, and lot size.
+  - Dedicated **Lots** input field synchronized bidirectionally with quantity (`Quantity = Lots * LotSize`).
+  - Automatic trading session derivation from entry timestamp (`NSE_REGULAR`, `MCX_EVENING`, `NEW_YORK`, `LONDON`, `OFF_HOURS`).
+  - Automatic Indian statutory charges calculation (`calculateIndianCharges` in `@tradevault/financial-engine`) with live `TradeCalculationBanner` recomputation, "Auto" badge, manual fee override detection, and "Reset to auto" action.
+  - Persistent preference memory: remembers last-used account, strategy, symbol, workflow mode, and execution mode.
   - Search, filter by account, symbol, asset class, direction, status, outcome, and date range.
   - Pagination and sorting.
   - Trade duplication, bulk tagging, and bulk deletion.
 - **Inputs & Outputs:**
-  - *Inputs:* Account ID, symbol, asset class, direction (`LONG`/`SHORT`), status (`PLANNED`/`OPEN`/`CLOSED`/`CANCELLED`), entry/exit prices, quantity, contract multiplier, fees breakdown, confluences, emotions, mistakes.
-  - *Outputs:* Persisted trade document, calculated gross/net P&L, realized R-multiple, outcome classification.
+  - *Inputs:* Account ID, symbol, asset class, direction (`LONG`/`SHORT`), status (`PLANNED`/`OPEN`/`CLOSED`/`CANCELLED`), entry/exit prices, lots/quantity, contract multiplier, fees breakdown, confluences, emotions, mistakes.
+  - *Outputs:* Persisted trade document, calculated gross/net P&L, itemized statutory charges, realized R-multiple, outcome classification.
 - **Frontend Components:**
   - [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
   - [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx)

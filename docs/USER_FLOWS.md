@@ -51,12 +51,17 @@ sequenceDiagram
     participant DB as MongoDB (Trade / TradingAccount)
 
     User->>Modal: Clicks "Log New Trade" (or + New Trade in Top Bar)
-    Modal->>Modal: Loads default account & remembered preferences
-    User->>Modal: Selects Symbol (e.g. NIFTY), Direction (LONG)
-    User->>Modal: Inputs Entry Price (24,000), Exit Price (24,120), Quantity (50)
+    Modal->>Modal: Loads remembered preferences (Account, Strategy, Symbol, Mode)
+    User->>Modal: Selects Instrument (e.g. NIFTY)
+    Modal->>Modal: Autofills exchange (NSE), segment (NSE_FNO), multiplier (1), lotSize (25)
+    User->>Modal: Enters Lots (2) -> Auto-converts Quantity to 50
+    User->>Modal: Sets Entry Timestamp -> Auto-derives session (NSE_REGULAR)
+    User->>Modal: Inputs Entry Price (24,000), Exit Price (24,120)
+    Modal->>FE: calculateIndianCharges({ assetClass, prices, qty, broker })
+    FE-->>Modal: Auto-populates itemized Brokerage (₹40), Exchange, SEBI, STT, GST
     Modal->>FE: calculateSimpleExecutionPnL(direction, simpleExecution)
-    FE-->>Modal: Returns live Gross P&L (+₹6,000), Fees (₹112.50), Net P&L (+₹5,887.50)
-    Modal->>Modal: Updates TradeCalculationBanner with live profit preview
+    FE-->>Modal: Returns live Gross P&L (+₹6,000), Fees (₹207.82), Net P&L (+₹5,792.18)
+    Modal->>Modal: Updates TradeCalculationBanner with live profit & AUTO fees badge
     User->>Modal: Selects Discipline Score (5/5), Emotion (CALM), Strategy Playbook
     User->>Modal: Clicks "Save Trade Entry"
     Modal->>API: POST /api/v1/trades { accountId, symbol, executionMode: 'SIMPLE', ... }

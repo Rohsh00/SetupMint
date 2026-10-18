@@ -1,4 +1,4 @@
-# TradeVault — Future FYERS Broker Integration Architecture
+# SetupMint — Future FYERS Broker Integration Architecture
 
 ## 1. Architectural Strategy
 To ensure complete local privacy and independence from broker API volatility, live broker synchronization is **isolated and disabled** in the first release.

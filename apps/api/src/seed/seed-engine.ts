@@ -1,6 +1,10 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
-import { calculateLinearPnL, calculateRealizedRMultiple } from '@tradevault/financial-engine';
+import {
+  calculateLinearPnL,
+  calculateRealizedRMultiple,
+  IndianChargesCalculator,
+} from '@tradevault/financial-engine';
 import { Confluence, Emotion, MistakeTag, TradingSession } from '@tradevault/shared';
 import { AccountService } from '../services/account.service.js';
 import {
@@ -18,7 +22,6 @@ import { SeededPRNG } from './prng.js';
 import { SeedDensity, SeedOptions, SeedProfileName, SeedResult } from './types.js';
 import { IndianMarketCalendar } from './date-generator.js';
 import { SEED_INSTRUMENTS, SeedInstrumentSpec } from './instrument-catalog.js';
-import { IndianChargesCalculator } from './charges-calculator.js';
 import { SEED_STRATEGY_PLAYBOOKS } from './playbooks.js';
 import { ChartGenerator } from './chart-generator.js';
 import { ProfileDefinition, SEED_PROFILES } from './profiles.js';

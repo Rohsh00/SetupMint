@@ -32,6 +32,8 @@ interface TradeCalculationBannerProps {
   status: string;
   isDirectionValid?: boolean;
   directionError?: string | null;
+  isAutoFees?: boolean;
+  onResetAutoFees?: () => void;
 }
 
 export function TradeCalculationBanner({
@@ -46,6 +48,8 @@ export function TradeCalculationBanner({
   status,
   isDirectionValid = true,
   directionError,
+  isAutoFees,
+  onResetAutoFees,
 }: TradeCalculationBannerProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -273,12 +277,40 @@ export function TradeCalculationBanner({
                   fontSize: '0.75rem',
                 }}
               >
-                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
-                  TOTAL FEES
-                </Typography>
-                <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: 'text.secondary' }}>
-                  {formatCurrency(totalCosts)}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
+                    TOTAL FEES
+                  </Typography>
+                  {isAutoFees !== undefined && (
+                    <Chip
+                      label={isAutoFees ? 'AUTO' : 'MANUAL'}
+                      size="small"
+                      color={isAutoFees ? 'success' : 'warning'}
+                      variant="outlined"
+                      sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 800, px: 0.25 }}
+                    />
+                  )}
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: 'text.secondary' }}>
+                    {formatCurrency(totalCosts)}
+                  </Typography>
+                  {isAutoFees === false && onResetAutoFees && (
+                    <Typography
+                      variant="caption"
+                      onClick={onResetAutoFees}
+                      sx={{
+                        fontSize: '0.5625rem',
+                        color: 'primary.main',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Reset
+                    </Typography>
+                  )}
+                </Box>
               </Box>
 
               {/* Planned Risk */}

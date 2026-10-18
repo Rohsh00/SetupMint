@@ -29,7 +29,7 @@ This directory serves as the single source of truth for traders, software engine
 | [**UI_COMPONENTS_AND_DESIGN_SYSTEM.md**](UI_COMPONENTS_AND_DESIGN_SYSTEM.md) | MUI v9 + Tailwind CSS design system, typography, dark/light mode tokens, and Recharts. | UI/UX Designers |
 | [**CONFIGURATION_AND_ENVIRONMENT.md**](CONFIGURATION_AND_ENVIRONMENT.md) | Environment variables, `.env.example`, default configurations, and secrets management. | DevOps & Developers |
 | [**LOCAL_SETUP_AND_DEVELOPMENT.md**](LOCAL_SETUP_AND_DEVELOPMENT.md) | Step-by-step developer guide for setup, running dev servers, seeding, and debugging. | All Developers |
-| [**TESTING_AND_QUALITY_ASSURANCE.md**](TESTING_AND_QUALITY_ASSURANCE.md) | Vitest testing suites (90 unit and integration tests), test commands, and assertions. | QA Engineers |
+| [**TESTING_AND_QUALITY_ASSURANCE.md**](TESTING_AND_QUALITY_ASSURANCE.md) | Vitest testing suites (101 unit and integration tests), test commands, and assertions. | QA Engineers |
 | [**DEPLOYMENT_AND_OPERATIONS.md**](DEPLOYMENT_AND_OPERATIONS.md) | Production builds, Docker Compose, hosting topology, backup scripts, and data persistence. | DevOps & SREs |
 | [**KNOWN_LIMITATIONS_AND_TECHNICAL_DEBT.md**](KNOWN_LIMITATIONS_AND_TECHNICAL_DEBT.md) | Verified defects, partial features, technical debt, and planned enhancements. | Engineering Leads |
 

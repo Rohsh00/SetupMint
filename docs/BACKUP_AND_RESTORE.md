@@ -1,6 +1,6 @@
-# TradeVault — Local Backup and Restore Guide
+# SetupMint — Local Backup and Restore Guide
 
-TradeVault is designed to maintain 100% of your trading records locally on your MacBook. Because data is private and not sent to commercial cloud databases, regular backups are recommended.
+SetupMint is designed to maintain 100% of your trading records locally on your machine. Because data is private and not sent to commercial cloud databases, regular backups are recommended.
 
 ---
 

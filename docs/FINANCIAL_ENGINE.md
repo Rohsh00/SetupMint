@@ -1,8 +1,8 @@
-# TradeVault — Financial Calculation Engine Specifications
+# SetupMint — Financial Calculation Engine Specifications
 
 ## 1. Mathematical Formulas & Conventions
 
-All calculations are implemented in `@tradevault/financial-engine` using decimal arithmetic (`decimal.js`).
+All calculations are implemented in `@tradevault/financial-engine` using decimal arithmetic (`decimal.js`) with 30-digit precision and `ROUND_HALF_UP` rounding.
 
 ### A. Linear Instrument P&L
 For standard linear instruments (Equities, Index Futures, Commodities, Forex, Crypto):
@@ -74,3 +74,43 @@ $$\text{Peak Equity}_i = \max(\text{Cumulative Equity}_1, \dots, \text{Cumulativ
 $$\text{Drawdown Amount}_i = \text{Peak Equity}_i - \text{Cumulative Equity}_i$$
 $$\text{Drawdown Percentage}_i = \frac{\text{Drawdown Amount}_i}{\text{Peak Equity}_i} \times 100$$
 $$\text{Max Drawdown} = \max(\text{Drawdown Amount}_1, \dots, \text{Drawdown Amount}_n)$$
+
+---
+
+## 5. Indian Statutory Charges Engine (`charges.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/charges.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/charges.ts)
+
+Models realistic Indian market statutory turnover charges, broker fees, and tax schedules using Decimal.js:
+- **Brokerage**: Configurable per-leg fee (default ₹20/leg = ₹40 round-trip; ₹0 for zero-brokerage brokers like Finvasia).
+- **Exchange Turnover Fees**:
+  - NSE Cash: 0.00297%
+  - NSE Futures: 0.00173%
+  - NSE Options (on premium): 0.035%
+  - MCX Non-agri Commodities: 0.0021%
+- **STT / CTT**:
+  - NSE Cash (Intraday): 0.025% on sell turnover
+  - NSE Futures: 0.02% on sell turnover
+  - NSE Options: 0.10% on sell premium turnover
+  - MCX Commodities (CTT): 0.01% on sell turnover
+- **Stamp Duty**:
+  - Cash Equities & Options: 0.003% on buy turnover
+  - Futures & Commodities: 0.002% on buy turnover
+- **SEBI Turnover Fee**: ₹10 per crore (0.0001% of total turnover)
+- **GST**: 18% on (Brokerage + Exchange Fees + SEBI Fee)
+
+---
+
+## 6. Trading Session Derivation (`session.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/session.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/session.ts)
+
+Derives `TradingSession` based on execution timestamp and exchange:
+- **`NSE_REGULAR`**: Indian equity & F&O market hours (09:15 - 15:30 IST)
+- **`MCX_EVENING`**: MCX commodity evening session (17:00 - 23:30/23:55 IST)
+- **`NEW_YORK`**: US exchange sessions (NYSE, NASDAQ, CME)
+- **`LONDON`**: London exchange session (LSE)
+- **`OFF_HOURS`**: Weekend trades (Saturday / Sunday) and 24/7 Crypto markets
+

@@ -27,12 +27,14 @@ import {
   ExpandMoreRounded,
   ExpandLessRounded,
   LocalOfferRounded,
+  RotateLeftRounded,
 } from '@mui/icons-material';
 import {
   ASSET_CLASSES,
   MARKET_SEGMENTS,
   TRADING_SESSIONS,
 } from '@tradevault/shared';
+import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { formatCurrency } from '../../../lib/utils.js';
 
 interface TradeQuickSectionProps {
@@ -42,6 +44,9 @@ interface TradeQuickSectionProps {
   accounts: any[];
   instruments: any[];
   strategies: any[];
+  isAutoFees?: boolean;
+  onToggleAutoFees?: (auto: boolean) => void;
+  onResetAutoFees?: () => void;
 }
 
 export function TradeQuickSection({
@@ -51,6 +56,9 @@ export function TradeQuickSection({
   accounts,
   instruments,
   strategies,
+  isAutoFees = true,
+  onToggleAutoFees,
+  onResetAutoFees,
 }: TradeQuickSectionProps) {
   const muiTheme = useTheme();
   const [showItemizedFees, setShowItemizedFees] = useState(false);
@@ -70,6 +78,17 @@ export function TradeQuickSection({
     (i) => i.symbol.toUpperCase() === selectedSymbol.toUpperCase()
   );
   const lotSize = currentInstrument?.lotSize || 1;
+  const lotsValue = lotSize > 0 ? Number(quantity) / lotSize : Number(quantity);
+
+  const handleLotsChange = (valStr: string) => {
+    if (valStr === '') return;
+    const l = Number(valStr);
+    if (!isNaN(l) && l >= 0) {
+      const step = lotSize > 0 ? lotSize : 1;
+      const computed = Math.max(1, Math.round(l * step));
+      setValue('simpleExecution.quantity', computed);
+    }
+  };
 
   // Change symbol and auto-populate metadata
   const handleSelectSymbol = (sym: string) => {
@@ -84,6 +103,10 @@ export function TradeQuickSection({
       setValue('risk.lotSize', found.lotSize || 1);
       if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
         setValue('simpleExecution.quantity', found.lotSize || 1);
+      }
+      const entryTime = watch('entryTime');
+      if (entryTime) {
+        setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment));
       }
     }
   };
@@ -289,8 +312,8 @@ export function TradeQuickSection({
 
       <Divider sx={{ my: 0.5 }} />
 
-      {/* Row 3: Execution Prices & Quantity */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1.5fr 1fr' }, gap: 2 }}>
+      {/* Row 3: Execution Prices, Lots & Quantity */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: '1.2fr 1.2fr 0.9fr 1.3fr 1fr' }, gap: 2 }}>
         <TextField
           label="Entry Price *"
           type="number"
@@ -319,6 +342,18 @@ export function TradeQuickSection({
           onChange={(e) => setValue('simpleExecution.exitPrice', e.target.value === '' ? '' : Number(e.target.value))}
           slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
           helperText={status === 'OPEN' ? 'Position is active' : ''}
+        />
+
+        {/* Lots Input */}
+        <TextField
+          label="Lots"
+          type="number"
+          size="small"
+          fullWidth
+          value={Number.isInteger(lotsValue) ? lotsValue : Number(lotsValue.toFixed(2))}
+          onChange={(e) => handleLotsChange(e.target.value)}
+          slotProps={{ htmlInput: { step: 1, min: 0.01, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
+          helperText={lotSize > 1 ? `1 lot = ${lotSize}` : '1 lot = 1'}
         />
 
         {/* Quantity with Lot Stepper */}
@@ -359,7 +394,7 @@ export function TradeQuickSection({
           </Box>
           {lotSize > 1 && (
             <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', color: 'text.secondary', fontSize: '0.6875rem', pl: 0.5, mt: 0.25, display: 'block' }}>
-              = {Math.round(quantity / lotSize)} lot{Math.round(quantity / lotSize) !== 1 ? 's' : ''} (Lot Size: {lotSize})
+              = {Math.round(quantity / lotSize)} lot{Math.round(quantity / lotSize) !== 1 ? 's' : ''}
             </Typography>
           )}
         </Box>
@@ -442,7 +477,11 @@ export function TradeQuickSection({
           required
           fullWidth
           value={watch('entryTime') || ''}
-          onChange={(e) => setValue('entryTime', e.target.value)}
+          onChange={(e) => {
+            setValue('entryTime', e.target.value);
+            const derived = deriveSessionFromTime(e.target.value, watch('exchange'), watch('marketSegment'));
+            setValue('session', derived);
+          }}
           slotProps={{ inputLabel: { shrink: true } }}
         />
 
@@ -523,22 +562,43 @@ export function TradeQuickSection({
 
       {/* Itemized Fees Expander */}
       <Box sx={{ pt: 0.5 }}>
-        <Button
-          size="small"
-          color="inherit"
-          onClick={() => setShowItemizedFees(!showItemizedFees)}
-          endIcon={showItemizedFees ? <ExpandLessRounded /> : <ExpandMoreRounded />}
-          sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', color: 'text.secondary', p: 0 }}
-        >
-          {showItemizedFees ? 'Hide Itemized Execution Fees' : 'Add Itemized Execution Fees (Brokerage, Taxes, Exchange)'}
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Button
+            size="small"
+            color="inherit"
+            onClick={() => setShowItemizedFees(!showItemizedFees)}
+            endIcon={showItemizedFees ? <ExpandLessRounded /> : <ExpandMoreRounded />}
+            sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', color: 'text.secondary', p: 0 }}
+          >
+            {showItemizedFees ? 'Hide Itemized Execution Fees' : 'Itemized Execution Fees (Brokerage, Taxes, Exchange)'}
+          </Button>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip
+              icon={<SecurityRounded sx={{ fontSize: '13px !important' }} />}
+              label={isAutoFees ? 'AUTO FEES' : 'MANUAL OVERRIDE'}
+              size="small"
+              color={isAutoFees ? 'success' : 'warning'}
+              variant={isAutoFees ? 'filled' : 'outlined'}
+              sx={{ height: 20, fontSize: '0.625rem', fontWeight: 700 }}
+            />
+            {!isAutoFees && onResetAutoFees && (
+              <Button
+                size="small"
+                variant="text"
+                onClick={onResetAutoFees}
+                startIcon={<RotateLeftRounded sx={{ fontSize: 14 }} />}
+                sx={{ textTransform: 'none', fontSize: '0.6875rem', py: 0, px: 0.75, height: 20 }}
+              >
+                Reset to auto
+              </Button>
+            )}
+          </Box>
+        </Box>
 
         <Collapse in={showItemizedFees}>
           <Box
             sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr 1fr' },
-              gap: 2,
               p: 2,
               mt: 1.5,
               borderRadius: 2,
@@ -547,52 +607,91 @@ export function TradeQuickSection({
               borderColor: 'divider',
             }}
           >
-            <TextField
-              label="Brokerage"
-              type="number"
-              size="small"
-              fullWidth
-              value={watch('simpleExecution.brokerage') ?? 0}
-              onChange={(e) => setValue('simpleExecution.brokerage', Number(e.target.value))}
-              slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-            />
-            <TextField
-              label="Exchange Fees"
-              type="number"
-              size="small"
-              fullWidth
-              value={watch('simpleExecution.exchangeFees') ?? 0}
-              onChange={(e) => setValue('simpleExecution.exchangeFees', Number(e.target.value))}
-              slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-            />
-            <TextField
-              label="Regulatory (SEBI)"
-              type="number"
-              size="small"
-              fullWidth
-              value={watch('simpleExecution.regulatoryFees') ?? 0}
-              onChange={(e) => setValue('simpleExecution.regulatoryFees', Number(e.target.value))}
-              slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-            />
-            <TextField
-              label="Taxes (GST/STT)"
-              type="number"
-              size="small"
-              fullWidth
-              value={watch('simpleExecution.taxes') ?? 0}
-              onChange={(e) => setValue('simpleExecution.taxes', Number(e.target.value))}
-              slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-            />
-            <TextField
-              label="Explicit Adjustments"
-              type="number"
-              size="small"
-              fullWidth
-              value={watch('simpleExecution.explicitAdjustments') ?? 0}
-              onChange={(e) => setValue('simpleExecution.explicitAdjustments', Number(e.target.value))}
-              slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              helperText="Dividends / Carry"
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                {isAutoFees
+                  ? 'Charges auto-calculated: Flat ₹20/leg brokerage, exchange turnover, STT/CTT, SEBI (₹10/cr), stamp duty, and 18% GST'
+                  : 'Manual fee overrides active. Click "Reset to auto" to restore statutory calculations.'}
+              </Typography>
+              {!isAutoFees && onResetAutoFees && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={onResetAutoFees}
+                  startIcon={<RotateLeftRounded sx={{ fontSize: 14 }} />}
+                  sx={{ textTransform: 'none', fontSize: '0.6875rem', py: 0.25, px: 1 }}
+                >
+                  Reset to auto
+                </Button>
+              )}
+            </Box>
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr 1fr' },
+                gap: 2,
+              }}
+            >
+              <TextField
+                label="Brokerage"
+                type="number"
+                size="small"
+                fullWidth
+                value={watch('simpleExecution.brokerage') ?? 0}
+                onChange={(e) => {
+                  onToggleAutoFees?.(false);
+                  setValue('simpleExecution.brokerage', Number(e.target.value));
+                }}
+                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+              <TextField
+                label="Exchange Fees"
+                type="number"
+                size="small"
+                fullWidth
+                value={watch('simpleExecution.exchangeFees') ?? 0}
+                onChange={(e) => {
+                  onToggleAutoFees?.(false);
+                  setValue('simpleExecution.exchangeFees', Number(e.target.value));
+                }}
+                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+              <TextField
+                label="Regulatory (SEBI)"
+                type="number"
+                size="small"
+                fullWidth
+                value={watch('simpleExecution.regulatoryFees') ?? 0}
+                onChange={(e) => {
+                  onToggleAutoFees?.(false);
+                  setValue('simpleExecution.regulatoryFees', Number(e.target.value));
+                }}
+                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+              <TextField
+                label="Taxes (GST/STT)"
+                type="number"
+                size="small"
+                fullWidth
+                value={watch('simpleExecution.taxes') ?? 0}
+                onChange={(e) => {
+                  onToggleAutoFees?.(false);
+                  setValue('simpleExecution.taxes', Number(e.target.value));
+                }}
+                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              />
+              <TextField
+                label="Explicit Adjustments"
+                type="number"
+                size="small"
+                fullWidth
+                value={watch('simpleExecution.explicitAdjustments') ?? 0}
+                onChange={(e) => setValue('simpleExecution.explicitAdjustments', Number(e.target.value))}
+                slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                helperText="Dividends / Carry"
+              />
+            </Box>
           </Box>
         </Collapse>
       </Box>

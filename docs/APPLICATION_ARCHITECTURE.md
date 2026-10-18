@@ -62,7 +62,7 @@ graph TB
 | **File Uploads** | `@fastify/multipart` (10MB max limit) | Safe local streaming to disk with magic-bytes signature verification. |
 | **Database & ODM** | MongoDB Community Server / `mongodb-memory-server` v10, Mongoose ODM v8 | Flexible document modeling, compound indexes, and Decimal128 exact monetary storage. |
 | **Financial Engine** | `decimal.js` v10.5.0 | 30-digit precision arithmetic, eliminating IEEE-754 binary floating-point round-off errors. |
-| **Testing** | Vitest (`vitest` 3.0.6) | Lightning-fast test runner sharing Vite configuration, 90 passing test cases. |
+| **Testing** | Vitest (`vitest` 3.0.6) | Lightning-fast test runner sharing Vite configuration, 101 passing test cases. |
 
 ---
 

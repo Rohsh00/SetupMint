@@ -1,7 +1,7 @@
-# TradeVault — System Architecture Document
+# SetupMint — System Architecture Document
 
 ## 1. Overview & Vision
-TradeVault is a local-first, privacy-respecting trading journal built for serious discretionary traders. It provides deterministic financial metrics, risk management, psychological discipline tracking, and multi-asset capabilities (Indian Stocks & Indices, F&O, MCX Commodities, Forex, and Crypto).
+SetupMint (monorepo name: `tradevault-monorepo`) is a local-first, privacy-respecting trading journal built for serious discretionary traders. It provides deterministic financial metrics, risk management, psychological discipline tracking, and multi-asset capabilities (Indian Stocks & Indices, F&O, MCX Commodities, Forex, and Crypto).
 
 ---
 

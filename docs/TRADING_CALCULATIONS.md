@@ -1,6 +1,6 @@
 # SetupMint — Mathematical & Financial Calculations Engine
 
-This document provides the definitive mathematical specifications, exact algorithmic implementations, rounding rules, and edge-case handling implemented in `@tradevault/financial-engine` and `apps/api/src/seed/charges-calculator.ts`.
+This document provides the definitive mathematical specifications, exact algorithmic implementations, rounding rules, and edge-case handling implemented in `@tradevault/financial-engine` (`packages/financial-engine/src/charges.ts`).
 
 ---
 
@@ -9,7 +9,7 @@ This document provides the definitive mathematical specifications, exact algorit
 SetupMint executes **all monetary arithmetic using Decimal.js** configured with **30 digits of precision** and banker's rounding (`ROUND_HALF_UP`):
 
 ```typescript
-// packages/financial-engine/src/pnl.ts
+// packages/financial-engine/src/pnl.ts, packages/financial-engine/src/charges.ts
 import Decimal from 'decimal.js';
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 ```
@@ -84,9 +84,9 @@ $$\bar{P}_{\text{exit}} = \frac{\sum (P_j \times Q_j)}{\sum Q_j} \quad \text{for
 ## 4. Indian Statutory Charges & Fee Structure
 
 ### Code Location:
-[`apps/api/src/seed/charges-calculator.ts:11-78`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/seed/charges-calculator.ts#L11-L78)
+[`packages/financial-engine/src/charges.ts:42-154`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/charges.ts#L42-L154)
 
-SetupMint models exact Indian market turnover charges based on official SEBI, exchange, and broker fee schedules:
+SetupMint models exact Indian market statutory charges using Decimal.js based on official SEBI, exchange, and broker fee schedules:
 
 ### Formulas:
 $$\text{Buy Turnover} = P_{\text{entry}} \times Q \times M$$
@@ -95,7 +95,7 @@ $$\text{Total Turnover} = \text{Buy Turnover} + \text{Sell Turnover}$$
 
 | Fee Component | Market Segment | Rate Formula |
 | :--- | :--- | :--- |
-| **Brokerage** | FYERS (All Segments) | Flat ₹20 per executed leg = **₹40.00 round-trip** |
+| **Brokerage** | FYERS / Zerodha / Angel One | Flat ₹20 per executed leg = **₹40.00 round-trip** (customizable per-broker flat fee, e.g. ₹0 for Finvasia) |
 | **Exchange Turnover Fee** | NSE Cash Equities | $0.00297\%$ of Total Turnover ($\text{Turnover} \times 0.0000297$) |
 | | NSE Index/Stock Futures | $0.00173\%$ of Total Turnover ($\text{Turnover} \times 0.0000173$) |
 | | NSE Options (on Premium) | $0.035\%$ of Premium Turnover ($\text{Turnover} \times 0.00035$) |

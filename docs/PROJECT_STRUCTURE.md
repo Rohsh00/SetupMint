@@ -55,7 +55,9 @@ Pure, deterministic mathematical calculation library:
 - [`packages/financial-engine/src/risk.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/risk.ts): Position sizing, risk budget calculations, lot rounding, planned R:R, and realized R-multiples (`calculateRiskAndPositionSize`, `calculateRealizedRMultiple`).
 - [`packages/financial-engine/src/metrics.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/metrics.ts): Aggregated quantitative metrics (`calculateDashboardMetrics`) generating win rate, profit factor, expectancy, drawdowns, streaks, and equity curves.
 - [`packages/financial-engine/src/currency.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/currency.ts): Deterministic currency conversion rejecting silent 1:1 fallbacks (`convertCurrency`).
-- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (22 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`).
+- [`packages/financial-engine/src/charges.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/charges.ts): Indian statutory regulatory charges calculator (`calculateIndianCharges`, `IndianChargesCalculator`) covering flat brokerage, exchange fees, STT/CTT, stamp duty, SEBI fees, and 18% GST with Decimal.js.
+- [`packages/financial-engine/src/session.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/session.ts): Automatic trading session derivation (`deriveSessionFromTime`) from execution timestamp and exchange.
+- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (33 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`, `charges.test.ts`, `session.test.ts`).
 
 ---
 
@@ -101,7 +103,7 @@ apps/api/
 │   ├── services/
 │   │   └── account.service.ts     # Authoritative account balance reconciliation service
 │   ├── seed/                      # SetupMint Heavy Seed Data Engine
-│   │   ├── charges-calculator.ts  # Indian statutory charges calculator (STT, GST, SEBI, stamp duty)
+│   │   ├── charges-calculator.ts  # Indian statutory charges calculator (re-exports from @tradevault/financial-engine)
 │   │   ├── chart-generator.ts     # Generates synthetic TradingView-style SVG candlestick charts
 │   │   ├── date-generator.ts      # IST market calendar date generator (skipping weekends/holidays)
 │   │   ├── instrument-catalog.ts  # Realistic Indian trading scrips & strike price ranges

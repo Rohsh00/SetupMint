@@ -13,11 +13,11 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (90 Passing Tests)
+## 2. Test Suite Inventory (101 Passing Tests)
 
-The repository contains **90 fully automated tests** spanning mathematical calculations, REST endpoints, file uploads, seed generation, and regression scenarios.
+The repository contains **101 fully automated tests** spanning mathematical calculations, regulatory fee structures, session derivations, REST endpoints, file uploads, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (22 Tests)
+### A. Financial Engine Unit Tests (33 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -27,6 +27,8 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `risk.test.ts` | 5 tests | Position size formula, lot rounding down to lot size step, stop distance validation, planned R:R, realized R-multiple. |
 | `metrics.test.ts` | 2 tests | Comprehensive dashboard metrics: win rate, profit factor (including zero-loss 999.99 handling), peak-to-trough drawdowns, consecutive win/loss streaks. |
 | `currency.test.ts` | 3 tests | Identical currency pass-through, explicit conversion rates, rejection of silent 1:1 conversions when rate is missing. |
+| `charges.test.ts` | 6 tests | Indian statutory charges across segments (NSE_EQ, NSE_FNO futures, NSE_FNO options, MCX commodities), flat brokerage (₹20/leg, ₹0 Finvasia, custom), STT/CTT, SEBI, GST, stamp duty. |
+| `session.test.ts` | 5 tests | Automatic session derivation: NSE market hours (09:15-15:30 IST), MCX evening session, foreign exchanges (New York / London), weekends & Crypto off-hours. |
 
 ### B. Backend API & Integration Tests (68 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
@@ -43,10 +45,10 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 ## 3. Running Test Commands
 
 ```bash
-# 1. Run all test suites across the monorepo (90 tests)
+# 1. Run all test suites across the monorepo (101 tests)
 npm run test
 
-# 2. Run only financial engine mathematical unit tests (22 tests)
+# 2. Run only financial engine mathematical unit tests (33 tests)
 npm run test:engine
 
 # 3. Run only backend API, attachment, and regression tests (68 tests)

@@ -36,7 +36,7 @@
 - **Shared Package (`packages/shared`):** Shared TypeScript types, Zod schemas, market constants, instrument presets.
 - **Persistence:** MongoDB Community Server or persistent embedded WiredTiger engine in `./apps/api/data/db`.
 - **Private Attachment Storage:** Local filesystem storage in `./data/uploads`.
-- **Testing:** Vitest v3 (90 automated unit and integration tests passing).
+- **Testing:** Vitest v3 (101 automated unit and integration tests passing).
 
 ---
 
@@ -63,7 +63,7 @@ Trading Vault/
 │       ├── components/trades/     # TradeFormModal.tsx, TradeAdvancedFills.tsx, etc.
 │       └── pages/                 # 13 routed page components
 ├── packages/
-│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts
+│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts
 │   └── shared/src/                # types.ts, schemas.ts, constants.ts
 ├── scripts/                       # backup.js, restore.js, reconcile.js
 └── docs/                          # Comprehensive markdown documentation library
@@ -111,7 +111,7 @@ All monetary calculations reside in `@tradevault/financial-engine`:
   - $\text{Short Gross} = (P_{\text{entry}} - P_{\text{exit}}) \times Q \times M$
 - **Net P&L:** $\text{Gross P&L} - \text{Total Costs} + \text{Adjustments}$
 - **FIFO Matching Queue:** Exit fills match earliest open entry lots chronologically. Excess exits throw an error.
-- **Indian Statutory Charges:** Modeled in `IndianChargesCalculator` (flat ₹20 leg brokerage, STT/CTT rates, SEBI turnover fees, stamp duty, 18% GST).
+- **Indian Statutory Charges:** Modeled in `IndianChargesCalculator` (`@tradevault/financial-engine`) (flat ₹20 leg brokerage, STT/CTT rates, SEBI turnover fees, stamp duty, 18% GST).
 - **Position Sizing:** Raw quantity is **floored** to the nearest integer multiple of `lotSize`. Never round up.
 - **Profit Factor Zero-Loss Edge Case:** Returns `999.99` if losses are zero and gains are positive.
 - **Currency Conversion:** Requires explicit rate; never assumes a silent 1:1 fallback.
@@ -133,10 +133,10 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites (90 tests)
+# Run all test suites (101 tests)
 npm run test
 
-# Run financial engine unit tests (22 tests)
+# Run financial engine unit tests (33 tests)
 npm run test:engine
 
 # Run API integration and regression tests (68 tests)

@@ -83,9 +83,9 @@ The central trade logging experience is managed by [`TradeFormModal.tsx`](file:/
 
 | Component | Responsibility |
 | :--- | :--- |
-| `TradeCalculationBanner` | Displays live real-time gross P&L, fees breakdown, net P&L, and R-multiple before form submission. |
+| `TradeCalculationBanner` | Displays live real-time gross P&L, statutory fee breakdown, AUTO/MANUAL fee chip with reset action, net P&L, and realized R-multiple before form submission. |
 | `TradeTemplateSelector` | One-click prefill chips for common market setups (e.g., Nifty Breakout, BankNifty Mean Reversion). |
-| `TradeQuickSection` | Minimalist express trade entry (Symbol, Direction, Price, Qty, P&L) for rapid post-session logging. |
+| `TradeQuickSection` | Express trade entry with instrument autofill (currency, multiplier, lot size), bidirectional **Lots** / Quantity conversion, auto-session derivation, and auto statutory fee breakdown with manual override and reset. |
 | `TradeAdvancedFills` | Interactive chronological list of entry and exit fills with FIFO lot matching. |
 | `TradeJournalDetails` | Accordion containing deep-dive tabs: Identity, Execution, Risk, Technical Thesis, and Psychology. |
 | `TradeAttachmentUploader` | Drag-and-drop file dropzone with staging preview, progress indicators, and category selection. |

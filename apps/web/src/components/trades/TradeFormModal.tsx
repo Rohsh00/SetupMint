@@ -41,6 +41,7 @@ import {
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
   calculateFIFOExecution,
+  IndianChargesCalculator,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
@@ -78,9 +79,17 @@ export function TradeFormModal({
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
+  // Determine initial account and preferences safely
+  const rememberedPrefs = useMemo(() => getRememberedTradePreferences(), []);
+
   // Workflow mode: 'QUICK' for express trade logging; 'COMPREHENSIVE' for deep journaling
-  const [workflowMode, setWorkflowMode] = useState<'QUICK' | 'COMPREHENSIVE'>('QUICK');
-  const [executionMode, setExecutionMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE');
+  const [workflowMode, setWorkflowMode] = useState<'QUICK' | 'COMPREHENSIVE'>(
+    rememberedPrefs.preferredWorkflow || 'QUICK'
+  );
+  const [executionMode, setExecutionMode] = useState<'SIMPLE' | 'ADVANCED'>(
+    rememberedPrefs.preferredExecutionMode || 'SIMPLE'
+  );
+  const [isAutoFees, setIsAutoFees] = useState(true);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -95,8 +104,6 @@ export function TradeFormModal({
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
   const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
 
-  // Determine initial account default safely
-  const rememberedPrefs = useMemo(() => getRememberedTradePreferences(), []);
   const initialAccountId =
     defaultAccountId ||
     rememberedPrefs.preferredAccountId ||
@@ -120,7 +127,7 @@ export function TradeFormModal({
       marketSegment: 'NSE_FNO',
       direction: 'LONG',
       status: 'CLOSED',
-      strategyId: '',
+      strategyId: rememberedPrefs.preferredStrategyId || '',
       tradeDate: new Date().toISOString().split('T')[0],
       entryTime: new Date().toISOString().slice(0, 16),
       exitTime: new Date().toISOString().slice(0, 16),
@@ -229,14 +236,23 @@ export function TradeFormModal({
       if (prefs.preferredWorkflow) {
         setWorkflowMode(prefs.preferredWorkflow);
       }
+      if (prefs.preferredExecutionMode) {
+        setExecutionMode(prefs.preferredExecutionMode);
+      }
       if (prefs.preferredAccountId && (!watch('accountId') || watch('accountId') === '')) {
         setValue('accountId', prefs.preferredAccountId);
       }
       if (prefs.preferredSymbol && (!watch('symbol') || watch('symbol') === '')) {
         setValue('symbol', prefs.preferredSymbol);
       }
+      if (prefs.preferredStrategyId && (!watch('strategyId') || watch('strategyId') === '')) {
+        setValue('strategyId', prefs.preferredStrategyId);
+      }
+      setIsAutoFees(true);
       setExistingAttachments([]);
       setStagedAttachments([]);
+    } else {
+      setIsAutoFees(false);
     }
     setSubmitError(null);
   }, [initialValues, editTradeId, reset, setValue]);
@@ -253,16 +269,88 @@ export function TradeFormModal({
     }
   };
 
-  // Persist preferences safely when user actively changes symbol or account
+  const watchedStrategyId = watch('strategyId');
+  const watchedAssetClass = watch('assetClass');
+  const watchedMarketSegment = watch('marketSegment');
+
+  // Selected account for broker identification
+  const selectedAccount = useMemo(() => {
+    return accounts.find((a: any) => a.id === watchedAccountId);
+  }, [accounts, watchedAccountId]);
+
+  // Persist preferences safely when user actively changes symbol, account, strategy, workflow, or execution mode
   useEffect(() => {
-    if (!editTradeId && watchedAccountId && watchedSymbol) {
+    if (!editTradeId && (watchedAccountId || watchedSymbol || watchedStrategyId)) {
       saveRememberedTradePreferences({
         preferredAccountId: watchedAccountId,
         preferredSymbol: watchedSymbol,
         preferredWorkflow: workflowMode,
+        preferredStrategyId: watchedStrategyId,
+        preferredExecutionMode: executionMode,
       });
     }
-  }, [watchedAccountId, watchedSymbol, workflowMode, editTradeId]);
+  }, [watchedAccountId, watchedSymbol, watchedStrategyId, workflowMode, executionMode, editTradeId]);
+
+  // Auto statutory fee calculation
+  const computeAutoCharges = () => {
+    const entryP = Number(watchedSimple?.entryPrice) || 0;
+    const exitP = watchedStatus === 'CLOSED'
+      ? (Number(watchedSimple?.exitPrice) || entryP)
+      : entryP;
+    const qty = Number(watchedSimple?.quantity) || 1;
+    const mult = Number(watchedSimple?.contractMultiplier) || 1;
+
+    if (entryP > 0 && qty > 0) {
+      return IndianChargesCalculator.calculate(
+        watchedAssetClass || 'EQUITY',
+        watchedMarketSegment || 'NSE_EQ',
+        entryP,
+        exitP,
+        qty,
+        mult,
+        20,
+        selectedAccount?.broker
+      );
+    }
+    return null;
+  };
+
+  const handleResetAutoFees = () => {
+    setIsAutoFees(true);
+    const charges = computeAutoCharges();
+    if (charges) {
+      setValue('simpleExecution.brokerage', charges.brokerage);
+      setValue('simpleExecution.exchangeFees', charges.exchangeFees);
+      setValue('simpleExecution.regulatoryFees', charges.regulatoryFees);
+      setValue('simpleExecution.taxes', charges.taxes);
+    }
+  };
+
+  // Automatically recalculate fees when isAutoFees is active
+  useEffect(() => {
+    if (executionMode === 'SIMPLE' && isAutoFees && !editTradeId) {
+      const charges = computeAutoCharges();
+      if (charges) {
+        setValue('simpleExecution.brokerage', charges.brokerage);
+        setValue('simpleExecution.exchangeFees', charges.exchangeFees);
+        setValue('simpleExecution.regulatoryFees', charges.regulatoryFees);
+        setValue('simpleExecution.taxes', charges.taxes);
+      }
+    }
+  }, [
+    executionMode,
+    isAutoFees,
+    editTradeId,
+    watchedAccountId,
+    selectedAccount?.broker,
+    watchedAssetClass,
+    watchedMarketSegment,
+    watchedSimple?.entryPrice,
+    watchedSimple?.exitPrice,
+    watchedSimple?.quantity,
+    watchedSimple?.contractMultiplier,
+    watchedStatus,
+  ]);
 
   // Live P&L, Execution & Risk Computation using financial-engine
   let liveGross = 0;
@@ -754,6 +842,8 @@ export function TradeFormModal({
             isDirectionValid={isDirectionValid}
             rewardRiskRatio={plannedRewardRiskRatio}
             positionValue={positionExposure}
+            isAutoFees={executionMode === 'SIMPLE' ? isAutoFees : undefined}
+            onResetAutoFees={handleResetAutoFees}
           />
 
           {templateNotice && (
@@ -791,6 +881,9 @@ export function TradeFormModal({
               accounts={accounts}
               instruments={instruments}
               strategies={strategies}
+              isAutoFees={isAutoFees}
+              onToggleAutoFees={(val) => setIsAutoFees(val)}
+              onResetAutoFees={handleResetAutoFees}
             />
 
             {/* Execution Mode Toggle Bar */}

@@ -1,6 +1,6 @@
-# TradeVault — Open Source Dependency & Licensing Inventory
+# SetupMint — Open Source Dependency & Licensing Inventory
 
-All software dependencies in TradeVault are free to use locally without recurring software subscriptions or commercial fees.
+All software dependencies in SetupMint are free to use locally without recurring software subscriptions or commercial fees.
 
 ---
 
@@ -8,7 +8,7 @@ All software dependencies in TradeVault are free to use locally without recurrin
 
 > [!NOTE]
 > **MongoDB Community Server Licensing:**
-> MongoDB Community Server is licensed under the **Server Side Public License (SSPL v1)**. The SSPL is **not** an OSI-approved open-source license. It allows free local execution, private self-hosting, and development on your MacBook without cost, provided you do not offer MongoDB as a commercial cloud service to third parties. TradeVault does not misrepresent SSPL as OSI-approved open source.
+> MongoDB Community Server is licensed under the **Server Side Public License (SSPL v1)**. The SSPL is **not** an OSI-approved open-source license. It allows free local execution, private self-hosting, and development on your MacBook without cost, provided you do not offer MongoDB as a commercial cloud service to third parties. SetupMint does not misrepresent SSPL as OSI-approved open source.
 
 ---
 

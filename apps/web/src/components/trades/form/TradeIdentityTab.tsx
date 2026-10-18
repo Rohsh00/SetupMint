@@ -5,6 +5,7 @@ import {
   MARKET_SEGMENTS,
   TRADING_SESSIONS,
 } from '@tradevault/shared';
+import { deriveSessionFromTime } from '@tradevault/financial-engine';
 
 interface TradeIdentityTabProps {
   register: UseFormRegister<any>;
@@ -37,8 +38,16 @@ export function TradeIdentityTab({
       setValue('assetClass', found.assetClass);
       setValue('exchange', found.exchange);
       setValue('marketSegment', found.marketSegment);
+      setValue('currency', found.quoteCurrency || 'INR');
       setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1);
       setValue('risk.lotSize', found.lotSize || 1);
+      if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
+        setValue('simpleExecution.quantity', found.lotSize || 1);
+      }
+      const entryTime = watch('entryTime');
+      if (entryTime) {
+        setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment));
+      }
     }
   };
 
@@ -225,7 +234,13 @@ export function TradeIdentityTab({
           </label>
           <input
             type="datetime-local"
-            {...register('entryTime', { required: true })}
+            {...register('entryTime', {
+              required: true,
+              onChange: (e) => {
+                const derived = deriveSessionFromTime(e.target.value, watch('exchange'), watch('marketSegment'));
+                setValue('session', derived);
+              },
+            })}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
         </div>

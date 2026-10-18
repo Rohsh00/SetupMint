@@ -326,3 +326,19 @@ export const riskCalculatorQuerySchema = z.object({
   quantityIncrement: z.coerce.number().positive().default(1),
   estimatedCosts: z.coerce.number().nonnegative().default(0),
 });
+
+export const riskSettingsSchema = z.object({
+  maxDailyLoss: z.coerce.number().nonnegative().optional(),
+  maxDailyTrades: z.coerce.number().int().positive().optional(),
+  maxOpenTrades: z.coerce.number().int().positive().optional(),
+  maxRiskPerTradePercent: z.coerce.number().positive().optional(),
+  revengeTradingMinutes: z.coerce.number().int().positive().optional(),
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().min(1).optional(),
+  baseCurrency: z.string().optional(),
+  theme: z.enum(['dark', 'light', 'system']).optional(),
+  riskSettings: riskSettingsSchema.optional(),
+});
+

@@ -333,9 +333,9 @@ Authentication is handled via stateful sessions:
 - **Response:** Array of calendar day objects (`date`, `netPnL`, `tradesCount`, `winCount`, `lossCount`, `hasJournal`, `disciplineRating`, `marketBias`).
 
 ### `GET /api/v1/journal/:date`
-- **Purpose:** Retrieve daily reflection review and all trades executed on a specific date (`YYYY-MM-DD`).
+- **Purpose:** Retrieve daily reflection review, all trades executed on that date (`YYYY-MM-DD`), and calculated session `prefill` data (suggested best/worst trade, aggregated mistakes, suggested discipline rating, and daily loss breach status).
 - **Auth:** **Required**.
-- **Responses:** `200 OK`.
+- **Responses:** `200 OK` with `{ date, journal, trades, summary: { tradesCount, netPnL }, prefill }`.
 
 ### `POST /api/v1/journal/:date`
 - **Purpose:** Upsert daily session reflection review.
@@ -347,6 +347,9 @@ Authentication is handled via stateful sessions:
     "marketBias": "BEARISH",
     "emotionalState": "CALM",
     "disciplineRating": 4,
+    "bestTradeId": "67b45...",
+    "worstTradeId": "67b46...",
+    "mistakes": ["CHASED_MARKET"],
     "lessonsLearned": "Wait for 15m candle close before entering against morning momentum",
     "nextDayPlan": "Focus exclusively on BankNifty key level retests"
   }
@@ -505,10 +508,32 @@ Authentication is handled via stateful sessions:
 ## 12. Settings & Integrations
 
 ### Settings (`/api/v1/settings`)
-- `PUT /api/v1/settings/profile` — Update name, base currency, and theme.
+- `GET /api/v1/settings/profile` — Return user profile including base currency, theme, and `riskSettings`.
+- `PUT /api/v1/settings/profile` — Update name, base currency, theme, and `riskSettings` (`maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`).
 - `POST /api/v1/settings/change-password` — Change password (`currentPassword`, `newPassword`).
 - `GET /api/v1/settings/system-status` — Return total trade count, account count, attachment count, database type, and version.
 
 ### Broker Integrations (`/api/v1/integrations`)
 - `GET /api/v1/integrations/fyers/status` — Return connection status (`DISABLED`/`IDLE`), App ID, and architecture capabilities.
 - `POST /api/v1/integrations/fyers/config` — Store FYERS App ID.
+
+---
+
+## 13. Daily Review Queue & Mistake Detection (`/api/v1/review`)
+
+### `GET /api/v1/review/queue`
+- **Purpose:** Retrieve unreviewed trades missing exit, reflections, or screenshots, and unreviewed trading sessions in the last 30 days. Includes heuristic mistake suggestions (`REVENGE_TRADING`, `OVERTRADING`, `SIZE_VIOLATION`) and daily loss breach alerts.
+- **Auth:** **Required**.
+- **Responses:** `200 OK` with `{ queue: [...], unreviewedDays: [...], dailyLossBreach: { breached, maxDailyLoss, currentDailyLoss }, summary: { totalUnreviewedTrades, missingExitCount, missingPsychologyCount, missingScreenshotsCount, unreviewedDaysCount } }`.
+
+### `GET /api/v1/review/prefill/:date`
+- **Purpose:** Calculate automated prefill data for a daily reflection session, suggesting best trade, worst trade, aggregated mistake tags, and rule-based discipline rating (1 to 5).
+- **Auth:** **Required**.
+- **Path Parameters:** `date` (`YYYY-MM-DD`).
+- **Responses:** `200 OK` with `{ date, suggestedBestTrade, suggestedWorstTrade, aggregatedMistakes, suggestedDisciplineRating, reasoning, dailyLossBreach, tradesCount, netPnL }`.
+
+### `GET /api/v1/review/suggest-mistakes/:tradeId`
+- **Purpose:** Analyze a specific trade in chronological execution context and return rule-based mistake suggestions.
+- **Auth:** **Required**.
+- **Responses:** `200 OK` with array of `{ tradeId, rule, mistakeTag, severity, message }`.
+

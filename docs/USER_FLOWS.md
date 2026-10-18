@@ -338,3 +338,42 @@ sequenceDiagram
         Palette->>Router: Navigates to /risk-calculator
     end
 ```
+
+---
+
+## 10. Daily Review Queue & End-of-Day Journal Reflection Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Trader as Trader
+    participant Dash as DashboardPage (/dashboard)
+    participant Queue as Review Queue Card Widget
+    participant Cal as JournalCalendarPage (/journal)
+    participant Engine as @tradevault/financial-engine
+    participant RevAPI as Fastify Review API (/api/v1/review)
+    participant JourAPI as Fastify Journal API (/api/v1/journal)
+    participant DB as MongoDB (Trade / DailyJournal / User)
+
+    Trader->>Dash: Opens Dashboard Overview
+    Dash->>RevAPI: GET /api/v1/review/queue
+    RevAPI->>DB: User.findById(userId) (reads riskSettings)
+    RevAPI->>DB: Trade.find({ userId, isDeleted: false })
+    RevAPI->>DB: DailyJournal.find({ userId })
+    RevAPI->>Engine: detectMistakeSuggestions() & checkDailyLossBreach()
+    RevAPI-->>Queue: 200 OK { pendingTrades, unreviewedDays, totalPending, dailyLossBreach }
+    Queue->>Trader: Displays Daily Review Card with pending trades, tags & breach banner
+    Trader->>Queue: Clicks "Start Daily Review" (or "Review" on specific trade)
+    Queue->>Cal: Navigates to /journal?date=YYYY-MM-DD
+    Cal->>JourAPI: GET /api/v1/journal/:date
+    JourAPI->>DB: Trade.find({ userId, tradeDate })
+    JourAPI->>Engine: calculateDailySessionSummary(date, trades, riskSettings, accountEquity)
+    Engine-->>JourAPI: Computes bestTrade, worstTrade, aggregatedMistakeTags, disciplineRating
+    JourAPI-->>Cal: 200 OK { journal, prefill: { totalTrades, netPnL, bestTrade, worstTrade, disciplineRating, mistakeTags } }
+    Cal->>Trader: Opens Reflection Drawer pre-populated with session stats & mistake chips
+    Trader->>Cal: Adds market bias, lessons learned, adjusts discipline rating -> Clicks "Save Reflection"
+    Cal->>JourAPI: POST /api/v1/journal/:date { marketBias, emotionalState, disciplineRating, bestTrade, worstTrade, mistakes, lessonsLearned }
+    JourAPI->>DB: DailyJournal.findOneAndUpdate({ userId, date }, ..., { upsert: true })
+    JourAPI-->>Cal: 200 OK { success: true, data: journal }
+    Cal->>Trader: Updates calendar day cell status to "Reviewed" (green badge)
+```

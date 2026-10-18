@@ -75,6 +75,25 @@ export function SettingsPage() {
   const [fyersSuccess, setFyersSuccess] = useState(false);
   const [fyersError, setFyersError] = useState<string | null>(null);
 
+  // Risk Guardrails state
+  const [maxDailyLoss, setMaxDailyLoss] = useState(user?.riskSettings?.maxDailyLoss ?? 5000);
+  const [maxDailyTrades, setMaxDailyTrades] = useState(user?.riskSettings?.maxDailyTrades ?? 6);
+  const [maxOpenTrades, setMaxOpenTrades] = useState(user?.riskSettings?.maxOpenTrades ?? 3);
+  const [maxRiskPerTradePercent, setMaxRiskPerTradePercent] = useState(user?.riskSettings?.maxRiskPerTradePercent ?? 2.0);
+  const [revengeTradingMinutes, setRevengeTradingMinutes] = useState(user?.riskSettings?.revengeTradingMinutes ?? 30);
+  const [riskSuccess, setRiskSuccess] = useState(false);
+  const [riskError, setRiskError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (user?.riskSettings) {
+      if (user.riskSettings.maxDailyLoss !== undefined) setMaxDailyLoss(user.riskSettings.maxDailyLoss);
+      if (user.riskSettings.maxDailyTrades !== undefined) setMaxDailyTrades(user.riskSettings.maxDailyTrades);
+      if (user.riskSettings.maxOpenTrades !== undefined) setMaxOpenTrades(user.riskSettings.maxOpenTrades);
+      if (user.riskSettings.maxRiskPerTradePercent !== undefined) setMaxRiskPerTradePercent(user.riskSettings.maxRiskPerTradePercent);
+      if (user.riskSettings.revengeTradingMinutes !== undefined) setRevengeTradingMinutes(user.riskSettings.revengeTradingMinutes);
+    }
+  }, [user]);
+
   const { data: systemStatus } = useQuery({
     queryKey: ['system-status'],
     queryFn: () => api.settings.systemStatus(),
@@ -122,6 +141,34 @@ export function SettingsPage() {
       toast.error(msg);
     },
   });
+
+  const riskMutation = useMutation({
+    mutationFn: (payload: any) => api.settings.updateProfile({ riskSettings: payload }),
+    onSuccess: () => {
+      refreshUser();
+      setRiskError(null);
+      setRiskSuccess(true);
+      toast.success('Discipline & risk guardrails saved successfully.');
+      setTimeout(() => setRiskSuccess(false), 3000);
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to update risk guardrails';
+      setRiskError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const handleRiskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    riskMutation.mutate({
+      maxDailyLoss: Number(maxDailyLoss),
+      maxDailyTrades: Number(maxDailyTrades),
+      maxOpenTrades: Number(maxOpenTrades),
+      maxRiskPerTradePercent: Number(maxRiskPerTradePercent),
+      revengeTradingMinutes: Number(revengeTradingMinutes),
+    });
+  };
+
 
   const fyersMutation = useMutation({
     mutationFn: (appId: string) => api.integrations.fyersConfig({ appId }),
@@ -310,6 +357,118 @@ export function SettingsPage() {
                     sx={{ fontWeight: 600, px: 3 }}
                   >
                     {passwordMutation.isPending ? 'Updating...' : 'Change Password'}
+                  </Button>
+                </Box>
+              </form>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Discipline & Risk Guardrails Card */}
+        <Grid size={{ xs: 12, md: 6 }}>
+          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ShieldRounded sx={{ color: 'primary.main' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Discipline & Risk Guardrails
+                </Typography>
+              </Box>
+
+              <Typography variant="body2" color="text.secondary">
+                Configure heuristic parameters used by the financial engine for mistake detection, revenge trade alerts, daily loss warnings, and discipline scoring.
+              </Typography>
+
+              <form onSubmit={handleRiskSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Max Daily Loss (₹)"
+                      type="number"
+                      size="small"
+                      required
+                      fullWidth
+                      value={maxDailyLoss}
+                      onChange={(e) => setMaxDailyLoss(Number(e.target.value))}
+                      helperText="Warning banner fires when breached"
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Max Trades Per Day"
+                      type="number"
+                      size="small"
+                      required
+                      fullWidth
+                      value={maxDailyTrades}
+                      onChange={(e) => setMaxDailyTrades(Number(e.target.value))}
+                      helperText="Flags overtrading beyond cap"
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Max Open Trades"
+                      type="number"
+                      size="small"
+                      required
+                      fullWidth
+                      value={maxOpenTrades}
+                      onChange={(e) => setMaxOpenTrades(Number(e.target.value))}
+                      helperText="Max concurrent positions"
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Max Risk Per Trade (%)"
+                      type="number"
+                      size="small"
+                      required
+                      fullWidth
+                      value={maxRiskPerTradePercent}
+                      onChange={(e) => setMaxRiskPerTradePercent(Number(e.target.value))}
+                      helperText="Flags position size violation"
+                      slotProps={{ htmlInput: { step: '0.1', min: '0.1' } }}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      label="Revenge Trading Window (Minutes)"
+                      type="number"
+                      size="small"
+                      required
+                      fullWidth
+                      value={revengeTradingMinutes}
+                      onChange={(e) => setRevengeTradingMinutes(Number(e.target.value))}
+                      helperText="Flags trades entered with larger size within N mins of a loss"
+                    />
+                  </Grid>
+                </Grid>
+
+                {riskSuccess && (
+                  <Alert severity="success" icon={<CheckCircleRounded fontSize="inherit" />}>
+                    Discipline guardrails saved successfully.
+                  </Alert>
+                )}
+
+                {riskError && (
+                  <Alert severity="error" onClose={() => setRiskError(null)}>
+                    {riskError}
+                  </Alert>
+                )}
+
+                <Box sx={{ pt: 1 }}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    color="primary"
+                    disabled={riskMutation.isPending}
+                    sx={{ fontWeight: 600, px: 3 }}
+                  >
+                    {riskMutation.isPending ? 'Saving Guardrails...' : 'Save Guardrails'}
                   </Button>
                 </Box>
               </form>

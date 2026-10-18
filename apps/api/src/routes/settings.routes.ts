@@ -7,13 +7,42 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.addHook('preHandler', requireAuth);
 
   // Update profile / base currency / theme
+  // Get user profile including riskSettings
+  app.get('/profile', async (req: any, reply) => {
+    const user = await User.findById(req.user!.id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+    return reply.send({
+      success: true,
+      data: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        baseCurrency: user.baseCurrency,
+        theme: user.theme,
+        riskSettings: user.riskSettings,
+      },
+    });
+  });
+
+  // Update profile / base currency / theme / riskSettings
   app.put('/profile', async (req: any, reply) => {
-    const { name, baseCurrency, theme } = req.body;
+    const { name, baseCurrency, theme, riskSettings } = req.body;
 
     const update: any = {};
     if (name) update.name = name;
     if (baseCurrency) update.baseCurrency = baseCurrency;
     if (theme) update.theme = theme;
+    if (riskSettings) {
+      update.riskSettings = {
+        maxDailyLoss: riskSettings.maxDailyLoss !== undefined ? Number(riskSettings.maxDailyLoss) : undefined,
+        maxDailyTrades: riskSettings.maxDailyTrades !== undefined ? Number(riskSettings.maxDailyTrades) : undefined,
+        maxOpenTrades: riskSettings.maxOpenTrades !== undefined ? Number(riskSettings.maxOpenTrades) : undefined,
+        maxRiskPerTradePercent: riskSettings.maxRiskPerTradePercent !== undefined ? Number(riskSettings.maxRiskPerTradePercent) : undefined,
+        revengeTradingMinutes: riskSettings.revengeTradingMinutes !== undefined ? Number(riskSettings.revengeTradingMinutes) : undefined,
+      };
+    }
 
     const user = await User.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
 
@@ -25,6 +54,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         email: user!.email,
         baseCurrency: user!.baseCurrency,
         theme: user!.theme,
+        riskSettings: user!.riskSettings,
       },
     });
   });

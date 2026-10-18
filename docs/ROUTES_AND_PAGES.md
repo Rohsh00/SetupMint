@@ -57,19 +57,26 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 3. `/` — Dashboard Overview Page
 - **Page Component:** [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx)
-- **Purpose:** Executive high-level performance metrics, equity curve chart, and quick access to recent trade activity.
+- **Purpose:** Executive high-level performance metrics, equity curve chart, daily review queue, and quick access to recent trade activity.
 - **Main Components:**
   - KPI Stat Cards: Net Realized P&L, Win Rate, Profit Factor, Expectancy, Max Drawdown, Total Costs, Current Streak, Rule Adherence.
   - Interactive Recharts Equity Curve Area Chart with cumulative equity and peak drawdown tracking.
+  - **Daily Review Queue Card Widget:**
+    - Active review status banner showing pending unreviewed trades and unreviewed trading days.
+    - Daily Loss Breach Banner (red alert if today's net loss exceeds user's configured `maxDailyLoss`).
+    - Review breakdown chips: Total Pending, Revenge Risk, Sizing Violations, High Volume.
+    - Pending Trades Table: Symbol, Direction, Net P&L, Suggested Mistake tags with hover tooltips, and "Review" action button.
+    - "Start Daily Review" primary action button: One-click jump to `/journal` with the unreviewed date preloaded.
   - Quick Actions Bar: "Log New Trade", "Risk Calculator", "Daily Review".
   - Recent Trades Table with symbol, direction, P&L badge, and outcome.
   - Date Range Quick Filters (7D, 30D, 90D, YTD, All Time).
-- **Available Actions:** Change date range filter, select global account filter, click "Log New Trade" (opens `TradeFormModal`), navigate to trade details.
+- **Available Actions:** Change date range filter, select global account filter, click "Log New Trade" (opens `TradeFormModal`), navigate to trade details, click "Start Daily Review" or individual trade review buttons.
 - **API Calls:**
   - `GET /api/v1/dashboard/stats?accountId=...&startDate=...`
   - `GET /api/v1/trades?accountId=...&limit=5&sortBy=tradeDate&sortOrder=desc`
-- **Database Models:** `Trade`, `TradingAccount`.
-- **Loading / Empty States:** Skeleton loaders for KPI cards and charts; empty state with "No trades recorded yet" button.
+  - `GET /api/v1/review/queue`
+- **Database Models:** `Trade`, `TradingAccount`, `DailyJournal`, `User`.
+- **Loading / Empty States:** Skeleton loaders for KPI cards and charts; empty state with "No trades recorded yet" button; review queue complete banner ("All trades reviewed!").
 - **Auth & Access:** Authenticated (Protected by `ProtectedRoute`).
 - **Status:** **IMPLEMENTED**.
 
@@ -124,21 +131,28 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 6. `/journal` — Visual Monthly Calendar Page
 - **Page Component:** [`JournalCalendarPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/JournalCalendarPage.tsx)
-- **Purpose:** Monthly calendar heatmap and daily session reflection review.
+- **Purpose:** Monthly calendar heatmap and daily session reflection review with automated prefill.
 - **Main Components:**
   - Monthly Calendar Grid: 7-day columns (Sun–Sat) with green/red P&L badges, trade counts, and journal status indicators.
   - Month Switcher: Previous month, next month, current month title.
   - Month Summary Cards: Total Monthly P&L, Total Trades, Win Days vs Loss Days.
-  - Daily Reflection Drawer/Dialog: Opens when clicking any calendar day:
-    - Lists all trades taken on that day with individual P&Ls.
-    - Reflection form: Market conditions, Market bias (Bullish/Bearish/Neutral), Emotional state, Discipline rating (1–5), Lessons learned, Next day plan.
-- **Available Actions:** Switch month, click day cell to inspect trades, submit daily reflection, delete daily reflection.
+  - Daily Reflection Drawer/Dialog: Opens when clicking any calendar day or navigating via `?date=YYYY-MM-DD`:
+    - Daily Loss Breach Alert Banner: Displays if daily loss exceeded user limit, with breach amount.
+    - Trade Session Summary: Net P&L, Total Trades, Win Count, Loss Count.
+    - Automated Session Prefill:
+      - Best Trade selector (pre-selects trade with highest Net P&L $> 0$).
+      - Worst Trade selector (pre-selects trade with lowest Net P&L $< 0$).
+      - Aggregated Mistake Tags: Automatically aggregates mistake tags from individual session trades into interactive chips with one-click removal.
+      - Rule-Based Discipline Rating: Calculated 1–5 stars with indicator of rule infractions.
+    - Lists all trades taken on that day with individual P&Ls and suggested mistake chips.
+    - Reflection form: Market conditions, Market bias (Bullish/Bearish/Neutral), Emotional state, Discipline rating (1–5), Best trade, Worst trade, Mistake tags, Lessons learned, Next day plan.
+- **Available Actions:** Switch month, click day cell to inspect trades, prefill session reflection, select best/worst trade, add/remove mistake tags, submit daily reflection, delete daily reflection.
 - **API Calls:**
   - `GET /api/v1/journal/calendar?yearMonth=YYYY-MM`
-  - `GET /api/v1/journal/:date`
+  - `GET /api/v1/journal/:date` (returns journal record and auto-calculated `prefill` session data)
   - `POST /api/v1/journal/:date`
   - `DELETE /api/v1/journal/:date`
-- **Database Models:** `DailyJournal`, `Trade`.
+- **Database Models:** `DailyJournal`, `Trade`, `User`.
 - **Status:** **IMPLEMENTED**.
 
 ---
@@ -259,15 +273,23 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 13. `/settings` — Application Settings Page
 - **Page Component:** [`SettingsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/SettingsPage.tsx)
-- **Purpose:** Profile management, theme customization, security password updates, FYERS configuration, and system diagnostic overview.
+- **Purpose:** Profile management, theme customization, discipline & risk guardrails configuration, security password updates, FYERS configuration, and system diagnostic overview.
 - **Main Components:**
   - Profile Card: Name, Email (read-only), Base Currency selector (`INR`, `USD`, `EUR`, `GBP`).
+  - **Discipline & Risk Guardrails Card:**
+    - Maximum Daily Loss limit (INR) with breach detection toggle.
+    - Maximum Daily Trades cap (overtrading threshold).
+    - Maximum Open Trades concurrent position limit.
+    - Maximum Risk Per Trade (% of account equity).
+    - Revenge Trading Cool-Off Window (minutes after a losing trade).
+    - Interactive "Save Risk Settings" persistence with feedback snackbars.
   - Appearance Card: Theme toggle (Dark, Light, System).
   - Security Card: Change password form (current password, new password min 8 characters).
   - FYERS Broker Integration Card: App ID input, connection status (`DISABLED`/`IDLE`), link to documentation.
   - System Diagnostic Card: Database engine status, total trades count, total accounts, total attachments, privacy mode verification.
-- **Available Actions:** Save profile, switch theme, update password, save FYERS app ID, logout.
+- **Available Actions:** Save profile, update discipline & risk guardrails, switch theme, update password, save FYERS app ID, logout.
 - **API Calls:**
+  - `GET /api/v1/settings/profile`
   - `PUT /api/v1/settings/profile`
   - `POST /api/v1/settings/change-password`
   - `GET /api/v1/settings/system-status`

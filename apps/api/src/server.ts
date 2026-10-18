@@ -22,6 +22,7 @@ import { attachmentRoutes } from './routes/attachment.routes.js';
 import { exportImportRoutes } from './routes/export-import.routes.js';
 import { settingsRoutes } from './routes/settings.routes.js';
 import { integrationsRoutes } from './routes/integrations.routes.js';
+import { reviewRoutes } from './routes/review.routes.js';
 
 export async function buildApp() {
   const app = fastify({
@@ -127,6 +128,7 @@ export async function buildApp() {
   app.register(exportImportRoutes, { prefix: '/api/v1/export' });
   app.register(settingsRoutes, { prefix: '/api/v1/settings' });
   app.register(integrationsRoutes, { prefix: '/api/v1/integrations' });
+  app.register(reviewRoutes, { prefix: '/api/v1/review' });
 
   // Centralized Error Handler
   app.setErrorHandler((error: any, request, reply) => {

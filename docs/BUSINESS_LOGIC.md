@@ -213,3 +213,49 @@ The core ledger architecture enforces that **the database is the authoritative s
    - If $\text{Planned R:R} < \text{Strategy.minRiskReward}$, the system generates an explicit warning banner:
      $$\text{Warning: Planned R:R is below the required minimum of } 1:\text{minRiskReward for strategy } \text{Name.}$$
    - This warning guides the trader prior to submitting the trade setup while preserving full discretionary execution flexibility.
+
+---
+
+## 11. Daily Review Queue, Rule-Based Mistake Detection & Discipline Scoring
+
+### 1. Review Queue Qualification Criteria
+A trade enters the user's **Daily Review Queue** (`GET /api/v1/review/queue`) if any of the following review criteria are unmet:
+- **Missing Exit:** Status is `OPEN` or exit price/time is absent.
+- **Missing Psychology / Reflection:** Closed trade lacking emotional state (`emotionBefore`, `emotionAfter`), notes, or mistake tags.
+- **Missing Chart Screenshots:** Closed trade having zero linked attachments in `./data/uploads`.
+- **Unreviewed Trading Days:** Any date in the previous 30 calendar days that had executed trades but has no persisted `DailyJournal` reflection.
+
+### 2. Rule-Based Mistake Suggestions (Never Auto-Applied)
+Heuristic detections run inside `@tradevault/financial-engine` (`detectMistakeSuggestions`) and suggest tags to the trader without altering underlying records:
+
+1. **Revenge Trading (`REVENGE_TRADING`):**
+   - Triggered when a new trade is entered within $N$ minutes (`revengeTradingMinutes`, default 30 min) of a preceding closed trade that resulted in a net loss ($\text{netPnL} < 0$), where the new trade's position size or monetary exposure is equal to or larger than the losing trade:
+     $$\Delta t = t_{\text{entry, new}} - t_{\text{exit, loss}} \le \text{revengeTradingMinutes} \quad \text{AND} \quad \text{Qty}_{\text{new}} \ge \text{Qty}_{\text{loss}}$$
+   - Flagged with `CRITICAL` severity advising cooling off.
+
+2. **Overtrading (`OVERTRADING`):**
+   - **Daily Trade Cap:** Total trades executed on a calendar date exceeds the user-configured cap (`maxDailyTrades`, default 6):
+     $$\text{DayTradesCount} > \text{maxDailyTrades}$$
+   - **Concurrent Position Cap:** Concurrent open positions at entry time exceeds `maxOpenTrades` (default 3).
+
+3. **Position Sizing Violation (`SIZE_VIOLATION`):**
+   - Planned risk percentage or monetary risk as a percentage of account equity exceeds the maximum allowed limit (`maxRiskPerTradePercent`, default 2.0%):
+     $$\text{ActualRiskPercent} > \text{maxRiskPerTradePercent}$$
+
+4. **Max Daily Loss Breach:**
+   - Evaluated across closed trades for the day. If accumulated net loss meets or exceeds `maxDailyLoss`:
+     $$\left|\sum \text{NetPnL}_{\text{closed, today}}\right| \ge \text{maxDailyLoss} \quad (\text{NetPnL} < 0)$$
+   - Triggers high-visibility critical warning banner on Dashboard and in the Journal dialog.
+
+### 3. Automated Daily Journal Prefill & Discipline Scoring
+When initiating daily reflection review (`/journal/:date` or `/review/prefill/:date`):
+- **Suggested Best Trade:** Closed trade with maximum positive net P&L ($\max(\text{NetPnL}) > 0$).
+- **Suggested Worst Trade:** Closed trade with lowest negative net P&L ($\min(\text{NetPnL}) < 0$).
+- **Aggregated Mistakes:** Union of trader-tagged mistakes and rule-detected suggestions.
+- **Discipline Rating Scoring Matrix (1 to 5):**
+  - **Rating 5 (Flawless Execution):** 0 rule breaks, positive or controlled P&L, full risk compliance.
+  - **Rating 4 (Good Execution):** Negative P&L but zero risk rule violations; losses kept strictly within planned stops.
+  - **Rating 3 (Hesitant / Rule Drift):** Minor mistakes logged (e.g. `CHASED_MARKET`, `PREMATURE_EXIT`).
+  - **Rating 2 (Rule Violation):** Sizing limit exceeded (`SIZE_VIOLATION`) or daily frequency cap exceeded (`OVERTRADING`).
+  - **Rating 1 (Severe Tilt / Breach):** Max daily loss breached or revenge trading pattern detected.
+

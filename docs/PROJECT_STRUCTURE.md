@@ -57,7 +57,8 @@ Pure, deterministic mathematical calculation library:
 - [`packages/financial-engine/src/currency.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/currency.ts): Deterministic currency conversion rejecting silent 1:1 fallbacks (`convertCurrency`).
 - [`packages/financial-engine/src/charges.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/charges.ts): Indian statutory regulatory charges calculator (`calculateIndianCharges`, `IndianChargesCalculator`) covering flat brokerage, exchange fees, STT/CTT, stamp duty, SEBI fees, and 18% GST with Decimal.js.
 - [`packages/financial-engine/src/session.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/session.ts): Automatic trading session derivation (`deriveSessionFromTime`) from execution timestamp and exchange.
-- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (33 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`, `charges.test.ts`, `session.test.ts`).
+- [`packages/financial-engine/src/mistakes.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/mistakes.ts): Rule-based mistake detection (`detectMistakeSuggestions`, `checkDailyLossBreach`, `calculateDailySessionSummary`) evaluating revenge trading, overtrading, sizing violations, daily loss limits, and discipline rating scoring.
+- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (40 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`, `charges.test.ts`, `session.test.ts`, `mistakes.test.ts`).
 
 ---
 
@@ -71,7 +72,7 @@ apps/api/
 │   ├── db/
 │   │   ├── connection.ts          # Resilient MongoDB connection manager (Docker / Embedded / Memory)
 │   │   └── models/                # Mongoose ODM schemas & models
-│   │       ├── User.ts            # User identity, password hash, base currency, theme
+│   │       ├── User.ts            # User identity, password hash, base currency, theme, riskSettings
 │   │       ├── Session.ts         # User sessions with 30-day TTL expiration index
 │   │       ├── TradingAccount.ts  # Trading accounts with exact Decimal128 balance fields
 │   │       ├── AccountTransaction.ts # Deposits, withdrawals, and cash flow adjustments
@@ -95,6 +96,7 @@ apps/api/
 │   │   ├── trade.routes.ts        # /api/v1/trades (CRUD, duplicate, bulk-tag, bulk-delete)
 │   │   ├── dashboard.routes.ts    # /api/v1/dashboard/stats (overview stats & equity curve)
 │   │   ├── journal.routes.ts      # /api/v1/journal (calendar heatmap & daily reviews)
+│   │   ├── review.routes.ts       # /api/v1/review (queue, session prefill, mistake suggestions)
 │   │   ├── analytics.routes.ts    # /api/v1/analytics/psychology (emotions & mistake costs)
 │   │   ├── risk.routes.ts         # /api/v1/risk/calculate (sizing & lot rounding)
 │   │   ├── attachment.routes.ts   # /api/v1/attachments (upload, stream, delete)
@@ -119,7 +121,7 @@ apps/api/
 │       ├── reset-demo.ts          # Safe reset script for demo user data (npm run seed:reset)
 │       ├── validate-seed.ts       # CLI validator script (npm run seed:validate)
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (74 tests)
+└── test/                          # Vitest API and Seed Engine integration test suites (79 tests)
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests
     ├── regression.test.ts         # Comprehensive 38-case QA regression test suite

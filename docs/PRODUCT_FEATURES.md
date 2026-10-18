@@ -132,47 +132,62 @@ This document provides a comprehensive, verified feature inventory of all module
 ## 5. Psychology & Discipline Tracking
 
 - **Status:** **IMPLEMENTED**
-- **Purpose:** Systematic tracking of emotional state, discipline compliance, and trading mistakes.
-- **Problem Solved:** Quantifies the monetary cost of emotional undiscipline (e.g., revenge trading, moving stop losses).
+- **Purpose:** Systematic tracking of emotional state, discipline compliance, and trading mistakes with pure rule-based detection.
+- **Problem Solved:** Quantifies the monetary cost of emotional undiscipline and automatically detects rule violations (e.g. revenge trading, overtrading, size violations) without external heuristics or telemetry.
 - **Main User Interactions:**
-  - Rate discipline from 1 to 5.
+  - Rate discipline from 1 to 5 stars (with automated objective scoring baseline).
+  - Configure user-level risk guardrails in Settings: `maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`.
+  - View automated mistake suggestion tooltips on pending trades in Review Queue.
   - Tag emotions before entry, during trade, and after exit (`CALM`, `CONFIDENT`, `ANXIOUS`, `FEARFUL`, `GREEDY`, `FRUSTRATED`, etc.).
   - Toggle discrete mistake flags: **Revenge Trading**, **Overtrading**, **Premature Exit**, **Stop Loss Moved**, **Position Size Violation**.
   - Check checklist completion and rule adherence.
   - View psychology analytics comparing discipline scores and emotional states to net P&L.
 - **Frontend Components:**
   - [`TradePsychologyTab.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/form/TradePsychologyTab.tsx)
+  - [`SettingsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/SettingsPage.tsx) (Discipline & Risk Guardrails Card)
   - [`AnalyticsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AnalyticsPage.tsx) (Psychology tab)
 - **Backend APIs & Services:**
+  - `GET /api/v1/review/suggest-mistakes/:tradeId`
   - `GET /api/v1/analytics/psychology`
-- **Database Entities:** Embedded `psychology` subdocument in `Trade`.
+- **Database Entities:** Embedded `psychology` subdocument in `Trade`, `riskSettings` subdocument in `User`.
 - **Business Rules & Calculations:**
+  - `detectMistakeSuggestions` evaluates revenge trading (within $N$ minutes of a loss with $\ge$ size), overtrading (daily count or simultaneous open trades), and position sizing violations ($> \text{maxRiskPerTradePercent}$).
+  - `checkDailyLossBreach` evaluates cumulative realized losses against daily risk limit.
   - Tracks total monetary loss caused by each mistake flag across closed trades.
   - Computes win rate and net P&L segmented by 1–5 discipline ratings and entry emotions.
 
 ---
 
-## 6. Visual Monthly Journal Calendar
+## 6. Visual Monthly Journal Calendar & Daily Review Queue
 
 - **Status:** **IMPLEMENTED**
-- **Purpose:** Calendar-based view of daily trading performance with daily reflection logging.
-- **Problem Solved:** Fosters daily review routines and provides instant visual heatmaps of profitable vs. losing trading sessions.
+- **Purpose:** Calendar-based view of daily trading performance with automated end-of-day session reflection reviews.
+- **Problem Solved:** Fosters disciplined daily review routines and eliminates manual friction in synthesizing trade performance and mistakes.
 - **Main User Interactions:**
   - Navigate months using previous/next buttons.
   - View daily green (profit) / red (loss) badges with trade counts and net P&L.
-  - Click any day to open the day's reflection review and view all trades taken on that date.
-  - Record market conditions, market bias, discipline rating, best/worst trade links, mistakes, and next-day plan.
+  - **Daily Review Queue Widget** on Dashboard: Shows unreviewed trades, unreviewed days, revenge/sizing/volume breakdown chips, and daily loss breach alerts.
+  - One-click **"Start Daily Review"** jumps directly into session reflection.
+  - **Automated Session Prefill**: Automatically pre-selects suggested best trade ($\max(\text{NetPnL}) > 0$), worst trade ($\min(\text{NetPnL}) < 0$), aggregates mistake tags into removable chips, and derives rule-based discipline rating (1–5).
+  - Click any calendar day to open reflection review and view all trades taken on that date.
+  - Record market conditions, market bias, discipline rating, best/worst trade links, mistakes, lessons learned, and next-day plan.
 - **Inputs & Outputs:**
-  - *Inputs:* Year-Month (`YYYY-MM`), daily reflection notes, ratings, biases.
-  - *Outputs:* Calendar grid data with daily aggregates and detailed journal entries.
-- **Frontend Components:** [`JournalCalendarPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/JournalCalendarPage.tsx).
+  - *Inputs:* Year-Month (`YYYY-MM`), daily reflection notes, ratings, biases, linked trades.
+  - *Outputs:* Calendar grid data with daily aggregates, review queue status, and detailed journal entries with session prefills.
+- **Frontend Components:**
+  - [`JournalCalendarPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/JournalCalendarPage.tsx)
+  - [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx) (Review Queue Widget)
 - **Backend APIs & Services:**
+  - `GET /api/v1/review/queue`
+  - `GET /api/v1/review/prefill/:date`
   - `GET /api/v1/journal/calendar?yearMonth=YYYY-MM`
-  - `GET /api/v1/journal/:date`
+  - `GET /api/v1/journal/:date` (returns journal record and auto-calculated `prefill` session summary)
   - `POST /api/v1/journal/:date` (upserts review)
   - `DELETE /api/v1/journal/:date`
-- **Database Entities:** `DailyJournal`, `Trade`.
-- **Business Rules & Calculations:** Dates stored as `YYYY-MM-DD` strings to eliminate timezone shift issues between client and server.
+- **Database Entities:** `DailyJournal`, `Trade`, `User`.
+- **Business Rules & Calculations:**
+  - Dates stored as `YYYY-MM-DD` strings to eliminate timezone shift issues between client and server.
+  - Discipline score calculated starting at 5 with penalties: -2 for daily loss breach, -1 for revenge trading, -1 for overtrading, -1 for size violation (clamped to $[1, 5]$).
 
 ---
 

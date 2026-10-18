@@ -12,7 +12,7 @@ This directory serves as the single source of truth for traders, software engine
 | :--- | :--- | :--- |
 | [**AI_CONTEXT.md**](AI_CONTEXT.md) | **Permanent AI Context**: High-density primer for new AI pairing sessions and developers. Read this first! | AI Agents & Engineers |
 | [**PRODUCT_OVERVIEW.md**](PRODUCT_OVERVIEW.md) | High-level product positioning, value proposition, problem statement, and supported markets. | Product & Business |
-| [**PRODUCT_FEATURES.md**](PRODUCT_FEATURES.md) | Comprehensive feature inventory across all 13 application modules, with inputs, outputs, and statuses. | Product & Engineering |
+| [**PRODUCT_FEATURES.md**](PRODUCT_FEATURES.md) | Comprehensive feature inventory across all 14 application modules, with inputs, outputs, and statuses. | Product & Engineering |
 | [**APPLICATION_ARCHITECTURE.md**](APPLICATION_ARCHITECTURE.md) | System design, monorepo layout, tech stack, data flow, and architectural decisions. | System Architects |
 | [**PROJECT_STRUCTURE.md**](PROJECT_STRUCTURE.md) | Annotated directory tree mapping folders and files to their architectural responsibilities. | Developers |
 | [**ROUTES_AND_PAGES.md**](ROUTES_AND_PAGES.md) | Complete breakdown of all frontend pages, routing paths, modals, and actions. | Frontend Developers |
@@ -29,7 +29,7 @@ This directory serves as the single source of truth for traders, software engine
 | [**UI_COMPONENTS_AND_DESIGN_SYSTEM.md**](UI_COMPONENTS_AND_DESIGN_SYSTEM.md) | MUI v9 + Tailwind CSS design system, typography, dark/light mode tokens, and Recharts. | UI/UX Designers |
 | [**CONFIGURATION_AND_ENVIRONMENT.md**](CONFIGURATION_AND_ENVIRONMENT.md) | Environment variables, `.env.example`, default configurations, and secrets management. | DevOps & Developers |
 | [**LOCAL_SETUP_AND_DEVELOPMENT.md**](LOCAL_SETUP_AND_DEVELOPMENT.md) | Step-by-step developer guide for setup, running dev servers, seeding, and debugging. | All Developers |
-| [**TESTING_AND_QUALITY_ASSURANCE.md**](TESTING_AND_QUALITY_ASSURANCE.md) | Vitest testing suites (107 unit and integration tests), test commands, and assertions. | QA Engineers |
+| [**TESTING_AND_QUALITY_ASSURANCE.md**](TESTING_AND_QUALITY_ASSURANCE.md) | Vitest testing suites (119 unit and integration tests), test commands, and assertions. | QA Engineers |
 | [**DEPLOYMENT_AND_OPERATIONS.md**](DEPLOYMENT_AND_OPERATIONS.md) | Production builds, Docker Compose, hosting topology, backup scripts, and data persistence. | DevOps & SREs |
 | [**KNOWN_LIMITATIONS_AND_TECHNICAL_DEBT.md**](KNOWN_LIMITATIONS_AND_TECHNICAL_DEBT.md) | Verified defects, partial features, technical debt, and planned enhancements. | Engineering Leads |
 

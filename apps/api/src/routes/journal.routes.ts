@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { dailyJournalSchema } from '@tradevault/shared';
-import { DailyJournal, Trade } from '../db/models/index.js';
+import { calculateDailySessionSummary } from '@tradevault/financial-engine';
+import { DailyJournal, Trade, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
 
@@ -100,6 +101,33 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
     const totalNetPnL = trades.reduce((sum, t) => sum + (t.calculated?.netPnL || 0), 0);
 
+    const user = await User.findById(req.user!.id);
+    const tradeSummaries = trades.map((t) => ({
+      id: t._id.toString(),
+      symbol: t.symbol,
+      direction: t.direction,
+      status: t.status,
+      entryTime: t.entryTime,
+      exitTime: t.exitTime,
+      quantity:
+        t.simpleExecution?.quantity ??
+        t.calculated?.closedQuantity ??
+        t.calculated?.openQuantity ??
+        0,
+      entryPrice:
+        t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? 0,
+      exitPrice:
+        t.simpleExecution?.exitPrice ?? t.calculated?.averageExitPrice,
+      netPnL: t.calculated?.netPnL,
+      plannedRiskAmount:
+        t.risk?.estimatedRiskAmount ?? t.risk?.riskBudgetAmount,
+      riskPercent:
+        t.risk?.riskPercentage ?? t.risk?.riskAsPercentOfEquity,
+      mistakes: t.psychology?.mistakes || [],
+    }));
+
+    const prefill = calculateDailySessionSummary(date, tradeSummaries, user?.riskSettings);
+
     return reply.send({
       success: true,
       data: {
@@ -110,6 +138,7 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
           tradesCount: trades.length,
           netPnL: Number(totalNetPnL.toFixed(2)),
         },
+        prefill,
       },
     });
   });

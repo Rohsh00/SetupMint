@@ -32,7 +32,7 @@ This document records confirmed limitations, incomplete features, architectural 
 | Item | Location | Description | Priority |
 | :--- | :--- | :--- | :--- |
 | **Legacy Namespace References** | Monorepo package naming (`@tradevault/*`) | Packages are named `@tradevault/api`, `@tradevault/web`, `@tradevault/financial-engine`, and `@tradevault/shared` while user-facing branding is **SetupMint Pro**. Maintain alias `StratumLogo` -> `SetupMintLogo`. | Low |
-| **E2E Automated Browser Tests** | `apps/web` | The application has 107 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
+| **E2E Automated Browser Tests** | `apps/web` | The application has 119 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
 | **Mobile Drawer Gesture Polish** | `AppLayout.tsx` | Mobile navigation uses an off-canvas drawer; edge swipe gesture support on iOS Safari could be improved. | Low |
 | **Database Lock Recovery Automation** | `connection.ts` | If an abrupt system crash leaves `mongod.lock` with non-zero bytes, manual removal of the lock file may be required. | Low |
 

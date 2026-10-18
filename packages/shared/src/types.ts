@@ -92,12 +92,21 @@ export type TradingSession =
   | 'NEW_YORK'
   | 'OFF_HOURS';
 
+export interface IRiskSettings {
+  maxDailyLoss?: number;
+  maxDailyTrades?: number;
+  maxOpenTrades?: number;
+  maxRiskPerTradePercent?: number;
+  revengeTradingMinutes?: number;
+}
+
 export interface IUser {
   id: string;
   email: string;
   name: string;
   baseCurrency: string;
   theme: 'dark' | 'light' | 'system';
+  riskSettings?: IRiskSettings;
   createdAt: string;
   updatedAt: string;
 }
@@ -541,3 +550,77 @@ export interface IBrokerImportMapping {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface IMistakeSuggestion {
+  tradeId?: string;
+  rule: 'REVENGE_TRADING' | 'OVERTRADING' | 'SIZE_VIOLATION';
+  mistakeTag: MistakeTag;
+  severity: 'WARNING' | 'CRITICAL';
+  message: string;
+}
+
+export interface IDailyLossBreach {
+  breached: boolean;
+  maxDailyLoss: number;
+  currentDailyLoss: number;
+  currency?: string;
+  message?: string;
+}
+
+export interface IReviewQueueItem {
+  id: string;
+  symbol: string;
+  tradeDate: string;
+  entryTime: string;
+  exitTime?: string;
+  status: string;
+  direction?: string;
+  strategyName?: string;
+  quantity: number;
+  entryPrice: number;
+  exitPrice?: number;
+  netPnL?: number;
+  missing: Array<'MISSING_EXIT' | 'MISSING_PSYCHOLOGY' | 'MISSING_SCREENSHOTS'>;
+  suggestedMistakes: IMistakeSuggestion[];
+}
+
+export interface IUnreviewedDay {
+  date: string;
+  tradesCount: number;
+  netPnL: number;
+  hasJournal: boolean;
+}
+
+export interface IReviewQueueResponse {
+  queue: IReviewQueueItem[];
+  unreviewedDays: IUnreviewedDay[];
+  dailyLossBreach: IDailyLossBreach;
+  summary: {
+    totalUnreviewedTrades: number;
+    missingExitCount: number;
+    missingPsychologyCount: number;
+    missingScreenshotsCount: number;
+    unreviewedDaysCount: number;
+  };
+}
+
+export interface IDailyPrefillResponse {
+  date: string;
+  suggestedBestTrade?: {
+    id: string;
+    symbol: string;
+    netPnL: number;
+  } | null;
+  suggestedWorstTrade?: {
+    id: string;
+    symbol: string;
+    netPnL: number;
+  } | null;
+  aggregatedMistakes: MistakeTag[];
+  suggestedDisciplineRating: number;
+  reasoning: string;
+  dailyLossBreach: IDailyLossBreach;
+  tradesCount: number;
+  netPnL: number;
+}
+

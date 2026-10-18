@@ -114,3 +114,25 @@ Derives `TradingSession` based on execution timestamp and exchange:
 - **`LONDON`**: London exchange session (LSE)
 - **`OFF_HOURS`**: Weekend trades (Saturday / Sunday) and 24/7 Crypto markets
 
+---
+
+## 7. Rule-Based Mistake Detection & Discipline Scoring (`mistakes.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/mistakes.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/mistakes.ts)
+
+Provides deterministic financial rule heuristics and scoring using Decimal.js:
+- **`checkDailyLossBreach(closedTrades, maxDailyLoss, currency)`**:
+  Evaluates total net realized P&L across closed trades for the day. If $\sum \text{Net P&L} \le -\text{maxDailyLoss}$, returns `{ breached: true, currentDailyLoss, message }`.
+- **`detectMistakeSuggestions({ trades, targetTradeId, accountEquity, thresholds })`**:
+  - **Revenge Trading**: Flags trades executed within `revengeTradingMinutes` of a losing trade with equal or larger size.
+  - **Overtrading**: Flags trades exceeding `maxDailyTrades` on the same date or exceeding `maxOpenTrades` concurrent open positions.
+  - **Size Violation**: Flags trades where planned monetary risk or `riskPercent` exceeds `maxRiskPerTradePercent`.
+- **`calculateDailySessionSummary(date, trades, thresholds, accountEquity)`**:
+  Derives automated daily session prefill:
+  - Best trade ($\max(\text{Net P&L}) > 0$)
+  - Worst trade ($\min(\text{Net P&L}) < 0$)
+  - Aggregated mistake tags
+  - Discipline score (1 to 5) based on rule breaches, tilt indicators, and stop discipline.
+
+

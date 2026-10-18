@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { IRiskSettings } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 
 export interface User {
@@ -7,6 +8,7 @@ export interface User {
   name: string;
   baseCurrency: string;
   theme?: string;
+  riskSettings?: IRiskSettings;
 }
 
 interface AuthContextType {

@@ -13,11 +13,11 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (107 Passing Tests)
+## 2. Test Suite Inventory (119 Passing Tests)
 
-The repository contains **107 fully automated tests** spanning mathematical calculations, regulatory fee structures, session derivations, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, batch undo, file uploads, seed generation, and regression scenarios.
+The repository contains **119 fully automated tests** spanning mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, file uploads, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (33 Tests)
+### A. Financial Engine Unit Tests (40 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -29,13 +29,14 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `currency.test.ts` | 3 tests | Identical currency pass-through, explicit conversion rates, rejection of silent 1:1 conversions when rate is missing. |
 | `charges.test.ts` | 6 tests | Indian statutory charges across segments (NSE_EQ, NSE_FNO futures, NSE_FNO options, MCX commodities), flat brokerage (₹20/leg, ₹0 Finvasia, custom), STT/CTT, SEBI, GST, stamp duty. |
 | `session.test.ts` | 5 tests | Automatic session derivation: NSE market hours (09:15-15:30 IST), MCX evening session, foreign exchanges (New York / London), weekends & Crypto off-hours. |
+| `mistakes.test.ts` | 7 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, and rule-based discipline rating (1 to 5). |
 
-### B. Backend API & Integration Tests (74 Tests)
+### B. Backend API & Integration Tests (79 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
-| `api.test.ts` | 20 tests | Registration, login, duplicate email rejection, session cookie issuance, account CRUD, trade creation with live P&L, Quick Close partial execution with CLOSED audit log, broker column mapping persistence, broker format auto-detection (Zerodha), FIFO raw execution grouping with statutory charges, duplicate trade prevention, and batch undo with account balance reconciliation. |
+| `api.test.ts` | 25 tests | Registration, login, duplicate email rejection, session cookie issuance, account CRUD, trade creation with live P&L, Quick Close partial execution with CLOSED audit log, broker column mapping persistence, broker format auto-detection (Zerodha), FIFO raw execution grouping with statutory charges, duplicate trade prevention, batch undo with account balance reconciliation, profile risk settings retrieval & update (`GET`/`PUT /api/v1/settings/profile`), review queue endpoint (`GET /api/v1/review/queue`), trade mistake suggestions (`GET /api/v1/review/suggest-mistakes/:tradeId`), and journal reflection prefill endpoint (`GET /api/v1/review/prefill/:date`). |
 | `attachment.test.ts` | 8 tests | Multipart upload, binary magic-bytes signature verification (PNG/JPEG/WebP), rejection of disguised binary files, authenticated streaming, disk cleanup upon deletion. |
 | `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, idempotency verification (reseeding cleanly replaces previous demo data), account balance consistency, seed validation engine. |
 | `regression.test.ts` | 38 tests | Exhaustive QA test matrix covering boundary scenarios: breakeven outcomes, soft delete account archival, bulk tagging, bulk deletion with multi-account reconciliation, CSV import duplicate prevention. |
@@ -45,13 +46,13 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 ## 3. Running Test Commands
 
 ```bash
-# 1. Run all test suites across the monorepo (107 tests)
+# 1. Run all test suites across the monorepo (119 tests)
 npm run test
 
-# 2. Run only financial engine mathematical unit tests (33 tests)
+# 2. Run only financial engine mathematical unit tests (40 tests)
 npm run test:engine
 
-# 3. Run only backend API, attachment, and regression tests (74 tests)
+# 3. Run only backend API, attachment, and regression tests (79 tests)
 npm run test:api
 
 # 4. Run tests with live watch mode (in package directory)

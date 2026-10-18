@@ -7,13 +7,13 @@ Before inspecting or writing code in this repository, you **MUST** read the perm
 
 It contains:
 - Complete product identity, tech stack, and directory mappings.
-- All 13 application routes, 12 MongoDB database models, and REST endpoints.
+- All 14 application routes, 12 MongoDB database models, and REST endpoints.
 - Exact financial calculation specifications in `@tradevault/financial-engine`.
 - Strict rules of engagement regarding financial accuracy, tenant isolation, local-first privacy, and testing requirements.
 
 ### Quick Reference Commands:
 - `npm run dev` — Start Fastify backend (4000) and Vite frontend (5173).
-- `npm run test` — Run all 107 unit and integration tests.
+- `npm run test` — Run all 119 unit and integration tests.
 - `npm run typecheck` — Typecheck all workspaces.
 - `npm run db:seed` — Populate realistic demo trading records.
 - `npm run seed:reset` — Safely reset demo data without touching real user data.

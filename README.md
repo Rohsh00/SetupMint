@@ -93,13 +93,13 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)** to start
 Execute comprehensive unit and integration test suites:
 
 ```bash
-# Run standalone financial engine calculation tests (33 unit tests)
+# Run standalone financial engine calculation tests (40 unit tests)
 npm run test:engine
 
-# Run Fastify API integration tests (74 endpoint and regression tests)
+# Run Fastify API integration tests (79 endpoint and regression tests)
 npm run test:api
 
-# Run all test suites across the monorepo (107 tests)
+# Run all test suites across the monorepo (119 tests)
 npm run test
 ```
 

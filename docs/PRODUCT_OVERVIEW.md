@@ -23,7 +23,7 @@ In codebase configurations and package naming, the project is structured under t
 - **Rapid Manual Trade Journaling:** Logging trades immediately after market execution with live preview of fees, net P&L, and R-multiples using either Express Quick mode or Comprehensive mode.
 - **Multi-Fill Execution Tracking (Scale-Ins & Partial Exits):** Recording individual entry and exit executions in Advanced Mode, matched deterministically via strict FIFO order.
 - **Pre-Trade Risk Management & Sizing:** Computing optimal position sizes, lot rounding, and stop-loss distances before entering orders, with one-click transfer into the trade logging form.
-- **Daily Reflection & Calendar Reviews:** Reviewing daily net P&L heatmaps, market biases, and discipline ratings to foster consistent trading habits.
+- **Daily Review Queue & End-of-Day Journaling:** Reviewing pending unreviewed trades from an interactive dashboard queue with automated mistake suggestions (revenge trading, overtrading, position sizing violations), daily loss breach alerts, and one-click session prefill.
 - **Quantitative Strategy Playbook Evaluation:** Measuring the historical win rate, profit factor, total net P&L, and expectancy of specific strategy rules to identify true market edge.
 - **Tax & Fee Audit Reporting:** Analyzing total transaction friction (brokerage vs. statutory charges) to prevent "trading for the broker."
 - **Data Portability & Backups:** Performing full JSON/CSV data exports, interactive CSV imports with column mapping, and single-command local disk backups.
@@ -36,7 +36,7 @@ In codebase configurations and package naming, the project is structured under t
 | :--- | :--- |
 | **Silent IEEE-754 Floating-Point Errors:** Standard spreadsheet tools and basic web journals suffer from binary floating-point round-off errors in financial balances. | Uses `decimal.js` with **30-digit precision** for all P&L, fee, R-multiple, and balance calculations in `@tradevault/financial-engine`. |
 | **Hidden Friction & Fee Surprise:** Indian traders frequently miscalculate net profitability due to complex statutory taxes (STT/CTT, Stamp Duty, GST, Exchange Fees). | Incorporates a dedicated `IndianChargesCalculator` modeling exact exchange turnover, STT/CTT rates, SEBI fees, and 18% GST across asset classes. |
-| **Emotional Blind Spots:** Costly habits like revenge trading and moving stops are often hidden from conventional broker P&L reports. | Features explicit psychological tracking (emotions before/during/after, 1–5 discipline ratings, checklist confirmations, and 5 discrete mistake flags). |
+| **Emotional Blind Spots & Review Friction:** Costly habits like revenge trading and overtrading are often forgotten by end-of-day, while manual journal prefill is tedious. | Features a Daily Review Queue on the dashboard with pure rule-based mistake detection (revenge trading, overtrading, sizing violations), daily loss breach alerts, and automatic session reflection prefill. |
 | **Cloud Privacy Concerns:** Uploading proprietary trading strategies, trade sizes, and annotated chart screenshots to third-party cloud servers exposes sensitive financial intellectual property. | Fully local-first architecture. Attachments are saved to `./data/uploads` on local disk and served strictly through authenticated endpoints. |
 | **Account Balance Drift:** Frequent deposits, withdrawals, and trade edits cause account balances to desynchronize over time. | Features authoritative account balance reconciliation (`AccountService.recalculateAccountBalances`), deriving balances directly from raw trade P&Ls and cash transactions. |
 | **Complex Lot & Multiplier Arithmetic:** MCX commodities and Index F&O contracts have varying lot sizes and multipliers that break generic trade trackers. | Built-in instrument catalog with explicit `contractMultiplier`, `lotSize`, `tickSize`, and `quantityIncrement` parameters. |
@@ -54,6 +54,7 @@ mindmap
       Indian statutory charges calculator
       Risk & position sizing
       R-multiple tracking
+      Rule-based mistake detection
     Trade Management
       Simple Mode vs Advanced Mode
       Pre-trade risk & confluence tagging
@@ -64,7 +65,9 @@ mindmap
       Emotions before, during & after
       Discipline score 1 to 5
       Discrete mistake impact quantification
-      Daily session reflection reviews
+      Daily review queue
+      Automated session reflection prefill
+      User-defined risk guardrails
     Analytics & Reporting
       Interactive equity curves & drawdowns
       Monthly journal P&L calendar

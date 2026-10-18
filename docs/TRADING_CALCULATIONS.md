@@ -196,3 +196,49 @@ $$\text{Max Drawdown Percentage} = \max(\text{Drawdown Percentage}_1, \dots, \te
 - SetupMint formats all calendar dates as ISO strings (`YYYY-MM-DD`).
 - In Indian financial markets, the official Financial Year (FY) spans **April 1 through March 31**.
 - When filtering dates for annual performance audits (e.g., FY 2024–25), the start date boundary is `2024-04-01` and the end date boundary is `2025-03-31`.
+
+---
+
+## 9. Mistake Detection, Daily Loss Breach & Discipline Scoring
+
+### Code Location:
+[`packages/financial-engine/src/mistakes.ts:24-190`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/mistakes.ts#L24-L190)
+
+All behavioral detection and session synthesis operate deterministically using Decimal.js without external heuristics or telemetry:
+
+### 1. Revenge Trading Detection
+A trade $T_{\text{target}}$ is flagged as potential `revenge_trading` if:
+1. An earlier closed trade $T_{\text{prior}}$ exists on the same account within a lookback window $\Delta t \le \text{revengeTradingMinutes}$ (default 30 minutes) prior to $T_{\text{target}}$ entry:
+   $$0 < \text{entryTime}(T_{\text{target}}) - \text{exitTime}(T_{\text{prior}}) \le \Delta t_{\text{window}}$$
+2. The prior trade was a realized loss:
+   $$\text{Net P&L}(T_{\text{prior}}) < 0$$
+3. The target trade position size is greater than or equal to the prior trade:
+   $$Q(T_{\text{target}}) \ge Q(T_{\text{prior}})$$
+
+### 2. Overtrading Detection
+A trade $T_{\text{target}}$ is flagged as potential `overtrading` if either condition holds:
+- **Daily Volume Cap:** Total trades executed on the calendar day of $T_{\text{target}}$ exceeds the user's configured daily trade limit:
+  $$N_{\text{trades}}(\text{date}) > \text{maxDailyTrades}$$
+- **Simultaneous Open Positions:** The number of concurrently active (open) positions at the time of entry exceeds the maximum open position limit:
+  $$N_{\text{open\_at\_entry}} > \text{maxOpenTrades}$$
+
+### 3. Sizing Violation Detection
+A trade $T_{\text{target}}$ is flagged as `position_sizing` violation if:
+- Account equity $E > 0$ and the planned risk percentage exceeds the user's risk guardrail $\text{maxRiskPerTradePercent}$:
+  $$\text{Risk \%} = \frac{\text{Planned Risk Amount}}{E} \times 100 > \text{maxRiskPerTradePercent}$$
+
+### 4. Daily Loss Breach Detection
+Computes cumulative net realized loss across all closed trades for a given calendar day:
+$$\text{Net Loss}_{\text{day}} = -\sum_{i=1}^{N_{\text{closed}}} \min(0, \text{Net P&L}_i) - \sum_{i=1}^{N_{\text{closed}}} \max(0, \text{Net P&L}_i) = -\sum_{i=1}^{N_{\text{closed}}} \text{Net P&L}_i$$
+If $\sum \text{Net P&L}_i \le -\text{maxDailyLoss}$, the day is flagged with `isBreached: true` along with breach amount:
+$$\text{Breach Amount} = \max(0, |\sum \text{Net P&L}_i| - \text{maxDailyLoss})$$
+
+### 5. Rule-Based Discipline Rating
+Daily journal discipline ratings (1 to 5 stars) are computed automatically based on objective rule violations:
+- Start at baseline: **5 / 5**
+- Subtract **2 points** if Daily Loss limit is breached.
+- Subtract **1 point** if revenge trading was detected.
+- Subtract **1 point** if daily trade limit was exceeded (overtrading).
+- Subtract **1 point** if position sizing violation occurred.
+- Clamp score between **1** and **5**:
+  $$\text{Discipline Score} = \max(1, \min(5, 5 - \text{Penalties}))$$

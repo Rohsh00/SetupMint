@@ -6,8 +6,8 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 10 core Mongoose models:
-1. `User` — Trader identity, password hash, and preferences.
+SetupMint defines 12 core Mongoose models:
+1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
 2. `Session` — Stateful authentication tokens with automatic 30-day MongoDB TTL expiration.
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
 4. `AccountTransaction` — Capital deposits, withdrawals, transfers, and adjustments.
@@ -36,6 +36,12 @@ SetupMint defines 10 core Mongoose models:
 | `name` | `String` | **Yes** | — | Trim | User display name |
 | `baseCurrency` | `String` | No | `'INR'` | Trim | Account baseline reporting currency |
 | `theme` | `String` | No | `'dark'` | Enum: `['dark', 'light', 'system']` | User interface color theme |
+| `riskSettings` | `Object` | No | Embedded | Subdocument | User discipline & risk guardrails |
+| `riskSettings.maxDailyLoss` | `Number` | No | `5000` | — | Max allowable daily loss amount (INR) |
+| `riskSettings.maxDailyTrades` | `Number` | No | `6` | — | Max allowed trades per calendar day |
+| `riskSettings.maxOpenTrades` | `Number` | No | `3` | — | Max concurrent active positions |
+| `riskSettings.maxRiskPerTradePercent` | `Number` | No | `2.0` | — | Max risk % of account equity per trade |
+| `riskSettings.revengeTradingMinutes` | `Number` | No | `30` | — | Lookback window (minutes) after loss |
 | `createdAt` | `Date` | Auto | Current Time | — | Mongoose timestamp |
 | `updatedAt` | `Date` | Auto | Current Time | — | Mongoose timestamp |
 

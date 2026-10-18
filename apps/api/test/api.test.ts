@@ -549,5 +549,128 @@ describe('TradeVault API Integration Tests', () => {
     expect(accBody.data.currentBalance).toBe(150000);
     expect(accBody.data.realizedPnL).toBe(0);
   });
+
+  it('PUT /api/v1/settings/profile updates riskSettings and GET /api/v1/settings/profile returns them', async () => {
+    const updateRes = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/settings/profile',
+      headers: { cookie: authCookie },
+      payload: {
+        riskSettings: {
+          maxDailyLoss: 7500,
+          maxDailyTrades: 4,
+          maxOpenTrades: 2,
+          maxRiskPerTradePercent: 1.5,
+          revengeTradingMinutes: 20,
+        },
+      },
+    });
+
+    expect(updateRes.statusCode).toBe(200);
+    const updateBody = JSON.parse(updateRes.body);
+    expect(updateBody.success).toBe(true);
+    expect(updateBody.data.riskSettings.maxDailyLoss).toBe(7500);
+    expect(updateBody.data.riskSettings.maxDailyTrades).toBe(4);
+
+    const getRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/profile',
+      headers: { cookie: authCookie },
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = JSON.parse(getRes.body);
+    expect(getBody.data.riskSettings.maxDailyLoss).toBe(7500);
+    expect(getBody.data.riskSettings.maxRiskPerTradePercent).toBe(1.5);
+  });
+
+  it('GET /api/v1/review/queue returns trades missing exit, psychology, screenshots, and unreviewed days', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/review/queue',
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.data.queue)).toBe(true);
+    expect(Array.isArray(body.data.unreviewedDays)).toBe(true);
+    expect(body.data.summary).toBeDefined();
+    expect(body.data.summary.totalUnreviewedTrades).toBeGreaterThanOrEqual(1);
+    expect(body.data.dailyLossBreach).toBeDefined();
+    expect(typeof body.data.dailyLossBreach.breached).toBe('boolean');
+  });
+
+  it('GET /api/v1/review/prefill/:date calculates session prefill with best/worst trade and discipline rating', async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/review/prefill/${todayStr}`,
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.date).toBe(todayStr);
+    expect(typeof body.data.suggestedDisciplineRating).toBe('number');
+    expect(body.data.suggestedDisciplineRating).toBeGreaterThanOrEqual(1);
+    expect(body.data.suggestedDisciplineRating).toBeLessThanOrEqual(5);
+    expect(body.data.reasoning).toBeDefined();
+    expect(Array.isArray(body.data.aggregatedMistakes)).toBe(true);
+  });
+
+  it('GET /api/v1/journal/:date includes prefill payload alongside journal review', async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/journal/${todayStr}`,
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.date).toBe(todayStr);
+    expect(body.data.prefill).toBeDefined();
+    expect(typeof body.data.prefill.suggestedDisciplineRating).toBe('number');
+  });
+
+  it('GET /api/v1/review/suggest-mistakes/:tradeId detects rule violations or returns suggestions list', async () => {
+    const tradeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/trades',
+      headers: { cookie: authCookie },
+      payload: {
+        accountId,
+        symbol: 'TCS',
+        assetClass: 'EQUITY',
+        exchange: 'NSE',
+        marketSegment: 'NSE_EQ',
+        direction: 'LONG',
+        tradeDate: new Date().toISOString(),
+        entryTime: new Date().toISOString(),
+        executionMode: 'SIMPLE',
+        simpleExecution: {
+          entryPrice: 3500,
+          quantity: 10,
+        },
+      },
+    });
+    expect(tradeRes.statusCode).toBe(201);
+    const createdTrade = JSON.parse(tradeRes.body).data;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/review/suggest-mistakes/${createdTrade.id}`,
+      headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.data)).toBe(true);
+  });
 });
+
 

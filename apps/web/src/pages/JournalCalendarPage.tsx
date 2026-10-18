@@ -34,6 +34,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
+import { MISTAKE_TAGS } from '@tradevault/shared';
 
 export function JournalCalendarPage() {
   const queryClient = useQueryClient();
@@ -67,8 +68,24 @@ export function JournalCalendarPage() {
   const [disciplineRating, setDisciplineRating] = useState(5);
   const [lessonsLearned, setLessonsLearned] = useState('');
   const [nextDayPlan, setNextDayPlan] = useState('');
+  const [bestTradeId, setBestTradeId] = useState<string>('');
+  const [worstTradeId, setWorstTradeId] = useState<string>('');
+  const [mistakes, setMistakes] = useState<string[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleApplyPrefill = () => {
+    if (!dayDetails?.prefill) return;
+    const p = dayDetails.prefill;
+    if (p.suggestedDisciplineRating) setDisciplineRating(p.suggestedDisciplineRating);
+    if (p.suggestedBestTrade?.id) setBestTradeId(p.suggestedBestTrade.id);
+    if (p.suggestedWorstTrade?.id) setWorstTradeId(p.suggestedWorstTrade.id);
+    if (p.aggregatedMistakes?.length) setMistakes(p.aggregatedMistakes);
+    if (p.reasoning) {
+      setLessonsLearned((prev) => (prev ? `${prev}\n${p.reasoning}` : p.reasoning));
+    }
+    toast.success('Auto-prefilled from session trades analysis.');
+  };
 
   // Load day details into review form when date changes
   React.useEffect(() => {
@@ -80,6 +97,20 @@ export function JournalCalendarPage() {
       setDisciplineRating(j.disciplineRating || 5);
       setLessonsLearned(j.lessonsLearned || '');
       setNextDayPlan(j.nextDayPlan || '');
+      setBestTradeId(j.bestTradeId?._id || j.bestTradeId || '');
+      setWorstTradeId(j.worstTradeId?._id || j.worstTradeId || '');
+      setMistakes(j.mistakes || []);
+    } else if (dayDetails?.prefill) {
+      const p = dayDetails.prefill;
+      setMarketConditions('');
+      setMarketBias('NEUTRAL');
+      setEmotionalState('CALM');
+      setDisciplineRating(p.suggestedDisciplineRating || 5);
+      setLessonsLearned(p.reasoning ? `[Analysis] ${p.reasoning}` : '');
+      setNextDayPlan('');
+      setBestTradeId(p.suggestedBestTrade?.id || '');
+      setWorstTradeId(p.suggestedWorstTrade?.id || '');
+      setMistakes(p.aggregatedMistakes || []);
     } else {
       setMarketConditions('');
       setMarketBias('NEUTRAL');
@@ -87,6 +118,9 @@ export function JournalCalendarPage() {
       setDisciplineRating(5);
       setLessonsLearned('');
       setNextDayPlan('');
+      setBestTradeId('');
+      setWorstTradeId('');
+      setMistakes([]);
     }
     setSaveSuccess(false);
     setSaveError(null);
@@ -522,10 +556,29 @@ export function JournalCalendarPage() {
 
             {/* Right: Daily Reflection Form */}
             <Grid size={{ xs: 12, md: 7 }}>
-              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                <AutoAwesomeIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
-                Daily Session Reflection
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <AutoAwesomeIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+                  Daily Session Reflection
+                </Typography>
+                {dayDetails?.prefill && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    startIcon={<AutoAwesomeIcon fontSize="small" />}
+                    onClick={handleApplyPrefill}
+                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
+                  >
+                    Auto-Prefill Session
+                  </Button>
+                )}
+              </Box>
+
+              {dayDetails?.prefill?.dailyLossBreach?.breached && (
+                <Alert severity="error" sx={{ mb: 2, borderRadius: 1.5 }}>
+                  {dayDetails.prefill.dailyLossBreach.message}
+                </Alert>
+              )}
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Grid container spacing={2}>
@@ -563,6 +616,82 @@ export function JournalCalendarPage() {
                     </FormControl>
                   </Grid>
                 </Grid>
+
+                {/* Best & Worst Trade Selectors */}
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                      Best Trade of Day
+                    </Typography>
+                    <FormControl size="small" fullWidth>
+                      <Select
+                        value={bestTradeId}
+                        displayEmpty
+                        onChange={(e) => setBestTradeId(e.target.value)}
+                      >
+                        <MenuItem value=""><em>None</em></MenuItem>
+                        {(dayDetails?.trades || []).map((t: any) => (
+                          <MenuItem key={t._id} value={t._id}>
+                            {t.symbol} ({formatCurrency(t.calculated?.netPnL)})
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+
+                  <Grid size={{ xs: 6 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                      Worst Trade of Day
+                    </Typography>
+                    <FormControl size="small" fullWidth>
+                      <Select
+                        value={worstTradeId}
+                        displayEmpty
+                        onChange={(e) => setWorstTradeId(e.target.value)}
+                      >
+                        <MenuItem value=""><em>None</em></MenuItem>
+                        {(dayDetails?.trades || []).map((t: any) => (
+                          <MenuItem key={t._id} value={t._id}>
+                            {t.symbol} ({formatCurrency(t.calculated?.netPnL)})
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+
+                {/* Aggregated Mistakes / Rule Breaks */}
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.75 }}>
+                    Session Mistake / Rule Break Tags
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                    {MISTAKE_TAGS.map((m) => {
+                      const isSelected = mistakes.includes(m.value);
+                      return (
+                        <Chip
+                          key={m.value}
+                          label={m.label}
+                          size="small"
+                          color={isSelected ? 'error' : 'default'}
+                          variant={isSelected ? 'filled' : 'outlined'}
+                          onClick={() => {
+                            if (isSelected) {
+                              setMistakes(mistakes.filter((tag) => tag !== m.value));
+                            } else {
+                              setMistakes([...mistakes, m.value]);
+                            }
+                          }}
+                          sx={{
+                            cursor: 'pointer',
+                            fontSize: '0.6875rem',
+                            fontWeight: isSelected ? 700 : 500,
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
+                </Box>
 
                 <Box>
                   <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
@@ -648,6 +777,9 @@ export function JournalCalendarPage() {
                   disciplineRating,
                   lessonsLearned,
                   nextDayPlan,
+                  bestTradeId: bestTradeId || undefined,
+                  worstTradeId: worstTradeId || undefined,
+                  mistakes,
                 });
               }}
             >

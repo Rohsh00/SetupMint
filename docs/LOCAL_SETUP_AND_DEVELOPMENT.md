@@ -85,9 +85,9 @@ All commands are executed from the repository root:
 | :--- | :--- |
 | `npm run dev` | Runs Fastify backend and Vite frontend concurrently with live reloading. |
 | `npm run build` | Compiles `@tradevault/shared`, `@tradevault/financial-engine`, backend API, and frontend bundle. |
-| `npm run test` | Executes all Vitest test suites (financial engine unit tests + API integration tests). |
-| `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (33 tests). |
-| `npm run test:api` | Runs Fastify API integration, regression, and attachment test suites (74 tests). |
+| `npm run test` | Executes all Vitest test suites (119 tests across financial engine + API). |
+| `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (40 tests). |
+| `npm run test:api` | Runs Fastify API integration, regression, and attachment test suites (79 tests). |
 | `npm run typecheck` | Validates TypeScript types across all 4 packages (`shared`, `financial-engine`, `api`, `web`). |
 | `npm run db:seed` | Populates database with default active-trader demo profile. |
 | `npm run seed:reset` | Wipes only demo user records (`trader@tradevault.local`), preserving real users. |

@@ -1,0 +1,372 @@
+import Decimal from 'decimal.js';
+import {
+  IRiskSettings,
+  MistakeTag,
+  IMistakeSuggestion,
+  IDailyLossBreach,
+  TradeStatus,
+} from '@tradevault/shared';
+
+export interface ITradeSummaryForDetection {
+  id?: string;
+  symbol: string;
+  direction?: 'LONG' | 'SHORT';
+  status: TradeStatus | string;
+  entryTime: Date | string;
+  exitTime?: Date | string | null;
+  quantity: number;
+  entryPrice: number;
+  exitPrice?: number | null;
+  netPnL?: number | null;
+  plannedRiskAmount?: number | null;
+  riskPercent?: number | null;
+  accountEquity?: number | null;
+  mistakes?: string[];
+}
+
+export interface IDetectMistakesParams {
+  trades: ITradeSummaryForDetection[];
+  targetTradeId?: string;
+  accountEquity?: number;
+  thresholds?: IRiskSettings;
+}
+
+export interface IMistakeDetectionResult {
+  suggestions: IMistakeSuggestion[];
+  dailyLossBreach: IDailyLossBreach;
+  totalTradesToday: number;
+  openTradesCount: number;
+}
+
+export interface IDailySessionPrefill {
+  date: string;
+  suggestedBestTrade?: {
+    id: string;
+    symbol: string;
+    netPnL: number;
+  } | null;
+  suggestedWorstTrade?: {
+    id: string;
+    symbol: string;
+    netPnL: number;
+  } | null;
+  aggregatedMistakes: MistakeTag[];
+  suggestedDisciplineRating: number;
+  reasoning: string;
+  dailyLossBreach: IDailyLossBreach;
+  tradesCount: number;
+  netPnL: number;
+}
+
+const DEFAULT_THRESHOLDS: Required<IRiskSettings> = {
+  revengeTradingMinutes: 30,
+  maxDailyTrades: 5,
+  maxOpenTrades: 3,
+  maxRiskPerTradePercent: 2.0,
+  maxDailyLoss: 5000,
+};
+
+/**
+ * Checks whether the accumulated loss for a collection of closed trades breaches maxDailyLoss.
+ */
+export function checkDailyLossBreach(
+  closedTrades: ITradeSummaryForDetection[],
+  maxDailyLoss: number = DEFAULT_THRESHOLDS.maxDailyLoss,
+  currency: string = 'INR'
+): IDailyLossBreach {
+  let dailyLoss = new Decimal(0);
+
+  for (const t of closedTrades) {
+    if (t.netPnL !== undefined && t.netPnL !== null) {
+      dailyLoss = dailyLoss.plus(new Decimal(t.netPnL));
+    }
+  }
+
+  const dLimit = new Decimal(maxDailyLoss);
+  // dailyLoss is net PnL (negative means loss)
+  const isLoss = dailyLoss.isNegative();
+  const lossMagnitude = dailyLoss.abs();
+  const breached = isLoss && lossMagnitude.greaterThanOrEqualTo(dLimit);
+
+  return {
+    breached,
+    maxDailyLoss,
+    currentDailyLoss: isLoss ? Number(lossMagnitude.toFixed(2)) : 0,
+    currency,
+    message: breached
+      ? `Maximum daily loss limit of ₹${maxDailyLoss.toLocaleString()} breached (Current Loss: ₹${Number(lossMagnitude.toFixed(2)).toLocaleString()}). Stop trading for the session.`
+      : undefined,
+  };
+}
+
+/**
+ * Detects rule-based mistake suggestions across trades using deterministic financial rules.
+ */
+export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistakeDetectionResult {
+  const { trades, targetTradeId, accountEquity } = params;
+  const thresholds: Required<IRiskSettings> = {
+    ...DEFAULT_THRESHOLDS,
+    ...(params.thresholds || {}),
+  };
+
+  const suggestions: IMistakeSuggestion[] = [];
+
+  // Parse and sort trades chronologically by entryTime
+  const sorted = [...trades].sort((a, b) => {
+    const timeA = new Date(a.entryTime).getTime();
+    const timeB = new Date(b.entryTime).getTime();
+    return timeA - timeB;
+  });
+
+  // Track daily trades map by YYYY-MM-DD
+  const dailyTradesMap = new Map<string, ITradeSummaryForDetection[]>();
+  for (const t of sorted) {
+    const dStr = new Date(t.entryTime).toISOString().split('T')[0];
+    const list = dailyTradesMap.get(dStr) || [];
+    list.push(t);
+    dailyTradesMap.set(dStr, list);
+  }
+
+  // 1. Analyze each trade
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    if (targetTradeId && current.id && current.id !== targetTradeId) {
+      continue;
+    }
+
+    const currentEntryTime = new Date(current.entryTime).getTime();
+
+    // --- RULE A: Revenge Trading ---
+    // Look for previous closed losing trade within revengeTradingMinutes
+    for (let j = i - 1; j >= 0; j--) {
+      const prev = sorted[j];
+      if (prev.status !== 'CLOSED' || !prev.exitTime) continue;
+
+      const prevExitTime = new Date(prev.exitTime).getTime();
+      // Ensure prev trade exited before current trade entry
+      if (prevExitTime <= currentEntryTime) {
+        const diffMinutes = (currentEntryTime - prevExitTime) / (60 * 1000);
+        if (diffMinutes <= thresholds.revengeTradingMinutes) {
+          const prevPnL = prev.netPnL ?? 0;
+          if (prevPnL < 0) {
+            // Check position size or monetary value
+            const currentVal = new Decimal(current.quantity).times(current.entryPrice);
+            const prevVal = new Decimal(prev.quantity).times(prev.entryPrice);
+
+            if (
+              current.quantity >= prev.quantity ||
+              currentVal.greaterThanOrEqualTo(prevVal)
+            ) {
+              suggestions.push({
+                tradeId: current.id,
+                rule: 'REVENGE_TRADING',
+                mistakeTag: 'REVENGE_TRADING',
+                severity: 'CRITICAL',
+                message: `Entered ${current.symbol} within ${Math.round(
+                  diffMinutes
+                )}m of a losing trade (${prev.symbol}, -₹${Math.abs(
+                  prevPnL
+                ).toLocaleString()}) with equal or larger size (${current.quantity} vs ${prev.quantity}).`,
+              });
+              break; // Don't flag multiple revenge origins for same trade
+            }
+          }
+        } else {
+          // Out of time window, since sorted, earlier trades are even further away
+          break;
+        }
+      }
+    }
+
+    // --- RULE B: Overtrading (Concurrent Open Trades & Daily Cap) ---
+    // Check concurrent open trades at the time of current trade entry
+    let openAtCurrentTime = 0;
+    for (const other of sorted) {
+      if (other.id === current.id) continue;
+      const otherEntry = new Date(other.entryTime).getTime();
+      if (otherEntry <= currentEntryTime) {
+        if (!other.exitTime || other.status === 'OPEN') {
+          openAtCurrentTime++;
+        } else {
+          const otherExit = new Date(other.exitTime).getTime();
+          if (otherExit > currentEntryTime) {
+            openAtCurrentTime++;
+          }
+        }
+      }
+    }
+
+    if (openAtCurrentTime >= thresholds.maxOpenTrades) {
+      suggestions.push({
+        tradeId: current.id,
+        rule: 'OVERTRADING',
+        mistakeTag: 'OVERTRADING',
+        severity: 'WARNING',
+        message: `Exceeded concurrent open trades limit (${openAtCurrentTime + 1} open > limit of ${
+          thresholds.maxOpenTrades
+        }).`,
+      });
+    }
+
+    // Check daily trade cap
+    const dStr = new Date(current.entryTime).toISOString().split('T')[0];
+    const dayTrades = dailyTradesMap.get(dStr) || [];
+    const tradeIndexInDay = dayTrades.findIndex((t) => t.id === current.id);
+    const dayCount = tradeIndexInDay >= 0 ? tradeIndexInDay + 1 : dayTrades.length;
+
+    if (dayCount > thresholds.maxDailyTrades) {
+      suggestions.push({
+        tradeId: current.id,
+        rule: 'OVERTRADING',
+        mistakeTag: 'OVERTRADING',
+        severity: 'WARNING',
+        message: `Trade #${dayCount} exceeds maximum allowed daily trades limit (${thresholds.maxDailyTrades} trades/day).`,
+      });
+    }
+
+    // --- RULE C: Position Size Violation ---
+    const maxRiskPct = thresholds.maxRiskPerTradePercent;
+    let actualRiskPct = current.riskPercent;
+
+    if (
+      (actualRiskPct === undefined || actualRiskPct === null) &&
+      current.plannedRiskAmount &&
+      accountEquity &&
+      accountEquity > 0
+    ) {
+      actualRiskPct = Number(
+        new Decimal(current.plannedRiskAmount)
+          .dividedBy(accountEquity)
+          .times(100)
+          .toFixed(2)
+      );
+    }
+
+    if (actualRiskPct !== undefined && actualRiskPct !== null && actualRiskPct > maxRiskPct) {
+      suggestions.push({
+        tradeId: current.id,
+        rule: 'SIZE_VIOLATION',
+        mistakeTag: 'SIZE_VIOLATION',
+        severity: 'CRITICAL',
+        message: `Position risk of ${actualRiskPct}% exceeds maximum allowable risk threshold of ${maxRiskPct}% per trade.`,
+      });
+    }
+  }
+
+  // Calculate daily loss breach on all closed trades
+  const closedTrades = sorted.filter((t) => t.status === 'CLOSED');
+  const dailyLossBreach = checkDailyLossBreach(closedTrades, thresholds.maxDailyLoss);
+
+  // Count open trades currently
+  const openTradesCount = sorted.filter((t) => t.status === 'OPEN').length;
+
+  return {
+    suggestions,
+    dailyLossBreach,
+    totalTradesToday: sorted.length,
+    openTradesCount,
+  };
+}
+
+/**
+ * Computes prefill data for a Daily Journal review session.
+ */
+export function calculateDailySessionSummary(
+  date: string,
+  trades: ITradeSummaryForDetection[],
+  thresholds?: IRiskSettings,
+  accountEquity?: number
+): IDailySessionPrefill {
+  const closedTrades = trades.filter((t) => t.status === 'CLOSED');
+
+  // Identify Best Trade
+  let suggestedBestTrade: { id: string; symbol: string; netPnL: number } | null = null;
+  let maxPnL = new Decimal(0);
+
+  // Identify Worst Trade
+  let suggestedWorstTrade: { id: string; symbol: string; netPnL: number } | null = null;
+  let minPnL = new Decimal(0);
+
+  let netPnL = new Decimal(0);
+
+  for (const t of closedTrades) {
+    const pnl = new Decimal(t.netPnL ?? 0);
+    netPnL = netPnL.plus(pnl);
+
+    if (pnl.greaterThan(maxPnL)) {
+      maxPnL = pnl;
+      if (t.id) {
+        suggestedBestTrade = { id: t.id, symbol: t.symbol, netPnL: Number(pnl.toFixed(2)) };
+      }
+    }
+
+    if (pnl.lessThan(minPnL)) {
+      minPnL = pnl;
+      if (t.id) {
+        suggestedWorstTrade = { id: t.id, symbol: t.symbol, netPnL: Number(pnl.toFixed(2)) };
+      }
+    }
+  }
+
+  // Run mistake detection
+  const detection = detectMistakeSuggestions({
+    trades,
+    thresholds,
+    accountEquity,
+  });
+
+  // Aggregate mistakes
+  const mistakeSet = new Set<MistakeTag>();
+
+  // Add existing mistakes tagged by trader
+  for (const t of trades) {
+    if (t.mistakes) {
+      for (const m of t.mistakes) {
+        mistakeSet.add(m as MistakeTag);
+      }
+    }
+  }
+
+  // Add newly suggested mistake tags
+  for (const s of detection.suggestions) {
+    mistakeSet.add(s.mistakeTag);
+  }
+
+  const aggregatedMistakes = Array.from(mistakeSet);
+
+  // Determine discipline rating (1 to 5)
+  let suggestedDisciplineRating = 5;
+  let reasoning = 'Flawless execution: All trading rules and risk limits were respected.';
+
+  const hasRevenge = detection.suggestions.some((s) => s.rule === 'REVENGE_TRADING');
+  const hasSizeViolation = detection.suggestions.some((s) => s.rule === 'SIZE_VIOLATION');
+  const hasOvertrading = detection.suggestions.some((s) => s.rule === 'OVERTRADING');
+
+  if (detection.dailyLossBreach.breached || hasRevenge) {
+    suggestedDisciplineRating = 1;
+    reasoning = detection.dailyLossBreach.breached
+      ? 'Severe Tilt / Breach: Maximum daily loss limit exceeded.'
+      : 'Severe Discipline Breakdown: Revenge trading pattern detected.';
+  } else if (hasSizeViolation || hasOvertrading) {
+    suggestedDisciplineRating = 2;
+    reasoning = 'Rule Violation: Position sizing limit or trade frequency cap exceeded.';
+  } else if (aggregatedMistakes.length > 0) {
+    suggestedDisciplineRating = 3;
+    reasoning = 'Rule Drift: Setup execution had logged mistakes or hesitation.';
+  } else if (netPnL.isNegative()) {
+    suggestedDisciplineRating = 4;
+    reasoning = 'Good Execution: Losses were strictly managed within risk tolerance.';
+  }
+
+  return {
+    date,
+    suggestedBestTrade,
+    suggestedWorstTrade,
+    aggregatedMistakes,
+    suggestedDisciplineRating,
+    reasoning,
+    dailyLossBreach: detection.dailyLossBreach,
+    tradesCount: trades.length,
+    netPnL: Number(netPnL.toFixed(2)),
+  };
+}

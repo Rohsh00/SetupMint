@@ -250,11 +250,19 @@ export const api = {
 
   // Settings
   settings: {
+    getProfile: () => request<any>('/settings/profile'),
     updateProfile: (profile: any) =>
       request<any>('/settings/profile', { method: 'PUT', body: JSON.stringify(profile) }),
     changePassword: (data: any) =>
       request('/settings/change-password', { method: 'POST', body: JSON.stringify(data) }),
     systemStatus: () => request<any>('/settings/system-status'),
+  },
+
+  // Review Queue & Mistake Detection
+  review: {
+    queue: () => request<any>('/review/queue'),
+    prefill: (date: string) => request<any>(`/review/prefill/${date}`),
+    suggestMistakes: (tradeId: string) => request<any>(`/review/suggest-mistakes/${tradeId}`),
   },
 
   // Integrations
@@ -264,3 +272,4 @@ export const api = {
       request<any>('/integrations/fyers/config', { method: 'POST', body: JSON.stringify(config) }),
   },
 };
+

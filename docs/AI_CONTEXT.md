@@ -36,7 +36,7 @@
 - **Shared Package (`packages/shared`):** Shared TypeScript types, Zod schemas, market constants, instrument presets.
 - **Persistence:** MongoDB Community Server or persistent embedded WiredTiger engine in `./apps/api/data/db`.
 - **Private Attachment Storage:** Local filesystem storage in `./data/uploads`.
-- **Testing:** Vitest v3 (107 automated unit and integration tests passing).
+- **Testing:** Vitest v3 (119 automated unit and integration tests passing).
 
 ---
 
@@ -50,7 +50,7 @@ Trading Vault/
 │   │   ├── server.ts              # Fastify app factory (buildApp)
 │   │   ├── db/connection.ts       # Multi-stage MongoDB connection manager
 │   │   ├── db/models/             # Mongoose models (User, Trade, TradingAccount, etc.)
-│   │   ├── routes/                # 13 REST API routes (/auth, /trades, /accounts, etc.)
+│   │   ├── routes/                # 14 REST API routes (/auth, /trades, /review, etc.)
 │   │   ├── services/              # account.service.ts (authoritative balance reconciliation)
 │   │   ├── seed/                  # SetupMint Seed Engine (8 profiles, PRNG, validator)
 │   │   └── scripts/               # seed.ts, reset-demo.ts, validate-seed.ts
@@ -133,13 +133,13 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites (107 tests)
+# Run all test suites (119 tests)
 npm run test
 
-# Run financial engine unit tests (33 tests)
+# Run financial engine unit tests (40 tests)
 npm run test:engine
 
-# Run API integration and regression tests (74 tests)
+# Run API integration and regression tests (79 tests)
 npm run test:api
 
 # Typecheck all packages

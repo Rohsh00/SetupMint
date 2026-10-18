@@ -29,6 +29,10 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEventsRounded';
 import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForwardRounded';
 import InsightsIcon from '@mui/icons-material/InsightsRounded';
+import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
+import CheckCircleIcon from '@mui/icons-material/CheckCircleRounded';
+import Alert from '@mui/material/Alert';
 
 import {
   Area,
@@ -98,6 +102,11 @@ export function DashboardPage() {
       }),
   });
 
+  const { data: reviewQueueData } = useQuery({
+    queryKey: ['review-queue'],
+    queryFn: () => api.review.queue(),
+  });
+
   const recentTrades = Array.isArray(recentTradesData)
     ? recentTradesData
     : recentTradesData?.data || [];
@@ -129,6 +138,24 @@ export function DashboardPage() {
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      {/* Daily Loss Breach Critical Alert Banner */}
+      {reviewQueueData?.dailyLossBreach?.breached && (
+        <Alert
+          severity="error"
+          variant="filled"
+          icon={<WarningAmberIcon fontSize="inherit" />}
+          sx={{
+            borderRadius: 2,
+            fontWeight: 700,
+            backgroundColor: '#DC2626',
+            boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)',
+          }}
+        >
+          {reviewQueueData.dailyLossBreach.message ||
+            `Risk Rule Alert: Maximum daily loss limit of ₹${reviewQueueData.dailyLossBreach.maxDailyLoss?.toLocaleString()} breached! Stop trading for the session.`}
+        </Alert>
+      )}
+
       {/* Top Header & Range Filters */}
       <Box
         sx={{
@@ -642,6 +669,232 @@ export function DashboardPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Daily Review Queue Widget */}
+      <Card
+        sx={{
+          p: 2.5,
+          borderRadius: 2,
+          border: isDark
+            ? '1px solid rgba(59, 130, 246, 0.25)'
+            : '1px solid rgba(37, 99, 235, 0.2)',
+          background: isDark
+            ? 'linear-gradient(180deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%)'
+            : 'linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%)',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            mb: 2,
+            flexWrap: 'wrap',
+            gap: 1.5,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: 2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)',
+                color: '#3B82F6',
+              }}
+            >
+              <RateReviewIcon fontSize="small" />
+            </Box>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', letterSpacing: '-0.01em' }}>
+                  Daily Review Queue
+                </Typography>
+                <Chip
+                  label={`${reviewQueueData?.summary?.totalUnreviewedTrades || 0} Trades`}
+                  size="small"
+                  color={reviewQueueData?.summary?.totalUnreviewedTrades ? 'primary' : 'default'}
+                  sx={{ height: 20, fontSize: '0.6875rem', fontWeight: 700 }}
+                />
+                {(reviewQueueData?.summary?.unreviewedDaysCount || 0) > 0 && (
+                  <Chip
+                    label={`${reviewQueueData?.summary?.unreviewedDaysCount} Unreviewed Days`}
+                    size="small"
+                    color="warning"
+                    sx={{ height: 20, fontSize: '0.6875rem', fontWeight: 700 }}
+                  />
+                )}
+              </Box>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                Trades missing exit, reflection, screenshots, or unreviewed trading days
+              </Typography>
+            </Box>
+          </Box>
+
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            startIcon={<AutoAwesomeIcon />}
+            endIcon={<ArrowForwardIcon />}
+            component={RouterLink}
+            to={reviewQueueData?.unreviewedDays?.[0] ? '/journal' : '/trades'}
+            sx={{
+              fontWeight: 700,
+              px: 2.5,
+              py: 0.75,
+              borderRadius: 2,
+              textTransform: 'none',
+              boxShadow: isDark
+                ? '0 4px 14px 0 rgba(16, 185, 129, 0.35)'
+                : '0 4px 14px 0 rgba(5, 150, 105, 0.25)',
+            }}
+          >
+            Start Daily Review
+          </Button>
+        </Box>
+
+        {/* Breakdown Summary Chips */}
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`${reviewQueueData?.summary?.missingPsychologyCount || 0} Missing Reflection`}
+            color="info"
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`${reviewQueueData?.summary?.missingScreenshotsCount || 0} Missing Screenshots`}
+            color="secondary"
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`${reviewQueueData?.summary?.missingExitCount || 0} Unclosed Trades`}
+            color="warning"
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          />
+        </Box>
+
+        {/* Table of pending review trades */}
+        {reviewQueueData?.queue && reviewQueueData.queue.length > 0 ? (
+          <TableContainer component={Paper} sx={{ borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Symbol</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Missing Items</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Mistake Suggestions</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Net P&L</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Action</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {reviewQueueData.queue.slice(0, 5).map((t: any) => (
+                  <TableRow key={t.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                    <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem' }}>
+                      {t.tradeDate}
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                      <RouterLink to={`/trades/${t.id}`} style={{ color: muiTheme.palette.text.primary, textDecoration: 'none' }}>
+                        {t.symbol}
+                      </RouterLink>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={t.status}
+                        size="small"
+                        sx={{ height: 20, fontSize: '0.625rem', fontWeight: 600 }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                        {t.missing?.map((m: string) => (
+                          <Chip
+                            key={m}
+                            label={
+                              m === 'MISSING_EXIT'
+                                ? 'Exit Missing'
+                                : m === 'MISSING_PSYCHOLOGY'
+                                ? 'No Reflection'
+                                : 'No Screenshot'
+                            }
+                            size="small"
+                            variant="outlined"
+                            color={m === 'MISSING_EXIT' ? 'warning' : 'default'}
+                            sx={{ height: 18, fontSize: '0.625rem' }}
+                          />
+                        ))}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      {t.suggestedMistakes && t.suggestedMistakes.length > 0 ? (
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {t.suggestedMistakes.map((s: any, idx: number) => (
+                            <Tooltip key={idx} title={s.message} arrow>
+                              <Chip
+                                label={`${s.rule.replace('_', ' ')}?`}
+                                size="small"
+                                color={s.severity === 'CRITICAL' ? 'error' : 'warning'}
+                                sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700, cursor: 'help' }}
+                              />
+                            </Tooltip>
+                          ))}
+                        </Box>
+                      ) : (
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          None detected
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        fontWeight: 700,
+                        color:
+                          (t.netPnL || 0) > 0
+                            ? muiTheme.palette.profit.main
+                            : (t.netPnL || 0) < 0
+                            ? muiTheme.palette.loss.main
+                            : muiTheme.palette.text.secondary,
+                      }}
+                    >
+                      {formatCurrency(t.netPnL)}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Button
+                        component={RouterLink}
+                        to={`/trades/${t.id}`}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.6875rem', py: 0.2, px: 1, minWidth: 'unset' }}
+                      >
+                        Review
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : (
+          <Box sx={{ p: 2, textAlign: 'center', color: muiTheme.palette.text.secondary }}>
+            <CheckCircleIcon color="primary" sx={{ fontSize: 28, mb: 0.5 }} />
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              All caught up! All trades in the last 30 days have been thoroughly reviewed with reflections and screenshots.
+            </Typography>
+          </Box>
+        )}
+      </Card>
 
       {/* Recent Trades Table */}
       <Card sx={{ p: 2.5 }}>

@@ -25,6 +25,7 @@ import { exportImportRoutes } from './routes/export-import.routes.js';
 import { settingsRoutes } from './routes/settings.routes.js';
 import { integrationsRoutes } from './routes/integrations.routes.js';
 import { reviewRoutes } from './routes/review.routes.js';
+import { templateRoutes } from './routes/template.routes.js';
 
 export async function buildApp() {
   const app = fastify({
@@ -131,6 +132,7 @@ export async function buildApp() {
   app.register(settingsRoutes, { prefix: '/api/v1/settings' });
   app.register(integrationsRoutes, { prefix: '/api/v1/integrations' });
   app.register(reviewRoutes, { prefix: '/api/v1/review' });
+  app.register(templateRoutes, { prefix: '/api/v1/templates' });
 
   // Centralized Error Handler
   app.setErrorHandler((error: any, request, reply) => {

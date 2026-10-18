@@ -174,21 +174,35 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ---
 
-### 8. `/strategies` — Strategy Playbook Page
+### 8. `/strategies` — Strategy Playbooks & Trade Templates Hub
 - **Page Component:** [`StrategyPlaybookPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/StrategyPlaybookPage.tsx)
-- **Purpose:** Creation, documentation, and statistical tracking of strategy playbooks.
+- **Purpose:** Discretionary execution playbook management and rule-driven trade setup template catalog with empirical edge tracking.
 - **Main Components:**
-  - Strategy Grid: Cards for each playbook displaying Name, Description, Asset Classes, Min R:R, Total Trades, Win Rate %, Net P&L, Profit Factor.
-  - Strategy Modal: Name, description, asset classes, timeframes, entry rules, stop-loss rules, target rules, invalidation criteria, pre-trade checklist items.
-- **Available Actions:** Create strategy, edit strategy, delete strategy, view linked trades.
+  - **Top Tab Switcher:**
+    - Tab 1: **"Execution Playbooks"** (Strategic frameworks, entry/exit rules, invalidation, checklists).
+    - Tab 2: **"Trade Setup Templates"** (Market-based entry patterns, SL rules, min R:R, prefill patterns, and live trade edge metrics).
+  - **Execution Playbooks Tab:**
+    - Strategy Cards Grid: Name, Description, Asset Classes, Min R:R, Total Trades, Win Rate %, Net P&L, Profit Factor.
+    - Strategy Modal: Name, description, asset classes, timeframes, entry rules, stop-loss rules, target rules, invalidation criteria, pre-trade checklist items.
+  - **Trade Setup Templates Tab:**
+    - Market Category Pills: `All`, `F&O Intraday`, `Stocks & Cash`, `Forex & Gold`, `Crypto`, `Commodities (MCX)`, `Price Action / Any Market`, `Custom`.
+    - Search Input & Favorite Quick Filter.
+    - Template Cards Grid: Setup name, category badge, direction chip (`LONG` / `SHORT`), linked strategy playbook chip, mathematical stop-loss rule pill (`PERCENT`, `POINTS`, `PREMIUM_PERCENT`, `MANUAL`), minimum R:R target, active time window, dynamic title pattern, confluence tags, checklist items.
+    - Performance Edge Banner on each card: Real-time aggregated win rate %, profit factor, net P&L, and total trades linked to the template.
+    - Action Buttons: Favorite toggle star, "Apply in Form", "Clone & Customize", "Edit", "Delete" (built-ins protected as read-only).
+    - Custom Template Dialog: Name, description, market group, compatible asset classes, direction, target strategy name, stop loss rule mode & value/hint, min R:R, dynamic title pattern (`{symbol}`, `{side}`), tags, confluences, checklists, time window, expiry-day-only toggle, target trading session.
+- **Available Actions:**
+  - Switch tabs via URL query param (`?tab=templates`).
+  - Create, edit, delete execution playbooks.
+  - Create, edit, clone, delete custom trade setup templates.
+  - Star / unstar favorite templates.
+  - View real-time aggregated edge statistics for both playbooks and templates.
 - **API Calls:**
-  - `GET /api/v1/strategies`
-  - `POST /api/v1/strategies`
-  - `GET /api/v1/strategies/:id`
-  - `PUT /api/v1/strategies/:id`
-  - `DELETE /api/v1/strategies/:id`
-- **Database Models:** `Strategy`, `Trade`.
+  - `GET /api/v1/strategies`, `POST /api/v1/strategies`, `GET /api/v1/strategies/:id`, `PUT /api/v1/strategies/:id`, `DELETE /api/v1/strategies/:id`
+  - `GET /api/v1/templates`, `POST /api/v1/templates`, `GET /api/v1/templates/:id`, `PUT /api/v1/templates/:id`, `DELETE /api/v1/templates/:id`, `POST /api/v1/templates/:id/favorite`, `POST /api/v1/templates/:id/use`
+- **Database Models:** `Strategy`, `TradeTemplate`, `Trade`.
 - **Status:** **IMPLEMENTED**.
+
 
 ---
 

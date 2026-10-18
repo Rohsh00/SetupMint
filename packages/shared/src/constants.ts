@@ -4,6 +4,7 @@ import {
   Confluence,
   Emotion,
   IInstrument,
+  ITradeTemplate,
   MarketSegment,
   MistakeTag,
   TradingSession,
@@ -246,6 +247,52 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     isActive: true,
   },
   {
+    symbol: 'GBPUSD',
+    displayName: 'British Pound / US Dollar',
+    assetClass: 'FOREX',
+    exchange: 'FOREX',
+    marketSegment: 'FOREX',
+    quoteCurrency: 'USD',
+    contractMultiplier: 1,
+    lotSize: 1000,
+    tickSize: 0.00001,
+    quantityIncrement: 1000,
+    pricePrecision: 5,
+    isActive: true,
+    description: 'British Pound vs US Dollar spot/futures',
+  },
+  {
+    symbol: 'USDJPY',
+    displayName: 'US Dollar / Japanese Yen',
+    assetClass: 'FOREX',
+    exchange: 'FOREX',
+    marketSegment: 'FOREX',
+    quoteCurrency: 'JPY',
+    contractMultiplier: 1,
+    lotSize: 1000,
+    tickSize: 0.001,
+    quantityIncrement: 1000,
+    pricePrecision: 3,
+    isActive: true,
+    description: 'US Dollar vs Japanese Yen spot/futures',
+  },
+  {
+    symbol: 'XAUUSD',
+    displayName: 'Gold / US Dollar Spot (CFD/Forex)',
+    assetClass: 'FOREX',
+    exchange: 'FOREX',
+    marketSegment: 'FOREX',
+    quoteCurrency: 'USD',
+    // 1 standard lot = 100 troy ounces. Default multiplier 100 for PnL calculations
+    contractMultiplier: 100,
+    lotSize: 1,
+    tickSize: 0.01,
+    quantityIncrement: 0.01,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'Spot Gold vs US Dollar (100 oz per standard contract lot)',
+  },
+  {
     symbol: 'BTCUSDT',
     displayName: 'Bitcoin / Tether Perpetual',
     assetClass: 'CRYPTO',
@@ -258,6 +305,36 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quantityIncrement: 0.001,
     pricePrecision: 2,
     isActive: true,
+  },
+  {
+    symbol: 'ETHUSDT',
+    displayName: 'Ethereum / Tether Perpetual',
+    assetClass: 'CRYPTO',
+    exchange: 'BINANCE',
+    marketSegment: 'CRYPTO',
+    quoteCurrency: 'USDT',
+    contractMultiplier: 1,
+    lotSize: 0.01,
+    tickSize: 0.01,
+    quantityIncrement: 0.01,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'Ethereum vs Tether Perpetual Futures',
+  },
+  {
+    symbol: 'SOLUSDT',
+    displayName: 'Solana / Tether Perpetual',
+    assetClass: 'CRYPTO',
+    exchange: 'BINANCE',
+    marketSegment: 'CRYPTO',
+    quoteCurrency: 'USDT',
+    contractMultiplier: 1,
+    lotSize: 0.1,
+    tickSize: 0.01,
+    quantityIncrement: 0.1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'Solana vs Tether Perpetual Futures',
   },
 ];
 
@@ -311,4 +388,382 @@ export const CHART_TIMEFRAMES = [
   'Daily',
   'Weekly',
 ] as const;
+
+/**
+ * Official NSE Trading Holidays for calendar year 2026.
+ * PROMINENT NOTICE: This list MUST be verified and updated annually when NSE publishes the official holiday circular for each calendar year.
+ * Verified: Dussehra on 2026-10-20 (Tuesday) shifts Nifty weekly expiry to Monday 2026-10-19.
+ * Verified: Guru Nanak Jayanti on 2026-11-24 (Tuesday) shifts NSE monthly expiry to Monday 2026-11-23.
+ */
+export const NSE_HOLIDAYS_2026: readonly string[] = [
+  '2026-01-26', // Republic Day
+  '2026-02-16', // Mahashivratri
+  '2026-03-03', // Holi
+  '2026-03-20', // Id-ul-Fitr (Ramzan Id)
+  '2026-04-03', // Good Friday
+  '2026-04-14', // Dr. Baba Saheb Ambedkar Jayanti
+  '2026-05-01', // Maharashtra Day
+  '2026-05-27', // Bakri Id
+  '2026-06-26', // Muharram
+  '2026-10-02', // Mahatma Gandhi Jayanti
+  '2026-10-20', // Dussehra (Tuesday holiday -> shifts Nifty weekly expiry to Mon 2026-10-19)
+  '2026-11-10', // Diwali Balipratipada
+  '2026-11-24', // Guru Nanak Jayanti (Last Tuesday holiday -> shifts NSE monthly expiry to Mon 2026-11-23)
+  '2026-12-25', // Christmas
+];
+
+/**
+ * Built-in Rule-Driven Market Templates for SetupMint.
+ *
+ * NOTE: ALL SL percentages and R:R values are PLACEHOLDER defaults for user configuration and demonstration.
+ * Templates describe a SETUP for a MARKET. They NEVER name a symbol such as NIFTY or BANKNIFTY.
+ * Option-buying templates are strictly LONG only (long premium, CE or PE).
+ */
+export const BUILT_IN_TEMPLATES: ITradeTemplate[] = [
+  // ==========================================
+  // 1. F&O (Futures & Options)
+  // ==========================================
+  {
+    id: 'fno-orb',
+    name: 'Opening Range Breakout',
+    description: 'Breakout of the initial 15-minute range with volume expansion',
+    group: 'FNO',
+    markets: ['FUTURES', 'OPTIONS', 'INDEX'],
+    slRule: { type: 'PERCENT', value: 0.3 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} ORB {DIR}',
+    tags: ['FNO', 'ORB', 'INTRADAY', 'MOMENTUM'],
+    confluences: ['BOS', 'VOLUME_SPIKE', 'VWAP'],
+    checklist: ['First 15-min high/low established', 'Volume surge on breakout candle', 'Index breadth confirms move'],
+    strategyName: 'Opening Range Breakout',
+    timeWindow: { start: '09:15', end: '10:15' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'fno-vwap-mean-reversion',
+    name: 'VWAP Mean Reversion',
+    description: 'Fade extended moves back toward session VWAP',
+    group: 'FNO',
+    markets: ['FUTURES', 'OPTIONS', 'INDEX'],
+    slRule: { type: 'PERCENT', value: 0.25 }, // PLACEHOLDER default SL %
+    minRR: 1.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} VWAP Mean Reversion {DIR}',
+    tags: ['FNO', 'VWAP', 'MEAN_REVERSION', 'INTRADAY'],
+    confluences: ['VWAP', 'SUPPORT_RESISTANCE', 'LIQUIDITY_SWEEP'],
+    checklist: ['Price extended > 2 standard deviations from VWAP', 'Reversal candlestick confirmation', 'Clear target to VWAP band'],
+    strategyName: 'Mean Reversion',
+    timeWindow: { start: '10:30', end: '14:00' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'fno-trend-pullback',
+    name: 'Trend Pullback',
+    description: 'Retest of EMA 20/50 or VWAP in strong intraday trend',
+    group: 'FNO',
+    markets: ['FUTURES', 'OPTIONS', 'INDEX'],
+    slRule: { type: 'PERCENT', value: 0.35 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Trend Pullback {DIR}',
+    tags: ['FNO', 'TREND', 'PULLBACK', 'INTRADAY'],
+    confluences: ['EMA_CROSS', 'VWAP', 'BOS'],
+    checklist: ['Higher timeframe trend clear', 'Pullback on declining volume', 'Bullish/bearish rejection at dynamic support'],
+    strategyName: 'Trend Pullback',
+    timeWindow: { start: '10:00', end: '14:30' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'fno-options-directional-buy',
+    name: 'Options Directional Buy',
+    description: 'Long premium directional momentum scalp or intraday swing',
+    group: 'FNO',
+    markets: ['OPTIONS'],
+    direction: 'LONG', // Option-buying is strictly LONG only (long premium)
+    slRule: { type: 'PREMIUM_PERCENT', value: 20 }, // PLACEHOLDER default SL % (premium)
+    minRR: 2.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Option Directional Long',
+    tags: ['OPTIONS', 'MOMENTUM', 'SCALP', 'LONG_PREMIUM'],
+    confluences: ['BOS', 'VOLUME_SPIKE', 'VWAP'],
+    checklist: ['Underlying breaks key structure with momentum', 'Delta 0.45-0.55 ATM contract selected', 'Strict premium-based stop loss'],
+    strategyName: 'Options Directional Momentum',
+    timeWindow: { start: '09:30', end: '15:00' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'fno-expiry-day-scalp',
+    name: 'Expiry Day Scalp',
+    description: 'Zero-hero or fast premium momentum on index expiry days',
+    group: 'FNO',
+    markets: ['OPTIONS', 'FUTURES', 'INDEX'],
+    slRule: { type: 'PREMIUM_PERCENT', value: 25 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Expiry Scalp {DIR}',
+    tags: ['EXPIRY', 'SCALP', 'GAMMA', 'INTRADAY'],
+    confluences: ['SUPPORT_RESISTANCE', 'LIQUIDITY_SWEEP', 'VOLUME_SPIKE'],
+    checklist: ['Active expiry day confirmed', 'Fast volume burst / breakout', 'Tight risk management for rapid decay'],
+    strategyName: 'Expiry Day Scalp',
+    expiryDayOnly: true,
+    timeWindow: { start: '13:00', end: '15:15' },
+    isBuiltIn: true,
+  },
+
+  // ==========================================
+  // 2. Stocks (Equities)
+  // ==========================================
+  {
+    id: 'stocks-gap-and-go',
+    name: 'Gap & Go',
+    description: 'Premarket earnings or catalyst gap continuation on opening volume',
+    group: 'STOCKS',
+    markets: ['EQUITY'],
+    slRule: { type: 'PERCENT', value: 0.8 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Gap & Go {DIR}',
+    tags: ['EQUITY', 'GAP', 'MOMENTUM', 'INTRADAY'],
+    confluences: ['VOLUME_SPIKE', 'BOS', 'VWAP'],
+    checklist: ['Gap > 1.5% with news/earnings catalyst', 'First 5-min candle breaks in gap direction', 'Relative volume (RVOL) > 2.0'],
+    strategyName: 'High-Volume Breakout',
+    timeWindow: { start: '09:15', end: '10:30' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'stocks-vwap-pullback',
+    name: 'VWAP Pullback',
+    description: 'First or second touch of VWAP in leading market stock',
+    group: 'STOCKS',
+    markets: ['EQUITY'],
+    slRule: { type: 'PERCENT', value: 0.6 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} VWAP Pullback {DIR}' ,
+    tags: ['EQUITY', 'VWAP', 'PULLBACK', 'INTRADAY'],
+    confluences: ['VWAP', 'EMA_CROSS', 'SUPPORT_RESISTANCE'],
+    checklist: ['Stock leading sector in relative strength', 'Controlled pullback to VWAP on lower volume', 'Clean rejection candle wick'],
+    strategyName: 'Trend Pullback',
+    timeWindow: { start: '10:00', end: '13:30' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'stocks-swing-breakout',
+    name: 'Swing Breakout',
+    description: 'Multi-week consolidation breakout with institutional volume',
+    group: 'STOCKS',
+    markets: ['EQUITY'],
+    slRule: { type: 'PERCENT', value: 2.5 }, // PLACEHOLDER default SL %
+    minRR: 3.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Swing Breakout {DIR}',
+    tags: ['EQUITY', 'SWING', 'BREAKOUT', 'POSITIONAL'],
+    confluences: ['SUPPORT_RESISTANCE', 'VOLUME_SPIKE', 'BOS'],
+    checklist: ['Tight multi-week base or cup-with-handle', 'Volume expands 150%+ above 20-day average', 'Sector tailwind aligned'],
+    strategyName: 'High-Volume Breakout',
+    isBuiltIn: true,
+  },
+  {
+    id: 'stocks-swing-support-bounce',
+    name: 'Swing Support Bounce',
+    description: 'Long swing entry at major weekly/daily horizontal support',
+    group: 'STOCKS',
+    markets: ['EQUITY'],
+    direction: 'LONG',
+    slRule: { type: 'PERCENT', value: 2.0 }, // PLACEHOLDER default SL %
+    minRR: 2.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Support Bounce Long',
+    tags: ['EQUITY', 'SWING', 'SUPPORT', 'LONG'],
+    confluences: ['SUPPORT_RESISTANCE', 'FIBONACCI', 'ORDER_BLOCK'],
+    checklist: ['Key horizontal support tested 2+ times', 'Bullish reversal candle (hammer or engulfing)', 'Risk reward to prior high > 2.5:1'],
+    strategyName: 'Support Resistance Reversal',
+    isBuiltIn: true,
+  },
+
+  // ==========================================
+  // 3. Forex & Gold
+  // ==========================================
+  {
+    id: 'forex-london-open-breakout',
+    name: 'London Open Breakout',
+    description: 'Breakout of the Asian session consolidation during London open',
+    group: 'FOREX_GOLD',
+    markets: ['FOREX', 'COMMODITY'],
+    slRule: { type: 'PERCENT', value: 0.25 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} London Breakout {DIR}',
+    tags: ['FOREX', 'GOLD', 'LONDON', 'BREAKOUT', 'SESSION'],
+    confluences: ['LIQUIDITY_SWEEP', 'BOS', 'PDH_PDL'],
+    checklist: ['Asian session range clearly mapped', 'Liquidity sweep of Asian high or low', 'Fast expansion candle entering London session'],
+    strategyName: 'Liquidity Sweep + FVG Reversal',
+    timeWindow: { start: '12:30', end: '16:00' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'forex-ny-session-reversal',
+    name: 'New York Session Reversal',
+    description: 'Midday London reversal or US market open liquidity sweep',
+    group: 'FOREX_GOLD',
+    markets: ['FOREX', 'COMMODITY'],
+    slRule: { type: 'PERCENT', value: 0.3 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} NY Session Reversal {DIR}',
+    tags: ['FOREX', 'GOLD', 'NEW_YORK', 'REVERSAL', 'SESSION'],
+    confluences: ['LIQUIDITY_SWEEP', 'CHOCH', 'ORDER_BLOCK'],
+    checklist: ['London session trend exhausted into key higher timeframe level', 'US economic data release absorbed', 'Change of character on M5/M15'],
+    strategyName: 'Liquidity Sweep + FVG Reversal',
+    timeWindow: { start: '18:00', end: '22:00' },
+    isBuiltIn: true,
+  },
+  {
+    id: 'forex-trend-pullback-h1-h4',
+    name: 'Trend Pullback (H1/H4)',
+    description: 'Higher timeframe trend continuation after liquidity grab',
+    group: 'FOREX_GOLD',
+    markets: ['FOREX', 'COMMODITY'],
+    slRule: { type: 'PERCENT', value: 0.4 }, // PLACEHOLDER default SL %
+    minRR: 2.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Trend Pullback {DIR}',
+    tags: ['FOREX', 'GOLD', 'SWING', 'TREND', 'H1_H4'],
+    confluences: ['FIBONACCI', 'ORDER_BLOCK', 'BOS'],
+    checklist: ['H4 market structure bullish/bearish', 'Retest into 61.8% golden pocket or unmitigated OB', 'Lower timeframe confirmation trigger'],
+    strategyName: 'Trend Pullback',
+    isBuiltIn: true,
+  },
+
+  // ==========================================
+  // 4. Crypto
+  // ==========================================
+  {
+    id: 'crypto-breakout-retest',
+    name: 'Breakout & Retest',
+    description: 'Break of horizontal consolidation with volume, followed by retest',
+    group: 'CRYPTO',
+    markets: ['CRYPTO'],
+    slRule: { type: 'PERCENT', value: 1.5 }, // PLACEHOLDER default SL %
+    minRR: 2.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Breakout & Retest {DIR}',
+    tags: ['CRYPTO', 'BREAKOUT', 'RETEST', 'MOMENTUM'],
+    confluences: ['SUPPORT_RESISTANCE', 'BOS', 'VOLUME_SPIKE'],
+    checklist: ['Range consolidation lasting > 24 hours', 'Clean close beyond range high/low', 'Retest holds with lower wick rejection'],
+    strategyName: 'Break of Structure (BOS) Trend Continuation',
+    isBuiltIn: true,
+  },
+  {
+    id: 'crypto-range-reversal',
+    name: 'Range High/Low Reversal',
+    description: 'Fade range boundary after false breakout / deviation wick',
+    group: 'CRYPTO',
+    markets: ['CRYPTO'],
+    slRule: { type: 'PERCENT', value: 1.2 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Range Reversal {DIR}',
+    tags: ['CRYPTO', 'RANGE', 'MEAN_REVERSION', 'S/R'],
+    confluences: ['LIQUIDITY_SWEEP', 'SUPPORT_RESISTANCE', 'CHOCH'],
+    checklist: ['Well-defined horizontal trading range', 'Deviation / fakeout outside range boundary', 'Prompt close back inside range'],
+    strategyName: 'Mean Reversion',
+    isBuiltIn: true,
+  },
+  {
+    id: 'crypto-trend-pullback',
+    name: 'Trend Pullback',
+    description: 'Continuation in strong trending crypto perpetuals',
+    group: 'CRYPTO',
+    markets: ['CRYPTO'],
+    slRule: { type: 'PERCENT', value: 1.8 }, // PLACEHOLDER default SL %
+    minRR: 2.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Trend Pullback {DIR}',
+    tags: ['CRYPTO', 'PERP', 'TREND', 'PULLBACK'],
+    confluences: ['EMA_CROSS', 'BOS', 'FIBONACCI'],
+    checklist: ['Supertrend / EMA alignment on 1h/4h', 'Healthy funding rate not overly crowded', 'Pullback to key demand/supply zone'],
+    strategyName: 'Trend Pullback',
+    isBuiltIn: true,
+  },
+
+  // ==========================================
+  // 5. MCX Commodities
+  // ==========================================
+  {
+    id: 'mcx-evening-breakout',
+    name: 'Evening Session Breakout',
+    description: 'US inventory release momentum or London close continuation',
+    group: 'MCX',
+    markets: ['COMMODITY'],
+    slRule: { type: 'PERCENT', value: 0.5 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Evening Breakout {DIR}',
+    tags: ['COMMODITY', 'MCX', 'EVENING', 'BREAKOUT'],
+    confluences: ['VOLUME_SPIKE', 'VWAP', 'BOS'],
+    checklist: ['US regular trading hours open surge (19:00+ IST)', 'Break of Indian day range high/low', 'Inventory data alignment (Crude / NG)'],
+    strategyName: 'High-Volume Breakout',
+    timeWindow: { start: '17:00', end: '22:00' },
+    session: 'MCX_EVENING',
+    isBuiltIn: true,
+  },
+  {
+    id: 'mcx-trend-pullback',
+    name: 'Trend Pullback',
+    description: 'Pullback to session VWAP or EMA in commodity trend',
+    group: 'MCX',
+    markets: ['COMMODITY'],
+    slRule: { type: 'PERCENT', value: 0.6 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} MCX Trend Pullback {DIR}',
+    tags: ['COMMODITY', 'MCX', 'TREND', 'PULLBACK'],
+    confluences: ['VWAP', 'EMA_CROSS', 'SUPPORT_RESISTANCE'],
+    checklist: ['Clear multi-hour commodity trend', 'Low volume test of session VWAP', 'Reversal confirmation bar'],
+    strategyName: 'Trend Pullback',
+    timeWindow: { start: '17:00', end: '23:00' },
+    session: 'MCX_EVENING',
+    isBuiltIn: true,
+  },
+
+  // ==========================================
+  // 6. Price Action (Universal - All Markets)
+  // ==========================================
+  {
+    id: 'pa-smc-bos-fvg',
+    name: 'SMC BOS + FVG Retest',
+    description: 'Break of structure followed by fair value gap retest',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: {
+      type: 'MANUAL',
+      manualHint: 'Structure SL: Place beyond the invalidation order block / FVG origin',
+    },
+    minRR: 2.5, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} SMC BOS+FVG {DIR}',
+    tags: ['PRICE_ACTION', 'SMC', 'FVG', 'BOS'],
+    confluences: ['BOS', 'FVG', 'ORDER_BLOCK'],
+    checklist: ['Impulsive break of market structure (BOS)', 'Imbalance / Fair Value Gap left behind', 'Price mitigates into FVG with rejection wick'],
+    strategyName: 'Break of Structure (BOS) Trend Continuation',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-smc-liquidity-sweep',
+    name: 'SMC Liquidity Sweep',
+    description: 'Raid of equal highs/lows or previous session extremes followed by displacement',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: {
+      type: 'MANUAL',
+      manualHint: 'Structure SL: Place beyond the liquidity raid wick',
+    },
+    minRR: 3.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} Liquidity Sweep {DIR}',
+    tags: ['PRICE_ACTION', 'SMC', 'SWEEP', 'REVERSAL'],
+    confluences: ['LIQUIDITY_SWEEP', 'CHOCH', 'ORDER_BLOCK'],
+    checklist: ['Equal highs/lows or previous session extreme cleared', 'Sharp rejection wick leaving trailing liquidity', 'Change of character (CHOCH) confirming displacement'],
+    strategyName: 'Liquidity Sweep + FVG Reversal',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-sr-flip',
+    name: 'Support/Resistance Flip',
+    description: 'Prior resistance turning into support (or vice-versa) on retest',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: { type: 'PERCENT', value: 0.5 }, // PLACEHOLDER default SL %
+    minRR: 2.0, // PLACEHOLDER default R:R
+    titlePattern: '{SYMBOL} S/R Flip {DIR}',
+    tags: ['PRICE_ACTION', 'SUPPORT_RESISTANCE', 'RETEST'],
+    confluences: ['SUPPORT_RESISTANCE', 'VOLUME_SPIKE', 'BOS'],
+    checklist: ['Significant horizontal level broken with clear impulse', 'Pullback cleanly retests the broken level', 'Rejection candle confirming polarity change'],
+    strategyName: 'Support Resistance Reversal',
+    isBuiltIn: true,
+  },
+];
 

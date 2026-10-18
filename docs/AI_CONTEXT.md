@@ -50,7 +50,7 @@ Trading Vault/
 │   │   ├── server.ts              # Fastify app factory (buildApp)
 │   │   ├── db/connection.ts       # Multi-stage MongoDB connection manager
 │   │   ├── db/models/             # Mongoose models (User, Trade, TradingAccount, etc.)
-│   │   ├── routes/                # 14 REST API routes (/auth, /trades, /review, etc.)
+│   │   ├── routes/                # 15 REST API routes (/auth, /trades, /templates, /review, etc.)
 │   │   ├── services/              # account.service.ts (authoritative balance reconciliation)
 │   │   ├── seed/                  # SetupMint Seed Engine (8 profiles, PRNG, validator)
 │   │   └── scripts/               # seed.ts, reset-demo.ts, validate-seed.ts
@@ -63,7 +63,7 @@ Trading Vault/
 │       ├── components/trades/     # TradeFormModal.tsx, TradeAdvancedFills.tsx, etc.
 │       └── pages/                 # 13 routed page components
 ├── packages/
-│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts
+│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts, templates.ts
 │   └── shared/src/                # types.ts, schemas.ts, constants.ts
 ├── scripts/                       # backup.js, restore.js, reconcile.js
 └── docs/                          # Comprehensive markdown documentation library
@@ -91,7 +91,7 @@ Trading Vault/
 ## 6. Database Entities & Consistency Invariants
 
 ### Entities:
-- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade`, `Instrument`, `Strategy`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `AuditLog`.
+- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade`, `Instrument`, `Strategy`, `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `AuditLog`.
 
 ### Invariants:
 1. **Tenant Isolation:** Every document includes `userId: ObjectId`. All queries must filter by `{ userId: req.user.id }`.
@@ -133,13 +133,13 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites (119 tests)
+# Run all test suites (186 tests)
 npm run test
 
-# Run financial engine unit tests (40 tests)
+# Run financial engine unit tests (70 tests)
 npm run test:engine
 
-# Run API integration and regression tests (79 tests)
+# Run API integration and regression tests (116 tests)
 npm run test:api
 
 # Typecheck all packages

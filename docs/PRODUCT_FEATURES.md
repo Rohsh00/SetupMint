@@ -70,44 +70,63 @@ This document provides a comprehensive, verified feature inventory of all module
   - Instrument selection with instant metadata autofill: exchange, market segment, currency, contract multiplier, and lot size.
   - Dedicated **Lots** input field synchronized bidirectionally with quantity (`Quantity = Lots * LotSize`).
   - Automatic trading session derivation from entry timestamp (`NSE_REGULAR`, `MCX_EVENING`, `NEW_YORK`, `LONDON`, `OFF_HOURS`).
+  - **Market-Based, Rule-Driven Trade Setup Templates:**
+    - 20 built-in templates across 6 market groups (`FNO`, `STOCKS`, `FOREX_GOLD`, `CRYPTO`, `MCX`, `PRICE_ACTION`).
+    - Templates describe institutional setups for markets (e.g. London Breakout, Gap & Go, SMC BOS + FVG, Expiry Scalp) and **NEVER** hardcode symbols such as `NIFTY` or `BANKNIFTY`. They adapt to whichever symbol the trader selects.
+    - Dynamic contextual ranking (`rankTemplates`) elevates matching templates based on asset class, trading session time window in IST, and expiry day recognition (with NSE 2026 holiday shifts).
+    - Quick access bar ([`MarketTemplateBar.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/form/MarketTemplateBar.tsx)) with top 6 ranked chips and keyboard shortcuts (`1-6` to preview, `Enter` to apply).
+    - Popover preview showing `"Will prefill (empty fields only)"` to guarantee non-destructive prefilling that respects `dirtyFields`.
+    - Pure `decimal.js` rule resolution (`resolveTemplate`) computing stop loss (`PERCENT`, `POINTS`, `PREMIUM_PERCENT`, `MANUAL`), target from `minRR`, and rounding to instrument `tickSize`.
+    - Provenance tracking tags (`"from template"`, `"from rule"`, `"auto"`) and complete "Undo template" action.
+    - Dynamic stop loss and target recomputation whenever the trader updates entry price or direction.
+    - Custom template creation, favoriting, and tenant-isolated performance tracking via `/api/v1/templates`.
   - Automatic Indian statutory charges calculation (`calculateIndianCharges` in `@tradevault/financial-engine`) with live `TradeCalculationBanner` recomputation, "Auto" badge, manual fee override detection, and "Reset to auto" action.
   - Persistent preference memory: remembers last-used account, strategy, symbol, workflow mode, and execution mode.
   - Quick Close action on `/trades` and `/trades/:id` for OPEN/PLANNED trades via [`QuickCloseTradeDialog`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx): prompts for exit price, exit time, optional exit fees, auto-computes round-trip statutory charges, and live Net P&L.
   - Global Command Palette ([`CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx)) accessible via `Cmd+K` / `Ctrl+K` with quick actions:
     - *Log New Trade (`N`)*
+    - *Apply Trade Setup Template (`T`)*
     - *Repeat Last Trade (`R`)*: Instantly clones the most recent trade via `POST /api/v1/trades/:id/duplicate`.
     - *Jump to Today's Journal (`J`)*
     - *Open Risk Calculator (`C`)*
     - *Jump to Page*: Instant filter and jump to any view.
   - Strategy-aware entry: selecting a strategy playbook pre-populates `thesis.confluences` with the strategy's checklist/entry rules, and verifies `plannedRewardRiskRatio >= strategy.minRiskReward` (displays warning banner if R:R threshold is breached).
-  - Search, filter by account, symbol, asset class, direction, status, outcome, and date range.
+  - Search, filter by account, symbol, asset class, direction, status, outcome, template (`templateId`), and date range.
   - Pagination and sorting.
   - Trade duplication, bulk tagging, and bulk deletion.
 - **Inputs & Outputs:**
-  - *Inputs:* Account ID, symbol, asset class, direction (`LONG`/`SHORT`), status (`PLANNED`/`OPEN`/`CLOSED`/`CANCELLED`), entry/exit prices, lots/quantity, contract multiplier, fees breakdown, confluences, emotions, mistakes.
-  - *Outputs:* Persisted trade document, calculated gross/net P&L, itemized statutory charges, realized R-multiple, outcome classification.
+  - *Inputs:* Account ID, symbol, asset class, direction (`LONG`/`SHORT`), status (`PLANNED`/`OPEN`/`CLOSED`/`CANCELLED`), template ID (`templateId`), entry/exit prices, lots/quantity, contract multiplier, fees breakdown, confluences, emotions, mistakes.
+  - *Outputs:* Persisted trade document with linked `templateId`, calculated gross/net P&L, itemized statutory charges, realized R-multiple, outcome classification.
 - **Frontend Components:**
   - [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
   - [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx)
   - [`TradeFormModal.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/TradeFormModal.tsx)
+  - [`MarketTemplateBar.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/form/MarketTemplateBar.tsx)
   - [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx)
   - [`CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx)
   - Sub-components: `TradeQuickSection`, `TradeAdvancedFills`, `TradeCalculationBanner`, `TradeJournalDetails`, `TradeTemplateSelector`.
 - **Backend APIs & Services:**
-  - `GET /api/v1/trades` (supports filtering, sorting, pagination)
-  - `POST /api/v1/trades`
+  - `GET /api/v1/trades` (supports filtering by `templateId`, sorting, pagination)
+  - `POST /api/v1/trades` (persists `templateId` and increments template usage count)
   - `GET /api/v1/trades/:id`
   - `PUT /api/v1/trades/:id` (supports partial simple execution payload for quick closing)
   - `DELETE /api/v1/trades/:id` (unlinks private files from disk and recalculates account balance)
   - `POST /api/v1/trades/:id/duplicate`
   - `POST /api/v1/trades/bulk-tag`
   - `POST /api/v1/trades/bulk-delete`
-- **Database Entities:** `Trade`, `TradingAccount`, `Attachment`, `Strategy`.
+  - `GET /api/v1/templates` (lists built-in & custom templates with live trade performance aggregation)
+  - `POST /api/v1/templates` (creates custom user template)
+  - `PUT /api/v1/templates/:id` (updates custom template; protects built-ins with `BUILT_IN_READ_ONLY`)
+  - `DELETE /api/v1/templates/:id` (deletes custom template)
+  - `POST /api/v1/templates/:id/favorite` (toggles favorite status)
+  - `POST /api/v1/templates/:id/use` (increments usage count)
+- **Database Entities:** `Trade`, `TradingAccount`, `Attachment`, `Strategy`, `TradeTemplate`.
 - **Business Rules & Calculations:**
   - Linear Gross P&L computed via `@tradevault/financial-engine`.
   - Advanced mode uses strict FIFO lot matching via `calculateFIFOExecution`.
   - Every trade modification appends an immutable entry to `auditLog` (actions: `CREATED`, `UPDATED`, `CLOSED`, `DUPLICATED`).
   - Account balances are authoritatively recomputed on every trade creation, update, closure, or deletion.
+  - Template performance statistics (total trades, win rate, net P&L, profit factor) are aggregated authoritatively by tenant.
 
 ---
 

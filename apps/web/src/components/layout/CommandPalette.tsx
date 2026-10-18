@@ -33,6 +33,8 @@ import CurrencyExchangeRoundedIcon from '@mui/icons-material/CurrencyExchangeRou
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
@@ -160,6 +162,19 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
         navigate('/risk-calculator');
       },
     },
+    {
+      id: 'action-trade-templates',
+      category: 'ACTIONS',
+      title: 'Apply Trade Setup Template',
+      subtitle: 'Pick a rule-driven setup (F&O, Stocks, Forex, Crypto, MCX) for fast prefill',
+      icon: AutoAwesomeRoundedIcon,
+      shortcut: 'T',
+      keywords: ['template', 'setup', 'orb', 'gap and go', 'breakout', 'rule', 'prefill', 'strategy'],
+      action: () => {
+        onClose();
+        onOpenNewTrade();
+      },
+    },
     // Navigation
     {
       id: 'nav-overview',
@@ -207,6 +222,18 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
       action: () => {
         onClose();
         navigate('/strategies');
+      },
+    },
+    {
+      id: 'nav-templates',
+      category: 'NAVIGATION',
+      title: 'Go to Trade Setup Templates',
+      subtitle: 'Inspect 20 market-based setups & custom rules with statistical win rates',
+      icon: LayersRoundedIcon,
+      keywords: ['templates', 'setups', 'rules', 'fno', 'stocks', 'forex', 'crypto', 'mcx'],
+      action: () => {
+        onClose();
+        navigate('/strategies?tab=templates');
       },
     },
     {

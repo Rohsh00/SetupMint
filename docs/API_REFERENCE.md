@@ -204,6 +204,7 @@ Authentication is handled via stateful sessions:
   - `status` (`'PLANNED' | 'OPEN' | 'CLOSED' | 'CANCELLED'`, optional)
   - `outcome` (`'WIN' | 'LOSS' | 'BREAKEVEN' | 'OPEN'`, optional)
   - `strategyId` (`string`, optional)
+  - `templateId` (`string`, optional): Filters trades created from a specific setup template.
   - `session` (`string`, optional)
   - `startDate`, `endDate` (`YYYY-MM-DD`, optional)
   - `tags` (`string`, comma-separated, optional)
@@ -497,8 +498,17 @@ Authentication is handled via stateful sessions:
 - `PUT /api/v1/strategies/:id` — Update strategy.
 - `DELETE /api/v1/strategies/:id` — Delete strategy.
 
+### Trade Setup Templates (`/api/v1/templates`)
+- `GET /api/v1/templates` — List all 20 built-in institutional templates and user custom templates merged with aggregated tenant-isolated trade performance metrics (`totalTrades`, `winTrades`, `winRate`, `netPnL`, `profitFactor`).
+- `POST /api/v1/templates` — Create a custom user setup template. Requires `name`, `group` (`'FNO'|'STOCKS'|'FOREX_GOLD'|'CRYPTO'|'MCX'|'PRICE_ACTION'|'CUSTOM'`), `markets`, `slRule` (`PERCENT`, `POINTS`, `PREMIUM_PERCENT`, or `MANUAL`), `minRR`, and `titlePattern`. Real symbols or fixed prices are strictly prohibited.
+- `GET /api/v1/templates/:id` — Get single template details and performance stats. Supports built-in IDs (e.g. `'fno-orb'`) or custom MongoDB ObjectIds.
+- `PUT /api/v1/templates/:id` — Update custom template. Modifying built-in templates returns `400 Bad Request` with error code `BUILT_IN_READ_ONLY`.
+- `DELETE /api/v1/templates/:id` — Delete custom template. Deleting built-in templates returns `400 Bad Request` with error code `BUILT_IN_READ_ONLY`.
+- `POST /api/v1/templates/:id/favorite` — Toggle favorite star status on custom template.
+- `POST /api/v1/templates/:id/use` — Increment `usageCount` and update `lastUsedAt`.
+
 ### Instruments (`/api/v1/instruments`)
-- `GET /api/v1/instruments` — List global presets combined with user-created instruments.
+- `GET /api/v1/instruments` — List global presets combined with user-created instruments. Includes presets for `NIFTY`, `BANKNIFTY`, `FINNIFTY`, `RELIANCE`, `CRUDEOIL`, `GOLD`, `EURUSD`, `GBPUSD`, `USDJPY`, `XAUUSD`, `BTCUSDT`, `ETHUSDT`, `SOLUSDT`.
 - `POST /api/v1/instruments` — Create custom instrument.
 - `PUT /api/v1/instruments/:id` — Update custom instrument.
 - `DELETE /api/v1/instruments/:id` — Delete custom instrument.

@@ -35,13 +35,21 @@ import {
   SwapHorizRounded,
   CollectionsRounded,
 } from '@mui/icons-material';
-import { IAttachment } from '@tradevault/shared';
+import {
+  IAttachment,
+  ITradeTemplate,
+  TemplatePatch,
+  ProvenanceSource,
+  BUILT_IN_TEMPLATES,
+} from '@tradevault/shared';
 import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
   calculateFIFOExecution,
   IndianChargesCalculator,
+  resolveTemplate,
+  rankTemplates,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
@@ -117,7 +125,8 @@ export function TradeFormModal({
     setValue,
     reset,
     control,
-    formState: { errors, isSubmitting, isDirty },
+    getValues,
+    formState: { errors, isSubmitting, isDirty, dirtyFields },
   } = useForm<any>({
     defaultValues: {
       accountId: initialAccountId,
@@ -485,32 +494,195 @@ export function TradeFormModal({
     mutationFn: (tradeData: any) => api.trades.update(editTradeId!, tradeData),
   });
 
-  // Template handling: never copies prices, timestamps, or P&L
-  const handleSelectTemplate = (template: TradeSetupTemplate) => {
-    setValue('symbol', template.symbol, { shouldDirty: true });
-    setValue('assetClass', template.assetClass, { shouldDirty: true });
-    setValue('direction', template.direction, { shouldDirty: true });
-    if (template.session) setValue('session', template.session, { shouldDirty: true });
-    if (template.strategyId) setValue('strategyId', template.strategyId, { shouldDirty: true });
-    if (template.riskBudgetAmount) setValue('risk.riskBudgetAmount', template.riskBudgetAmount, { shouldDirty: true });
-    if (template.confluences) setValue('thesis.confluences', template.confluences, { shouldDirty: true });
-    if (template.preMarketBias) setValue('thesis.preMarketBias', template.preMarketBias, { shouldDirty: true });
-    if (template.marketStructure) setValue('thesis.marketStructure', template.marketStructure, { shouldDirty: true });
-    if (template.tags && template.tags.length > 0) {
-      setValue('tagsInput', template.tags.join(', '), { shouldDirty: true });
+  // Query templates for user custom templates
+  const { data: allTemplatesData = [] } = useQuery<ITradeTemplate[]>({
+    queryKey: ['templates'],
+    queryFn: () => api.templates.list(),
+  });
+
+  // Selected instrument for contract specifications & tick size
+  const selectedInstrument = useMemo(() => {
+    if (!watchedSymbol) return null;
+    return instruments.find((i: any) => i.symbol?.toUpperCase() === watchedSymbol.toUpperCase()) || null;
+  }, [instruments, watchedSymbol]);
+
+  // Market-based rule-driven template state
+  const [activeTemplate, setActiveTemplate] = useState<ITradeTemplate | null>(null);
+  const [provenanceMap, setProvenanceMap] = useState<Record<string, ProvenanceSource>>({});
+  const [manualSlHint, setManualSlHint] = useState<string | null>(null);
+  const [missingStrategyName, setMissingStrategyName] = useState<string | null>(null);
+  const [previousFormSnapshot, setPreviousFormSnapshot] = useState<any | null>(null);
+
+  // Dynamic recomputation of SL and target when entryPrice or direction changes later
+  const watchedEntryPrice = watch('simpleExecution.entryPrice');
+  const prevEntryPriceRef = useRef<number | undefined>(undefined);
+  const prevDirectionRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!activeTemplate || activeTemplate.slRule.type === 'MANUAL') return;
+
+    const entryNum = Number(watchedEntryPrice) || 0;
+    const dir = watchedDirection;
+
+    if (entryNum === prevEntryPriceRef.current && dir === prevDirectionRef.current) {
+      return;
+    }
+    prevEntryPriceRef.current = entryNum;
+    prevDirectionRef.current = dir;
+
+    if (entryNum > 0 && dir) {
+      const isSlRuleDerived = provenanceMap['risk.initialStopLoss'] === 'RULE' && !dirtyFields.risk?.initialStopLoss;
+      const isTargetRuleDerived = provenanceMap['risk.plannedTarget'] === 'RULE' && !dirtyFields.risk?.plannedTarget;
+
+      if (isSlRuleDerived || isTargetRuleDerived) {
+        const tick = selectedInstrument?.tickSize || 0.05;
+        const recomputed = resolveTemplate(activeTemplate, {
+          symbol: watchedSymbol,
+          assetClass: watchedAssetClass,
+          direction: dir,
+          entryPrice: entryNum,
+          tickSize: tick,
+        });
+
+        if (isSlRuleDerived && recomputed.risk?.initialStopLoss) {
+          setValue('risk.initialStopLoss', recomputed.risk.initialStopLoss, { shouldDirty: false });
+        }
+        if (isTargetRuleDerived && recomputed.risk?.plannedTarget) {
+          setValue('risk.plannedTarget', recomputed.risk.plannedTarget, { shouldDirty: false });
+        }
+      }
+    }
+  }, [watchedEntryPrice, watchedDirection, activeTemplate, provenanceMap, dirtyFields, selectedInstrument, watchedSymbol, watchedAssetClass, setValue]);
+
+  // Template handling: never overwrites dirty/edited fields, fills empty/untouched fields
+  const handleApplyTemplatePatch = (patch: TemplatePatch, template: ITradeTemplate) => {
+    const cur = getValues();
+    setPreviousFormSnapshot(JSON.parse(JSON.stringify(cur)));
+
+    const newProvenance: Record<string, ProvenanceSource> = { ...patch.provenance };
+
+    // Trade title: fill if not dirty and empty or placeholder
+    if (!dirtyFields.tradeTitle && patch.tradeTitle) {
+      setValue('tradeTitle', patch.tradeTitle, { shouldDirty: true });
+    } else {
+      delete newProvenance['tradeTitle'];
     }
 
-    // Auto-update lot size and instrument metadata
-    const match = instruments.find((i: any) => i.symbol === template.symbol);
-    if (match) {
-      if (match.exchange) setValue('exchange', match.exchange);
-      if (match.marketSegment) setValue('marketSegment', match.marketSegment);
-      if (match.lotSize) setValue('simpleExecution.quantity', match.lotSize);
-      if (match.contractMultiplier) setValue('simpleExecution.contractMultiplier', match.contractMultiplier);
+    // Direction: fill if template has direction and not dirty
+    if (patch.direction && !dirtyFields.direction) {
+      setValue('direction', patch.direction, { shouldDirty: true });
     }
 
-    setTemplateNotice(`Setup template applied: "${template.name}". Set your execution prices.`);
+    // Strategy matching (case-insensitive)
+    if (template.strategyName) {
+      const matched = strategies.find(
+        (s: any) => s.name?.toLowerCase() === template.strategyName!.toLowerCase()
+      );
+      if (matched) {
+        if (!dirtyFields.strategyId) {
+          setValue('strategyId', matched.id || matched._id, { shouldDirty: true });
+          setValue('strategyName', matched.name, { shouldDirty: true });
+          setMissingStrategyName(null);
+        }
+      } else {
+        setMissingStrategyName(template.strategyName);
+        if (!dirtyFields.strategyName) {
+          setValue('strategyName', template.strategyName, { shouldDirty: true });
+        }
+      }
+    }
+
+    // Tags
+    if (!dirtyFields.tagsInput && patch.tags && patch.tags.length > 0) {
+      setValue('tagsInput', patch.tags.join(', '), { shouldDirty: true });
+    }
+
+    // Confluences
+    if (patch.confluences && patch.confluences.length > 0) {
+      const curConfs = cur.thesis?.confluences || [];
+      const combined = Array.from(new Set([...curConfs, ...patch.confluences]));
+      setValue('thesis.confluences', combined, { shouldDirty: true });
+      setValue('psychology.checklistCompleted', true, { shouldDirty: true });
+    }
+
+    // Planned R:R
+    if (patch.risk?.plannedRewardRiskRatio) {
+      setValue('risk.plannedRewardRiskRatio', patch.risk.plannedRewardRiskRatio);
+    }
+
+    // Stop loss & target
+    if (template.slRule.type === 'MANUAL') {
+      setManualSlHint(patch.risk?.slHint || template.slRule.manualHint || 'Structure-based stop loss required');
+    } else {
+      setManualSlHint(null);
+      if (patch.risk?.initialStopLoss && !dirtyFields.risk?.initialStopLoss) {
+        setValue('risk.initialStopLoss', patch.risk.initialStopLoss, { shouldDirty: true });
+      } else {
+        delete newProvenance['risk.initialStopLoss'];
+      }
+      if (patch.risk?.plannedTarget && !dirtyFields.risk?.plannedTarget) {
+        setValue('risk.plannedTarget', patch.risk.plannedTarget, { shouldDirty: true });
+      } else {
+        delete newProvenance['risk.plannedTarget'];
+      }
+    }
+
+    // Trading session
+    if (patch.session && !dirtyFields.session) {
+      setValue('session', patch.session, { shouldDirty: true });
+    }
+
+    setActiveTemplate(template);
+    setProvenanceMap(newProvenance);
+    setTemplateNotice(`Setup template applied: "${template.name}". Set execution details.`);
     setTimeout(() => setTemplateNotice(null), 4000);
+  };
+
+  const handleUndoTemplate = () => {
+    if (previousFormSnapshot) {
+      if (previousFormSnapshot.tradeTitle !== undefined) setValue('tradeTitle', previousFormSnapshot.tradeTitle);
+      if (previousFormSnapshot.direction !== undefined) setValue('direction', previousFormSnapshot.direction);
+      if (previousFormSnapshot.strategyId !== undefined) setValue('strategyId', previousFormSnapshot.strategyId);
+      if (previousFormSnapshot.strategyName !== undefined) setValue('strategyName', previousFormSnapshot.strategyName);
+      if (previousFormSnapshot.tagsInput !== undefined) setValue('tagsInput', previousFormSnapshot.tagsInput);
+      if (previousFormSnapshot.thesis?.confluences !== undefined) setValue('thesis.confluences', previousFormSnapshot.thesis.confluences);
+      if (previousFormSnapshot.risk?.initialStopLoss !== undefined) setValue('risk.initialStopLoss', previousFormSnapshot.risk.initialStopLoss);
+      if (previousFormSnapshot.risk?.plannedTarget !== undefined) setValue('risk.plannedTarget', previousFormSnapshot.risk.plannedTarget);
+      if (previousFormSnapshot.risk?.plannedRewardRiskRatio !== undefined) setValue('risk.plannedRewardRiskRatio', previousFormSnapshot.risk.plannedRewardRiskRatio);
+      if (previousFormSnapshot.session !== undefined) setValue('session', previousFormSnapshot.session);
+    }
+    setActiveTemplate(null);
+    setProvenanceMap({});
+    setManualSlHint(null);
+    setMissingStrategyName(null);
+    setPreviousFormSnapshot(null);
+    toast.info('Template undone. Previous values restored.');
+  };
+
+  const handleSelectTemplate = (template: any) => {
+    const matchBuiltIn = BUILT_IN_TEMPLATES.find((t) => t.id === template.id);
+    const targetTemplate: ITradeTemplate = matchBuiltIn || {
+      id: template.id || `custom-${Date.now()}`,
+      name: template.name,
+      description: template.description || 'Custom template',
+      group: 'PRICE_ACTION',
+      markets: [watch('assetClass') || 'FUTURES'],
+      slRule: { type: 'PERCENT', value: 0.5 },
+      minRR: 2.0,
+      titlePattern: `${watch('symbol') || 'Trade'} {DIR}`,
+      tags: template.tags || [],
+      confluences: template.confluences || [],
+      isBuiltIn: false,
+    };
+
+    const patch = resolveTemplate(targetTemplate, {
+      symbol: watch('symbol'),
+      assetClass: watch('assetClass'),
+      direction: watch('direction'),
+      entryPrice: Number(watch('simpleExecution.entryPrice')) || undefined,
+      tickSize: selectedInstrument?.tickSize || 0.05,
+    });
+    handleApplyTemplatePatch(patch, targetTemplate);
   };
 
   const handleResetDefaults = () => {
@@ -581,25 +753,20 @@ export function TradeFormModal({
     setWorkflowMode('QUICK');
   };
 
-  const getCurrentFormStateForTemplate = (): Omit<TradeSetupTemplate, 'id' | 'isBuiltIn'> => {
+  const getCurrentFormStateForTemplate = () => {
     const vals = watch();
     return {
-      name: vals.tradeTitle || `${vals.symbol} Setup`,
-      description: `Setup template for ${vals.symbol} ${vals.direction}`,
-      symbol: vals.symbol || 'NIFTY',
-      assetClass: vals.assetClass || 'FUTURES',
-      exchange: vals.exchange || 'NSE',
-      marketSegment: vals.marketSegment || 'NSE_FNO',
-      direction: vals.direction || 'LONG',
-      session: vals.session || 'NSE_REGULAR',
-      strategyId: vals.strategyId || '',
-      riskBudgetAmount: Number(vals.risk?.riskBudgetAmount) || 2000,
-      confluences: vals.thesis?.confluences || [],
+      assetClass: vals.assetClass,
+      direction: vals.direction,
+      strategyName: selectedStrategy?.name || vals.strategyName,
+      entryPrice: Number(vals.simpleExecution?.entryPrice) || undefined,
+      initialStopLoss: Number(vals.risk?.initialStopLoss) || undefined,
+      plannedTarget: Number(vals.risk?.plannedTarget) || undefined,
+      plannedRR: plannedRewardRiskRatio,
       tags: vals.tagsInput
         ? vals.tagsInput.split(',').map((t: string) => t.trim().toUpperCase()).filter(Boolean)
         : [],
-      preMarketBias: vals.thesis?.preMarketBias || 'BULLISH',
-      marketStructure: vals.thesis?.marketStructure || 'TRENDING_UP',
+      confluences: vals.thesis?.confluences || [],
     };
   };
 
@@ -643,6 +810,7 @@ export function TradeFormModal({
 
     const payload = {
       ...data,
+      templateId: activeTemplate?.id || data.templateId,
       simpleExecution: simpleExecPayload,
       tags,
       executionMode,
@@ -692,6 +860,7 @@ export function TradeFormModal({
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
 
       // Reset form state so isDirty becomes false and close modal cleanly
       reset();
@@ -926,6 +1095,16 @@ export function TradeFormModal({
               isAutoFees={isAutoFees}
               onToggleAutoFees={(val) => setIsAutoFees(val)}
               onResetAutoFees={handleResetAutoFees}
+              dirtyFields={dirtyFields}
+              activeTemplate={activeTemplate}
+              provenanceMap={provenanceMap}
+              manualSlHint={manualSlHint}
+              onApplyTemplatePatch={handleApplyTemplatePatch}
+              onUndoTemplate={handleUndoTemplate}
+              hasAppliedTemplate={Boolean(activeTemplate)}
+              appliedTemplateName={activeTemplate?.name}
+              missingStrategyName={missingStrategyName}
+              userTemplates={allTemplatesData.filter((t: any) => !t.isBuiltIn)}
             />
 
             {/* Execution Mode Toggle Bar */}

@@ -341,6 +341,7 @@ export interface ITrade {
   externalBrokerOrderRef?: string;
   externalExecutionId?: string;
   importBatchId?: string;
+  templateId?: string;
 
   executionMode: ExecutionMode;
   simpleExecution?: ISimpleExecution;
@@ -622,5 +623,93 @@ export interface IDailyPrefillResponse {
   dailyLossBreach: IDailyLossBreach;
   tradesCount: number;
   netPnL: number;
+}
+
+export type TemplateGroup =
+  | 'FNO'
+  | 'STOCKS'
+  | 'FOREX_GOLD'
+  | 'CRYPTO'
+  | 'MCX'
+  | 'PRICE_ACTION'
+  | 'CUSTOM';
+
+export type TemplateAssetClass = AssetClass;
+
+export type SlRuleType = 'PERCENT' | 'POINTS' | 'PREMIUM_PERCENT' | 'MANUAL';
+
+export interface SlRule {
+  type: SlRuleType;
+  value?: number;
+  manualHint?: string;
+}
+
+export interface ITradeTemplate {
+  id: string;
+  name: string;
+  description: string;
+  group: TemplateGroup;
+  markets: AssetClass[];
+  direction?: Direction;
+  strategyName?: string;
+  slRule: SlRule;
+  minRR: number;
+  titlePattern: string;
+  tags: string[];
+  confluences?: string[];
+  checklist?: string[];
+  timeWindow?: {
+    start: string; // HH:mm in IST
+    end: string;   // HH:mm in IST
+  };
+  expiryDayOnly?: boolean;
+  session?: TradingSession;
+  isBuiltIn: boolean;
+  isFavorite?: boolean;
+  usageCount?: number;
+  lastUsedAt?: string | Date;
+  userId?: string;
+  clonedFromId?: string;
+  performance?: {
+    totalTrades: number;
+    winTrades: number;
+    winRate: number;
+    netPnL: number;
+    profitFactor: number;
+  };
+}
+
+export type ProvenanceSource = 'TEMPLATE' | 'RULE' | 'AUTO';
+
+export interface TemplateContext {
+  symbol?: string;
+  assetClass?: AssetClass;
+  direction?: Direction;
+  entryPrice?: number;
+  tickSize?: number;
+  lotSize?: number;
+  contractMultiplier?: number;
+  entryTime?: string | Date;
+  sameDayTradeCount?: number;
+  existingTitlesToday?: string[];
+  isFavorite?: boolean;
+  usageCount?: number;
+}
+
+export interface TemplatePatch {
+  tradeTitle?: string;
+  direction?: Direction;
+  strategyName?: string;
+  tags?: string[];
+  confluences?: string[];
+  checklist?: string[];
+  session?: TradingSession;
+  risk?: {
+    plannedRewardRiskRatio?: number;
+    initialStopLoss?: number;
+    plannedTarget?: number;
+    slHint?: string;
+  };
+  provenance: Record<string, ProvenanceSource>;
 }
 

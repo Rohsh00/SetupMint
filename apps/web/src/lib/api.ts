@@ -100,6 +100,19 @@ export const api = {
     delete: (id: string) => request(`/strategies/${id}`, { method: 'DELETE' }),
   },
 
+  // Trade Setup Templates
+  templates: {
+    list: () => request<any[]>('/templates'),
+    get: (id: string) => request<any>(`/templates/${id}`),
+    create: (template: any) =>
+      request<any>('/templates', { method: 'POST', body: JSON.stringify(template) }),
+    update: (id: string, updates: any) =>
+      request<any>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
+    delete: (id: string) => request(`/templates/${id}`, { method: 'DELETE' }),
+    toggleFavorite: (id: string) => request<any>(`/templates/${id}/favorite`, { method: 'POST' }),
+    useTemplate: (id: string) => request<any>(`/templates/${id}/use`, { method: 'POST' }),
+  },
+
   // Trades
   trades: {
     list: (params: Record<string, any> = {}) => {

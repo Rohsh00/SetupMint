@@ -6,7 +6,7 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 12 core Mongoose models:
+SetupMint defines 13 core Mongoose models:
 1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
 2. `Session` — Stateful authentication tokens with automatic 30-day MongoDB TTL expiration.
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
@@ -19,6 +19,7 @@ SetupMint defines 12 core Mongoose models:
 10. `BrokerIntegration` — Broker connectivity status and sync history logs.
 11. `BrokerImportMapping` — Saved per-broker CSV column mapping configurations with unique `userId+broker` indexing.
 12. `AuditLog` — General audit trail entries for administrative tracking.
+13. `TradeTemplate` — Market-based, rule-driven trade setup templates with dynamic SL/target formulas and trade performance aggregation.
 
 ---
 
@@ -142,6 +143,7 @@ SetupMint defines 12 core Mongoose models:
 | `tradeTitle` | `String` | No | — | — | Optional custom title |
 | `externalBrokerOrderRef` | `String` | No | — | — | External broker order ID |
 | `importBatchId` | `String` | No | — | Indexed | Unique batch ID for bulk CSV import tracking and undo |
+| `templateId` | `String` | No | — | Indexed | Linked setup template identifier (built-in ID or custom TradeTemplate `_id`) |
 | `executionMode` | `String` | No | `'SIMPLE'` | Enum: `['SIMPLE', 'ADVANCED']` | Execution mode |
 
 #### Embedded Subdocuments in Trade:
@@ -235,6 +237,7 @@ SetupMint defines 12 core Mongoose models:
 - `{ userId: 1, tradeDate: -1 }`
 - `{ userId: 1, accountId: 1, tradeDate: -1 }`
 - `{ userId: 1, 'calculated.netPnL': -1 }`
+- `{ userId: 1, templateId: 1 }`
 
 ---
 
@@ -396,3 +399,43 @@ SetupMint defines 12 core Mongoose models:
 | `ipAddress` | `String` | No | — | Client IP address |
 | `userAgent` | `String` | No | — | Client User-Agent |
 | `createdAt` | `Date` | Auto | Timestamp | Timestamp of audit entry |
+
+---
+
+### 2.13 TradeTemplate Model (`TradeTemplate.ts`)
+- **Collection Name:** `tradetemplates`
+- **File:** [`apps/api/src/db/models/TradeTemplate.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/TradeTemplate.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Custom template identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owner user ID |
+| `name` | `String` | **Yes** | — | Trim, Compound unique (`userId` + `name`) | Template display name (e.g. "Opening Range Breakout") |
+| `description` | `String` | No | `''` | — | Setup description and context |
+| `group` | `String` | No | `'CUSTOM'` | Enum: `['FNO', 'STOCKS', 'FOREX_GOLD', 'CRYPTO', 'MCX', 'PRICE_ACTION', 'CUSTOM']`, Indexed | Setup market category |
+| `markets` | `[String]` | **Yes** | — | Array of `['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX']` | Compatible asset classes |
+| `direction` | `String` | No | — | Enum: `['LONG', 'SHORT']` | Fixed directional bias (if directional) |
+| `strategyName` | `String` | No | — | Trim | Target playbook strategy name (auto-links to Strategy) |
+| `slRule` | `Object` | **Yes** | — | Subdocument: `{ type, value?, manualHint? }` | Mathematical stop-loss rule |
+| `slRule.type` | `String` | **Yes** | — | Enum: `['PERCENT', 'POINTS', 'PREMIUM_PERCENT', 'MANUAL']` | SL calculation mode |
+| `slRule.value` | `Number` | No | — | Required for `PERCENT`, `POINTS`, `PREMIUM_PERCENT` | Numeric SL parameter |
+| `slRule.manualHint`| `String` | No | — | For `MANUAL` (e.g. "Below trigger candle low") | Manual entry guidance |
+| `minRR` | `Number` | No | `1.5` | Minimum planned Risk:Reward ratio | Target calculation multiplier |
+| `titlePattern` | `String` | **Yes** | — | Trim, supports `{symbol}` and `{side}` tokens | Auto-generated trade title pattern |
+| `tags` | `[String]` | No | `[]` | — | Prefilled search tags |
+| `confluences` | `[String]` | No | `[]` | — | Technical confluence labels (e.g. `BOS`, `ORB_15M`) |
+| `checklist` | `[String]` | No | `[]` | — | Quality checklist verification items |
+| `timeWindow` | `Object` | No | — | Subdocument: `{ start: String, end: String }` | Active execution window (HH:mm in market local time) |
+| `expiryDayOnly` | `Boolean` | No | `false` | — | Restricts or prioritizes ranking on market expiry days |
+| `session` | `String` | No | — | Enum: `['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS']` | Target trading session |
+| `isFavorite` | `Boolean` | No | `false` | Indexed | User pinned favorite flag |
+| `usageCount` | `Number` | No | `0` | — | Cumulative times applied to trades |
+| `lastUsedAt` | `Date` | No | — | — | Timestamp of most recent application |
+| `clonedFromId` | `String` | No | — | — | Upstream template ID if cloned from built-in |
+| `createdAt` | `Date` | Auto | Current Time | — | Creation timestamp |
+| `updatedAt` | `Date` | Auto | Current Time | — | Update timestamp |
+
+**Compound Indexes:**
+- `{ userId: 1, name: 1 }` (Unique constraint)
+- `{ userId: 1, isFavorite: 1 }`
+- `{ userId: 1, group: 1 }`

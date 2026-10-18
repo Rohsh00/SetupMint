@@ -10,3 +10,4 @@ export * from './Attachment.js';
 export * from './AuditLog.js';
 export * from './BrokerIntegration.js';
 export * from './BrokerImportMapping.js';
+export * from './TradeTemplate.js';

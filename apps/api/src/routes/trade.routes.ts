@@ -7,7 +7,7 @@ import {
   calculateSimpleExecutionPnL,
 } from '@tradevault/financial-engine';
 import { createTradeSchema, updateTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
-import { TradingAccount, Trade, Strategy, Instrument, Attachment } from '../db/models/index.js';
+import { TradingAccount, Trade, Strategy, Instrument, Attachment, TradeTemplate } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
@@ -109,6 +109,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       status,
       outcome,
       strategyId,
+      templateId,
       session,
       startDate,
       endDate,
@@ -126,6 +127,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (status) filter.status = status;
     if (outcome) filter['calculated.outcome'] = outcome;
     if (strategyId) filter.strategyId = strategyId;
+    if (templateId) filter.templateId = templateId;
     if (session) filter.session = session;
 
     if (startDate || endDate) {
@@ -184,7 +186,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       exitTime: t.exitTime?.toISOString(),
       session: t.session,
       tradeTitle: t.tradeTitle,
+      externalBrokerOrderRef: t.externalBrokerOrderRef,
       importBatchId: t.importBatchId,
+      templateId: t.templateId,
       executionMode: t.executionMode,
       simpleExecution: t.simpleExecution,
       fills: t.fills,
@@ -253,11 +257,19 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Recalculate account realized P&L and balance authoritatively
     await AccountService.recalculateAccountBalances(account._id, req.user!.id);
 
+    if (body.templateId) {
+      await TradeTemplate.findOneAndUpdate(
+        { _id: body.templateId, userId: req.user!.id },
+        { $inc: { usageCount: 1 }, $set: { lastUsedAt: new Date() } }
+      ).catch(() => {});
+    }
+
     return reply.status(201).send({
       success: true,
       data: {
         id: trade._id.toString(),
         symbol: trade.symbol,
+        templateId: trade.templateId,
         netPnL: trade.calculated.netPnL,
         outcome: trade.calculated.outcome,
       },
@@ -318,6 +330,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         tradeTitle: trade.tradeTitle,
         externalBrokerOrderRef: trade.externalBrokerOrderRef,
         importBatchId: trade.importBatchId,
+        templateId: trade.templateId,
         executionMode: trade.executionMode,
         simpleExecution: trade.simpleExecution,
         fills: trade.fills,

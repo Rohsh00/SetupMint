@@ -32,6 +32,7 @@ export interface ITradeDoc extends Document {
   tradeTitle?: string;
   externalBrokerOrderRef?: string;
   importBatchId?: string;
+  templateId?: string;
 
   executionMode: ExecutionMode;
   simpleExecution?: {
@@ -217,6 +218,7 @@ const TradeSchema = new Schema<ITradeDoc>(
     tradeTitle: { type: String },
     externalBrokerOrderRef: { type: String },
     importBatchId: { type: String, index: true },
+    templateId: { type: String, index: true },
 
     executionMode: {
       type: String,
@@ -319,5 +321,6 @@ const TradeSchema = new Schema<ITradeDoc>(
 TradeSchema.index({ userId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, accountId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, 'calculated.netPnL': -1 });
+TradeSchema.index({ userId: 1, templateId: 1 });
 
 export const Trade = mongoose.model<ITradeDoc>('Trade', TradeSchema);

@@ -259,3 +259,55 @@ When initiating daily reflection review (`/journal/:date` or `/review/prefill/:d
   - **Rating 2 (Rule Violation):** Sizing limit exceeded (`SIZE_VIOLATION`) or daily frequency cap exceeded (`OVERTRADING`).
   - **Rating 1 (Severe Tilt / Breach):** Max daily loss breached or revenge trading pattern detected.
 
+---
+
+## 12. Market-Based, Rule-Driven Trade Setup Templates
+
+SetupMint replaces static symbol-specific trade setups with a dynamic, market-based template architecture designed to cut manual friction in trade logging while maintaining analytical precision:
+
+### 1. Symbol-Independent, Market-Based Architecture
+Templates describe a **setup pattern for a market mechanism**, not a static instrument:
+- Grouped into market domains: `FNO`, `STOCKS`, `FOREX_GOLD`, `CRYPTO`, `MCX`, `PRICE_ACTION`, and `CUSTOM`.
+- Never hardcode symbols like `NIFTY`, `BANKNIFTY`, or `RELIANCE`. The user picks or switches the instrument, and the template adapts dynamically to the asset class, precision, tick size, and contract multiplier.
+- Titles use dynamic token patterns (e.g. `"{symbol} London Breakout Long"`, `"{symbol} 15m ORB Long"`) that interpolate the selected symbol and direction automatically.
+
+### 2. Context-Aware Dynamic Ranking Engine (`rankTemplates`)
+When logging a trade, SetupMint evaluates all available templates and surfaces the top 6 most relevant setups:
+- **Asset Class Alignment (+100 pts):** Templates supporting the active trade's asset class (e.g. `OPTIONS`, `EQUITY`, `FOREX`).
+- **Favorite Setup (+50 pts):** Trader-pinned setups (`isFavorite === true`).
+- **Active Expiry Match (+40 pts):** Boosted when `expiryDayOnly === true` and the current date is an active expiry for the selected market.
+- **Active Execution Window (+30 pts):** Active within the current time of day (e.g. 09:15–10:00 IST for Opening Range Breakout; 13:00–16:00 IST for London Open).
+- **Session Alignment (+20 pts):** Matches the current market session (`NSE_REGULAR`, `LONDON`, `NEW_YORK`, `MCX_EVENING`).
+- **Historical Frequency (+1 pt per use, max +20 pts):** Prioritizes frequently utilized user workflows.
+
+### 3. NSE 2026 Expiry Calendar & Shift Rules
+For Indian F&O derivatives, SetupMint accounts for exchange holiday schedules:
+- **Weekly Expiry:** Standard Tuesday for Nifty (`isNiftyWeeklyExpiry`).
+- **Monthly Expiry:** Last Thursday of the calendar month (`isNseMonthlyExpiry`).
+- **Holiday Shift Invariant:** If the scheduled expiry date falls on an official NSE holiday according to `NSE_HOLIDAYS_2026` (e.g. Dussehra on Tuesday Oct 20, 2026; Guru Nanak Jayanti on Tuesday Nov 24, 2026), the expiry day shifts backwards to the preceding trading day (Monday). Verified through comprehensive unit tests.
+
+### 4. Pure Decimal.js Stop-Loss & Target Mathematical Resolution (`resolveTemplate`)
+Calculations are executed inside `@tradevault/financial-engine` using `decimal.js` (30 digits precision, `ROUND_HALF_UP`) with zero component floating-point inaccuracies:
+- **`PERCENT` Rule:**
+  - Long: $P_{\text{stop}} = P_{\text{entry}} \times \left(1 - \frac{\text{value}}{100}\right)$
+  - Short: $P_{\text{stop}} = P_{\text{entry}} \times \left(1 + \frac{\text{value}}{100}\right)$
+- **`POINTS` Rule:**
+  - Long: $P_{\text{stop}} = P_{\text{entry}} - \text{value}$
+  - Short: $P_{\text{stop}} = P_{\text{entry}} + \text{value}$
+- **`PREMIUM_PERCENT` Rule:**
+  - Tailored for options buying/selling; calculates stop-loss based on option premium percentage.
+- **`MANUAL` Rule:**
+  - Does not force an arbitrary price; populates actionable contextual entry guidance in `manualHint` (e.g. "Below trigger candle low").
+- **Target Price Resolution:**
+  - Risk Distance: $D_{\text{risk}} = |P_{\text{entry}} - P_{\text{stop}}|$
+  - Long: $P_{\text{target}} = P_{\text{entry}} + (D_{\text{risk}} \times \text{minRR})$
+  - Short: $P_{\text{target}} = P_{\text{entry}} - (D_{\text{risk}} \times \text{minRR})$
+- **Tick Size Rounding:** Resulting stop-loss and target prices are rounded to the instrument's exact tick size via `roundToTick(price, tickSize)` (e.g. 0.05 for NSE, 0.00001 for Forex, 0.10 for Crypto).
+
+### 5. Non-Destructive Form Prefilling Invariant
+SetupMint enforces strict user-intent preservation:
+- The trade entry modal tracks dirty fields (`dirtyFields.has(fieldName)`).
+- Applying or switching templates will **never overwrite** any field that the trader has manually edited or typed.
+- If the trader updates the entry price later, dependent stop-loss and target prices recompute dynamically according to template rules, *unless* the trader has manually modified the stop-loss or target fields.
+
+

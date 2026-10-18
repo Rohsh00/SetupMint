@@ -152,6 +152,7 @@ export const createTradeSchema = z.object({
     .optional(),
   tradeTitle: z.string().optional(),
   externalBrokerOrderRef: z.string().optional(),
+  templateId: z.string().optional(),
 
   executionMode: z.enum(['SIMPLE', 'ADVANCED']).default('SIMPLE'),
   simpleExecution: simpleExecutionSchema.optional(),
@@ -278,6 +279,7 @@ export const tradeFilterQuerySchema = z.object({
   status: z.preprocess(emptyStringToUndefined, z.enum(['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED']).optional()),
   outcome: z.preprocess(emptyStringToUndefined, z.enum(['WIN', 'LOSS', 'BREAKEVEN', 'OPEN', 'CANCELLED']).optional()),
   strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  templateId: z.preprocess(emptyStringToUndefined, z.string().optional()),
   session: z.preprocess(emptyStringToUndefined, z.string().optional()),
   startDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
   endDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
@@ -285,6 +287,47 @@ export const tradeFilterQuerySchema = z.object({
   sortBy: z.string().default('tradeDate'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
+
+export const slRuleSchema = z.object({
+  type: z.enum(['PERCENT', 'POINTS', 'PREMIUM_PERCENT', 'MANUAL']),
+  value: z.number().optional(),
+  manualHint: z.string().optional(),
+});
+
+export const createTradeTemplateSchema = z.object({
+  name: z.string().min(1, 'Template name is required'),
+  description: z.string().default(''),
+  group: z
+    .enum(['FNO', 'STOCKS', 'FOREX_GOLD', 'CRYPTO', 'MCX', 'PRICE_ACTION', 'CUSTOM'])
+    .default('CUSTOM'),
+  markets: z
+    .array(z.enum(['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX']))
+    .min(1, 'At least one market is required'),
+  direction: z.enum(['LONG', 'SHORT']).optional(),
+  strategyName: z.string().optional(),
+  slRule: slRuleSchema,
+  minRR: z.number().nonnegative().default(1.5),
+  titlePattern: z.string().min(1, 'Title pattern is required'),
+  tags: z.array(z.string()).default([]),
+  confluences: z.array(z.string()).optional(),
+  checklist: z.array(z.string()).optional(),
+  timeWindow: z
+    .object({
+      start: z.string(),
+      end: z.string(),
+    })
+    .optional(),
+  expiryDayOnly: z.boolean().optional(),
+  session: z
+    .enum(['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'])
+    .optional(),
+  isFavorite: z.boolean().optional(),
+  clonedFromId: z.string().optional(),
+});
+
+export const updateTradeTemplateSchema = createTradeTemplateSchema.partial();
+export type CreateTradeTemplateInput = z.infer<typeof createTradeTemplateSchema>;
+export type UpdateTradeTemplateInput = z.infer<typeof updateTradeTemplateSchema>;
 
 export const dailyJournalSchema = z.object({
   date: z.string().min(1, 'Date is required'),

@@ -58,7 +58,8 @@ Pure, deterministic mathematical calculation library:
 - [`packages/financial-engine/src/charges.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/charges.ts): Indian statutory regulatory charges calculator (`calculateIndianCharges`, `IndianChargesCalculator`) covering flat brokerage, exchange fees, STT/CTT, stamp duty, SEBI fees, and 18% GST with Decimal.js.
 - [`packages/financial-engine/src/session.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/session.ts): Automatic trading session derivation (`deriveSessionFromTime`) from execution timestamp and exchange.
 - [`packages/financial-engine/src/mistakes.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/mistakes.ts): Rule-based mistake detection (`detectMistakeSuggestions`, `checkDailyLossBreach`, `calculateDailySessionSummary`) evaluating revenge trading, overtrading, sizing violations, daily loss limits, and discipline rating scoring.
-- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (40 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`, `charges.test.ts`, `session.test.ts`, `mistakes.test.ts`).
+- [`packages/financial-engine/src/templates.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/templates.ts): Dynamic template resolution (`resolveTemplate`), context-aware ranking (`rankTemplates`), tick rounding (`roundToTick`), and NSE 2026 expiry date calculation (`isNiftyWeeklyExpiry`, `isNseMonthlyExpiry`, `isExpiryDay`).
+- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (70 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`, `charges.test.ts`, `session.test.ts`, `mistakes.test.ts`, and `templates.test.ts` (30 tests)).
 
 ---
 
@@ -85,6 +86,7 @@ apps/api/
 │   │       ├── BrokerIntegration.ts # FYERS connection status and sync history
 │   │       ├── BrokerImportMapping.ts # Saved per-broker CSV column mapping configurations
 │   │       ├── AuditLog.ts        # Immutable system audit trail entries
+│   │       ├── TradeTemplate.ts   # Rule-driven trade setup templates with dynamic SL/target
 │   │       └── index.ts           # Models barrel export
 │   ├── middleware/
 │   │   ├── auth.ts                # Session cookie validation (requireAuth, createSession, clearSession)
@@ -100,6 +102,7 @@ apps/api/
 │   │   ├── review.routes.ts       # /api/v1/review (queue, session prefill, mistake suggestions)
 │   │   ├── analytics.routes.ts    # /api/v1/analytics/psychology (emotions & mistake costs)
 │   │   ├── risk.routes.ts         # /api/v1/risk/calculate (sizing & lot rounding)
+│   │   ├── template.routes.ts     # /api/v1/templates (CRUD, favorites, usage, edge stats)
 │   │   ├── attachment.routes.ts   # /api/v1/attachments (upload, stream, delete)
 │   │   ├── export-import.routes.ts# /api/v1/export (CSV/JSON export, CSV preview & commit)
 │   │   ├── settings.routes.ts     # /api/v1/settings (profile, password, system-status)
@@ -122,11 +125,12 @@ apps/api/
 │       ├── reset-demo.ts          # Safe reset script for demo user data (npm run seed:reset)
 │       ├── validate-seed.ts       # CLI validator script (npm run seed:validate)
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (79 tests)
+└── test/                          # Vitest API and Seed Engine integration test suites (116 tests)
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests
     ├── regression.test.ts         # Comprehensive 38-case QA regression test suite
-    └── seed-engine.test.ts        # Seed engine determinism, idempotency, and integrity tests
+    ├── seed-engine.test.ts        # Seed engine determinism, idempotency, and integrity tests
+    └── template.test.ts           # Template CRUD, tenant isolation, and edge stat tests (12 tests)
 ```
 
 ---
@@ -164,9 +168,10 @@ apps/web/
 │   │       ├── QuickCloseTradeDialog.tsx # Fast exit modal with live P&L and auto-charges
 │   │       ├── tradeTemplates.ts  # Predefined trade setup templates
 │   │       ├── form/
+│   │       │   ├── MarketTemplateBar.tsx      # Ranked quick setup chips bar (1-6 shortcuts, preview)
 │   │       │   ├── TradeCalculationBanner.tsx # Live gross/net P&L & fees banner
-│   │       │   ├── TradeTemplateSelector.tsx  # Quick setup templates selector
-│   │       │   ├── TradeQuickSection.tsx      # Express entry inputs
+│   │       │   ├── TradeTemplateSelector.tsx  # Modal catalog for setup templates (/api/v1/templates)
+│   │       │   ├── TradeQuickSection.tsx      # Express entry inputs & template bar integration
 │   │       │   ├── TradeAdvancedFills.tsx     # Chronological FIFO fill entries
 │   │       │   ├── TradeJournalDetails.tsx    # Thesis, confluences, psychology tabs
 │   │       │   ├── TradeIdentityTab.tsx       # Account, symbol, instrument details
@@ -186,7 +191,7 @@ apps/web/
 │       ├── TradeDetailPage.tsx    # /trades/:id (Deep-dive trade inspection & charts)
 │       ├── JournalCalendarPage.tsx# /journal (Monthly green/red calendar & reflections)
 │       ├── AnalyticsPage.tsx      # /analytics (Psychology, weekday, session analytics)
-│       ├── StrategyPlaybookPage.tsx # /strategies (Playbooks and win rate scores)
+│       ├── StrategyPlaybookPage.tsx # /strategies (Dual tabs: Execution Playbooks & Trade Templates)
 │       ├── RiskCalculatorPage.tsx # /risk-calculator (Position sizing & trade transfer)
 │       ├── AccountsPage.tsx       # /accounts (Multi-broker ledger & cash flows)
 │       ├── InstrumentsPage.tsx    # /instruments (Contract specifications & scrips)

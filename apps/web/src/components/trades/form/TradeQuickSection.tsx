@@ -28,14 +28,19 @@ import {
   ExpandLessRounded,
   LocalOfferRounded,
   RotateLeftRounded,
+  InfoOutlined,
 } from '@mui/icons-material';
 import {
   ASSET_CLASSES,
   MARKET_SEGMENTS,
   TRADING_SESSIONS,
+  ITradeTemplate,
+  TemplatePatch,
+  ProvenanceSource,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { formatCurrency } from '../../../lib/utils.js';
+import { MarketTemplateBar } from './MarketTemplateBar.js';
 
 interface TradeQuickSectionProps {
   register: UseFormRegister<any>;
@@ -47,6 +52,16 @@ interface TradeQuickSectionProps {
   isAutoFees?: boolean;
   onToggleAutoFees?: (auto: boolean) => void;
   onResetAutoFees?: () => void;
+  dirtyFields?: Record<string, any>;
+  activeTemplate?: ITradeTemplate | null;
+  provenanceMap?: Record<string, ProvenanceSource>;
+  manualSlHint?: string | null;
+  onApplyTemplatePatch?: (patch: TemplatePatch, template: ITradeTemplate) => void;
+  onUndoTemplate?: () => void;
+  hasAppliedTemplate?: boolean;
+  appliedTemplateName?: string;
+  missingStrategyName?: string | null;
+  userTemplates?: ITradeTemplate[];
 }
 
 export function TradeQuickSection({
@@ -59,6 +74,16 @@ export function TradeQuickSection({
   isAutoFees = true,
   onToggleAutoFees,
   onResetAutoFees,
+  dirtyFields = {},
+  activeTemplate = null,
+  provenanceMap = {},
+  manualSlHint = null,
+  onApplyTemplatePatch,
+  onUndoTemplate,
+  hasAppliedTemplate = false,
+  appliedTemplateName,
+  missingStrategyName = null,
+  userTemplates = [],
 }: TradeQuickSectionProps) {
   const muiTheme = useTheme();
   const [showItemizedFees, setShowItemizedFees] = useState(false);
@@ -308,6 +333,28 @@ export function TradeQuickSection({
             </Box>
           )}
         </Box>
+
+        {/* Market-based Rule-Driven Templates Bar */}
+        {onApplyTemplatePatch && (
+          <MarketTemplateBar
+            symbol={selectedSymbol}
+            assetClass={watch('assetClass') || 'FUTURES'}
+            direction={direction}
+            entryPrice={Number(watch('simpleExecution.entryPrice')) || 0}
+            entryTime={watch('entryTime')}
+            tickSize={currentInstrument?.tickSize || 0.05}
+            lotSize={lotSize}
+            contractMultiplier={Number(contractMultiplier) || 1}
+            dirtyFields={dirtyFields}
+            currentValues={watch()}
+            strategies={strategies}
+            onApplyTemplatePatch={onApplyTemplatePatch}
+            onUndoTemplate={onUndoTemplate}
+            hasAppliedTemplate={hasAppliedTemplate}
+            appliedTemplateName={appliedTemplateName}
+            userTemplates={userTemplates}
+          />
+        )}
       </Box>
 
       <Divider sx={{ my: 0.5 }} />
@@ -412,24 +459,69 @@ export function TradeQuickSection({
 
       {/* Row 4: Risk Parameters (Stop Loss & Target) */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2 }}>
-        <TextField
-          label="Initial Stop Loss"
-          type="number"
-          size="small"
-          placeholder="e.g. 23950"
-          fullWidth
-          value={watch('risk.initialStopLoss') || ''}
-          onChange={(e) => setValue('risk.initialStopLoss', e.target.value === '' ? '' : Number(e.target.value))}
-          slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-          helperText={
-            stopLoss && entryPrice
-              ? `${Math.abs(entryPrice - stopLoss).toFixed(2)} pts stop (${formatCurrency(Math.abs(entryPrice - stopLoss) * quantity * contractMultiplier)} risk)`
-              : 'Defines your risk invalidation'
-          }
-        />
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          <TextField
+            label={
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                <span>Initial Stop Loss</span>
+                {provenanceMap['risk.initialStopLoss'] === 'RULE' && (
+                  <Chip
+                    label="from rule"
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 700 }}
+                  />
+                )}
+              </Box>
+            }
+            type="number"
+            size="small"
+            placeholder="e.g. 23950"
+            fullWidth
+            value={watch('risk.initialStopLoss') || ''}
+            onChange={(e) => setValue('risk.initialStopLoss', e.target.value === '' ? '' : Number(e.target.value))}
+            slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+            helperText={
+              manualSlHint ? (
+                <Box
+                  component="span"
+                  sx={{
+                    color: 'warning.main',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    fontSize: '0.6875rem',
+                  }}
+                >
+                  <InfoOutlined sx={{ fontSize: 13 }} />
+                  {manualSlHint}
+                </Box>
+              ) : stopLoss && entryPrice ? (
+                `${Math.abs(entryPrice - stopLoss).toFixed(2)} pts stop (${formatCurrency(Math.abs(entryPrice - stopLoss) * quantity * contractMultiplier)} risk)`
+              ) : (
+                'Defines your risk invalidation'
+              )
+            }
+          />
+        </Box>
 
         <TextField
-          label="Planned Target Price"
+          label={
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+              <span>Planned Target Price</span>
+              {provenanceMap['risk.plannedTarget'] === 'RULE' && (
+                <Chip
+                  label="from rule"
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 700 }}
+                />
+              )}
+            </Box>
+          }
           type="number"
           size="small"
           placeholder="e.g. 24200"
@@ -514,30 +606,77 @@ export function TradeQuickSection({
 
       {/* Row 6: Strategy, Title & Tags */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1.2fr 1.2fr 1.6fr' }, gap: 2 }}>
-        <TextField
-          select
-          label="Strategy Playbook"
-          size="small"
-          fullWidth
-          value={watch('strategyId') || ''}
-          onChange={(e) => {
-            setValue('strategyId', e.target.value);
-            const found = strategies.find((s) => s.id === e.target.value);
-            if (found) setValue('strategyName', found.name);
-          }}
-        >
-          <MenuItem value="">
-            <em>None / Discretionary</em>
-          </MenuItem>
-          {strategies.map((strat) => (
-            <MenuItem key={strat.id} value={strat.id}>
-              {strat.name}
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          <TextField
+            select
+            label={
+              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                <span>Strategy Playbook</span>
+                {provenanceMap['strategyName'] === 'TEMPLATE' && (
+                  <Chip
+                    label="from template"
+                    size="small"
+                    sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 700, bgcolor: 'primary.main', color: '#fff' }}
+                  />
+                )}
+              </Box>
+            }
+            size="small"
+            fullWidth
+            value={watch('strategyId') || ''}
+            onChange={(e) => {
+              setValue('strategyId', e.target.value);
+              const found = strategies.find((s) => s.id === e.target.value);
+              if (found) setValue('strategyName', found.name);
+            }}
+          >
+            <MenuItem value="">
+              <em>None / Discretionary</em>
             </MenuItem>
-          ))}
-        </TextField>
+            {strategies.map((strat) => (
+              <MenuItem key={strat.id} value={strat.id}>
+                {strat.name}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          {/* Missing strategy helper chip */}
+          {missingStrategyName && (
+            <Box sx={{ mt: 0.75 }}>
+              <Chip
+                icon={<AddRounded sx={{ fontSize: '13px !important' }} />}
+                label={`Create strategy "${missingStrategyName}"`}
+                size="small"
+                color="info"
+                variant="outlined"
+                onClick={() => {
+                  setValue('strategyName', missingStrategyName, { shouldDirty: true });
+                }}
+                sx={{
+                  height: 22,
+                  fontSize: '0.6875rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'info.main', color: '#fff' },
+                }}
+              />
+            </Box>
+          )}
+        </Box>
 
         <TextField
-          label="Trade Setup Title"
+          label={
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+              <span>Trade Setup Title</span>
+              {provenanceMap['tradeTitle'] === 'TEMPLATE' && (
+                <Chip
+                  label="from template"
+                  size="small"
+                  sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 700, bgcolor: 'primary.main', color: '#fff' }}
+                />
+              )}
+            </Box>
+          }
           size="small"
           placeholder="e.g. 5m FVG Bounce"
           fullWidth
@@ -546,7 +685,18 @@ export function TradeQuickSection({
         />
 
         <TextField
-          label="Tags (Comma-separated)"
+          label={
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+              <span>Tags (Comma-separated)</span>
+              {provenanceMap['tags'] && (
+                <Chip
+                  label="from template"
+                  size="small"
+                  sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 700, bgcolor: 'primary.main', color: '#fff' }}
+                />
+              )}
+            </Box>
+          }
           size="small"
           placeholder="e.g. A-PLUS, MOMENTUM, S&R"
           fullWidth

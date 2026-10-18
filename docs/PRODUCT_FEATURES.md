@@ -72,6 +72,14 @@ This document provides a comprehensive, verified feature inventory of all module
   - Automatic trading session derivation from entry timestamp (`NSE_REGULAR`, `MCX_EVENING`, `NEW_YORK`, `LONDON`, `OFF_HOURS`).
   - Automatic Indian statutory charges calculation (`calculateIndianCharges` in `@tradevault/financial-engine`) with live `TradeCalculationBanner` recomputation, "Auto" badge, manual fee override detection, and "Reset to auto" action.
   - Persistent preference memory: remembers last-used account, strategy, symbol, workflow mode, and execution mode.
+  - Quick Close action on `/trades` and `/trades/:id` for OPEN/PLANNED trades via [`QuickCloseTradeDialog`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx): prompts for exit price, exit time, optional exit fees, auto-computes round-trip statutory charges, and live Net P&L.
+  - Global Command Palette ([`CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx)) accessible via `Cmd+K` / `Ctrl+K` with quick actions:
+    - *Log New Trade (`N`)*
+    - *Repeat Last Trade (`R`)*: Instantly clones the most recent trade via `POST /api/v1/trades/:id/duplicate`.
+    - *Jump to Today's Journal (`J`)*
+    - *Open Risk Calculator (`C`)*
+    - *Jump to Page*: Instant filter and jump to any view.
+  - Strategy-aware entry: selecting a strategy playbook pre-populates `thesis.confluences` with the strategy's checklist/entry rules, and verifies `plannedRewardRiskRatio >= strategy.minRiskReward` (displays warning banner if R:R threshold is breached).
   - Search, filter by account, symbol, asset class, direction, status, outcome, and date range.
   - Pagination and sorting.
   - Trade duplication, bulk tagging, and bulk deletion.
@@ -82,12 +90,14 @@ This document provides a comprehensive, verified feature inventory of all module
   - [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
   - [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx)
   - [`TradeFormModal.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/TradeFormModal.tsx)
+  - [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx)
+  - [`CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx)
   - Sub-components: `TradeQuickSection`, `TradeAdvancedFills`, `TradeCalculationBanner`, `TradeJournalDetails`, `TradeTemplateSelector`.
 - **Backend APIs & Services:**
   - `GET /api/v1/trades` (supports filtering, sorting, pagination)
   - `POST /api/v1/trades`
   - `GET /api/v1/trades/:id`
-  - `PUT /api/v1/trades/:id`
+  - `PUT /api/v1/trades/:id` (supports partial simple execution payload for quick closing)
   - `DELETE /api/v1/trades/:id` (unlinks private files from disk and recalculates account balance)
   - `POST /api/v1/trades/:id/duplicate`
   - `POST /api/v1/trades/bulk-tag`
@@ -96,8 +106,8 @@ This document provides a comprehensive, verified feature inventory of all module
 - **Business Rules & Calculations:**
   - Linear Gross P&L computed via `@tradevault/financial-engine`.
   - Advanced mode uses strict FIFO lot matching via `calculateFIFOExecution`.
-  - Every trade modification appends an immutable entry to `auditLog`.
-  - Account balances are authoritatively recomputed on every trade creation, update, or deletion.
+  - Every trade modification appends an immutable entry to `auditLog` (actions: `CREATED`, `UPDATED`, `CLOSED`, `DUPLICATED`).
+  - Account balances are authoritatively recomputed on every trade creation, update, closure, or deletion.
 
 ---
 
@@ -218,8 +228,8 @@ This document provides a comprehensive, verified feature inventory of all module
 - **Purpose:** Secure local storage and visualization of trade chart screenshots.
 - **Problem Solved:** Keeps chart intellectual property private on local disk while providing rich visual trade reviews.
 - **Main User Interactions:**
-  - Drag and drop or upload up to 12 images per trade.
-  - Categorize charts (`SETUP`, `ENTRY`, `EXIT`, `REVIEW`, `OTHER`, `ANNOTATED`, etc.).
+  - Multi-file drag and drop or direct clipboard paste (`Ctrl+V` / `Cmd+V`) up to 12 images per trade.
+  - Automatic stage categorization on paste/drop (`SETUP` -> `ENTRY` -> `EXIT` -> `REVIEW`).
   - Add timeframe and captions.
   - View full-resolution lightbox gallery with zoom and category badges.
   - Delete attachments.

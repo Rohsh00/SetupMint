@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
@@ -15,6 +15,7 @@ import Menu from '@mui/material/Menu';
 import FormControl from '@mui/material/FormControl';
 import Avatar from '@mui/material/Avatar';
 import Divider from '@mui/material/Divider';
+import Chip from '@mui/material/Chip';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -36,6 +37,7 @@ import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchangeRounded';
 import AssessmentIcon from '@mui/icons-material/AssessmentRounded';
 import SettingsIcon from '@mui/icons-material/SettingsRounded';
 import AddIcon from '@mui/icons-material/AddRounded';
+import SearchIcon from '@mui/icons-material/SearchRounded';
 import LightModeIcon from '@mui/icons-material/LightModeRounded';
 import DarkModeIcon from '@mui/icons-material/DarkModeRounded';
 import MenuIcon from '@mui/icons-material/MenuRounded';
@@ -48,6 +50,7 @@ import { useTheme } from '../../context/ThemeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
 import { SetupMintLogo } from '../brand/SetupMintLogo.js';
+import { CommandPalette } from './CommandPalette.js';
 import { toast } from '../../context/ToastContext.js';
 
 const DRAWER_WIDTH = 250;
@@ -66,9 +69,43 @@ export function AppLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+
+  // Global Keyboard Shortcuts (Cmd+K palette, N for new trade)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl + K opens/toggles command palette
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // Avoid interrupting form inputs
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isInputActive =
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        activeTag === 'select' ||
+        (document.activeElement as HTMLElement)?.isContentEditable;
+
+      if (isInputActive) return;
+
+      // Single-key global shortcuts when no modal is open
+      if (!isTradeModalOpen && !isCommandPaletteOpen) {
+        if (e.key.toLowerCase() === 'n') {
+          e.preventDefault();
+          setIsTradeModalOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTradeModalOpen, isCommandPaletteOpen]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -482,6 +519,67 @@ export function AppLayout() {
 
             {/* Top Bar Actions */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              {/* Command Palette Trigger */}
+              <Tooltip title="Quick Commands & Search (Cmd+K)" arrow>
+                <Button
+                  id="command-palette-trigger-btn"
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setIsCommandPaletteOpen(true)}
+                  startIcon={<SearchIcon sx={{ fontSize: 18, color: muiTheme.palette.text.secondary }} />}
+                  sx={{
+                    height: 36,
+                    borderRadius: 2,
+                    borderColor: muiTheme.palette.divider,
+                    color: muiTheme.palette.text.secondary,
+                    textTransform: 'none',
+                    px: 1.5,
+                    fontSize: '0.8125rem',
+                    fontWeight: 500,
+                    backgroundColor: isDark ? 'rgba(17, 24, 39, 0.4)' : 'rgba(255, 255, 255, 0.6)',
+                    display: { xs: 'none', sm: 'inline-flex' },
+                    alignItems: 'center',
+                    gap: 1.5,
+                    '&:hover': {
+                      borderColor: muiTheme.palette.primary.main,
+                      backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(255, 255, 255, 0.9)',
+                    },
+                  }}
+                >
+                  <span>Search or command...</span>
+                  <Chip
+                    label="⌘K"
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                      color: muiTheme.palette.text.secondary,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                </Button>
+              </Tooltip>
+
+              {/* Mobile Search Icon Button */}
+              {isMobile && (
+                <IconButton
+                  size="small"
+                  onClick={() => setIsCommandPaletteOpen(true)}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                    color: muiTheme.palette.text.secondary,
+                  }}
+                >
+                  <SearchIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+              )}
+
               {/* Mobile Quick Trade Button */}
               {isMobile && (
                 <Button
@@ -639,6 +737,13 @@ export function AppLayout() {
         isOpen={isTradeModalOpen}
         onClose={() => setIsTradeModalOpen(false)}
         defaultAccountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+      />
+
+      {/* Cmd+K Global Command Palette */}
+      <CommandPalette
+        open={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onOpenNewTrade={() => setIsTradeModalOpen(true)}
       />
     </Box>
   );

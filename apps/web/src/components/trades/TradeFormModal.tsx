@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -278,6 +278,38 @@ export function TradeFormModal({
     return accounts.find((a: any) => a.id === watchedAccountId);
   }, [accounts, watchedAccountId]);
 
+  // Selected strategy for rules and confluences
+  const selectedStrategy = useMemo(() => {
+    if (!watchedStrategyId) return null;
+    return strategies.find((s: any) => s.id === watchedStrategyId || s._id === watchedStrategyId) || null;
+  }, [strategies, watchedStrategyId]);
+
+  // Strategy-aware entry: prefill checklist/confluences when strategy is selected
+  const prevStrategyIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!watchedStrategyId || watchedStrategyId === prevStrategyIdRef.current) {
+      prevStrategyIdRef.current = watchedStrategyId;
+      return;
+    }
+    prevStrategyIdRef.current = watchedStrategyId;
+
+    if (selectedStrategy) {
+      if (selectedStrategy.name) {
+        setValue('strategyName', selectedStrategy.name);
+      }
+      const strategyConfluences = [
+        ...(selectedStrategy.checklist || []),
+        ...(selectedStrategy.entryRules || []),
+      ];
+      if (strategyConfluences.length > 0) {
+        const currentConfluences: string[] = watch('thesis.confluences') || [];
+        const combined = Array.from(new Set([...currentConfluences, ...strategyConfluences]));
+        setValue('thesis.confluences', combined, { shouldDirty: true });
+        setValue('psychology.checklistCompleted', true, { shouldDirty: true });
+      }
+    }
+  }, [watchedStrategyId, selectedStrategy, setValue, watch]);
+
   // Persist preferences safely when user actively changes symbol, account, strategy, workflow, or execution mode
   useEffect(() => {
     if (!editTradeId && (watchedAccountId || watchedSymbol || watchedStrategyId)) {
@@ -434,6 +466,15 @@ export function TradeFormModal({
       plannedRewardRiskRatio = Number((rewardDist / riskDist).toFixed(2));
     }
   }
+
+  // Strategy rule: warn if planned R:R is below strategy minimum
+  const strategyRRWarning = useMemo(() => {
+    if (!selectedStrategy?.minRiskReward || plannedRewardRiskRatio === undefined) return undefined;
+    if (plannedRewardRiskRatio < selectedStrategy.minRiskReward) {
+      return `Strategy Rule Warning: Planned R:R (1:${plannedRewardRiskRatio.toFixed(2)}) is below the playbook minimum required (1:${selectedStrategy.minRiskReward.toFixed(2)}) for ${selectedStrategy.name}.`;
+    }
+    return undefined;
+  }, [selectedStrategy, plannedRewardRiskRatio]);
 
   // Mutations
   const createMutation = useMutation({
@@ -844,6 +885,7 @@ export function TradeFormModal({
             positionValue={positionExposure}
             isAutoFees={executionMode === 'SIMPLE' ? isAutoFees : undefined}
             onResetAutoFees={handleResetAutoFees}
+            strategyRRWarning={strategyRRWarning}
           />
 
           {templateNotice && (

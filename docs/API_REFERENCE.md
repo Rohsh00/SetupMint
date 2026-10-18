@@ -270,9 +270,11 @@ Authentication is handled via stateful sessions:
 - **Responses:** `200 OK`, `404 TRADE_NOT_FOUND`.
 
 ### `PUT /api/v1/trades/:id`
-- **Purpose:** Update trade fields, recalculate P&L, append audit log entry, and re-balance account.
+- **Purpose:** Update trade fields, execute Quick Close for open positions, recalculate P&L via financial engine, append audit log entry, and re-balance account.
 - **Auth:** **Required**.
-- **Responses:** `200 OK`, `404 TRADE_NOT_FOUND`.
+- **Payload Schema:** `updateTradeSchema` (partial `createTradeSchema` with optional partial `simpleExecution`).
+- **Quick Close Support:** Accepts partial `simpleExecution` with `{ exitPrice, brokerage?, ... }` and `status: 'CLOSED'`. The server merges with existing entry prices, computes authoritative P&L, appends `auditLog` action `CLOSED` (or `UPDATED`), and authoritatively reconciles the account balance.
+- **Responses:** `200 OK` with updated trade object, `400 VALIDATION_ERROR`, `404 TRADE_NOT_FOUND`.
 
 ### `DELETE /api/v1/trades/:id`
 - **Purpose:** Delete trade, remove associated disk files, delete attachments, and reconcile account balance.

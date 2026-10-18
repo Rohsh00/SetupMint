@@ -8,7 +8,7 @@ import {
 } from '@tradevault/financial-engine';
 import fs from 'fs';
 import path from 'path';
-import { createTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
+import { createTradeSchema, updateTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
 import { TradingAccount, Trade, Strategy, Instrument, Attachment } from '../db/models/index.js';
 import { config } from '../config.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -344,7 +344,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
-    const parseResult = createTradeSchema.partial().safeParse(req.body);
+    const parseResult = updateTradeSchema.safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
         success: false,
@@ -352,18 +352,29 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
+    const existingExec = existingTrade.simpleExecution
+      ? typeof (existingTrade.simpleExecution as any).toObject === 'function'
+        ? (existingTrade.simpleExecution as any).toObject()
+        : existingTrade.simpleExecution
+      : {};
+
+    const mergedSimpleExecution = parseResult.data.simpleExecution
+      ? { ...existingExec, ...parseResult.data.simpleExecution }
+      : existingTrade.simpleExecution;
+
     const mergedData = {
       ...existingTrade.toObject(),
       ...parseResult.data,
       risk: { ...existingTrade.risk, ...parseResult.data.risk },
       thesis: { ...existingTrade.thesis, ...parseResult.data.thesis },
       psychology: { ...existingTrade.psychology, ...parseResult.data.psychology },
-      simpleExecution: parseResult.data.simpleExecution || existingTrade.simpleExecution,
+      simpleExecution: mergedSimpleExecution,
       fills: parseResult.data.fills || existingTrade.fills,
     };
 
     const oldNetPnL = existingTrade.calculated?.netPnL || 0;
     const newCalculated = computeTradeCalculations(mergedData);
+    const isClosing = parseResult.data.status === 'CLOSED' && existingTrade.status !== 'CLOSED';
 
     const updatePayload: any = {
       ...parseResult.data,
@@ -375,10 +386,14 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       calculated: newCalculated,
       $push: {
         auditLog: {
-          action: 'UPDATED',
+          action: isClosing ? 'CLOSED' : 'UPDATED',
           timestamp: new Date(),
           changedBy: req.user!.email,
-          details: { oldNetPnL, newNetPnL: newCalculated.netPnL },
+          details: {
+            oldNetPnL,
+            newNetPnL: newCalculated.netPnL,
+            ...(isClosing && mergedSimpleExecution?.exitPrice ? { exitPrice: mergedSimpleExecution.exitPrice } : {}),
+          },
         },
       },
     };

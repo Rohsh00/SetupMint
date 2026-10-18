@@ -260,3 +260,66 @@ sequenceDiagram
 2. Connects to database and iterates over every trading account.
 3. Re-aggregates all closed trade net P&Ls and account transactions (deposits, withdrawals, adjustments).
 4. Persists the exact calculated balance back to `TradingAccount.currentBalance` and `realizedPnL`.
+
+---
+
+## 9. Fast Entry, Quick Close & Command Palette Workflows
+
+### A. Quick Close Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Trader as Trader
+    participant Page as TradesPage / TradeDetailPage
+    participant Dialog as QuickCloseTradeDialog
+    participant Engine as @tradevault/financial-engine
+    participant API as Fastify Trade API (/api/v1/trades/:id)
+    participant AccSvc as AccountService
+    participant DB as MongoDB (Trade / TradingAccount)
+
+    Trader->>Page: Clicks "Quick Close" on OPEN/PLANNED trade
+    Page->>Dialog: Opens with trade context (symbol, entryPrice, qty, broker)
+    Trader->>Dialog: Inputs exit price (e.g., 2,560)
+    Dialog->>Engine: IndianChargesCalculator.calculate(assetClass, segment, entryPrice, exitPrice, qty, mult, broker)
+    Engine-->>Dialog: Returns ChargesBreakdown (brokerage, exchange, regulatory, taxes, totalCosts)
+    Dialog->>Dialog: Computes live Gross P&L, Total Costs, and Net Realized P&L
+    Trader->>Dialog: Clicks "Close Position"
+    Dialog->>API: PUT /api/v1/trades/:id { status: 'CLOSED', exitTime, simpleExecution: { exitPrice, brokerage, ... } }
+    API->>API: updateTradeSchema validates partial execution payload
+    API->>DB: Merges existing entry price & quantity with new exit price
+    API->>Engine: computeTradeCalculations() computes authoritative Net P&L & outcome
+    API->>DB: Trade.findOneAndUpdate() + appends auditLog { action: 'CLOSED', details: { exitPrice, newNetPnL } }
+    API->>AccSvc: AccountService.recalculateAccountBalances(accountId, userId)
+    AccSvc->>DB: Re-aggregates authoritative balance
+    API-->>Dialog: 200 OK { success: true, data: updatedTrade }
+    Dialog->>Page: Invalidates queries & displays success toast
+```
+
+### B. Command Palette & Quick Re-Entry Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Trader as Trader
+    participant Palette as CommandPalette (Cmd+K)
+    participant API as Fastify API
+    participant Router as React Router
+
+    Trader->>Palette: Hits Cmd+K (or clicks Search in TopBar)
+    Palette->>Trader: Displays glassmorphic command search dialog
+    alt Action: Repeat Last Trade
+        Trader->>Palette: Selects "Repeat Last Trade" (R)
+        Palette->>API: GET /api/v1/trades?limit=1&sortBy=createdAt&sortOrder=desc
+        API-->>Palette: Returns latest trade setup
+        Palette->>API: POST /api/v1/trades/:id/duplicate
+        API-->>Palette: 201 Created { id: newTradeId, symbol }
+        Palette->>Router: Navigates to /trades/:newTradeId
+    else Action: Jump to Today's Journal
+        Trader->>Palette: Selects "Jump to Today's Journal" (J)
+        Palette->>Router: Navigates to /journal
+    else Action: Open Risk Calculator
+        Trader->>Palette: Selects "Open Risk & Position Size Calculator" (C)
+        Palette->>Router: Navigates to /risk-calculator
+    end
+```

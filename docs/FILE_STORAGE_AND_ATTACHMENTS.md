@@ -27,6 +27,10 @@ SetupMint implements **100% private local disk storage** for chart screenshot at
 - **Maximum File Size:** Configured via `MAX_FILE_SIZE_MB` in `.env` (default: **10 MB**).
 - **Maximum Screenshots per Trade:** **12 images**.
 - **Attachment Storage Directory:** Configured via `UPLOAD_DIR` in `.env` (default: `./data/uploads`). Automatically created on server boot if absent.
+- **Client Capture Modes:**
+  - Multi-file drag-and-drop onto [`TradeAttachmentUploader`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeAttachmentUploader.tsx).
+  - Direct clipboard paste (`Ctrl+V` / `Cmd+V`) from system screenshot tools (e.g. macOS `Cmd+Ctrl+Shift+4`).
+  - Automatic stage categorization on addition (`SETUP` -> `ENTRY` -> `EXIT` -> `REVIEW`).
 
 ---
 

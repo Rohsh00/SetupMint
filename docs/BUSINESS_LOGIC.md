@@ -153,3 +153,40 @@ The core ledger architecture enforces that **the database is the authoritative s
    });
    ```
    If a matching record exists, the row is flagged as duplicate and skipped, preventing duplicate balance inflation.
+
+---
+
+## 9. Fast Entry & Quick Close Domain Rules
+
+1. **Quick Close Lifecycle Transition:**
+   - Any trade in `OPEN` or `PLANNED` status can be closed via the Quick Close action on `/trades` or `/trades/:id`.
+   - The Quick Close action reuses `PUT /api/v1/trades/:id` accepting a partial `simpleExecution` payload containing `exitPrice` and optional fee adjustments.
+   - The server merges the partial execution with the trade's existing `entryPrice`, `quantity`, and `contractMultiplier`.
+2. **Authoritative Closure Calculations:**
+   - Net realized P&L is re-evaluated by passing the merged execution details through `@tradevault/financial-engine`.
+   - The trade status shifts to `CLOSED`, and the outcome is classified as `WIN`, `LOSS`, or `BREAKEVEN`.
+3. **Audit Log & Balance Re-Aggregation:**
+   - Every quick closure appends an immutable audit entry to `Trade.auditLog`:
+     ```typescript
+     {
+       action: 'CLOSED',
+       timestamp: new Date(),
+       changedBy: req.user.email,
+       details: { oldNetPnL, newNetPnL: newCalculated.netPnL, exitPrice }
+     }
+     ```
+   - Immediately following trade persistence, `AccountService.recalculateAccountBalances(accountId, userId)` is executed to maintain strict balance consistency.
+
+---
+
+## 10. Strategy Playbook Adherence & Minimum R:R Validation
+
+1. **Playbook Confluences Inheritance:**
+   - Selecting a strategy in `TradeFormModal` automatically pre-fills the trade's `thesis.confluences` with the strategy's predefined `checklist` and `entryRules`.
+   - Sets `psychology.checklistCompleted` to `true` by default.
+2. **Minimum Reward-to-Risk Rule Enforcement:**
+   - When planned entry price ($P_{\text{entry}}$), initial stop loss ($P_{\text{stop}}$), and target price ($P_{\text{target}}$) are supplied:
+     $$\text{Planned R:R} = \frac{|P_{\text{target}} - P_{\text{entry}}|}{|P_{\text{entry}} - P_{\text{stop}}|}$$
+   - If $\text{Planned R:R} < \text{Strategy.minRiskReward}$, the system generates an explicit warning banner:
+     $$\text{Warning: Planned R:R is below the required minimum of } 1:\text{minRiskReward for strategy } \text{Name.}$$
+   - This warning guides the trader prior to submitting the trade setup while preserving full discretionary execution flexibility.

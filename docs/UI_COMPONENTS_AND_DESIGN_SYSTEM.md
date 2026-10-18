@@ -72,7 +72,17 @@ graph TD
 - Accessible modal dialog for destructive actions (deleting trades, wiping accounts, resetting demo data).
 - Renders custom warning icon, explanatory text, cancel button, and danger-themed confirmation button with loading spinner.
 
-### 3. `Modal.tsx` ([`apps/web/src/components/ui/Modal.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/Modal.tsx))
+### 3. `QuickCloseTradeDialog.tsx` ([`apps/web/src/components/trades/QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx))
+- Compact modal dialog for rapid closure of `OPEN` and `PLANNED` trades directly from `/trades` or `/trades/:id`.
+- Prompts for exit price, exit date/time (defaults to current local time), and optional exit fees.
+- Real-time statutory fee calculation via `@tradevault/financial-engine` with manual override and reset.
+- Live Net Realized P&L preview banner before closing the position.
+
+### 4. `CommandPalette.tsx` ([`apps/web/src/components/layout/CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx))
+- Global `Cmd+K` / `Ctrl+K` command search modal with full keyboard navigation (`↑`/`↓`/`↵`/`Esc`).
+- Provides quick actions: Log New Trade (`N`), Repeat Last Trade (`R`), Jump to Today's Journal (`J`), Open Risk Calculator (`C`), and instant fuzzy page navigation.
+
+### 5. `Modal.tsx` ([`apps/web/src/components/ui/Modal.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/Modal.tsx))
 - Base modal wrapper with smooth backdrop transition, keyboard `Esc` listener, and focus trapping.
 
 ---
@@ -83,12 +93,12 @@ The central trade logging experience is managed by [`TradeFormModal.tsx`](file:/
 
 | Component | Responsibility |
 | :--- | :--- |
-| `TradeCalculationBanner` | Displays live real-time gross P&L, statutory fee breakdown, AUTO/MANUAL fee chip with reset action, net P&L, and realized R-multiple before form submission. |
+| `TradeCalculationBanner` | Displays live real-time gross P&L, statutory fee breakdown, AUTO/MANUAL fee chip with reset action, net P&L, realized R-multiple, and strategy minimum R:R violation warning before form submission. |
 | `TradeTemplateSelector` | One-click prefill chips for common market setups (e.g., Nifty Breakout, BankNifty Mean Reversion). |
-| `TradeQuickSection` | Express trade entry with instrument autofill (currency, multiplier, lot size), bidirectional **Lots** / Quantity conversion, auto-session derivation, and auto statutory fee breakdown with manual override and reset. |
+| `TradeQuickSection` | Express trade entry with instrument autofill (currency, multiplier, lot size), bidirectional **Lots** / Quantity conversion, auto-session derivation, strategy playbook selection with auto-confluences prefill, and auto statutory fee breakdown with manual override and reset. |
 | `TradeAdvancedFills` | Interactive chronological list of entry and exit fills with FIFO lot matching. |
 | `TradeJournalDetails` | Accordion containing deep-dive tabs: Identity, Execution, Risk, Technical Thesis, and Psychology. |
-| `TradeAttachmentUploader` | Drag-and-drop file dropzone with staging preview, progress indicators, and category selection. |
+| `TradeAttachmentUploader` | Multi-file drag-and-drop and direct clipboard paste (`Ctrl+V` / `Cmd+V`) dropzone with staging preview, progress indicators, and category selection. |
 
 ---
 

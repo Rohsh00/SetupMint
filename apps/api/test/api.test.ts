@@ -229,6 +229,51 @@ describe('TradeVault API Integration Tests', () => {
     expect(body.data.symbol).toBe('RELIANCE');
   });
 
+  it('PUT /api/v1/trades/:id performs Quick Close for OPEN trade with partial execution payload', async () => {
+    // 1. Duplicate creates an OPEN trade with entryPrice=2500, quantity=100
+    const dupRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/trades/${tradeId}/duplicate`,
+      headers: { cookie: authCookie },
+    });
+    const dupTrade = JSON.parse(dupRes.body).data;
+
+    // 2. Perform Quick Close: send only exitPrice, exitTime, and status: 'CLOSED'
+    const closeRes = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/trades/${dupTrade.id}`,
+      headers: { cookie: authCookie },
+      payload: {
+        status: 'CLOSED',
+        exitTime: '2026-10-18T10:30:00Z',
+        simpleExecution: {
+          exitPrice: 2560, // Gross: (2560 - 2500) * 100 = 6000. Costs: 100 (40+20+40 from source). Net: 5900
+        },
+      },
+    });
+
+    expect(closeRes.statusCode).toBe(200);
+    const closeBody = JSON.parse(closeRes.body);
+    expect(closeBody.success).toBe(true);
+    expect(closeBody.data.status).toBe('CLOSED');
+    expect(closeBody.data.calculated.grossPnL).toBe(6000);
+    expect(closeBody.data.calculated.netPnL).toBe(5900);
+    expect(closeBody.data.calculated.outcome).toBe('WIN');
+
+    // 3. Verify audit log recorded CLOSED action and exitPrice details
+    const lastAudit = closeBody.data.auditLog[closeBody.data.auditLog.length - 1];
+    expect(lastAudit.action).toBe('CLOSED');
+    expect(lastAudit.details.exitPrice).toBe(2560);
+
+    // 4. Clean up duplicate closed trade to maintain state isolation for sequential account tests
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/trades/${dupTrade.id}`,
+      headers: { cookie: authCookie },
+    });
+    expect(delRes.statusCode).toBe(200);
+  });
+
   it('GET /api/v1/trades/invalid-id rejects invalid ObjectId format with 400', async () => {
     const res = await app.inject({
       method: 'GET',

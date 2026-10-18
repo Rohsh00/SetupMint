@@ -37,12 +37,14 @@ import SecurityIcon from '@mui/icons-material/SecurityRounded';
 import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CloudUploadIcon from '@mui/icons-material/CloudUploadRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
+import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 
 export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -52,6 +54,7 @@ export function TradeDetailPage() {
   const isDark = muiTheme.palette.mode === 'dark';
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isQuickCloseOpen, setIsQuickCloseOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -231,6 +234,18 @@ export function TradeDetailPage() {
 
         {/* Action Buttons */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {(trade.status === 'OPEN' || trade.status === 'PLANNED') && (
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              onClick={() => setIsQuickCloseOpen(true)}
+              startIcon={<CheckCircleRoundedIcon fontSize="small" />}
+              sx={{ fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
+            >
+              Close Trade
+            </Button>
+          )}
           <Button
             variant="outlined"
             size="small"
@@ -592,6 +607,14 @@ export function TradeDetailPage() {
         onConfirm={() => {
           deleteMutation.mutate();
         }}
+      />
+
+      {/* Quick Close Trade Dialog */}
+      <QuickCloseTradeDialog
+        open={isQuickCloseOpen}
+        onClose={() => setIsQuickCloseOpen(false)}
+        trade={trade}
+        accountBroker={trade?.accountId?.broker || trade?.accountBroker || 'ZERODHA'}
       />
     </Box>
   );

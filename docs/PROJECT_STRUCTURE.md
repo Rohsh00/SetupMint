@@ -118,7 +118,7 @@ apps/api/
 │       ├── reset-demo.ts          # Safe reset script for demo user data (npm run seed:reset)
 │       ├── validate-seed.ts       # CLI validator script (npm run seed:validate)
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (68 tests)
+└── test/                          # Vitest API and Seed Engine integration test suites (69 tests)
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests
     ├── regression.test.ts         # Comprehensive 38-case QA regression test suite
@@ -150,12 +150,14 @@ apps/web/
 │   │   │   ├── SetupMintLogo.tsx  # Vector SVG logo & wordmark
 │   │   │   └── StratumLogo.tsx    # Re-export alias for backward compatibility
 │   │   ├── layout/
-│   │   │   └── AppLayout.tsx      # Sidebar navigation, top bar, global account selector
+│   │   │   ├── AppLayout.tsx      # Sidebar navigation, top bar, global account selector
+│   │   │   └── CommandPalette.tsx # Global Cmd/Ctrl+K shortcut command palette
 │   │   ├── ui/                    # Reusable UI primitives
 │   │   │   ├── ConfirmDialog.tsx  # Confirmation modal for dangerous actions
 │   │   │   └── Modal.tsx          # Accessible modal dialog container
 │   │   └── trades/                # Trade form and execution components
 │   │       ├── TradeFormModal.tsx # Master modal (Quick vs Comprehensive, Simple vs Advanced)
+│   │       ├── QuickCloseTradeDialog.tsx # Fast exit modal with live P&L and auto-charges
 │   │       ├── tradeTemplates.ts  # Predefined trade setup templates
 │   │       ├── form/
 │   │       │   ├── TradeCalculationBanner.tsx # Live gross/net P&L & fees banner

@@ -41,12 +41,14 @@ import FilterAltOffIcon from '@mui/icons-material/FilterAltOffRounded';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
+import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
@@ -77,6 +79,7 @@ export function TradesPage() {
 
   // Modals
   const [isNewTradeModalOpen, setIsNewTradeModalOpen] = useState(false);
+  const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
 
   // Query trades
   const { data, isLoading } = useQuery({
@@ -632,6 +635,24 @@ export function TradesPage() {
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          {(t.status === 'OPEN' || t.status === 'PLANNED') && (
+                            <Tooltip title="Quick Close Trade" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={() => setQuickCloseTrade(t)}
+                                sx={{
+                                  color: muiTheme.palette.primary.main,
+                                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(5, 150, 105, 0.08)',
+                                  border: `1px solid ${isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.2)'}`,
+                                  '&:hover': {
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(5, 150, 105, 0.18)',
+                                  },
+                                }}
+                              >
+                                <CheckCircleRoundedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                           <Tooltip title="View Details" arrow>
                             <IconButton
                               component={RouterLink}
@@ -822,6 +843,14 @@ export function TradesPage() {
         onConfirm={() => {
           bulkDeleteMutation.mutate(selectedIds);
         }}
+      />
+
+      {/* Quick Close Trade Dialog */}
+      <QuickCloseTradeDialog
+        open={Boolean(quickCloseTrade)}
+        onClose={() => setQuickCloseTrade(null)}
+        trade={quickCloseTrade}
+        accountBroker={quickCloseTrade?.accountId?.broker || quickCloseTrade?.accountBroker || 'ZERODHA'}
       />
     </Box>
   );

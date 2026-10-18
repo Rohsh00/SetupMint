@@ -34,6 +34,7 @@ interface TradeCalculationBannerProps {
   directionError?: string | null;
   isAutoFees?: boolean;
   onResetAutoFees?: () => void;
+  strategyRRWarning?: string;
 }
 
 export function TradeCalculationBanner({
@@ -50,6 +51,7 @@ export function TradeCalculationBanner({
   directionError,
   isAutoFees,
   onResetAutoFees,
+  strategyRRWarning,
 }: TradeCalculationBannerProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -396,6 +398,22 @@ export function TradeCalculationBanner({
           }}
         >
           {directionError || 'Invalid risk configuration: verify entry price and stop loss price relationship.'}
+        </Alert>
+      )}
+
+      {/* Strategy Minimum R:R Violation Alert */}
+      {strategyRRWarning && (
+        <Alert
+          severity="warning"
+          icon={<WarningAmberRounded />}
+          sx={{
+            py: 0.5,
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            borderRadius: 1.5,
+          }}
+        >
+          {strategyRRWarning}
         </Alert>
       )}
     </Box>

@@ -77,16 +77,17 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 4. `/trades` — Master Trades Ledger Page
 - **Page Component:** [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
-- **Purpose:** Searchable, filterable ledger of all trades with pagination, bulk operations, and full audit logs.
+- **Purpose:** Searchable, filterable ledger of all trades with pagination, bulk operations, quick close, and full audit logs.
 - **Main Components:**
   - Filter Toolbar: Search input (symbol/title/notes), Direction filter (Long/Short), Outcome filter (Win/Loss/Breakeven/Open), Asset Class filter, Status filter.
-  - Master Table: Date, Symbol, Direction, Asset Class, Quantity, Entry Price, Exit Price, Net P&L, Realized R, Discipline Score, Attachments Count, Action buttons (View, Duplicate, Delete).
+  - Master Table: Date, Symbol, Direction, Asset Class, Quantity, Entry Price, Exit Price, Net P&L, Realized R, Discipline Score, Attachments Count, Action buttons (Quick Close, View Details, Duplicate, Delete).
   - Bulk Actions Toolbar: Select all checkbox, Bulk Tagging button, Bulk Delete button.
   - Pagination Controls: Page size selector (25, 50, 100), previous/next page navigation.
-  - Modals: `TradeFormModal`, `ConfirmDialog` for single delete and bulk delete, Bulk Tag dialog.
-- **Available Actions:** Search, filter, paginate, sort by column, open trade detail, open edit modal, duplicate trade, delete trade, bulk tag, bulk delete.
+  - Modals: `TradeFormModal`, `QuickCloseTradeDialog` (compact exit dialog for OPEN/PLANNED trades), `ConfirmDialog` for single delete and bulk delete, Bulk Tag dialog.
+- **Available Actions:** Search, filter, paginate, sort by column, quick close position, open trade detail, open edit modal, duplicate trade, delete trade, bulk tag, bulk delete.
 - **API Calls:**
   - `GET /api/v1/trades?page=...&limit=...&search=...&direction=...&outcome=...`
+  - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/trades/:id/duplicate`
   - `DELETE /api/v1/trades/:id`
   - `POST /api/v1/trades/bulk-tag`
@@ -98,20 +99,21 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 5. `/trades/:id` — Trade Detail & Audit Page
 - **Page Component:** [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx)
-- **Purpose:** In-depth post-trade analysis, execution fills inspection, technical thesis, psychological notes, chart gallery, and immutable audit trail.
+- **Purpose:** In-depth post-trade analysis, execution fills inspection, technical thesis, psychological notes, chart gallery, quick close, and immutable audit trail.
 - **Main Components:**
-  - Trade Header: Symbol, asset class, direction, status, trade title, net P&L badge, R-multiple badge.
+  - Trade Header: Symbol, asset class, direction, status, trade title, net P&L badge, R-multiple badge, Quick Close button (for OPEN/PLANNED positions).
   - Metrics Cards: Gross P&L, Total Costs Breakdown (brokerage, exchange, regulatory, taxes), ROI %, holding time.
   - Tabbed Sections:
     - *Execution Tab:* Simple execution details or FIFO fills breakdown with lot match pairs.
     - *Risk & Planning Tab:* Initial stop loss, planned target, planned R:R, actual quantity vs suggested quantity.
     - *Thesis & Confluences Tab:* Pre-market bias, market structure, entry confirmation, SMC technical confluences.
     - *Psychology & Discipline Tab:* Emotions before/during/after, discipline rating (1–5), mistake tags, rules followed, lessons learned.
-    - *Screenshots Gallery:* Uploaded chart screenshots categorized by trade stage with lightbox inspection.
-    - *Audit Trail:* Immutable log of creation, updates, and balance adjustments.
-- **Available Actions:** Edit trade (opens `TradeFormModal`), duplicate trade, delete trade, upload additional screenshots, view full-resolution charts.
+    - *Screenshots Gallery:* Uploaded chart screenshots categorized by trade stage with lightbox inspection and clipboard paste (Ctrl+V / Cmd+V) support.
+    - *Audit Trail:* Immutable log of creation, updates, quick closures, and balance adjustments.
+- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
 - **API Calls:**
   - `GET /api/v1/trades/:id`
+  - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/attachments/trades/:id/upload`
   - `DELETE /api/v1/attachments/:attachmentId`
   - `DELETE /api/v1/trades/:id`
@@ -266,4 +268,23 @@ This document details all routes and pages discovered in the **SetupMint** front
   - `POST /api/v1/integrations/fyers/config`
   - `POST /api/v1/auth/logout`
 - **Database Models:** `User`, `BrokerIntegration`, `Trade`, `TradingAccount`, `Attachment`.
+- **Status:** **IMPLEMENTED**.
+
+---
+
+## 3. Global Application Shell & Command Palette
+
+- **Component:** [`AppLayout.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/AppLayout.tsx)
+- **Command Palette:** [`CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx)
+- **Shortcuts:**
+  - `Cmd+K` or `Ctrl+K`: Toggle global Command Palette modal from any screen.
+  - `N`: Quick-open Log New Trade modal (when no text input is focused).
+  - `↑` / `↓` / `↵` / `Esc`: Keyboard-driven palette selection and execution.
+- **Command Palette Actions:**
+  - **Quick Actions:**
+    - `Log New Trade` (`N`): Opens `TradeFormModal` with auto fees and instrument metadata.
+    - `Repeat Last Trade` (`R`): Automatically queries the latest logged trade and duplicates it via `POST /api/v1/trades/:id/duplicate`, resetting timestamps to now and status to `OPEN` for instant re-entry.
+    - `Jump to Today's Journal` (`J`): Navigates directly to `/journal` for daily reflections.
+    - `Open Risk Calculator` (`C`): Navigates directly to `/risk-calculator`.
+  - **Page Navigation:** Search and jump to any view: Overview (`/`), Trades (`/trades`), Journal (`/journal`), Analytics (`/analytics`), Strategies (`/strategies`), Risk Calculator (`/risk-calculator`), Accounts (`/accounts`), Instruments (`/instruments`), Reports (`/reports`), Settings (`/settings`).
 - **Status:** **IMPLEMENTED**.

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -156,6 +156,35 @@ export function TradeAttachmentUploader({
     }
   };
 
+  // Clipboard paste support (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      // If focused inside a text input or textarea without files, let normal text paste proceed
+      if ((activeTag === 'input' || activeTag === 'textarea') && (!e.clipboardData.files || e.clipboardData.files.length === 0)) {
+        return;
+      }
+
+      const files: File[] = [];
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const file = items[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+
+      if (files.length > 0) {
+        e.preventDefault();
+        processFiles(files);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [totalCurrentFiles, maxFiles]);
+
   // Preview an existing or staged attachment in the lightbox
   const openStagedPreview = (index: number) => {
     const convertedItems: IAttachment[] = stagedAttachments.map((s) => ({
@@ -236,24 +265,37 @@ export function TradeAttachmentUploader({
           </Box>
 
           <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.9375rem' }}>
-            Drag & drop chart screenshots here, or{' '}
+            Drag & drop chart screenshots, paste from clipboard (Ctrl+V), or{' '}
             <span style={{ color: muiTheme.palette.primary.main, textDecoration: 'underline' }}>browse</span>
           </Typography>
 
-          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, maxWidth: 520 }}>
-            Attach multiple charts per trade (Trade Setup, Entry Trigger, Exit / Target, Post-Trade Review). PNG, JPG, or WebP up to 10MB each.
+          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, maxWidth: 520, textAlign: 'center' }}>
+            Multi-file drop & instant clipboard paste (PNG, JPG, WebP up to 10MB each). Auto-categorized by trade lifecycle.
           </Typography>
 
-          <Chip
-            size="small"
-            label={`${totalCurrentFiles} / ${maxFiles} screenshots attached`}
-            sx={{
-              mt: 1,
-              fontFamily: `'JetBrains Mono', monospace`,
-              fontWeight: 600,
-              fontSize: '0.6875rem',
-            }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+            <Chip
+              size="small"
+              label={`${totalCurrentFiles} / ${maxFiles} screenshots attached`}
+              sx={{
+                fontFamily: `'JetBrains Mono', monospace`,
+                fontWeight: 600,
+                fontSize: '0.6875rem',
+              }}
+            />
+            <Chip
+              size="small"
+              label="Ctrl+V / ⌘V Paste Active"
+              color="primary"
+              variant="outlined"
+              sx={{
+                fontFamily: `'JetBrains Mono', monospace`,
+                fontWeight: 700,
+                fontSize: '0.625rem',
+                height: 22,
+              }}
+            />
+          </Box>
         </Box>
       </Box>
 

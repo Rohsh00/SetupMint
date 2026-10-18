@@ -259,6 +259,11 @@ export const createTradeSchema = z.object({
   screenshotIds: z.array(z.string()).default([]),
 });
 
+export const updateTradeSchema = createTradeSchema.partial().extend({
+  simpleExecution: simpleExecutionSchema.partial().optional(),
+});
+export type UpdateTradeInput = z.infer<typeof updateTradeSchema>;
+
 const emptyStringToUndefined = (val: unknown) =>
   typeof val === 'string' && val.trim() === '' ? undefined : val;
 

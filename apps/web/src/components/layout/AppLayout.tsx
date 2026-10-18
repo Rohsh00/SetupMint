@@ -47,7 +47,8 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
-import { StratumLogo } from '../brand/StratumLogo.js';
+import { SetupMintLogo } from '../brand/SetupMintLogo.js';
+import { toast } from '../../context/ToastContext.js';
 
 const DRAWER_WIDTH = 250;
 const COLLAPSED_DRAWER_WIDTH = 72;
@@ -75,9 +76,11 @@ export function AppLayout() {
     try {
       await logout();
       queryClient.clear();
+      toast.success('Logged out successfully.');
       navigate('/login', { replace: true });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Logout error:', err);
+      toast.error(err?.message || 'Logout failed');
     } finally {
       setIsLoggingOut(false);
       setUserMenuAnchor(null);
@@ -126,7 +129,7 @@ export function AppLayout() {
           borderBottom: `1px solid ${muiTheme.palette.divider}`,
         }}
       >
-        <StratumLogo
+        <SetupMintLogo
           size={sidebarCollapsed ? 'sm' : 'md'}
           collapsed={sidebarCollapsed}
           showSubtitle={!sidebarCollapsed}
@@ -329,7 +332,7 @@ export function AppLayout() {
                   fontFamily: `'JetBrains Mono', monospace`,
                 }}
               >
-                {user?.email || 'trader@stratum'}
+                {user?.email || 'trader@setupmint.com'}
               </Typography>
             </Box>
           </Box>
@@ -582,7 +585,7 @@ export function AppLayout() {
                     variant="caption"
                     sx={{ color: 'text.secondary', fontFamily: '"JetBrains Mono", monospace', display: 'block' }}
                   >
-                    {user?.email || 'trader@stratum'}
+                    {user?.email || 'trader@setupmint.com'}
                   </Typography>
                 </Box>
                 <Divider sx={{ my: 0.75 }} />

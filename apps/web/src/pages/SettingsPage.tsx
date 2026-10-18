@@ -32,6 +32,7 @@ import {
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
 
 export function SettingsPage() {
   const muiTheme = useMuiTheme();
@@ -48,9 +49,11 @@ export function SettingsPage() {
     try {
       await logout();
       queryClient.clear();
+      toast.success('Logged out successfully.');
       navigate('/login', { replace: true });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Logout error:', err);
+      toast.error(err?.message || 'Logout failed');
     } finally {
       setIsLoggingOut(false);
     }
@@ -94,10 +97,13 @@ export function SettingsPage() {
       refreshUser();
       setProfileError(null);
       setProfileSuccess(true);
+      toast.success('Settings saved successfully.');
       setTimeout(() => setProfileSuccess(false), 3000);
     },
     onError: (err: any) => {
-      setProfileError(err.message || 'Failed to update profile');
+      const msg = err.message || 'Failed to update profile';
+      setProfileError(msg);
+      toast.error(msg);
     },
   });
 
@@ -105,12 +111,15 @@ export function SettingsPage() {
     mutationFn: (payload: any) => api.settings.changePassword(payload),
     onSuccess: () => {
       setPasswordMsg({ type: 'success', text: 'Password changed successfully!' });
+      toast.success('Password changed successfully!');
       setCurrentPassword('');
       setNewPassword('');
       setTimeout(() => setPasswordMsg(null), 3000);
     },
     onError: (err: any) => {
-      setPasswordMsg({ type: 'error', text: err.message || 'Failed to update password' });
+      const msg = err.message || 'Failed to update password';
+      setPasswordMsg({ type: 'error', text: msg });
+      toast.error(msg);
     },
   });
 
@@ -119,10 +128,13 @@ export function SettingsPage() {
     onSuccess: () => {
       setFyersError(null);
       setFyersSuccess(true);
+      toast.success('Broker configuration saved.');
       setTimeout(() => setFyersSuccess(false), 3000);
     },
     onError: (err: any) => {
-      setFyersError(err.message || 'Failed to save Fyers configuration');
+      const msg = err.message || 'Failed to save Fyers configuration';
+      setFyersError(msg);
+      toast.error(msg);
     },
   });
 
@@ -406,7 +418,7 @@ export function SettingsPage() {
           </Box>
 
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            Stratum is architected with a decoupled <strong>BrokerAdapter</strong> interface and <strong>NormalizedExecution</strong> schema. In future updates, FYERS API orders and fills will synchronize without altering your manual trade journal core.
+            SetupMint is architected with a decoupled <strong>BrokerAdapter</strong> interface and <strong>NormalizedExecution</strong> schema. In future updates, FYERS API orders and fills will synchronize without altering your manual trade journal core.
           </Typography>
 
           <Box
@@ -492,7 +504,7 @@ export function SettingsPage() {
           </Box>
 
           <Typography variant="body2" color="text.secondary">
-            Logged in as <strong>{user?.name}</strong> ({user?.email}). Stratum uses secure, HttpOnly session cookies isolated to your local environment.
+            Logged in as <strong>{user?.name}</strong> ({user?.email}). SetupMint uses secure, HttpOnly session cookies isolated to your local environment.
           </Typography>
 
           <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
@@ -505,7 +517,7 @@ export function SettingsPage() {
               startIcon={<LogoutRounded />}
               sx={{ fontWeight: 700 }}
             >
-              {isLoggingOut ? 'Signing Out...' : 'Sign Out of Stratum'}
+              {isLoggingOut ? 'Signing Out...' : 'Sign Out of SetupMint'}
             </Button>
           </Box>
         </CardContent>

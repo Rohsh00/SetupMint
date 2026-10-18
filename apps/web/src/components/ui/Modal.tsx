@@ -52,8 +52,8 @@ export function Modal({
       maxWidth={muiMaxWidth}
       fullWidth
       scroll="paper"
-      aria-labelledby="stratum-modal-title"
-      aria-describedby={description ? 'stratum-modal-description' : undefined}
+      aria-labelledby="setupmint-modal-title"
+      aria-describedby={description ? 'setupmint-modal-description' : undefined}
       slotProps={{
         paper: {
           sx: {
@@ -77,7 +77,7 @@ export function Modal({
     >
       {/* Dialog Header */}
       <DialogTitle
-        id="stratum-modal-title"
+        id="setupmint-modal-title"
         sx={{
           m: 0,
           p: '16px 20px',
@@ -102,7 +102,7 @@ export function Modal({
           </Typography>
           {description && (
             <Typography
-              id="stratum-modal-description"
+              id="setupmint-modal-description"
               variant="caption"
               sx={{
                 color: theme.palette.text.secondary,

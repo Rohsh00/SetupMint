@@ -35,6 +35,7 @@ import {
   TrendingUpRounded,
 } from '@mui/icons-material';
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
 import { formatCurrency } from '../lib/utils.js';
 
 export function AccountsPage() {
@@ -70,6 +71,7 @@ export function AccountsPage() {
     mutationFn: (payload: any) => api.accounts.create(payload),
     onSuccess: () => {
       setCreateError(null);
+      toast.success('Trading account created successfully.');
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       setIsAddAccountModalOpen(false);
       setName('');
@@ -78,7 +80,9 @@ export function AccountsPage() {
       setInitialBalance(100000);
     },
     onError: (err: any) => {
-      setCreateError(err.message || 'Failed to create trading account');
+      const msg = err.message || 'Failed to create trading account';
+      setCreateError(msg);
+      toast.error(msg);
     },
   });
 
@@ -87,13 +91,16 @@ export function AccountsPage() {
       api.accounts.addTransaction(accountId, payload),
     onSuccess: () => {
       setTxError(null);
+      toast.success('Transaction recorded successfully.');
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       setIsTxModalOpen(false);
       setTxAmount(10000);
       setTxNotes('');
     },
     onError: (err: any) => {
-      setTxError(err.message || 'Failed to record cash flow transaction');
+      const msg = err.message || 'Failed to record cash flow transaction';
+      setTxError(msg);
+      toast.error(msg);
     },
   });
 
@@ -101,15 +108,22 @@ export function AccountsPage() {
     mutationFn: (accountId: string) => api.accounts.reconcile(accountId),
     onSuccess: () => {
       setReconcileError(null);
+      toast.success('Account balance reconciled successfully.');
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
     onError: (err: any) => {
-      setReconcileError(err.message || 'Failed to reconcile account balance');
+      const msg = err.message || 'Failed to reconcile account balance';
+      setReconcileError(msg);
+      toast.error(msg);
     },
   });
 
   const handleCreateAccount = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) {
+      toast.warning('Please enter an account name.');
+      return;
+    }
     createAccountMutation.mutate({
       name,
       broker,
@@ -124,11 +138,17 @@ export function AccountsPage() {
     e.preventDefault();
     if (!selectedAccountForTx) return;
 
+    const amt = Number(txAmount);
+    if (!amt || amt <= 0) {
+      toast.warning('Please enter a valid transaction amount greater than 0.');
+      return;
+    }
+
     addTxMutation.mutate({
       accountId: selectedAccountForTx.id || selectedAccountForTx._id,
       payload: {
         type: txType,
-        amount: Number(txAmount),
+        amount: amt,
         currency: selectedAccountForTx.baseCurrency,
         date: txDate,
         notes: txNotes,

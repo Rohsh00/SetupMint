@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark Theme Tokens (Default for Stratum) */
+/* Dark Theme Tokens (Default for SetupMint) */
 :root,
 html.dark,
 .dark {

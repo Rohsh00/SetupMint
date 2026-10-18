@@ -31,6 +31,8 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckCircleIcon from '@mui/icons-material/CheckCircleRounded';
 
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
 
 export function JournalCalendarPage() {
@@ -41,6 +43,7 @@ export function JournalCalendarPage() {
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1-indexed
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -94,13 +97,34 @@ export function JournalCalendarPage() {
     onSuccess: () => {
       setSaveError(null);
       setSaveSuccess(true);
+      toast.success('Journal entry saved successfully.');
       queryClient.invalidateQueries({ queryKey: ['journal-calendar'] });
       queryClient.invalidateQueries({ queryKey: ['journal-day', selectedDate] });
       // Close the modal cleanly upon successful save
       setSelectedDate(null);
     },
     onError: (err: any) => {
-      setSaveError(err.message || 'Failed to save daily reflection');
+      const msg = err.message || 'Failed to save daily reflection';
+      setSaveError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const deleteJournalMutation = useMutation({
+    mutationFn: () => api.journal.deleteDay(selectedDate!),
+    onSuccess: () => {
+      setSaveError(null);
+      setSaveSuccess(false);
+      setIsDeleteConfirmOpen(false);
+      toast.success('Journal entry deleted successfully.');
+      queryClient.invalidateQueries({ queryKey: ['journal-calendar'] });
+      queryClient.invalidateQueries({ queryKey: ['journal-day', selectedDate] });
+      setSelectedDate(null);
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to delete journal entry';
+      setSaveError(msg);
+      toast.error(msg);
     },
   });
 
@@ -586,16 +610,27 @@ export function JournalCalendarPage() {
         </DialogContent>
 
         <DialogActions sx={{ px: 3, py: 2, borderTop: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {saveSuccess ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: muiTheme.palette.primary.main }}>
-              <CheckCircleIcon fontSize="small" />
-              <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                Daily reflection saved successfully
-              </Typography>
-            </Box>
-          ) : (
-            <span />
-          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {dayDetails?.journal && (
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                disabled={deleteJournalMutation.isPending || saveJournalMutation.isPending}
+                onClick={() => setIsDeleteConfirmOpen(true)}
+              >
+                {deleteJournalMutation.isPending ? 'Deleting...' : 'Delete Entry'}
+              </Button>
+            )}
+            {saveSuccess && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: muiTheme.palette.primary.main }}>
+                <CheckCircleIcon fontSize="small" />
+                <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                  Daily reflection saved successfully
+                </Typography>
+              </Box>
+            )}
+          </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Button variant="outlined" onClick={() => setSelectedDate(null)}>
@@ -621,6 +656,28 @@ export function JournalCalendarPage() {
           </Box>
         </DialogActions>
       </Dialog>
+
+      {/* Styled Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={isDeleteConfirmOpen}
+        title="Delete Daily Reflection"
+        message={
+          <>
+            Are you sure you want to permanently delete the journal review and psychological reflection for <strong>{selectedDate}</strong>? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete Reflection"
+        isLoading={deleteJournalMutation.isPending}
+        error={saveError}
+        onCancel={() => {
+          if (!deleteJournalMutation.isPending) {
+            setIsDeleteConfirmOpen(false);
+          }
+        }}
+        onConfirm={() => {
+          deleteJournalMutation.mutate();
+        }}
+      />
     </Box>
   );
 }

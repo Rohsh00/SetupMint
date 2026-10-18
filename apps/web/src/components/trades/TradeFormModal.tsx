@@ -43,6 +43,7 @@ import {
   calculateFIFOExecution,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
+import { toast } from '../../context/ToastContext.js';
 import { TradeCalculationBanner } from './form/TradeCalculationBanner.js';
 import { TradeTemplateSelector } from './form/TradeTemplateSelector.js';
 import { TradeQuickSection } from './form/TradeQuickSection.js';
@@ -246,8 +247,9 @@ export function TradeFormModal({
       setExistingAttachments((prev) => prev.filter((a) => a.id !== attId));
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['trade', editTradeId] });
+      toast.success('Chart screenshot removed.');
     } catch (err: any) {
-      alert(`Failed to delete chart screenshot: ${err.message}`);
+      toast.error(`Failed to delete chart screenshot: ${err.message || 'Server error'}`);
     }
   };
 
@@ -565,11 +567,26 @@ export function TradeFormModal({
       // Reset form state so isDirty becomes false and close modal cleanly
       reset();
       onClose();
+      toast.success(editTradeId ? 'Trade updated successfully.' : 'Trade added successfully.');
     } catch (err: any) {
       console.error('Error saving trade:', err);
-      setSubmitError(err.message || 'Failed to save trade record');
+      const msg = err.message || 'Failed to save trade record';
+      setSubmitError(msg);
+      toast.error(msg);
     } finally {
       setIsUploadingAttachments(false);
+    }
+  };
+
+  const onInvalid = (errors: any) => {
+    const errorKeys = Object.keys(errors);
+    if (errorKeys.length > 0) {
+      const firstKey = errorKeys[0];
+      const errorObj = errors[firstKey];
+      const message = errorObj?.message || errorObj?.root?.message || `Please check the ${firstKey} field.`;
+      toast.warning(`Validation: ${message}`);
+    } else {
+      toast.warning('Please correct the validation errors in the form.');
     }
   };
 
@@ -751,7 +768,7 @@ export function TradeFormModal({
         </Box>
 
         {/* Modal Body / Scrollable Form */}
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
           <DialogContent
             sx={{
               p: 3,

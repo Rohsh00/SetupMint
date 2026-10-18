@@ -192,7 +192,7 @@ export function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={stats.equityCurve}>
                     <defs>
-                      <linearGradient id="stratumDrawdownGradient" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="setupmintDrawdownGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.4} />
                         <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
                       </linearGradient>
@@ -217,7 +217,7 @@ export function AnalyticsPage() {
                       stroke="#F43F5E"
                       strokeWidth={2}
                       fillOpacity={1}
-                      fill="url(#stratumDrawdownGradient)"
+                      fill="url(#setupmintDrawdownGradient)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>

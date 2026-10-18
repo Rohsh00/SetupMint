@@ -26,6 +26,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 
 import { calculateRiskAndPositionSize } from '@tradevault/financial-engine';
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 
@@ -127,6 +128,7 @@ export function RiskCalculatorPage() {
         estimatedRiskAmount: calcResult.estimatedMonetaryLoss,
       },
     });
+    toast.info('Parameters copied to trade form.');
     setIsTradeModalOpen(true);
   };
 

@@ -18,7 +18,8 @@ import {
   LockRounded,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
-import { StratumLogo } from '../components/brand/StratumLogo.js';
+import { SetupMintLogo } from '../components/brand/SetupMintLogo.js';
+import { toast } from '../context/ToastContext.js';
 
 export function LoginPage() {
   const muiTheme = useTheme();
@@ -32,14 +33,21 @@ export function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim() || !password) {
+      toast.warning('Please enter your email and password.');
+      return;
+    }
     setError(null);
     setLoading(true);
 
     try {
       await login({ email, password });
+      toast.success('Welcome back!');
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Invalid credentials');
+      const msg = err.message || 'Invalid credentials';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -53,9 +61,12 @@ export function LoginPage() {
 
     try {
       await login({ email: 'trader@tradevault.local', password: 'TradeVault@123' });
+      toast.success('Welcome back! Demo account signed in.');
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Demo login failed');
+      const msg = err.message || 'Demo login failed';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -84,13 +95,13 @@ export function LoginPage() {
         <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Brand Header */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
-            <StratumLogo size="lg" />
+            <SetupMintLogo size="lg" />
             <Box>
               <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-                Welcome to Stratum
+                Welcome to SetupMint
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Sign in to your private discretionary trading journal
+                Sign in to your professional trading journal &amp; performance analytics
               </Typography>
             </Box>
           </Box>
@@ -125,6 +136,25 @@ export function LoginPage() {
               autoComplete="current-password"
             />
 
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: -1 }}>
+              <Link
+                component="button"
+                type="button"
+                variant="caption"
+                onClick={() => {
+                  toast.info('For local / self-hosted SetupMint, use seed credentials or reset your password in Settings.');
+                }}
+                sx={{
+                  color: 'text.secondary',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  '&:hover': { color: 'primary.main', textDecoration: 'underline' },
+                }}
+              >
+                Forgot password?
+              </Link>
+            </Box>
+
             <Button
               type="submit"
               variant="contained"
@@ -133,7 +163,7 @@ export function LoginPage() {
               size="large"
               disabled={loading}
               endIcon={<ArrowForwardRounded />}
-              sx={{ fontWeight: 700, mt: 1 }}
+              sx={{ fontWeight: 700, mt: 0.5 }}
             >
               {loading ? 'Signing in...' : 'Sign In to Journal'}
             </Button>

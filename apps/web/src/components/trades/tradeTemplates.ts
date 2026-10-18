@@ -111,15 +111,19 @@ export const BUILTIN_TEMPLATES: TradeSetupTemplate[] = [
   },
 ];
 
-const CUSTOM_TEMPLATES_KEY = 'stratum_custom_templates';
-const PREF_ACCOUNT_KEY = 'stratum_pref_account';
-const PREF_INSTRUMENT_KEY = 'stratum_pref_instrument';
-const PREF_WORKFLOW_MODE_KEY = 'stratum_pref_trade_mode';
+const CUSTOM_TEMPLATES_KEY = 'setupmint_custom_templates';
+const LEGACY_CUSTOM_TEMPLATES_KEY = 'stratum_custom_templates';
+const PREF_ACCOUNT_KEY = 'setupmint_pref_account';
+const LEGACY_PREF_ACCOUNT_KEY = 'stratum_pref_account';
+const PREF_INSTRUMENT_KEY = 'setupmint_pref_instrument';
+const LEGACY_PREF_INSTRUMENT_KEY = 'stratum_pref_instrument';
+const PREF_WORKFLOW_MODE_KEY = 'setupmint_pref_trade_mode';
+const LEGACY_PREF_WORKFLOW_MODE_KEY = 'stratum_pref_trade_mode';
 
 export function getCustomTemplates(): TradeSetupTemplate[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(CUSTOM_TEMPLATES_KEY);
+    const raw = localStorage.getItem(CUSTOM_TEMPLATES_KEY) || localStorage.getItem(LEGACY_CUSTOM_TEMPLATES_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -166,9 +170,9 @@ export function getRememberedTradePreferences(): TradePreferences {
   if (typeof window === 'undefined') return {};
   try {
     return {
-      preferredAccountId: localStorage.getItem(PREF_ACCOUNT_KEY) || undefined,
-      preferredSymbol: localStorage.getItem(PREF_INSTRUMENT_KEY) || undefined,
-      preferredWorkflow: (localStorage.getItem(PREF_WORKFLOW_MODE_KEY) as 'QUICK' | 'COMPREHENSIVE') || undefined,
+      preferredAccountId: localStorage.getItem(PREF_ACCOUNT_KEY) || localStorage.getItem(LEGACY_PREF_ACCOUNT_KEY) || undefined,
+      preferredSymbol: localStorage.getItem(PREF_INSTRUMENT_KEY) || localStorage.getItem(LEGACY_PREF_INSTRUMENT_KEY) || undefined,
+      preferredWorkflow: (localStorage.getItem(PREF_WORKFLOW_MODE_KEY) || localStorage.getItem(LEGACY_PREF_WORKFLOW_MODE_KEY)) as 'QUICK' | 'COMPREHENSIVE' | undefined,
     };
   } catch {
     return {};

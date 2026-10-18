@@ -30,6 +30,7 @@ import {
   IAttachment,
 } from '@tradevault/shared';
 import { ChartImageViewerDialog } from './ChartImageViewerDialog.js';
+import { ConfirmDialog } from '../../ui/ConfirmDialog.js';
 
 export interface StagedAttachment {
   id: string;
@@ -76,6 +77,7 @@ export function TradeAttachmentUploader({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewItems, setPreviewItems] = useState<IAttachment[]>([]);
   const [previewInitialIndex, setPreviewInitialIndex] = useState(0);
+  const [deletingAttId, setDeletingAttId] = useState<string | null>(null);
 
   const totalCurrentFiles = stagedAttachments.length + existingAttachments.length;
 
@@ -361,11 +363,7 @@ export function TradeAttachmentUploader({
                             <IconButton
                               size="small"
                               color="error"
-                              onClick={() => {
-                                if (window.confirm('Delete this chart screenshot?')) {
-                                  onDeleteExisting(att.id);
-                                }
-                              }}
+                              onClick={() => setDeletingAttId(att.id)}
                             >
                               <DeleteOutlineRounded fontSize="small" />
                             </IconButton>
@@ -552,6 +550,21 @@ export function TradeAttachmentUploader({
         attachments={previewItems}
         initialIndex={previewInitialIndex}
         symbol={symbol}
+      />
+
+      {/* Styled Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={Boolean(deletingAttId)}
+        title="Delete Chart Screenshot"
+        message="Are you sure you want to delete this chart screenshot? This action cannot be undone."
+        confirmLabel="Delete Screenshot"
+        onCancel={() => setDeletingAttId(null)}
+        onConfirm={() => {
+          if (deletingAttId && onDeleteExisting) {
+            onDeleteExisting(deletingAttId);
+            setDeletingAttId(null);
+          }
+        }}
       />
     </Box>
   );

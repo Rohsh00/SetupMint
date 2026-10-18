@@ -34,6 +34,8 @@ import {
 } from '@mui/icons-material';
 import { ASSET_CLASSES, MARKET_SEGMENTS } from '@tradevault/shared';
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 
 export function InstrumentsPage() {
   const muiTheme = useTheme();
@@ -42,6 +44,7 @@ export function InstrumentsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [instrumentToDelete, setInstrumentToDelete] = useState<any | null>(null);
 
   // New instrument state
   const [symbol, setSymbol] = useState('');
@@ -64,13 +67,16 @@ export function InstrumentsPage() {
     mutationFn: (payload: any) => api.instruments.create(payload),
     onSuccess: () => {
       setCreateError(null);
+      toast.success('Custom instrument created successfully.');
       queryClient.invalidateQueries({ queryKey: ['instruments'] });
       setIsModalOpen(false);
       setSymbol('');
       setDisplayName('');
     },
     onError: (err: any) => {
-      setCreateError(err.message || 'Failed to save instrument');
+      const msg = err.message || 'Failed to save instrument';
+      setCreateError(msg);
+      toast.error(msg);
     },
   });
 
@@ -78,15 +84,23 @@ export function InstrumentsPage() {
     mutationFn: (id: string) => api.instruments.delete(id),
     onSuccess: () => {
       setDeleteError(null);
+      setInstrumentToDelete(null);
+      toast.success('Custom instrument deleted successfully.');
       queryClient.invalidateQueries({ queryKey: ['instruments'] });
     },
     onError: (err: any) => {
-      setDeleteError(err.message || 'Failed to delete custom instrument');
+      const msg = err.message || 'Failed to delete custom instrument';
+      setDeleteError(msg);
+      toast.error(msg);
     },
   });
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!symbol.trim()) {
+      toast.warning('Please enter an instrument symbol.');
+      return;
+    }
     createMutation.mutate({
       symbol: symbol.toUpperCase().trim(),
       displayName,
@@ -236,9 +250,8 @@ export function InstrumentsPage() {
                             color="error"
                             disabled={deleteMutation.isPending}
                             onClick={() => {
-                              if (confirm(`Delete custom instrument ${inst.symbol}?`)) {
-                                deleteMutation.mutate(inst.id || inst._id);
-                              }
+                              setDeleteError(null);
+                              setInstrumentToDelete(inst);
                             }}
                           >
                             <DeleteOutlineRounded sx={{ fontSize: 18 }} />
@@ -401,6 +414,31 @@ export function InstrumentsPage() {
           </DialogActions>
         </form>
       </Dialog>
+
+      {/* Styled Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={Boolean(instrumentToDelete)}
+        title="Delete Custom Instrument"
+        message={
+          <>
+            Are you sure you want to permanently delete custom instrument <strong>{instrumentToDelete?.symbol}</strong> ({instrumentToDelete?.displayName || instrumentToDelete?.symbol})? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete Instrument"
+        isLoading={deleteMutation.isPending}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleteMutation.isPending) {
+            setInstrumentToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        onConfirm={() => {
+          if (instrumentToDelete) {
+            deleteMutation.mutate(instrumentToDelete.id || instrumentToDelete._id);
+          }
+        }}
+      />
     </Box>
   );
 }

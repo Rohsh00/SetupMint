@@ -43,6 +43,8 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 
@@ -51,6 +53,8 @@ export function TradesPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   // Filter state
   const [page, setPage] = useState(1);
@@ -112,10 +116,13 @@ export function TradesPage() {
     mutationFn: (id: string) => api.trades.duplicate(id),
     onSuccess: () => {
       setActionError(null);
+      toast.success('Trade duplicated successfully.');
       queryClient.invalidateQueries({ queryKey: ['trades'] });
     },
     onError: (err: any) => {
-      setActionError(err.message || 'Failed to duplicate trade setup');
+      const msg = err.message || 'Failed to duplicate trade setup';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -124,11 +131,14 @@ export function TradesPage() {
     onSuccess: () => {
       setDeleteConfirmId(null);
       setDeleteError(null);
+      toast.success('Trade deleted successfully.');
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     },
     onError: (err: any) => {
-      setDeleteError(err.message || 'Failed to delete trade record');
+      const msg = err.message || 'Failed to delete trade record';
+      setDeleteError(msg);
+      toast.error(msg);
     },
   });
 
@@ -137,11 +147,15 @@ export function TradesPage() {
     onSuccess: () => {
       setSelectedIds([]);
       setActionError(null);
+      setShowBulkDeleteConfirm(false);
+      toast.success('Selected trades deleted successfully.');
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     },
     onError: (err: any) => {
-      setActionError(err.message || 'Failed to delete selected trades');
+      const msg = err.message || 'Failed to delete selected trades';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -153,10 +167,13 @@ export function TradesPage() {
       setShowBulkTagModal(false);
       setBulkTagInput('');
       setActionError(null);
+      toast.success('Tags applied to selected trades.');
       queryClient.invalidateQueries({ queryKey: ['trades'] });
     },
     onError: (err: any) => {
-      setActionError(err.message || 'Failed to apply tags to selected trades');
+      const msg = err.message || 'Failed to apply tags to selected trades';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -186,6 +203,7 @@ export function TradesPage() {
     setStatusFilter('');
     setAssetClassFilter('');
     setPage(1);
+    toast.info('Filters reset.');
   };
 
   return (
@@ -221,6 +239,7 @@ export function TradesPage() {
             download
             variant="outlined"
             size="small"
+            onClick={() => toast.success('CSV export started.')}
             startIcon={<DownloadIcon fontSize="small" />}
             sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
           >
@@ -272,6 +291,7 @@ export function TradesPage() {
               onChange={(e) => {
                 setDirectionFilter(e.target.value);
                 setPage(1);
+                if (e.target.value) toast.info('Filters applied.');
               }}
               displayEmpty
             >
@@ -290,6 +310,7 @@ export function TradesPage() {
               onChange={(e) => {
                 setOutcomeFilter(e.target.value);
                 setPage(1);
+                if (e.target.value) toast.info('Filters applied.');
               }}
               displayEmpty
             >
@@ -310,6 +331,7 @@ export function TradesPage() {
               onChange={(e) => {
                 setStatusFilter(e.target.value);
                 setPage(1);
+                if (e.target.value) toast.info('Filters applied.');
               }}
               displayEmpty
             >
@@ -385,11 +407,7 @@ export function TradesPage() {
               variant="contained"
               color="error"
               disabled={bulkDeleteMutation.isPending}
-              onClick={() => {
-                if (window.confirm(`Delete ${selectedIds.length} selected trades permanently?`)) {
-                  bulkDeleteMutation.mutate(selectedIds);
-                }
-              }}
+              onClick={() => setShowBulkDeleteConfirm(true)}
               startIcon={bulkDeleteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <DeleteOutlineIcon fontSize="small" />}
               sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600 }}
             >
@@ -767,57 +785,44 @@ export function TradesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
+      {/* Delete Single Trade Confirmation Dialog */}
+      <ConfirmDialog
         open={Boolean(deleteConfirmId)}
-        onClose={() => {
+        title="Delete Trade"
+        message="Are you sure you want to permanently delete this trade record? This action cannot be undone."
+        confirmLabel="Delete Trade"
+        isLoading={deleteMutation.isPending}
+        error={deleteError}
+        onCancel={() => {
           if (!deleteMutation.isPending) {
             setDeleteConfirmId(null);
             setDeleteError(null);
           }
         }}
-        maxWidth="xs"
-        fullWidth
-        slotProps={{
-          paper: { sx: { borderRadius: 3 } },
+        onConfirm={() => {
+          if (deleteConfirmId) {
+            deleteMutation.mutate(deleteConfirmId);
+          }
         }}
-      >
-        <DialogTitle sx={{ fontWeight: 700 }}>Delete Trade</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {deleteError && (
-            <Alert severity="error" onClose={() => setDeleteError(null)}>
-              {deleteError}
-            </Alert>
-          )}
-          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
-            Are you sure you want to permanently delete this trade record? This action cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => {
-              setDeleteConfirmId(null);
-              setDeleteError(null);
-            }}
-            disabled={deleteMutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={deleteMutation.isPending}
-            startIcon={deleteMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
-            onClick={() => {
-              if (deleteConfirmId) {
-                deleteMutation.mutate(deleteConfirmId);
-              }
-            }}
-          >
-            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      />
+
+      {/* Bulk Delete Trades Confirmation Dialog */}
+      <ConfirmDialog
+        open={showBulkDeleteConfirm}
+        title="Delete Selected Trades"
+        message={`Are you sure you want to permanently delete ${selectedIds.length} selected trade record(s)? This action cannot be undone.`}
+        confirmLabel={`Delete ${selectedIds.length} Trades`}
+        isLoading={bulkDeleteMutation.isPending}
+        error={actionError}
+        onCancel={() => {
+          if (!bulkDeleteMutation.isPending) {
+            setShowBulkDeleteConfirm(false);
+          }
+        }}
+        onConfirm={() => {
+          bulkDeleteMutation.mutate(selectedIds);
+        }}
+      />
     </Box>
   );
 }

@@ -30,6 +30,7 @@ import {
   CloudUploadRounded,
 } from '@mui/icons-material';
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
 
 export function ReportsPage() {
   const muiTheme = useTheme();
@@ -55,9 +56,12 @@ export function ReportsPage() {
       setPreviewData(data);
       setColumnMapping(data.suggestedMapping || {});
       setImportResult(null);
+      toast.info(`CSV parsed: ${data.previewRows?.length || 0} trade rows detected.`);
     },
     onError: (err: any) => {
-      setImportError(err.message || 'Failed to preview CSV file');
+      const msg = err.message || 'Failed to preview CSV file';
+      setImportError(msg);
+      toast.error(msg);
     },
   });
 
@@ -68,12 +72,15 @@ export function ReportsPage() {
       setImportResult(data);
       setPreviewData(null);
       setImportFile(null);
+      toast.success(`Import completed successfully! (${data.importedCount} trades imported)`);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
     onError: (err: any) => {
-      setImportError(err.message || 'Failed to commit trade import');
+      const msg = err.message || 'Failed to commit trade import';
+      setImportError(msg);
+      toast.error(msg);
     },
   });
 
@@ -167,6 +174,7 @@ export function ReportsPage() {
                   download
                   variant="contained"
                   color="primary"
+                  onClick={() => toast.success('CSV export started.')}
                   startIcon={<TableChartRounded />}
                   sx={{ flex: 1, fontWeight: 600, py: 1 }}
                 >
@@ -179,6 +187,7 @@ export function ReportsPage() {
                   download
                   variant="outlined"
                   color="inherit"
+                  onClick={() => toast.success('JSON export started.')}
                   startIcon={<DataObjectRounded sx={{ color: 'info.main' }} />}
                   sx={{ flex: 1, fontWeight: 600, py: 1 }}
                 >
@@ -201,7 +210,7 @@ export function ReportsPage() {
               </Box>
 
               <Typography variant="body2" color="text.secondary">
-                Stratum runs locally on your MacBook with all personal records in MongoDB and chart screenshots in private disk storage.
+                SetupMint runs locally on your MacBook with all personal records in MongoDB and chart screenshots in private disk storage.
               </Typography>
 
               <Box
@@ -385,7 +394,7 @@ export function ReportsPage() {
                 }}
               >
                 <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
-                  Map CSV Columns to Stratum Fields
+                  Map CSV Columns to SetupMint Fields
                 </Typography>
                 <Grid container spacing={2}>
                   {[

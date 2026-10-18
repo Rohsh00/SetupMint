@@ -29,6 +29,7 @@ import { useTheme as useMuiTheme } from '@mui/material/styles';
 // Icons
 import ArrowBackIcon from '@mui/icons-material/ArrowBackRounded';
 import ContentCopyIcon from '@mui/icons-material/ContentCopyRounded';
+import LinkIcon from '@mui/icons-material/LinkRounded';
 import EditIcon from '@mui/icons-material/EditRounded';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoneyRounded';
@@ -37,6 +38,8 @@ import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CloudUploadIcon from '@mui/icons-material/CloudUploadRounded';
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
@@ -64,6 +67,7 @@ export function TradeDetailPage() {
     mutationFn: () => api.trades.duplicate(id!),
     onSuccess: (data: any) => {
       setActionError(null);
+      toast.success('Trade duplicated successfully.');
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       const newId = data?.id || data?.data?.id || data?._id;
       if (newId) {
@@ -73,7 +77,9 @@ export function TradeDetailPage() {
       }
     },
     onError: (err: any) => {
-      setActionError(err.message || 'Failed to duplicate trade setup');
+      const msg = err.message || 'Failed to duplicate trade setup';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -82,12 +88,15 @@ export function TradeDetailPage() {
     onSuccess: () => {
       setShowDeleteConfirm(false);
       setDeleteError(null);
+      toast.success('Trade deleted successfully.');
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       navigate('/trades');
     },
     onError: (err: any) => {
-      setDeleteError(err.message || 'Failed to delete trade record');
+      const msg = err.message || 'Failed to delete trade record';
+      setDeleteError(msg);
+      toast.error(msg);
     },
   });
 
@@ -95,10 +104,13 @@ export function TradeDetailPage() {
     mutationFn: (file: File) => api.attachments.upload(id!, file),
     onSuccess: () => {
       setActionError(null);
+      toast.success('Chart screenshot uploaded successfully.');
       queryClient.invalidateQueries({ queryKey: ['trade', id] });
     },
     onError: (err: any) => {
-      setActionError(err.message || 'Failed to upload attachment');
+      const msg = err.message || 'Screenshot upload failed. Please try again.';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -106,10 +118,13 @@ export function TradeDetailPage() {
     mutationFn: (attId: string) => api.attachments.delete(attId),
     onSuccess: () => {
       setActionError(null);
+      toast.success('Chart screenshot deleted.');
       queryClient.invalidateQueries({ queryKey: ['trade', id] });
     },
     onError: (err: any) => {
-      setActionError(err.message || 'Failed to delete attachment');
+      const msg = err.message || 'Failed to delete attachment';
+      setActionError(msg);
+      toast.error(msg);
     },
   });
 
@@ -216,6 +231,22 @@ export function TradeDetailPage() {
 
         {/* Action Buttons */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(window.location.href);
+                toast.success('Copied to clipboard!');
+              } catch {
+                toast.error('Failed to copy to clipboard.');
+              }
+            }}
+            startIcon={<LinkIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+          >
+            Copy Link
+          </Button>
           <Button
             variant="outlined"
             size="small"
@@ -541,50 +572,27 @@ export function TradeDetailPage() {
       />
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
+      <ConfirmDialog
         open={showDeleteConfirm}
-        onClose={() => {
+        title="Delete Trade Record"
+        message={
+          <>
+            Are you sure you want to permanently delete this trade record for <strong>{trade.symbol}</strong>? This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete Trade"
+        isLoading={deleteMutation.isPending}
+        error={deleteError}
+        onCancel={() => {
           if (!deleteMutation.isPending) {
             setShowDeleteConfirm(false);
             setDeleteError(null);
           }
         }}
-        maxWidth="xs"
-        fullWidth
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
-      >
-        <DialogTitle sx={{ fontWeight: 700 }}>Delete Trade Record</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {deleteError && (
-            <Alert severity="error" onClose={() => setDeleteError(null)}>
-              {deleteError}
-            </Alert>
-          )}
-          <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
-            Are you sure you want to permanently delete this trade record for <strong>{trade.symbol}</strong>? This cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => {
-              setShowDeleteConfirm(false);
-              setDeleteError(null);
-            }}
-            disabled={deleteMutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={deleteMutation.isPending}
-            startIcon={deleteMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
-            onClick={() => deleteMutation.mutate()}
-          >
-            {deleteMutation.isPending ? 'Deleting...' : 'Delete Permanently'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={() => {
+          deleteMutation.mutate();
+        }}
+      />
     </Box>
   );
 }

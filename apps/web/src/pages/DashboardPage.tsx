@@ -449,7 +449,7 @@ export function DashboardPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={stats.equityCurve}>
                     <defs>
-                      <linearGradient id="stratumEquityGradient" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="setupmintEquityGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10B981" stopOpacity={0.35} />
                         <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
                       </linearGradient>
@@ -474,7 +474,7 @@ export function DashboardPage() {
                       stroke="#10B981"
                       strokeWidth={2.5}
                       fillOpacity={1}
-                      fill="url(#stratumEquityGradient)"
+                      fill="url(#setupmintEquityGradient)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>

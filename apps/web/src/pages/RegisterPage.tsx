@@ -16,7 +16,8 @@ import {
   ArrowForwardRounded,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
-import { StratumLogo } from '../components/brand/StratumLogo.js';
+import { SetupMintLogo } from '../components/brand/SetupMintLogo.js';
+import { toast } from '../context/ToastContext.js';
 
 export function RegisterPage() {
   const muiTheme = useTheme();
@@ -32,14 +33,26 @@ export function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim() || !email.trim() || !password) {
+      toast.warning('Please fill in all required fields.');
+      return;
+    }
+    if (password.length < 8) {
+      toast.warning('Password must be at least 8 characters long.');
+      return;
+    }
+
     setError(null);
     setLoading(true);
 
     try {
       await registerUser({ name, email, password, baseCurrency });
+      toast.success('Account created successfully!');
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Registration failed');
+      const msg = err.message || 'Registration failed';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -68,13 +81,13 @@ export function RegisterPage() {
         <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Brand Header */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
-            <StratumLogo size="lg" />
+            <SetupMintLogo size="lg" />
             <Box>
               <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-                Create Stratum Account
+                Create SetupMint Account
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Set up your local-first private trading journal
+                Trade. Track. Improve. Set up your professional trading journal
               </Typography>
             </Box>
           </Box>

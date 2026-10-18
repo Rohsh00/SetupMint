@@ -27,6 +27,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineRounde
 import CloseIcon from '@mui/icons-material/CloseRounded';
 
 import { api } from '../lib/api.js';
+import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 
 export function StrategyPlaybookPage() {
@@ -93,11 +94,14 @@ export function StrategyPlaybookPage() {
     },
     onSuccess: () => {
       setSaveError(null);
+      toast.success(editingStrategy ? 'Strategy setup updated successfully.' : 'Strategy setup saved to playbook.');
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
       setIsModalOpen(false);
     },
     onError: (err: any) => {
-      setSaveError(err.message || 'Failed to save strategy setup');
+      const msg = err.message || 'Failed to save strategy setup';
+      setSaveError(msg);
+      toast.error(msg);
     },
   });
 
@@ -106,15 +110,22 @@ export function StrategyPlaybookPage() {
     onSuccess: () => {
       setDeleteConfirmId(null);
       setDeleteError(null);
+      toast.success('Strategy setup deleted successfully.');
       queryClient.invalidateQueries({ queryKey: ['strategies'] });
     },
     onError: (err: any) => {
-      setDeleteError(err.message || 'Failed to delete strategy setup');
+      const msg = err.message || 'Failed to delete strategy setup';
+      setDeleteError(msg);
+      toast.error(msg);
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) {
+      toast.warning('Please enter a strategy name.');
+      return;
+    }
     const payload = {
       name,
       description,

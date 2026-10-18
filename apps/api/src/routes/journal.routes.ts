@@ -134,4 +134,11 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
     return reply.send({ success: true, data: journal });
   });
+
+  // Delete daily review
+  app.delete('/:date', { preHandler: [validateDateParam('date')] }, async (req: any, reply) => {
+    const { date } = req.params;
+    await DailyJournal.deleteOne({ userId: req.user!.id, date });
+    return reply.send({ success: true, message: 'Journal entry deleted' });
+  });
 };

@@ -24,6 +24,7 @@ import {
 } from '@mui/icons-material';
 import { IAttachment, CHART_ATTACHMENT_CATEGORIES } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
+import { ConfirmDialog } from '../../ui/ConfirmDialog.js';
 
 interface ChartImageViewerDialogProps {
   open: boolean;
@@ -47,6 +48,7 @@ export function ChartImageViewerDialog({
 
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Sync index on initialIndex change
   useEffect(() => {
@@ -254,11 +256,7 @@ export function ChartImageViewerDialog({
               <IconButton
                 size="small"
                 color="error"
-                onClick={() => {
-                  if (window.confirm('Are you sure you want to delete this chart screenshot?')) {
-                    onDelete(currentAttachment.id);
-                  }
-                }}
+                onClick={() => setShowDeleteConfirm(true)}
                 sx={{ border: `1px solid ${muiTheme.palette.divider}`, borderRadius: 2 }}
               >
                 <DeleteOutlineRounded fontSize="small" />
@@ -392,6 +390,21 @@ export function ChartImageViewerDialog({
           </Typography>
         </Box>
       </Box>
+
+      {/* Styled Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Chart Screenshot"
+        message="Are you sure you want to permanently delete this chart screenshot? This action cannot be undone."
+        confirmLabel="Delete Screenshot"
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={() => {
+          setShowDeleteConfirm(false);
+          if (onDelete && currentAttachment) {
+            onDelete(currentAttachment.id || (currentAttachment as any)._id);
+          }
+        }}
+      />
     </Dialog>
   );
 }

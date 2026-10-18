@@ -24,7 +24,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
-          <span className="text-xs text-muted-foreground font-mono">Authenticating Stratum session...</span>
+          <span className="text-xs text-muted-foreground font-mono">Authenticating SetupMint session...</span>
         </div>
       </div>
     );

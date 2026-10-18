@@ -17,7 +17,8 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const THEME_STORAGE_KEY = 'stratum_theme';
+const THEME_STORAGE_KEY = 'setupmint_theme';
+const LEGACY_STRATUM_THEME_KEY = 'stratum_theme';
 const LEGACY_THEME_STORAGE_KEY = 'tradevault_theme';
 
 function getSystemTheme(): ResolvedTheme {
@@ -30,14 +31,18 @@ function getSystemTheme(): ResolvedTheme {
 function getStoredTheme(): Theme {
   if (typeof window === 'undefined') return 'dark';
   try {
-    const saved = (localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem(LEGACY_THEME_STORAGE_KEY)) as Theme | null;
+    const saved = (
+      localStorage.getItem(THEME_STORAGE_KEY) ||
+      localStorage.getItem(LEGACY_STRATUM_THEME_KEY) ||
+      localStorage.getItem(LEGACY_THEME_STORAGE_KEY)
+    ) as Theme | null;
     if (saved === 'dark' || saved === 'light' || saved === 'system') {
       return saved;
     }
   } catch {
     // ignore
   }
-  return 'dark'; // Default to Stratum's institutional dark theme
+  return 'dark'; // Default to SetupMint institutional dark theme
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

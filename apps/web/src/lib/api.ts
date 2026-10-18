@@ -19,11 +19,19 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-    credentials: 'include', // sends and receives HttpOnly session cookies
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      credentials: 'include', // sends and receives HttpOnly session cookies
+    });
+  } catch {
+    throw new ApiError(
+      'Network connection failed. Please check your internet connection or verify the server is running.',
+      'NETWORK_ERROR'
+    );
+  }
 
   const data = await response.json().catch(() => ({}));
 
@@ -141,6 +149,8 @@ export const api = {
     getDay: (date: string) => request<any>(`/journal/${date}`),
     saveDay: (date: string, review: any) =>
       request<any>(`/journal/${date}`, { method: 'POST', body: JSON.stringify(review) }),
+    deleteDay: (date: string) =>
+      request<any>(`/journal/${date}`, { method: 'DELETE' }),
   },
 
   // Analytics

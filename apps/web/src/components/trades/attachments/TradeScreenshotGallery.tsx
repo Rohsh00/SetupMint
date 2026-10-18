@@ -39,7 +39,9 @@ import {
   IAttachment,
 } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
+import { toast } from '../../../context/ToastContext.js';
 import { ChartImageViewerDialog } from './ChartImageViewerDialog.js';
+import { ConfirmDialog } from '../../ui/ConfirmDialog.js';
 
 interface TradeScreenshotGalleryProps {
   tradeId: string;
@@ -72,6 +74,8 @@ export function TradeScreenshotGallery({
   const [caption, setCaption] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filter attachments based on category tab
   const filteredAttachments = attachments.filter((att) => {
@@ -136,10 +140,13 @@ export function TradeScreenshotGallery({
         caption,
         timeframe: selectedTimeframe,
       });
+      toast.success('Chart screenshot uploaded successfully.');
       closeUploadModal();
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      setUploadError(err.message || 'Failed to upload chart screenshot.');
+      const msg = err.message || 'Screenshot upload failed. Please try again.';
+      setUploadError(msg);
+      toast.error(msg);
     } finally {
       setIsUploading(false);
     }
@@ -148,10 +155,12 @@ export function TradeScreenshotGallery({
   const handleDeleteAttachment = async (attachmentId: string) => {
     try {
       await api.attachments.delete(attachmentId);
+      toast.success('Chart screenshot deleted.');
       if (viewerOpen) setViewerOpen(false);
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      alert(`Failed to delete attachment: ${err.message}`);
+      const msg = err.message || 'Failed to delete attachment';
+      toast.error(msg);
     }
   };
 
@@ -456,11 +465,7 @@ export function TradeScreenshotGallery({
                             <IconButton
                               size="small"
                               color="error"
-                              onClick={() => {
-                                if (window.confirm('Permanently delete this chart screenshot?')) {
-                                  handleDeleteAttachment(att.id || (att as any)._id);
-                                }
-                              }}
+                              onClick={() => setDeletingAttachmentId(att.id || (att as any)._id)}
                             >
                               <DeleteOutlineRounded fontSize="small" />
                             </IconButton>
@@ -684,6 +689,29 @@ export function TradeScreenshotGallery({
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Styled Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={Boolean(deletingAttachmentId)}
+        title="Delete Chart Screenshot"
+        message="Are you sure you want to permanently delete this chart screenshot? This action cannot be undone."
+        confirmLabel="Delete Screenshot"
+        isLoading={isDeleting}
+        onCancel={() => {
+          if (!isDeleting) setDeletingAttachmentId(null);
+        }}
+        onConfirm={async () => {
+          if (deletingAttachmentId) {
+            setIsDeleting(true);
+            try {
+              await handleDeleteAttachment(deletingAttachmentId);
+            } finally {
+              setIsDeleting(false);
+              setDeletingAttachmentId(null);
+            }
+          }
+        }}
+      />
     </Card>
   );
 }

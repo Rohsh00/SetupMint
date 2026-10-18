@@ -119,11 +119,14 @@ export const simpleExecutionSchema = z.object({
   adjustmentsReason: z.string().optional(),
 });
 
+const emptyStringToUndefined = (val: unknown) =>
+  typeof val === 'string' && val.trim() === '' ? undefined : val;
+
 export const createTradeSchema = z.object({
   accountId: z.string().min(1, 'Trading account is required'),
   symbol: z.string().min(1, 'Symbol is required').transform((s) => s.toUpperCase().trim()),
-  instrumentId: z.string().optional(),
-  instrumentName: z.string().optional(),
+  instrumentId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  instrumentName: z.preprocess(emptyStringToUndefined, z.string().optional()),
   assetClass: z.enum(['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX']),
   exchange: z.string().min(1, 'Exchange is required'),
   marketSegment: z.enum([
@@ -140,19 +143,19 @@ export const createTradeSchema = z.object({
   currency: z.string().default('INR'),
   direction: z.enum(['LONG', 'SHORT']),
   status: z.enum(['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED']).default('CLOSED'),
-  strategyId: z.string().optional(),
-  strategyName: z.string().optional(),
+  strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  strategyName: z.preprocess(emptyStringToUndefined, z.string().optional()),
   tags: z.array(z.string()).default([]),
   tradeDate: z.string().min(1, 'Trade date is required'),
   timeZone: z.string().default('Asia/Kolkata'),
   entryTime: z.string().min(1, 'Entry time is required'),
-  exitTime: z.string().optional(),
+  exitTime: z.preprocess(emptyStringToUndefined, z.string().optional()),
   session: z
     .enum(['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'])
     .optional(),
-  tradeTitle: z.string().optional(),
-  externalBrokerOrderRef: z.string().optional(),
-  templateId: z.string().optional(),
+  tradeTitle: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  externalBrokerOrderRef: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  templateId: z.preprocess(emptyStringToUndefined, z.string().optional()),
 
   executionMode: z.enum(['SIMPLE', 'ADVANCED']).default('SIMPLE'),
   simpleExecution: simpleExecutionSchema.optional(),
@@ -264,9 +267,6 @@ export const updateTradeSchema = createTradeSchema.partial().extend({
   simpleExecution: simpleExecutionSchema.partial().optional(),
 });
 export type UpdateTradeInput = z.infer<typeof updateTradeSchema>;
-
-const emptyStringToUndefined = (val: unknown) =>
-  typeof val === 'string' && val.trim() === '' ? undefined : val;
 
 export const tradeFilterQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),

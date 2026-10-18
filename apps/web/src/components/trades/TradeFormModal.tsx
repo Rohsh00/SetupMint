@@ -810,12 +810,15 @@ export function TradeFormModal({
 
     const payload = {
       ...data,
-      templateId: activeTemplate?.id || data.templateId,
+      templateId: activeTemplate?.id || data.templateId || undefined,
       simpleExecution: simpleExecPayload,
       tags,
       executionMode,
     };
     delete payload.tagsInput;
+    if (!payload.strategyId) delete payload.strategyId;
+    if (!payload.instrumentId) delete payload.instrumentId;
+    if (!payload.templateId) delete payload.templateId;
 
     try {
       setIsUploadingAttachments(true);

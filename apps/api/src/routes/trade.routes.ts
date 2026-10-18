@@ -237,7 +237,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Compute calculations
     const calculated = computeTradeCalculations(body);
 
-    const trade = await Trade.create({
+    const tradeData: any = {
       ...body,
       userId: req.user!.id,
       tradeDate: new Date(body.tradeDate),
@@ -252,7 +252,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           details: { initialPnl: calculated.netPnL },
         },
       ],
-    });
+    };
+
+    if (!tradeData.strategyId) delete tradeData.strategyId;
+    if (!tradeData.instrumentId) delete tradeData.instrumentId;
+    if (!tradeData.templateId) delete tradeData.templateId;
+
+    const trade = await Trade.create(tradeData);
 
     // Recalculate account realized P&L and balance authoritatively
     await AccountService.recalculateAccountBalances(account._id, req.user!.id);
@@ -414,6 +420,25 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (parseResult.data.tradeDate) updatePayload.tradeDate = new Date(parseResult.data.tradeDate);
     if (parseResult.data.entryTime) updatePayload.entryTime = new Date(parseResult.data.entryTime);
     if (parseResult.data.exitTime) updatePayload.exitTime = new Date(parseResult.data.exitTime);
+
+    if (!parseResult.data.strategyId) {
+      delete updatePayload.strategyId;
+      if (req.body.strategyId === '' || req.body.strategyId === null) {
+        updatePayload.$unset = { ...updatePayload.$unset, strategyId: 1 };
+      }
+    }
+    if (!parseResult.data.instrumentId) {
+      delete updatePayload.instrumentId;
+      if (req.body.instrumentId === '' || req.body.instrumentId === null) {
+        updatePayload.$unset = { ...updatePayload.$unset, instrumentId: 1 };
+      }
+    }
+    if (!parseResult.data.templateId) {
+      delete updatePayload.templateId;
+      if (req.body.templateId === '' || req.body.templateId === null) {
+        updatePayload.$unset = { ...updatePayload.$unset, templateId: 1 };
+      }
+    }
 
     const updated = await Trade.findOneAndUpdate(
       { _id: req.params.id, userId: req.user!.id },

@@ -413,6 +413,125 @@ describe('TradeVault API Integration Tests', () => {
     expect(body.data.isRawExecutionLog).toBe(true);
   });
 
+  it('POST /api/v1/export/import/preview detects FYERS Tradebook report with preamble metadata and comma numbers', async () => {
+    const fyersCsv = [
+      'Report Title,Tradebook report',
+      'Date Range,From 01/04/2026 to 31/03/2027',
+      'Client Name,KOMAL MEHTA',
+      'Client ID,FAK61952',
+      'PAN,GUYPM7707N',
+      'Download Timestamp,18/10/2026 16:54:50 IST',
+      '',
+      'Symbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID',
+      'NIFTY26O1923100PE,NIFTY 23100 PE,"16 Oct 2026, 10:48:23 AM",SELL,Overnight,130.00,124.30,"16,159.00",Derivatives,"=""1000000084271616""","=""26101600177998"""',
+      'NIFTY26O1923100PE,NIFTY 23100 PE,"16 Oct 2026, 10:37:40 AM",BUY,Overnight,130.00,103.55,"13,461.50",Derivatives,"=""1000000075022109""","=""26101600161330"""',
+      'GOLDM26NOVFUT,GOLDM Fut,"15 Oct 2026, 09:06:47 AM",SELL,Overnight,20.00,"1,46,317.00","29,26,340.00",Commodity,"=""628824324136021""","=""26101500002739.0"""',
+      'GOLDM26NOVFUT,GOLDM Fut,"15 Oct 2026, 12:00:00 AM",BUY,Overnight,20.00,"1,44,696.00","28,93,920.00",Commodity,"=""C1446960000""","=""C1446960000"""',
+    ].join('\n');
+
+    // Test with JSON csvText body
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/preview',
+      headers: {
+        'content-type': 'application/json',
+        cookie: authCookie,
+      },
+      payload: { csvText: fyersCsv },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.detectedBroker).toBe('FYERS');
+    expect(body.data.totalRows).toBe(4);
+    expect(body.data.isRawExecutionLog).toBe(true);
+    expect(body.data.headers).toContain('Symbol name');
+    expect(body.data.headers).toContain('Traded price');
+    expect(body.data.headers).toContain('OMS order ID');
+    expect(body.data.suggestedMapping.symbol).toBe('Symbol name');
+    expect(body.data.suggestedMapping.price).toBe('Traded price');
+    expect(body.data.suggestedMapping.tradeDate).toBe('Date & time');
+    expect(body.data.previewRows[0]['Exchange order ID']).toBe('1000000084271616');
+  });
+
+  it('POST /api/v1/export/import/commit handles Indian commas in prices and classifies MCX commodity futures', async () => {
+    const fyersAccRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/accounts',
+      headers: { cookie: authCookie },
+      payload: {
+        name: 'FYERS Test MCX Account',
+        accountType: 'COMMODITY',
+        broker: 'FYERS',
+        initialBalance: 100000,
+        baseCurrency: 'INR',
+      },
+    });
+    const fyersAccId = JSON.parse(fyersAccRes.body).data.id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/commit',
+      headers: { cookie: authCookie },
+      payload: {
+        accountId: fyersAccId,
+        broker: 'FYERS',
+        mapping: {
+          tradeDate: 'Date & time',
+          symbol: 'Symbol name',
+          direction: 'Side',
+          price: 'Traded price',
+          quantity: 'Qty',
+          orderId: 'Exchange order ID',
+          tradeId: 'OMS order ID',
+          segment: 'Segment',
+        },
+        rows: [
+          {
+            'Symbol name': 'GOLDM26NOVFUT',
+            'Date & time': '15 Oct 2026, 09:00:00 AM',
+            Side: 'BUY',
+            'Traded price': '1,44,696.00',
+            Qty: '20.00',
+            Segment: 'Commodity',
+            'Exchange order ID': '="628824324136021"',
+          },
+          {
+            'Symbol name': 'GOLDM26NOVFUT',
+            'Date & time': '15 Oct 2026, 09:06:47 AM',
+            Side: 'SELL',
+            'Traded price': '1,46,317.00',
+            Qty: '20.00',
+            Segment: 'Commodity',
+            'Exchange order ID': '="628824324136021"',
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.importedCount).toBe(1);
+
+    const tradesRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/trades?accountId=${fyersAccId}&search=GOLDM`,
+      headers: { cookie: authCookie },
+    });
+    const tradesBody = JSON.parse(tradesRes.body);
+    const goldTrade = tradesBody.data.find((t: any) => t.symbol === 'GOLDM26NOVFUT');
+    expect(goldTrade).toBeDefined();
+    expect(goldTrade.assetClass).toBe('COMMODITY');
+    expect(goldTrade.exchange).toBe('MCX');
+    expect(goldTrade.marketSegment).toBe('MCX');
+    expect(goldTrade.calculated.averageEntryPrice).toBe(144696);
+    expect(goldTrade.calculated.averageExitPrice).toBe(146317);
+    expect(goldTrade.calculated.closedQuantity).toBe(20);
+    expect(goldTrade.calculated.grossPnL).toBe(32420); // 20 * (146317 - 144696)
+  });
+
   let importedBatchId: string;
 
   it('POST /api/v1/export/import/commit groups raw executions into round-trip trades using FIFO matching with auto-charges', async () => {

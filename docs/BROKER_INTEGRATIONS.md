@@ -132,14 +132,17 @@ SetupMint provides first-class support for importing historical tradebook CSV fi
 | Broker | Tradebook Identifier Headers | Direction Column | Execution Pricing | Supported Segments |
 | :--- | :--- | :--- | :--- | :--- |
 | **Zerodha** | `isin`, `trade_type`, `series`, `order_execution_time` | `trade_type` (`buy`/`sell`) | `price` | Equity, F&O, Currency, Commodity |
-| **FYERS** | `trade no`, `order no`, `side`, `trade value` | `side` (`buy`/`sell` or `1`/`-1`) | `price` / `trade price` | Equity Cash, F&O, Commodities |
+| **FYERS** | `symbol name`, `oms order id`, `exchange order id`, `traded price` or `trade no`, `trade value` | `side` (`buy`/`sell` or `1`/`-1`) | `traded price` / `price` | Equity Cash, NSE/BSE F&O, MCX Commodities |
 | **Angel One** | `scrip / contract`, `client code`, `net rate` | `buy/sell` | `rate` / `net rate` | NSE/BSE Equity, F&O, MCX |
 | **Upstox** | `scrip`, `product`, `side` / `type`, `order no` | `side` (`BUY`/`SELL`) | `price` | Equity Intraday/Delivery, F&O |
 | **Custom** | Heuristic matching (`Date`, `Symbol`, `Price`, `Qty`, `Exit`) | Direction or Side | Entry / Exit or Execution Rate | Any market or manual sheet |
 
 ### Smart Import Engine Workflow:
-1. **Auto-Detection:** Inspects uploaded CSV headers and immediately identifies the originating broker.
-2. **Saved User Mapping:** Loads the user's custom `BrokerImportMapping` configuration if previously saved, or provides broker-specific default mappings.
-3. **FIFO Round-Trip Grouping:** Raw fills are chronologically ordered and matched into complete round-trip trades using `calculateFIFOExecution` in `@tradevault/financial-engine`.
-4. **Auto-Charges:** Automatically calculates statutory exchange turnover fees, SEBI charges, stamp duty, STT/CTT, and GST via `IndianChargesCalculator`.
-5. **Batch Undo:** Every import is tracked via `importBatchId` allowing 1-click batch reversal and balance re-reconciliation.
+1. **Metadata Preamble Stripping:** Handles broker export preambles (e.g. FYERS Report Title, Client ID, PAN headers) and automatically detects the true table header row.
+2. **Indian Number Formatting:** Sanitizes comma-separated price and quantity fields (e.g. `"1,46,317.00"`, `"1,750.00"`) avoiding IEEE-754 truncation bugs.
+3. **Formula Escaping Sanitization:** Strips Excel formula quotes (e.g. `="1000000084271616"`) to retain clean exchange and OMS order identifiers.
+4. **Auto-Detection:** Inspects uploaded CSV headers and immediately identifies the originating broker (including FYERS Web/MyAccount Tradebook exports).
+5. **Saved User Mapping:** Loads the user's custom `BrokerImportMapping` configuration if previously saved, or provides broker-specific default mappings.
+6. **FIFO Round-Trip Grouping:** Raw fills are chronologically ordered and matched into complete round-trip trades using `calculateFIFOExecution` in `@tradevault/financial-engine`.
+7. **MCX Commodity & Statutory Auto-Charges:** Automatically classifies MCX commodities (e.g. `CRUDEOILM`, `NATGASMINI`, `GOLDM`) and calculates statutory exchange turnover fees, SEBI charges, stamp duty, STT/CTT, and GST via `IndianChargesCalculator`.
+8. **Batch Undo:** Every import is tracked via `importBatchId` allowing 1-click batch reversal and balance re-reconciliation.

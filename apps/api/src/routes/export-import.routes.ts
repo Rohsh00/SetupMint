@@ -12,6 +12,120 @@ import { Trade, TradingAccount, BrokerImportMapping, SupportedImportBroker } fro
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 
+const TRADE_HEADER_KEYWORDS = [
+  'symbol',
+  'scrip',
+  'ticker',
+  'instrument',
+  'tradename',
+  'date',
+  'time',
+  'side',
+  'trade_type',
+  'direction',
+  'buysell',
+  'type',
+  'qty',
+  'quantity',
+  'shares',
+  'lots',
+  'price',
+  'traded price',
+  'trade price',
+  'rate',
+  'order',
+  'trade',
+  'order_id',
+  'trade_id',
+  'isin',
+  'entry',
+  'exit',
+];
+
+export function extractTableFromCsv(csvContent: string): { headers: string[]; records: Record<string, string>[] } {
+  const rawRows: string[][] = parse(csvContent, {
+    skip_empty_lines: true,
+    trim: true,
+    relax_column_count: true,
+  });
+
+  if (rawRows.length === 0) {
+    return { headers: [], records: [] };
+  }
+
+  // Find the header row index by scoring trade keyword matches
+  let headerRowIdx = -1;
+  let maxScore = 0;
+
+  for (let i = 0; i < Math.min(rawRows.length, 35); i++) {
+    const row = rawRows[i];
+    if (row.length < 3) continue;
+
+    let score = 0;
+    for (const cell of row) {
+      const clean = String(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (TRADE_HEADER_KEYWORDS.some((kw) => clean === kw || clean.includes(kw))) {
+        score++;
+      }
+    }
+
+    if (score >= 2 && score > maxScore) {
+      maxScore = score;
+      headerRowIdx = i;
+    }
+  }
+
+  if (headerRowIdx === -1) {
+    headerRowIdx = 0;
+  }
+
+  const rawHeaders = rawRows[headerRowIdx];
+  const seenHeaders = new Map<string, number>();
+  const headers = rawHeaders.map((h, colIdx) => {
+    let name = String(h || '').trim();
+    if (!name) name = `Column_${colIdx + 1}`;
+    const count = seenHeaders.get(name) || 0;
+    seenHeaders.set(name, count + 1);
+    return count > 0 ? `${name}_${count + 1}` : name;
+  });
+
+  const records: Record<string, string>[] = [];
+  const dataRows = rawRows.slice(headerRowIdx + 1);
+
+  for (const row of dataRows) {
+    if (!row || row.length === 0 || row.every((c) => !c || !String(c).trim())) {
+      continue;
+    }
+
+    const record: Record<string, string> = {};
+    for (let c = 0; c < headers.length; c++) {
+      let cell = row[c] !== undefined ? String(row[c]).trim() : '';
+      if (cell.startsWith('=')) {
+        cell = cell.replace(/^="?|"?$/g, '').replace(/^"|"$/g, '').trim();
+      }
+      record[headers[c]] = cell;
+    }
+    records.push(record);
+  }
+
+  return { headers, records };
+}
+
+export function parseCleanFloat(val: any): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const cleaned = String(val).replace(/,/g, '').replace(/[^\d.-]/g, '');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+
+export function cleanId(val: any): string | undefined {
+  if (!val) return undefined;
+  let str = String(val).trim();
+  str = str.replace(/^="?|"?$/g, '').replace(/^"|"$/g, '').trim();
+  return str || undefined;
+}
+
 function detectBrokerFromHeaders(headers: string[]): SupportedImportBroker {
   const normalized = headers.map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
   const rawJoined = headers.map((h) => h.toLowerCase()).join(' ');
@@ -26,6 +140,16 @@ function detectBrokerFromHeaders(headers: string[]): SupportedImportBroker {
     return 'ZERODHA';
   }
 
+  // FYERS Tradebook (API format or MyAccount Tradebook export with OMS order ID / Symbol name / Traded price)
+  if (
+    normalized.includes('omsorderid') ||
+    (normalized.includes('exchangeorderid') && (normalized.includes('tradedprice') || normalized.includes('symbolcode'))) ||
+    ((normalized.includes('tradeno') || normalized.includes('tradenumber')) &&
+      (normalized.includes('tradevalue') || (normalized.includes('side') && normalized.includes('qty'))))
+  ) {
+    return 'FYERS';
+  }
+
   // Angel One
   if (
     rawJoined.includes('scrip / contract') ||
@@ -34,14 +158,6 @@ function detectBrokerFromHeaders(headers: string[]): SupportedImportBroker {
     (normalized.includes('scrip') && normalized.includes('rate') && normalized.includes('tradeno'))
   ) {
     return 'ANGEL_ONE';
-  }
-
-  // FYERS Tradebook
-  if (
-    (normalized.includes('tradeno') || normalized.includes('tradenumber')) &&
-    (normalized.includes('tradevalue') || (normalized.includes('side') && normalized.includes('qty')))
-  ) {
-    return 'FYERS';
   }
 
   // Upstox Tradebook
@@ -78,14 +194,16 @@ function getDefaultMappingForBroker(broker: SupportedImportBroker, headers: stri
     mapping.quantity = findHeader(['quantity', 'qty']);
     mapping.orderId = findHeader(['order_id', 'order id']);
     mapping.tradeId = findHeader(['trade_id', 'trade id']);
+    mapping.segment = findHeader(['segment']);
   } else if (broker === 'FYERS') {
-    mapping.tradeDate = findHeader(['trade date', 'trade_date', 'date']);
-    mapping.symbol = findHeader(['symbol']);
-    mapping.direction = findHeader(['side', 'type']);
-    mapping.price = findHeader(['price', 'trade price', 'rate']);
+    mapping.tradeDate = findHeader(['date & time', 'date and time', 'trade date', 'trade_date', 'date']);
+    mapping.symbol = findHeader(['symbol name', 'symbol', 'symbol code', 'scrip']);
+    mapping.direction = findHeader(['side', 'type', 'direction', 'buy/sell']);
+    mapping.price = findHeader(['traded price', 'trade price', 'price', 'rate']);
     mapping.quantity = findHeader(['qty', 'quantity']);
-    mapping.orderId = findHeader(['order no', 'order_no', 'orderid']);
-    mapping.tradeId = findHeader(['trade no', 'trade_no', 'tradeid']);
+    mapping.orderId = findHeader(['exchange order id', 'order no', 'order_no', 'order id', 'orderid']);
+    mapping.tradeId = findHeader(['oms order id', 'trade no', 'trade_no', 'trade id', 'tradeid']);
+    mapping.segment = findHeader(['segment']);
   } else if (broker === 'ANGEL_ONE') {
     mapping.tradeDate = findHeader(['trade date', 'trade_date', 'date']);
     mapping.symbol = findHeader(['scrip / contract', 'scrip', 'symbol']);
@@ -94,6 +212,7 @@ function getDefaultMappingForBroker(broker: SupportedImportBroker, headers: stri
     mapping.quantity = findHeader(['quantity', 'qty']);
     mapping.orderId = findHeader(['order no', 'order id']);
     mapping.tradeId = findHeader(['trade no', 'trade id']);
+    mapping.segment = findHeader(['segment']);
   } else if (broker === 'UPSTOX') {
     mapping.tradeDate = findHeader(['date', 'time', 'trade_date']);
     mapping.symbol = findHeader(['scrip', 'symbol']);
@@ -102,19 +221,23 @@ function getDefaultMappingForBroker(broker: SupportedImportBroker, headers: stri
     mapping.quantity = findHeader(['quantity', 'qty']);
     mapping.orderId = findHeader(['order no', 'order_no', 'order id']);
     mapping.tradeId = findHeader(['trade id', 'trade_id']);
+    mapping.segment = findHeader(['segment']);
   } else {
     // Custom / Generic
-    mapping.tradeDate = findHeader(['tradeDate', 'date', 'trade date', 'time']);
-    mapping.symbol = findHeader(['symbol', 'ticker', 'instrument', 'scrip']);
+    mapping.tradeDate = findHeader(['date & time', 'date and time', 'tradeDate', 'date', 'trade date', 'time']);
+    mapping.symbol = findHeader(['symbol name', 'symbol', 'ticker', 'instrument', 'scrip']);
     mapping.direction = findHeader(['direction', 'side', 'type', 'buysell']);
     mapping.exitPrice = findHeader(['exitprice', 'sellprice', 'closeprice', 'exit', 'close']);
     if (mapping.exitPrice) {
       mapping.entryPrice = findHeader(['entryprice', 'buyprice', 'openprice', 'price']);
     } else {
       mapping.entryPrice = findHeader(['entryprice', 'buyprice', 'openprice']);
-      mapping.price = findHeader(['price', 'rate']);
+      mapping.price = findHeader(['traded price', 'trade price', 'price', 'rate']);
     }
     mapping.quantity = findHeader(['quantity', 'qty', 'shares', 'lots']);
+    mapping.orderId = findHeader(['exchange order id', 'order id', 'order no', 'order_id', 'orderno']);
+    mapping.tradeId = findHeader(['oms order id', 'trade id', 'trade no', 'trade_id', 'tradeno']);
+    mapping.segment = findHeader(['segment', 'market']);
     mapping.totalCosts = findHeader(['fee', 'fees', 'brokerage', 'costs', 'charges']);
     mapping.notes = findHeader(['notes', 'comments']);
     mapping.strategy = findHeader(['setup', 'strategy']);
@@ -154,24 +277,36 @@ function parseFlexibleDate(dateStr: string | undefined): Date {
   return new Date();
 }
 
-function deriveInstrumentMeta(symbol: string): { assetClass: any; marketSegment: any } {
+function deriveInstrumentMeta(symbol: string, segment?: string): { assetClass: any; marketSegment: any } {
   const sym = symbol.toUpperCase().trim();
-  if (sym.includes('FUT')) {
-    return { assetClass: 'FUTURES', marketSegment: 'NSE_FNO' };
-  }
-  if (sym.includes('CE') || sym.includes('PE')) {
-    return { assetClass: 'OPTIONS', marketSegment: 'NSE_FNO' };
-  }
-  if (
-    ['CRUDEOIL', 'NATURALGAS', 'GOLD', 'SILVER', 'COPPER', 'ZINC', 'NICKEL', 'LEAD', 'ALUMINIUM'].some(
+  const seg = String(segment || '').toUpperCase().trim();
+
+  // 1. Commodity check first (covers MCX commodities which often have FUT suffix e.g. GOLDM26NOVFUT, CRUDEOILM26OCTFUT)
+  const isCommodity =
+    seg.includes('COMMODITY') ||
+    seg.includes('MCX') ||
+    ['CRUDEOIL', 'NATURALGAS', 'NATGAS', 'GOLD', 'SILVER', 'COPPER', 'ZINC', 'NICKEL', 'LEAD', 'ALUMINIUM'].some(
       (c) => sym.startsWith(c)
-    )
-  ) {
+    );
+
+  if (isCommodity) {
     return { assetClass: 'COMMODITY', marketSegment: 'MCX' };
   }
+
+  // 2. Crypto
   if (sym.includes('USDT') || sym.includes('BTC') || sym.includes('ETH')) {
     return { assetClass: 'CRYPTO', marketSegment: 'CRYPTO' };
   }
+
+  // 3. Derivatives (Options / Futures)
+  if (sym.includes('CE') || sym.includes('PE')) {
+    return { assetClass: 'OPTIONS', marketSegment: 'NSE_FNO' };
+  }
+
+  if (sym.includes('FUT')) {
+    return { assetClass: 'FUTURES', marketSegment: 'NSE_FNO' };
+  }
+
   return { assetClass: 'EQUITY', marketSegment: 'NSE_EQ' };
 }
 
@@ -252,24 +387,44 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
   // CSV Import Preview with Broker Format Detection
   app.post('/import/preview', async (req: any, reply) => {
-    const data = await req.file();
-    if (!data) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'NO_FILE', message: 'No CSV file uploaded' },
-      });
+    let csvContent = '';
+
+    if (req.isMultipart && req.isMultipart()) {
+      const data = await req.file();
+      if (!data) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'NO_FILE', message: 'No CSV file uploaded' },
+        });
+      }
+      const buffer = await data.toBuffer();
+      csvContent = buffer.toString('utf-8');
+    } else if (req.body && typeof req.body.csvText === 'string') {
+      csvContent = req.body.csvText;
+    } else {
+      try {
+        const data = await req.file();
+        if (data) {
+          const buffer = await data.toBuffer();
+          csvContent = buffer.toString('utf-8');
+        }
+      } catch {
+        // Ignore multipart error
+      }
+      if (!csvContent) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'NO_FILE', message: 'No CSV file or text provided' },
+        });
+      }
     }
 
-    const buffer = await data.toBuffer();
-    const csvContent = buffer.toString('utf-8');
-
-    let records: any[] = [];
+    let headers: string[] = [];
+    let records: Record<string, string>[] = [];
     try {
-      records = parse(csvContent, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-      });
+      const extracted = extractTableFromCsv(csvContent);
+      headers = extracted.headers;
+      records = extracted.records;
     } catch (err: any) {
       return reply.status(400).send({
         success: false,
@@ -277,14 +432,13 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       });
     }
 
-    if (records.length === 0) {
+    if (records.length === 0 || headers.length === 0) {
       return reply.status(400).send({
         success: false,
         error: { code: 'EMPTY_CSV', message: 'CSV file contains no data rows' },
       });
     }
 
-    const headers = Object.keys(records[0]);
     const detectedBroker = detectBrokerFromHeaders(headers);
 
     // Check if user has a saved custom mapping for this broker
@@ -450,9 +604,9 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const direction =
             dirRaw.includes('SHORT') || dirRaw === 'S' || dirRaw === 'SELL' ? 'SHORT' : 'LONG';
 
-          const entryPrice = parseFloat(row[mapping.entryPrice]) || 0;
-          const exitPrice = parseFloat(row[mapping.exitPrice]) || 0;
-          const quantity = parseFloat(row[mapping.quantity]) || 1;
+          const entryPrice = parseCleanFloat(row[mapping.entryPrice]);
+          const exitPrice = parseCleanFloat(row[mapping.exitPrice]);
+          const quantity = parseCleanFloat(row[mapping.quantity]);
 
           if (!symbolVal || entryPrice <= 0 || quantity <= 0) {
             errors.push({
@@ -478,7 +632,9 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             continue;
           }
 
-          const { assetClass, marketSegment } = deriveInstrumentMeta(symbolVal);
+          const segmentVal = mapping.segment ? row[mapping.segment] : row['Segment'] || row['segment'];
+          const { assetClass, marketSegment } = deriveInstrumentMeta(symbolVal, segmentVal);
+          const exchange = marketSegment === 'MCX' ? 'MCX' : symbolVal.startsWith('SENSEX') || symbolVal.startsWith('BANKEX') ? 'BSE' : 'NSE';
 
           // Auto-calculate statutory charges via financial engine
           const charges = calculateIndianCharges({
@@ -504,14 +660,14 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             explicitAdjustments: 0,
           });
 
-          const session = deriveSessionFromTime(tradeDate, 'NSE', marketSegment);
+          const session = deriveSessionFromTime(tradeDate, exchange, marketSegment);
 
           await Trade.create({
             userId: req.user!.id,
             accountId: account._id,
             symbol: symbolVal,
             assetClass,
-            exchange: marketSegment === 'MCX' ? 'MCX' : 'NSE',
+            exchange,
             marketSegment,
             currency: account.baseCurrency,
             direction,
@@ -589,6 +745,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         quantity: number;
         orderId?: string;
         tradeId?: string;
+        segment?: string;
       }
 
       const parsedExecutions: RawExecution[] = [];
@@ -601,10 +758,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const rawQty = row[mapping.quantity] || row[mapping.qty];
           const rawDir = String(row[mapping.direction] || '').toUpperCase().trim();
 
-          const price = parseFloat(rawPrice);
-          const quantity = parseFloat(rawQty);
+          const price = parseCleanFloat(rawPrice);
+          const quantity = parseCleanFloat(rawQty);
 
-          if (!symbolVal || isNaN(price) || price <= 0 || isNaN(quantity) || quantity <= 0) {
+          if (!symbolVal || price <= 0 || quantity <= 0) {
             errors.push({
               row: i + 1,
               symbol: symbolVal || undefined,
@@ -636,8 +793,9 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             side: isBuy ? 'BUY' : 'SELL',
             price,
             quantity,
-            orderId: mapping.orderId ? row[mapping.orderId] : undefined,
-            tradeId: mapping.tradeId ? row[mapping.tradeId] : undefined,
+            orderId: mapping.orderId ? cleanId(row[mapping.orderId]) : undefined,
+            tradeId: mapping.tradeId ? cleanId(row[mapping.tradeId]) : undefined,
+            segment: mapping.segment ? row[mapping.segment] : row['Segment'] || row['segment'],
           });
         } catch (err: any) {
           errors.push({ row: i + 1, message: err.message });
@@ -656,7 +814,9 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       for (const [symbol, execList] of executionsBySymbol.entries()) {
         execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime() || a.rowIdx - b.rowIdx);
 
-        const { assetClass, marketSegment } = deriveInstrumentMeta(symbol);
+        const segmentVal = execList[0]?.segment;
+        const { assetClass, marketSegment } = deriveInstrumentMeta(symbol, segmentVal);
+        const exchange = marketSegment === 'MCX' ? 'MCX' : symbol.startsWith('SENSEX') || symbol.startsWith('BANKEX') ? 'BSE' : 'NSE';
 
         interface ActiveTradeGroup {
           direction: 'LONG' | 'SHORT';
@@ -733,14 +893,14 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               .filter((f) => f.type === 'EXIT')
               .slice(-1)[0];
             const exitTime = lastExitFill ? lastExitFill.timestamp : undefined;
-            const session = deriveSessionFromTime(group.entryTime, 'NSE', marketSegment);
+            const session = deriveSessionFromTime(group.entryTime, exchange, marketSegment);
 
             await Trade.create({
               userId: req.user!.id,
               accountId: account._id,
               symbol,
               assetClass,
-              exchange: marketSegment === 'MCX' ? 'MCX' : 'NSE',
+              exchange,
               marketSegment,
               currency: account.baseCurrency,
               direction: group.direction,

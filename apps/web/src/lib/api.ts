@@ -228,9 +228,15 @@ export const api = {
       }
       return `${BASE_URL}/export/json?${query.toString()}`;
     },
-    previewCsv: (file: File) => {
+    previewCsv: (input: File | string) => {
+      if (typeof input === 'string') {
+        return request<any>('/export/import/preview', {
+          method: 'POST',
+          body: JSON.stringify({ csvText: input }),
+        });
+      }
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', input);
       return request<any>('/export/import/preview', {
         method: 'POST',
         body: formData,

@@ -22,6 +22,8 @@ import {
   FormControlLabel,
   Checkbox,
   Collapse,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
   DownloadRounded,
@@ -36,6 +38,7 @@ import {
   AutoAwesomeRounded,
   HistoryRounded,
   WarningAmberRounded,
+  ContentPasteRounded,
 } from '@mui/icons-material';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -52,6 +55,8 @@ export function ReportsPage() {
   const [endDate, setEndDate] = useState('');
 
   // Import states
+  const [importMode, setImportMode] = useState<'FILE' | 'PASTE'>('FILE');
+  const [pastedText, setPastedText] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importTargetAccount, setImportTargetAccount] = useState('');
   const [previewData, setPreviewData] = useState<any>(null);
@@ -69,7 +74,7 @@ export function ReportsPage() {
   });
 
   const previewMutation = useMutation({
-    mutationFn: (file: File) => api.exportImport.previewCsv(file),
+    mutationFn: (input: File | string) => api.exportImport.previewCsv(input),
     onSuccess: (data) => {
       setImportError(null);
       setPreviewData(data);
@@ -96,6 +101,7 @@ export function ReportsPage() {
       setImportResult(data);
       setPreviewData(null);
       setImportFile(null);
+      setPastedText('');
       toast.success(`Import completed successfully! (${data.importedCount} trades imported)`);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
@@ -133,6 +139,14 @@ export function ReportsPage() {
       setImportFile(file);
       previewMutation.mutate(file);
     }
+  };
+
+  const handlePastedAnalyze = () => {
+    if (!pastedText.trim()) {
+      toast.error('Please paste CSV tradebook content first');
+      return;
+    }
+    previewMutation.mutate(pastedText);
   };
 
   const handleCommit = () => {
@@ -355,36 +369,97 @@ export function ReportsPage() {
             </Alert>
           )}
 
-          {/* Upload Dropzone */}
+          {/* Upload Dropzone or Paste Input Box */}
           {!previewData && (
-            <Box
-              component="label"
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                p: 5,
-                border: '2px dashed',
-                borderColor: 'divider',
-                borderRadius: 2,
-                cursor: 'pointer',
-                bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)',
-                transition: 'all 0.2s',
-                '&:hover': {
-                  borderColor: 'primary.main',
-                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.02)',
-                },
-              }}
-            >
-              <CloudUploadRounded sx={{ fontSize: 44, color: 'primary.main', mb: 1 }} />
-              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Click or drag & drop CSV file to upload
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                Supports Zerodha Console, FYERS Tradebook, Angel One, Upstox, or custom spreadsheet exports
-              </Typography>
-              <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: 'none' }} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <ToggleButtonGroup
+                  value={importMode}
+                  exclusive
+                  onChange={(_, val) => val && setImportMode(val)}
+                  size="small"
+                  sx={{
+                    bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                    p: 0.5,
+                    borderRadius: 2,
+                  }}
+                >
+                  <ToggleButton value="FILE" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
+                    <CloudUploadRounded sx={{ fontSize: 18, mr: 1 }} />
+                    Upload CSV File
+                  </ToggleButton>
+                  <ToggleButton value="PASTE" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
+                    <ContentPasteRounded sx={{ fontSize: 18, mr: 1 }} />
+                    Paste CSV Data
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+
+              {importMode === 'FILE' ? (
+                <Box
+                  component="label"
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    p: 5,
+                    border: '2px dashed',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      borderColor: 'primary.main',
+                      bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.02)',
+                    },
+                  }}
+                >
+                  <CloudUploadRounded sx={{ fontSize: 44, color: 'primary.main', mb: 1 }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Click or drag & drop CSV file to upload
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                    Supports FYERS Tradebook, Zerodha Console, Angel One, Upstox, or custom spreadsheet exports
+                  </Typography>
+                  <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: 'none' }} />
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  <TextField
+                    multiline
+                    rows={8}
+                    fullWidth
+                    value={pastedText}
+                    onChange={(e) => setPastedText(e.target.value)}
+                    placeholder={`Paste tradebook CSV report or rows here (e.g. from FYERS, Zerodha, etc.):\n\nReport Title,Tradebook report\n...\nSymbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID\nNIFTY26O1923100PE,NIFTY 23100 PE,"16 Oct 2026, 10:48:23 AM",SELL,Overnight,130.00,124.30,"16,159.00",Derivatives,...`}
+                    sx={{
+                      '& .MuiInputBase-root': {
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontSize: '0.8rem',
+                      },
+                    }}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                    {pastedText && (
+                      <Button size="small" color="inherit" onClick={() => setPastedText('')}>
+                        Clear
+                      </Button>
+                    )}
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      startIcon={<AutoAwesomeRounded />}
+                      onClick={handlePastedAnalyze}
+                      disabled={!pastedText.trim() || previewMutation.isPending}
+                      sx={{ fontWeight: 600, px: 3 }}
+                    >
+                      {previewMutation.isPending ? 'Analyzing Data...' : 'Analyze Tradebook Data'}
+                    </Button>
+                  </Box>
+                </Box>
+              )}
             </Box>
           )}
 
@@ -562,6 +637,7 @@ export function ReportsPage() {
                     { field: 'exitPrice', label: 'Exit Price (Simple Mode)' },
                     { field: 'orderId', label: 'Order ID' },
                     { field: 'tradeId', label: 'Trade ID' },
+                    { field: 'segment', label: 'Market Segment (MCX/NSE/BSE)' },
                     { field: 'notes', label: 'Notes / Comments' },
                   ].map((item) => (
                     <Grid size={{ xs: 12, sm: 6, md: 3 }} key={item.field}>
@@ -622,7 +698,7 @@ export function ReportsPage() {
 
               {/* Actions */}
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, pt: 1 }}>
-                <Button variant="outlined" color="inherit" onClick={() => setPreviewData(null)}>
+                <Button variant="outlined" color="inherit" onClick={() => { setPreviewData(null); setPastedText(''); }}>
                   Cancel
                 </Button>
                 <Button

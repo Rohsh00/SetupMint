@@ -97,12 +97,12 @@ export const tradeFillSchema = z.object({
   type: z.enum(['ENTRY', 'EXIT']),
   price: z.number().positive('Price must be greater than zero'),
   quantity: z.number().positive('Quantity must be greater than zero'),
-  timestamp: z.string(),
-  fee: z.number().nonnegative().optional(),
-  brokerage: z.number().nonnegative().optional(),
-  exchangeFee: z.number().nonnegative().optional(),
-  taxes: z.number().nonnegative().optional(),
-  notes: z.string().optional(),
+  timestamp: z.string().min(1, 'Fill timestamp is required'),
+  fee: z.preprocess((val) => (val === '' || Number.isNaN(val) || val === undefined ? 0 : Number(val)), z.number().nonnegative().default(0)),
+  brokerage: z.preprocess((val) => (val === '' || Number.isNaN(val) || val === undefined ? 0 : Number(val)), z.number().nonnegative().default(0)),
+  exchangeFee: z.preprocess((val) => (val === '' || Number.isNaN(val) || val === undefined ? 0 : Number(val)), z.number().nonnegative().default(0)),
+  taxes: z.preprocess((val) => (val === '' || Number.isNaN(val) || val === undefined ? 0 : Number(val)), z.number().nonnegative().default(0)),
+  notes: z.preprocess((val) => (val === null || val === undefined ? '' : String(val)), z.string().default('')),
 });
 
 export const simpleExecutionSchema = z.object({

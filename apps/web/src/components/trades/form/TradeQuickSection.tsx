@@ -117,21 +117,40 @@ export function TradeQuickSection({
 
   // Change symbol and auto-populate metadata
   const handleSelectSymbol = (sym: string) => {
-    setValue('symbol', sym.toUpperCase());
-    const found = instruments.find((i) => i.symbol.toUpperCase() === sym.toUpperCase());
+    const symUpper = sym.toUpperCase();
+    setValue('symbol', symUpper, { shouldDirty: true });
+
+    const cleanSym = symUpper.replace(/^(MCX:|NSE:|BSE:)/i, '');
+    const found = instruments.find(
+      (i) => i.symbol.toUpperCase() === symUpper || i.symbol.toUpperCase() === cleanSym
+    );
     if (found) {
-      setValue('assetClass', found.assetClass);
-      setValue('exchange', found.exchange);
-      setValue('marketSegment', found.marketSegment);
-      setValue('currency', found.quoteCurrency || 'INR');
-      setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1);
-      setValue('risk.lotSize', found.lotSize || 1);
+      setValue('assetClass', found.assetClass, { shouldDirty: true });
+      setValue('exchange', found.exchange, { shouldDirty: true });
+      setValue('marketSegment', found.marketSegment, { shouldDirty: true });
+      setValue('currency', found.quoteCurrency || 'INR', { shouldDirty: true });
+      setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1, { shouldDirty: true });
+      setValue('risk.lotSize', found.lotSize || 1, { shouldDirty: true });
       if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
-        setValue('simpleExecution.quantity', found.lotSize || 1);
+        setValue('simpleExecution.quantity', found.lotSize || 1, { shouldDirty: true });
       }
       const entryTime = watch('entryTime');
       if (entryTime) {
-        setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment));
+        setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment), { shouldDirty: true });
+      }
+    } else if (
+      symUpper.startsWith('MCX:') ||
+      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(cleanSym)
+    ) {
+      setValue('assetClass', 'COMMODITY', { shouldDirty: true });
+      setValue('exchange', 'MCX', { shouldDirty: true });
+      setValue('marketSegment', 'MCX', { shouldDirty: true });
+      setValue('currency', 'INR', { shouldDirty: true });
+      const mult = cleanSym.startsWith('CRUDEOILM') ? 10 : cleanSym.startsWith('NATGASMINI') ? 250 : 1;
+      setValue('simpleExecution.contractMultiplier', mult, { shouldDirty: true });
+      const entryTime = watch('entryTime');
+      if (entryTime) {
+        setValue('session', deriveSessionFromTime(entryTime, 'MCX', 'MCX'), { shouldDirty: true });
       }
     }
   };
@@ -275,7 +294,18 @@ export function TradeQuickSection({
             size="small"
             fullWidth
             value={watch('assetClass') || 'FUTURES'}
-            onChange={(e) => setValue('assetClass', e.target.value)}
+            onChange={(e) => {
+              const ac = e.target.value;
+              setValue('assetClass', ac, { shouldDirty: true });
+              if (ac === 'COMMODITY' && watch('exchange') !== 'MCX') {
+                setValue('exchange', 'MCX', { shouldDirty: true });
+                setValue('marketSegment', 'MCX', { shouldDirty: true });
+                const entryTime = watch('entryTime');
+                if (entryTime) {
+                  setValue('session', deriveSessionFromTime(entryTime, 'MCX', 'MCX'), { shouldDirty: true });
+                }
+              }
+            }}
           >
             {ASSET_CLASSES.map((ac) => (
               <MenuItem key={ac.value} value={ac.value}>
@@ -289,7 +319,23 @@ export function TradeQuickSection({
             size="small"
             fullWidth
             value={watch('exchange') || 'NSE'}
-            onChange={(e) => setValue('exchange', e.target.value.toUpperCase())}
+            onChange={(e) => {
+              const ex = e.target.value.toUpperCase();
+              setValue('exchange', ex, { shouldDirty: true });
+              if (ex === 'MCX') {
+                setValue('marketSegment', 'MCX', { shouldDirty: true });
+                setValue('assetClass', 'COMMODITY', { shouldDirty: true });
+                const entryTime = watch('entryTime');
+                if (entryTime) {
+                  setValue('session', deriveSessionFromTime(entryTime, 'MCX', 'MCX'), { shouldDirty: true });
+                }
+              } else if (ex === 'NSE' || ex === 'BSE') {
+                const currentAc = watch('assetClass');
+                const nextAc = currentAc === 'COMMODITY' ? 'FUTURES' : currentAc;
+                setValue('assetClass', nextAc, { shouldDirty: true });
+                setValue('marketSegment', nextAc === 'EQUITY' ? `${ex}_EQ` : `${ex}_FNO`, { shouldDirty: true });
+              }
+            }}
             slotProps={{ htmlInput: { style: { textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' } } }}
           />
         </Box>
@@ -370,10 +416,8 @@ export function TradeQuickSection({
           value={watch('simpleExecution.entryPrice') || ''}
           onChange={(e) => {
             const val = e.target.value === '' ? '' : Number(e.target.value);
-            setValue('simpleExecution.entryPrice', val);
-            if (!watch('risk.plannedEntryPrice')) {
-              setValue('risk.plannedEntryPrice', val);
-            }
+            setValue('simpleExecution.entryPrice', val, { shouldDirty: true });
+            setValue('risk.plannedEntryPrice', val, { shouldDirty: true });
           }}
           slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
         />

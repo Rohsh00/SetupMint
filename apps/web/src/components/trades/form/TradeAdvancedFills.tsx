@@ -1,5 +1,5 @@
 import React from 'react';
-import { UseFormRegister, UseFormWatch, UseFieldArrayReturn } from 'react-hook-form';
+import { UseFormRegister, UseFormWatch, UseFieldArrayReturn, UseFormSetValue } from 'react-hook-form';
 import {
   Box,
   Typography,
@@ -32,12 +32,14 @@ import { formatCurrency } from '../../../lib/utils.js';
 interface TradeAdvancedFillsProps {
   register: UseFormRegister<any>;
   watch: UseFormWatch<any>;
+  setValue?: UseFormSetValue<any>;
   fillsFieldArray: UseFieldArrayReturn<any, 'fills'>;
 }
 
 export function TradeAdvancedFills({
   register,
   watch,
+  setValue,
   fillsFieldArray,
 }: TradeAdvancedFillsProps) {
   const muiTheme = useTheme();
@@ -173,6 +175,14 @@ export function TradeAdvancedFills({
               {fields.map((field, index) => {
                 const fillType = watch(`fills.${index}.type`);
                 const isEntry = fillType === 'ENTRY';
+                const rawTs = watch(`fills.${index}.timestamp`);
+                const formattedTs = rawTs
+                  ? typeof rawTs === 'string'
+                    ? rawTs.length > 16
+                      ? rawTs.slice(0, 16)
+                      : rawTs
+                    : new Date(rawTs).toISOString().slice(0, 16)
+                  : '';
 
                 return (
                   <TableRow key={field.id} hover>
@@ -208,7 +218,14 @@ export function TradeAdvancedFills({
                       <TextField
                         type="datetime-local"
                         size="small"
-                        {...register(`fills.${index}.timestamp`, { required: true })}
+                        value={formattedTs}
+                        onChange={(e) => {
+                          if (setValue) {
+                            setValue(`fills.${index}.timestamp`, e.target.value, { shouldDirty: true, shouldValidate: true });
+                          } else {
+                            register(`fills.${index}.timestamp`).onChange(e);
+                          }
+                        }}
                         slotProps={{ htmlInput: { style: { fontSize: '0.75rem' } } }}
                       />
                     </TableCell>
@@ -217,7 +234,15 @@ export function TradeAdvancedFills({
                       <TextField
                         type="number"
                         size="small"
-                        {...register(`fills.${index}.fee`, { valueAsNumber: true })}
+                        value={watch(`fills.${index}.fee`) ?? 0}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : Number(e.target.value);
+                          if (setValue) {
+                            setValue(`fills.${index}.fee`, val, { shouldDirty: true });
+                          } else {
+                            register(`fills.${index}.fee`).onChange(e);
+                          }
+                        }}
                         slotProps={{ htmlInput: { step: 'any', min: 0, style: { width: 60, fontFamily: '"JetBrains Mono", monospace' } } }}
                       />
                     </TableCell>

@@ -208,8 +208,65 @@ export function TradeFormModal({
   // Handle edit values or initial opening
   useEffect(() => {
     if (initialValues) {
+      const initialEntry = Number(initialValues.simpleExecution?.entryPrice) || 0;
+      const initialRisk = initialValues.risk ? { ...initialValues.risk } : {};
+      // Auto-heal corrupted/truncated plannedEntryPrice (e.g. truncated keystroke '9' vs entryPrice '9233')
+      if (
+        initialEntry > 0 &&
+        (!initialRisk.plannedEntryPrice ||
+          (initialRisk.plannedEntryPrice < initialEntry / 2 && Math.abs(initialEntry - initialRisk.plannedEntryPrice) > 50))
+      ) {
+        initialRisk.plannedEntryPrice = initialEntry;
+      }
+
+      // Format fills timestamps properly for datetime-local input (YYYY-MM-DDTHH:mm)
+      const formattedFills = Array.isArray(initialValues.fills)
+        ? initialValues.fills.map((f: any) => {
+            let tsStr = '';
+            if (f.timestamp) {
+              try {
+                const d = new Date(f.timestamp);
+                if (!isNaN(d.getTime())) {
+                  tsStr = d.toISOString().slice(0, 16);
+                }
+              } catch {
+                tsStr = '';
+              }
+            }
+            if (!tsStr) {
+              tsStr = initialValues.entryTime ? initialValues.entryTime.slice(0, 16) : new Date().toISOString().slice(0, 16);
+            }
+            return {
+              ...f,
+              fee: f.fee ?? 0,
+              timestamp: tsStr,
+            };
+          })
+        : [];
+
+      // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
+      let initialExchange = initialValues.exchange || 'NSE';
+      let initialMarketSegment = initialValues.marketSegment || 'NSE_FNO';
+      let initialAssetClass = initialValues.assetClass || 'FUTURES';
+
+      const symUpper = (initialValues.symbol || '').toUpperCase();
+      if (
+        initialExchange === 'MCX' ||
+        symUpper.startsWith('MCX:') ||
+        /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(symUpper.replace(/^MCX:/i, ''))
+      ) {
+        initialExchange = 'MCX';
+        initialMarketSegment = 'MCX';
+        initialAssetClass = 'COMMODITY';
+      }
+
       reset({
         ...initialValues,
+        exchange: initialExchange,
+        marketSegment: initialMarketSegment,
+        assetClass: initialAssetClass,
+        risk: initialRisk,
+        fills: formattedFills,
         tagsInput: Array.isArray(initialValues.tags)
           ? initialValues.tags.join(', ')
           : (initialValues.tagsInput || ''),
@@ -444,7 +501,11 @@ export function TradeFormModal({
 
   // Calculate live planned risk
   let plannedRiskAmount = Number(watchedRisk?.riskBudgetAmount) || 0;
-  const pEntry = Number(watchedRisk?.plannedEntryPrice || watchedSimple?.entryPrice) || 0;
+  const pEntry = Number(
+    workflowMode === 'QUICK'
+      ? (watchedSimple?.entryPrice || watchedRisk?.plannedEntryPrice)
+      : (watchedRisk?.plannedEntryPrice || watchedSimple?.entryPrice)
+  ) || 0;
   const pStop = Number(watchedRisk?.initialStopLoss) || 0;
   const pTarget = Number(watchedRisk?.plannedTarget) || 0;
 
@@ -808,8 +869,47 @@ export function TradeFormModal({
       }
     }
 
+    // Ensure plannedEntryPrice in risk is synced with entry price in Quick mode
+    const finalRisk = { ...data.risk };
+    if (workflowMode === 'QUICK' && simpleExecPayload.entryPrice) {
+      finalRisk.plannedEntryPrice = simpleExecPayload.entryPrice;
+    }
+
+    // Sanitize fills payloads
+    const sanitizedFills = Array.isArray(data.fills)
+      ? data.fills.map((f: any) => ({
+          ...f,
+          fee: Number(f.fee) || 0,
+          price: Number(f.price) || 0,
+          quantity: Number(f.quantity) || 0,
+          timestamp: f.timestamp
+            ? new Date(f.timestamp).toISOString()
+            : (data.entryTime ? new Date(data.entryTime).toISOString() : new Date().toISOString()),
+        }))
+      : [];
+
+    // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
+    let finalExchange = data.exchange || 'NSE';
+    let finalMarketSegment = data.marketSegment || 'NSE_FNO';
+    let finalAssetClass = data.assetClass || 'FUTURES';
+    const subSymUpper = (data.symbol || '').toUpperCase();
+    if (
+      finalExchange === 'MCX' ||
+      subSymUpper.startsWith('MCX:') ||
+      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(subSymUpper.replace(/^MCX:/i, ''))
+    ) {
+      finalExchange = 'MCX';
+      finalMarketSegment = 'MCX';
+      finalAssetClass = 'COMMODITY';
+    }
+
     const payload = {
       ...data,
+      exchange: finalExchange,
+      marketSegment: finalMarketSegment,
+      assetClass: finalAssetClass,
+      risk: finalRisk,
+      fills: sanitizedFills,
       templateId: activeTemplate?.id || data.templateId || undefined,
       simpleExecution: simpleExecPayload,
       tags,
@@ -1157,6 +1257,7 @@ export function TradeFormModal({
               <TradeAdvancedFills
                 register={register}
                 watch={watch}
+                setValue={setValue}
                 fillsFieldArray={fillsFieldArray}
               />
             )}

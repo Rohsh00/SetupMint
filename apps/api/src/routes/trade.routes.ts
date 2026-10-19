@@ -63,16 +63,29 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
     }
 
-    // Realized R-Multiple
+    // Realized R-Multiple & Planned Risk
     let plannedRisk = body.risk?.riskBudgetAmount || body.risk?.estimatedRiskAmount;
-    if (!plannedRisk && body.risk?.plannedEntryPrice && body.risk?.initialStopLoss) {
-      const dist = Math.abs(body.risk.plannedEntryPrice - body.risk.initialStopLoss);
+    const entryForRisk = body.risk?.plannedEntryPrice || avgEntry || body.simpleExecution?.entryPrice;
+    if (!plannedRisk && entryForRisk && body.risk?.initialStopLoss) {
+      const dist = Math.abs(entryForRisk - body.risk.initialStopLoss);
       const qty = body.simpleExecution?.quantity || closedQty || 1;
       const mult = body.simpleExecution?.contractMultiplier || 1;
       plannedRisk = dist * qty * mult;
     }
 
     const realizedRMultiple = calculateRealizedRMultiple(netPnL, plannedRisk);
+
+    // Authoritatively calculate plannedRewardRiskRatio
+    if (body.risk && entryForRisk && body.risk.initialStopLoss && body.risk.plannedTarget) {
+      const rDist = Math.abs(entryForRisk - body.risk.initialStopLoss);
+      const rewDist = Math.abs(body.risk.plannedTarget - entryForRisk);
+      if (rDist > 0) {
+        body.risk.plannedRewardRiskRatio = Number((rewDist / rDist).toFixed(2));
+      }
+    }
+    if (body.risk && (!body.risk.plannedEntryPrice || body.risk.plannedEntryPrice <= 0) && entryForRisk) {
+      body.risk.plannedEntryPrice = entryForRisk;
+    }
 
     return {
       grossPnL,
@@ -258,6 +271,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (!tradeData.instrumentId) delete tradeData.instrumentId;
     if (!tradeData.templateId) delete tradeData.templateId;
 
+    // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
+    const sym = (tradeData.symbol || '').toUpperCase();
+    if (
+      tradeData.exchange === 'MCX' ||
+      sym.startsWith('MCX:') ||
+      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(sym.replace(/^MCX:/i, ''))
+    ) {
+      tradeData.exchange = 'MCX';
+      tradeData.marketSegment = 'MCX';
+      tradeData.assetClass = 'COMMODITY';
+    }
+
     const trade = await Trade.create(tradeData);
 
     // Recalculate account realized P&L and balance authoritatively
@@ -438,6 +463,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       if (req.body.templateId === '' || req.body.templateId === null) {
         updatePayload.$unset = { ...updatePayload.$unset, templateId: 1 };
       }
+    }
+
+    // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
+    const updateSym = (updatePayload.symbol || existingTrade.symbol || '').toUpperCase();
+    if (
+      updatePayload.exchange === 'MCX' ||
+      updateSym.startsWith('MCX:') ||
+      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(updateSym.replace(/^MCX:/i, ''))
+    ) {
+      updatePayload.exchange = 'MCX';
+      updatePayload.marketSegment = 'MCX';
+      updatePayload.assetClass = 'COMMODITY';
     }
 
     const updated = await Trade.findOneAndUpdate(

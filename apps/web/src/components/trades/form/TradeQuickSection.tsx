@@ -39,7 +39,7 @@ import {
   ProvenanceSource,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, toLocalIsoDateTime } from '../../../lib/utils.js';
 import { MarketTemplateBar } from './MarketTemplateBar.js';
 
 interface TradeQuickSectionProps {
@@ -612,11 +612,11 @@ export function TradeQuickSection({
           size="small"
           required
           fullWidth
-          value={watch('entryTime') || ''}
+          value={toLocalIsoDateTime(watch('entryTime'))}
           onChange={(e) => {
-            setValue('entryTime', e.target.value);
+            setValue('entryTime', e.target.value, { shouldDirty: true });
             const derived = deriveSessionFromTime(e.target.value, watch('exchange'), watch('marketSegment'));
-            setValue('session', derived);
+            setValue('session', derived, { shouldDirty: true });
           }}
           slotProps={{ inputLabel: { shrink: true } }}
         />
@@ -627,8 +627,8 @@ export function TradeQuickSection({
           size="small"
           disabled={status === 'OPEN'}
           fullWidth
-          value={status === 'OPEN' ? '' : (watch('exitTime') || '')}
-          onChange={(e) => setValue('exitTime', e.target.value)}
+          value={status === 'OPEN' ? '' : toLocalIsoDateTime(watch('exitTime'))}
+          onChange={(e) => setValue('exitTime', e.target.value, { shouldDirty: true })}
           slotProps={{ inputLabel: { shrink: true } }}
         />
 

@@ -53,6 +53,7 @@ import {
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
+import { toLocalIsoDateTime, currentLocalIsoDateTime, fromLocalIsoDateTime } from '../../lib/utils.js';
 import { TradeCalculationBanner } from './form/TradeCalculationBanner.js';
 import { TradeTemplateSelector } from './form/TradeTemplateSelector.js';
 import { TradeQuickSection } from './form/TradeQuickSection.js';
@@ -138,8 +139,8 @@ export function TradeFormModal({
       status: 'CLOSED',
       strategyId: rememberedPrefs.preferredStrategyId || '',
       tradeDate: new Date().toISOString().split('T')[0],
-      entryTime: new Date().toISOString().slice(0, 16),
-      exitTime: new Date().toISOString().slice(0, 16),
+      entryTime: currentLocalIsoDateTime(),
+      exitTime: currentLocalIsoDateTime(),
       session: 'NSE_REGULAR',
       tradeTitle: '',
       tagsInput: '',
@@ -221,27 +222,11 @@ export function TradeFormModal({
 
       // Format fills timestamps properly for datetime-local input (YYYY-MM-DDTHH:mm)
       const formattedFills = Array.isArray(initialValues.fills)
-        ? initialValues.fills.map((f: any) => {
-            let tsStr = '';
-            if (f.timestamp) {
-              try {
-                const d = new Date(f.timestamp);
-                if (!isNaN(d.getTime())) {
-                  tsStr = d.toISOString().slice(0, 16);
-                }
-              } catch {
-                tsStr = '';
-              }
-            }
-            if (!tsStr) {
-              tsStr = initialValues.entryTime ? initialValues.entryTime.slice(0, 16) : new Date().toISOString().slice(0, 16);
-            }
-            return {
-              ...f,
-              fee: f.fee ?? 0,
-              timestamp: tsStr,
-            };
-          })
+        ? initialValues.fills.map((f: any) => ({
+            ...f,
+            fee: f.fee ?? 0,
+            timestamp: toLocalIsoDateTime(f.timestamp) || toLocalIsoDateTime(initialValues.entryTime) || currentLocalIsoDateTime(),
+          }))
         : [];
 
       // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
@@ -331,11 +316,11 @@ export function TradeFormModal({
           ? initialValues.tradeDate.split('T')[0]
           : new Date().toISOString().split('T')[0],
         entryTime: initialValues.entryTime
-          ? initialValues.entryTime.slice(0, 16)
-          : new Date().toISOString().slice(0, 16),
+          ? toLocalIsoDateTime(initialValues.entryTime)
+          : currentLocalIsoDateTime(),
         exitTime: initialValues.exitTime
-          ? initialValues.exitTime.slice(0, 16)
-          : new Date().toISOString().slice(0, 16),
+          ? toLocalIsoDateTime(initialValues.exitTime)
+          : (initialValues.status === 'OPEN' ? '' : currentLocalIsoDateTime()),
       });
       setIsAutoFees(shouldAutoFees);
 
@@ -848,8 +833,8 @@ export function TradeFormModal({
       status: 'CLOSED',
       strategyId: '',
       tradeDate: new Date().toISOString().split('T')[0],
-      entryTime: new Date().toISOString().slice(0, 16),
-      exitTime: new Date().toISOString().slice(0, 16),
+      entryTime: currentLocalIsoDateTime(),
+      exitTime: currentLocalIsoDateTime(),
       session: 'NSE_REGULAR',
       tradeTitle: '',
       tagsInput: '',
@@ -980,6 +965,13 @@ export function TradeFormModal({
       finalRisk.plannedEntryPrice = simpleExecPayload.entryPrice;
     }
 
+    const finalEntryTime = data.entryTime
+      ? fromLocalIsoDateTime(data.entryTime) || new Date(data.entryTime).toISOString()
+      : new Date().toISOString();
+    const finalExitTime = data.exitTime && data.status !== 'OPEN'
+      ? fromLocalIsoDateTime(data.exitTime) || new Date(data.exitTime).toISOString()
+      : undefined;
+
     // Sanitize fills payloads
     const sanitizedFills = Array.isArray(data.fills)
       ? data.fills.map((f: any) => ({
@@ -988,8 +980,8 @@ export function TradeFormModal({
           price: Number(f.price) || 0,
           quantity: Number(f.quantity) || 0,
           timestamp: f.timestamp
-            ? new Date(f.timestamp).toISOString()
-            : (data.entryTime ? new Date(data.entryTime).toISOString() : new Date().toISOString()),
+            ? fromLocalIsoDateTime(f.timestamp) || new Date(f.timestamp).toISOString()
+            : finalEntryTime,
         }))
       : [];
 
@@ -1010,6 +1002,8 @@ export function TradeFormModal({
 
     const payload = {
       ...data,
+      entryTime: finalEntryTime,
+      exitTime: finalExitTime,
       exchange: finalExchange,
       marketSegment: finalMarketSegment,
       assetClass: finalAssetClass,
@@ -1020,6 +1014,9 @@ export function TradeFormModal({
       tags,
       executionMode,
     };
+    if (!finalExitTime) {
+      delete payload.exitTime;
+    }
     delete payload.tagsInput;
     if (!payload.strategyId) delete payload.strategyId;
     if (!payload.instrumentId) delete payload.instrumentId;

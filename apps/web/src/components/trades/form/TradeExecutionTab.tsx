@@ -1,7 +1,7 @@
 import React from 'react';
 import { UseFormRegister, UseFormWatch, UseFieldArrayReturn } from 'react-hook-form';
 import { Plus, Trash2, Sliders } from 'lucide-react';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, currentLocalIsoDateTime } from '../../../lib/utils.js';
 
 interface TradeExecutionTabProps {
   register: UseFormRegister<any>;
@@ -26,7 +26,7 @@ export function TradeExecutionTab({
       type,
       price: watch('simpleExecution.entryPrice') || 100,
       quantity: 1,
-      timestamp: new Date().toISOString().slice(0, 16),
+      timestamp: currentLocalIsoDateTime(),
       fee: 20,
       notes: '',
     });

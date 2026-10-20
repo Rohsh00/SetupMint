@@ -790,6 +790,64 @@ describe('TradeVault API Integration Tests', () => {
     expect(body.success).toBe(true);
     expect(Array.isArray(body.data)).toBe(true);
   });
+
+  it('POST /api/v1/export/import/commit accurately preserves 12-hour AM/PM timestamps from broker tradebooks', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/export/import/commit',
+      headers: { cookie: authCookie },
+      payload: {
+        accountId,
+        broker: 'FYERS',
+        mapping: {
+          tradeDate: 'Date & time',
+          symbol: 'Symbol name',
+          direction: 'Side',
+          price: 'Traded price',
+          quantity: 'Qty',
+          orderId: 'Exchange order ID',
+          tradeId: 'OMS order ID',
+        },
+        rows: [
+          {
+            'Symbol name': 'CRUDEOILM26OCTFUT',
+            'Date & time': '19/10/2026, 08:28:00 PM',
+            Side: 'BUY',
+            'Traded price': '6100.00',
+            Qty: '100',
+            'Exchange order ID': 'ORD-PM-1',
+            'OMS order ID': 'TRD-PM-1',
+          },
+          {
+            'Symbol name': 'CRUDEOILM26OCTFUT',
+            'Date & time': '19/10/2026, 08:48:00 PM',
+            Side: 'SELL',
+            'Traded price': '6150.00',
+            Qty: '100',
+            'Exchange order ID': 'ORD-PM-2',
+            'OMS order ID': 'TRD-PM-2',
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+
+    const tradesRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/trades?accountId=${accountId}&search=CRUDEOILM26OCTFUT`,
+      headers: { cookie: authCookie },
+    });
+    const tradesBody = JSON.parse(tradesRes.body);
+    const crudeTrade = tradesBody.data.find((t: any) => t.symbol === 'CRUDEOILM26OCTFUT');
+    expect(crudeTrade).toBeDefined();
+    // 08:28 PM IST = 14:58 UTC
+    expect(crudeTrade.entryTime).toBe('2026-10-19T14:58:00.000Z');
+    // 08:48 PM IST = 15:18 UTC
+    expect(crudeTrade.exitTime).toBe('2026-10-19T15:18:00.000Z');
+  });
 });
 
 

@@ -27,7 +27,7 @@ import {
   WarningAmberRounded,
 } from '@mui/icons-material';
 import { calculateFIFOExecution } from '@tradevault/financial-engine';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, toLocalIsoDateTime, currentLocalIsoDateTime } from '../../../lib/utils.js';
 
 interface TradeAdvancedFillsProps {
   register: UseFormRegister<any>;
@@ -56,7 +56,7 @@ export function TradeAdvancedFills({
       type,
       price: watch('simpleExecution.entryPrice') || 100,
       quantity: 1,
-      timestamp: new Date().toISOString().slice(0, 16),
+      timestamp: currentLocalIsoDateTime(),
       fee: 20,
       notes: '',
     });
@@ -176,13 +176,7 @@ export function TradeAdvancedFills({
                 const fillType = watch(`fills.${index}.type`);
                 const isEntry = fillType === 'ENTRY';
                 const rawTs = watch(`fills.${index}.timestamp`);
-                const formattedTs = rawTs
-                  ? typeof rawTs === 'string'
-                    ? rawTs.length > 16
-                      ? rawTs.slice(0, 16)
-                      : rawTs
-                    : new Date(rawTs).toISOString().slice(0, 16)
-                  : '';
+                const formattedTs = toLocalIsoDateTime(rawTs);
 
                 return (
                   <TableRow key={field.id} hover>

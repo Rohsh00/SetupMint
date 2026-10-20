@@ -6,6 +6,7 @@ import {
   TRADING_SESSIONS,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
+import { toLocalIsoDateTime } from '../../../lib/utils.js';
 
 interface TradeIdentityTabProps {
   register: UseFormRegister<any>;
@@ -234,13 +235,12 @@ export function TradeIdentityTab({
           </label>
           <input
             type="datetime-local"
-            {...register('entryTime', {
-              required: true,
-              onChange: (e) => {
-                const derived = deriveSessionFromTime(e.target.value, watch('exchange'), watch('marketSegment'));
-                setValue('session', derived);
-              },
-            })}
+            value={toLocalIsoDateTime(watch('entryTime'))}
+            onChange={(e) => {
+              setValue('entryTime', e.target.value, { shouldDirty: true });
+              const derived = deriveSessionFromTime(e.target.value, watch('exchange'), watch('marketSegment'));
+              setValue('session', derived, { shouldDirty: true });
+            }}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
         </div>
@@ -251,7 +251,8 @@ export function TradeIdentityTab({
           </label>
           <input
             type="datetime-local"
-            {...register('exitTime')}
+            value={toLocalIsoDateTime(watch('exitTime'))}
+            onChange={(e) => setValue('exitTime', e.target.value, { shouldDirty: true })}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
         </div>

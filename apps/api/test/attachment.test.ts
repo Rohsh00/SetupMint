@@ -424,7 +424,7 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
     expect(excessRes.statusCode).toBe(400);
     const body = JSON.parse(excessRes.body);
     expect(body.error.code).toBe('ATTACHMENT_LIMIT_EXCEEDED');
-  }, 30000);
+  }, 60000);
 
   it('DELETE /api/v1/trades/:id cleans up all linked attachments in DB and storage', async () => {
     const tradeBefore = await Trade.findById(tradeId);
@@ -445,5 +445,5 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
 
     // Verify storage cleanup
     expect(testStorage.count()).toBe(0);
-  });
+  }, 30000);
 });

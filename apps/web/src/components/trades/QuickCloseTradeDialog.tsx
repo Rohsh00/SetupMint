@@ -25,7 +25,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { IndianChargesCalculator, ChargesBreakdown } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
-import { formatCurrency } from '../../lib/utils.js';
+import { formatCurrency, currentLocalIsoDateTime } from '../../lib/utils.js';
 
 export interface QuickCloseTradeProps {
   open: boolean;
@@ -69,9 +69,7 @@ export function QuickCloseTradeDialog({
       setExitPrice(trade?.simpleExecution?.exitPrice ? String(trade.simpleExecution.exitPrice) : '');
 
       // Default exit time to current local time in ISO format for datetime-local
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      setExitTime(now.toISOString().slice(0, 16));
+      setExitTime(currentLocalIsoDateTime());
     }
   }, [open, trade]);
 

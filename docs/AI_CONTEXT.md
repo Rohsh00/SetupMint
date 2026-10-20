@@ -133,13 +133,13 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites (196 tests)
+# Run all test suites (197 tests)
 npm run test
 
 # Run financial engine unit tests (70 tests)
 npm run test:engine
 
-# Run API integration and regression tests (126 tests)
+# Run API integration and regression tests (127 tests)
 npm run test:api
 
 # Typecheck all packages

@@ -27,7 +27,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 import { calculateRiskAndPositionSize } from '@tradevault/financial-engine';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
-import { formatCurrency, formatPercent } from '../lib/utils.js';
+import { formatCurrency, formatPercent, currentLocalIsoDateTime } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 
 export function RiskCalculatorPage() {
@@ -112,7 +112,7 @@ export function RiskCalculatorPage() {
       status: 'OPEN',
       executionMode: 'SIMPLE',
       tradeDate: new Date().toISOString().split('T')[0],
-      entryTime: new Date().toISOString().slice(0, 16),
+      entryTime: currentLocalIsoDateTime(),
       simpleExecution: {
         entryPrice,
         quantity: calcResult.roundedLotQuantity,

@@ -255,26 +255,69 @@ function parseFlexibleDate(dateStr: string | undefined): Date {
   if (!dateStr) return new Date();
   const trimmed = dateStr.trim();
 
-  // Try standard ISO or new Date(trimmed)
-  const d = new Date(trimmed);
-  if (!isNaN(d.getTime())) {
-    return d;
+  // If already standard ISO with UTC 'Z' or explicit offset e.g. "+05:30"
+  if (/Z$|[+-]\d{2}:?\d{2}$/i.test(trimmed)) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
   }
 
-  // Try DD-MM-YYYY or DD/MM/YYYY
-  const parts = trimmed.split(/[-/ :T]/);
+  // If string contains explicit English month name (e.g. "16 Oct 2026, 10:48:23 AM")
+  if (/[a-zA-Z]{3,}/.test(trimmed) && !/^\d+/.test(trimmed)) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Detect AM / PM
+  const isPM = /\bpm\b/i.test(trimmed);
+  const isAM = /\bam\b/i.test(trimmed);
+
+  const cleaned = trimmed.replace(/,/g, ' ').trim();
+  const parts = cleaned.split(/[\s\-\/:T]+/).filter(Boolean);
+
   if (parts.length >= 3) {
-    const day = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    const year = parseInt(parts[2], 10);
-    const hours = parts[3] ? parseInt(parts[3], 10) : 9;
-    const mins = parts[4] ? parseInt(parts[4], 10) : 15;
-    const secs = parts[5] ? parseInt(parts[5], 10) : 0;
-    const parsed = new Date(Date.UTC(year, month, day, hours, mins, secs));
+    let day = 1;
+    let month = 0;
+    let year = 2026;
+
+    if (parts[0].length === 4) {
+      // YYYY-MM-DD
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      day = parseInt(parts[2], 10);
+    } else if (isNaN(parseInt(parts[1], 10))) {
+      // e.g. "16 Oct 2026"
+      day = parseInt(parts[0], 10);
+      const mStr = parts[1].toLowerCase();
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const foundMonth = months.findIndex((m) => mStr.startsWith(m));
+      month = foundMonth === -1 ? 0 : foundMonth;
+      year = parseInt(parts[2], 10);
+    } else {
+      // DD-MM-YYYY or DD/MM/YYYY
+      day = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      year = parseInt(parts[2], 10);
+    }
+
+    let hours = parts[3] ? parseInt(parts[3], 10) : 9;
+    const mins = parts[4] ? parseInt(parts[4], 10) : (parts[3] ? 0 : 15);
+    const secs = parts[5] && !isNaN(parseInt(parts[5], 10)) ? parseInt(parts[5], 10) : 0;
+
+    if (isPM && hours < 12) {
+      hours += 12;
+    } else if (isAM && hours === 12) {
+      hours = 0;
+    }
+
+    // Indian brokers (FYERS, Zerodha, Angel One, Upstox) report local time in IST (UTC+5:30)
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const utcEpoch = Date.UTC(year, month, day, hours, mins, secs) - istOffsetMs;
+    const parsed = new Date(utcEpoch);
     if (!isNaN(parsed.getTime())) return parsed;
   }
 
-  return new Date();
+  const fallback = new Date(trimmed);
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
 }
 
 function deriveInstrumentMeta(symbol: string, segment?: string): { assetClass: any; marketSegment: any } {

@@ -4,7 +4,7 @@ This document provides detailed, end-to-end traces of the primary user workflows
 
 ---
 
-## 1. Authentication & Onboarding Workflow
+## 1. Authentication & Persistent Sliding Session Workflow
 
 ```mermaid
 sequenceDiagram
@@ -17,21 +17,30 @@ sequenceDiagram
 
     User->>UI: Navigates to http://localhost:5173
     UI->>AuthCtx: Checks session via api.auth.me()
-    AuthCtx->>API: GET /api/v1/auth/me (Cookie: tv_session)
-    alt No Active Session
-        API-->>UI: 401 Unauthorized
+    AuthCtx->>API: GET /api/v1/auth/me (Cookie: tv_session=<rawToken>)
+    alt No Active Session / Expired
+        API->>DB: Session.findOne({ tokenHash: sha256(rawToken) })
+        DB-->>API: null or expired
+        API-->>UI: 401 Unauthorized { code: "UNAUTHORIZED" }
         UI->>User: Displays LoginPage
         User->>UI: Enters Email & Password -> Clicks "Sign In"
         UI->>API: POST /api/v1/auth/login { email, password }
         API->>DB: User.findOne({ email })
         API->>API: bcrypt.compare(password, user.passwordHash)
-        API->>DB: Session.create({ userId, token, expiresAt: +30d })
-        API-->>UI: 200 OK + Set-Cookie: tv_session (HttpOnly, SameSite)
+        API->>API: Generate raw token & SHA-256 tokenHash
+        API->>DB: Session.create({ userId, tokenHash, expiresAt: +90d, absoluteExpiresAt: +365d, lastUsedAt: now })
+        API-->>UI: 200 OK + Set-Cookie: tv_session=<rawToken> (HttpOnly, SameSite=Lax, maxAge=90d, expires)
         UI->>AuthCtx: Sets currentUser
         UI->>User: Redirects to / (DashboardPage)
-    else Active Session Exists
-        API->>DB: Session.findOne({ token, expiresAt > now })
-        API-->>UI: 200 OK { user: { id, email, name, baseCurrency } }
+    else Active Session Exists (< 50% Idle Lifetime Remaining)
+        API->>DB: Session.findOne({ tokenHash: sha256(rawToken), expiresAt > now, absoluteExpiresAt > now })
+        API->>API: Check remaining idle lifetime < 50%
+        API->>DB: Session.updateOne({ expiresAt: min(now + 90d, absoluteExpiresAt), lastUsedAt: now })
+        API-->>UI: 200 OK { user } + Set-Cookie: tv_session=<rawToken> (renewed maxAge=90d, expires)
+        UI->>User: Renders AppLayout & Dashboard with renewed persistent session
+    else Active Session Exists (> 50% Idle Lifetime Remaining)
+        API->>DB: Session.findOne({ tokenHash: sha256(rawToken), expiresAt > now, absoluteExpiresAt > now })
+        API-->>UI: 200 OK { user } (no DB write overhead)
         UI->>User: Renders AppLayout & Dashboard
     end
 ```

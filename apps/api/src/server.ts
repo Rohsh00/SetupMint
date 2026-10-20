@@ -7,7 +7,7 @@ import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import mongoose from 'mongoose';
-import { config } from './config.js';
+import { config, validateConfig } from './config.js';
 import { connectDatabase, disconnectDatabase, extractMongoHost } from './db/connection.js';
 import { getStorage } from './storage/index.js';
 import { S3Storage } from './storage/s3.storage.js';
@@ -28,10 +28,22 @@ import { reviewRoutes } from './routes/review.routes.js';
 import { templateRoutes } from './routes/template.routes.js';
 
 export async function buildApp() {
+  // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
+  validateConfig();
+
   const app = fastify({
     logger: {
       level: config.isDev ? 'info' : 'warn',
-      redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body.password', 'req.body.token'],
+      redact: [
+        'req.headers.cookie',
+        'req.headers.authorization',
+        'req.body.password',
+        'req.body.token',
+        'req.body.tokenHash',
+        'cookie',
+        'token',
+        'tokenHash',
+      ],
       transport: config.isDev
         ? {
             target: 'pino-pretty',

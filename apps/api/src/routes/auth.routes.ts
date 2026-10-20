@@ -1,8 +1,16 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { loginSchema, registerSchema } from '@tradevault/shared';
-import { User } from '../db/models/index.js';
-import { clearSession, createSession, requireAuth, SESSION_COOKIE_NAME } from '../middleware/auth.js';
+import { Session, User } from '../db/models/index.js';
+import {
+  clearSession,
+  clearSessionCookie,
+  createSession,
+  hashSessionToken,
+  requireAuth,
+  SESSION_COOKIE_NAME,
+} from '../middleware/auth.js';
+import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Register with stricter rate limiting
@@ -65,7 +73,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
   });
 
-  // Login with stricter rate limiting
+  // Login with stricter rate limiting & token rotation
   app.post(
     '/login',
     {
@@ -105,6 +113,18 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         success: false,
         error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
       });
+    }
+
+    // Token Rotation on login: revoke previous session if one was passed in cookie/header
+    let existingToken = req.cookies[SESSION_COOKIE_NAME];
+    if (!existingToken && req.headers.authorization?.startsWith('Bearer ')) {
+      existingToken = req.headers.authorization.slice(7);
+    }
+    if (existingToken) {
+      const existingHash = hashSessionToken(existingToken);
+      await Session.deleteMany({
+        $or: [{ tokenHash: existingHash }, { token: existingToken }],
+      }).catch(() => {});
     }
 
     const token = await createSession(user._id.toString(), req, reply);
@@ -161,4 +181,85 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       },
     });
   });
+
+  // ==========================================
+  // Session & Device Management Endpoints
+  // ==========================================
+
+  // List current user's active sessions (never exposes raw tokens or hashes)
+  app.get('/sessions', { preHandler: [requireAuth] }, async (req, reply) => {
+    const now = new Date();
+    const sessions = await Session.find({
+      userId: req.user!.id,
+      expiresAt: { $gt: now },
+      $or: [{ absoluteExpiresAt: { $gt: now } }, { absoluteExpiresAt: { $exists: false } }],
+    }).sort({ lastUsedAt: -1, createdAt: -1 });
+
+    return reply.send({
+      success: true,
+      data: sessions.map((s) => ({
+        id: s._id.toString(),
+        createdAt: s.createdAt,
+        lastUsedAt: s.lastUsedAt || s.createdAt,
+        userAgent: s.userAgent,
+        ipAddress: s.ipAddress,
+        isCurrent: s._id.toString() === req.sessionId,
+      })),
+    });
+  });
+
+  // Revoke one session by ID (404 if not found or belongs to another user)
+  app.delete(
+    '/sessions/:id',
+    { preHandler: [requireAuth, validateObjectIdParam('id')] },
+    async (req: any, reply) => {
+      const session = await Session.findOne({
+        _id: req.params.id,
+        userId: req.user!.id,
+      });
+
+      if (!session) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Session not found' },
+        });
+      }
+
+      await Session.deleteOne({ _id: session._id });
+
+      // If the revoked session was the current device session, clear cookie
+      if (session._id.toString() === req.sessionId) {
+        clearSessionCookie(reply);
+      }
+
+      return reply.send({
+        success: true,
+        message: 'Session revoked successfully',
+      });
+    }
+  );
+
+  // Revoke all sessions (except current by default; revokes all if includeCurrent=true)
+  app.post('/logout-all', { preHandler: [requireAuth] }, async (req: any, reply) => {
+    const { includeCurrent } = req.body || {};
+
+    if (includeCurrent) {
+      await Session.deleteMany({ userId: req.user!.id });
+      clearSessionCookie(reply);
+      return reply.send({
+        success: true,
+        message: 'All sessions revoked successfully',
+      });
+    } else {
+      await Session.deleteMany({
+        userId: req.user!.id,
+        _id: { $ne: req.sessionId },
+      });
+      return reply.send({
+        success: true,
+        message: 'All other sessions revoked successfully',
+      });
+    }
+  });
 };
+

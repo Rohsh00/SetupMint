@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import Decimal from 'decimal.js';
 import { buildApp } from '../src/server.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
@@ -1133,9 +1134,10 @@ describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
       const tokenMatch = authCookie.match(/tv_session=([a-f0-9]+)/);
       expect(tokenMatch).toBeTruthy();
       const token = tokenMatch![1];
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-      // 2. Verify session exists in DB
-      const sessionBefore = await Session.findOne({ token });
+      // 2. Verify session exists in DB (hashed or legacy plaintext)
+      const sessionBefore = await Session.findOne({ $or: [{ tokenHash }, { token }] });
       expect(sessionBefore).not.toBeNull();
 
       // 3. Confirm protected route succeeds before logout
@@ -1162,7 +1164,7 @@ describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
       expect(clearCookie.toLowerCase()).toContain('tv_session=;');
 
       // 5. Verify session is deleted from database
-      const sessionAfter = await Session.findOne({ token });
+      const sessionAfter = await Session.findOne({ $or: [{ tokenHash }, { token }] });
       expect(sessionAfter).toBeNull();
 
       // 6. Verify subsequent protected request is immediately rejected with 401

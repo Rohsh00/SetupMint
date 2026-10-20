@@ -14,6 +14,8 @@ import {
   ToggleButton,
   Alert,
   Divider,
+  Chip,
+  CircularProgress,
   useTheme as useMuiTheme,
 } from '@mui/material';
 import {
@@ -28,11 +30,35 @@ import {
   CheckCircleRounded,
   ShieldRounded,
   LogoutRounded,
+  LaptopRounded,
+  PhoneAndroidRounded,
+  DevicesRounded,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
+
+function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
+  if (!ua) return { browser: 'Unknown Browser', os: 'Unknown Device', full: 'Web Session (Unknown Device)', isMobile: false };
+
+  let os = 'Unknown OS';
+  let isMobile = false;
+  if (/windows/i.test(ua)) os = 'Windows';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/iphone|ipad|ipod/i.test(ua)) { os = 'iOS'; isMobile = true; }
+  else if (/android/i.test(ua)) { os = 'Android'; isMobile = true; }
+  else if (/linux/i.test(ua)) os = 'Linux';
+
+  let browser = 'Unknown Browser';
+  if (/edg\//i.test(ua)) browser = 'Edge';
+  else if (/chrome|crios/i.test(ua) && !/edg/i.test(ua)) browser = 'Chrome';
+  else if (/safari/i.test(ua) && !/chrome|crios/i.test(ua)) browser = 'Safari';
+  else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
+  else if (/opera|opr/i.test(ua)) browser = 'Opera';
+
+  return { browser, os, full: `${browser} on ${os}`, isMobile };
+}
 
 export function SettingsPage() {
   const muiTheme = useMuiTheme();
@@ -58,6 +84,39 @@ export function SettingsPage() {
       setIsLoggingOut(false);
     }
   };
+
+  // Sessions Query & Mutations
+  const { data: activeSessions = [], isLoading: isLoadingSessions } = useQuery({
+    queryKey: ['auth-sessions'],
+    queryFn: () => api.auth.sessions(),
+  });
+
+  const revokeSessionMutation = useMutation({
+    mutationFn: (id: string) => api.auth.revokeSession(id),
+    onSuccess: (_, id) => {
+      const revoked = activeSessions.find((s) => s.id === id);
+      if (revoked?.isCurrent) {
+        handleLogout();
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['auth-sessions'] });
+        toast.success('Session revoked successfully.');
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to revoke session');
+    },
+  });
+
+  const logoutAllMutation = useMutation({
+    mutationFn: () => api.auth.logoutAll(false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth-sessions'] });
+      toast.success('All other devices have been logged out.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to revoke other sessions');
+    },
+  });
 
   // Profile state
   const [name, setName] = useState(user?.name || '');
@@ -633,38 +692,169 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Active Session & Account Security Card */}
+      {/* Active Sessions & Device Management Card */}
       <Card variant="outlined" sx={{ p: 1 }}>
         <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <ShieldRounded sx={{ color: 'primary.main' }} />
-                Active Session & Account Security
+                Active Sessions & Device Management
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Manage your authenticated journal session on this device
+                Review and manage authenticated browser and device sessions
               </Typography>
             </Box>
-            <Box
-              sx={{
-                px: 1.5,
-                py: 0.5,
-                borderRadius: 1,
-                bgcolor: 'rgba(16, 185, 129, 0.1)',
-                color: 'primary.main',
-                fontWeight: 700,
-                fontSize: '0.75rem',
-                fontFamily: '"JetBrains Mono", monospace',
-              }}
-            >
-              AUTHENTICATED
-            </Box>
+            {activeSessions.filter((s) => !s.isCurrent).length > 0 && (
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                disabled={logoutAllMutation.isPending}
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to log out of all other devices?')) {
+                    logoutAllMutation.mutate();
+                  }
+                }}
+                sx={{ fontWeight: 600, textTransform: 'none' }}
+              >
+                {logoutAllMutation.isPending ? 'Logging out...' : 'Log Out All Other Devices'}
+              </Button>
+            )}
           </Box>
 
           <Typography variant="body2" color="text.secondary">
-            Logged in as <strong>{user?.name}</strong> ({user?.email}). SetupMint uses secure, HttpOnly session cookies isolated to your local environment.
+            Logged in as <strong>{user?.name}</strong> ({user?.email}). SetupMint uses production-grade sliding sessions with secure, HttpOnly cookies. Sessions remain active until you explicitly log out or remain idle past your policy window.
           </Typography>
+
+          {/* Device Sessions List */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+            {isLoadingSessions ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">
+                  Loading active sessions...
+                </Typography>
+              </Box>
+            ) : activeSessions.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+                No active sessions found.
+              </Typography>
+            ) : (
+              activeSessions.map((session) => {
+                const uaInfo = parseUserAgent(session.userAgent);
+                const lastUsedStr = new Date(session.lastUsedAt).toLocaleString('en-IN', {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                });
+                const createdStr = new Date(session.createdAt).toLocaleDateString('en-IN', {
+                  dateStyle: 'medium',
+                });
+
+                return (
+                  <Box
+                    key={session.id}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 1.5,
+                      p: 1.5,
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: session.isCurrent
+                        ? muiTheme.palette.mode === 'dark'
+                          ? 'rgba(16, 185, 129, 0.4)'
+                          : 'rgba(16, 185, 129, 0.5)'
+                        : 'divider',
+                      bgcolor: session.isCurrent
+                        ? muiTheme.palette.mode === 'dark'
+                          ? 'rgba(16, 185, 129, 0.05)'
+                          : 'rgba(16, 185, 129, 0.03)'
+                        : 'background.paper',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          p: 1,
+                          borderRadius: 1,
+                          bgcolor: session.isCurrent
+                            ? 'rgba(16, 185, 129, 0.15)'
+                            : muiTheme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.05)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                          color: session.isCurrent ? 'primary.main' : 'text.secondary',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {uaInfo.isMobile ? (
+                          <PhoneAndroidRounded sx={{ fontSize: 20 }} />
+                        ) : (
+                          <LaptopRounded sx={{ fontSize: 20 }} />
+                        )}
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {uaInfo.full}
+                          </Typography>
+                          {session.isCurrent && (
+                            <Chip
+                              label="Current Device"
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.6875rem',
+                                fontWeight: 700,
+                              }}
+                            />
+                          )}
+                        </Box>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: 'text.secondary',
+                            display: 'block',
+                            fontFamily: '"JetBrains Mono", monospace',
+                            fontSize: '0.6875rem',
+                          }}
+                        >
+                          IP: {session.ipAddress || 'Unknown'} • Last active: {lastUsedStr} • Signed in: {createdStr}
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {!session.isCurrent && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          disabled={revokeSessionMutation.isPending}
+                          onClick={() => {
+                            if (window.confirm(`Log out ${uaInfo.full}?`)) {
+                              revokeSessionMutation.mutate(session.id);
+                            }
+                          }}
+                          sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', py: 0.25 }}
+                        >
+                          Log out
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
+                );
+              })
+            )}
+          </Box>
+
+          <Divider sx={{ my: 0.5 }} />
 
           <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
             <Button
@@ -676,7 +866,7 @@ export function SettingsPage() {
               startIcon={<LogoutRounded />}
               sx={{ fontWeight: 700 }}
             >
-              {isLoggingOut ? 'Signing Out...' : 'Sign Out of SetupMint'}
+              {isLoggingOut ? 'Signing Out...' : 'Sign Out of Current Device'}
             </Button>
           </Box>
         </CardContent>

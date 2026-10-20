@@ -2,13 +2,15 @@ const BASE_URL = '/api/v1';
 
 export class ApiError extends Error {
   code: string;
+  status?: number;
   details?: any;
 
-  constructor(message: string, code = 'API_ERROR', details?: any) {
+  constructor(message: string, code = 'API_ERROR', details?: any, status?: number) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.details = details;
+    this.status = status;
   }
 }
 
@@ -29,7 +31,9 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   } catch {
     throw new ApiError(
       'Network connection failed. Please check your internet connection or verify the server is running.',
-      'NETWORK_ERROR'
+      'NETWORK_ERROR',
+      undefined,
+      0
     );
   }
 
@@ -37,7 +41,12 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 
   if (!response.ok || !data.success) {
     const error = data?.error || {};
-    throw new ApiError(error.message || 'An error occurred with your request', error.code, error.details);
+    throw new ApiError(
+      error.message || 'An error occurred with your request',
+      error.code || `HTTP_${response.status}`,
+      error.details,
+      response.status
+    );
   }
 
   if (data.pagination !== undefined && data.data !== undefined) {
@@ -48,7 +57,7 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 }
 
 export const api = {
-  // Auth
+  // Auth & Session Management
   auth: {
     me: () => request<{ user: any }>('/auth/me'),
     login: (credentials: any) =>
@@ -62,6 +71,26 @@ export const api = {
         body: JSON.stringify(details),
       }),
     logout: () => request('/auth/logout', { method: 'POST' }),
+    sessions: () =>
+      request<
+        Array<{
+          id: string;
+          createdAt: string;
+          lastUsedAt: string;
+          userAgent?: string;
+          ipAddress?: string;
+          isCurrent: boolean;
+        }>
+      >('/auth/sessions'),
+    revokeSession: (id: string) =>
+      request<{ success: boolean; message: string }>(`/auth/sessions/${id}`, {
+        method: 'DELETE',
+      }),
+    logoutAll: (includeCurrent = false) =>
+      request<{ success: boolean; message: string }>('/auth/logout-all', {
+        method: 'POST',
+        body: JSON.stringify({ includeCurrent }),
+      }),
   },
 
   // Accounts

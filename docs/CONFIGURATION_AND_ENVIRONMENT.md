@@ -32,10 +32,15 @@ S3_PREFIX=journal-charts
 # Multipart Upload Limits
 MAX_FILE_SIZE_MB=10
 
-# Session & Security
+# Session & Security Settings
 SESSION_SECRET=<your-32-character-session-secret-encryption-key>
-COOKIE_DOMAIN=localhost
+COOKIE_DOMAIN=
 CORS_ORIGIN=http://localhost:5173
+
+# Persistent Session Lifetimes (Sliding & Absolute)
+SESSION_IDLE_DAYS=90
+SESSION_ABSOLUTE_DAYS=365
+SESSION_RENEW_THRESHOLD=0.5
 
 # Default User Currency
 DEFAULT_BASE_CURRENCY=INR
@@ -63,8 +68,11 @@ FYERS_REDIRECT_URI=http://127.0.0.1:4000/api/v1/integrations/fyers/callback
 | `PORT` | No | `4000` | Port on which the Fastify backend API listens. | Bind to local port. |
 | `HOST` | No | `'127.0.0.1'` | Network interface binding. | Set to `127.0.0.1` for local privacy. Avoid `0.0.0.0` unless running behind a reverse proxy. |
 | `NODE_ENV` | No | `'development'` | Runtime environment (`development`, `production`, `test`). | In production, pretty-logging is disabled and secure cookie flags are enforced. |
-| `SESSION_SECRET` | No | Dev fallback string | Secret key used for signing cookies. | Must be changed in production to a random string of at least 32 characters. |
-| `COOKIE_DOMAIN` | No | `'localhost'` | Domain scope for session cookies. | Set to domain name in production deployments. |
+| `SESSION_SECRET` | Conditionally in Prod | Dev fallback outside prod | Secret key used for signing cookies. | **Fail-fast in production:** If `NODE_ENV=production`, must be set, cannot be default, and must be >= 32 characters or startup aborts immediately. |
+| `COOKIE_DOMAIN` | No | `''` (omitted on localhost) | Domain scope for session cookies. | **Crucial:** Omit or leave empty for `localhost` / `127.0.0.1` because modern browsers reject `Domain=localhost`. Set to `.yourdomain.com` in production. |
+| `SESSION_IDLE_DAYS` | No | `90` | Sliding session lifetime in days. | Session expiry extends when active and idle remaining < 50%. |
+| `SESSION_ABSOLUTE_DAYS` | No | `365` | Hard upper limit on session age in days from creation. | Forces re-authentication after 1 year regardless of activity. |
+| `SESSION_RENEW_THRESHOLD` | No | `0.5` | Fractional remaining idle lifetime threshold that triggers sliding renewal. | Prevents DB write overhead on every request; renews when < 50% idle time remains. |
 | `CORS_ORIGIN` | No | `'http://localhost:5173'` | Allowed origin for Cross-Origin Resource Sharing. | Restrict strictly to the frontend web origin. |
 | `DEFAULT_BASE_CURRENCY` | No | `'INR'` | Baseline currency used for new registrations. | Standard currency code (e.g. `INR`, `USD`). |
 
@@ -72,9 +80,11 @@ FYERS_REDIRECT_URI=http://127.0.0.1:4000/api/v1/integrations/fyers/callback
 
 ## 3. Configuration & Startup Fail-Fast Guarantees
 
-1. **MongoDB Atlas Enforced:**
+1. **Production Session Secret Validation:**
+   `apps/api/src/config.ts` exports `validateConfig()` executed on startup in `buildApp()`. When `NODE_ENV === 'production'`, the server verifies `SESSION_SECRET` is set, is not the development fallback string, and contains at least 32 characters. Missing or weak secrets trigger an immediate exit (`process.exit(1)`).
+2. **MongoDB Atlas Enforced:**
    `apps/api/src/db/connection.ts` validates that `MONGODB_URI` starts with `mongodb+srv://` or contains `.mongodb.net`. If missing or invalid, the server throws immediately. On network connection failure, only the host is logged and the process terminates non-zero.
-2. **Cloudflare R2 Enforced:**
+3. **Cloudflare R2 Enforced:**
    `apps/api/src/storage/index.ts` verifies that `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are all present. If any is missing, it throws immediately. At server startup, `S3Storage.healthCheck()` tests read/write access to Cloudflare R2.
-3. **No Local Disk Fallbacks:**
+4. **No Local Disk Fallbacks:**
    `UPLOAD_DIR` and disk directory creation have been permanently removed. All uploads stream directly to and from Cloudflare R2 through authenticated proxy endpoints.

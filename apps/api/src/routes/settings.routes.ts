@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
-import { User, Trade, TradingAccount, Attachment } from '../db/models/index.js';
+import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
 export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -84,6 +84,14 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
+
+    // Revoke all other active sessions for this user on password change
+    if (req.sessionId) {
+      await Session.deleteMany({
+        userId: req.user!.id,
+        _id: { $ne: req.sessionId },
+      });
+    }
 
     return reply.send({ success: true, message: 'Password updated successfully' });
   });

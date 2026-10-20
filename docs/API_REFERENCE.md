@@ -100,7 +100,7 @@ Authentication is handled via stateful sessions:
   - `401 Unauthorized`: Invalid credentials (`INVALID_CREDENTIALS`).
 
 ### `POST /api/v1/auth/logout`
-- **Purpose:** Revoke session and clear cookie.
+- **Purpose:** Revoke current session and clear cookie.
 - **Auth:** Public (safely handles missing token).
 - **Responses:**
   - `200 OK`: Session deleted from database, cookie expired.
@@ -110,6 +110,34 @@ Authentication is handled via stateful sessions:
 - **Auth:** **Required**.
 - **Responses:**
   - `200 OK`: Returns `{ user: { id, email, name, baseCurrency, theme, createdAt } }`.
+  - `401 Unauthorized`: Missing or invalid session token.
+
+### `GET /api/v1/auth/sessions`
+- **Purpose:** List all active, non-expired sessions for the authenticated user across devices.
+- **Auth:** **Required**.
+- **Responses:**
+  - `200 OK`: Returns `{ sessions: [{ id, createdAt, lastUsedAt, userAgent, ipAddress, isCurrent }] }`.
+  - `401 Unauthorized`: Missing or invalid session token.
+
+### `DELETE /api/v1/auth/sessions/:id`
+- **Purpose:** Revoke a specific active session.
+- **Auth:** **Required**. Validates `:id` parameter via `validateObjectIdParam('id')`.
+- **Responses:**
+  - `200 OK`: Returns `{ success: true, message: "Session revoked successfully" }`. If revoking current session, `tv_session` cookie is also cleared.
+  - `400 Bad Request`: Invalid session ID format (`INVALID_ID`).
+  - `404 Not Found`: Session not found or does not belong to authenticated user (`SESSION_NOT_FOUND`).
+
+### `POST /api/v1/auth/logout-all`
+- **Purpose:** Revoke all other active sessions for the user across all devices.
+- **Auth:** **Required**.
+- **Request Body (Optional):**
+  ```json
+  {
+    "includeCurrent": false
+  }
+  ```
+- **Responses:**
+  - `200 OK`: Returns `{ success: true, message: "All other sessions revoked successfully", revokedCount: number }`.
   - `401 Unauthorized`: Missing or invalid session token.
 
 ---

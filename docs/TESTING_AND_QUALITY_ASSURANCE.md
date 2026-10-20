@@ -13,9 +13,9 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (205 Passing Tests)
+## 2. Test Suite Inventory (217 Passing Tests)
 
-The repository contains **205 fully automated tests** spanning mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, seed generation, and regression scenarios.
+The repository contains **217 fully automated tests** spanning mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
 ### A. Financial Engine Unit Tests (77 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
@@ -32,12 +32,13 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `mistakes.test.ts` | 12 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, rule-based discipline rating (1 to 5), and advisory liquidity/level checks (`NO_LIQUIDITY_TAKEN`, `NO_LIQUIDITY_TARGET`, `STOP_TOO_TIGHT`). |
 | `templates.test.ts` | 32 tests | Pure Decimal.js rule resolution (PERCENT, POINTS, PREMIUM_PERCENT, MANUAL), target calculation from minRR, instrument tick size rounding, dynamic ranking by market/session/expiry, NSE 2026 Tuesday holiday shifts to Monday (Dussehra 2026-10-20 to 2026-10-19, Guru Nanak Jayanti 2026-11-24 to 2026-11-23), Nifty-only weekly vs Bank Nifty/FinNifty/stock monthly expiry constraints, universal asset class coverage, 25 built-in templates validation, and liquidity template resolution. |
 
-### B. Backend API & Integration Tests (128 Tests)
+### B. Backend API & Integration Tests (140 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
 | `api.test.ts` | 29 tests | Registration, login, duplicate email rejection, session cookie issuance, account CRUD, trade creation with live P&L, Quick Close partial execution with CLOSED audit log, broker column mapping persistence, broker format auto-detection (Zerodha), FIFO raw execution grouping with statutory charges, duplicate trade prevention, batch undo with account balance reconciliation, profile risk settings retrieval & update (`GET`/`PUT /api/v1/settings/profile`), review queue endpoint (`GET /api/v1/review/queue`), trade mistake suggestions (`GET /api/v1/review/suggest-mistakes/:tradeId`), journal reflection prefill endpoint (`GET /api/v1/review/prefill/:date`), accurate 12-hour AM/PM broker timestamp preservation, and validation of new liquidity emotions, confluences, and mistake tags on trades, journals, and psychology analytics. |
+| `session-auth.test.ts` | 12 tests | Persistent cookie issuance with explicit `Max-Age` (90 days) and `Expires`, SHA-256 hashed token storage (`tokenHash`), raw token exclusion from database, lazy sliding renewal on requests with < 50% idle lifetime remaining, avoidance of database writes on requests with > 50% remaining, idle session expiration enforcement, absolute lifetime cap (365 days) enforcement even if idle is active, seamless legacy plaintext token lookup and automatic upgrade to `tokenHash`, safe device session listing without token/hash leaks, single session revocation (`DELETE /api/v1/auth/sessions/:id`) with 404 on foreign sessions, `POST /api/v1/auth/logout-all` with current session preservation, password change revocation of other sessions, and production startup fail-fast on weak/missing `SESSION_SECRET`. |
 | `optimize-image.test.ts` | 7 tests | Pixel-identical raw RGBA decoding proof of losslessness, Display P3 / sRGB ICC profile retention, 10% savings threshold enforcement, fail-safe corrupted buffer pass-through, JPEG to WebP transcoding, WebP lossless repack, SVG pass-through. |
 | `attachment.test.ts` | 13 tests | Multipart upload, binary magic-bytes signature verification (PNG/JPEG/WebP), rejection of disguised binary files, server-side lossless optimization, matching stored WebP/PNG extension and stream Content-Type, 12-image cap enforcement, authenticated streaming, cloud storage cleanup upon deletion. |
 | `template.test.ts` | 12 tests | Authentication enforcement, 25 built-in templates listing with stats, custom template creation & uniqueness, update, built-in protection (`BUILT_IN_READ_ONLY`), strict tenant isolation between users, trade linking to `templateId`, trade query filtering by `templateId`, favorite toggling, usage incrementation. |
@@ -51,13 +52,13 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 ## 3. Running Test Commands
 
 ```bash
-# 1. Run all test suites across the monorepo (205 tests)
+# 1. Run all test suites across the monorepo (217 tests)
 npm run test
 
 # 2. Run only financial engine mathematical unit tests (77 tests)
 npm run test:engine
 
-# 3. Run only backend API, attachment, and regression tests (128 tests)
+# 3. Run only backend API, attachment, session, and regression tests (140 tests)
 npm run test:api
 
 # 4. Run tests with live watch mode (in package directory)

@@ -8,7 +8,7 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 SetupMint defines 13 core Mongoose models:
 1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
-2. `Session` — Stateful authentication tokens with automatic 30-day MongoDB TTL expiration.
+2. `Session` — Stateful authentication tokens with SHA-256 token hashing, sliding renewal, absolute cap, and exact MongoDB TTL expiration (`expireAfterSeconds: 0`).
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
 4. `AccountTransaction` — Capital deposits, withdrawals, transfers, and adjustments.
 5. `Trade` — Master trade ledger recording execution fills, risk metrics, SMC thesis, psychology, and audit logs.
@@ -56,8 +56,11 @@ SetupMint defines 13 core Mongoose models:
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `_id` | `ObjectId` | Auto | Generated | Primary Key | Session identifier |
 | `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Associated user ID |
-| `token` | `String` | **Yes** | — | Unique, Indexed | 64-char hex random token (`crypto.randomBytes(32)`) |
-| `expiresAt` | `Date` | **Yes** | — | **TTL Index (`expires: '30d'`)** | Auto-purged by MongoDB after expiration |
+| `tokenHash` | `String` | No (Auto) | — | Unique, Sparse, Indexed | SHA-256 hex hash of the presented 64-char hex random token |
+| `token` | `String` | No | — | Sparse | Legacy plaintext token (auto-migrated and upgraded to `tokenHash` on first access) |
+| `expiresAt` | `Date` | **Yes** | — | **TTL Index (`expireAfterSeconds: 0`)** | Auto-purged by MongoDB background thread exactly when `expiresAt` is reached |
+| `absoluteExpiresAt` | `Date` | No | — | — | Hard session cap from session creation (default 365 days); session terminates once reached |
+| `lastUsedAt` | `Date` | No | Current Time | — | Last activity timestamp (used to calculate remaining idle lifetime and trigger renewal) |
 | `userAgent` | `String` | No | — | — | Client user-agent string |
 | `ipAddress` | `String` | No | — | — | Client IP address |
 | `createdAt` | `Date` | Auto | Current Time | — | Session creation timestamp |

@@ -13,7 +13,7 @@ It contains:
 
 ### Quick Reference Commands:
 - `npm run dev` — Start Fastify backend (4000) and Vite frontend (5173).
-- `npm run test` — Run all 186 unit and integration tests.
+- `npm run test` — Run all 196 unit and integration tests.
 - `npm run typecheck` — Typecheck all workspaces.
 - `npm run db:seed` — Populate realistic demo trading records.
 - `npm run seed:reset` — Safely reset demo data without touching real user data.

@@ -2,9 +2,10 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import crypto from 'crypto';
 import path from 'path';
 import { Attachment, Trade } from '../db/models/index.js';
-import { getStorage } from '../storage/index.js';
+import { getStorage, optimizeImage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
+import { config } from '../config.js';
 
 /**
  * Validates file signature (magic bytes) directly against the in-memory buffer
@@ -83,7 +84,16 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     // Buffer the file directly into memory for signature inspection
     const fileBuffer = await data.toBuffer();
 
-    // Validate file magic bytes signature BEFORE saving to Cloudflare R2
+    // Enforce MAX_FILE_SIZE_MB on the INPUT buffer before optimization
+    const maxBytes = config.maxFileSizeMb * 1024 * 1024;
+    if (fileBuffer.length > maxBytes) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'FILE_TOO_LARGE', message: `File exceeds maximum allowed size of ${config.maxFileSizeMb} MB` },
+      });
+    }
+
+    // Validate file magic bytes signature BEFORE optimizing or saving to Cloudflare R2
     const isValidSignature = verifyImageMagicBytes(fileBuffer, data.mimetype);
     if (!isValidSignature) {
       return reply.status(400).send({
@@ -92,14 +102,29 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
       });
     }
 
-    // Server-controlled random UUID filename prevents path traversal
-    const ext = path.extname(data.filename).toLowerCase() || (data.mimetype === 'image/jpeg' ? '.jpg' : '.png');
-    const safeFilename = `${crypto.randomUUID()}${ext}`;
+    // Run server-side image optimization pipeline
+    const rawExt = path.extname(data.filename).toLowerCase();
+    const fallbackExt = rawExt || (data.mimetype === 'image/jpeg' ? '.jpg' : '.png');
+    const optimized = await optimizeImage(fileBuffer, data.mimetype, fallbackExt);
+
+    req.log.info(
+      {
+        originalBytes: optimized.originalBytes,
+        optimizedBytes: optimized.optimizedBytes,
+        wasOptimized: optimized.wasOptimized,
+        originalMime: data.mimetype,
+        storedMime: optimized.mimeType,
+      },
+      'Chart screenshot processed by optimization pipeline'
+    );
+
+    // Server-controlled random UUID filename with optimized extension
+    const safeFilename = `${crypto.randomUUID()}.${optimized.ext.replace(/^\./, '')}`;
 
     const storage = getStorage();
 
     // Save directly to cloud storage (Cloudflare R2 / S3)
-    await storage.save(safeFilename, fileBuffer, data.mimetype);
+    await storage.save(safeFilename, optimized.buffer, optimized.mimeType);
 
     // Extract form metadata from multipart fields
     const rawCategory = (data.fields.category as any)?.value;
@@ -117,8 +142,8 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
         tradeId: trade._id,
         originalName: path.basename(data.filename),
         storedFilename: safeFilename,
-        mimeType: data.mimetype,
-        sizeBytes: fileBuffer.length,
+        mimeType: optimized.mimeType,
+        sizeBytes: optimized.optimizedBytes,
         category,
         description,
         timeframe,
@@ -232,7 +257,16 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     try {
       const stream = await storage.read(attachment.storedFilename);
       reply.header('Content-Type', attachment.mimeType);
-      reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(attachment.originalName)}"`);
+
+      // Determine downloaded filename extension to match stored mime format (e.g. .png -> .webp)
+      let downloadFilename = attachment.originalName;
+      const storedExt = path.extname(attachment.storedFilename).toLowerCase();
+      if (storedExt) {
+        const parsed = path.parse(attachment.originalName);
+        downloadFilename = `${parsed.name}${storedExt}`;
+      }
+
+      reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(downloadFilename)}"`);
       reply.header('Cache-Control', 'private, max-age=86400');
       return reply.send(stream);
     } catch (storageErr: any) {

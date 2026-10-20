@@ -1,5 +1,6 @@
 import { IStorageProvider } from './types.js';
 import { S3Storage } from './s3.storage.js';
+export { optimizeImage, OptimizedImageResult, MIN_SAVING_RATIO } from './optimize-image.js';
 
 let storageInstance: S3Storage | null = null;
 let testStorageInstance: IStorageProvider | null = null;

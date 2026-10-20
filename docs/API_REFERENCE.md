@@ -416,6 +416,7 @@ Authentication is handled via stateful sessions:
 - **Content-Type:** `multipart/form-data`.
 - **Form Fields:** `file` (binary), `category` (`SETUP`/`ENTRY`/`EXIT`/`REVIEW`/`OTHER`), `caption`, `timeframe`, `chartTimestamp`.
 - **Validation:** Verifies MIME type and binary magic bytes (PNG, JPEG, WebP). Maximum 12 screenshots per trade.
+- **Image Optimization:** Server-side lossless optimization (sharp). Stored MIME type and extension may be converted to WebP when lossless repack achieves >=10% compression without quality loss.
 - **Responses:** `201 Created`, `400 INVALID_IMAGE_SIGNATURE`, `400 ATTACHMENT_LIMIT_EXCEEDED`, `404 TRADE_NOT_FOUND`.
 
 ### `GET /api/v1/attachments/trades/:tradeId`
@@ -425,14 +426,14 @@ Authentication is handled via stateful sessions:
 ### `GET /api/v1/attachments/:id/download` & `GET /api/v1/attachments/:id/stream`
 - **Purpose:** Authenticated streaming of private chart image.
 - **Auth:** **Required** (enforces tenant ownership).
-- **Responses:** `200 OK` (streams binary file with inline content-disposition), `404 NOT_FOUND`.
+- **Responses:** `200 OK` (streams binary file with inline content-disposition; `Content-Type` matches stored format, e.g. `image/webp`), `404 NOT_FOUND`.
 
 ### `PUT /api/v1/attachments/:id`
 - **Purpose:** Update category, caption, or timeframe.
 - **Auth:** **Required**.
 
 ### `DELETE /api/v1/attachments/:id`
-- **Purpose:** Delete attachment from database and physically unlink file from `./data/uploads`.
+- **Purpose:** Delete attachment from database and remove object from Cloudflare R2 bucket.
 - **Auth:** **Required**.
 
 ---

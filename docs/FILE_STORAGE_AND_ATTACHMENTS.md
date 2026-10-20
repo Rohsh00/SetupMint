@@ -51,12 +51,13 @@ sequenceDiagram
     Fastify->>Fastify: 3. Verify MIME type in [image/png, image/jpeg, image/webp]
     Fastify->>Fastify: 4. Buffer into memory & verify magic-bytes header
     alt Signature Mismatch
-        Fastify-->>Browser: 400 INVALID_IMAGE_SIGNATURE (Never touches R2)
+        Fastify-->>Browser: 400 INVALID_IMAGE_SIGNATURE (Never touches sharp or R2)
     else Valid Image
-        Fastify->>Fastify: 5. Generate random UUID key: <uuid>.<ext>
-        Fastify->>R2: 6. storage.save(key, buffer, mime) (PutObjectCommand)
-        Fastify->>DB: 7. Attachment.create({ tradeId, storedFilename, sizeBytes, category, ... })
-        Fastify->>DB: 8. Trade.updateOne({ $push: { screenshotIds: attachment._id } })
+        Fastify->>Fastify: 5. optimizeImage: Lossless WebP/PNG repack, Display P3 ICC preservation, >=10% threshold check
+        Fastify->>Fastify: 6. Generate random UUID key: <uuid>.<optimizedExt>
+        Fastify->>R2: 7. storage.save(key, optimizedBuffer, optimizedMime) (PutObjectCommand)
+        Fastify->>DB: 8. Attachment.create({ tradeId, storedFilename, sizeBytes: optimizedBytes, mimeType: optimizedMime, ... })
+        Fastify->>DB: 9. Trade.updateOne({ $push: { screenshotIds: attachment._id } })
         Fastify-->>Browser: 201 Created { id, downloadUrl: '/api/v1/attachments/:id/download' }
     end
 ```
@@ -65,7 +66,7 @@ sequenceDiagram
 
 ## 4. Binary Magic-Bytes Signature Verification
 
-To guarantee that uploaded files are genuine images rather than disguised binary payloads or executable scripts, `verifyImageMagicBytes` inspects the raw in-memory buffer before any network call to Cloudflare R2:
+To guarantee that uploaded files are genuine images rather than disguised binary payloads or executable scripts, `verifyImageMagicBytes` inspects the raw in-memory buffer before any network call to Cloudflare R2 or sharp processing:
 
 ```typescript
 // PNG Header: 89 50 4E 47 0D 0A 1A 0A
@@ -82,7 +83,47 @@ If the signature fails verification, the request immediately terminates with HTT
 
 ---
 
-## 5. Attachment Categories & Trading Phases
+## 5. Server-Side Image Optimization Pipeline
+
+To minimize storage footprint in Cloudflare R2 and expedite chart downloads without sacrificing technical chart legibility, SetupMint applies an automated server-side image optimization pipeline via `sharp`:
+
+### 1. Lossless-First Strategy
+The vast majority of trader uploads are macOS screenshot clips (`Cmd+Ctrl+Shift+4`), which produce high-resolution PNGs at Retina 2x scale with embedded Display P3 color profiles.
+- **PNG Optimization:** Builds lossless candidates concurrently and selects the smallest:
+  - **Lossless WebP Candidate:** `sharp(input).webp({ lossless: true, effort: 6 })`
+  - **Repacked PNG Candidate:** `sharp(input).png({ compressionLevel: 9, effort: 10, palette: false })`
+  - *Palette mode is explicitly disabled (`palette: false`)* to avoid 8-bit color quantization and keep 100% pixel-identical RGBA clarity.
+- **JPEG Optimization:** `sharp(input).webp({ quality: 90, effort: 6, smartSubsample: true })`.
+- **WebP Optimization:** Lossless re-pack (`effort: 6`), retaining original if not smaller.
+- **SVG Pass-Through:** Vector charts (`image/svg+xml`) pass through untouched without any sharp decoding.
+
+### 2. Display P3 & sRGB ICC Profile Preservation
+Every raster pipeline begins with:
+```typescript
+sharp(input, { failOn: 'error' }).rotate().keepIccProfile()
+```
+This guarantees:
+- EXIF rotation is applied correctly.
+- Embedded color profiles (especially macOS **Display P3** and standard **sRGB**) are preserved across transcoding so red and green candlestick shades remain vibrant and true to the trading platform.
+
+### 3. Absolute Pixel Fidelity (Zero Downscaling)
+The pipeline strictly preserves full pixel dimensions (e.g. 2880x1800 Retina). Resizing, downscaling, or blur filters are never applied.
+
+### 4. 10% Minimum Savings Threshold (`MIN_SAVING_RATIO = 0.10`)
+To prevent unnecessary format conversions or negligible size deltas:
+- The candidate is only adopted if `optimizedBytes <= originalBytes * (1 - MIN_SAVING_RATIO)`.
+- If savings are below 10%, the original buffer is saved with `wasOptimized = false`.
+
+### 5. Fail-Safe Fallback
+All optimization logic is wrapped in a fail-safe `try/catch`. If sharp encounters an unexpected decoding issue or corrupted segment, the pipeline safely catches the error, logs a warning, and returns the original buffer. An upload will **never fail** because optimization failed.
+
+### 6. Storage Keys & Content-Disposition
+- When lossless optimization chooses WebP, the stored key is `<uuid>.webp` and MongoDB stores `mimeType: "image/webp"`.
+- When streaming or downloading via `/api/v1/attachments/:id/stream`, the `Content-Type` header reflects `attachment.mimeType`. If `Content-Disposition` is generated from the client's original filename, its extension is rewritten to match the stored format (e.g. `chart.png` -> `chart.webp`) ensuring seamless OS handling.
+
+---
+
+## 6. Attachment Categories & Trading Phases
 
 SetupMint allows traders to organize charts by trade progression:
 
@@ -98,7 +139,7 @@ SetupMint allows traders to organize charts by trade progression:
 
 ---
 
-## 6. Authenticated Image Streaming
+## 7. Authenticated Image Streaming
 
 Attachments are **not** served as public static assets. Instead, streaming is guarded by session authentication:
 
@@ -108,15 +149,16 @@ Attachments are **not** served as public static assets. Instead, streaming is gu
 - **Ownership Check:** Queries `Attachment.findOne({ _id: req.params.id, userId: req.user.id })`. An unauthenticated request yields 401, while another user's attachment yields 404.
 - **Response Headers:**
   ```http
-  Content-Type: image/png
-  Content-Disposition: inline; filename="Nifty_5m_Entry.png"
+  Content-Type: image/webp
+  Content-Disposition: inline; filename="Nifty_5m_Entry.webp"
   Cache-Control: private, max-age=86400
   ```
+  *(Note: `Content-Type` reflects the stored MIME type, and `Content-Disposition` dynamically matches the stored extension).*
 - **Stream:** Node.js readable stream piped directly from Cloudflare R2 (`storage.read(key)`).
 
 ---
 
-## 7. Deletion & Cleanup Behavior
+## 8. Deletion & Cleanup Behavior
 
 When an attachment is removed:
 1. **Via `DELETE /api/v1/attachments/:id`:**

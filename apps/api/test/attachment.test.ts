@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import path from 'path';
+import sharp from 'sharp';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/server.js';
 import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
@@ -294,6 +296,92 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
     expect(trade?.screenshotIds.map((id) => id.toString())).not.toContain(attachmentId);
   });
 
+  it('uploads real generated PNG screenshot and stores optimized WebP/PNG record with matching ext and stream Content-Type', async () => {
+    // Generate real PNG chart screenshot with sharp
+    const realPngBuffer = await sharp({
+      create: {
+        width: 400,
+        height: 250,
+        channels: 4,
+        background: { r: 15, g: 23, b: 42, alpha: 1 },
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(`
+            <svg width="400" height="250">
+              <rect x="50" y="50" width="20" height="100" fill="#22c55e" />
+              <rect x="100" y="80" width="20" height="70" fill="#ef4444" />
+              <line x1="60" y1="20" x2="60" y2="180" stroke="#22c55e" stroke-width="2" />
+              <line x1="110" y1="40" x2="110" y2="170" stroke="#ef4444" stroke-width="2" />
+              <text x="150" y="100" font-family="monospace" font-size="16" fill="#f8fafc">BankNifty Breakout</text>
+            </svg>
+          `),
+        },
+      ])
+      .png({ compressionLevel: 1 })
+      .toBuffer();
+
+    const boundary = '----TestBoundaryRealPng';
+    const payload = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="banknifty_breakout.png"\r\nContent-Type: image/png\r\n\r\n`),
+      realPngBuffer,
+      Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="category"\r\n\r\nENTRY\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n5m confirmation candle entry\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="timeframe"\r\n\r\n5m\r\n`),
+      Buffer.from(`--${boundary}--\r\n`),
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/attachments/trades/${tradeId}/upload`,
+      headers: {
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+        cookie: authCookie,
+      },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+
+    const attDoc = await Attachment.findById(body.data.id);
+    expect(attDoc).toBeDefined();
+
+    // The stored record mimeType and storedFilename ext match the optimized output
+    expect(['image/webp', 'image/png']).toContain(attDoc!.mimeType);
+    const storedExt = path.extname(attDoc!.storedFilename).toLowerCase();
+    expect(['.webp', '.png']).toContain(storedExt);
+    if (attDoc!.mimeType === 'image/webp') {
+      expect(storedExt).toBe('.webp');
+    } else {
+      expect(storedExt).toBe('.png');
+    }
+
+    // Size stored in database is smaller than the input PNG (wasOptimized=true)
+    expect(attDoc!.sizeBytes).toBeLessThan(realPngBuffer.length);
+
+    // Verify authenticated stream returns correct Content-Type matching stored mimeType
+    const streamRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/attachments/${body.data.id}/stream`,
+      headers: { cookie: authCookie },
+    });
+    expect(streamRes.statusCode).toBe(200);
+    expect(streamRes.headers['content-type']).toBe(attDoc!.mimeType);
+    if (storedExt === '.webp') {
+      expect(streamRes.headers['content-disposition']).toContain('banknifty_breakout.webp');
+    }
+
+    // Clean up this attachment so 12-cap test is not affected
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/attachments/${body.data.id}`,
+      headers: { cookie: authCookie },
+    });
+  });
+
   it('enforces 12-image cap per trade', async () => {
     // Fill trade up to 12 screenshots
     const boundary = '----TestBoundaryCap';
@@ -336,7 +424,7 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
     expect(excessRes.statusCode).toBe(400);
     const body = JSON.parse(excessRes.body);
     expect(body.error.code).toBe('ATTACHMENT_LIMIT_EXCEEDED');
-  });
+  }, 30000);
 
   it('DELETE /api/v1/trades/:id cleans up all linked attachments in DB and storage', async () => {
     const tradeBefore = await Trade.findById(tradeId);

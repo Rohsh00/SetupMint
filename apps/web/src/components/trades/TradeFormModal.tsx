@@ -260,12 +260,69 @@ export function TradeFormModal({
         initialAssetClass = 'COMMODITY';
       }
 
+      let initialExec = initialValues.simpleExecution ? { ...initialValues.simpleExecution } : {};
+      const hasItemizedFees =
+        Number(initialExec.brokerage || 0) > 0 ||
+        Number(initialExec.exchangeFees || 0) > 0 ||
+        Number(initialExec.regulatoryFees || 0) > 0 ||
+        Number(initialExec.taxes || 0) > 0;
+
+      let shouldAutoFees = true;
+      if (hasItemizedFees) {
+        shouldAutoFees = false;
+      } else {
+        let entryP = Number(initialExec.entryPrice) || Number(initialValues.calculated?.averageEntryPrice) || 0;
+        let exitP = Number(initialExec.exitPrice) || Number(initialValues.calculated?.averageExitPrice) || undefined;
+        let qty = Number(initialExec.quantity) || Number(initialValues.calculated?.closedQuantity) || Number(initialValues.calculated?.openQuantity) || 1;
+        const mult = Number(initialExec.contractMultiplier) || 1;
+
+        if (initialValues.executionMode === 'ADVANCED' && formattedFills.length > 0) {
+          try {
+            const fifo = calculateFIFOExecution(initialValues.direction, formattedFills, mult);
+            entryP = fifo.weightedAvgEntryPrice.toNumber() || entryP;
+            if (fifo.weightedAvgExitPrice) {
+              exitP = fifo.weightedAvgExitPrice.toNumber();
+            }
+            qty = fifo.closedQuantity.toNumber() || fifo.openQuantity.toNumber() || qty;
+          } catch {
+            // keep derived
+          }
+        }
+
+        if (entryP > 0 && qty > 0) {
+          const autoCharges = IndianChargesCalculator.calculate(
+            initialAssetClass,
+            initialMarketSegment,
+            entryP,
+            exitP,
+            qty,
+            mult,
+            20,
+            initialValues.accountId?.broker
+          );
+          if (autoCharges) {
+            initialExec = {
+              ...initialExec,
+              brokerage: autoCharges.brokerage,
+              exchangeFees: autoCharges.exchangeFees,
+              regulatoryFees: autoCharges.regulatoryFees,
+              taxes: autoCharges.taxes,
+              entryPrice: entryP,
+              exitPrice: exitP,
+              quantity: qty,
+              contractMultiplier: mult,
+            };
+          }
+        }
+      }
+
       reset({
         ...initialValues,
         exchange: initialExchange,
         marketSegment: initialMarketSegment,
         assetClass: initialAssetClass,
         risk: initialRisk,
+        simpleExecution: initialExec,
         fills: formattedFills,
         tagsInput: Array.isArray(initialValues.tags)
           ? initialValues.tags.join(', ')
@@ -280,6 +337,8 @@ export function TradeFormModal({
           ? initialValues.exitTime.slice(0, 16)
           : new Date().toISOString().slice(0, 16),
       });
+      setIsAutoFees(shouldAutoFees);
+
       if (initialValues.executionMode) {
         setExecutionMode(initialValues.executionMode);
       }
@@ -391,12 +450,25 @@ export function TradeFormModal({
 
   // Auto statutory fee calculation
   const computeAutoCharges = () => {
-    const entryP = Number(watchedSimple?.entryPrice) || 0;
-    const exitP = watchedStatus === 'CLOSED'
+    let entryP = Number(watchedSimple?.entryPrice) || 0;
+    let exitP = watchedStatus === 'CLOSED'
       ? (Number(watchedSimple?.exitPrice) || entryP)
       : entryP;
-    const qty = Number(watchedSimple?.quantity) || 1;
+    let qty = Number(watchedSimple?.quantity) || 1;
     const mult = Number(watchedSimple?.contractMultiplier) || 1;
+
+    if (executionMode === 'ADVANCED' && watchedFills.length > 0) {
+      try {
+        const fifo = calculateFIFOExecution(watchedDirection, watchedFills, mult);
+        entryP = fifo.weightedAvgEntryPrice.toNumber() || entryP;
+        if (fifo.weightedAvgExitPrice) {
+          exitP = fifo.weightedAvgExitPrice.toNumber();
+        }
+        qty = fifo.closedQuantity.toNumber() || fifo.openQuantity.toNumber() || qty;
+      } catch {
+        // Fallback to watchedSimple
+      }
+    }
 
     if (entryP > 0 && qty > 0) {
       return IndianChargesCalculator.calculate(
@@ -426,7 +498,7 @@ export function TradeFormModal({
 
   // Automatically recalculate fees when isAutoFees is active
   useEffect(() => {
-    if (executionMode === 'SIMPLE' && isAutoFees && !editTradeId) {
+    if (isAutoFees) {
       const charges = computeAutoCharges();
       if (charges) {
         setValue('simpleExecution.brokerage', charges.brokerage);
@@ -438,16 +510,17 @@ export function TradeFormModal({
   }, [
     executionMode,
     isAutoFees,
-    editTradeId,
     watchedAccountId,
     selectedAccount?.broker,
     watchedAssetClass,
     watchedMarketSegment,
+    watchedDirection,
     watchedSimple?.entryPrice,
     watchedSimple?.exitPrice,
     watchedSimple?.quantity,
     watchedSimple?.contractMultiplier,
     watchedStatus,
+    watchedFills,
   ]);
 
   // Live P&L, Execution & Risk Computation using financial-engine
@@ -490,9 +563,25 @@ export function TradeFormModal({
     try {
       const fifo = calculateFIFOExecution(watchedDirection, watchedFills, multiplier);
       liveGross = Number(fifo.realizedGrossPnL.toFixed(2));
-      liveCosts = Number(fifo.totalCosts.toFixed(2));
-      liveNet = Number(fifo.realizedNetPnL.toFixed(2));
-      liveOutcome = watchedStatus === 'OPEN' ? 'OPEN' : fifo.outcome;
+      const fifoCosts = Number(fifo.totalCosts.toFixed(2));
+      const simpleCosts = Number(
+        (
+          (Number(watchedSimple?.brokerage) || 0) +
+          (Number(watchedSimple?.exchangeFees) || 0) +
+          (Number(watchedSimple?.regulatoryFees) || 0) +
+          (Number(watchedSimple?.taxes) || 0) +
+          (Number(watchedSimple?.otherFees) || 0) +
+          (Number(watchedSimple?.explicitAdjustments) || 0)
+        ).toFixed(2)
+      );
+
+      liveCosts = fifoCosts > 0 ? fifoCosts : simpleCosts;
+      if (liveCosts === 0 && isAutoFees) {
+        const auto = computeAutoCharges();
+        if (auto) liveCosts = auto.totalCosts;
+      }
+      liveNet = Number((liveGross - liveCosts).toFixed(2));
+      liveOutcome = watchedStatus === 'OPEN' ? 'OPEN' : liveNet > 0 ? 'WIN' : liveNet < 0 ? 'LOSS' : 'BREAKEVEN';
       positionExposure = Number(fifo.weightedAvgEntryPrice.toFixed(2)) * fifo.closedQuantity.plus(fifo.openQuantity).toNumber() * multiplier;
     } catch {
       // Incomplete fills
@@ -869,6 +958,22 @@ export function TradeFormModal({
       }
     }
 
+    const hasItemizedInPayload =
+      Number(simpleExecPayload.brokerage || 0) > 0 ||
+      Number(simpleExecPayload.exchangeFees || 0) > 0 ||
+      Number(simpleExecPayload.regulatoryFees || 0) > 0 ||
+      Number(simpleExecPayload.taxes || 0) > 0;
+
+    if (!hasItemizedInPayload && isAutoFees) {
+      const auto = computeAutoCharges();
+      if (auto) {
+        simpleExecPayload.brokerage = auto.brokerage;
+        simpleExecPayload.exchangeFees = auto.exchangeFees;
+        simpleExecPayload.regulatoryFees = auto.regulatoryFees;
+        simpleExecPayload.taxes = auto.taxes;
+      }
+    }
+
     // Ensure plannedEntryPrice in risk is synced with entry price in Quick mode
     const finalRisk = { ...data.risk };
     if (workflowMode === 'QUICK' && simpleExecPayload.entryPrice) {
@@ -1155,7 +1260,7 @@ export function TradeFormModal({
             isDirectionValid={isDirectionValid}
             rewardRiskRatio={plannedRewardRiskRatio}
             positionValue={positionExposure}
-            isAutoFees={executionMode === 'SIMPLE' ? isAutoFees : undefined}
+            isAutoFees={isAutoFees}
             onResetAutoFees={handleResetAutoFees}
             strategyRRWarning={strategyRRWarning}
           />

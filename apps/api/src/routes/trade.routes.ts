@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import mongoose from 'mongoose';
 import {
   calculateFIFOExecution,
+  calculateIndianCharges,
   calculateLinearPnL,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
@@ -45,13 +46,57 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       const fifo = calculateFIFOExecution(body.direction, body.fills, mult);
 
       grossPnL = Number(fifo.realizedGrossPnL.toFixed(2));
-      totalCosts = Number(fifo.totalCosts.toFixed(2));
-      netPnL = Number(fifo.realizedNetPnL.toFixed(2));
+      const fifoCosts = Number(fifo.totalCosts.toFixed(2));
       outcome = body.status === 'OPEN' ? 'OPEN' : fifo.outcome;
       closedQty = fifo.closedQuantity.toNumber();
       openQty = fifo.openQuantity.toNumber();
       avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(4));
       avgExit = fifo.weightedAvgExitPrice ? Number(fifo.weightedAvgExitPrice.toFixed(4)) : undefined;
+
+      const simpleCosts = body.simpleExecution
+        ? Number(
+            (
+              (body.simpleExecution.brokerage || 0) +
+              (body.simpleExecution.exchangeFees || 0) +
+              (body.simpleExecution.regulatoryFees || 0) +
+              (body.simpleExecution.taxes || 0) +
+              (body.simpleExecution.otherFees || 0) +
+              (body.simpleExecution.explicitAdjustments || 0)
+            ).toFixed(2)
+          )
+        : 0;
+
+      if (fifoCosts > 0) {
+        totalCosts = fifoCosts;
+      } else if (simpleCosts > 0) {
+        totalCosts = simpleCosts;
+      } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
+        const autoCharges = calculateIndianCharges({
+          assetClass: body.assetClass,
+          marketSegment: body.marketSegment,
+          entryPrice: avgEntry,
+          exitPrice: avgExit,
+          quantity: closedQty > 0 ? closedQty : openQty,
+          contractMultiplier: mult,
+        });
+        totalCosts = autoCharges.totalCosts;
+        if (!body.simpleExecution) {
+          body.simpleExecution = {};
+        }
+        body.simpleExecution.brokerage = autoCharges.brokerage;
+        body.simpleExecution.exchangeFees = autoCharges.exchangeFees;
+        body.simpleExecution.regulatoryFees = autoCharges.regulatoryFees;
+        body.simpleExecution.taxes = autoCharges.taxes;
+      } else {
+        totalCosts = 0;
+      }
+
+      netPnL = Number((grossPnL - totalCosts).toFixed(2));
+      if (body.status !== 'OPEN') {
+        if (netPnL > 0) outcome = 'WIN';
+        else if (netPnL < 0) outcome = 'LOSS';
+        else outcome = 'BREAKEVEN';
+      }
     }
 
     // Holding time

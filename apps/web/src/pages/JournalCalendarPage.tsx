@@ -660,37 +660,71 @@ export function JournalCalendarPage() {
                   </Grid>
                 </Grid>
 
-                {/* Aggregated Mistakes / Rule Breaks */}
-                <Box>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.75 }}>
-                    Session Mistake / Rule Break Tags
+                {/* Aggregated Mistakes / Rule Breaks (Grouped by Category) */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
+                    Session Mistake / Rule Break Tags ({mistakes.length} selected)
                   </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                    {MISTAKE_TAGS.map((m) => {
-                      const isSelected = mistakes.includes(m.value);
-                      return (
-                        <Chip
-                          key={m.value}
-                          label={m.label}
-                          size="small"
-                          color={isSelected ? 'error' : 'default'}
-                          variant={isSelected ? 'filled' : 'outlined'}
-                          onClick={() => {
-                            if (isSelected) {
-                              setMistakes(mistakes.filter((tag) => tag !== m.value));
-                            } else {
-                              setMistakes([...mistakes, m.value]);
-                            }
-                          }}
+
+                  {[
+                    { cat: 'LIQUIDITY_LEVEL', title: '1. Liquidity & Structural Levels (S/R)' },
+                    { cat: 'EXECUTION_TIMING', title: '2. Execution & Entry Timing' },
+                    { cat: 'RISK_DISCIPLINE', title: '3. Risk Management & Discipline' },
+                    { cat: 'SESSION_CONTEXT', title: '4. Session & Macro Context' },
+                  ].map((grp) => {
+                    const items = MISTAKE_TAGS.filter((m) => m.category === grp.cat);
+                    return (
+                      <Box
+                        key={grp.cat}
+                        sx={{
+                          p: 1.25,
+                          borderRadius: 1.5,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
                           sx={{
-                            cursor: 'pointer',
-                            fontSize: '0.6875rem',
-                            fontWeight: isSelected ? 700 : 500,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            fontSize: '0.625rem',
+                            color: muiTheme.palette.text.secondary,
+                            display: 'block',
+                            mb: 0.75,
                           }}
-                        />
-                      );
-                    })}
-                  </Box>
+                        >
+                          {grp.title}
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                          {items.map((m) => {
+                            const isSelected = mistakes.includes(m.value);
+                            return (
+                              <Chip
+                                key={m.value}
+                                label={m.label}
+                                size="small"
+                                color={isSelected ? 'error' : 'default'}
+                                variant={isSelected ? 'filled' : 'outlined'}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setMistakes(mistakes.filter((tag) => tag !== m.value));
+                                  } else {
+                                    setMistakes([...mistakes, m.value]);
+                                  }
+                                }}
+                                sx={{
+                                  cursor: 'pointer',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: isSelected ? 700 : 500,
+                                }}
+                              />
+                            );
+                          })}
+                        </Box>
+                      </Box>
+                    );
+                  })}
                 </Box>
 
                 <Box>

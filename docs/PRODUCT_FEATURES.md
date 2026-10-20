@@ -71,8 +71,9 @@ This document provides a comprehensive, verified feature inventory of all module
   - Dedicated **Lots** input field synchronized bidirectionally with quantity (`Quantity = Lots * LotSize`).
   - Automatic trading session derivation from entry timestamp (`NSE_REGULAR`, `MCX_EVENING`, `NEW_YORK`, `LONDON`, `OFF_HOURS`).
   - **Market-Based, Rule-Driven Trade Setup Templates:**
-    - 20 built-in templates across 6 market groups (`FNO`, `STOCKS`, `FOREX_GOLD`, `CRYPTO`, `MCX`, `PRICE_ACTION`).
-    - Templates describe institutional setups for markets (e.g. London Breakout, Gap & Go, SMC BOS + FVG, Expiry Scalp) and **NEVER** hardcode symbols such as `NIFTY` or `BANKNIFTY`. They adapt to whichever symbol the trader selects.
+    - 25 built-in templates across 6 market groups (`FNO`, `STOCKS`, `FOREX_GOLD`, `CRYPTO`, `MCX`, `PRICE_ACTION`).
+    - Tailored for institutional liquidity and S/R traders with 5 specialized setups: Liquidity Sweep Reversal, Equal Highs/Lows Raid, PDH/PDL Sweep Reversal, Support/Resistance Flip Retest, and Supply/Demand Zone Rejection.
+    - Templates describe institutional setups for markets and **NEVER** hardcode symbols such as `NIFTY` or `BANKNIFTY`. They adapt to whichever symbol the trader selects.
     - Dynamic contextual ranking (`rankTemplates`) elevates matching templates based on asset class, trading session time window in IST, and expiry day recognition (with NSE 2026 holiday shifts).
     - Quick access bar ([`MarketTemplateBar.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/form/MarketTemplateBar.tsx)) with top 6 ranked chips and keyboard shortcuts (`1-6` to preview, `Enter` to apply).
     - Popover preview showing `"Will prefill (empty fields only)"` to guarantee non-destructive prefilling that respects `dirtyFields`.
@@ -80,6 +81,9 @@ This document provides a comprehensive, verified feature inventory of all module
     - Provenance tracking tags (`"from template"`, `"from rule"`, `"auto"`) and complete "Undo template" action.
     - Dynamic stop loss and target recomputation whenever the trader updates entry price or direction.
     - Custom template creation, favoriting, and tenant-isolated performance tracking via `/api/v1/templates`.
+  - **Liquidity & S/R Trade Journaling Workflow:**
+    - Thesis tab: 51 technical confluences grouped into 4 distinct collapsible categories (Liquidity surfaced first, Support/Resistance, Confirmation/Structure, and Indicators/Other) with real-time text search and multi-select chip filter.
+    - Psychology tab: 23 emotional states grouped by Positive, Neutral, and Negative in `<optgroup>` pickers; 29 discrete mistake tags categorized into Liquidity/Level, Execution/Timing, Risk/Discipline, and Session/Context; interactive 10-point `LIQUIDITY_RULE_CHECKLIST` with visual adherence badge ("Rules Followed: X / 10").
   - Automatic Indian statutory charges calculation (`calculateIndianCharges` in `@tradevault/financial-engine`) with live `TradeCalculationBanner` recomputation, "Auto" badge, manual fee override detection, and "Reset to auto" action.
   - Persistent preference memory: remembers last-used account, strategy, symbol, workflow mode, and execution mode.
   - Quick Close action on `/trades` and `/trades/:id` for OPEN/PLANNED trades via [`QuickCloseTradeDialog`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx): prompts for exit price, exit time, optional exit fees, auto-computes round-trip statutory charges, and live Net P&L.
@@ -243,6 +247,7 @@ This document provides a comprehensive, verified feature inventory of all module
 - **Problem Solved:** Enables traders to verify whether their setups have statistical edge.
 - **Main User Interactions:**
   - Create/edit strategy playbooks with asset classes, timeframes, entry rules, stop-loss rules, target rules, invalidation criteria, and checklists.
+  - Pre-seeded with 13 comprehensive institutional strategy playbooks across F&O, MCX, and Price Action (including 6 specialized Liquidity and S/R playbooks).
   - View real-time aggregated strategy performance: total trades, win rate, net P&L, and profit factor.
   - Associate trades with strategies via dropdown in trade logging modal.
 - **Frontend Components:** [`StrategyPlaybookPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/StrategyPlaybookPage.tsx).

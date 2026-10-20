@@ -32,47 +32,634 @@ export const MARKET_SEGMENTS: { value: MarketSegment; label: string }[] = [
   { value: 'OTHER', label: 'Other Market' },
 ];
 
-export const EMOTIONS: { value: Emotion; label: string; color: string }[] = [
-  { value: 'CALM', label: 'Calm & Centered', color: 'emerald' },
-  { value: 'CONFIDENT', label: 'Confident & Prepared', color: 'blue' },
-  { value: 'DISCIPLINED', label: 'Disciplined & Patient', color: 'teal' },
-  { value: 'NEUTRAL', label: 'Neutral / Routine', color: 'slate' },
-  { value: 'ANXIOUS', label: 'Anxious / Hesitant', color: 'amber' },
-  { value: 'FEARFUL', label: 'Fearful / Scared of Loss', color: 'orange' },
-  { value: 'GREEDY', label: 'Greedy / Wanting Big Win', color: 'purple' },
-  { value: 'EUPHORIC', label: 'Euphoric / Overconfident', color: 'indigo' },
-  { value: 'FRUSTRATED', label: 'Frustrated / Angry', color: 'rose' },
+export type EmotionCategory = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
+
+export interface IEmotionDefinition {
+  value: Emotion;
+  label: string;
+  category: EmotionCategory;
+  color: string;
+}
+
+export const EMOTIONS: IEmotionDefinition[] = [
+  // Positive / Disciplined Mindset (Surfaced first)
+  { value: 'CALM', label: 'Calm & Centered', category: 'POSITIVE', color: 'emerald' },
+  { value: 'CONFIDENT', label: 'Confident & Prepared', category: 'POSITIVE', color: 'blue' },
+  { value: 'DISCIPLINED', label: 'Disciplined & Rule-Adherent', category: 'POSITIVE', color: 'teal' },
+  { value: 'PATIENT', label: 'Patient / Waiting for Level', category: 'POSITIVE', color: 'cyan' },
+  { value: 'FOCUSED', label: 'Focused & Present', category: 'POSITIVE', color: 'sky' },
+  { value: 'RELIEVED', label: 'Relieved / Execution Done', category: 'POSITIVE', color: 'emerald' },
+
+  // Neutral / Observational Mindset
+  { value: 'NEUTRAL', label: 'Neutral / Objective Routine', category: 'NEUTRAL', color: 'slate' },
+  { value: 'BORED', label: 'Bored / Flat Session', category: 'NEUTRAL', color: 'zinc' },
+  { value: 'HESITANT', label: 'Hesitant / Slight Reluctance', category: 'NEUTRAL', color: 'amber' },
+  { value: 'DOUBTFUL_OF_LEVEL', label: 'Doubtful of Level Strength', category: 'NEUTRAL', color: 'stone' },
+
+  // Negative / Reactive Mindset
+  { value: 'ANXIOUS', label: 'Anxious / Hesitant', category: 'NEGATIVE', color: 'amber' },
+  { value: 'FEARFUL', label: 'Fearful / Scared of Loss', category: 'NEGATIVE', color: 'orange' },
+  { value: 'GREEDY', label: 'Greedy / Wanting Big Win', category: 'NEGATIVE', color: 'purple' },
+  { value: 'EUPHORIC', label: 'Euphoric / Overconfident', category: 'NEGATIVE', color: 'indigo' },
+  { value: 'FRUSTRATED', label: 'Frustrated / Angry', category: 'NEGATIVE', color: 'rose' },
+  { value: 'IMPATIENT', label: 'Impatient / Front-Running', category: 'NEGATIVE', color: 'rose' },
+  { value: 'FOMO', label: 'FOMO / Chasing Move', category: 'NEGATIVE', color: 'red' },
+  { value: 'OVERCONFIDENT', label: 'Overconfident / Sizing Blindly', category: 'NEGATIVE', color: 'violet' },
+  { value: 'STRESSED', label: 'Stressed / High Friction', category: 'NEGATIVE', color: 'orange' },
+  { value: 'TILTED', label: 'Tilted / Emotionally Impaired', category: 'NEGATIVE', color: 'red' },
+  { value: 'REVENGEFUL', label: 'Revengeful / Wanting Back Loss', category: 'NEGATIVE', color: 'rose' },
+  { value: 'REGRETFUL', label: 'Regretful / Second-Guessing Plan', category: 'NEGATIVE', color: 'amber' },
+  { value: 'FEAR_OF_STOP_HUNT', label: 'Fear of Stop Hunt / Paranoia', category: 'NEGATIVE', color: 'orange' },
 ];
 
-export const MISTAKE_TAGS: { value: MistakeTag; label: string; description: string }[] = [
-  { value: 'REVENGE_TRADING', label: 'Revenge Trading', description: 'Trying to quickly make back a recent loss' },
-  { value: 'OVERTRADING', label: 'Overtrading', description: 'Taking trades outside playbook or beyond daily limit' },
-  { value: 'PREMATURE_EXIT', label: 'Premature Exit', description: 'Closing winning trade before target without invalidation' },
-  { value: 'STOP_MOVED', label: 'Moved Stop Loss', description: 'Widening or moving stop loss further away during trade' },
-  { value: 'SIZE_VIOLATION', label: 'Position Sizing Violation', description: 'Trading bigger than permitted by risk rules' },
-  { value: 'FOMO', label: 'FOMO / Chasing Move', description: 'Entering after the move started because of fear of missing out' },
-  { value: 'CHASED_MARKET', label: 'Chased Market', description: 'Accepting poor entry price and bad R:R' },
-  { value: 'NO_STOP_LOSS', label: 'No Hard Stop Loss', description: 'Entered position without predefined invalidation stop' },
-  { value: 'EARLY_ENTRY', label: 'Early Entry', description: 'Anticipating setup before actual confirmation' },
-  { value: 'LATE_ENTRY', label: 'Late Entry', description: 'Missed optimal entry, reduced profit margin' },
-  { value: 'POOR_RR', label: 'Poor Risk/Reward Ratio', description: 'Planned reward was lower than minimum threshold' },
-  { value: 'NEWS_GAMBLE', label: 'News Gambling', description: 'Holding high leverage through unpredictable macro events' },
+export const EMOTION_LABEL_MAP: Record<string, string> = Object.fromEntries(
+  EMOTIONS.map((e) => [e.value, e.label])
+);
+
+export type MistakeCategory =
+  | 'LIQUIDITY_LEVEL'
+  | 'EXECUTION_TIMING'
+  | 'RISK_DISCIPLINE'
+  | 'SESSION_CONTEXT';
+
+export interface IMistakeTagDefinition {
+  value: MistakeTag;
+  label: string;
+  description: string;
+  category: MistakeCategory;
+}
+
+export const MISTAKE_TAGS: IMistakeTagDefinition[] = [
+  // Liquidity & Structural Level Mistakes (Surfaced First for S/R + Liquidity Traders)
+  {
+    value: 'ENTERED_BEFORE_SWEEP',
+    label: 'Entered Before Sweep',
+    description: 'Jumped into setup before resting high/low liquidity was raided',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'NO_LIQUIDITY_TAKEN',
+    label: 'No Liquidity Taken',
+    description: 'Traded in a liquidity vacuum / middle of range with no opposing orders',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'NO_CONFIRMATION_AFTER_SWEEP',
+    label: 'No Confirmation Post-Sweep',
+    description: 'Entered immediately upon sweep without LTF CHOCH or displacement',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'TRADED_INTO_HTF_LEVEL',
+    label: 'Traded Into HTF Level',
+    description: 'Bought directly into major HTF resistance or shorted into HTF demand',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'TRADED_MID_RANGE',
+    label: 'Traded Mid-Range',
+    description: 'Entered between key structural boundaries with 50/50 chop odds',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'STOP_INSIDE_LIQUIDITY_POOL',
+    label: 'Stop Inside Liquidity Pool',
+    description: 'Placed invalidation stop directly at equal highs/lows where sweeps occur',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'TARGET_NOT_AT_LIQUIDITY',
+    label: 'Target Not at Liquidity',
+    description: 'Set profit target at random price instead of resting opposing liquidity',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'NO_LIQUIDITY_TARGET',
+    label: 'No Liquidity Target',
+    description: 'Executed trade without defining an opposing resting liquidity target',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'COUNTER_TREND_NO_SWEEP',
+    label: 'Counter-Trend Without Sweep',
+    description: 'Faded strong trend without a clear HTF liquidity raid',
+    category: 'LIQUIDITY_LEVEL',
+  },
+  {
+    value: 'FAKE_BREAKOUT_CHASE',
+    label: 'Chased Fake Breakout',
+    description: 'Bought high of day or shorted low of day on obvious trap volume',
+    category: 'LIQUIDITY_LEVEL',
+  },
+
+  // Execution & Timing Mistakes
+  {
+    value: 'EARLY_ENTRY',
+    label: 'Early Entry',
+    description: 'Anticipated setup before actual trigger candle closed',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'LATE_ENTRY',
+    label: 'Late Entry',
+    description: 'Missed optimal zone/retest, chased entry with poor R:R',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'FOMO_ENTRY',
+    label: 'FOMO / Impulse Entry',
+    description: 'Entered on momentum spike purely out of fear of missing the move',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'FOMO',
+    label: 'FOMO / Chasing Move',
+    description: 'Entering after the move started because of fear of missing out',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'CHASED_MARKET',
+    label: 'Chased Market',
+    description: 'Accepting poor entry price and bad risk-to-reward ratio',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'PREMATURE_EXIT',
+    label: 'Premature Exit',
+    description: 'Closing winning trade before target without structural invalidation',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'BREAKEVEN_TOO_EARLY',
+    label: 'Moved Breakeven Too Early',
+    description: 'Choked trade breathing room before structure gave reason to trail',
+    category: 'EXECUTION_TIMING',
+  },
+  {
+    value: 'STOP_TOO_TIGHT',
+    label: 'Stop Loss Too Tight',
+    description: 'Placed stop within normal market noise and tick volatility',
+    category: 'EXECUTION_TIMING',
+  },
+
+  // Risk & Discipline Mistakes
+  {
+    value: 'REVENGE_TRADING',
+    label: 'Revenge Trading',
+    description: 'Trying to quickly make back a recent loss with impulsive entry',
+    category: 'RISK_DISCIPLINE',
+  },
+  {
+    value: 'OVERTRADING',
+    label: 'Overtrading',
+    description: 'Taking trades outside playbook or beyond daily risk limit',
+    category: 'RISK_DISCIPLINE',
+  },
+  {
+    value: 'STOP_MOVED',
+    label: 'Moved Stop Loss',
+    description: 'Widening or moving stop loss further away during trade lifecycle',
+    category: 'RISK_DISCIPLINE',
+  },
+  {
+    value: 'SIZE_VIOLATION',
+    label: 'Position Sizing Violation',
+    description: 'Trading bigger than permitted by portfolio risk rules',
+    category: 'RISK_DISCIPLINE',
+  },
+  {
+    value: 'NO_STOP_LOSS',
+    label: 'No Hard Stop Loss',
+    description: 'Entered position without predefined hard invalidation order',
+    category: 'RISK_DISCIPLINE',
+  },
+  {
+    value: 'ADDED_TO_LOSER',
+    label: 'Added to Losing Trade',
+    description: 'Averaged down on an invalidating position without an edge',
+    category: 'RISK_DISCIPLINE',
+  },
+  {
+    value: 'POOR_RR',
+    label: 'Poor Risk/Reward Ratio',
+    description: 'Planned reward was lower than minimum strategy threshold',
+    category: 'RISK_DISCIPLINE',
+  },
+
+  // Session & Macro Context Mistakes
+  {
+    value: 'IGNORED_HTF_BIAS',
+    label: 'Ignored HTF Bias',
+    description: 'Fought dominant daily/weekly trend direction without structure shift',
+    category: 'SESSION_CONTEXT',
+  },
+  {
+    value: 'TRADED_OUTSIDE_SESSION',
+    label: 'Traded Outside Session',
+    description: 'Executed outside prime volume killzones and core market hours',
+    category: 'SESSION_CONTEXT',
+  },
+  {
+    value: 'TRADED_NEWS_EVENT',
+    label: 'Traded News Event',
+    description: 'Held or entered through high-impact scheduled macroeconomic release',
+    category: 'SESSION_CONTEXT',
+  },
+  {
+    value: 'NEWS_GAMBLE',
+    label: 'News Gambling',
+    description: 'Holding high leverage through unpredictable macro events',
+    category: 'SESSION_CONTEXT',
+  },
 ];
 
-export const CONFLUENCES: { value: Confluence; label: string }[] = [
-  { value: 'BOS', label: 'Break of Structure (BOS)' },
-  { value: 'CHOCH', label: 'Change of Character (CHOCH)' },
-  { value: 'FVG', label: 'Fair Value Gap (FVG)' },
-  { value: 'ORDER_BLOCK', label: 'Order Block (OB)' },
-  { value: 'LIQUIDITY_SWEEP', label: 'Liquidity Sweep / Raid' },
-  { value: 'PDH_PDL', label: 'Prev Day High / Low' },
-  { value: 'PWH_PWL', label: 'Prev Week High / Low' },
-  { value: 'SUPPORT_RESISTANCE', label: 'Key Support / Resistance' },
-  { value: 'TRENDLINE', label: 'Trendline Liquidity' },
-  { value: 'FIBONACCI', label: 'Fibonacci Golden Pocket / OTE' },
-  { value: 'EMA_CROSS', label: 'EMA Alignment / Dynamic S/R' },
-  { value: 'VWAP', label: 'VWAP Rejection / Deviation' },
-  { value: 'VOLUME_SPIKE', label: 'Institutional Volume Spike' },
+export const MISTAKE_LABEL_MAP: Record<string, string> = Object.fromEntries(
+  MISTAKE_TAGS.map((m) => [m.value, m.label])
+);
+
+export type ConfluenceCategory =
+  | 'LIQUIDITY'
+  | 'SUPPORT_RESISTANCE'
+  | 'CONFIRMATION_STRUCTURE'
+  | 'INDICATORS_OTHER';
+
+export interface IConfluenceDefinition {
+  value: Confluence;
+  label: string;
+  category: ConfluenceCategory;
+  description?: string;
+}
+
+export const CONFLUENCES: IConfluenceDefinition[] = [
+  // ==========================================
+  // 1. LIQUIDITY (Surfaced First for Liquidity Traders)
+  // ==========================================
+  {
+    value: 'BUY_SIDE_LIQUIDITY_SWEEP',
+    label: 'Buy-Side Liquidity (BSL) Sweep',
+    category: 'LIQUIDITY',
+    description: 'Swept buy stops above previous swing high / equal highs',
+  },
+  {
+    value: 'SELL_SIDE_LIQUIDITY_SWEEP',
+    label: 'Sell-Side Liquidity (SSL) Sweep',
+    category: 'LIQUIDITY',
+    description: 'Swept sell stops below previous swing low / equal lows',
+  },
+  {
+    value: 'EQUAL_HIGHS',
+    label: 'Equal Highs (EQH) Liquidity Pool',
+    category: 'LIQUIDITY',
+    description: 'Double top resting liquidity target or raid level',
+  },
+  {
+    value: 'EQUAL_LOWS',
+    label: 'Equal Lows (EQL) Liquidity Pool',
+    category: 'LIQUIDITY',
+    description: 'Double bottom resting liquidity target or raid level',
+  },
+  {
+    value: 'PREV_DAY_HIGH_SWEEP',
+    label: 'Previous Day High (PDH) Sweep',
+    category: 'LIQUIDITY',
+    description: 'Raided previous session high before rejection',
+  },
+  {
+    value: 'PREV_DAY_LOW_SWEEP',
+    label: 'Previous Day Low (PDL) Sweep',
+    category: 'LIQUIDITY',
+    description: 'Raided previous session low before reversal',
+  },
+  {
+    value: 'PREV_WEEK_HIGH_SWEEP',
+    label: 'Previous Week High (PWH) Sweep',
+    category: 'LIQUIDITY',
+    description: 'Major weekly swing high raid',
+  },
+  {
+    value: 'PREV_WEEK_LOW_SWEEP',
+    label: 'Previous Week Low (PWL) Sweep',
+    category: 'LIQUIDITY',
+    description: 'Major weekly swing low raid',
+  },
+  {
+    value: 'ASIAN_RANGE_SWEEP',
+    label: 'Asian Range Sweep (Judas Swing)',
+    category: 'LIQUIDITY',
+    description: 'London / Frankfurt open raid of overnight Asian session range',
+  },
+  {
+    value: 'SESSION_HIGH_LOW_SWEEP',
+    label: 'Session High/Low Sweep',
+    category: 'LIQUIDITY',
+    description: 'Morning or afternoon extreme sweep',
+  },
+  {
+    value: 'STOP_HUNT',
+    label: 'Stop Hunt / Turtle Soup',
+    category: 'LIQUIDITY',
+    description: 'Engineered false breakout trapping breakout traders',
+  },
+  {
+    value: 'INDUCEMENT',
+    label: 'Inducement (IDM) Trap',
+    category: 'LIQUIDITY',
+    description: 'Engineered minor swing high/low bait before real reversal',
+  },
+  {
+    value: 'TRENDLINE_LIQUIDITY',
+    label: 'Trendline Liquidity Run',
+    category: 'LIQUIDITY',
+    description: 'Retail trendline stop cascade raid',
+  },
+  {
+    value: 'LIQUIDITY_VOID',
+    label: 'Liquidity Void / Imbalance',
+    category: 'LIQUIDITY',
+    description: 'Fast price expansion leaving unfilled price void',
+  },
+  {
+    value: 'LIQUIDITY_POOL_TARGET',
+    label: 'Target Opposing Liquidity Pool',
+    category: 'LIQUIDITY',
+    description: 'Exiting at resting liquidity pool across the range',
+  },
+  {
+    value: 'LIQUIDITY_GRAB_REJECTION',
+    label: 'Liquidity Grab & Rejection Wick',
+    category: 'LIQUIDITY',
+    description: 'Clear candle pin/wick rejecting beyond key liquidity level',
+  },
+  {
+    value: 'LIQUIDITY_SWEEP',
+    label: 'Liquidity Sweep / Raid (General)',
+    category: 'LIQUIDITY',
+    description: 'General liquidity raid across key levels',
+  },
+
+  // ==========================================
+  // 2. SUPPORT / RESISTANCE
+  // ==========================================
+  {
+    value: 'HTF_SUPPORT',
+    label: 'Higher Timeframe (HTF) Support',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Daily / 4-hour key institutional support level',
+  },
+  {
+    value: 'HTF_RESISTANCE',
+    label: 'Higher Timeframe (HTF) Resistance',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Daily / 4-hour key institutional resistance level',
+  },
+  {
+    value: 'SUPPORT_RESISTANCE_FLIP',
+    label: 'Support / Resistance Flip',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Prior broken resistance becomes support (or vice-versa)',
+  },
+  {
+    value: 'SUPPORT_RETEST',
+    label: 'Support Level Retest',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Clean pullback and bounce from established support',
+  },
+  {
+    value: 'RESISTANCE_RETEST',
+    label: 'Resistance Level Retest',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Clean pullback and rejection from established resistance',
+  },
+  {
+    value: 'DEMAND_ZONE',
+    label: 'Institutional Demand Zone',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Base of aggressive buying origin / order cluster',
+  },
+  {
+    value: 'SUPPLY_ZONE',
+    label: 'Institutional Supply Zone',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Base of aggressive selling origin / distribution',
+  },
+  {
+    value: 'KEY_LEVEL_REJECTION',
+    label: 'Key Horizontal Level Rejection',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Strong wick rejection off proven horizontal price pivot',
+  },
+  {
+    value: 'ROUND_NUMBER_LEVEL',
+    label: 'Round Number / Psychological Strike',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Heavy institutional resting volume at round strike (e.g. 25,000 / 50,000)',
+  },
+  {
+    value: 'PREV_DAY_HIGH_LOW_LEVEL',
+    label: 'Prev Day High / Low Reference Level',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'PDH or PDL horizontal support/resistance reference',
+  },
+  {
+    value: 'OPENING_RANGE_LEVEL',
+    label: 'Opening Range Level',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Initial 15m high/low reference boundary',
+  },
+  {
+    value: 'VWAP_LEVEL',
+    label: 'VWAP Anchor / Band Level',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Session VWAP or upper/lower deviation band touch',
+  },
+  {
+    value: 'FAKE_BREAKOUT_RECLAIM',
+    label: 'Fake Breakout & Reclaim',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Price pierced level and immediately reclaimed inside boundary',
+  },
+  {
+    value: 'DOUBLE_TOP_BOTTOM',
+    label: 'Double Top / Double Bottom Level',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Classic double top or double bottom structural pivot',
+  },
+  {
+    value: 'RANGE_HIGH_LOW_REJECTION',
+    label: 'Range High / Low Boundary Rejection',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Rejection at outer boundary of multi-hour consolidation',
+  },
+  {
+    value: 'OI_WALL_CE',
+    label: 'Highest Call OI Wall (Resistance)',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Option chain highest open interest call strike acting as ceiling',
+  },
+  {
+    value: 'OI_WALL_PE',
+    label: 'Highest Put OI Wall (Support)',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Option chain highest open interest put strike acting as floor',
+  },
+  {
+    value: 'SUPPORT_RESISTANCE',
+    label: 'Key Support / Resistance (General)',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'General support or resistance horizontal level',
+  },
+  {
+    value: 'PDH_PDL',
+    label: 'Prev Day High / Low (Legacy)',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Previous day extreme',
+  },
+  {
+    value: 'PWH_PWL',
+    label: 'Prev Week High / Low (Legacy)',
+    category: 'SUPPORT_RESISTANCE',
+    description: 'Previous week extreme',
+  },
+
+  // ==========================================
+  // 3. CONFIRMATION & STRUCTURE
+  // ==========================================
+  {
+    value: 'MARKET_STRUCTURE_SHIFT',
+    label: 'Market Structure Shift (MSS)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Shift from bullish to bearish order flow (or vice-versa)',
+  },
+  {
+    value: 'DISPLACEMENT',
+    label: 'Displacement / Energetic Candle',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Large directional body candle showing institutional footprint',
+  },
+  {
+    value: 'CHOCH',
+    label: 'Change of Character (CHOCH)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'First structural break signaling trend exhaustion',
+  },
+  {
+    value: 'BOS',
+    label: 'Break of Structure (BOS)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Break of previous swing point confirming trend continuation',
+  },
+  {
+    value: 'FVG',
+    label: 'Fair Value Gap (FVG)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: '3-candle imbalance price target and entry mitigation zone',
+  },
+  {
+    value: 'ORDER_BLOCK',
+    label: 'Order Block (OB)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Institutional sponsorship candle preceding displacement',
+  },
+  {
+    value: 'BREAKER_BLOCK',
+    label: 'Breaker Block (Failed OB)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Invalidated order block flipping into support/resistance',
+  },
+  {
+    value: 'MITIGATION_BLOCK',
+    label: 'Mitigation Block',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Re-test block mitigating institutional drawdowns',
+  },
+  {
+    value: 'PREMIUM_ZONE_ENTRY',
+    label: 'Premium Zone Entry (Shorts)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Selling above 50% equilibrium of dealing range',
+  },
+  {
+    value: 'DISCOUNT_ZONE_ENTRY',
+    label: 'Discount Zone Entry (Longs)',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Buying below 50% equilibrium of dealing range',
+  },
+  {
+    value: 'LTF_CONFIRMATION_CANDLE',
+    label: 'LTF Confirmation Candle',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Lower timeframe reversal trigger candle (pinbar/engulfing)',
+  },
+  {
+    value: 'VOLUME_SPIKE_AT_LEVEL',
+    label: 'Volume Spike at Key Level',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Anomalous trading volume at reaction level',
+  },
+
+  // ==========================================
+  // 4. INDICATORS & OTHER
+  // ==========================================
+  {
+    value: 'TRENDLINE',
+    label: 'Trendline Liquidity / Slope',
+    category: 'INDICATORS_OTHER',
+    description: 'Dynamic trendline support or resistance',
+  },
+  {
+    value: 'FIBONACCI',
+    label: 'Fibonacci Golden Pocket / OTE',
+    category: 'INDICATORS_OTHER',
+    description: '0.618 - 0.786 optimal trade entry zone',
+  },
+  {
+    value: 'EMA_CROSS',
+    label: 'EMA Alignment / Dynamic S/R',
+    category: 'INDICATORS_OTHER',
+    description: 'Exponential moving average trend alignment',
+  },
+  {
+    value: 'VWAP',
+    label: 'VWAP Rejection / Deviation',
+    category: 'INDICATORS_OTHER',
+    description: 'Volume-weighted average price reaction',
+  },
+  {
+    value: 'VOLUME_SPIKE',
+    label: 'Institutional Volume Spike',
+    category: 'INDICATORS_OTHER',
+    description: 'Volume > 2x average indicating smart money involvement',
+  },
+];
+
+export const CONFLUENCE_LABEL_MAP: Record<string, string> = Object.fromEntries(
+  CONFLUENCES.map((c) => [c.value, c.label])
+);
+
+export const LIQUIDITY_CONFLUENCE_VALUES: Set<string> = new Set(
+  CONFLUENCES.filter((c) => c.category === 'LIQUIDITY').map((c) => c.value)
+);
+
+export const SR_CONFLUENCE_VALUES: Set<string> = new Set(
+  CONFLUENCES.filter((c) => c.category === 'SUPPORT_RESISTANCE').map((c) => c.value)
+);
+
+export const LIQUIDITY_OR_SR_CONFLUENCE_VALUES: Set<string> = new Set([
+  ...Array.from(LIQUIDITY_CONFLUENCE_VALUES),
+  ...Array.from(SR_CONFLUENCE_VALUES),
+]);
+
+export const LIQUIDITY_RULE_CHECKLIST: string[] = [
+  'HTF bias identified and trade aligned with it',
+  'Key liquidity pool marked (equal highs/lows, PDH/PDL, session high/low)',
+  'Liquidity was actually swept (wick beyond the level)',
+  'Price reclaimed / rejected the level (no acceptance beyond it)',
+  'LTF confirmation (CHOCH / MSS / displacement) after the sweep',
+  'Entry at a valid zone (OB / FVG / S-R flip / demand-supply)',
+  'Stop placed beyond the sweep wick, NOT inside a liquidity pool',
+  'Target set at the next opposing liquidity pool or key level',
+  'Planned R:R meets strategy minimum',
+  'Inside valid session / no high-impact news conflict',
 ];
 
 export const TRADING_SESSIONS: { value: TradingSession; label: string; timing: string }[] = [
@@ -763,6 +1350,118 @@ export const BUILT_IN_TEMPLATES: ITradeTemplate[] = [
     confluences: ['SUPPORT_RESISTANCE', 'VOLUME_SPIKE', 'BOS'],
     checklist: ['Significant horizontal level broken with clear impulse', 'Pullback cleanly retests the broken level', 'Rejection candle confirming polarity change'],
     strategyName: 'Support Resistance Reversal',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-liquidity-sweep-reversal',
+    name: 'Liquidity Sweep Reversal',
+    description: 'High-probability reversal after stop raid of buy-side or sell-side resting liquidity',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: {
+      type: 'MANUAL',
+      manualHint: 'Structure SL: Place 2-5 ticks beyond the sweep wick extreme',
+    },
+    minRR: 2.5,
+    titlePattern: '{SYMBOL} Liquidity Sweep {DIR}',
+    tags: ['PRICE_ACTION', 'LIQUIDITY', 'SWEEP', 'REVERSAL'],
+    confluences: ['BUY_SIDE_LIQUIDITY_SWEEP', 'SELL_SIDE_LIQUIDITY_SWEEP', 'CHOCH', 'MARKET_STRUCTURE_SHIFT', 'DISPLACEMENT'],
+    checklist: [
+      'Key resting liquidity pool identified on higher timeframe',
+      'Liquidity was swept with a sharp rejection wick',
+      'Lower timeframe structure shifted (CHOCH / MSS)',
+      'Invalidation stop placed strictly beyond the sweep wick extreme',
+    ],
+    strategyName: 'Liquidity Sweep & Reversal',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-equal-highs-lows-raid',
+    name: 'Equal Highs/Lows Raid',
+    description: 'Exploiting retail double top/bottom stop cascades with institutional displacement',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: {
+      type: 'MANUAL',
+      manualHint: 'Structure SL: Place beyond the raid extreme wick',
+    },
+    minRR: 3.0,
+    titlePattern: '{SYMBOL} EQH/EQL Raid {DIR}',
+    tags: ['PRICE_ACTION', 'LIQUIDITY', 'EQUAL_HIGHS', 'EQUAL_LOWS'],
+    confluences: ['EQUAL_HIGHS', 'EQUAL_LOWS', 'STOP_HUNT', 'DISPLACEMENT', 'LIQUIDITY_GRAB_REJECTION'],
+    checklist: [
+      'Obvious equal highs or equal lows identified on 15m/1h',
+      'Aggressive wick raid cleared out retail stop orders',
+      'Immediate displacement back inside previous dealing range',
+      'Target opposing liquidity pool across the consolidation',
+    ],
+    strategyName: 'Equal Highs/Lows Raid',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-pdh-pdl-sweep-reversal',
+    name: 'PDH/PDL Sweep Reversal',
+    description: 'Fade failed expansion beyond previous day high or low with reclaim into prior value',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: {
+      type: 'MANUAL',
+      manualHint: 'Structure SL: Place outside the PDH/PDL sweep point by instrument buffer',
+    },
+    minRR: 2.5,
+    titlePattern: '{SYMBOL} PDH/PDL Sweep {DIR}',
+    tags: ['PRICE_ACTION', 'PDH_PDL', 'SWEEP', 'REVERSAL'],
+    confluences: ['PREV_DAY_HIGH_SWEEP', 'PREV_DAY_LOW_SWEEP', 'FAKE_BREAKOUT_RECLAIM', 'KEY_LEVEL_REJECTION'],
+    checklist: [
+      'Price expanded past yesterday extreme during active session',
+      'Breakout immediately failed with zero candle acceptance above/below level',
+      'Candle close back inside yesterday range confirms fake breakout',
+      'Target set at session VWAP or opposing day extreme',
+    ],
+    strategyName: 'PDH/PDL Sweep Reversal',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-sr-flip-retest',
+    name: 'Support/Resistance Flip Retest',
+    description: 'Polarity change confirmation where broken key horizontal structure is cleanly retested',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: { type: 'PERCENT', value: 0.4 },
+    minRR: 2.0,
+    titlePattern: '{SYMBOL} S/R Flip {DIR}',
+    tags: ['PRICE_ACTION', 'SUPPORT_RESISTANCE', 'RETEST', 'SR_FLIP'],
+    confluences: ['SUPPORT_RESISTANCE_FLIP', 'SUPPORT_RETEST', 'RESISTANCE_RETEST', 'VOLUME_SPIKE_AT_LEVEL'],
+    checklist: [
+      'Decisive structural break through major horizontal level on volume',
+      'Controlled low-volume pullback retests the broken level',
+      'Rejection pinbar or engulfing candle confirms polarity change',
+      'Risk/reward minimum 1:2 to the next key resistance/support zone',
+    ],
+    strategyName: 'Support/Resistance Flip Retest',
+    isBuiltIn: true,
+  },
+  {
+    id: 'pa-supply-demand-rejection',
+    name: 'Supply/Demand Zone Rejection',
+    description: 'Institutional order block and imbalance mitigation at fresh supply or demand zones',
+    group: 'PRICE_ACTION',
+    markets: ['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX'],
+    slRule: {
+      type: 'MANUAL',
+      manualHint: 'Structure SL: Beyond zone boundary with tick buffer',
+    },
+    minRR: 2.5,
+    titlePattern: '{SYMBOL} Supply/Demand {DIR}',
+    tags: ['PRICE_ACTION', 'SUPPLY_ZONE', 'DEMAND_ZONE', 'ORDER_BLOCK'],
+    confluences: ['DEMAND_ZONE', 'SUPPLY_ZONE', 'KEY_LEVEL_REJECTION', 'LTF_CONFIRMATION_CANDLE', 'DISCOUNT_ZONE_ENTRY'],
+    checklist: [
+      'Fresh, unmitigated institutional supply or demand zone on HTF',
+      'Price taps zone and exhibits sharp rejection wicks',
+      'Lower timeframe trigger candle confirms institutional entry',
+      'Stop loss safely placed outside the distal zone boundary',
+    ],
+    strategyName: 'Supply/Demand Zone Rejection',
     isBuiltIn: true,
   },
 ];

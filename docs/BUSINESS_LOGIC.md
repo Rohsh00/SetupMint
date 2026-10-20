@@ -95,15 +95,58 @@ When sizing a position in the risk calculator:
 Discretionary trading performance is heavily determined by psychological discipline. SetupMint codifies behavioral metrics:
 
 ### Discrete Mistake Tags & Impact Quantification
-SetupMint tracks five specific costly behavioral mistakes:
-1. **`REVENGE_TRADING`:** Taking an unplanned emotional trade immediately after a loss to "win back" capital.
-2. **`OVERTRADING`:** Executing trades outside playbook rules or beyond daily maximum limits.
-3. **`PREMATURE_EXIT`:** Closing a winning trade out of fear before it reaches the planned target without technical invalidation.
-4. **`STOP_MOVED`:** Widening or cancelling a stop-loss order during an adverse move.
-5. **`SIZE_VIOLATION`:** Trading significantly larger lot sizes than allowed by account equity risk parameters.
+SetupMint tracks 29 discrete behavioral and technical mistake tags grouped into four domain categories with human-readable labels:
+
+1. **Liquidity / Level Mistakes (`LIQUIDITY_LEVEL`):**
+   - `ENTERED_BEFORE_SWEEP`: Entered before liquidity sweep
+   - `NO_LIQUIDITY_TAKEN`: No liquidity taken before entry
+   - `NO_CONFIRMATION_AFTER_SWEEP`: No confirmation after sweep
+   - `TRADED_INTO_HTF_LEVEL`: Traded directly into HTF level
+   - `TRADED_MID_RANGE`: Traded mid-range / no edge
+   - `STOP_INSIDE_LIQUIDITY_POOL`: Stop placed inside liquidity pool
+   - `STOP_TOO_TIGHT`: Stop loss too tight
+   - `TARGET_NOT_AT_LIQUIDITY`: Target not at liquidity pool
+   - `NO_LIQUIDITY_TARGET`: Missing liquidity target
+   - `IGNORED_HTF_BIAS`: Ignored higher timeframe bias
+   - `COUNTER_TREND_NO_SWEEP`: Counter-trend without sweep
+   - `FAKE_BREAKOUT_CHASE`: Chased fake breakout
+
+2. **Execution / Timing Mistakes (`EXECUTION_TIMING`):**
+   - `EARLY_ENTRY`: Early entry / jumped gun
+   - `LATE_ENTRY`: Late entry / missed optimal price
+   - `FOMO_ENTRY`: FOMO entry
+   - `CHASED_MARKET`: Chased market after move started
+   - `PREMATURE_EXIT`: Premature exit / cut winner early
+   - `BREAKEVEN_TOO_EARLY`: Moved to breakeven too early
+
+3. **Risk & Discipline Mistakes (`RISK_DISCIPLINE`):**
+   - `STOP_MOVED`: Stop loss moved / widened
+   - `SIZE_VIOLATION`: Position size too large
+   - `ADDED_TO_LOSER`: Added to losing position
+   - `REVENGE_TRADING`: Revenge trading after loss
+   - `OVERTRADING`: Overtrading / too many trades
+
+4. **Session / Context Mistakes (`SESSION_CONTEXT`):**
+   - `TRADED_OUTSIDE_SESSION`: Traded outside core session
+   - `TRADED_NEWS_EVENT`: Traded into high-impact news
 
 The system calculates **Cumulative Mistake Loss**:
 $$\text{Total Loss}_{\text{mistake}} = \sum_{t \in \text{Trades with Mistake Flag}} |\text{Net P&L}_t| \quad (\text{for } \text{Net P&L} < 0)$$
+
+### Reusable Liquidity Rule Checklist & Adherence Metric
+SetupMint defines a standardized 10-point `LIQUIDITY_RULE_CHECKLIST` used across Strategy Playbooks and Trade Psychology:
+1. HTF bias identified and trade aligned with it
+2. Key liquidity pool marked (equal highs/lows, PDH/PDL, session high/low)
+3. Liquidity was actually swept (wick beyond the level)
+4. Price reclaimed / rejected the level (no acceptance beyond it)
+5. LTF confirmation (CHOCH / MSS / displacement) after the sweep
+6. Entry at a valid zone (OB / FVG / S-R flip / demand-supply)
+7. Stop placed beyond the sweep wick, NOT inside a liquidity pool
+8. Target set at the next opposing liquidity pool or key level
+9. Planned R:R meets strategy minimum
+10. Inside valid session / no high-impact news conflict
+
+In the Trade Psychology tab, an interactive adherence tracker displays **"Rules Followed: X / 10"** with dynamic color badges (green $\ge 8$, amber $5-7$, red $< 5$).
 
 ### Rule Adherence Percentage
 $$\text{Rule Adherence \%} = \frac{\text{Closed Trades where } \text{rulesFollowed} == \text{true}}{\text{Total Closed Trades}} \times 100$$
@@ -247,6 +290,19 @@ Heuristic detections run inside `@tradevault/financial-engine` (`detectMistakeSu
      $$\left|\sum \text{NetPnL}_{\text{closed, today}}\right| \ge \text{maxDailyLoss} \quad (\text{NetPnL} < 0)$$
    - Triggers high-visibility critical warning banner on Dashboard and in the Journal dialog.
 
+5. **No Liquidity Taken (`NO_LIQUIDITY_TAKEN`):**
+   - Advisory check on closed trades whose `thesis.confluences` contains none of the `LIQUIDITY` or `SUPPORT_RESISTANCE` category confluences (e.g. sweeps, stop hunts, equal highs/lows, key levels, S/R flips, supply/demand).
+   - Flagged with `INFO` severity.
+
+6. **No Liquidity Target (`NO_LIQUIDITY_TARGET`):**
+   - Advisory check on trades where setup confluences or targets are tracked, but `risk.plannedTarget` is missing ($<= 0$) or `thesis.targetRationale` is empty.
+   - Flagged with `INFO` severity.
+
+7. **Stop Loss Too Tight (`STOP_TOO_TIGHT`):**
+   - Deterministic Decimal.js check evaluated when `entryPrice`, `initialStopLoss`, and instrument `tickSize` (> 0) are available:
+     $$\Delta_{\text{stop}} = |P_{\text{entry}} - P_{\text{stop}}| < 3 \times \text{tickSize}$$
+   - Flagged with `WARNING` severity. If `tickSize` is not available, the rule is safely skipped without heuristics.
+
 ### 3. Automated Daily Journal Prefill & Discipline Scoring
 When initiating daily reflection review (`/journal/:date` or `/review/prefill/:date`):
 - **Suggested Best Trade:** Closed trade with maximum positive net P&L ($\max(\text{NetPnL}) > 0$).
@@ -263,13 +319,13 @@ When initiating daily reflection review (`/journal/:date` or `/review/prefill/:d
 
 ## 12. Market-Based, Rule-Driven Trade Setup Templates
 
-SetupMint replaces static symbol-specific trade setups with a dynamic, market-based template architecture designed to cut manual friction in trade logging while maintaining analytical precision:
+SetupMint provides **25 built-in market-based templates** (expanded to include 5 specialized Liquidity and Support/Resistance price-action setups) designed to cut manual friction in trade logging while maintaining analytical precision:
 
 ### 1. Symbol-Independent, Market-Based Architecture
 Templates describe a **setup pattern for a market mechanism**, not a static instrument:
-- Grouped into market domains: `FNO`, `STOCKS`, `FOREX_GOLD`, `CRYPTO`, `MCX`, `PRICE_ACTION`, and `CUSTOM`.
+- Grouped into market domains: `FNO` (10), `STOCKS` (3), `FOREX_GOLD` (2), `CRYPTO` (2), `MCX` (1), `PRICE_ACTION` (7 including liquidity sweep, equal highs/lows raid, PDH/PDL sweep, S/R flip retest, and supply/demand rejection), and `CUSTOM`.
 - Never hardcode symbols like `NIFTY`, `BANKNIFTY`, or `RELIANCE`. The user picks or switches the instrument, and the template adapts dynamically to the asset class, precision, tick size, and contract multiplier.
-- Titles use dynamic token patterns (e.g. `"{symbol} London Breakout Long"`, `"{symbol} 15m ORB Long"`) that interpolate the selected symbol and direction automatically.
+- Titles use dynamic token patterns (e.g. `"{symbol} Liquidity Sweep Short"`, `"{symbol} S/R Flip Long"`) that interpolate the selected symbol and direction automatically.
 
 ### 2. Context-Aware Dynamic Ranking Engine (`rankTemplates`)
 When logging a trade, SetupMint evaluates all available templates and surfaces the top 6 most relevant setups:

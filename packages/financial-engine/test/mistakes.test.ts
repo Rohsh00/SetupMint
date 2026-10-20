@@ -269,4 +269,124 @@ describe('Financial Engine - Mistake Detection & Discipline Scoring', () => {
     expect(prefill.aggregatedMistakes).toContain('CHASED_MARKET');
     expect(prefill.suggestedDisciplineRating).toBe(3); // Logged mistake present
   });
+
+  describe('Liquidity & Level Advisory Mistake Suggestions', () => {
+    it('suggests NO_LIQUIDITY_TAKEN when closed trade has no liquidity or S/R confluences', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 't-no-liq',
+          symbol: 'BANKNIFTY',
+          status: 'CLOSED',
+          entryTime: '2026-10-18T09:30:00.000Z',
+          exitTime: '2026-10-18T10:00:00.000Z',
+          quantity: 30,
+          entryPrice: 51200,
+          exitPrice: 51000,
+          netPnL: -6000,
+          confluences: ['BOS', 'FVG'], // Only structure, no liquidity/SR confluences
+          plannedTarget: 51800,
+          targetRationale: 'Targeting next structural high',
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const noLiq = result.suggestions.find((s) => s.rule === 'NO_LIQUIDITY_TAKEN');
+      expect(noLiq).toBeDefined();
+      expect(noLiq?.mistakeTag).toBe('NO_LIQUIDITY_TAKEN');
+      expect(noLiq?.severity).toBe('INFO');
+      expect(noLiq?.tradeId).toBe('t-no-liq');
+    });
+
+    it('does NOT suggest NO_LIQUIDITY_TAKEN when liquidity or S/R confluences are present', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 't-with-liq',
+          symbol: 'NIFTY',
+          status: 'CLOSED',
+          entryTime: '2026-10-18T09:30:00.000Z',
+          exitTime: '2026-10-18T10:00:00.000Z',
+          quantity: 50,
+          entryPrice: 25000,
+          exitPrice: 25100,
+          netPnL: 5000,
+          confluences: ['BUY_SIDE_LIQUIDITY_SWEEP', 'SUPPORT_RETEST'],
+          plannedTarget: 25200,
+          targetRationale: 'Targeting equal highs pool',
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const noLiq = result.suggestions.find((s) => s.rule === 'NO_LIQUIDITY_TAKEN');
+      expect(noLiq).toBeUndefined();
+    });
+
+    it('suggests NO_LIQUIDITY_TARGET when plannedTarget or targetRationale is missing', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 't-no-target',
+          symbol: 'CRUDEOIL',
+          status: 'CLOSED',
+          entryTime: '2026-10-18T17:00:00.000Z',
+          exitTime: '2026-10-18T18:00:00.000Z',
+          quantity: 1,
+          entryPrice: 6200,
+          exitPrice: 6250,
+          netPnL: 5000,
+          confluences: ['ASIAN_RANGE_SWEEP'],
+          // missing plannedTarget and targetRationale
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const noTarget = result.suggestions.find((s) => s.rule === 'NO_LIQUIDITY_TARGET');
+      expect(noTarget).toBeDefined();
+      expect(noTarget?.mistakeTag).toBe('NO_LIQUIDITY_TARGET');
+      expect(noTarget?.severity).toBe('INFO');
+    });
+
+    it('suggests STOP_TOO_TIGHT when stop distance is less than 3 ticks', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 't-tight-stop',
+          symbol: 'NIFTY',
+          status: 'OPEN',
+          entryTime: '2026-10-18T09:30:00.000Z',
+          quantity: 50,
+          entryPrice: 25000.10,
+          initialStopLoss: 25000.00, // Distance = 0.10. With tickSize 0.05, 3 ticks = 0.15 > 0.10
+          tickSize: 0.05,
+          confluences: ['EQUAL_LOWS'],
+          plannedTarget: 25100,
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const tightStop = result.suggestions.find((s) => s.rule === 'STOP_TOO_TIGHT');
+      expect(tightStop).toBeDefined();
+      expect(tightStop?.mistakeTag).toBe('STOP_TOO_TIGHT');
+      expect(tightStop?.severity).toBe('WARNING');
+      expect(tightStop?.message).toContain('less than 3 ticks');
+    });
+
+    it('does NOT suggest STOP_TOO_TIGHT if tickSize is absent (safely skipped)', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 't-no-tick',
+          symbol: 'NIFTY',
+          status: 'OPEN',
+          entryTime: '2026-10-18T09:30:00.000Z',
+          quantity: 50,
+          entryPrice: 25000.10,
+          initialStopLoss: 25000.00,
+          // tickSize missing
+          confluences: ['EQUAL_LOWS'],
+          plannedTarget: 25100,
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const tightStop = result.suggestions.find((s) => s.rule === 'STOP_TOO_TIGHT');
+      expect(tightStop).toBeUndefined();
+    });
+  });
 });

@@ -500,7 +500,7 @@ Authentication is handled via stateful sessions:
 - `DELETE /api/v1/strategies/:id` — Delete strategy.
 
 ### Trade Setup Templates (`/api/v1/templates`)
-- `GET /api/v1/templates` — List all 20 built-in institutional templates and user custom templates merged with aggregated tenant-isolated trade performance metrics (`totalTrades`, `winTrades`, `winRate`, `netPnL`, `profitFactor`).
+- `GET /api/v1/templates` — List all 25 built-in institutional templates (including 5 specialized Liquidity and Support/Resistance setups) and user custom templates merged with aggregated tenant-isolated trade performance metrics (`totalTrades`, `winTrades`, `winRate`, `netPnL`, `profitFactor`).
 - `POST /api/v1/templates` — Create a custom user setup template. Requires `name`, `group` (`'FNO'|'STOCKS'|'FOREX_GOLD'|'CRYPTO'|'MCX'|'PRICE_ACTION'|'CUSTOM'`), `markets`, `slRule` (`PERCENT`, `POINTS`, `PREMIUM_PERCENT`, or `MANUAL`), `minRR`, and `titlePattern`. Real symbols or fixed prices are strictly prohibited.
 - `GET /api/v1/templates/:id` — Get single template details and performance stats. Supports built-in IDs (e.g. `'fno-orb'`) or custom MongoDB ObjectIds.
 - `PUT /api/v1/templates/:id` — Update custom template. Modifying built-in templates returns `400 Bad Request` with error code `BUILT_IN_READ_ONLY`.

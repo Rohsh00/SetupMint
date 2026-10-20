@@ -197,18 +197,29 @@ SetupMint defines 13 core Mongoose models:
 - `exitRationale` (`String`)
 - `invalidationConditions` (`String`)
 - `higherTimeframeContext` (`String`)
-- `confluences` (`[String]`): SMC confluences (e.g. `BOS`, `CHOCH`, `FVG`, `ORDER_BLOCK`, `LIQUIDITY_SWEEP`)
+- `confluences` (`[String]`): 51 standardized confluences across 4 distinct categories:
+  - **LIQUIDITY:** `BUY_SIDE_LIQUIDITY_SWEEP`, `SELL_SIDE_LIQUIDITY_SWEEP`, `EQUAL_HIGHS`, `EQUAL_LOWS`, `PREV_DAY_HIGH_SWEEP`, `PREV_DAY_LOW_SWEEP`, `PREV_WEEK_HIGH_SWEEP`, `PREV_WEEK_LOW_SWEEP`, `ASIAN_RANGE_SWEEP`, `SESSION_HIGH_LOW_SWEEP`, `STOP_HUNT`, `INDUCEMENT`, `TRENDLINE_LIQUIDITY`, `LIQUIDITY_VOID`, `LIQUIDITY_POOL_TARGET`, `LIQUIDITY_GRAB_REJECTION`
+  - **SUPPORT / RESISTANCE:** `HTF_SUPPORT`, `HTF_RESISTANCE`, `SUPPORT_RESISTANCE_FLIP`, `SUPPORT_RETEST`, `RESISTANCE_RETEST`, `DEMAND_ZONE`, `SUPPLY_ZONE`, `KEY_LEVEL_REJECTION`, `ROUND_NUMBER_LEVEL`, `PREV_DAY_HIGH_LOW_LEVEL`, `OPENING_RANGE_LEVEL`, `VWAP_LEVEL`, `FAKE_BREAKOUT_RECLAIM`, `DOUBLE_TOP_BOTTOM`, `RANGE_HIGH_LOW_REJECTION`, `OI_WALL_CE`, `OI_WALL_PE`
+  - **CONFIRMATION / STRUCTURE:** `BOS`, `CHOCH`, `FVG`, `ORDER_BLOCK`, `LIQUIDITY_SWEEP`, `MARKET_STRUCTURE_SHIFT`, `DISPLACEMENT`, `BREAKER_BLOCK`, `MITIGATION_BLOCK`, `PREMIUM_ZONE_ENTRY`, `DISCOUNT_ZONE_ENTRY`, `LTF_CONFIRMATION_CANDLE`, `VOLUME_SPIKE_AT_LEVEL`
+  - **INDICATORS / OTHER:** `EMA_CROSS`, `RSI_DIVERGENCE`, `VWAP_BOUNCE`, `OPENING_RANGE_BREAKOUT`, `VOLUME_PROFILE`
 - `customTechnicalLabels` (`[String]`)
 
-##### E. `psychology` (Behavioral & Discipline Discipline)
-- `emotionBefore` (`String`): Emotion prior to entry (e.g. `CALM`, `ANXIOUS`, `GREEDY`)
-- `emotionDuring` (`String`): Emotion during position hold
-- `emotionAfter` (`String`): Emotion post-exit
+##### E. `psychology` (Behavioral & Discipline Metrics)
+- `emotionBefore` (`String`, enum: 23 standardized emotions):
+  - **Positive:** `CALM`, `CONFIDENT`, `PATIENT`, `FOCUSED`, `DISCIPLINED`, `RELIEVED`
+  - **Neutral:** `NEUTRAL`, `BORED`, `UNCERTAIN`
+  - **Negative:** `ANXIOUS`, `FEARFUL`, `GREEDY`, `FRUSTRATED`, `HESITANT`, `IMPATIENT`, `FOMO`, `OVERCONFIDENT`, `STRESSED`, `TILTED`, `REVENGEFUL`, `REGRETFUL`, `DOUBTFUL_OF_LEVEL`, `FEAR_OF_STOP_HUNT`
+- `emotionDuring` (`String`, enum: same 23 standardized emotions)
+- `emotionAfter` (`String`, enum: same 23 standardized emotions)
 - `confidenceScore` (`Number`, min 1, max 5)
 - `disciplineScore` (`Number`, default `4`, min 1, max 5)
 - `checklistCompleted` (`Boolean`, default `true`)
 - `rulesFollowed` (`Boolean`, default `true`)
-- `mistakes` (`[String]`): Mistake tags
+- `mistakes` (`[String]`): 29 standardized mistake tags across 4 categories:
+  - **Liquidity / Level:** `ENTERED_BEFORE_SWEEP`, `NO_LIQUIDITY_TAKEN`, `NO_CONFIRMATION_AFTER_SWEEP`, `TRADED_INTO_HTF_LEVEL`, `TRADED_MID_RANGE`, `STOP_INSIDE_LIQUIDITY_POOL`, `STOP_TOO_TIGHT`, `TARGET_NOT_AT_LIQUIDITY`, `NO_LIQUIDITY_TARGET`, `IGNORED_HTF_BIAS`, `COUNTER_TREND_NO_SWEEP`, `FAKE_BREAKOUT_CHASE`
+  - **Execution / Timing:** `EARLY_ENTRY`, `LATE_ENTRY`, `FOMO_ENTRY`, `CHASED_MARKET`, `PREMATURE_EXIT`, `BREAKEVEN_TOO_EARLY`
+  - **Risk / Discipline:** `STOP_MOVED`, `SIZE_VIOLATION`, `ADDED_TO_LOSER`, `REVENGE_TRADING`, `OVERTRADING`
+  - **Session / Context:** `TRADED_OUTSIDE_SESSION`, `TRADED_NEWS_EVENT`
 - `revengeTrading` (`Boolean`, default `false`)
 - `overtrading` (`Boolean`, default `false`)
 - `prematureExit` (`Boolean`, default `false`)

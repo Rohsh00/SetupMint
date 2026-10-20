@@ -483,5 +483,56 @@ describe('Financial Engine — Rule-Driven Trade Templates', () => {
         expect(t.name).not.toContain('RELIANCE');
       }
     });
+
+    it('contains exactly 25 built-in templates including the 5 liquidity / SR templates', () => {
+      expect(BUILT_IN_TEMPLATES.length).toBe(25);
+
+      const liquidityTemplates = [
+        'pa-liquidity-sweep-reversal',
+        'pa-equal-highs-lows-raid',
+        'pa-pdh-pdl-sweep-reversal',
+        'pa-sr-flip-retest',
+        'pa-supply-demand-rejection',
+      ];
+
+      for (const id of liquidityTemplates) {
+        const found = BUILT_IN_TEMPLATES.find((t) => t.id === id);
+        expect(found).toBeDefined();
+        expect(found?.isBuiltIn).toBe(true);
+        expect(found?.group).toBe('PRICE_ACTION');
+        expect(found?.minRR).toBeGreaterThanOrEqual(2.0);
+        expect(found?.checklist?.length).toBeGreaterThanOrEqual(4);
+      }
+    });
+
+    it('resolves liquidity templates with {symbol} and {side} tokens correctly', () => {
+      const sweepTemplate = BUILT_IN_TEMPLATES.find((t) => t.id === 'pa-liquidity-sweep-reversal')!;
+      const resolvedSweep = resolveTemplate(sweepTemplate, {
+        symbol: 'CRUDEOIL',
+        entryPrice: 6200,
+        direction: 'SHORT',
+        tickSize: 1,
+      });
+
+      expect(resolvedSweep.tradeTitle).toBe('CRUDEOIL Liquidity Sweep Short');
+      expect(resolvedSweep.risk.slHint).toContain('beyond the sweep wick');
+      expect(resolvedSweep.confluences).toContain('SELL_SIDE_LIQUIDITY_SWEEP');
+      expect(resolvedSweep.checklist).toBeDefined();
+      expect(resolvedSweep.checklist?.length).toBeGreaterThan(0);
+
+      const srTemplate = BUILT_IN_TEMPLATES.find((t) => t.id === 'pa-sr-flip-retest')!;
+      const resolvedSR = resolveTemplate(srTemplate, {
+        symbol: 'RELIANCE',
+        entryPrice: 3000,
+        direction: 'LONG',
+        tickSize: 0.05,
+      });
+
+      expect(resolvedSR.tradeTitle).toBe('RELIANCE S/R Flip Long');
+      // 3000 * 0.004 = 12 distance. SL = 2988, Target = 3000 + 24 = 3024
+      expect(resolvedSR.risk.initialStopLoss).toBe(2988);
+      expect(resolvedSR.risk.plannedTarget).toBe(3024);
+      expect(resolvedSR.confluences).toContain('SUPPORT_RESISTANCE_FLIP');
+    });
   });
 });

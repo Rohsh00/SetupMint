@@ -83,7 +83,7 @@ describe('Trade Templates API Integration & Isolation Tests', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET /api/v1/templates returns 20 built-in templates with accurate structure', async () => {
+  it('GET /api/v1/templates returns 25 built-in templates with accurate structure', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/v1/templates',
@@ -93,7 +93,7 @@ describe('Trade Templates API Integration & Isolation Tests', () => {
     const body = JSON.parse(res.body);
     expect(body.success).toBe(true);
     expect(Array.isArray(body.data)).toBe(true);
-    expect(body.data.length).toBeGreaterThanOrEqual(20);
+    expect(body.data.length).toBeGreaterThanOrEqual(25);
 
     const orb = body.data.find((t: any) => t.id === 'fno-orb');
     expect(orb).toBeDefined();
@@ -102,6 +102,12 @@ describe('Trade Templates API Integration & Isolation Tests', () => {
     expect(orb.slRule.type).toBe('PERCENT');
     expect(orb.performance).toBeDefined();
     expect(orb.performance.totalTrades).toBe(0);
+
+    const sweep = body.data.find((t: any) => t.id === 'pa-liquidity-sweep-reversal');
+    expect(sweep).toBeDefined();
+    expect(sweep.isBuiltIn).toBe(true);
+    expect(sweep.group).toBe('PRICE_ACTION');
+    expect(sweep.confluences).toContain('BUY_SIDE_LIQUIDITY_SWEEP');
   });
 
   it('POST /api/v1/templates creates a custom template for user', async () => {

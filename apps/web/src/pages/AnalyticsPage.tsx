@@ -34,6 +34,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { EMOTION_LABEL_MAP, MISTAKE_LABEL_MAP } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 
@@ -431,7 +432,7 @@ export function AnalyticsPage() {
                       }}
                     >
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {e.emotion}
+                        {EMOTION_LABEL_MAP[e.emotion] || e.emotion}
                       </Typography>
                       <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                         {e.tradesCount} trades
@@ -479,7 +480,7 @@ export function AnalyticsPage() {
                     }}
                   >
                     <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: muiTheme.palette.text.primary }}>
-                      {m.label}
+                      {m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}
                     </Typography>
                     <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.5 }}>
                       Occurred: {m.occurrences} times

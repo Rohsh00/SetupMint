@@ -848,6 +848,115 @@ describe('TradeVault API Integration Tests', () => {
     // 08:48 PM IST = 15:18 UTC
     expect(crudeTrade.exitTime).toBe('2026-10-19T15:18:00.000Z');
   });
+
+  it('POST /api/v1/trades and PUT /api/v1/trades/:id validate new liquidity emotions, confluences, and mistake tags alongside legacy values', async () => {
+    // 1. Create trade with new liquidity confluences, new emotions, and new mistake tags
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/trades',
+      headers: { cookie: authCookie },
+      payload: {
+        accountId,
+        symbol: 'NIFTY24OCT25000CE',
+        assetClass: 'OPTIONS',
+        exchange: 'NSE',
+        marketSegment: 'NSE_FNO',
+        direction: 'LONG',
+        tradeDate: new Date().toISOString(),
+        entryTime: new Date().toISOString(),
+        executionMode: 'SIMPLE',
+        simpleExecution: {
+          entryPrice: 120,
+          quantity: 50,
+        },
+        thesis: {
+          confluences: ['BUY_SIDE_LIQUIDITY_SWEEP', 'SUPPORT_RETEST', 'CHOCH'],
+          rationale: 'Asian range swept and reclaimed with CHOCH',
+          plannedStopLoss: 100,
+          plannedTarget: 160,
+          targetRationale: 'Opposing equal highs liquidity pool',
+        },
+        psychology: {
+          emotionBefore: 'PATIENT',
+          emotionDuring: 'FOCUSED',
+          mistakes: ['ENTERED_BEFORE_SWEEP'],
+          disciplineScore: 4,
+        },
+      },
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const createBody = JSON.parse(createRes.body);
+    expect(createBody.success).toBe(true);
+    const tradeId = createBody.data.id;
+
+    // Verify created trade details via GET
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/trades/${tradeId}`,
+      headers: { cookie: authCookie },
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = JSON.parse(getRes.body);
+    expect(getBody.data.thesis.confluences).toContain('BUY_SIDE_LIQUIDITY_SWEEP');
+    expect(getBody.data.psychology.emotionBefore).toBe('PATIENT');
+    expect(getBody.data.psychology.mistakes).toContain('ENTERED_BEFORE_SWEEP');
+
+    // 2. Update with PUT /api/v1/trades/:id mixing legacy (CALM) and new (DOUBTFUL_OF_LEVEL)
+    const updateRes = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/trades/${tradeId}`,
+      headers: { cookie: authCookie },
+      payload: {
+        psychology: {
+          emotionBefore: 'CALM', // legacy
+          emotionDuring: 'DOUBTFUL_OF_LEVEL', // new
+          emotionAfter: 'RELIEVED', // new
+          mistakes: ['ENTERED_BEFORE_SWEEP', 'STOP_INSIDE_LIQUIDITY_POOL'],
+        },
+      },
+    });
+
+    expect(updateRes.statusCode).toBe(200);
+    const updateBody = JSON.parse(updateRes.body);
+    expect(updateBody.success).toBe(true);
+    expect(updateBody.data.psychology.emotionBefore).toBe('CALM');
+    expect(updateBody.data.psychology.emotionDuring).toBe('DOUBTFUL_OF_LEVEL');
+    expect(updateBody.data.psychology.emotionAfter).toBe('RELIEVED');
+    expect(updateBody.data.psychology.mistakes).toHaveLength(2);
+
+    // 3. Daily journal reflection saves new emotionalState and mistake tags
+    const journalDate = new Date().toISOString().split('T')[0];
+    const journalRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/journal/${journalDate}`,
+      headers: { cookie: authCookie },
+      payload: {
+        disciplineRating: 4,
+        notes: 'Good session respecting sweeps',
+        emotionalState: 'DISCIPLINED', // new emotion
+        mistakes: ['STOP_INSIDE_LIQUIDITY_POOL', 'EARLY_ENTRY'], // new mistake tags
+      },
+    });
+
+    expect(journalRes.statusCode).toBe(200);
+    const journalBody = JSON.parse(journalRes.body);
+    expect(journalBody.success).toBe(true);
+    expect(journalBody.data.emotionalState).toBe('DISCIPLINED');
+    expect(journalBody.data.mistakes).toContain('STOP_INSIDE_LIQUIDITY_POOL');
+
+    // 4. Psychology Analytics endpoint includes performance and mistake tracking
+    const analyticsRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/analytics/psychology',
+      headers: { cookie: authCookie },
+    });
+    expect(analyticsRes.statusCode).toBe(200);
+    const analyticsBody = JSON.parse(analyticsRes.body);
+    expect(analyticsBody.success).toBe(true);
+    expect(analyticsBody.data.mistakeAnalysis).toBeDefined();
+    expect(Array.isArray(analyticsBody.data.mistakeAnalysis)).toBe(true);
+  });
 });
 
 

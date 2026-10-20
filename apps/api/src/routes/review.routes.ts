@@ -39,6 +39,10 @@ function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
     plannedRiskAmount,
     riskPercent,
     mistakes,
+    confluences: t.thesis?.confluences || [],
+    plannedTarget: t.risk?.plannedTarget,
+    targetRationale: t.thesis?.targetRationale,
+    initialStopLoss: t.risk?.initialStopLoss,
   };
 }
 

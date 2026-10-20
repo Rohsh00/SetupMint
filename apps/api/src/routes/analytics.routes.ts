@@ -31,14 +31,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       emotionMap.set(e.value, { count: 0, netPnL: 0, wins: 0 });
     }
 
-    // 3. Mistake impact tracking
-    const mistakeImpact: Record<string, { count: number; totalLoss: number }> = {
-      REVENGE_TRADING: { count: 0, totalLoss: 0 },
-      OVERTRADING: { count: 0, totalLoss: 0 },
-      PREMATURE_EXIT: { count: 0, totalLoss: 0 },
-      STOP_MOVED: { count: 0, totalLoss: 0 },
-      SIZE_VIOLATION: { count: 0, totalLoss: 0 },
-    };
+    // 3. Mistake impact tracking (Dynamic across all MISTAKE_TAGS + legacy flags)
+    const mistakeImpact: Record<string, { count: number; totalLoss: number }> = {};
+    for (const m of MISTAKE_TAGS) {
+      mistakeImpact[m.value] = { count: 0, totalLoss: 0 };
+    }
 
     for (const t of trades) {
       const pnl = t.calculated?.netPnL || 0;
@@ -60,25 +57,27 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       if (isWin) eRec.wins++;
       emotionMap.set(emo, eRec);
 
-      // Mistakes
-      if (t.psychology?.revengeTrading) {
-        mistakeImpact.REVENGE_TRADING.count++;
-        if (pnl < 0) mistakeImpact.REVENGE_TRADING.totalLoss += Math.abs(pnl);
+      // Mistakes: collect unique mistakes for this trade (both legacy booleans and mistake tag array)
+      const tradeMistakes = new Set<string>();
+      if (t.psychology?.revengeTrading) tradeMistakes.add('REVENGE_TRADING');
+      if (t.psychology?.overtrading) tradeMistakes.add('OVERTRADING');
+      if (t.psychology?.prematureExit) tradeMistakes.add('PREMATURE_EXIT');
+      if (t.psychology?.stopLossMoved) tradeMistakes.add('STOP_MOVED');
+      if (t.psychology?.positionSizeViolation) tradeMistakes.add('SIZE_VIOLATION');
+      if (Array.isArray(t.psychology?.mistakes)) {
+        for (const m of t.psychology.mistakes) {
+          if (m) tradeMistakes.add(m);
+        }
       }
-      if (t.psychology?.overtrading) {
-        mistakeImpact.OVERTRADING.count++;
-        if (pnl < 0) mistakeImpact.OVERTRADING.totalLoss += Math.abs(pnl);
-      }
-      if (t.psychology?.prematureExit) {
-        mistakeImpact.PREMATURE_EXIT.count++;
-      }
-      if (t.psychology?.stopLossMoved) {
-        mistakeImpact.STOP_MOVED.count++;
-        if (pnl < 0) mistakeImpact.STOP_MOVED.totalLoss += Math.abs(pnl);
-      }
-      if (t.psychology?.positionSizeViolation) {
-        mistakeImpact.SIZE_VIOLATION.count++;
-        if (pnl < 0) mistakeImpact.SIZE_VIOLATION.totalLoss += Math.abs(pnl);
+
+      for (const m of tradeMistakes) {
+        if (!mistakeImpact[m]) {
+          mistakeImpact[m] = { count: 0, totalLoss: 0 };
+        }
+        mistakeImpact[m].count++;
+        if (pnl < 0) {
+          mistakeImpact[m].totalLoss += Math.abs(pnl);
+        }
       }
     }
 
@@ -99,12 +98,14 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       }))
       .sort((a, b) => b.netPnL - a.netPnL);
 
-    const mistakeAnalysis = Object.entries(mistakeImpact).map(([key, val]) => ({
-      mistake: key,
-      label: MISTAKE_TAGS.find((m) => m.value === key)?.label || key,
-      occurrences: val.count,
-      totalLoss: Number(val.totalLoss.toFixed(2)),
-    }));
+    const mistakeAnalysis = Object.entries(mistakeImpact)
+      .map(([key, val]) => ({
+        mistake: key,
+        label: MISTAKE_TAGS.find((m) => m.value === key)?.label || key,
+        occurrences: val.count,
+        totalLoss: Number(val.totalLoss.toFixed(2)),
+      }))
+      .sort((a, b) => b.totalLoss - a.totalLoss || b.occurrences - a.occurrences);
 
     return reply.send({
       success: true,

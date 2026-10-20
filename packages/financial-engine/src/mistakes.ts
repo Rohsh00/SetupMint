@@ -5,6 +5,7 @@ import {
   IMistakeSuggestion,
   IDailyLossBreach,
   TradeStatus,
+  LIQUIDITY_OR_SR_CONFLUENCE_VALUES,
 } from '@tradevault/shared';
 
 export interface ITradeSummaryForDetection {
@@ -22,6 +23,11 @@ export interface ITradeSummaryForDetection {
   riskPercent?: number | null;
   accountEquity?: number | null;
   mistakes?: string[];
+  confluences?: string[];
+  plannedTarget?: number | null;
+  targetRationale?: string | null;
+  initialStopLoss?: number | null;
+  tickSize?: number | null;
 }
 
 export interface IDetectMistakesParams {
@@ -250,6 +256,69 @@ export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistak
         severity: 'CRITICAL',
         message: `Position risk of ${actualRiskPct}% exceeds maximum allowable risk threshold of ${maxRiskPct}% per trade.`,
       });
+    }
+
+    // --- RULE D: Liquidity Confluence Check (NO_LIQUIDITY_TAKEN) ---
+    // Advisory check for closed trades: must contain at least one liquidity or support/resistance confluence
+    if (current.status === 'CLOSED' && current.confluences !== undefined) {
+      const confluences = current.confluences || [];
+      const hasLiquidityOrSR = confluences.some((c) => LIQUIDITY_OR_SR_CONFLUENCE_VALUES.has(c));
+      if (!hasLiquidityOrSR) {
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'NO_LIQUIDITY_TAKEN',
+          mistakeTag: 'NO_LIQUIDITY_TAKEN',
+          severity: 'INFO',
+          message: `Closed trade on ${current.symbol} has no logged liquidity sweep or support/resistance confluence.`,
+        });
+      }
+    }
+
+    // --- RULE E: Liquidity Target Check (NO_LIQUIDITY_TARGET) ---
+    // Advisory check: trade has a missing planned target or empty target rationale
+    // Only applies when confluences or target fields are being tracked/provided
+    const hasConfluencesOrTarget =
+      (current.confluences && current.confluences.length > 0) ||
+      current.plannedTarget !== undefined ||
+      current.targetRationale !== undefined;
+
+    if (hasConfluencesOrTarget) {
+      const hasTarget = current.plannedTarget !== undefined && current.plannedTarget !== null && current.plannedTarget > 0;
+      const hasTargetRationale = Boolean(current.targetRationale && current.targetRationale.trim().length > 0);
+      if (!hasTarget || !hasTargetRationale) {
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'NO_LIQUIDITY_TARGET',
+          mistakeTag: 'NO_LIQUIDITY_TARGET',
+          severity: 'INFO',
+          message: !hasTarget
+            ? `Missing predefined planned target at opposing liquidity pool for ${current.symbol}.`
+            : `Missing target rationale explaining exit objective for ${current.symbol}.`,
+        });
+      }
+    }
+
+    // --- RULE F: Stop Loss Distance Check (STOP_TOO_TIGHT) ---
+    // Feasible when entryPrice, initialStopLoss, and tickSize (> 0) are provided
+    if (
+      current.entryPrice &&
+      current.initialStopLoss &&
+      current.tickSize &&
+      current.tickSize > 0
+    ) {
+      const entry = new Decimal(current.entryPrice);
+      const stop = new Decimal(current.initialStopLoss);
+      const stopDist = entry.minus(stop).abs();
+      const minDistance = new Decimal(current.tickSize).times(3); // Less than 3 ticks is considered too tight
+      if (stopDist.greaterThan(0) && stopDist.lessThan(minDistance)) {
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'STOP_TOO_TIGHT',
+          mistakeTag: 'STOP_TOO_TIGHT',
+          severity: 'WARNING',
+          message: `Initial stop distance (${stopDist.toString()} pts) is less than 3 ticks (${minDistance.toString()} pts) for ${current.symbol}. Prone to market noise.`,
+        });
+      }
     }
   }
 

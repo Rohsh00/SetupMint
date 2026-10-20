@@ -122,6 +122,32 @@ export const simpleExecutionSchema = z.object({
 const emptyStringToUndefined = (val: unknown) =>
   typeof val === 'string' && val.trim() === '' ? undefined : val;
 
+export const emotionEnum = z.enum([
+  'CALM',
+  'CONFIDENT',
+  'DISCIPLINED',
+  'PATIENT',
+  'FOCUSED',
+  'RELIEVED',
+  'NEUTRAL',
+  'BORED',
+  'HESITANT',
+  'DOUBTFUL_OF_LEVEL',
+  'ANXIOUS',
+  'FEARFUL',
+  'GREEDY',
+  'EUPHORIC',
+  'FRUSTRATED',
+  'IMPATIENT',
+  'FOMO',
+  'OVERCONFIDENT',
+  'STRESSED',
+  'TILTED',
+  'REVENGEFUL',
+  'REGRETFUL',
+  'FEAR_OF_STOP_HUNT',
+]);
+
 export const createTradeSchema = z.object({
   accountId: z.string().min(1, 'Trading account is required'),
   symbol: z.string().min(1, 'Symbol is required').transform((s) => s.toUpperCase().trim()),
@@ -196,45 +222,9 @@ export const createTradeSchema = z.object({
 
   psychology: z
     .object({
-      emotionBefore: z
-        .enum([
-          'CALM',
-          'CONFIDENT',
-          'ANXIOUS',
-          'EUPHORIC',
-          'FEARFUL',
-          'GREEDY',
-          'FRUSTRATED',
-          'DISCIPLINED',
-          'NEUTRAL',
-        ])
-        .optional(),
-      emotionDuring: z
-        .enum([
-          'CALM',
-          'CONFIDENT',
-          'ANXIOUS',
-          'EUPHORIC',
-          'FEARFUL',
-          'GREEDY',
-          'FRUSTRATED',
-          'DISCIPLINED',
-          'NEUTRAL',
-        ])
-        .optional(),
-      emotionAfter: z
-        .enum([
-          'CALM',
-          'CONFIDENT',
-          'ANXIOUS',
-          'EUPHORIC',
-          'FEARFUL',
-          'GREEDY',
-          'FRUSTRATED',
-          'DISCIPLINED',
-          'NEUTRAL',
-        ])
-        .optional(),
+      emotionBefore: emotionEnum.optional(),
+      emotionDuring: emotionEnum.optional(),
+      emotionAfter: emotionEnum.optional(),
       confidenceScore: z.number().int().min(1).max(5).optional(),
       disciplineScore: z.number().int().min(1).max(5).default(4),
       checklistCompleted: z.boolean().default(true),
@@ -336,19 +326,7 @@ export const dailyJournalSchema = z.object({
   bestTradeId: z.string().optional(),
   worstTradeId: z.string().optional(),
   mistakes: z.array(z.string()).default([]),
-  emotionalState: z
-    .enum([
-      'CALM',
-      'CONFIDENT',
-      'ANXIOUS',
-      'EUPHORIC',
-      'FEARFUL',
-      'GREEDY',
-      'FRUSTRATED',
-      'DISCIPLINED',
-      'NEUTRAL',
-    ])
-    .optional(),
+  emotionalState: emotionEnum.optional(),
   disciplineRating: z.number().int().min(1).max(5).optional(),
   lessonsLearned: z.string().optional(),
   nextDayPlan: z.string().optional(),

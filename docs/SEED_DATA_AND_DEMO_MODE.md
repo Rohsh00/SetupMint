@@ -99,7 +99,7 @@ Reseeding the database is completely idempotent:
 The engine seeds and interlinks 7 distinct entity types:
 1. **Trading Accounts:** Created with realistic initial balances (e.g. ₹5,00,000), cash deposits, and withdrawals.
 2. **Instruments:** 19 Indian stocks and derivatives (NIFTY, BANKNIFTY, RELIANCE, CRUDEOIL, etc.) with exact lot sizes.
-3. **Strategy Playbooks:** 7 realistic strategies (e.g., SMC Liquidity Sweep, 15m ORB, VWAP Mean Reversion).
+3. **Strategy Playbooks:** 13 codified institutional strategy playbooks with asset classes, timeframes, entry rules, stop-loss rules, target rules, invalidation criteria, and checklists (including 6 specialized Liquidity & S/R playbooks: *Liquidity Sweep & Reversal*, *Equal Highs/Lows Raid*, *PDH/PDL Sweep Reversal*, *Support/Resistance Flip Retest*, *Asian Range Sweep*, and *Supply/Demand Zone Rejection*).
 4. **Trades:** Simple and Advanced multi-fill trades with realistic prices, stops, targets, confluences, and psychological tags.
 5. **Chart Screenshots:** Real SVG TradingView-style candlestick charts written to `./data/uploads/` and linked via `Attachment` records.
 6. **Daily Journals:** Reflection entries across all active trading days with market biases and ratings.

@@ -338,8 +338,8 @@ export function resolveTemplate(
     : '';
 
   let title = template.titlePattern
-    .replace('{SYMBOL}', symToken)
-    .replace('{DIR}', dirToken);
+    .replace(/{SYMBOL}/gi, symToken)
+    .replace(/{DIR}|{SIDE}/gi, dirToken);
 
   // Collapse multiple consecutive spaces and trim
   title = title.replace(/\s+/g, ' ').trim();

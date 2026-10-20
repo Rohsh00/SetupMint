@@ -45,15 +45,32 @@ export type AccountStatus = 'ACTIVE' | 'ARCHIVED';
 export type TransactionType = 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER' | 'ADJUSTMENT';
 
 export type Emotion =
+  // Positive
   | 'CALM'
   | 'CONFIDENT'
+  | 'DISCIPLINED'
+  | 'PATIENT'
+  | 'FOCUSED'
+  | 'RELIEVED'
+  // Neutral
+  | 'NEUTRAL'
+  | 'BORED'
+  | 'HESITANT'
+  | 'DOUBTFUL_OF_LEVEL'
+  // Negative
   | 'ANXIOUS'
-  | 'EUPHORIC'
   | 'FEARFUL'
   | 'GREEDY'
+  | 'EUPHORIC'
   | 'FRUSTRATED'
-  | 'DISCIPLINED'
-  | 'NEUTRAL';
+  | 'IMPATIENT'
+  | 'FOMO'
+  | 'OVERCONFIDENT'
+  | 'STRESSED'
+  | 'TILTED'
+  | 'REVENGEFUL'
+  | 'REGRETFUL'
+  | 'FEAR_OF_STOP_HUNT';
 
 export type MistakeTag =
   | 'REVENGE_TRADING'
@@ -67,9 +84,28 @@ export type MistakeTag =
   | 'EARLY_ENTRY'
   | 'LATE_ENTRY'
   | 'POOR_RR'
-  | 'NEWS_GAMBLE';
+  | 'NEWS_GAMBLE'
+  // Liquidity & Level Mistakes
+  | 'ENTERED_BEFORE_SWEEP'
+  | 'NO_LIQUIDITY_TAKEN'
+  | 'NO_CONFIRMATION_AFTER_SWEEP'
+  | 'TRADED_INTO_HTF_LEVEL'
+  | 'TRADED_MID_RANGE'
+  | 'STOP_INSIDE_LIQUIDITY_POOL'
+  | 'STOP_TOO_TIGHT'
+  | 'TARGET_NOT_AT_LIQUIDITY'
+  | 'NO_LIQUIDITY_TARGET'
+  | 'IGNORED_HTF_BIAS'
+  | 'COUNTER_TREND_NO_SWEEP'
+  | 'FAKE_BREAKOUT_CHASE'
+  | 'FOMO_ENTRY'
+  | 'BREAKEVEN_TOO_EARLY'
+  | 'ADDED_TO_LOSER'
+  | 'TRADED_OUTSIDE_SESSION'
+  | 'TRADED_NEWS_EVENT';
 
 export type Confluence =
+  // Existing SMC & Technical Core
   | 'BOS'
   | 'CHOCH'
   | 'FVG'
@@ -82,7 +118,51 @@ export type Confluence =
   | 'FIBONACCI'
   | 'EMA_CROSS'
   | 'VWAP'
-  | 'VOLUME_SPIKE';
+  | 'VOLUME_SPIKE'
+  // Liquidity Confluences
+  | 'BUY_SIDE_LIQUIDITY_SWEEP'
+  | 'SELL_SIDE_LIQUIDITY_SWEEP'
+  | 'EQUAL_HIGHS'
+  | 'EQUAL_LOWS'
+  | 'PREV_DAY_HIGH_SWEEP'
+  | 'PREV_DAY_LOW_SWEEP'
+  | 'PREV_WEEK_HIGH_SWEEP'
+  | 'PREV_WEEK_LOW_SWEEP'
+  | 'ASIAN_RANGE_SWEEP'
+  | 'SESSION_HIGH_LOW_SWEEP'
+  | 'STOP_HUNT'
+  | 'INDUCEMENT'
+  | 'TRENDLINE_LIQUIDITY'
+  | 'LIQUIDITY_VOID'
+  | 'LIQUIDITY_POOL_TARGET'
+  | 'LIQUIDITY_GRAB_REJECTION'
+  // Support / Resistance Confluences
+  | 'HTF_SUPPORT'
+  | 'HTF_RESISTANCE'
+  | 'SUPPORT_RESISTANCE_FLIP'
+  | 'SUPPORT_RETEST'
+  | 'RESISTANCE_RETEST'
+  | 'DEMAND_ZONE'
+  | 'SUPPLY_ZONE'
+  | 'KEY_LEVEL_REJECTION'
+  | 'ROUND_NUMBER_LEVEL'
+  | 'PREV_DAY_HIGH_LOW_LEVEL'
+  | 'OPENING_RANGE_LEVEL'
+  | 'VWAP_LEVEL'
+  | 'FAKE_BREAKOUT_RECLAIM'
+  | 'DOUBLE_TOP_BOTTOM'
+  | 'RANGE_HIGH_LOW_REJECTION'
+  | 'OI_WALL_CE'
+  | 'OI_WALL_PE'
+  // Confirmation / Structure Confluences
+  | 'MARKET_STRUCTURE_SHIFT'
+  | 'DISPLACEMENT'
+  | 'BREAKER_BLOCK'
+  | 'MITIGATION_BLOCK'
+  | 'PREMIUM_ZONE_ENTRY'
+  | 'DISCOUNT_ZONE_ENTRY'
+  | 'LTF_CONFIRMATION_CANDLE'
+  | 'VOLUME_SPIKE_AT_LEVEL';
 
 export type TradingSession =
   | 'NSE_REGULAR'
@@ -554,9 +634,16 @@ export interface IBrokerImportMapping {
 
 export interface IMistakeSuggestion {
   tradeId?: string;
-  rule: 'REVENGE_TRADING' | 'OVERTRADING' | 'SIZE_VIOLATION';
+  rule:
+    | 'REVENGE_TRADING'
+    | 'OVERTRADING'
+    | 'SIZE_VIOLATION'
+    | 'NO_LIQUIDITY_TAKEN'
+    | 'NO_LIQUIDITY_TARGET'
+    | 'STOP_TOO_TIGHT'
+    | string;
   mistakeTag: MistakeTag;
-  severity: 'WARNING' | 'CRITICAL';
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
   message: string;
 }
 

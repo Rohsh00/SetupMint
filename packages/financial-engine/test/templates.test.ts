@@ -455,6 +455,94 @@ describe('Financial Engine — Rule-Driven Trade Templates', () => {
       expect(ranked[1].id).toBe('tpl-b');
       expect(ranked[2].id).toBe('tpl-a');
     });
+
+    it('ranks consistently profitable strategy ABOVE popular-but-unprofitable strategy', () => {
+      // Template Popular-Losing: 50 uses, 35 trades, negative expectancy (-1.2R)
+      const popularLosing: ITradeTemplate = {
+        ...samplePercentTemplate,
+        id: 'tpl-losing',
+        name: 'Popular Losing Strategy',
+        usageCount: 50,
+        performance: {
+          totalTrades: 35,
+          winTrades: 10,
+          winRate: 28.6,
+          netPnL: -15000,
+          profitFactor: 0.45,
+          meanExpectancyR: -1.2,
+        },
+      };
+
+      // Template Proven-Profitable: 10 uses, 40 trades, solid positive expectancy (+1.0R)
+      const provenProfitable: ITradeTemplate = {
+        ...samplePercentTemplate,
+        id: 'tpl-proven',
+        name: 'Proven Profitable Strategy',
+        usageCount: 10,
+        performance: {
+          totalTrades: 40,
+          winTrades: 26,
+          winRate: 65.0,
+          netPnL: 35000,
+          profitFactor: 2.1,
+          meanExpectancyR: 1.0,
+        },
+      };
+
+      const ranked = rankTemplates([popularLosing, provenProfitable], {
+        assetClass: 'FUTURES',
+        symbol: 'NIFTY',
+        entryTime: '2026-10-21T06:00:00.000Z',
+      });
+
+      // Despite lower usage count, the profitable strategy must rank ABOVE the losing one
+      expect(ranked[0].id).toBe('tpl-proven');
+      expect(ranked[1].id).toBe('tpl-losing');
+    });
+
+    it('low-sample 1-trade wonder shrinks toward global mean and ranks BELOW solid 30-trade strategy', () => {
+      // 1 trade with lucky +4.0R
+      const luckyOne: ITradeTemplate = {
+        ...samplePercentTemplate,
+        id: 'tpl-lucky',
+        name: '1 Lucky Trade',
+        usageCount: 1,
+        performance: {
+          totalTrades: 1,
+          winTrades: 1,
+          winRate: 100,
+          netPnL: 4000,
+          profitFactor: 999.99,
+          meanExpectancyR: 4.0,
+        },
+      };
+
+      // 30 trades with consistent +0.8R
+      const solidThirty: ITradeTemplate = {
+        ...samplePercentTemplate,
+        id: 'tpl-solid',
+        name: 'Solid 30 Trades',
+        usageCount: 30,
+        performance: {
+          totalTrades: 30,
+          winTrades: 19,
+          winRate: 63.3,
+          netPnL: 22000,
+          profitFactor: 1.85,
+          meanExpectancyR: 0.8,
+        },
+      };
+
+      const ranked = rankTemplates([luckyOne, solidThirty], {
+        assetClass: 'FUTURES',
+        symbol: 'NIFTY',
+        entryTime: '2026-10-21T06:00:00.000Z',
+      });
+
+      // Proven solid strategy must outrank the unproven 1-trade lucky wonder
+      expect(ranked[0].id).toBe('tpl-solid');
+      expect(ranked[1].id).toBe('tpl-lucky');
+    });
   });
 
   describe('templatesForAssetClass — Universal Coverage', () => {

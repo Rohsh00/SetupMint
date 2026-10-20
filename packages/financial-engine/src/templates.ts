@@ -9,6 +9,7 @@ import {
   TemplateContext,
   TemplatePatch,
 } from '@tradevault/shared';
+import { calculateEmpiricalBayesShrinkage } from './edge.js';
 
 // Configure Decimal precision (30 digits, ROUND_HALF_UP)
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
@@ -276,9 +277,29 @@ export function rankTemplates(
         score += 25;
       }
 
-      // Usage count (capped at +20)
+      // Empirical-Bayes Shrunk Expectancy vs Usage scoring
+      const perf = template.performance;
       const usage = template.usageCount ?? ctx.usageCount ?? 0;
-      score += Math.min(20, Math.max(0, usage));
+
+      if (perf && perf.totalTrades > 0) {
+        let sampleExpectancy = 0;
+        if (perf.meanExpectancyR !== undefined) {
+          sampleExpectancy = perf.meanExpectancyR;
+        } else if (perf.netPnL !== undefined && perf.totalTrades > 0) {
+          sampleExpectancy = perf.netPnL >= 0 ? (perf.winRate / 100) * 1.5 - ((100 - perf.winRate) / 100) : -1.0;
+        }
+
+        const globalPrior = ctx.globalMeanExpectancyR ?? 0.1;
+        const shrunkExp = calculateEmpiricalBayesShrinkage(sampleExpectancy, perf.totalTrades, globalPrior, 10);
+        const expectancyScore = Math.max(-15, Math.min(20, shrunkExp * 10));
+        score += expectancyScore;
+
+        // Minor familiarity boost based on usage, capped at +3
+        score += Math.min(3, Math.max(0, usage * 0.2));
+      } else {
+        // Fall back to historical usage count (capped at +20) when no performance data exists
+        score += Math.min(20, Math.max(0, usage));
+      }
 
       // Market-specific over generic (+5)
       if (template.group !== 'PRICE_ACTION') {
@@ -287,8 +308,8 @@ export function rankTemplates(
 
       return { template, score };
     })
-    // Hide templates with negative score (e.g. expiryDayOnly off expiry days)
-    .filter((item) => item.score >= 0);
+    // Hide templates with severe exclusion penalty (e.g. expiryDayOnly off expiry days with -100)
+    .filter((item) => item.score > -50);
 
   // Sort descending by score, tiebreak by usage count and template name
   scored.sort((a, b) => {

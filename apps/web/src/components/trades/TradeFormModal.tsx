@@ -50,6 +50,7 @@ import {
   IndianChargesCalculator,
   resolveTemplate,
   rankTemplates,
+  calculateContinuousTiltScore,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
@@ -112,6 +113,11 @@ export function TradeFormModal({
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
   const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
+  const { data: recentTradesResponse } = useQuery({
+    queryKey: ['trades', 'recent-tilt'],
+    queryFn: () => api.trades.list({ limit: 20 }),
+  });
+  const recentTrades = recentTradesResponse?.data || [];
 
   const initialAccountId =
     defaultAccountId ||
@@ -205,6 +211,27 @@ export function TradeFormModal({
   const watchedRisk = watch('risk');
   const watchedSymbol = watch('symbol');
   const watchedAccountId = watch('accountId');
+
+  // Continuous Tilt Score calculation (advisory pre-trade alert)
+  const watchedQty = watchedSimple?.quantity || 1;
+  const tiltResult = useMemo(() => {
+    if (!recentTrades || recentTrades.length === 0) return null;
+    const mapped = recentTrades.map((t: any) => ({
+      netPnL: t.calculated?.netPnL ?? 0,
+      tradeDate: t.tradeDate,
+      quantity: t.simpleExecution?.quantity ?? t.calculated?.closedQuantity ?? 1,
+      exitDate: t.exitTime || t.tradeDate,
+    }));
+
+    const currentAccount = accounts.find((a: any) => a.id === watchedAccountId);
+    const dailyLimit = currentAccount?.maxDailyLoss ?? 10000;
+
+    return calculateContinuousTiltScore({
+      recentTrades: mapped,
+      proposedQuantity: Number(watchedQty) || 1,
+      dailyLossLimit: dailyLimit,
+    });
+  }, [recentTrades, watchedQty, watchedAccountId, accounts]);
 
   // Handle edit values or initial opening
   useEffect(() => {
@@ -1287,6 +1314,47 @@ export function TradeFormModal({
             {submitError && (
               <Alert severity="error" onClose={() => setSubmitError(null)}>
                 {submitError}
+              </Alert>
+            )}
+
+            {/* Advisory Continuous Tilt Alert */}
+            {tiltResult && (tiltResult.level === 'HIGH_TILT' || tiltResult.level === 'SEVERE_TILT') && (
+              <Alert
+                severity="warning"
+                icon={<WarningAmberRounded />}
+                sx={{
+                  border: `1px solid ${muiTheme.palette.warning.main}`,
+                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.08)',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                    Advisory Risk Warning: Tilt Detected ({tiltResult.score}/100 — {tiltResult.level})
+                  </Typography>
+                  <Chip
+                    label={`${tiltResult.score}/100`}
+                    size="small"
+                    color="warning"
+                    sx={{ fontWeight: 800, height: 20, fontSize: '0.625rem' }}
+                  />
+                </Box>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                  {tiltResult.advisoryNote}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.75, flexWrap: 'wrap' }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Streak: {tiltResult.components.lossStreakScore}/100
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Size Escalation: {tiltResult.components.sizeEscalationScore}/100
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Time Compression: {tiltResult.components.timeCompressionScore}/100
+                  </Typography>
+                </Box>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'text.secondary', fontSize: '0.625rem' }}>
+                  Non-blocking advisory alert. Does not prevent trade logging or diagnose psychology.
+                </Typography>
               </Alert>
             )}
             {/* Primary Express Trade Entry Section */}

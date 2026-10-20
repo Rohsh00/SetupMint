@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -24,7 +24,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForwardRounded';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 
-import { calculateRiskAndPositionSize } from '@tradevault/financial-engine';
+import { calculateRiskAndPositionSize, calculateFractionalKelly } from '@tradevault/financial-engine';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent, currentLocalIsoDateTime } from '../lib/utils.js';
@@ -36,8 +36,10 @@ export function RiskCalculatorPage() {
 
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
+  const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
   const [accountEquity, setAccountEquity] = useState<number>(200000);
   const [riskMode, setRiskMode] = useState<'PERCENT' | 'FIXED'>('PERCENT');
   const [riskPercent, setRiskPercent] = useState<number>(1.0);
@@ -103,6 +105,24 @@ export function RiskCalculatorPage() {
   const rewardToRiskRatio = calcResult.rewardRiskRatio;
   const potentialMonetaryGain = calcResult.estimatedReward || 0;
   const validationErrors = calcResult.warnings;
+
+  const selectedStrategy = strategies.find((s: any) => (s.id || s._id) === selectedStrategyId);
+  const kellyResult = useMemo(() => {
+    if (!selectedStrategy) return null;
+    const edge = selectedStrategy.edge;
+    const winRate = edge?.bayesianWinRate?.posteriorMeanWinRate ?? selectedStrategy.winRate ?? 50;
+    const winProb = winRate / 100;
+    const avgWin = edge?.bayesianWinRate?.averageWinPnL ?? (rewardToRiskRatio ? rewardToRiskRatio * 1000 : 1500);
+    const avgLoss = edge?.bayesianWinRate?.averageLossPnL ?? 1000;
+
+    return calculateFractionalKelly({
+      winProbability: winProb,
+      averageWinMagnitude: avgWin,
+      averageLossMagnitude: avgLoss,
+      maxRiskPerTradePercent: 2.0,
+      edgeVerdict: edge?.verdict || 'UNPROVEN',
+    });
+  }, [selectedStrategy, rewardToRiskRatio]);
 
   const handleTransferToTrade = () => {
     setPrefilledTradeData({
@@ -189,6 +209,29 @@ export function RiskCalculatorPage() {
               </Grid>
             </Grid>
 
+            {/* Strategy Selection (Edge & Fractional Kelly) */}
+            <Box>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
+                Strategy Setup (Edge & Kelly Sizing)
+              </Typography>
+              <FormControl size="small" fullWidth>
+                <Select
+                  value={selectedStrategyId}
+                  onChange={(e) => setSelectedStrategyId(e.target.value)}
+                  displayEmpty
+                >
+                  <MenuItem value="">
+                    <em>Discretionary (No Strategy Assigned)</em>
+                  </MenuItem>
+                  {strategies.map((s: any) => (
+                    <MenuItem key={s.id || s._id} value={s.id || s._id}>
+                      {s.name} — {s.edge?.verdict === 'LIKELY_EDGE' ? 'Likely Edge' : s.edge?.verdict === 'NO_EDGE_NEGATIVE' ? 'Negative Edge' : 'Unproven Edge'}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+
             {/* Risk Mode Toggle */}
             <Box>
               <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 1 }}>
@@ -243,6 +286,53 @@ export function RiskCalculatorPage() {
                   />
                 )}
               </Box>
+
+              {/* Quarter-Kelly Sizing Recommendation Card */}
+              {selectedStrategy && kellyResult && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    p: 1.5,
+                    borderRadius: 2,
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', color: muiTheme.palette.text.secondary }}>
+                      Quarter-Kelly Recommendation
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={
+                        !kellyResult.isSuppressed && kellyResult.recommendedRiskPercent > 0
+                          ? `${kellyResult.recommendedRiskPercent}% Risk (Quarter-Kelly)`
+                          : 'Kelly Suppressed'
+                      }
+                      color={!kellyResult.isSuppressed && kellyResult.recommendedRiskPercent > 0 ? 'success' : 'default'}
+                      sx={{ height: 20, fontSize: '0.625rem', fontWeight: 700 }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ display: 'block', color: muiTheme.palette.text.secondary, fontSize: '0.6875rem' }}>
+                    {kellyResult.explanation}
+                  </Typography>
+                  {!kellyResult.isSuppressed && kellyResult.recommendedRiskPercent > 0 && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                      onClick={() => {
+                        setRiskMode('PERCENT');
+                        setRiskPercent(kellyResult.recommendedRiskPercent);
+                        toast.success(`Applied Quarter-Kelly risk: ${kellyResult.recommendedRiskPercent}%`);
+                      }}
+                      sx={{ mt: 1, fontSize: '0.6875rem', py: 0.25 }}
+                    >
+                      Apply {kellyResult.recommendedRiskPercent}% Risk
+                    </Button>
+                  )}
+                </Box>
+              )}
             </Box>
 
             {/* Symbol & Direction */}

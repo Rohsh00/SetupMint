@@ -39,6 +39,7 @@ import StarBorderIcon from '@mui/icons-material/StarBorderRounded';
 import TrendingUpIcon from '@mui/icons-material/TrendingUpRounded';
 import TrendingDownIcon from '@mui/icons-material/TrendingDownRounded';
 import CheckIcon from '@mui/icons-material/CheckRounded';
+import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -505,6 +506,196 @@ export function StrategyPlaybookPage() {
                           </Grid>
                         </Grid>
 
+                        {/* Edge Validation Engine Panel */}
+                        <Box
+                          sx={{
+                            mt: 2,
+                            p: 1.5,
+                            borderRadius: 2,
+                            backgroundColor: isDark
+                              ? strat.edge?.verdict === 'LIKELY_EDGE'
+                                ? 'rgba(16, 185, 129, 0.08)'
+                                : strat.edge?.verdict === 'NO_EDGE_NEGATIVE'
+                                ? 'rgba(239, 68, 68, 0.08)'
+                                : 'rgba(245, 158, 11, 0.05)'
+                              : strat.edge?.verdict === 'LIKELY_EDGE'
+                              ? 'rgba(16, 185, 129, 0.08)'
+                              : strat.edge?.verdict === 'NO_EDGE_NEGATIVE'
+                              ? 'rgba(239, 68, 68, 0.08)'
+                              : 'rgba(245, 158, 11, 0.06)',
+                            border: `1px solid ${
+                              strat.edge?.verdict === 'LIKELY_EDGE'
+                                ? 'rgba(16, 185, 129, 0.35)'
+                                : strat.edge?.verdict === 'NO_EDGE_NEGATIVE'
+                                ? 'rgba(239, 68, 68, 0.35)'
+                                : isDark
+                                ? 'rgba(255, 255, 255, 0.1)'
+                                : 'rgba(0, 0, 0, 0.1)'
+                            }`,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                color: muiTheme.palette.text.secondary,
+                                fontSize: '0.625rem',
+                              }}
+                            >
+                              Edge Validation Engine
+                            </Typography>
+                            <Chip
+                              size="small"
+                              icon={
+                                strat.edge?.verdict === 'LIKELY_EDGE' ? (
+                                  <CheckCircleOutlineIcon sx={{ fontSize: '13px !important' }} />
+                                ) : strat.edge?.verdict === 'NO_EDGE_NEGATIVE' ? (
+                                  <CloseIcon sx={{ fontSize: '13px !important' }} />
+                                ) : (
+                                  <WarningAmberIcon sx={{ fontSize: '13px !important' }} />
+                                )
+                              }
+                              label={
+                                strat.edge?.verdict === 'LIKELY_EDGE'
+                                  ? 'Likely Edge'
+                                  : strat.edge?.verdict === 'NO_EDGE_NEGATIVE'
+                                  ? 'Negative Edge'
+                                  : 'Unproven Edge'
+                              }
+                              color={
+                                strat.edge?.verdict === 'LIKELY_EDGE'
+                                  ? 'success'
+                                  : strat.edge?.verdict === 'NO_EDGE_NEGATIVE'
+                                  ? 'error'
+                                  : 'warning'
+                              }
+                              sx={{ fontWeight: 700, fontSize: '0.625rem', height: 20 }}
+                            />
+                          </Box>
+
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              display: 'block',
+                              color: muiTheme.palette.text.secondary,
+                              mb: 1.25,
+                              fontSize: '0.6875rem',
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {strat.edge?.explanation || 'Awaiting closed trades for statistical edge validation.'}
+                          </Typography>
+
+                          {/* Statistically adjusted metrics */}
+                          <Grid container spacing={1}>
+                            <Grid size={{ xs: 6 }}>
+                              <Box
+                                sx={{
+                                  p: 1,
+                                  borderRadius: 1.5,
+                                  backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)',
+                                  border: `1px solid ${muiTheme.palette.divider}`,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
+                                  Bootstrap Exp. (R)
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontFamily: `'JetBrains Mono', monospace`,
+                                    fontSize: '0.75rem',
+                                    color:
+                                      (strat.edge?.bootstrapExpectancy?.observedExpectancyR ?? 0) >= 0
+                                        ? 'success.main'
+                                        : 'error.main',
+                                  }}
+                                >
+                                  {strat.edge?.bootstrapExpectancy?.observedExpectancyR !== undefined
+                                    ? `${strat.edge.bootstrapExpectancy.observedExpectancyR >= 0 ? '+' : ''}${strat.edge.bootstrapExpectancy.observedExpectancyR.toFixed(2)}R`
+                                    : '—'}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.5625rem' }}>
+                                  90% CI: [{strat.edge?.bootstrapExpectancy?.bootstrapInterval90 ? `${strat.edge.bootstrapExpectancy.bootstrapInterval90[0].toFixed(2)}, ${strat.edge.bootstrapExpectancy.bootstrapInterval90[1].toFixed(2)}` : '—'}]
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 6 }}>
+                              <Box
+                                sx={{
+                                  p: 1,
+                                  borderRadius: 1.5,
+                                  backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)',
+                                  border: `1px solid ${muiTheme.palette.divider}`,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
+                                  P(Expectancy &gt; 0)
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem' }}>
+                                  {strat.edge?.bootstrapExpectancy?.probPositiveExpectancy !== undefined
+                                    ? `${(strat.edge.bootstrapExpectancy.probPositiveExpectancy * 100).toFixed(1)}%`
+                                    : '—'}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.5625rem' }}>
+                                  Sample N = {strat.edge?.sampleSize ?? strat.totalTrades ?? 0}
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 6 }}>
+                              <Box
+                                sx={{
+                                  p: 1,
+                                  borderRadius: 1.5,
+                                  backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)',
+                                  border: `1px solid ${muiTheme.palette.divider}`,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
+                                  Bayesian Win Rate
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem' }}>
+                                  {strat.edge?.bayesianWinRate?.posteriorMeanWinRate !== undefined
+                                    ? `${strat.edge.bayesianWinRate.posteriorMeanWinRate.toFixed(1)}%`
+                                    : '—'}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.5625rem' }}>
+                                  90% CrI: [{strat.edge?.bayesianWinRate?.credibleInterval90 ? `${strat.edge.bayesianWinRate.credibleInterval90[0].toFixed(1)}%, ${strat.edge.bayesianWinRate.credibleInterval90[1].toFixed(1)}%` : '—'}]
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 6 }}>
+                              <Box
+                                sx={{
+                                  p: 1,
+                                  borderRadius: 1.5,
+                                  backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)',
+                                  border: `1px solid ${muiTheme.palette.divider}`,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
+                                  Breakeven WR
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem' }}>
+                                  {strat.edge?.bayesianWinRate?.breakevenWinRate !== undefined
+                                    ? `${strat.edge.bayesianWinRate.breakevenWinRate.toFixed(1)}%`
+                                    : 'N/A'}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.5625rem' }}>
+                                  P(WR &gt; BE): {strat.edge?.bayesianWinRate?.probExceedsBreakeven !== undefined ? `${(strat.edge.bayesianWinRate.probExceedsBreakeven * 100).toFixed(0)}%` : '—'}
+                                </Typography>
+                              </Box>
+                            </Grid>
+                          </Grid>
+                        </Box>
+
                         {/* Rules counts */}
                         <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                           <Chip size="small" variant="outlined" label={`Min R:R 1:${strat.minRiskReward || 1.5}`} sx={{ fontWeight: 600, fontSize: '0.6875rem' }} />
@@ -806,6 +997,76 @@ export function StrategyPlaybookPage() {
                             {perf.totalTrades > 0 && perf.profitFactor ? perf.profitFactor : '—'}
                           </Typography>
                         </Box>
+                      </Box>
+
+                      {/* Compact Statistical Edge Status */}
+                      <Box
+                        sx={{
+                          pt: 1,
+                          borderTop: `1px dashed ${muiTheme.palette.divider}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.625rem', fontWeight: 600 }}>
+                          Edge Status
+                        </Typography>
+                        {perf.totalTrades < 30 ? (
+                          <Tooltip
+                            title={`Sample size N = ${perf.totalTrades}/30 trades. Statistical edge is unproven because small samples suffer from sampling randomness.`}
+                            arrow
+                          >
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              color="warning"
+                              icon={<WarningAmberIcon sx={{ fontSize: '12px !important' }} />}
+                              label={`Evidence Limited (${perf.totalTrades}/30)`}
+                              sx={{ height: 20, fontSize: '0.5625rem', fontWeight: 700 }}
+                            />
+                          </Tooltip>
+                        ) : (perf.meanExpectancyR ?? 0) > 0.15 ? (
+                          <Tooltip
+                            title={`Strategy edge validated with positive expectancy (+${perf.meanExpectancyR}R across ${perf.totalTrades} trades).`}
+                            arrow
+                          >
+                            <Chip
+                              size="small"
+                              color="success"
+                              icon={<CheckCircleOutlineIcon sx={{ fontSize: '12px !important' }} />}
+                              label={`Likely Edge (+${perf.meanExpectancyR}R)`}
+                              sx={{ height: 20, fontSize: '0.5625rem', fontWeight: 700 }}
+                            />
+                          </Tooltip>
+                        ) : (perf.meanExpectancyR ?? 0) < 0 ? (
+                          <Tooltip
+                            title={`Negative expectancy (${perf.meanExpectancyR}R across ${perf.totalTrades} trades).`}
+                            arrow
+                          >
+                            <Chip
+                              size="small"
+                              color="error"
+                              icon={<CloseIcon sx={{ fontSize: '12px !important' }} />}
+                              label={`Negative Edge (${perf.meanExpectancyR}R)`}
+                              sx={{ height: 20, fontSize: '0.5625rem', fontWeight: 700 }}
+                            />
+                          </Tooltip>
+                        ) : (
+                          <Tooltip
+                            title={`Expectancy is neutral or inconclusive (${perf.meanExpectancyR ?? 0}R).`}
+                            arrow
+                          >
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              color="warning"
+                              label="Neutral Edge"
+                              sx={{ height: 20, fontSize: '0.5625rem', fontWeight: 700 }}
+                            />
+                          </Tooltip>
+                        )}
                       </Box>
                     </Card>
                   </Grid>

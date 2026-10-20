@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { createStrategySchema } from '@tradevault/shared';
+import { validateStrategyEdge } from '@tradevault/financial-engine';
 import { Strategy, Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
@@ -7,7 +8,7 @@ import { validateObjectIdParam } from '../middleware/validate.js';
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
-  // List strategies with aggregated performance statistics
+  // List strategies with aggregated performance statistics and edge validation
   app.get('/', async (req, reply) => {
     const strategies = await Strategy.find({ userId: req.user!.id }).sort({ name: 1 });
 
@@ -45,6 +46,35 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       statsMap.set(stat._id.toString(), stat);
     }
 
+    // Load closed trades for statistical edge validation per strategy
+    const closedTrades = await Trade.find(
+      {
+        userId: req.user!.id,
+        strategyId: { $in: strategyIds },
+        status: 'CLOSED',
+      },
+      {
+        _id: 1,
+        strategyId: 1,
+        tradeDate: 1,
+        'calculated.netPnL': 1,
+        'calculated.realizedRMultiple': 1,
+        'risk.realizedRMultiple': 1,
+        'risk.riskBudgetAmount': 1,
+        'risk.estimatedRiskAmount': 1,
+      }
+    ).lean();
+
+    const strategyTradesMap = new Map<string, any[]>();
+    for (const t of (closedTrades as any[])) {
+      if (t.strategyId) {
+        const key = t.strategyId.toString();
+        const list = strategyTradesMap.get(key) ?? [];
+        list.push(t);
+        strategyTradesMap.set(key, list);
+      }
+    }
+
     const data = strategies.map((s) => {
       const stat = statsMap.get(s._id.toString());
       const totalTrades = stat ? stat.totalTrades : 0;
@@ -59,6 +89,20 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           profitFactor = Number((stat.grossWin / stat.grossLoss).toFixed(2));
         }
       }
+
+      // Edge validation
+      const stratTrades = strategyTradesMap.get(s._id.toString()) ?? [];
+      const edge = validateStrategyEdge(
+        stratTrades.map((t: any) => ({
+          id: t._id.toString(),
+          tradeDate: t.tradeDate,
+          status: 'CLOSED',
+          netPnL: t.calculated?.netPnL,
+          realizedRMultiple: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
+          plannedRiskAmount: t.risk?.riskBudgetAmount ?? t.risk?.estimatedRiskAmount,
+        })),
+        { seed: s._id.toString(), bootstrapIterations: 2000 }
+      );
 
       return {
         id: s._id.toString(),
@@ -80,6 +124,14 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         winRate,
         netPnL,
         profitFactor,
+        edge: {
+          verdict: edge.verdict,
+          reasonCode: edge.reasonCode,
+          explanation: edge.explanation,
+          sampleSize: edge.sampleSize,
+          bayesianWinRate: edge.bayesianWinRate,
+          bootstrapExpectancy: edge.bootstrapExpectancy,
+        },
         createdAt: s.createdAt.toISOString(),
       };
     });
@@ -113,7 +165,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     return reply.status(201).send({ success: true, data: strategy });
   });
 
-  // Get strategy detail with linked trades
+  // Get strategy detail with linked trades and edge validation
   app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const strategy = await Strategy.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!strategy) {
@@ -125,16 +177,30 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     const trades = await Trade.find({ strategyId: strategy._id, userId: req.user!.id })
       .sort({ tradeDate: -1 })
-      .limit(50);
+      .limit(100);
+
+    const edge = validateStrategyEdge(
+      trades.map((t) => ({
+        id: t._id.toString(),
+        tradeDate: t.tradeDate,
+        status: t.status,
+        netPnL: t.calculated?.netPnL,
+        realizedRMultiple: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
+        plannedRiskAmount: t.risk?.riskBudgetAmount ?? t.risk?.estimatedRiskAmount,
+      })),
+      { seed: strategy._id.toString(), bootstrapIterations: 3000 }
+    );
 
     return reply.send({
       success: true,
       data: {
         strategy,
         trades,
+        edge,
       },
     });
   });
+
 
   // Update strategy
   app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {

@@ -36,6 +36,9 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           grossLoss: {
             $sum: { $cond: [{ $lt: ['$calculated.netPnL', 0] }, { $abs: '$calculated.netPnL' }, 0] },
           },
+          totalR: {
+            $sum: { $ifNull: ['$calculated.realizedRMultiple', { $ifNull: ['$risk.realizedRMultiple', 0] }] },
+          },
         },
       },
     ]);
@@ -62,6 +65,11 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         profitFactor = Number((stat.grossWin / stat.grossLoss).toFixed(2));
       }
     }
+
+    const meanExpectancyR =
+      stat && totalTrades > 0 && typeof stat.totalR === 'number'
+        ? Number((stat.totalR / totalTrades).toFixed(2))
+        : undefined;
 
     return {
       id: template.id || template._id.toString(),
@@ -92,6 +100,7 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         winRate,
         netPnL,
         profitFactor,
+        meanExpectancyR,
       },
       createdAt: template.createdAt ? new Date(template.createdAt).toISOString() : undefined,
       updatedAt: template.updatedAt ? new Date(template.updatedAt).toISOString() : undefined,

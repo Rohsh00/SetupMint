@@ -12,6 +12,7 @@ import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
+import Tooltip from '@mui/material/Tooltip';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 // Icons
@@ -534,9 +535,22 @@ export function AnalyticsPage() {
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
                     }}
                   >
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      {day.day}
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {day.day}
+                      </Typography>
+                      {day.tradesCount < 30 && (
+                        <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
+                          <Chip
+                            label="N < 30"
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Box>
                     <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                       {day.tradesCount} trades
                     </Typography>
@@ -556,6 +570,9 @@ export function AnalyticsPage() {
                   </Box>
                 ))}
               </Box>
+              <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
+                Note: Subgroups with fewer than 30 trades exhibit high statistical variance. Empirical-Bayes shrinkage is recommended before drawing directional conclusions.
+              </Typography>
             </Card>
           </Grid>
 
@@ -587,9 +604,22 @@ export function AnalyticsPage() {
                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
                       }}
                     >
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {sess.session}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {sess.session}
+                        </Typography>
+                        {sess.tradesCount < 30 && (
+                          <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
+                            <Chip
+                              label="N < 30"
+                              size="small"
+                              variant="outlined"
+                              color="warning"
+                              sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
+                            />
+                          </Tooltip>
+                        )}
+                      </Box>
                       <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                         {sess.tradesCount} trades
                       </Typography>
@@ -614,6 +644,9 @@ export function AnalyticsPage() {
                   </Typography>
                 )}
               </Box>
+              <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
+                Note: Low trade counts increase uncertainty in session-level expectancy.
+              </Typography>
             </Card>
           </Grid>
         </Grid>

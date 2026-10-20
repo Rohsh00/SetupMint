@@ -7,4 +7,7 @@ export * from './charges.js';
 export * from './session.js';
 export * from './mistakes.js';
 export * from './templates.js';
-
+export * from './prng.js';
+export * from './edge.js';
+export * from './monte-carlo.js';
+export * from './tilt.js';

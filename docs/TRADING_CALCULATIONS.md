@@ -242,3 +242,78 @@ Daily journal discipline ratings (1 to 5 stars) are computed automatically based
 - Subtract **1 point** if position sizing violation occurred.
 - Clamp score between **1** and **5**:
   $$\text{Discipline Score} = \max(1, \min(5, 5 - \text{Penalties}))$$
+
+---
+
+## 10. Edge Validation Engine (`edge.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/edge.ts:1-614`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/edge.ts#L1-L614)
+
+### Numerical Foundations:
+1. **Lanczos Log-Gamma Approximation**:
+   Computes $\ln \Gamma(z)$ for $z > 0$ with 9 coefficients yielding $> 14$ decimal digits of precision:
+   $$\Gamma(z+1) = \sqrt{2\pi} \left(z + g + \frac{1}{2}\right)^{z+1/2} e^{-(z+g+1/2)} A_g(z)$$
+   With reflection formula $\Gamma(z)\Gamma(1-z) = \frac{\pi}{\sin(\pi z)}$ for $z < 0.5$.
+2. **Regularized Incomplete Beta Function $I_x(a, b)$**:
+   Evaluates Beta CDF via modified Lentz continued fraction expansion:
+   $$I_x(a, b) = \frac{x^a (1-x)^b}{a \, B(a, b)} \cdot \cfrac{1}{1 + \cfrac{d_1}{1 + \cfrac{d_2}{1 + \dots}}}$$
+   With symmetry transformation $I_x(a, b) = 1 - I_{1-x}(b, a)$ when $x > \frac{a+1}{a+b+2}$ to guarantee rapid numerical convergence ($< 200$ iterations).
+3. **Beta Quantile Inversion**:
+   Solves $I_x(a, b) = p$ using bracketed Newton-Raphson iterations with derivative $f(x) = \frac{x^{a-1} (1-x)^{b-1}}{B(a, b)}$ and guaranteed bisection safeguarding.
+
+### Bayesian Win-Rate Estimation:
+- **Prior**: Non-informative uniform $\text{Beta}(1, 1)$.
+- **Posterior**: $\text{Beta}(1 + N_{\text{win}}, 1 + N_{\text{loss}})$.
+- **Breakeven Trade Treatment**: Breakeven trades ($R = 0$ or $\text{Net P&L} = 0$) are tracked explicitly and excluded from decisive binary parameter updates.
+- **Estimated Breakeven Win Rate**: $\theta_{\text{BE}} = \frac{\bar{L}}{\bar{W} + \bar{L}}$ where $\bar{W}$ is average win P&L and $\bar{L}$ is average loss magnitude.
+
+### Non-Parametric Bootstrap Expectancy in R:
+- Resamples $N$ realized R-multiples $10,000$ times with replacement.
+- Deterministic 32-bit FNV-1a seeded Mulberry32 PRNG.
+- Returns observed expectancy $\bar{R}$, 90% percentile bootstrap interval $[E_{0.05}, E_{0.95}]$, and $P(E > 0)$.
+
+### Edge Verdict Rules:
+- **`UNPROVEN`**: If $N < 30$, or interval crosses zero ($E_{0.05} \le 0 \le E_{0.95}$), or evidence is inconclusive.
+- **`LIKELY_EDGE`**: If $N \ge 30$, $E_{0.05} > 0$, and $P(E > 0) \ge 0.90$.
+- **`NO_EDGE_NEGATIVE`**: If $N \ge 30$, $E_{0.95} < 0$, and $P(E > 0) \le 0.10$.
+
+---
+
+## 11. Empirical-Bayes Shrinkage for Ranking (`templates.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/templates.ts:31-150`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/templates.ts#L31-L150)
+
+$$\text{Shrunk Expectancy} = \frac{n \cdot \bar{R} + k \cdot \mu_{\text{global}}}{n + k}$$
+- $n$: Template sample size.
+- $\bar{R}$: Observed template mean expectancy in R.
+- $k$: Shrinkage strength (default: 10).
+- $\mu_{\text{global}}$: Compatible population prior mean (default: 0.0).
+
+---
+
+## 12. Monte Carlo Risk Simulation & Capped Fractional Kelly (`monte-carlo.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/monte-carlo.ts:1-409`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/monte-carlo.ts#L1-L409)
+
+- Simulates $10,000$ equity paths by bootstrap sampling historical R-multiples.
+- Baseline peak equity is initialized to $E_0$.
+- Computes drawdown percentiles ($P_{50}, P_{90}, P_{95}, P_{99}, \max$), ruin probability, threshold breach probability, and daily loss breach probability.
+- **Quarter-Kelly Formula**:
+  $$f^* = p - \frac{1 - p}{b}, \quad \text{Quarter-Kelly} = \min(0.25 \times f^* \times 100, \text{maxRiskPerTradePercent})$$
+  Suppressed when edge is `UNPROVEN` or `NO_EDGE_NEGATIVE`.
+
+---
+
+## 13. Continuous Tilt Scoring Engine (`tilt.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/tilt.ts:1-220`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/tilt.ts#L1-L220)
+
+$$\text{Tilt Score} = 0.30 S_{\text{streak}} + 0.25 S_{\text{size}} + 0.25 S_{\text{time}} + 0.20 S_{\text{daily\_loss}}$$
+- All components normalized to $[0, 100]$.
+- Categorized as `CALM` ($0-30$), `ELEVATED` ($31-60$), `HIGH_TILT` ($61-80$), `SEVERE_TILT` ($81-100$).
+- Advisory and non-blocking in `TradeFormModal`.
+

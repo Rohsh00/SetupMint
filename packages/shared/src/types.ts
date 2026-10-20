@@ -763,6 +763,7 @@ export interface ITradeTemplate {
     winRate: number;
     netPnL: number;
     profitFactor: number;
+    meanExpectancyR?: number;
   };
 }
 
@@ -781,6 +782,7 @@ export interface TemplateContext {
   existingTitlesToday?: string[];
   isFavorite?: boolean;
   usageCount?: number;
+  globalMeanExpectancyR?: number;
 }
 
 export interface TemplatePatch {

@@ -23,6 +23,8 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import ToggleButton from '@mui/material/ToggleButton';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 // Icons
@@ -40,6 +42,11 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUpRounded';
 import TrendingDownIcon from '@mui/icons-material/TrendingDownRounded';
 import CheckIcon from '@mui/icons-material/CheckRounded';
 import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
+import FullscreenIcon from '@mui/icons-material/FullscreenRounded';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExitRounded';
+import ViewSidebarIcon from '@mui/icons-material/ViewSidebarRounded';
+import TabIcon from '@mui/icons-material/TabRounded';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMoreRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -73,6 +80,10 @@ export function StrategyPlaybookPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isModalMaximized, setIsModalMaximized] = useState(false);
+  const [modalLayoutMode, setModalLayoutMode] = useState<'SPLIT' | 'TABS'>('SPLIT');
+  const [modalActiveTab, setModalActiveTab] = useState<'THESIS' | 'RULES' | 'CHECKLIST'>('THESIS');
+  const [expandedStrategyId, setExpandedStrategyId] = useState<string | null>(null);
 
   const { data: strategies = [], isLoading: isLoadingStrategies } = useQuery({
     queryKey: ['strategies'],
@@ -696,13 +707,103 @@ export function StrategyPlaybookPage() {
                           </Grid>
                         </Box>
 
-                        {/* Rules counts */}
-                        <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          <Chip size="small" variant="outlined" label={`Min R:R 1:${strat.minRiskReward || 1.5}`} sx={{ fontWeight: 600, fontSize: '0.6875rem' }} />
-                          <Chip size="small" variant="outlined" label={`${strat.entryRules?.length || 0} Entry Rules`} sx={{ fontSize: '0.6875rem' }} />
-                          <Chip size="small" variant="outlined" label={`${strat.stopLossRules?.length || 0} SL Rules`} sx={{ fontSize: '0.6875rem' }} />
-                          <Chip size="small" variant="outlined" label={`${strat.invalidationCriteria?.length || 0} Invalidation`} sx={{ fontSize: '0.6875rem' }} />
+                        {/* Rules counts & Expand Action */}
+                        <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                            <Chip size="small" variant="outlined" label={`Min R:R 1:${strat.minRiskReward || 1.5}`} sx={{ fontWeight: 600, fontSize: '0.6875rem' }} />
+                            <Chip size="small" variant="outlined" color="success" label={`${strat.entryRules?.length || 0} Entry Rules`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
+                            <Chip size="small" variant="outlined" color="error" label={`${strat.stopLossRules?.length || 0} SL Rules`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
+                            <Chip size="small" variant="outlined" color="warning" label={`${strat.invalidationCriteria?.length || 0} Invalidation`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => setExpandedStrategyId(expandedStrategyId === (strat.id || strat._id) ? null : (strat.id || strat._id))}
+                            endIcon={<ExpandMoreIcon sx={{ transform: expandedStrategyId === (strat.id || strat._id) ? 'rotate(180deg)' : 'none', transition: '0.2s', fontSize: 16 }} />}
+                            sx={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'none', py: 0.25 }}
+                          >
+                            {expandedStrategyId === (strat.id || strat._id) ? 'Hide Rules' : 'Expand Rules'}
+                          </Button>
                         </Box>
+
+                        {/* Collapsible Expanded Rules Section */}
+                        {expandedStrategyId === (strat.id || strat._id) && (
+                          <Box
+                            sx={{
+                              mt: 2,
+                              p: 2,
+                              borderRadius: 2,
+                              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(248, 250, 252, 0.9)',
+                              border: `1px solid ${muiTheme.palette.divider}`,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 1.5,
+                            }}
+                          >
+                            {strat.description && (
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', fontSize: '0.625rem', display: 'block', mb: 0.5 }}>
+                                  Strategic Thesis & Preparation
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontSize: '0.75rem', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+                                  {strat.description}
+                                </Typography>
+                              </Box>
+                            )}
+
+                            {strat.entryRules && strat.entryRules.length > 0 && (
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'success.main', textTransform: 'uppercase', fontSize: '0.625rem', display: 'block', mb: 0.5 }}>
+                                  Entry Confirmation Rules
+                                </Typography>
+                                <Box component="ul" sx={{ m: 0, pl: 2, fontSize: '0.75rem', lineHeight: 1.5 }}>
+                                  {strat.entryRules.map((rule: string, i: number) => (
+                                    <li key={i}>{rule}</li>
+                                  ))}
+                                </Box>
+                              </Box>
+                            )}
+
+                            {strat.stopLossRules && strat.stopLossRules.length > 0 && (
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'error.main', textTransform: 'uppercase', fontSize: '0.625rem', display: 'block', mb: 0.5 }}>
+                                  Stop Loss Rules
+                                </Typography>
+                                <Box component="ul" sx={{ m: 0, pl: 2, fontSize: '0.75rem', lineHeight: 1.5 }}>
+                                  {strat.stopLossRules.map((rule: string, i: number) => (
+                                    <li key={i}>{rule}</li>
+                                  ))}
+                                </Box>
+                              </Box>
+                            )}
+
+                            {strat.targetRules && strat.targetRules.length > 0 && (
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'primary.main', textTransform: 'uppercase', fontSize: '0.625rem', display: 'block', mb: 0.5 }}>
+                                  Profit Targets
+                                </Typography>
+                                <Box component="ul" sx={{ m: 0, pl: 2, fontSize: '0.75rem', lineHeight: 1.5 }}>
+                                  {strat.targetRules.map((rule: string, i: number) => (
+                                    <li key={i}>{rule}</li>
+                                  ))}
+                                </Box>
+                              </Box>
+                            )}
+
+                            {strat.invalidationCriteria && strat.invalidationCriteria.length > 0 && (
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'warning.main', textTransform: 'uppercase', fontSize: '0.625rem', display: 'block', mb: 0.5 }}>
+                                  Invalidation Conditions
+                                </Typography>
+                                <Box component="ul" sx={{ m: 0, pl: 2, fontSize: '0.75rem', lineHeight: 1.5 }}>
+                                  {strat.invalidationCriteria.map((rule: string, i: number) => (
+                                    <li key={i}>{rule}</li>
+                                  ))}
+                                </Box>
+                              </Box>
+                            )}
+                          </Box>
+                        )}
                       </Box>
                     </Card>
                   </Grid>
@@ -1077,119 +1178,538 @@ export function StrategyPlaybookPage() {
         </Box>
       )}
 
-      {/* Strategy Create/Edit Modal */}
+      {/* Strategy Create/Edit Studio Modal */}
       <Dialog
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        maxWidth="md"
+        maxWidth={isModalMaximized ? false : 'xl'}
         fullWidth
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        fullScreen={isModalMaximized}
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: isModalMaximized ? 0 : 3,
+              height: isModalMaximized ? '100vh' : '90vh',
+              maxHeight: isModalMaximized ? '100vh' : '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: isDark ? '#0D1525' : '#FFFFFF',
+            },
+          },
+        }}
       >
-        <DialogTitle sx={{ fontWeight: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {editingStrategy ? 'Edit Strategy Setup' : 'New Playbook Setup'}
-          <IconButton size="small" onClick={() => setIsModalOpen(false)}>
-            <CloseIcon />
-          </IconButton>
+        <DialogTitle
+          sx={{
+            py: 2,
+            px: 3,
+            borderBottom: `1px solid ${muiTheme.palette.divider}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 1.5,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                p: 0.85,
+                borderRadius: 2,
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+                color: 'primary.main',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <MenuBookIcon fontSize="small" />
+            </Box>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1.05rem' }}>
+                  {editingStrategy ? 'Edit Strategy Playbook Setup' : 'New Playbook Setup Studio'}
+                </Typography>
+                <Chip
+                  label={editingStrategy ? 'EDIT SETUP' : 'NEW PLAYBOOK'}
+                  size="small"
+                  color={editingStrategy ? 'primary' : 'success'}
+                  sx={{ height: 20, fontSize: '0.625rem', fontWeight: 800 }}
+                />
+              </Box>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Codify higher-timeframe thesis, entry triggers, stop-loss invalidation, and profit-taking rules.
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* View Mode Toggle: Split Studio vs Focused Tabs */}
+            <ToggleButtonGroup
+              size="small"
+              value={modalLayoutMode}
+              exclusive
+              onChange={(_, val) => val && setModalLayoutMode(val)}
+              sx={{ height: 32 }}
+            >
+              <ToggleButton value="SPLIT" sx={{ px: 1.25, py: 0.5, fontSize: '0.75rem', fontWeight: 700, gap: 0.5 }}>
+                <ViewSidebarIcon sx={{ fontSize: 16 }} />
+                Split Studio
+              </ToggleButton>
+              <ToggleButton value="TABS" sx={{ px: 1.25, py: 0.5, fontSize: '0.75rem', fontWeight: 700, gap: 0.5 }}>
+                <TabIcon sx={{ fontSize: 16 }} />
+                Focused Tabs
+              </ToggleButton>
+            </ToggleButtonGroup>
+
+            {/* Maximize Toggle */}
+            <Tooltip title={isModalMaximized ? 'Restore Normal Window' : 'Maximize Studio (Full Screen Mode)'} arrow>
+              <IconButton
+                size="small"
+                onClick={() => setIsModalMaximized(!isModalMaximized)}
+                sx={{ border: `1px solid ${muiTheme.palette.divider}` }}
+              >
+                {isModalMaximized ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+
+            {/* Close */}
+            <IconButton size="small" onClick={() => setIsModalOpen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </DialogTitle>
-        <form onSubmit={handleStrategySubmit}>
-          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+
+        <form onSubmit={handleStrategySubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <DialogContent sx={{ p: 3, flex: 1, overflowY: 'auto' }}>
             {saveError && (
-              <Alert severity="error" onClose={() => setSaveError(null)}>
+              <Alert severity="error" onClose={() => setSaveError(null)} sx={{ mb: 2.5 }}>
                 {saveError}
               </Alert>
             )}
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, sm: 8 }}>
-                <TextField
-                  label="Strategy Name *"
-                  fullWidth
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. 5-Min Opening Range Breakout"
-                />
+
+            {modalLayoutMode === 'SPLIT' ? (
+              /* ================== SPLIT STUDIO MODE ================== */
+              <Grid container spacing={3}>
+                {/* Left Column: Identity, Thesis & Checklist (5 of 12) */}
+                <Grid size={{ xs: 12, md: 5 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                    <Grid container spacing={2}>
+                      <Grid size={{ xs: 12, sm: 8 }}>
+                        <TextField
+                          label="Strategy Setup Name *"
+                          fullWidth
+                          required
+                          size="small"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="e.g. 5-Min Opening Range Breakout"
+                          slotProps={{
+                            input: { sx: { fontWeight: 700 } },
+                          }}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <TextField
+                          label="Min R:R *"
+                          type="number"
+                          fullWidth
+                          required
+                          size="small"
+                          slotProps={{
+                            htmlInput: { step: 0.1, min: 0 },
+                            input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 } },
+                          }}
+                          value={minRiskReward}
+                          onChange={(e) => setMinRiskReward(Number(e.target.value))}
+                        />
+                      </Grid>
+                    </Grid>
+
+                    {/* Description & Strategic Thesis (Maximized Height) */}
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.8125rem' }}>
+                          Strategic Thesis & Preparation (Weekly / Daily / 4H)
+                        </Typography>
+                        <Chip label="Context & Bias" size="small" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 600 }} />
+                      </Box>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={isModalMaximized ? 15 : 9}
+                        maxRows={isModalMaximized ? 25 : 15}
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="1. High Timeframe Preparation (Weekly / Daily / 4H)&#10;Step 1: On Weekly and Daily timeframes, locate the dominant market trend.&#10;Step 2: Mark previous day high (PDH), previous day low (PDL), and key S/R levels.&#10;Step 3: Define pre-market bias (Bullish / Bearish / Neutral) and market regime."
+                        helperText="Document higher-timeframe structure, market regime, key levels, and narrative context."
+                        slotProps={{
+                          input: {
+                            sx: {
+                              fontSize: '0.84rem',
+                              lineHeight: 1.6,
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                            },
+                          },
+                        }}
+                      />
+                    </Box>
+
+                    {/* Pre-Flight Execution Checklist */}
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.8125rem' }}>
+                          Pre-Flight Execution Checklist
+                        </Typography>
+                        <Chip label="Discipline Filter" size="small" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 600 }} />
+                      </Box>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={isModalMaximized ? 8 : 4}
+                        maxRows={isModalMaximized ? 14 : 7}
+                        value={checklistInput}
+                        onChange={(e) => setChecklistInput(e.target.value)}
+                        placeholder="1. High Timeframe Key Level Tested&#10;2. London/NY Session Volume Active&#10;3. Risk capped at <= 1% equity&#10;4. No high-impact CPI news in next 15 mins"
+                        helperText="Mandatory rules (one per line) that must be verified before executing order."
+                        slotProps={{
+                          input: {
+                            sx: {
+                              fontSize: '0.8125rem',
+                              lineHeight: 1.5,
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                            },
+                          },
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Right Column: Execution Rules Cards (7 of 12) */}
+                <Grid size={{ xs: 12, md: 7 }}>
+                  <Grid container spacing={2}>
+                    {/* Entry Rules */}
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <Card
+                        sx={{
+                          p: 2,
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          borderRadius: 2,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(16, 185, 129, 0.03)' : 'rgba(16, 185, 129, 0.02)',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'success.main', fontSize: '0.8125rem' }}>
+                            1. Entry Rules & Triggers
+                          </Typography>
+                          <Chip label="Green Light" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 700 }} />
+                        </Box>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={isModalMaximized ? 8 : 5}
+                          maxRows={isModalMaximized ? 14 : 8}
+                          value={entryRulesInput}
+                          onChange={(e) => setEntryRulesInput(e.target.value)}
+                          placeholder="1. Break of 15m structural high&#10;2. Volume > 1.5x 20 EMA&#10;3. VWAP aligned with momentum"
+                          slotProps={{
+                            input: {
+                              sx: {
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.5,
+                              },
+                            },
+                          }}
+                        />
+                      </Card>
+                    </Grid>
+
+                    {/* Stop Loss Rules */}
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <Card
+                        sx={{
+                          p: 2,
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          borderRadius: 2,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.03)' : 'rgba(239, 68, 68, 0.02)',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'error.main', fontSize: '0.8125rem' }}>
+                            2. Stop Loss & Risk Rules
+                          </Typography>
+                          <Chip label="Capital Shield" size="small" color="error" variant="outlined" sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 700 }} />
+                        </Box>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={isModalMaximized ? 8 : 5}
+                          maxRows={isModalMaximized ? 14 : 8}
+                          value={stopRulesInput}
+                          onChange={(e) => setStopRulesInput(e.target.value)}
+                          placeholder="1. Place Stop Loss strictly below the sweep wick&#10;2. Max 0.5% index points distance&#10;3. Never move stop further away"
+                          slotProps={{
+                            input: {
+                              sx: {
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.5,
+                              },
+                            },
+                          }}
+                        />
+                      </Card>
+                    </Grid>
+
+                    {/* Target Rules */}
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <Card
+                        sx={{
+                          p: 2,
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          borderRadius: 2,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.03)' : 'rgba(59, 130, 246, 0.02)',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'primary.main', fontSize: '0.8125rem' }}>
+                            3. Profit Targets & Scaling
+                          </Typography>
+                          <Chip label="Take Profit" size="small" color="primary" variant="outlined" sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 700 }} />
+                        </Box>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={isModalMaximized ? 8 : 5}
+                          maxRows={isModalMaximized ? 14 : 8}
+                          value={targetRulesInput}
+                          onChange={(e) => setTargetRulesInput(e.target.value)}
+                          placeholder="Target 1 (Base): 1-Hour swing high or overhead liquidity pool (Book 50%)&#10;Target 2 (Runner): Hold for HTF expansion target with trailing stop"
+                          slotProps={{
+                            input: {
+                              sx: {
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.5,
+                              },
+                            },
+                          }}
+                        />
+                      </Card>
+                    </Grid>
+
+                    {/* Invalidation Criteria */}
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <Card
+                        sx={{
+                          p: 2,
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          borderRadius: 2,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(245, 158, 11, 0.03)' : 'rgba(245, 158, 11, 0.02)',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'warning.main', fontSize: '0.8125rem' }}>
+                            4. Invalidation Criteria
+                          </Typography>
+                          <Chip label="Immediate Exit" size="small" color="warning" variant="outlined" sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 700 }} />
+                        </Box>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={isModalMaximized ? 8 : 5}
+                          maxRows={isModalMaximized ? 14 : 8}
+                          value={invalidationInput}
+                          onChange={(e) => setInvalidationInput(e.target.value)}
+                          placeholder="1. If price prints a 5m close below support, thesis of support defense is invalidated.&#10;2. Sudden absorption failure with high selling delta."
+                          slotProps={{
+                            input: {
+                              sx: {
+                                fontSize: '0.8125rem',
+                                lineHeight: 1.5,
+                              },
+                            },
+                          }}
+                        />
+                      </Card>
+                    </Grid>
+                  </Grid>
+                </Grid>
               </Grid>
-              <Grid size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  label="Minimum R:R *"
-                  type="number"
-                  fullWidth
-                  required
-                  slotProps={{ htmlInput: { step: 0.1, min: 0 } }}
-                  value={minRiskReward}
-                  onChange={(e) => setMinRiskReward(Number(e.target.value))}
-                />
-              </Grid>
-              <Grid size={{ xs: 12 }}>
-                <TextField
-                  label="Description & Strategic Thesis"
-                  fullWidth
-                  multiline
-                  rows={2}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe market regime, higher timeframe context, and entry triggers..."
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  label="Entry Rules (one per line)"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={entryRulesInput}
-                  onChange={(e) => setEntryRulesInput(e.target.value)}
-                  placeholder="1. Break of 15m high&#10;2. Volume > 1.5x 20 EMA&#10;3. VWAP aligned"
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  label="Stop Loss Rules (one per line)"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={stopRulesInput}
-                  onChange={(e) => setStopRulesInput(e.target.value)}
-                  placeholder="1. Below breakout candle low&#10;2. Max 0.5% index points"
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  label="Target Rules (one per line)"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={targetRulesInput}
-                  onChange={(e) => setTargetRulesInput(e.target.value)}
-                  placeholder="1. Minimum 1:2 R:R&#10;2. Previous day high resistance"
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  label="Invalidation Criteria (one per line)"
-                  fullWidth
-                  multiline
-                  rows={3}
-                  value={invalidationInput}
-                  onChange={(e) => setInvalidationInput(e.target.value)}
-                  placeholder="1. Candle closes back inside range&#10;2. Momentum divergence on 5m RSI"
-                />
-              </Grid>
-            </Grid>
+            ) : (
+              /* ================== FOCUSED TABS MODE ================== */
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                <Tabs
+                  value={modalActiveTab}
+                  onChange={(_, val) => setModalActiveTab(val)}
+                  sx={{ borderBottom: `1px solid ${muiTheme.palette.divider}`, minHeight: 40 }}
+                >
+                  <Tab label="1. Thesis & Strategic Context" value="THESIS" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
+                  <Tab label="2. Entry & Stop Loss Rules" value="RULES" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
+                  <Tab label="3. Targets & Invalidation" value="TARGETS" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
+                  <Tab label="4. Pre-Flight Checklist" value="CHECKLIST" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
+                </Tabs>
+
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 8 }}>
+                    <TextField
+                      label="Strategy Name *"
+                      fullWidth
+                      required
+                      size="small"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 4 }}>
+                    <TextField
+                      label="Minimum R:R *"
+                      type="number"
+                      fullWidth
+                      required
+                      size="small"
+                      value={minRiskReward}
+                      onChange={(e) => setMinRiskReward(Number(e.target.value))}
+                    />
+                  </Grid>
+                </Grid>
+
+                {modalActiveTab === 'THESIS' && (
+                  <Box>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                      Describe high-timeframe market structure, preparation routine, and strategic narrative in full detail:
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={isModalMaximized ? 20 : 13}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Write comprehensive strategic preparation thesis..."
+                      slotProps={{ input: { sx: { fontSize: '0.875rem', lineHeight: 1.7 } } }}
+                    />
+                  </Box>
+                )}
+
+                {modalActiveTab === 'RULES' && (
+                  <Grid container spacing={3}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'success.main', mb: 1 }}>
+                        Entry Rules & Execution Triggers
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={isModalMaximized ? 18 : 12}
+                        value={entryRulesInput}
+                        onChange={(e) => setEntryRulesInput(e.target.value)}
+                        placeholder="1. Entry condition A&#10;2. Entry condition B..."
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'error.main', mb: 1 }}>
+                        Stop Loss & Risk Placement Rules
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={isModalMaximized ? 18 : 12}
+                        value={stopRulesInput}
+                        onChange={(e) => setStopRulesInput(e.target.value)}
+                        placeholder="1. Stop loss condition A&#10;2. Stop loss condition B..."
+                      />
+                    </Grid>
+                  </Grid>
+                )}
+
+                {modalActiveTab === ('TARGETS' as any) && (
+                  <Grid container spacing={3}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'primary.main', mb: 1 }}>
+                        Profit Targets & Scaling Strategy
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={isModalMaximized ? 18 : 12}
+                        value={targetRulesInput}
+                        onChange={(e) => setTargetRulesInput(e.target.value)}
+                        placeholder="1. Profit target 1&#10;2. Runner target 2..."
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'warning.main', mb: 1 }}>
+                        Invalidation Conditions & Manual Exits
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={isModalMaximized ? 18 : 12}
+                        value={invalidationInput}
+                        onChange={(e) => setInvalidationInput(e.target.value)}
+                        placeholder="1. Invalidation signal A&#10;2. Early exit condition B..."
+                      />
+                    </Grid>
+                  </Grid>
+                )}
+
+                {modalActiveTab === 'CHECKLIST' && (
+                  <Box>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                      Pre-Flight Checklist items (one per line) required before executing trade:
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={isModalMaximized ? 20 : 13}
+                      value={checklistInput}
+                      onChange={(e) => setChecklistInput(e.target.value)}
+                      placeholder="1. Checklist rule 1&#10;2. Checklist rule 2..."
+                    />
+                  </Box>
+                )}
+              </Box>
+            )}
           </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2.5 }}>
-            <Button onClick={() => setIsModalOpen(false)} color="inherit" disabled={saveMutation.isPending}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              disabled={saveMutation.isPending}
-              startIcon={saveMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
-            >
-              {saveMutation.isPending ? 'Saving...' : editingStrategy ? 'Update Strategy' : 'Save Setup'}
-            </Button>
+
+          <DialogActions
+            sx={{
+              px: 3,
+              py: 2,
+              borderTop: `1px solid ${muiTheme.palette.divider}`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+              💡 Tip: Click the <strong>Maximize Studio</strong> button in the top-right corner to edit in distraction-free full screen.
+            </Typography>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button onClick={() => setIsModalOpen(false)} color="inherit" disabled={saveMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                disabled={saveMutation.isPending}
+                startIcon={saveMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
+                sx={{ px: 3, fontWeight: 700 }}
+              >
+                {saveMutation.isPending ? 'Saving...' : editingStrategy ? 'Update Strategy' : 'Save Setup'}
+              </Button>
+            </Box>
           </DialogActions>
         </form>
       </Dialog>

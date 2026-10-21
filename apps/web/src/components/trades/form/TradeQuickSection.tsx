@@ -13,6 +13,7 @@ import {
   Divider,
   Collapse,
   Button,
+  CircularProgress,
   useTheme,
 } from '@mui/material';
 import {
@@ -61,6 +62,8 @@ interface TradeQuickSectionProps {
   hasAppliedTemplate?: boolean;
   appliedTemplateName?: string;
   missingStrategyName?: string | null;
+  onCreateMissingStrategy?: (strategyName: string) => void | Promise<void>;
+  isCreatingStrategy?: boolean;
   userTemplates?: ITradeTemplate[];
 }
 
@@ -83,6 +86,8 @@ export function TradeQuickSection({
   hasAppliedTemplate = false,
   appliedTemplateName,
   missingStrategyName = null,
+  onCreateMissingStrategy,
+  isCreatingStrategy = false,
   userTemplates = [],
 }: TradeQuickSectionProps) {
   const muiTheme = useTheme();
@@ -669,39 +674,90 @@ export function TradeQuickSection({
             fullWidth
             value={watch('strategyId') || ''}
             onChange={(e) => {
-              setValue('strategyId', e.target.value);
-              const found = strategies.find((s) => s.id === e.target.value);
-              if (found) setValue('strategyName', found.name);
+              const val = e.target.value;
+              if (val.startsWith('__CREATE__:')) {
+                const stratName = val.replace('__CREATE__:', '');
+                if (onCreateMissingStrategy) {
+                  onCreateMissingStrategy(stratName);
+                }
+                return;
+              }
+              setValue('strategyId', val, { shouldDirty: true });
+              const found = strategies.find((s) => (s.id || s._id) === val);
+              if (found) setValue('strategyName', found.name, { shouldDirty: true });
             }}
           >
             <MenuItem value="">
               <em>None / Discretionary</em>
             </MenuItem>
-            {strategies.map((strat) => (
-              <MenuItem key={strat.id} value={strat.id}>
-                {strat.name}
-              </MenuItem>
-            ))}
+            {strategies.map((strat) => {
+              const stratId = strat.id || strat._id;
+              return (
+                <MenuItem key={stratId} value={stratId}>
+                  {strat.name}
+                </MenuItem>
+              );
+            })}
+            {missingStrategyName &&
+              !strategies.some(
+                (s) => (s.name || '').toLowerCase() === missingStrategyName.toLowerCase()
+              ) && (
+                <MenuItem
+                  value={`__CREATE__:${missingStrategyName}`}
+                  sx={{
+                    color: 'info.main',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    borderTop: `1px dashed ${muiTheme.palette.divider}`,
+                    mt: 0.5,
+                  }}
+                >
+                  <AddRounded sx={{ fontSize: 16 }} />
+                  + Create strategy "{missingStrategyName}"
+                </MenuItem>
+              )}
           </TextField>
 
           {/* Missing strategy helper chip */}
           {missingStrategyName && (
             <Box sx={{ mt: 0.75 }}>
               <Chip
-                icon={<AddRounded sx={{ fontSize: '13px !important' }} />}
-                label={`Create strategy "${missingStrategyName}"`}
+                icon={
+                  isCreatingStrategy ? (
+                    <CircularProgress size={12} color="inherit" sx={{ mr: '4px !important' }} />
+                  ) : (
+                    <AddRounded sx={{ fontSize: '13px !important' }} />
+                  )
+                }
+                label={
+                  isCreatingStrategy
+                    ? `Creating strategy "${missingStrategyName}"...`
+                    : `+ Create strategy "${missingStrategyName}"`
+                }
                 size="small"
                 color="info"
                 variant="outlined"
-                onClick={() => {
-                  setValue('strategyName', missingStrategyName, { shouldDirty: true });
+                disabled={isCreatingStrategy}
+                onClick={async () => {
+                  if (onCreateMissingStrategy) {
+                    await onCreateMissingStrategy(missingStrategyName);
+                  } else {
+                    setValue('strategyName', missingStrategyName, { shouldDirty: true });
+                  }
                 }}
                 sx={{
-                  height: 22,
+                  height: 24,
                   fontSize: '0.6875rem',
                   fontWeight: 700,
-                  cursor: 'pointer',
-                  '&:hover': { bgcolor: 'info.main', color: '#fff' },
+                  cursor: isCreatingStrategy ? 'default' : 'pointer',
+                  borderColor: 'info.main',
+                  bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(2, 136, 209, 0.08)' : 'rgba(2, 136, 209, 0.04)',
+                  '&:hover': {
+                    bgcolor: 'info.main',
+                    color: '#fff',
+                  },
                 }}
               />
             </Box>

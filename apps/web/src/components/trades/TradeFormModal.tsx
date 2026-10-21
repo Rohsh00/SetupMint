@@ -673,6 +673,7 @@ export function TradeFormModal({
   const [provenanceMap, setProvenanceMap] = useState<Record<string, ProvenanceSource>>({});
   const [manualSlHint, setManualSlHint] = useState<string | null>(null);
   const [missingStrategyName, setMissingStrategyName] = useState<string | null>(null);
+  const [isCreatingStrategy, setIsCreatingStrategy] = useState(false);
   const [previousFormSnapshot, setPreviousFormSnapshot] = useState<any | null>(null);
 
   // Dynamic recomputation of SL and target when entryPrice or direction changes later
@@ -738,19 +739,16 @@ export function TradeFormModal({
     // Strategy matching (case-insensitive)
     if (template.strategyName) {
       const matched = strategies.find(
-        (s: any) => s.name?.toLowerCase() === template.strategyName!.toLowerCase()
+        (s: any) => (s.name || '').trim().toLowerCase() === template.strategyName!.trim().toLowerCase()
       );
       if (matched) {
-        if (!dirtyFields.strategyId) {
-          setValue('strategyId', matched.id || matched._id, { shouldDirty: true });
-          setValue('strategyName', matched.name, { shouldDirty: true });
-          setMissingStrategyName(null);
-        }
+        setValue('strategyId', matched.id || matched._id, { shouldDirty: true });
+        setValue('strategyName', matched.name, { shouldDirty: true });
+        setMissingStrategyName(null);
       } else {
         setMissingStrategyName(template.strategyName);
-        if (!dirtyFields.strategyName) {
-          setValue('strategyName', template.strategyName, { shouldDirty: true });
-        }
+        setValue('strategyId', '', { shouldDirty: true });
+        setValue('strategyName', template.strategyName, { shouldDirty: true });
       }
     }
 
@@ -819,6 +817,66 @@ export function TradeFormModal({
     setMissingStrategyName(null);
     setPreviousFormSnapshot(null);
     toast.info('Template undone. Previous values restored.');
+  };
+
+  const handleCreateMissingStrategy = async (strategyName: string) => {
+    if (!strategyName || isCreatingStrategy) return;
+    try {
+      setIsCreatingStrategy(true);
+
+      // Check if strategy already exists in current list (case-insensitive)
+      let targetStrategy = strategies.find(
+        (s: any) => (s.name || '').trim().toLowerCase() === strategyName.trim().toLowerCase()
+      );
+
+      if (!targetStrategy) {
+        try {
+          const res = await api.strategies.create({
+            name: strategyName.trim(),
+            description: activeTemplate?.description || `Playbook strategy for ${strategyName}`,
+            tags: activeTemplate?.tags || [],
+            entryRules: activeTemplate?.confluences || [],
+            minRiskReward: activeTemplate?.minRR || 1.5,
+          });
+          targetStrategy = res?.data || res;
+        } catch (createErr: any) {
+          // If server reports it already exists (409), refetch the list and find it
+          const freshList = await api.strategies.list();
+          targetStrategy = freshList.find(
+            (s: any) => (s.name || '').trim().toLowerCase() === strategyName.trim().toLowerCase()
+          );
+          if (!targetStrategy) {
+            throw createErr;
+          }
+        }
+      }
+
+      const stratId = targetStrategy?.id || targetStrategy?._id;
+      if (!stratId) {
+        throw new Error('Strategy was created but no ID was returned');
+      }
+
+      // Update React Query cache immediately so dropdown has the new option
+      queryClient.setQueryData(['strategies'], (old: any[] = []) => {
+        const alreadyInList = old.some((s: any) => (s.id || s._id) === stratId);
+        return alreadyInList ? old : [...old, targetStrategy];
+      });
+      await queryClient.invalidateQueries({ queryKey: ['strategies'] });
+
+      // Update form values with both strategyId and strategyName
+      setValue('strategyId', stratId, { shouldDirty: true });
+      setValue('strategyName', targetStrategy.name || strategyName, { shouldDirty: true });
+
+      // Clear missingStrategyName so the helper button disappears
+      setMissingStrategyName(null);
+
+      toast.success(`Strategy "${strategyName}" created and linked to trade!`);
+    } catch (err: any) {
+      console.error('Error creating strategy from template:', err);
+      toast.error(err?.message || 'Failed to create strategy playbook');
+    } finally {
+      setIsCreatingStrategy(false);
+    }
   };
 
   const handleSelectTemplate = (template: any) => {
@@ -1045,6 +1103,34 @@ export function TradeFormModal({
       delete payload.exitTime;
     }
     delete payload.tagsInput;
+
+    // If template has a strategy that wasn't explicitly created via the button, auto-create it now
+    if (!payload.strategyId && missingStrategyName) {
+      try {
+        let autoStrat = strategies.find(
+          (s: any) => (s.name || '').trim().toLowerCase() === missingStrategyName.trim().toLowerCase()
+        );
+        if (!autoStrat) {
+          const res = await api.strategies.create({
+            name: missingStrategyName.trim(),
+            description: activeTemplate?.description || `Playbook strategy for ${missingStrategyName}`,
+            tags: activeTemplate?.tags || [],
+            entryRules: activeTemplate?.confluences || [],
+            minRiskReward: activeTemplate?.minRR || 1.5,
+          });
+          autoStrat = res?.data || res;
+        }
+        const sid = autoStrat?.id || autoStrat?._id;
+        if (sid) {
+          payload.strategyId = sid;
+          payload.strategyName = autoStrat.name || missingStrategyName;
+          queryClient.invalidateQueries({ queryKey: ['strategies'] });
+        }
+      } catch (err) {
+        console.warn('Auto-create strategy on submit skipped:', err);
+      }
+    }
+
     if (!payload.strategyId) delete payload.strategyId;
     if (!payload.instrumentId) delete payload.instrumentId;
     if (!payload.templateId) delete payload.templateId;
@@ -1377,6 +1463,8 @@ export function TradeFormModal({
               hasAppliedTemplate={Boolean(activeTemplate)}
               appliedTemplateName={activeTemplate?.name}
               missingStrategyName={missingStrategyName}
+              onCreateMissingStrategy={handleCreateMissingStrategy}
+              isCreatingStrategy={isCreatingStrategy}
               userTemplates={allTemplatesData.filter((t: any) => !t.isBuiltIn)}
             />
 

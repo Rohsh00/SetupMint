@@ -101,6 +101,30 @@ export function parseFyersSymbol(rawSymbol: string): {
   return { cleanSymbol, exchange, marketSegment, assetClass };
 }
 
+/**
+ * Resolves standard contract multiplier for Indian exchange commodities and derivatives
+ */
+export function resolveContractMultiplier(cleanSymbol: string, exchange: string): number {
+  const sym = (cleanSymbol || '').toUpperCase();
+  if (exchange === 'MCX') {
+    if (sym.startsWith('CRUDEOILM')) return 10;
+    if (sym.startsWith('CRUDEOIL')) return 100;
+    if (sym.startsWith('NATGASMINI') || sym.startsWith('NATURALGASMINI')) return 250;
+    if (sym.startsWith('NATGAS') || sym.startsWith('NATURALGAS')) return 1250;
+    if (sym.startsWith('GOLDM')) return 10;
+    if (sym.startsWith('GOLDGUINEA')) return 1;
+    if (sym.startsWith('GOLD')) return 100;
+    if (sym.startsWith('SILVERMIC')) return 1;
+    if (sym.startsWith('SILVERM')) return 5;
+    if (sym.startsWith('SILVER')) return 30;
+    if (sym.startsWith('COPPER')) return 2500;
+    if (sym.startsWith('ZINC')) return 5000;
+    if (sym.startsWith('ALUMINI')) return 1000;
+    if (sym.startsWith('ALUMINIUM')) return 5000;
+  }
+  return 1;
+}
+
 export class FyersService {
   private static readonly FYERS_API_BASE = 'https://api-t1.fyers.in/api/v3';
 
@@ -298,8 +322,17 @@ export class FyersService {
 
       let currentGroup: ActiveGroup | null = null;
 
+      const makeFillId = (execItem: { raw: IFyersExecutionRaw; price: number; quantity: number; timestamp: Date }): string => {
+        if (execItem.raw.tradeNumber) return String(execItem.raw.tradeNumber).trim();
+        if (execItem.raw.orderNumber) {
+          return `${execItem.raw.orderNumber}-${execItem.price}-${execItem.quantity}-${execItem.timestamp.getTime()}`;
+        }
+        return `fyer_${cleanSymbol}_${execItem.price}_${execItem.quantity}_${execItem.timestamp.getTime()}`;
+      };
+
       const commitTrade = async (grp: ActiveGroup) => {
         try {
+          const multiplier = resolveContractMultiplier(cleanSymbol, exchange);
           const fifoSummary = calculateFIFOExecution(
             grp.direction,
             grp.fills.map((f) => ({
@@ -309,28 +342,13 @@ export class FyersService {
               quantity: f.quantity,
               timestamp: f.timestamp.toISOString(),
             })),
-            1
+            multiplier
           );
 
           const avgEntry = fifoSummary.weightedAvgEntryPrice.toNumber();
           const avgExit = fifoSummary.weightedAvgExitPrice ? fifoSummary.weightedAvgExitPrice.toNumber() : undefined;
           const closedQty = fifoSummary.closedQuantity.toNumber();
           const tradeDate = grp.entryTime;
-
-          // Strict Idempotency Check: Don't insert if exact trade is already logged
-          const existing = await Trade.findOne({
-            userId: uId,
-            accountId: account._id,
-            symbol: cleanSymbol,
-            tradeDate,
-            'simpleExecution.entryPrice': avgEntry,
-          });
-
-          if (existing) {
-            duplicateTradesCount++;
-            return;
-          }
-
           const totalTradeQty = grp.fills.filter((f) => f.type === 'ENTRY').reduce((sum, f) => sum + f.quantity, 0);
 
           // Calculate Indian Statutory Charges with FYERS Flat ₹20 Brokerage
@@ -340,7 +358,7 @@ export class FyersService {
             entryPrice: avgEntry,
             exitPrice: avgExit,
             quantity: totalTradeQty,
-            contractMultiplier: 1,
+            contractMultiplier: multiplier,
             broker: 'FYERS',
           });
 
@@ -348,6 +366,78 @@ export class FyersService {
           const netPnL = grossPnL - charges.totalCosts;
           const lastExitFill = grp.fills.filter((f) => f.type === 'EXIT').slice(-1)[0];
           const exitTime = lastExitFill ? lastExitFill.timestamp : undefined;
+
+          const fillIdsToMatch = grp.fills.map((f) => f.fillId).filter(Boolean);
+
+          // Robust Idempotency Check:
+          // 1. Primary: Match on unique execution fill IDs (survives user updates, date changes, strategy tagging, account reassignments)
+          // 2. Secondary fallback: Match on symbol, direction, entry price, and time window
+          const existing = await Trade.findOne({
+            userId: uId,
+            $or: [
+              ...(fillIdsToMatch.length > 0 ? [{ 'fills.fillId': { $in: fillIdsToMatch } }] : []),
+              {
+                symbol: cleanSymbol,
+                direction: grp.direction,
+                'simpleExecution.entryPrice': avgEntry,
+                entryTime: {
+                  $gte: new Date(grp.entryTime.getTime() - 2 * 60 * 1000),
+                  $lte: new Date(grp.entryTime.getTime() + 2 * 60 * 1000),
+                },
+              },
+              {
+                symbol: cleanSymbol,
+                direction: grp.direction,
+                'simpleExecution.entryPrice': avgEntry,
+                'simpleExecution.quantity': totalTradeQty,
+                tradeDate: {
+                  $gte: new Date(grp.entryTime.getTime() - 24 * 60 * 60 * 1000),
+                  $lte: new Date(grp.entryTime.getTime() + 24 * 60 * 60 * 1000),
+                },
+              },
+            ],
+          });
+
+          if (existing) {
+            // If existing trade was OPEN and the new sync data has closed it:
+            if (existing.status === 'OPEN' && fifoSummary.isFullyClosed) {
+              existing.status = 'CLOSED';
+              existing.exitTime = exitTime;
+              if (existing.simpleExecution) {
+                existing.simpleExecution.contractMultiplier = multiplier;
+                existing.simpleExecution.exitPrice = avgExit;
+                existing.simpleExecution.brokerage = charges.brokerage;
+                existing.simpleExecution.exchangeFees = charges.exchangeFees;
+                existing.simpleExecution.regulatoryFees = charges.regulatoryFees;
+                existing.simpleExecution.taxes = charges.taxes;
+              }
+              existing.fills = grp.fills.map((f) => ({
+                fillId: f.fillId,
+                timestamp: f.timestamp,
+                type: f.type,
+                price: f.price,
+                quantity: f.quantity,
+                fee: 0,
+              }));
+              existing.calculated = {
+                ...existing.calculated,
+                averageEntryPrice: avgEntry,
+                averageExitPrice: avgExit,
+                closedQuantity: closedQty,
+                openQuantity: fifoSummary.openQuantity.toNumber(),
+                totalCosts: charges.totalCosts,
+                grossPnL,
+                netPnL,
+                outcome: netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN',
+              };
+              await existing.save();
+              syncedTradesCount++;
+              return;
+            }
+
+            duplicateTradesCount++;
+            return;
+          }
 
           await Trade.create({
             userId: uId,
@@ -366,7 +456,7 @@ export class FyersService {
             importBatchId: batchId,
             executionMode: 'ADVANCED',
             simpleExecution: {
-              contractMultiplier: 1,
+              contractMultiplier: multiplier,
               entryPrice: avgEntry,
               exitPrice: avgExit,
               quantity: totalTradeQty,
@@ -400,7 +490,6 @@ export class FyersService {
                 : netPnL < 0
                 ? 'LOSS'
                 : 'BREAKEVEN',
-              returnPercent: avgEntry > 0 && avgExit ? ((avgExit - avgEntry) / avgEntry) * 100 * (grp.direction === 'SHORT' ? -1 : 1) : 0,
             },
           });
 
@@ -416,7 +505,7 @@ export class FyersService {
             direction: exec.direction,
             fills: [
               {
-                fillId: exec.raw.tradeNumber || `fyer_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                fillId: makeFillId(exec),
                 type: 'ENTRY',
                 price: exec.price,
                 quantity: exec.quantity,
@@ -431,7 +520,7 @@ export class FyersService {
           if (isSameDirection) {
             // Scaling into existing position
             currentGroup.fills.push({
-              fillId: exec.raw.tradeNumber || `fyer_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              fillId: makeFillId(exec),
               type: 'ENTRY',
               price: exec.price,
               quantity: exec.quantity,
@@ -441,7 +530,7 @@ export class FyersService {
           } else {
             // Exiting position
             currentGroup.fills.push({
-              fillId: exec.raw.tradeNumber || `fyer_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              fillId: makeFillId(exec),
               type: 'EXIT',
               price: exec.price,
               quantity: exec.quantity,

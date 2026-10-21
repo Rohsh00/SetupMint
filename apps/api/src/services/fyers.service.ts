@@ -193,17 +193,36 @@ export class FyersService {
     }
 
     // Find or create user's FYERS trading account
-    let account = await TradingAccount.findOne({ userId: uId, broker: 'FYERS', isArchived: false });
-    if (!account) {
+    let account = await TradingAccount.findOne({
+      userId: uId,
+      $or: [
+        { broker: 'FYERS' },
+        { name: 'FYERS Trading Account' },
+        { name: new RegExp('^FYERS', 'i') },
+      ],
+    });
+
+    if (account) {
+      if (account.status === 'ARCHIVED') {
+        account.status = 'ACTIVE';
+        await account.save();
+      }
+    } else {
+      let candidateName = 'FYERS Trading Account';
+      let count = 1;
+      while (await TradingAccount.findOne({ userId: uId, name: candidateName })) {
+        candidateName = `FYERS Trading Account ${++count}`;
+      }
+
       account = await TradingAccount.create({
         userId: uId,
-        name: 'FYERS Trading Account',
+        name: candidateName,
         broker: 'FYERS',
         accountNumber: `FY-${appId.split('-')[0] || 'LIVE'}`,
         baseCurrency: 'INR',
         initialBalance: mongoose.Types.Decimal128.fromString('500000'),
         currentBalance: mongoose.Types.Decimal128.fromString('500000'),
-        isDefault: false,
+        status: 'ACTIVE',
       });
     }
 
@@ -372,15 +391,22 @@ export class FyersService {
               closedQuantity: closedQty,
               openQuantity: fifoSummary.openQuantity.toNumber(),
               totalCosts: charges.totalCosts,
-              realizedGrossPnL: grossPnL,
+              grossPnL,
               netPnL,
+              outcome: !fifoSummary.isFullyClosed
+                ? 'OPEN'
+                : netPnL > 0
+                ? 'WIN'
+                : netPnL < 0
+                ? 'LOSS'
+                : 'BREAKEVEN',
               returnPercent: avgEntry > 0 && avgExit ? ((avgExit - avgEntry) / avgEntry) * 100 * (grp.direction === 'SHORT' ? -1 : 1) : 0,
             },
           });
 
           syncedTradesCount++;
         } catch (e) {
-          // Continue with next group if one fails
+          console.error('[FYERS Sync] Error committing trade to journal:', e);
         }
       };
 

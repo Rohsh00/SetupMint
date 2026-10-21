@@ -44,6 +44,7 @@ import MenuIcon from '@mui/icons-material/MenuRounded';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import LogoutIcon from '@mui/icons-material/LogoutRounded';
+import SyncIcon from '@mui/icons-material/SyncRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
@@ -129,6 +130,38 @@ export function AppLayout() {
     queryKey: ['accounts'],
     queryFn: () => api.accounts.list(),
   });
+
+  // Query FYERS live connection status
+  const { data: fyersStatus } = useQuery({
+    queryKey: ['fyers-status'],
+    queryFn: () => api.integrations.fyersStatus(),
+  });
+
+  const fyersData = (fyersStatus as any)?.data ?? fyersStatus;
+  const isFyersConfigured = Boolean(fyersData?.isConfigured || fyersData?.appId);
+  const isFyersConnected = Boolean(fyersData?.isConnected);
+
+  const [isSyncingFyers, setIsSyncingFyers] = useState(false);
+
+  const handleQuickFyersSync = async () => {
+    if (!isFyersConnected) {
+      navigate('/settings');
+      return;
+    }
+    setIsSyncingFyers(true);
+    try {
+      const res = await api.integrations.fyersSync();
+      queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success(res?.message || 'Synchronized trades from FYERS successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to sync trades from FYERS.');
+    } finally {
+      setIsSyncingFyers(false);
+    }
+  };
 
   const navItems = [
     { to: '/', label: 'Overview', icon: LayoutDashboardIcon },
@@ -519,6 +552,54 @@ export function AppLayout() {
 
             {/* Top Bar Actions */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              {/* Quick FYERS Sync / Connect Button */}
+              {isFyersConfigured && (
+                <Tooltip
+                  title={
+                    isFyersConnected
+                      ? 'Sync trades from FYERS Tradebook now'
+                      : 'FYERS needs daily 1-click authorization'
+                  }
+                  arrow
+                >
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleQuickFyersSync}
+                    disabled={isSyncingFyers}
+                    startIcon={
+                      <SyncIcon
+                        sx={{
+                          fontSize: 16,
+                          color: isFyersConnected ? 'success.main' : 'warning.main',
+                          animation: isSyncingFyers ? 'spin 1s linear infinite' : 'none',
+                          '@keyframes spin': {
+                            '0%': { transform: 'rotate(0deg)' },
+                            '100%': { transform: 'rotate(360deg)' },
+                          },
+                        }}
+                      />
+                    }
+                    sx={{
+                      height: 36,
+                      borderRadius: 2,
+                      borderColor: isFyersConnected ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)',
+                      color: isFyersConnected ? (isDark ? '#34d399' : '#059669') : (isDark ? '#fbbf24' : '#d97706'),
+                      backgroundColor: isDark
+                        ? isFyersConnected ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)'
+                        : isFyersConnected ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      textTransform: 'none',
+                      px: 1.5,
+                      display: { xs: 'none', sm: 'inline-flex' },
+                    }}
+                  >
+                    {isSyncingFyers ? 'Syncing...' : isFyersConnected ? 'Sync FYERS' : 'Connect FYERS'}
+                  </Button>
+                </Tooltip>
+              )}
+
               {/* Command Palette Trigger */}
               <Tooltip title="Quick Commands & Search (Cmd+K)" arrow>
                 <Button

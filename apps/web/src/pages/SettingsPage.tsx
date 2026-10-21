@@ -16,6 +16,9 @@ import {
   Divider,
   Chip,
   CircularProgress,
+  IconButton,
+  InputAdornment,
+  Tooltip,
   useTheme as useMuiTheme,
 } from '@mui/material';
 import {
@@ -33,6 +36,14 @@ import {
   LaptopRounded,
   PhoneAndroidRounded,
   DevicesRounded,
+  SyncRounded,
+  LinkRounded,
+  LinkOffRounded,
+  VisibilityRounded,
+  VisibilityOffRounded,
+  CloudDoneRounded,
+  ContentCopyRounded,
+  OpenInNewRounded,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
@@ -130,7 +141,9 @@ export function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // FYERS Integration state
-  const [fyersAppId, setFyersAppId] = useState('');
+  const [fyersAppId, setFyersAppId] = useState('CPCJNZWGA9-200');
+  const [fyersSecretKey, setFyersSecretKey] = useState('atRZ7ZpSgfZiUjoL');
+  const [showSecretKey, setShowSecretKey] = useState(false);
   const [fyersSuccess, setFyersSuccess] = useState(false);
   const [fyersError, setFyersError] = useState<string | null>(null);
 
@@ -163,11 +176,30 @@ export function SettingsPage() {
     queryFn: () => api.integrations.fyersStatus(),
   });
 
+  const fyersData = (fyersStatus as any)?.data ?? fyersStatus;
+  const isFyersConfigured = Boolean(fyersData?.isConfigured || fyersData?.appId);
+  const isFyersConnected = Boolean(fyersData?.isConnected);
+
   React.useEffect(() => {
-    if (fyersStatus?.appId) {
-      setFyersAppId(fyersStatus.appId);
+    if (fyersData?.appId) {
+      setFyersAppId(fyersData.appId);
     }
-  }, [fyersStatus]);
+
+    // Detect OAuth callback redirect parameters
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('fyers') === 'connected') {
+      toast.success('FYERS broker account successfully connected! Today\'s trades synced.');
+      queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('fyers') === 'error') {
+      const msg = params.get('message') || 'Authentication failed';
+      toast.error(`FYERS Connection: ${msg}`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [fyersData, queryClient]);
 
   const profileMutation = useMutation({
     mutationFn: (payload: any) => api.settings.updateProfile(payload),
@@ -229,18 +261,66 @@ export function SettingsPage() {
   };
 
 
-  const fyersMutation = useMutation({
-    mutationFn: (appId: string) => api.integrations.fyersConfig({ appId }),
+  const fyersConfigMutation = useMutation({
+    mutationFn: (payload: { appId: string; secretKey?: string }) =>
+      api.integrations.fyersConfig(payload),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
       setFyersError(null);
       setFyersSuccess(true);
-      toast.success('Broker configuration saved.');
+      toast.success('FYERS credentials saved securely.');
       setTimeout(() => setFyersSuccess(false), 3000);
     },
     onError: (err: any) => {
-      const msg = err.message || 'Failed to save Fyers configuration';
+      const msg = err.message || 'Failed to save FYERS configuration';
       setFyersError(msg);
       toast.error(msg);
+    },
+  });
+
+  const fyersConnectMutation = useMutation({
+    mutationFn: async () => {
+      if (fyersAppId) {
+        await api.integrations.fyersConfig({ appId: fyersAppId, secretKey: fyersSecretKey });
+      }
+      return api.integrations.fyersLoginUrl();
+    },
+    onSuccess: (res: any) => {
+      const url = res?.url || res?.data?.url;
+      if (url) {
+        toast.info('Opening FYERS login portal...');
+        window.location.href = url;
+      } else {
+        toast.error('Unable to retrieve FYERS login portal URL.');
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to initialize FYERS login.');
+    },
+  });
+
+  const fyersSyncMutation = useMutation({
+    mutationFn: () => api.integrations.fyersSync(),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success(res?.message || 'Synchronized trades from FYERS successfully.');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to sync trades from FYERS.');
+    },
+  });
+
+  const fyersDisconnectMutation = useMutation({
+    mutationFn: () => api.integrations.fyersDisconnect(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
+      toast.info('FYERS broker session disconnected.');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to disconnect FYERS session.');
     },
   });
 
@@ -607,80 +687,227 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Future FYERS Integration Architecture Card */}
+      {/* Live FYERS Broker Integration Card */}
       <Card variant="outlined" sx={{ p: 1 }}>
         <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <KeyRounded sx={{ color: 'primary.main' }} />
-                Future FYERS Broker Integration
+                FYERS Broker Integration (Live API v3)
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Decoupled broker adapter abstraction ready for automated execution synchronization
+                Automated tradebook synchronization with FIFO round-trip matching & statutory charges calculation
               </Typography>
             </Box>
-            <Box
-              sx={{
-                px: 1.5,
-                py: 0.5,
-                borderRadius: 1,
-                bgcolor: 'action.hover',
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: '0.75rem',
-                color: 'text.secondary',
-              }}
-            >
-              Status: {fyersStatus?.status || 'DISABLED'}
-            </Box>
-          </Box>
-
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-            SetupMint is architected with a decoupled <strong>BrokerAdapter</strong> interface and <strong>NormalizedExecution</strong> schema. In future updates, FYERS API orders and fills will synchronize without altering your manual trade journal core.
-          </Typography>
-
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 1.5,
-              bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-              border: 1,
-              borderColor: 'divider',
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: '0.75rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.75,
-            }}
-          >
-            <div>Adapter Version: <strong>v3-compatible (REST / WebSocket)</strong></div>
-            <div>Normalized Execution Schema: <strong>INormalizedExecution</strong></div>
-            <div>Duplicate Reconciliation Engine: <strong>IdempotencyKey & Manual Review Ready</strong></div>
-          </Box>
-
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            <TextField
+            <Chip
+              icon={
+                isFyersConnected ? (
+                  <CloudDoneRounded sx={{ fontSize: '1rem !important' }} />
+                ) : isFyersConfigured ? (
+                  <LinkRounded sx={{ fontSize: '1rem !important' }} />
+                ) : (
+                  <LinkOffRounded sx={{ fontSize: '1rem !important' }} />
+                )
+              }
+              label={
+                isFyersConnected
+                  ? 'CONNECTED (LIVE SYNC)'
+                  : isFyersConfigured
+                  ? 'CONFIGURED (NEEDS DAILY LOGIN)'
+                  : 'NOT CONFIGURED'
+              }
               size="small"
-              placeholder="FYERS App ID (e.g. XC12345-100)"
-              value={fyersAppId}
-              onChange={(e) => setFyersAppId(e.target.value)}
-              sx={{ flex: 1 }}
-              slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+              color={isFyersConnected ? 'success' : isFyersConfigured ? 'warning' : 'default'}
+              sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
             />
-            <Button
-              variant="contained"
-              color="primary"
-              disabled={fyersMutation.isPending}
-              onClick={() => fyersMutation.mutate(fyersAppId)}
-              sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}
-            >
-              Save Configuration
-            </Button>
           </Box>
+
+          <Alert
+            severity={isFyersConnected ? 'success' : 'info'}
+            sx={{ fontSize: '0.8125rem', py: 0.75 }}
+          >
+            {isFyersConnected ? (
+              <span>
+                <strong>Active Broker Session:</strong> Trades executed on FYERS (mobile, web, or TradingView) can now be fetched automatically into your journal with exact fills and fees.
+              </span>
+            ) : (
+              <span>
+                <strong>SEBI 24-Hour Token Rule:</strong> Broker API tokens expire daily. Click <strong>"Connect to FYERS (1-Click Daily Auth)"</strong> once per trading day to authorize SetupMint to fetch your tradebook.
+              </span>
+            )}
+          </Alert>
+
+          {/* Configuration Inputs */}
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                FYERS App ID (Client ID)
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="e.g. CPCJNZWGA9-200"
+                value={fyersAppId}
+                onChange={(e) => setFyersAppId(e.target.value.trim())}
+                slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 } } }}
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                FYERS Secret Key
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                type={showSecretKey ? 'text' : 'password'}
+                placeholder="Enter 32-char Secret Key"
+                value={fyersSecretKey}
+                onChange={(e) => setFyersSecretKey(e.target.value.trim())}
+                slotProps={{
+                  htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } },
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={() => setShowSecretKey(!showSecretKey)}
+                          edge="end"
+                        >
+                          {showSecretKey ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+            </Grid>
+
+            {/* Redirect URI reference */}
+            <Grid size={{ xs: 12 }}>
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Registered Redirect / Callback URL (Saved in FYERS Dashboard):
+                  </Typography>
+                  <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: 'primary.main' }}>
+                    http://127.0.0.1:4000/api/v1/integrations/fyers/callback
+                  </Typography>
+                </Box>
+                <Tooltip title="Copy Redirect URL to clipboard">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ContentCopyRounded fontSize="small" />}
+                    onClick={() => {
+                      navigator.clipboard.writeText('http://127.0.0.1:4000/api/v1/integrations/fyers/callback');
+                      toast.info('Redirect URL copied to clipboard');
+                    }}
+                    sx={{ fontSize: '0.6875rem' }}
+                  >
+                    Copy
+                  </Button>
+                </Tooltip>
+              </Box>
+            </Grid>
+          </Grid>
+
+          {/* Action Buttons */}
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
+            <Button
+              variant="outlined"
+              color="inherit"
+              disabled={fyersConfigMutation.isPending || !fyersAppId}
+              onClick={() => fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey })}
+              sx={{ fontWeight: 600 }}
+            >
+              {fyersConfigMutation.isPending ? 'Saving...' : 'Save Credentials'}
+            </Button>
+
+            {!isFyersConnected && (
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<LinkRounded />}
+                disabled={fyersConnectMutation.isPending || !fyersAppId}
+                onClick={() => fyersConnectMutation.mutate()}
+                sx={{ fontWeight: 700 }}
+              >
+                {fyersConnectMutation.isPending ? 'Opening FYERS...' : 'Connect to FYERS (1-Click Daily Auth)'}
+              </Button>
+            )}
+
+            <Button
+              variant={isFyersConnected ? 'contained' : 'outlined'}
+              color={isFyersConnected ? 'success' : 'inherit'}
+              startIcon={
+                <SyncRounded
+                  sx={{
+                    animation: fyersSyncMutation.isPending ? 'spin 1s linear infinite' : 'none',
+                    '@keyframes spin': {
+                      '0%': { transform: 'rotate(0deg)' },
+                      '100%': { transform: 'rotate(360deg)' },
+                    },
+                  }}
+                />
+              }
+              disabled={fyersSyncMutation.isPending || fyersConnectMutation.isPending}
+              onClick={() => {
+                if (!isFyersConnected) {
+                  toast.info('FYERS session not authorized for today. Launching 1-Click Daily Auth...');
+                  fyersConnectMutation.mutate();
+                } else {
+                  fyersSyncMutation.mutate();
+                }
+              }}
+              sx={{ fontWeight: 700 }}
+            >
+              {fyersSyncMutation.isPending ? 'Syncing Tradebook...' : 'Sync FYERS Trades Now'}
+            </Button>
+
+            {isFyersConnected && (
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<LinkOffRounded />}
+                disabled={fyersDisconnectMutation.isPending}
+                onClick={() => fyersDisconnectMutation.mutate()}
+                sx={{ fontWeight: 600 }}
+              >
+                Disconnect
+              </Button>
+            )}
+          </Box>
+
+          {/* Sync History & Diagnostics */}
+          {fyersData?.lastSyncAt && (
+            <Box sx={{ pt: 1, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary">
+                Last Synced: <strong>{new Date(fyersData.lastSyncAt).toLocaleString()}</strong>
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Engine: <strong>FIFO Round-Trip + Indian Statutory Charges</strong>
+              </Typography>
+            </Box>
+          )}
 
           {fyersSuccess && (
             <Alert severity="success" icon={<CheckCircleRounded />}>
-              Configuration saved in integration layer
+              FYERS credentials saved securely in integration layer.
             </Alert>
           )}
 

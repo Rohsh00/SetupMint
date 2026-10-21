@@ -318,6 +318,9 @@ export const api = {
     fyersStatus: () => request<any>('/integrations/fyers/status'),
     fyersConfig: (config: any) =>
       request<any>('/integrations/fyers/config', { method: 'POST', body: JSON.stringify(config) }),
+    fyersLoginUrl: () => request<any>('/integrations/fyers/login-url'),
+    fyersSync: () => request<any>('/integrations/fyers/sync', { method: 'POST' }),
+    fyersDisconnect: () => request<any>('/integrations/fyers/disconnect', { method: 'POST' }),
   },
 };
 

@@ -328,12 +328,26 @@ export function TradeFormModal({
         }
       }
 
+      // Sanitize confluences (remove any accidental multi-sentence checklist questions or phase descriptions)
+      let initialThesis = initialValues.thesis ? { ...initialValues.thesis } : {};
+      if (Array.isArray(initialThesis.confluences)) {
+        initialThesis.confluences = initialThesis.confluences.filter((c: string) => {
+          if (!c || c.trim().length === 0) return false;
+          const trimmed = c.trim();
+          if (trimmed.length > 55) return false;
+          if (/^\d+\.\s+/i.test(trimmed)) return false;
+          if (/^(Phase \d|Bullish Trap|Bearish Trap|For a (Short|Long) Setup)/i.test(trimmed)) return false;
+          return true;
+        });
+      }
+
       reset({
         ...initialValues,
         exchange: initialExchange,
         marketSegment: initialMarketSegment,
         assetClass: initialAssetClass,
         risk: initialRisk,
+        thesis: initialThesis,
         simpleExecution: initialExec,
         fills: formattedFills,
         tagsInput: Array.isArray(initialValues.tags)
@@ -421,7 +435,7 @@ export function TradeFormModal({
     return strategies.find((s: any) => s.id === watchedStrategyId || s._id === watchedStrategyId) || null;
   }, [strategies, watchedStrategyId]);
 
-  // Strategy-aware entry: prefill checklist/confluences when strategy is selected
+  // Strategy-aware sync: sync strategyName when strategy is selected
   const prevStrategyIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!watchedStrategyId || watchedStrategyId === prevStrategyIdRef.current) {
@@ -434,18 +448,8 @@ export function TradeFormModal({
       if (selectedStrategy.name) {
         setValue('strategyName', selectedStrategy.name);
       }
-      const strategyConfluences = [
-        ...(selectedStrategy.checklist || []),
-        ...(selectedStrategy.entryRules || []),
-      ];
-      if (strategyConfluences.length > 0) {
-        const currentConfluences: string[] = watch('thesis.confluences') || [];
-        const combined = Array.from(new Set([...currentConfluences, ...strategyConfluences]));
-        setValue('thesis.confluences', combined, { shouldDirty: true });
-        setValue('psychology.checklistCompleted', true, { shouldDirty: true });
-      }
     }
-  }, [watchedStrategyId, selectedStrategy, setValue, watch]);
+  }, [watchedStrategyId, selectedStrategy, setValue]);
 
   // Persist preferences safely when user actively changes symbol, account, strategy, workflow, or execution mode
   useEffect(() => {

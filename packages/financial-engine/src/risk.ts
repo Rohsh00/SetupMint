@@ -125,8 +125,8 @@ export function calculateRiskAndPositionSize(
     estimatedReward = Number(grossReward.toFixed(2));
     estimatedNetReward = Number(netReward.toFixed(2));
 
-    if (estimatedMonetaryLoss.greaterThan(0)) {
-      rewardRiskRatio = Number(grossReward.dividedBy(estimatedMonetaryLoss).toFixed(2));
+    if (!stopDistance.isZero()) {
+      rewardRiskRatio = Number(rewardDistance.dividedBy(stopDistance).toFixed(2));
     }
   }
 

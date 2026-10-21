@@ -80,6 +80,30 @@ describe('Financial Engine - Risk Management & Sizing', () => {
     expect(result.warnings.some((w) => w.includes('LONG trades, initial stop-loss must be lower'))).toBe(true);
   });
 
+  it('calculates rewardRiskRatio correctly even when budget is below 1 lot (0 rounded units)', () => {
+    // User scenario: Entry 121,105, Stop 120,845 (stop distance = 260), Target 121,605 (reward distance = 500)
+    // Fixed risk budget: 1496. Lot size: 6. Minimum lot risk: 6 * 260 = 1560 > 1496 -> 0 units.
+    // Structural R:R must still be 500 / 260 = 1.92
+    const result = calculateRiskAndPositionSize({
+      accountEquity: 656346.8,
+      fixedRiskAmount: 1496,
+      entryPrice: 121105,
+      stopLossPrice: 120845,
+      targetPrice: 121605,
+      direction: 'LONG',
+      contractMultiplier: 1,
+      lotSize: 6,
+      quantityIncrement: 6,
+    });
+
+    expect(result.stopLossDistance).toBe(260);
+    expect(result.roundedLotQuantity).toBe(0);
+    expect(result.rawSuggestedQuantity).toBeCloseTo(5.7538, 2);
+    expect(result.rewardRiskRatio).toBe(1.92);
+    expect(result.isDirectionValid).toBe(true);
+    expect(result.isStopDistanceZero).toBe(false);
+  });
+
   it('calculates realized R-multiple accurately', () => {
     // Made 7,500 on a trade where planned risk was 2,500 -> 3.00 R
     expect(calculateRealizedRMultiple(7500, 2500)).toBe(3.0);
@@ -90,3 +114,4 @@ describe('Financial Engine - Risk Management & Sizing', () => {
     expect(calculateRealizedRMultiple(1000, null)).toBeUndefined();
   });
 });
+

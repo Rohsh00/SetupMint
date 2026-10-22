@@ -15,6 +15,8 @@ export interface IInstrumentDoc extends Document {
   quantityIncrement: number;
   pricePrecision: number;
   isActive: boolean;
+  source: 'AUTO' | 'CUSTOM';
+  needsReview: boolean;
   expiryDate?: Date;
   optionType?: OptionType;
   strikePrice?: number;
@@ -92,6 +94,16 @@ const InstrumentSchema = new Schema<IInstrumentDoc>(
       default: true,
       index: true,
     },
+    source: {
+      type: String,
+      enum: ['AUTO', 'CUSTOM'],
+      default: 'CUSTOM',
+      index: true,
+    },
+    needsReview: {
+      type: Boolean,
+      default: false,
+    },
     expiryDate: { type: Date },
     optionType: {
       type: String,
@@ -103,6 +115,6 @@ const InstrumentSchema = new Schema<IInstrumentDoc>(
   { timestamps: true }
 );
 
-InstrumentSchema.index({ userId: 1, symbol: 1 });
+InstrumentSchema.index({ userId: 1, symbol: 1 }, { unique: true });
 
 export const Instrument = mongoose.model<IInstrumentDoc>('Instrument', InstrumentSchema);

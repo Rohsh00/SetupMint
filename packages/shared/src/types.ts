@@ -227,9 +227,11 @@ export interface IAccountTransaction {
   createdAt: string;
 }
 
+export type InstrumentSource = 'AUTO' | 'CUSTOM';
+
 export interface IInstrument {
   id: string;
-  userId?: string; // Optional if global system preset
+  userId?: string;
   symbol: string;
   displayName: string;
   assetClass: AssetClass;
@@ -242,6 +244,12 @@ export interface IInstrument {
   quantityIncrement: number;
   pricePrecision: number;
   isActive: boolean;
+  source?: InstrumentSource;
+  needsReview?: boolean;
+  tradeCount?: number;
+  lastTradedAt?: string;
+  firstTradedAt?: string;
+  netPnL?: number;
   expiryDate?: string;
   optionType?: OptionType;
   strikePrice?: number;
@@ -422,6 +430,10 @@ export interface ITrade {
   externalExecutionId?: string;
   importBatchId?: string;
   templateId?: string;
+  underlying?: string;
+  optionType?: OptionType;
+  strikePrice?: number;
+  expiryDate?: string;
 
   executionMode: ExecutionMode;
   simpleExecution?: ISimpleExecution;

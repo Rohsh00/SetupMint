@@ -126,8 +126,9 @@ SetupMint defines 13 core Mongoose models:
 | `_id` | `ObjectId` | Auto | Generated | Primary Key | Trade identifier |
 | `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Trade owner ID |
 | `accountId` | `ObjectId` | **Yes** | — | Ref: `'TradingAccount'`, Indexed | Associated trading account |
-| `instrumentId` | `ObjectId` | No | — | Ref: `'Instrument'` | Linked instrument ID |
-| `symbol` | `String` | **Yes** | — | Uppercase, trim, Indexed | Trading symbol (e.g. NIFTY) |
+| `instrumentId` | `ObjectId` | No | — | Ref: `'Instrument'` | Linked underlying instrument ID |
+| `underlying` | `String` | No | — | Uppercase, trim, Indexed | Normalized underlying ticker (e.g. NIFTY) |
+| `symbol` | `String` | **Yes** | — | Uppercase, trim, Indexed | Traded contract or symbol (e.g. NIFTY24OCT24500CE) |
 | `instrumentName` | `String` | No | — | — | Long description name |
 | `assetClass` | `String` | **Yes** | — | Enum: `['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX']`, Indexed | Asset class category |
 | `exchange` | `String` | **Yes** | — | — | Exchange code (NSE, MCX, etc.) |
@@ -135,6 +136,9 @@ SetupMint defines 13 core Mongoose models:
 | `currency` | `String` | No | `'INR'` | — | Quote currency |
 | `direction` | `String` | **Yes** | — | Enum: `['LONG', 'SHORT']`, Indexed | Trade side |
 | `status` | `String` | No | `'CLOSED'` | Enum: `['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED']`, Indexed | Trade lifecycle status |
+| `optionType` | `String` | No | — | Enum: `['CALL', 'PUT']` | Options type |
+| `strikePrice` | `Number` | No | — | — | Options strike price |
+| `expiryDate` | `Date` | No | — | — | Derivatives expiry date |
 | `strategyId` | `ObjectId` | No | — | Ref: `'Strategy'`, Indexed | Associated playbook ID |
 | `strategyName` | `String` | No | — | — | Denormalized strategy name |
 | `tags` | `[String]` | No | `[]` | Indexed | Custom search tags |
@@ -259,15 +263,17 @@ SetupMint defines 13 core Mongoose models:
 - **Collection Name:** `instruments`
 - **File:** [`apps/api/src/db/models/Instrument.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/Instrument.ts)
 
+SetupMint implements a strict **One-Instrument-Per-Underlying** architecture. Global presets and static catalogs are not stored in the database. Instruments belong exclusively to individual users and represent base underlying assets (e.g. `NIFTY`, `BANKNIFTY`, `CRUDEOIL`, `RELIANCE`). Derivative-specific parameters (expiry date, option type, strike price) are stored at the individual trade level.
+
 | Field Name | Type | Required | Default | Constraints | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `_id` | `ObjectId` | Auto | Generated | Primary Key | Instrument identifier |
-| `userId` | `ObjectId` | No | — | Ref: `'User'`, Indexed | Null if global preset |
-| `symbol` | `String` | **Yes** | — | Uppercase, trim, Indexed | Trading symbol |
-| `displayName` | `String` | **Yes** | — | Trim | Human-readable name |
-| `assetClass` | `String` | **Yes** | — | Enum, Indexed | Instrument category |
-| `exchange` | `String` | **Yes** | — | Trim | Exchange identifier |
-| `marketSegment` | `String` | **Yes** | — | Enum | Market segment |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owning user ID |
+| `symbol` | `String` | **Yes** | — | Uppercase, trim, Indexed | Normalized underlying ticker (e.g. `NIFTY`) |
+| `displayName` | `String` | **Yes** | — | Trim | Human-readable name (e.g. `Nifty 50 Index`) |
+| `assetClass` | `String` | **Yes** | — | Enum, Indexed | Instrument category (`EQUITY`, `FUTURES`, `OPTIONS`, `COMMODITY`, `FOREX`, `CRYPTO`, `INDEX`) |
+| `exchange` | `String` | **Yes** | — | Trim | Exchange identifier (`NSE`, `MCX`, `BSE`, etc.) |
+| `marketSegment` | `String` | **Yes** | — | Enum | Market segment (`NSE_EQ`, `NSE_FNO`, `MCX`, etc.) |
 | `quoteCurrency` | `String` | No | `'INR'` | — | Pricing currency |
 | `contractMultiplier` | `Number` | **Yes** | `1` | Positive | Point value multiplier |
 | `lotSize` | `Number` | **Yes** | `1` | Positive | Minimum order lot size |
@@ -275,12 +281,12 @@ SetupMint defines 13 core Mongoose models:
 | `quantityIncrement` | `Number` | **Yes** | `1` | Positive | Increment step size |
 | `pricePrecision` | `Number` | **Yes** | `2` | Non-negative integer | Decimal display precision |
 | `isActive` | `Boolean` | No | `true` | Indexed | Active flag |
-| `expiryDate` | `Date` | No | — | — | Derivatives expiry date |
-| `optionType` | `String` | No | — | Enum: `['CALL', 'PUT']` | Options type |
-| `strikePrice` | `Number` | No | — | — | Options strike price |
+| `source` | `String` | No | `'CUSTOM'` | Enum: `['AUTO', 'CUSTOM']` | Creation origin (`AUTO` if created on first trade, `CUSTOM` if created manually) |
+| `needsReview` | `Boolean` | No | `false` | Indexed | Set to `true` when auto-created with unknown fallback specs; cleared when user edits |
+| `description` | `String` | No | — | — | Optional description |
 
 **Compound Indexes:**
-- `{ userId: 1, symbol: 1 }`
+- `{ userId: 1, symbol: 1 }` (Unique: `true`) — Guarantees exactly one instrument per underlying symbol per user.
 
 ---
 

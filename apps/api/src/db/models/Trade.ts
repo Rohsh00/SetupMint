@@ -4,6 +4,7 @@ import {
   Direction,
   ExecutionMode,
   MarketSegment,
+  OptionType,
   TradeOutcome,
   TradeStatus,
   TradingSession,
@@ -14,6 +15,10 @@ export interface ITradeDoc extends Document {
   accountId: mongoose.Types.ObjectId;
   instrumentId?: mongoose.Types.ObjectId;
   symbol: string;
+  underlying?: string;
+  optionType?: OptionType;
+  strikePrice?: number;
+  expiryDate?: Date;
   instrumentName?: string;
   assetClass: AssetClass;
   exchange: string;
@@ -174,6 +179,18 @@ const TradeSchema = new Schema<ITradeDoc>(
       trim: true,
       index: true,
     },
+    underlying: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      index: true,
+    },
+    optionType: {
+      type: String,
+      enum: ['CALL', 'PUT'],
+    },
+    strikePrice: { type: Number },
+    expiryDate: { type: Date },
     instrumentName: { type: String },
     assetClass: {
       type: String,

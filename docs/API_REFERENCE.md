@@ -537,10 +537,13 @@ Authentication is handled via stateful sessions:
 - `POST /api/v1/templates/:id/use` — Increment `usageCount` and update `lastUsedAt`.
 
 ### Instruments (`/api/v1/instruments`)
-- `GET /api/v1/instruments` — List global presets combined with user-created instruments. Includes presets for `NIFTY`, `BANKNIFTY`, `FINNIFTY`, `RELIANCE`, `CRUDEOIL`, `GOLD`, `EURUSD`, `GBPUSD`, `USDJPY`, `XAUUSD`, `BTCUSDT`, `ETHUSDT`, `SOLUSDT`.
-- `POST /api/v1/instruments` — Create custom instrument.
-- `PUT /api/v1/instruments/:id` — Update custom instrument.
-- `DELETE /api/v1/instruments/:id` — Delete custom instrument.
+The Instruments endpoint returns ONLY instruments the authenticated user has actually traded or explicitly created. There are no global presets or catalogs exposed in the user's instruments list. When a trade is logged for a symbol, an underlying instrument is automatically created if it does not already exist.
+
+- `GET /api/v1/instruments` — List only instruments traded or created by the authenticated user (returns `[]` for fresh users). Each instrument is enriched via aggregation with `tradeCount`, `netPnL` (net realized profit/loss), `firstTradedAt`, `lastTradedAt`, `source` (`'AUTO'` | `'CUSTOM'`), and `needsReview` (boolean flag set to `true` when auto-created from an unknown symbol without a preset spec).
+- `POST /api/v1/instruments` — Create custom instrument with `source: 'CUSTOM'`. Enforces unique `{ userId, symbol }` constraint (returns `409 Conflict` with code `DUPLICATE_INSTRUMENT` if symbol already exists for the user).
+- `POST /api/v1/instruments/:id/preview-update` — Non-destructive preview calculating financial impact of proposed instrument changes (e.g. multiplier updates) across all existing trades referencing this instrument. Returns `tradesCount`, `oldTotalNetPnL`, `newTotalNetPnL`, `deltaNetPnL`, and `affectedAccountIds`.
+- `PUT /api/v1/instruments/:id` — Update instrument specifications. Accepts optional `applyToTrades: boolean` (default: `false`). When `applyToTrades: true`, atomically updates all existing trades linked to this instrument in a single transaction, recalculates trade gross P&L, fees, and net P&L using `@tradevault/financial-engine`, appends audit log entries, and authoritatively reconciles affected account balances via `AccountService.recalculateAccountBalances()`. Clears `needsReview` flag. Returns `409 Conflict` if updating symbol to an existing symbol for the user.
+- `DELETE /api/v1/instruments/:id` — Delete instrument. Enforces referential integrity: returns `409 Conflict` with error code `INSTRUMENT_IN_USE` if any existing trades reference this instrument. Allowed only when `tradeCount === 0`.
 
 ---
 

@@ -242,20 +242,23 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ---
 
-### 11. `/instruments` — Instrument Catalog Page
+### 11. `/instruments` — Instruments & Contract Specifications Page
 - **Page Component:** [`InstrumentsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/InstrumentsPage.tsx)
-- **Purpose:** Specifications catalog of trading instruments, multipliers, and lot sizes.
+- **Purpose:** Centralized contract specifications and trading statistics for ONLY instruments the user has traded or explicitly created. No global presets or unused catalogs are shown.
 - **Main Components:**
-  - Instruments Table: Symbol, Display Name, Asset Class, Exchange, Segment, Contract Multiplier, Lot Size, Tick Size, Quantity Increment.
-  - System Preset vs Custom Badges.
-  - Add Custom Instrument Modal.
-- **Available Actions:** Browse instruments, search, create custom instrument, edit custom instrument, delete custom instrument.
+  - Single Traded Instruments Table: Underlying Symbol (with "Review specs" badge if auto-created from fallback), Display Name, Asset Class, Exchange, Contract Multiplier, Lot Size, Tick Size, Trades Count, Net Realized P&L, Last Traded Date, Source (`AUTO` | `CUSTOM`), and Actions.
+  - Empty State: When user has 0 instruments, informs user instruments are created automatically on first trade or can be added manually.
+  - Create Custom Instrument Modal: Add new instrument with custom multiplier, lot size, tick size, and precision.
+  - Edit Instrument Modal with Cascading Updates: Allows updating multiplier, lot size, etc., with "Apply to all N existing trades" checkbox (default ON when trades exist).
+  - Cascade Financial Impact Confirmation: Calls `POST /instruments/:id/preview-update` to display previous vs new net P&L and net difference before authoritatively reconciling account balances.
+- **Available Actions:** Search instruments, create custom instrument, edit specifications with optional trade cascade recalculation, delete unused instruments (blocked if trades exist).
 - **API Calls:**
   - `GET /api/v1/instruments`
   - `POST /api/v1/instruments`
-  - `PUT /api/v1/instruments/:id`
+  - `POST /api/v1/instruments/:id/preview-update`
+  - `PUT /api/v1/instruments/:id` (with `applyToTrades: boolean`)
   - `DELETE /api/v1/instruments/:id`
-- **Database Models:** `Instrument`.
+- **Database Models:** `Instrument`, `Trade`, `TradingAccount`.
 - **Status:** **IMPLEMENTED**.
 
 ---

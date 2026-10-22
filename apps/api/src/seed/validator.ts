@@ -66,14 +66,30 @@ export class SeedValidator {
     });
     if (accounts.length === 0) errors.push('No trading accounts found for user');
 
-    // Check 3: Instruments directory
+    // Check 3: Instruments & Referential Integrity
     const instruments = await Instrument.find({ userId });
+    const tradesForCheck = await Trade.find({ userId });
+    const instrumentIdSet = new Set(instruments.map((i) => i._id.toString()));
+    const unreferencedTrades = tradesForCheck.filter(
+      (t) => !t.instrumentId || !instrumentIdSet.has(t.instrumentId.toString())
+    );
+    const referencedInstrumentIds = new Set(tradesForCheck.map((t) => t.instrumentId?.toString()));
+    const unusedInstruments = instruments.filter((i) => !referencedInstrumentIds.has(i._id.toString()));
+    const instrumentsValid = instruments.length > 0 && unreferencedTrades.length === 0 && unusedInstruments.length === 0;
     checks.push({
-      name: 'Instruments Seeded',
-      passed: instruments.length >= 10,
-      details: `Found ${instruments.length} instruments (Equities, F&O, MCX Commodities)`,
+      name: 'Instruments Traded & Referential Integrity',
+      passed: instrumentsValid,
+      details: `Found ${instruments.length} traded instruments; all ${tradesForCheck.length} trades point to user instruments (${unreferencedTrades.length} orphaned, ${unusedInstruments.length} unused)`,
     });
-    if (instruments.length < 10) errors.push('Instrument catalogue is incomplete');
+    if (!instrumentsValid) {
+      if (instruments.length === 0) errors.push('No instruments found for user');
+      if (unreferencedTrades.length > 0) {
+        errors.push(`Trades fail referential integrity: ${unreferencedTrades.length} trades have invalid instrument reference`);
+      }
+      if (unusedInstruments.length > 0) {
+        errors.push(`Unused instruments found: ${unusedInstruments.length} instruments exist without any trades`);
+      }
+    }
 
     // Check 4: Strategies playbooks
     const strategies = await Strategy.find({ userId });

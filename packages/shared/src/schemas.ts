@@ -70,6 +70,8 @@ export const createInstrumentSchema = z.object({
   quantityIncrement: z.number().positive('Quantity increment must be positive').default(1),
   pricePrecision: z.number().int().nonnegative().default(2),
   isActive: z.boolean().default(true),
+  source: z.enum(['AUTO', 'CUSTOM']).default('CUSTOM'),
+  needsReview: z.boolean().default(false),
   expiryDate: z.string().optional(),
   optionType: z.enum(['CALL', 'PUT']).optional(),
   strikePrice: z.number().optional(),
@@ -153,6 +155,13 @@ export const createTradeSchema = z.object({
   symbol: z.string().min(1, 'Symbol is required').transform((s) => s.toUpperCase().trim()),
   instrumentId: z.preprocess(emptyStringToUndefined, z.string().optional()),
   instrumentName: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  underlying: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  optionType: z.preprocess(emptyStringToUndefined, z.enum(['CALL', 'PUT']).optional()),
+  strikePrice: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+  expiryDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
   assetClass: z.enum(['EQUITY', 'FUTURES', 'OPTIONS', 'COMMODITY', 'FOREX', 'CRYPTO', 'INDEX']),
   exchange: z.string().min(1, 'Exchange is required'),
   marketSegment: z.enum([

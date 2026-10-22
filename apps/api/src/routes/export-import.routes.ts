@@ -11,6 +11,7 @@ import {
 import { Trade, TradingAccount, BrokerImportMapping, SupportedImportBroker } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
+import { InstrumentService } from '../services/instrument.service.js';
 
 const TRADE_HEADER_KEYWORDS = [
   'symbol',
@@ -630,6 +631,27 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     let duplicateCount = 0;
     const errors: Array<{ row: number; symbol?: string; message: string }> = [];
 
+    const instrumentCache = new Map<string, any>();
+    const getOrEnsureInstrument = async (
+      sym: string,
+      meta?: { assetClass?: any; exchange?: string; marketSegment?: any }
+    ) => {
+      const underlying = InstrumentService.normalizeUnderlying(sym);
+      if (instrumentCache.has(underlying)) {
+        return instrumentCache.get(underlying);
+      }
+      const inst = await InstrumentService.ensureForTrade(req.user!.id, {
+        symbol: sym,
+        assetClass: meta?.assetClass,
+        exchange: meta?.exchange,
+        marketSegment: meta?.marketSegment,
+        currency: account.baseCurrency,
+        simpleExecution: { contractMultiplier: 1 },
+      });
+      instrumentCache.set(underlying, inst);
+      return inst;
+    };
+
     // Check if mapping represents raw executions (one row per fill/execution) vs completed trades (entry + exit in same row)
     const isCompletedTradeFormat = Boolean(mapping.entryPrice && mapping.exitPrice);
 
@@ -704,11 +726,15 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           });
 
           const session = deriveSessionFromTime(tradeDate, exchange, marketSegment);
+          const inst = await getOrEnsureInstrument(symbolVal, { assetClass, exchange, marketSegment });
 
           await Trade.create({
             userId: req.user!.id,
             accountId: account._id,
+            instrumentId: inst._id,
             symbol: symbolVal,
+            underlying: inst.symbol,
+            instrumentName: inst.displayName,
             assetClass,
             exchange,
             marketSegment,
@@ -937,11 +963,15 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               .slice(-1)[0];
             const exitTime = lastExitFill ? lastExitFill.timestamp : undefined;
             const session = deriveSessionFromTime(group.entryTime, exchange, marketSegment);
+            const inst = await getOrEnsureInstrument(symbol, { assetClass, exchange, marketSegment });
 
             await Trade.create({
               userId: req.user!.id,
               accountId: account._id,
+              instrumentId: inst._id,
               symbol,
+              underlying: inst.symbol,
+              instrumentName: inst.displayName,
               assetClass,
               exchange,
               marketSegment,

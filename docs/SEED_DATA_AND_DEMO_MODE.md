@@ -34,9 +34,9 @@ graph TD
     subgraph Seeding["Database Seeding Sequence"]
         UserSeed["1. Create/Isolate Demo User\n(trader@tradevault.local)"]
         CleanPrev["2. Reset Previous Demo Records Cleanly"]
-        InstSeed["3. Seed Instruments & Playbooks"]
+        PlaybookSeed["3. Seed Strategy Playbooks"]
         AccountSeed["4. Seed Accounts & Cash Flow Deposits"]
-        TradeSeed["5. Generate Trades & FIFO Execution Fills"]
+        TradeSeed["5. Generate Trades & Auto-create Traded Instruments\n(via InstrumentService.ensureForTrade)"]
         ChartSeed["6. Persist SVG Chart Screenshots to Disk & DB"]
         JournalSeed["7. Seed Daily Reflections & Ratings"]
         Reconcile["8. Authoritatively Reconcile Account Balances"]
@@ -98,7 +98,7 @@ Reseeding the database is completely idempotent:
 
 The engine seeds and interlinks 7 distinct entity types:
 1. **Trading Accounts:** Created with realistic initial balances (e.g. ₹5,00,000), cash deposits, and withdrawals.
-2. **Instruments:** 19 Indian stocks and derivatives (NIFTY, BANKNIFTY, RELIANCE, CRUDEOIL, etc.) with exact lot sizes.
+2. **Instruments:** Auto-created strictly on-demand for traded underlyings (`source: 'AUTO'`) via `InstrumentService.ensureForTrade`. Zero unused instruments exist in the database.
 3. **Strategy Playbooks:** 13 codified institutional strategy playbooks with asset classes, timeframes, entry rules, stop-loss rules, target rules, invalidation criteria, and checklists (including 6 specialized Liquidity & S/R playbooks: *Liquidity Sweep & Reversal*, *Equal Highs/Lows Raid*, *PDH/PDL Sweep Reversal*, *Support/Resistance Flip Retest*, *Asian Range Sweep*, and *Supply/Demand Zone Rejection*).
 4. **Trades:** Simple and Advanced multi-fill trades with realistic prices, stops, targets, confluences, and psychological tags.
 5. **Chart Screenshots:** Real SVG TradingView-style candlestick charts written to `./data/uploads/` and linked via `Attachment` records.
@@ -140,7 +140,7 @@ The validator in [`apps/api/src/seed/validator.ts`](file:///Users/komal/projects
 
 1. **User Identity Check:** Verifies demo user exists and has a valid password hash.
 2. **Account Balances Check:** Asserts that every account's `currentBalance` matches the sum of initial balance, trade net P&Ls, and cash transactions with zero drift.
-3. **Trades Referential Integrity:** Verifies all trades reference existing accounts and valid instruments.
+3. **Trades & Instruments Referential Integrity:** Verifies all trades reference existing accounts and valid instruments, and asserts that exactly zero unused instruments exist for the demo user.
 4. **Calculations Check:** Asserts that `netPnL == grossPnL - totalCosts` across all simple execution trades.
 5. **FIFO Integrity Check:** Asserts that advanced trades have valid fill matches and no orphaned exit quantities.
 6. **Chart Attachments Check:** Asserts that all attachment records point to existing physical files on disk.

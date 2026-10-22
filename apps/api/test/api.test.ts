@@ -110,7 +110,7 @@ describe('TradeVault API Integration Tests', () => {
     accountId = body.data.id;
   });
 
-  it('GET /api/v1/instruments returns presets and active instruments', async () => {
+  it('GET /api/v1/instruments returns empty array for new user with no trades or custom instruments', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/v1/instruments',
@@ -120,8 +120,7 @@ describe('TradeVault API Integration Tests', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(true);
-    expect(body.data.length).toBeGreaterThan(0);
-    expect(body.data.some((i: any) => i.symbol === 'NIFTY')).toBe(true);
+    expect(body.data).toEqual([]);
   });
 
   it('POST /api/v1/trades creates a manual trade with exact financial calculations', async () => {

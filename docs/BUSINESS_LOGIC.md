@@ -52,7 +52,26 @@ if (netPnL.greaterThan(0)) {
 
 ## 3. Multi-Market Domain Logic & Instrument Specifications
 
-SetupMint explicitly models the differing contract mechanisms across global asset classes:
+SetupMint explicitly models the differing contract mechanisms across global asset classes, adhering to strict user ownership and underlying normalization:
+
+### Underlying Normalization & One-Instrument-Per-Underlying Rule
+1. **One Instrument Per Underlying:**
+   - Instruments represent the root tradable asset (e.g., `NIFTY`, `BANKNIFTY`, `CRUDEOIL`, `RELIANCE`).
+   - Derivative option contracts (strikes like `24500`, expiries like `2024-10-31`, and types `CE`/`PE`) belong to the **trade** entity (`trade.strikePrice`, `trade.expiryDate`, `trade.optionType`), **never** as separate instruments. Both `NIFTY 24500 CE` and `NIFTY 24000 PE` point to the single instrument `NIFTY`.
+2. **Deterministic Symbol Normalization (`normalizeUnderlying`):**
+   - Strips exchange prefixes (`NSE:`, `MCX:`, `BSE:`) and option suffixes (`24500CE`, `24500 PE`, `24OCT24500CE`, etc.).
+   - Matches known market underlyings (`NIFTY`, `BANKNIFTY`, `FINNIFTY`, `MIDCPNIFTY`, `SENSEX`, `BANKEX`, `CRUDEOIL`, `NATURALGAS`, `GOLD`, `SILVER`, `COPPER`, `EURUSD`, `BTCUSDT`, etc.).
+3. **Automatic Discovery on First Trade (`source: 'AUTO'`):**
+   - The instruments collection contains **only** instruments the user has traded or custom created (`source: 'AUTO' | 'CUSTOM'`).
+   - Logging or importing a trade with an unseen underlying automatically registers the instrument for the user.
+   - If the symbol matches a known preset spec, default multiplier/lot/tick values are populated and `needsReview: false`. If unknown, fallback defaults are assigned (lot: 1, multiplier: 1, tick: 0.05) and `needsReview: true` is flagged for user confirmation.
+4. **Specification Cascade Updates & Authoritative Balance Reconciliation:**
+   - When an instrument's specifications (`contractMultiplier`, `lotSize`, `tickSize`) are updated:
+     - The user can preview the financial impact (`POST /api/v1/instruments/:id/preview-update`), which calculates the number of affected closed trades and the exact net P&L delta using `decimal.js`.
+     - When applied (`applyToTrades: true`), all trades referencing the instrument are recalculated via `@tradevault/financial-engine`, updating gross P&L, net P&L, R-multiple, and ROI.
+     - Affected user accounts have their balances authoritatively recalculated (`AccountService.recalculateAccountBalances()`) within a single database transaction.
+5. **Deletion Invariant:**
+   - An instrument cannot be deleted if any trades reference its `instrumentId`. The API returns a `409 Conflict` error to prevent orphaned executions or corrupted trade calculations.
 
 ### Multiplier & Lot Size Domain Rules
 1. **Indian Equities (NSE/BSE Cash):**
@@ -60,19 +79,24 @@ SetupMint explicitly models the differing contract mechanisms across global asse
    - Lot Size = `1`
    - Tick Size = `0.05`
    - STT applied on sell-side turnover (0.025% intraday).
-2. **Index Futures (NIFTY, BANKNIFTY, FINNIFTY):**
-   - NIFTY: Lot Size `25`, Multiplier `1`, Tick Size `0.05`.
+2. **Index Futures & Options Underlyings (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX):**
+   - NIFTY: Lot Size `25` (or current exchange lot), Multiplier `1`, Tick Size `0.05`.
    - BANKNIFTY: Lot Size `15`, Multiplier `1`, Tick Size `0.05`.
    - FINNIFTY: Lot Size `25`, Multiplier `1`, Tick Size `0.05`.
+   - MIDCPNIFTY: Lot Size `50`, Multiplier `1`, Tick Size `0.05`.
+   - SENSEX: Lot Size `10`, Multiplier `1`, Tick Size `0.05`.
+   - BANKEX: Lot Size `15`, Multiplier `1`, Tick Size `0.05`.
    - Point value change = Points $\times$ Multiplier $\times$ Quantity.
 3. **MCX Commodities (Physical multi-unit multiplier contracts):**
    - **CRUDEOIL:** Quoted per barrel; 1 lot = 100 barrels. Contract Multiplier = **`100`**. A ₹1 move in Crude equals ₹100 per lot.
    - **NATURALGAS:** Quoted per mmBtu; 1 lot = 1,250 mmBtu. Contract Multiplier = **`1250`**. A ₹1 move equals ₹1,250 per lot.
    - **GOLD (1KG):** Quoted per 10 grams. Contract Multiplier = **`1`** (relative to 100 base units per 1kg).
+   - **SILVER:** Quoted per kg; 1 lot = 30 kg. Contract Multiplier = **`30`**.
    - **COPPER:** Quoted per kg; 1 lot = 2,500 kg (2.5 MT). Contract Multiplier = **`2500`**. A ₹1 move equals ₹2,500 per lot.
 4. **Forex & Crypto:**
    - EUR/USD: Pip precision 5 decimal places (`0.00001`), lot size `1,000`.
    - BTC/USDT: Lot size `0.001`, tick size `0.10`, quoted in USDT.
+
 
 ---
 

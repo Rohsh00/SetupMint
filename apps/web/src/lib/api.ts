@@ -113,6 +113,8 @@ export const api = {
     list: () => request<any[]>('/instruments'),
     create: (instrument: any) =>
       request<any>('/instruments', { method: 'POST', body: JSON.stringify(instrument) }),
+    previewUpdate: (id: string, updates: any) =>
+      request<any>(`/instruments/${id}/preview-update`, { method: 'POST', body: JSON.stringify(updates) }),
     update: (id: string, updates: any) =>
       request<any>(`/instruments/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
     delete: (id: string) => request(`/instruments/${id}`, { method: 'DELETE' }),

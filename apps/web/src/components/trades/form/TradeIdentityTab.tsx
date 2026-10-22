@@ -4,6 +4,7 @@ import {
   ASSET_CLASSES,
   MARKET_SEGMENTS,
   TRADING_SESSIONS,
+  getPresetSpec,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { toLocalIsoDateTime } from '../../../lib/utils.js';
@@ -32,9 +33,11 @@ export function TradeIdentityTab({
   // When instrument is picked, auto-populate details
   const handleInstrumentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sym = e.target.value;
+    if (!sym) return;
     setValue('symbol', sym);
 
-    const found = instruments.find((i) => i.symbol === sym);
+    const cleanSym = sym.replace(/^(MCX:|NSE:|BSE:)/i, '');
+    const found = instruments.find((i) => i.symbol === sym || i.symbol === cleanSym);
     if (found) {
       setValue('assetClass', found.assetClass);
       setValue('exchange', found.exchange);
@@ -48,6 +51,48 @@ export function TradeIdentityTab({
       const entryTime = watch('entryTime');
       if (entryTime) {
         setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment));
+      }
+    } else {
+      const preset = getPresetSpec(cleanSym);
+      if (preset) {
+        setValue('assetClass', preset.assetClass);
+        setValue('exchange', preset.exchange);
+        setValue('marketSegment', preset.marketSegment);
+        setValue('currency', preset.quoteCurrency || 'INR');
+        setValue('simpleExecution.contractMultiplier', preset.contractMultiplier || 1);
+        setValue('risk.lotSize', preset.lotSize || 1);
+        if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
+          setValue('simpleExecution.quantity', preset.lotSize || 1);
+        }
+        const entryTime = watch('entryTime');
+        if (entryTime) {
+          setValue('session', deriveSessionFromTime(entryTime, preset.exchange, preset.marketSegment));
+        }
+      }
+    }
+  };
+
+  const handleManualSymbolChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const sym = e.target.value.toUpperCase();
+    setValue('symbol', sym);
+    const cleanSym = sym.replace(/^(MCX:|NSE:|BSE:)/i, '');
+    const found = instruments.find((i) => i.symbol === sym || i.symbol === cleanSym);
+    if (found) {
+      setValue('assetClass', found.assetClass);
+      setValue('exchange', found.exchange);
+      setValue('marketSegment', found.marketSegment);
+      setValue('currency', found.quoteCurrency || 'INR');
+      setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1);
+      setValue('risk.lotSize', found.lotSize || 1);
+    } else {
+      const preset = getPresetSpec(cleanSym);
+      if (preset) {
+        setValue('assetClass', preset.assetClass);
+        setValue('exchange', preset.exchange);
+        setValue('marketSegment', preset.marketSegment);
+        setValue('currency', preset.quoteCurrency || 'INR');
+        setValue('simpleExecution.contractMultiplier', preset.contractMultiplier || 1);
+        setValue('risk.lotSize', preset.lotSize || 1);
       }
     }
   };
@@ -75,13 +120,16 @@ export function TradeIdentityTab({
         {/* Instrument Symbol */}
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Instrument Preset
+            My Traded Instruments
           </label>
           <select
-            value={selectedSymbol}
+            value={selectedSymbol || ''}
             onChange={handleInstrumentChange}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
           >
+            <option value="">
+              {instruments.length === 0 ? 'No instruments traded yet' : '— Select from my instruments —'}
+            </option>
             {instruments.map((inst) => (
               <option key={inst.symbol} value={inst.symbol}>
                 {inst.symbol} - {inst.displayName || inst.assetClass} ({inst.exchange})
@@ -97,10 +145,19 @@ export function TradeIdentityTab({
           </label>
           <input
             type="text"
-            {...register('symbol', { required: true })}
+            list="identity-tab-instruments-list"
+            value={selectedSymbol || ''}
+            onChange={handleManualSymbolChange}
             placeholder="e.g. NIFTY, RELIANCE, CRUDEOIL"
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono uppercase text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
+          <datalist id="identity-tab-instruments-list">
+            {instruments.map((inst) => (
+              <option key={inst.symbol} value={inst.symbol}>
+                {inst.displayName || inst.symbol} ({inst.exchange})
+              </option>
+            ))}
+          </datalist>
         </div>
 
         {/* Asset Class */}

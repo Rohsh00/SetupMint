@@ -12,6 +12,7 @@ import { TradingAccount, Trade, Strategy, Instrument, Attachment, TradeTemplate 
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
+import { InstrumentService } from '../services/instrument.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -19,131 +20,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   // Helper function to calculate trade details using financial engine
   function computeTradeCalculations(body: any) {
-    let grossPnL = 0;
-    let totalCosts = 0;
-    let netPnL = 0;
-    let outcome: TradeOutcome = body.status === 'PLANNED' ? 'OPEN' : 'BREAKEVEN';
-    let closedQty = 0;
-    let openQty = 0;
-    let avgEntry = 0;
-    let avgExit: number | undefined = undefined;
-
-    if (body.executionMode === 'SIMPLE' && body.simpleExecution) {
-      const exec = body.simpleExecution;
-      const mult = exec.contractMultiplier || 1;
-      const res = calculateSimpleExecutionPnL(body.direction, exec);
-
-      grossPnL = res.grossPnLNumber;
-      totalCosts = res.totalCostsNumber;
-      netPnL = res.netPnLNumber;
-      outcome = body.status === 'OPEN' ? 'OPEN' : res.outcome;
-      closedQty = exec.exitPrice ? exec.quantity : 0;
-      openQty = exec.exitPrice ? 0 : exec.quantity;
-      avgEntry = exec.entryPrice;
-      avgExit = exec.exitPrice;
-    } else if (body.executionMode === 'ADVANCED' && body.fills && body.fills.length > 0) {
-      const mult = body.simpleExecution?.contractMultiplier || 1;
-      const fifo = calculateFIFOExecution(body.direction, body.fills, mult);
-
-      grossPnL = Number(fifo.realizedGrossPnL.toFixed(2));
-      const fifoCosts = Number(fifo.totalCosts.toFixed(2));
-      outcome = body.status === 'OPEN' ? 'OPEN' : fifo.outcome;
-      closedQty = fifo.closedQuantity.toNumber();
-      openQty = fifo.openQuantity.toNumber();
-      avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(4));
-      avgExit = fifo.weightedAvgExitPrice ? Number(fifo.weightedAvgExitPrice.toFixed(4)) : undefined;
-
-      const simpleCosts = body.simpleExecution
-        ? Number(
-            (
-              (body.simpleExecution.brokerage || 0) +
-              (body.simpleExecution.exchangeFees || 0) +
-              (body.simpleExecution.regulatoryFees || 0) +
-              (body.simpleExecution.taxes || 0) +
-              (body.simpleExecution.otherFees || 0) +
-              (body.simpleExecution.explicitAdjustments || 0)
-            ).toFixed(2)
-          )
-        : 0;
-
-      if (fifoCosts > 0) {
-        totalCosts = fifoCosts;
-      } else if (simpleCosts > 0) {
-        totalCosts = simpleCosts;
-      } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
-        const autoCharges = calculateIndianCharges({
-          assetClass: body.assetClass,
-          marketSegment: body.marketSegment,
-          entryPrice: avgEntry,
-          exitPrice: avgExit,
-          quantity: closedQty > 0 ? closedQty : openQty,
-          contractMultiplier: mult,
-        });
-        totalCosts = autoCharges.totalCosts;
-        if (!body.simpleExecution) {
-          body.simpleExecution = {};
-        }
-        body.simpleExecution.brokerage = autoCharges.brokerage;
-        body.simpleExecution.exchangeFees = autoCharges.exchangeFees;
-        body.simpleExecution.regulatoryFees = autoCharges.regulatoryFees;
-        body.simpleExecution.taxes = autoCharges.taxes;
-      } else {
-        totalCosts = 0;
-      }
-
-      netPnL = Number((grossPnL - totalCosts).toFixed(2));
-      if (body.status !== 'OPEN') {
-        if (netPnL > 0) outcome = 'WIN';
-        else if (netPnL < 0) outcome = 'LOSS';
-        else outcome = 'BREAKEVEN';
-      }
-    }
-
-    // Holding time
-    let holdingTimeMinutes: number | undefined;
-    if (body.entryTime && body.exitTime) {
-      const diffMs = new Date(body.exitTime).getTime() - new Date(body.entryTime).getTime();
-      if (diffMs > 0) {
-        holdingTimeMinutes = Math.round(diffMs / 60000);
-      }
-    }
-
-    // Realized R-Multiple & Planned Risk
-    let plannedRisk = body.risk?.riskBudgetAmount || body.risk?.estimatedRiskAmount;
-    const entryForRisk = body.risk?.plannedEntryPrice || avgEntry || body.simpleExecution?.entryPrice;
-    if (!plannedRisk && entryForRisk && body.risk?.initialStopLoss) {
-      const dist = Math.abs(entryForRisk - body.risk.initialStopLoss);
-      const qty = body.simpleExecution?.quantity || closedQty || 1;
-      const mult = body.simpleExecution?.contractMultiplier || 1;
-      plannedRisk = dist * qty * mult;
-    }
-
-    const realizedRMultiple = calculateRealizedRMultiple(netPnL, plannedRisk);
-
-    // Authoritatively calculate plannedRewardRiskRatio
-    if (body.risk && entryForRisk && body.risk.initialStopLoss && body.risk.plannedTarget) {
-      const rDist = Math.abs(entryForRisk - body.risk.initialStopLoss);
-      const rewDist = Math.abs(body.risk.plannedTarget - entryForRisk);
-      if (rDist > 0) {
-        body.risk.plannedRewardRiskRatio = Number((rewDist / rDist).toFixed(2));
-      }
-    }
-    if (body.risk && (!body.risk.plannedEntryPrice || body.risk.plannedEntryPrice <= 0) && entryForRisk) {
-      body.risk.plannedEntryPrice = entryForRisk;
-    }
-
-    return {
-      grossPnL,
-      totalCosts,
-      netPnL,
-      realizedRMultiple,
-      holdingTimeMinutes,
-      outcome,
-      closedQuantity: closedQty,
-      openQuantity: openQty,
-      averageEntryPrice: avgEntry,
-      averageExitPrice: avgExit,
-    };
+    return InstrumentService.computeTradeCalculations(body);
   }
 
   // List trades with pagination, global filtering, and sorting
@@ -229,6 +106,10 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       accountId: t.accountId?._id ? (t.accountId as any)._id.toString() : t.accountId?.toString(),
       accountName: (t.accountId as any)?.name || 'Account',
       symbol: t.symbol,
+      underlying: t.underlying || t.symbol,
+      optionType: t.optionType,
+      strikePrice: t.strikePrice,
+      expiryDate: t.expiryDate ? t.expiryDate.toISOString() : undefined,
       instrumentName: t.instrumentName,
       assetClass: t.assetClass,
       exchange: t.exchange,
@@ -328,6 +209,14 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       tradeData.assetClass = 'COMMODITY';
     }
 
+    // Auto-create/ensure instrument for trade's underlying
+    const inst = await InstrumentService.ensureForTrade(req.user!.id, tradeData);
+    tradeData.instrumentId = inst._id;
+    tradeData.underlying = inst.symbol;
+    if (!tradeData.instrumentName) {
+      tradeData.instrumentName = inst.displayName;
+    }
+
     const trade = await Trade.create(tradeData);
 
     // Recalculate account realized P&L and balance authoritatively
@@ -345,6 +234,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       data: {
         id: trade._id.toString(),
         symbol: trade.symbol,
+        underlying: trade.underlying,
+        instrumentId: trade.instrumentId?.toString(),
         templateId: trade.templateId,
         netPnL: trade.calculated.netPnL,
         outcome: trade.calculated.outcome,
@@ -389,6 +280,10 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         accountId: trade.accountId?._id ? (trade.accountId as any)._id.toString() : trade.accountId?.toString(),
         accountName: (trade.accountId as any)?.name || 'Account',
         symbol: trade.symbol,
+        underlying: trade.underlying || trade.symbol,
+        optionType: trade.optionType,
+        strikePrice: trade.strikePrice,
+        expiryDate: trade.expiryDate ? trade.expiryDate.toISOString() : undefined,
         instrumentName: trade.instrumentName,
         assetClass: trade.assetClass,
         exchange: trade.exchange,
@@ -522,6 +417,16 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       updatePayload.assetClass = 'COMMODITY';
     }
 
+    // Ensure instrument exists if symbol changed or instrumentId is missing
+    if (parseResult.data.symbol || !existingTrade.instrumentId) {
+      const inst = await InstrumentService.ensureForTrade(req.user!.id, mergedData);
+      updatePayload.instrumentId = inst._id;
+      updatePayload.underlying = inst.symbol;
+      if (!updatePayload.instrumentName && !existingTrade.instrumentName) {
+        updatePayload.instrumentName = inst.displayName;
+      }
+    }
+
     const updated = await Trade.findOneAndUpdate(
       { _id: req.params.id, userId: req.user!.id },
       updatePayload,
@@ -609,6 +514,10 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const newCalculated = computeTradeCalculations(tradeObj);
     tradeObj.calculated = newCalculated;
+
+    const inst = await InstrumentService.ensureForTrade(req.user!.id, tradeObj);
+    tradeObj.instrumentId = inst._id;
+    tradeObj.underlying = inst.symbol;
 
     const duplicated = await Trade.create(tradeObj);
 

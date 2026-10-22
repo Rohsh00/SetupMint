@@ -923,7 +923,123 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     isActive: true,
     description: 'Solana vs Tether Perpetual Futures',
   },
+  {
+    symbol: 'SILVER',
+    displayName: 'Silver 30KG Futures',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 30,
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Silver standard 30kg contract',
+  },
+  {
+    symbol: 'SENSEX',
+    displayName: 'BSE Sensex Futures',
+    assetClass: 'FUTURES',
+    exchange: 'BSE',
+    marketSegment: 'BSE_EQ',
+    quoteCurrency: 'INR',
+    contractMultiplier: 20,
+    lotSize: 10,
+    tickSize: 0.05,
+    quantityIncrement: 10,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'BSE Sensex Index future contract',
+  },
+  {
+    symbol: 'BANKEX',
+    displayName: 'BSE Bankex Futures',
+    assetClass: 'FUTURES',
+    exchange: 'BSE',
+    marketSegment: 'BSE_EQ',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 15,
+    tickSize: 0.05,
+    quantityIncrement: 15,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'BSE Bankex Index future contract',
+  },
+  {
+    symbol: 'MIDCPNIFTY',
+    displayName: 'Nifty Midcap Select Futures',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 50,
+    tickSize: 0.05,
+    quantityIncrement: 50,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'Nifty Midcap Select Index future contract',
+  },
+  {
+    symbol: 'CRUDEOILMINI',
+    displayName: 'Crude Oil Mini Futures',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 10, // 10 barrels per lot
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Crude Oil Mini 10 BBL contract',
+  },
+  {
+    symbol: 'NATGASMINI',
+    displayName: 'Natural Gas Mini Futures',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 250, // 250 mmBtu per lot
+    lotSize: 1,
+    tickSize: 0.1,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Natural Gas Mini 250 mmBtu contract',
+  },
 ];
+
+export type PresetInstrumentSpec = Omit<IInstrument, 'id'>;
+
+/**
+ * Internal spec lookup for known underlying symbols (lot size, tick size, multiplier, exchange, segment).
+ * Never listed directly in the UI or API list response. Used only to prefill specs when auto-creating an instrument.
+ */
+export function getPresetSpec(symbol: string): PresetInstrumentSpec | undefined {
+  if (!symbol) return undefined;
+  const clean = symbol.trim().toUpperCase().replace(/^(NSE:|BSE:|MCX:)/i, '');
+  const direct = PRESET_INSTRUMENTS.find(
+    (p) => p.symbol === clean || p.symbol === symbol.trim().toUpperCase()
+  );
+  if (direct) return direct;
+  if (clean === 'CRUDEOILM' || clean === 'CRUDEOILMINI') {
+    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'CRUDEOILMINI');
+  }
+  if (clean === 'NATGASMINI') {
+    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATGASMINI');
+  }
+  if (clean === 'NATGAS') {
+    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATURALGAS');
+  }
+  return undefined;
+}
+
 
 export const CHART_ATTACHMENT_CATEGORIES: {
   value: AttachmentCategory;

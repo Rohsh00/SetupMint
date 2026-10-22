@@ -29,6 +29,7 @@ import TuneIcon from '@mui/icons-material/TuneRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 import { calculateRiskAndPositionSize, calculateFractionalKelly } from '@tradevault/financial-engine';
+import { getPresetSpec } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent, currentLocalIsoDateTime } from '../lib/utils.js';
@@ -169,7 +170,7 @@ export function RiskCalculatorPage() {
     }
   };
 
-  // Symbol change handler with instrument catalog presets
+  // Symbol change handler: matches user's instruments first, then preset catalog fallback
   const handleSymbolChange = (sym: string) => {
     setSelectedSymbol(sym);
     const cleanSym = sym.trim().toUpperCase();
@@ -177,24 +178,14 @@ export function RiskCalculatorPage() {
     if (inst) {
       setContractMultiplierStr(String(inst.contractMultiplier || 1));
       setLotSizeStr(String(inst.lotSize || 1));
-      if (inst.typicalPriceMin && (!entryPriceStr || entryPriceStr === '24000')) {
-        const mid = (inst.typicalPriceMin + (inst.typicalPriceMax || inst.typicalPriceMin)) / 2;
-        setEntryPriceStr(String(mid));
-        const stopD = mid * 0.01;
-        setStopLossPriceStr(String(Number((direction === 'LONG' ? mid - stopD : mid + stopD).toFixed(2))));
-        setTargetPriceStr(String(Number((direction === 'LONG' ? mid + 2 * stopD : mid - 2 * stopD).toFixed(2))));
-      }
     } else {
-      if (cleanSym === 'MRF') {
-        if (!entryPriceStr || entryPriceStr === '24000') {
-          setEntryPriceStr('121105');
-          setStopLossPriceStr('120845');
-          setTargetPriceStr('121605');
-          setLotSizeStr('6');
-        }
-      } else if (cleanSym === 'RELIANCE') {
-        setLotSizeStr('1');
+      const preset = getPresetSpec(cleanSym);
+      if (preset) {
+        setContractMultiplierStr(String(preset.contractMultiplier || 1));
+        setLotSizeStr(String(preset.lotSize || 1));
+      } else {
         setContractMultiplierStr('1');
+        setLotSizeStr('1');
       }
     }
   };
@@ -640,11 +631,26 @@ export function RiskCalculatorPage() {
                   size="small"
                   value={selectedSymbol}
                   onChange={(e) => handleSymbolChange(e.target.value.toUpperCase())}
-                  placeholder="e.g. NIFTY, MRF, RELIANCE"
-                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, textTransform: 'uppercase' } } }}
+                  placeholder="e.g. NIFTY, BANKNIFTY, RELIANCE"
+                  slotProps={{
+                    input: {
+                      sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, textTransform: 'uppercase' },
+                      inputProps: { list: 'risk-calculator-symbol-list' },
+                    },
+                  }}
                 />
+                <datalist id="risk-calculator-symbol-list">
+                  {instruments.map((i: any) => (
+                    <option key={i.symbol} value={i.symbol}>
+                      {i.displayName || i.symbol} ({i.exchange})
+                    </option>
+                  ))}
+                </datalist>
                 <Box sx={{ display: 'flex', gap: 0.6, mt: 1, flexWrap: 'wrap' }}>
-                  {['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'MRF', 'CRUDEOIL', 'GOLD'].map((s) => (
+                  {(instruments.length > 0
+                    ? Array.from(new Set(instruments.map((i: any) => i.symbol))).slice(0, 7)
+                    : ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD']
+                  ).map((s: any) => (
                     <Chip
                       key={s}
                       label={s}

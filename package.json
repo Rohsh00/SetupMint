@@ -20,6 +20,7 @@
     "seed:demo": "npm run seed -w apps/api --",
     "seed:reset": "npm run seed:reset -w apps/api --",
     "seed:validate": "npm run seed:validate -w apps/api --",
+    "instruments:backfill": "npm run instruments:backfill -w apps/api --",
     "db:clean": "npm run clean -w apps/api",
     "db:backup": "node scripts/backup.js",
     "db:restore": "node scripts/restore.js",

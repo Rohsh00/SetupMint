@@ -11,6 +11,7 @@
     "seed:demo": "tsx src/scripts/seed.ts",
     "seed:reset": "tsx src/scripts/reset-demo.ts",
     "seed:validate": "tsx src/scripts/validate-seed.ts",
+    "instruments:backfill": "tsx src/scripts/backfill-instruments.ts",
     "clean": "tsx src/scripts/clean.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

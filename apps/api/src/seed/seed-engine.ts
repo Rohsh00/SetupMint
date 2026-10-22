@@ -7,6 +7,7 @@ import {
 } from '@tradevault/financial-engine';
 import { Confluence, Emotion, MistakeTag, TradingSession } from '@tradevault/shared';
 import { AccountService } from '../services/account.service.js';
+import { InstrumentService } from '../services/instrument.service.js';
 import {
   AccountTransaction,
   Attachment,
@@ -97,33 +98,7 @@ export class SetupMintSeedEngine {
     await Strategy.deleteMany({ userId });
     await BrokerIntegration.deleteMany({ userId });
 
-    // 3. Seed Instruments
-    console.log(`[SeedEngine] Seeding ${SEED_INSTRUMENTS.length} Indian instruments...`);
-    const createdInstruments: any[] = [];
-    for (const spec of SEED_INSTRUMENTS) {
-      const inst = await Instrument.create({
-        userId,
-        symbol: spec.symbol,
-        displayName: spec.displayName,
-        assetClass: spec.assetClass,
-        exchange: spec.exchange,
-        marketSegment: spec.marketSegment,
-        quoteCurrency: spec.quoteCurrency,
-        contractMultiplier: spec.contractMultiplier,
-        lotSize: spec.lotSize,
-        tickSize: spec.tickSize,
-        quantityIncrement: spec.quantityIncrement,
-        pricePrecision: spec.pricePrecision,
-        isActive: true,
-        optionType: spec.optionType,
-        strikePrice: spec.strikePrice,
-        expiryDate: spec.expiryDate,
-        description: spec.description,
-      });
-      createdInstruments.push(inst);
-    }
-
-    // 4. Seed Strategies
+    // 3. Seed Strategies
     console.log(`[SeedEngine] Seeding ${SEED_STRATEGY_PLAYBOOKS.length} strategy playbooks...`);
     const createdStrategies: any[] = [];
     for (const pb of SEED_STRATEGY_PLAYBOOKS) {
@@ -211,21 +186,20 @@ export class SetupMintSeedEngine {
       `[SeedEngine] Generated ${tradingDays.length} historical trading days (from ${startDate.toISOString().slice(0, 10)} to ${asOfDate.toISOString().slice(0, 10)})`
     );
 
-    // 9. Generate Trades
+    // 8. Generate Trades
     console.log(`[SeedEngine] Generating ${targetTradeCount} realistic trades...`);
     const tradeGenerationResult = await this.generateTrades(
       userId,
       profileDef,
       targetTradeCount,
       createdAccounts,
-      createdInstruments,
       createdStrategies,
       tradingDays,
       prng,
       asOfDate
     );
 
-    // 10. Generate Daily Journal reflections
+    // 9. Generate Daily Journal reflections
     console.log(`[SeedEngine] Seeding trading calendar daily reflections...`);
     const dailyJournalsCount = await this.seedDailyJournals(
       userId,
@@ -233,7 +207,7 @@ export class SetupMintSeedEngine {
       prng
     );
 
-    // 11. Authoritative Account Balance Reconciliation
+    // 10. Authoritative Account Balance Reconciliation
     console.log(`[SeedEngine] Reconciling authoritative balances across all accounts...`);
     const reconciledAccounts = await AccountService.reconcileAllUserAccounts(userId);
 
@@ -247,7 +221,7 @@ export class SetupMintSeedEngine {
       counts: {
         accounts: createdAccounts.length,
         transactions: createdTransactionsCount,
-        instruments: createdInstruments.length,
+        instruments: tradeGenerationResult.createdInstruments.length,
         strategies: createdStrategies.length,
         trades: tradeGenerationResult.totalCreated,
         attachments: tradeGenerationResult.attachmentCount,
@@ -351,7 +325,6 @@ export class SetupMintSeedEngine {
     profileDef: ProfileDefinition,
     targetCount: number,
     accounts: any[],
-    instruments: any[],
     strategies: any[],
     tradingDays: any[],
     prng: SeededPRNG,
@@ -361,12 +334,14 @@ export class SetupMintSeedEngine {
     attachmentCount: number;
     summary: SeedResult['tradesSummary'];
     tradesByDate: Map<string, any[]>;
+    createdInstruments: any[];
   }> {
-    // Filter instruments by profile's allowed asset classes
-    const eligibleInstruments = instruments.filter((i) =>
-      profileDef.allowedAssetClasses.includes(i.assetClass)
+    // Filter instrument specs by profile's allowed asset classes
+    const eligibleSpecs = SEED_INSTRUMENTS.filter((s) =>
+      profileDef.allowedAssetClasses.includes(s.assetClass)
     );
-    const instrumentPool = eligibleInstruments.length > 0 ? eligibleInstruments : instruments;
+    const specPool = eligibleSpecs.length > 0 ? eligibleSpecs : SEED_INSTRUMENTS;
+    const instrumentCache = new Map<string, any>();
 
     // Confluence options
     const allConfluences: Confluence[] = [
@@ -431,30 +406,50 @@ export class SetupMintSeedEngine {
         account = prng.pick(accounts.slice(1));
       }
 
-      // Pick instrument matching account
-      let inst = prng.pick(instrumentPool);
+      // Pick instrument spec matching account
+      let spec = prng.pick(specPool);
       if (account.accountType === 'COMMODITY') {
-        const commodityInsts = instrumentPool.filter((x) => x.assetClass === 'COMMODITY');
-        if (commodityInsts.length > 0) inst = prng.pick(commodityInsts);
+        const commoditySpecs = specPool.filter((x) => x.assetClass === 'COMMODITY');
+        if (commoditySpecs.length > 0) spec = prng.pick(commoditySpecs);
       } else if (account.accountType === 'FUTURES_OPTIONS') {
-        const fnoInsts = instrumentPool.filter((x) => x.assetClass === 'FUTURES' || x.assetClass === 'OPTIONS');
-        if (fnoInsts.length > 0) inst = prng.pick(fnoInsts);
+        const fnoSpecs = specPool.filter((x) => x.assetClass === 'FUTURES' || x.assetClass === 'OPTIONS');
+        if (fnoSpecs.length > 0) spec = prng.pick(fnoSpecs);
       } else if (account.accountType === 'EQUITY') {
-        const eqInsts = instrumentPool.filter((x) => x.assetClass === 'EQUITY');
-        if (eqInsts.length > 0) inst = prng.pick(eqInsts);
+        const eqSpecs = specPool.filter((x) => x.assetClass === 'EQUITY');
+        if (eqSpecs.length > 0) spec = prng.pick(eqSpecs);
+      }
+
+      // Ensure instrument exists on demand for this underlying
+      const underlying = InstrumentService.normalizeUnderlying(spec.symbol);
+      let inst = instrumentCache.get(underlying);
+      if (!inst) {
+        inst = await InstrumentService.ensureForTrade(userId, {
+          symbol: spec.symbol,
+          assetClass: spec.assetClass,
+          exchange: spec.exchange,
+          marketSegment: spec.marketSegment,
+          currency: spec.quoteCurrency,
+          instrumentName: spec.displayName,
+          contractMultiplier: spec.contractMultiplier,
+          lotSize: spec.lotSize,
+          tickSize: spec.tickSize,
+          quantityIncrement: spec.quantityIncrement,
+          pricePrecision: spec.pricePrecision,
+        });
+        instrumentCache.set(underlying, inst);
       }
 
       // Pick matching strategy
       const eligibleStrategies = strategies.filter((s: any) =>
-        s.assetClasses.includes(inst.assetClass)
+        s.assetClasses.includes(spec.assetClass)
       );
       const strategy = eligibleStrategies.length > 0 ? prng.pick(eligibleStrategies) : strategies[0];
 
       // Session & Timing
-      const session: TradingSession = inst.assetClass === 'COMMODITY' ? 'MCX_EVENING' : 'NSE_REGULAR';
+      const session: TradingSession = spec.assetClass === 'COMMODITY' ? 'MCX_EVENING' : 'NSE_REGULAR';
       const entryHour = session === 'MCX_EVENING' ? prng.nextInt(17, 21) : prng.nextInt(9, 14);
       const entryMinute = session === 'NSE_REGULAR' && entryHour === 9 ? prng.nextInt(16, 55) : prng.nextInt(0, 55);
-      const holdingMinutes = inst.assetClass === 'OPTIONS' ? prng.nextInt(12, 120) : prng.nextInt(25, 280);
+      const holdingMinutes = spec.assetClass === 'OPTIONS' ? prng.nextInt(12, 120) : prng.nextInt(25, 280);
 
       const { entryTime, exitTime } = IndianMarketCalendar.createExecutionTimestamps(
         dateStr,
@@ -477,13 +472,12 @@ export class SetupMintSeedEngine {
       const direction = prng.chance(0.65) ? 'LONG' : 'SHORT';
 
       // Base Price
-      const spec = SEED_INSTRUMENTS.find((s) => s.symbol === inst.symbol);
-      const minP = spec?.typicalPriceMin ?? 1000;
-      const maxP = spec?.typicalPriceMax ?? 1500;
+      const minP = spec.typicalPriceMin ?? 1000;
+      const maxP = spec.typicalPriceMax ?? 1500;
       const entryPrice = prng.nextNumber(minP, maxP, inst.pricePrecision);
 
       // Stop Loss & Target Distance
-      const stopDistancePercent = inst.assetClass === 'OPTIONS' ? prng.nextNumber(0.1, 0.25) : prng.nextNumber(0.005, 0.015);
+      const stopDistancePercent = spec.assetClass === 'OPTIONS' ? prng.nextNumber(0.1, 0.25) : prng.nextNumber(0.005, 0.015);
       const stopDist = Number((entryPrice * stopDistancePercent).toFixed(inst.pricePrecision));
 
       const stopLoss = direction === 'LONG' ? entryPrice - stopDist : entryPrice + stopDist;
@@ -647,7 +641,7 @@ export class SetupMintSeedEngine {
       const confluences = prng.pickMultiple(allConfluences, prng.nextInt(2, 4));
 
       // Titles
-      const tradeTitle = `${inst.symbol} ${strategy.name.slice(0, 20)} ${direction}`;
+      const tradeTitle = `${spec.symbol} ${strategy.name.slice(0, 20)} ${direction}`;
 
       // Notes
       const notes = isWin
@@ -667,17 +661,21 @@ export class SetupMintSeedEngine {
         userId,
         accountId: account._id,
         instrumentId: inst._id,
-        symbol: inst.symbol,
-        instrumentName: inst.displayName,
-        assetClass: inst.assetClass,
-        exchange: inst.exchange,
-        marketSegment: inst.marketSegment,
+        underlying: inst.symbol,
+        symbol: spec.symbol,
+        instrumentName: spec.displayName,
+        assetClass: spec.assetClass,
+        exchange: spec.exchange,
+        marketSegment: spec.marketSegment,
         currency: account.baseCurrency,
         direction,
         status,
+        optionType: spec.optionType,
+        strikePrice: spec.strikePrice,
+        expiryDate: spec.expiryDate,
         strategyId: strategy._id,
         strategyName: strategy.name,
-        tags: [...strategy.tags, direction, inst.assetClass],
+        tags: [...strategy.tags, direction, spec.assetClass],
         tradeDate: new Date(dateStr),
         timeZone: 'Asia/Kolkata',
         entryTime,
@@ -810,6 +808,7 @@ export class SetupMintSeedEngine {
       totalCreated: tradesToInsert.length,
       attachmentCount,
       tradesByDate,
+      createdInstruments: Array.from(instrumentCache.values()),
       summary: {
         closed: closedCount,
         open: openCount,

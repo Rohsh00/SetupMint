@@ -294,22 +294,26 @@ This document provides a comprehensive, verified feature inventory of all module
 
 ---
 
-## 10. Instrument Catalog & Market Specifications
+## 10. Instruments & Market Specifications
 
 - **Status:** **IMPLEMENTED**
-- **Purpose:** Multi-market instrument definitions with precise multipliers, lot sizes, and tick sizes.
-- **Problem Solved:** Ensures correct monetary calculations across Indian Equities, Index F&O, MCX Commodities, Forex, and Crypto.
+- **Purpose:** User-owned instrument definitions with precise multipliers, lot sizes, and tick sizes — strictly limited to instruments the user has traded or created.
+- **Problem Solved:** Ensures correct monetary calculations across Indian Equities, Index F&O, MCX Commodities, Forex, and Crypto without cluttering the UI with global presets, catalogs, or unused seeded instruments.
 - **Main User Interactions:**
-  - Browse global preset instruments (NIFTY, BANKNIFTY, FINNIFTY, RELIANCE, HDFCBANK, CRUDEOIL, NATURALGAS, GOLD, COPPER, EURUSD, BTCUSDT).
-  - Create custom instruments with specific contract multipliers and tick sizes.
-  - Edit or delete custom instruments.
+  - View user-only instruments table enriched with live trading summaries (total trade count, first & last traded timestamps, net P&L).
+  - Review auto-created instruments: symbols traded for the first time automatically create an underlying instrument (`source: 'AUTO'`). Unknown instruments flag a "Review specs" badge (`needsReview: true`) for user verification.
+  - One instrument per underlying: options contracts (strikes, expiries, CE/PE) map to their parent underlying instrument (`NIFTY`, `BANKNIFTY`, etc.).
+  - Create custom instruments with specific contract multipliers, lot sizes, and tick sizes (`source: 'CUSTOM'`).
+  - Edit instrument specifications with optional trade cascading: view real-time impact preview (`POST /preview-update` showing affected trades and financial P&L delta), confirm with cascade dialog (`applyToTrades: true`), recalculating trade metrics via `@tradevault/financial-engine` and authoritatively reconciling account balances.
+  - Delete unused instruments: safe deletion blocked with 409 Conflict if trades reference the instrument.
 - **Frontend Components:** [`InstrumentsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/InstrumentsPage.tsx).
 - **Backend APIs & Services:**
-  - `GET /api/v1/instruments` (merges system presets with user custom records)
-  - `POST /api/v1/instruments`
-  - `PUT /api/v1/instruments/:id`
-  - `DELETE /api/v1/instruments/:id`
-- **Database Entities:** `Instrument`.
+  - `GET /api/v1/instruments` (returns only user-owned traded and custom instruments with trade summaries)
+  - `POST /api/v1/instruments` (creates custom instrument)
+  - `POST /api/v1/instruments/:id/preview-update` (previews financial impact on existing trades)
+  - `PUT /api/v1/instruments/:id` (updates specs, cascades to trades when `applyToTrades: true`, reconciles account balances)
+  - `DELETE /api/v1/instruments/:id` (validates trade references, returns 409 Conflict if in use)
+- **Database Entities:** `Instrument`, `Trade`.
 
 ---
 

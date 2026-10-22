@@ -38,6 +38,7 @@ import {
   ITradeTemplate,
   TemplatePatch,
   ProvenanceSource,
+  getPresetSpec,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { formatCurrency, toLocalIsoDateTime } from '../../../lib/utils.js';
@@ -143,19 +144,36 @@ export function TradeQuickSection({
       if (entryTime) {
         setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment), { shouldDirty: true });
       }
-    } else if (
-      symUpper.startsWith('MCX:') ||
-      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(cleanSym)
-    ) {
-      setValue('assetClass', 'COMMODITY', { shouldDirty: true });
-      setValue('exchange', 'MCX', { shouldDirty: true });
-      setValue('marketSegment', 'MCX', { shouldDirty: true });
-      setValue('currency', 'INR', { shouldDirty: true });
-      const mult = cleanSym.startsWith('CRUDEOILM') ? 10 : cleanSym.startsWith('NATGASMINI') ? 250 : 1;
-      setValue('simpleExecution.contractMultiplier', mult, { shouldDirty: true });
-      const entryTime = watch('entryTime');
-      if (entryTime) {
-        setValue('session', deriveSessionFromTime(entryTime, 'MCX', 'MCX'), { shouldDirty: true });
+    } else {
+      const preset = getPresetSpec(cleanSym);
+      if (preset) {
+        setValue('assetClass', preset.assetClass, { shouldDirty: true });
+        setValue('exchange', preset.exchange, { shouldDirty: true });
+        setValue('marketSegment', preset.marketSegment, { shouldDirty: true });
+        setValue('currency', preset.quoteCurrency || 'INR', { shouldDirty: true });
+        setValue('simpleExecution.contractMultiplier', preset.contractMultiplier || 1, { shouldDirty: true });
+        setValue('risk.lotSize', preset.lotSize || 1, { shouldDirty: true });
+        if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
+          setValue('simpleExecution.quantity', preset.lotSize || 1, { shouldDirty: true });
+        }
+        const entryTime = watch('entryTime');
+        if (entryTime) {
+          setValue('session', deriveSessionFromTime(entryTime, preset.exchange, preset.marketSegment), { shouldDirty: true });
+        }
+      } else if (
+        symUpper.startsWith('MCX:') ||
+        /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(cleanSym)
+      ) {
+        setValue('assetClass', 'COMMODITY', { shouldDirty: true });
+        setValue('exchange', 'MCX', { shouldDirty: true });
+        setValue('marketSegment', 'MCX', { shouldDirty: true });
+        setValue('currency', 'INR', { shouldDirty: true });
+        const mult = cleanSym.startsWith('CRUDEOILM') ? 10 : cleanSym.startsWith('NATGASMINI') ? 250 : 1;
+        setValue('simpleExecution.contractMultiplier', mult, { shouldDirty: true });
+        const entryTime = watch('entryTime');
+        if (entryTime) {
+          setValue('session', deriveSessionFromTime(entryTime, 'MCX', 'MCX'), { shouldDirty: true });
+        }
       }
     }
   };
@@ -168,8 +186,10 @@ export function TradeQuickSection({
     setValue('simpleExecution.quantity', next);
   };
 
-  // Quick preset symbols
-  const quickSymbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD', 'BTCUSDT'];
+  // Dynamic quick symbols prioritizing user's traded instruments
+  const quickSymbols = instruments.length > 0
+    ? Array.from(new Set(instruments.map((i: any) => i.symbol))).slice(0, 7)
+    : ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD', 'BTCUSDT'];
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
@@ -284,6 +304,7 @@ export function TradeQuickSection({
             placeholder="e.g. NIFTY, BANKNIFTY, RELIANCE"
             slotProps={{
               htmlInput: {
+                list: 'trade-quick-symbol-list',
                 style: {
                   fontFamily: '"JetBrains Mono", monospace',
                   fontWeight: 700,
@@ -292,6 +313,13 @@ export function TradeQuickSection({
               },
             }}
           />
+          <datalist id="trade-quick-symbol-list">
+            {instruments.map((i: any) => (
+              <option key={i.symbol} value={i.symbol}>
+                {i.displayName || i.symbol} ({i.exchange})
+              </option>
+            ))}
+          </datalist>
 
           <TextField
             select

@@ -82,7 +82,7 @@ Trading Vault/
 - `/strategies` — Strategy Playbooks & Statistical Scores (`StrategyPlaybookPage`)
 - `/risk-calculator` — Position Sizing with Form Transfer (`RiskCalculatorPage`)
 - `/accounts` — Multi-Broker Accounts & Cash Flows (`AccountsPage`)
-- `/instruments` — Multi-Market Contract Specifications (`InstrumentsPage`)
+- `/instruments` — User-Owned Market Specifications & Traded Summaries (`InstrumentsPage`)
 - `/reports` — CSV/JSON Export & Interactive Broker Import (`ReportsPage`)
 - `/settings` — User Profile, Password & FYERS Configuration (`SettingsPage`)
 
@@ -98,8 +98,13 @@ Trading Vault/
 2. **Authoritative Account Balance Invariant:**
    $$\text{Current Balance} = \text{Initial Balance} + \sum \text{Closed Trades Net P&L} + \sum \text{Deposits} - \sum \text{Withdrawals} + \sum \text{Adjustments}$$
    *Never modify account balances via client-side calculations. Always trigger `AccountService.recalculateAccountBalances(accountId, userId)`.*
-3. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
-4. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
+3. **Instrument Ownership & One-Underlying Invariant:**
+   - The instruments collection contains **only** instruments the user has traded or custom created (`source: 'AUTO' | 'CUSTOM'`).
+   - One instrument per underlying: option strikes, expiries, and call/put flags belong to `Trade` (`underlying`, `optionType`, `strikePrice`, `expiryDate`), pointing to a single root `Instrument` (`NIFTY`, `BANKNIFTY`, `CRUDEOIL`).
+   - Editing an instrument can cascade to trades (`applyToTrades: true`), recalculating trade metrics and reconciling account balances in a single transaction.
+   - Deleting an instrument referenced by trades returns `409 Conflict`.
+4. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
+5. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
 
 ---
 
@@ -123,6 +128,7 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 - **Demo Identity:** Demo user is `trader@tradevault.local` (Password: `TradeVault@123`).
 - **8 Profiles:** `beginner`, `active-trader` (default), `options-specialist`, `commodity-trader`, `multi-broker`, `psychology`, `analytics`, `edge-cases`.
 - **Determinism:** Seeded via Mulberry32 PRNG. Supplying the same `--seed=<n>` produces identical data.
+- **On-Demand Instruments:** Instruments are created on-the-fly via `InstrumentService.ensureForTrade` only for traded underlyings (0 unused instruments).
 - **Safe Reset:** `npm run seed:reset` wipes only records matching `trader@tradevault.local`. Real registered users are never touched.
 
 ---
@@ -133,11 +139,14 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites (197 tests)
+# Run all test suites (214 tests)
 npm run test
 
-# Run financial engine unit tests (70 tests)
+# Run financial engine unit tests (56 tests)
 npm run test:engine
+
+# Backfill and normalize instruments for existing trades
+npm run instruments:backfill
 
 # Run API integration and regression tests (127 tests)
 npm run test:api

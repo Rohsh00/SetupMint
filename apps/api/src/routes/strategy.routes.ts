@@ -125,6 +125,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         tags: s.tags,
         notes: s.notes,
         isActive: s.isActive,
+        variants: s.variants || [],
         totalTrades,
         winRate,
         netPnL,

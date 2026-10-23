@@ -128,6 +128,19 @@ describe('Custom Parent Strategy & Child Setup Variants Integration Tests', () =
     expect(body.data.variants[1].key).toBe('VOL-REV-B');
 
     createdStrategyId = body.data._id || body.data.id;
+
+    // List endpoint must return persisted variants so they survive a page reload
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/strategies',
+      headers: { cookie: user1Cookie },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listedStrategy = JSON.parse(listRes.body).data.find((s: any) => s.id === createdStrategyId);
+    expect(listedStrategy).toBeDefined();
+    expect(listedStrategy.variants).toHaveLength(2);
+    expect(listedStrategy.variants[0].key).toBe('VOL-REV-A');
+    expect(listedStrategy.variants[1].key).toBe('VOL-REV-B');
   });
 
   it('2. Enforces strict tenant isolation: User 2 cannot access User 1 strategy', async () => {

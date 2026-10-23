@@ -1,9 +1,14 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { createStrategySchema } from '@tradevault/shared';
-import { validateStrategyEdge } from '@tradevault/financial-engine';
-import { Strategy, Trade } from '../db/models/index.js';
+import {
+  createStrategySchema,
+  updateStrategySchema,
+  deriveMomentumRelation,
+} from '@tradevault/shared';
+import { validateStrategyEdge, calculateVariantAnalytics } from '@tradevault/financial-engine';
+import { Strategy, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
+import { LIQUIDITY_RETRACEMENT_PACK } from '../seed/playbooks.js';
 
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -202,22 +207,42 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   });
 
 
-  // Update strategy
-  app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
-    const parseResult = createStrategySchema.partial().safeParse(req.body);
-    if (!parseResult.success) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Invalid update', details: parseResult.error.format() },
-      });
+  // Idempotent Liquidity Retracement Pack creation
+  app.post('/pack/liquidity-retracement', async (req: any, reply) => {
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const packItem of LIQUIDITY_RETRACEMENT_PACK) {
+      let strat = await Strategy.findOne({ userId: req.user!.id, name: packItem.name });
+      if (!strat) {
+        await Strategy.create({
+          ...packItem,
+          userId: req.user!.id,
+        });
+        createdCount++;
+      } else {
+        // Parent exists: merge any missing variants by key
+        const existingKeys = new Set((strat.variants || []).map((v) => v.key));
+        const missingVariants = (packItem.variants || []).filter((v) => !existingKeys.has(v.key));
+        if (missingVariants.length > 0) {
+          strat.variants = [...(strat.variants || []), ...missingVariants];
+          await strat.save();
+          updatedCount++;
+        }
+      }
     }
 
-    const strategy = await Strategy.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user!.id },
-      { $set: parseResult.data },
-      { new: true }
-    );
+    return reply.send({
+      success: true,
+      message: 'Liquidity Retracement pack applied successfully',
+      createdCount,
+      updatedCount,
+    });
+  });
 
+  // Strategy Variant Analytics endpoint
+  app.get('/:id/analytics', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const strategy = await Strategy.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!strategy) {
       return reply.status(404).send({
         success: false,
@@ -225,7 +250,124 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       });
     }
 
-    return reply.send({ success: true, data: strategy });
+    const {
+      startDate,
+      endDate,
+      accountId,
+      symbol,
+      session,
+      entryModel,
+      direction,
+      momentum,
+    } = req.query || {};
+
+    // Validate account ownership if accountId provided
+    if (accountId) {
+      const acc = await TradingAccount.findOne({ _id: accountId, userId: req.user!.id });
+      if (!acc) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'ACCOUNT_NOT_FOUND', message: 'Trading account not found' },
+        });
+      }
+    }
+
+    const filter: any = { userId: req.user!.id, strategyId: strategy._id };
+    if (accountId) filter.accountId = accountId;
+    if (symbol) filter.symbol = new RegExp(symbol.trim(), 'i');
+    if (session) filter.session = session;
+    if (direction) filter.direction = direction;
+    if (entryModel) filter['setup.entryModel'] = entryModel;
+    if (startDate || endDate) {
+      filter.tradeDate = {};
+      if (startDate) filter.tradeDate.$gte = new Date(startDate);
+      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    }
+
+    let trades = await Trade.find(filter).lean();
+
+    if (momentum) {
+      trades = trades.filter((t: any) => deriveMomentumRelation(t.direction, t.setup?.htfBias) === momentum);
+    }
+
+    const analytics = calculateVariantAnalytics({
+      strategy: {
+        id: strategy._id.toString(),
+        name: strategy.name,
+        minRiskReward: strategy.minRiskReward,
+        variants: strategy.variants || [],
+      },
+      trades: trades.map((t: any) => ({
+        id: t._id.toString(),
+        tradeDate: t.tradeDate,
+        entryTime: t.entryTime,
+        status: t.status,
+        direction: t.direction,
+        symbol: t.symbol,
+        calculated: t.calculated,
+        risk: t.risk,
+        setup: t.setup,
+        psychology: t.psychology,
+        simpleExecution: t.simpleExecution,
+      })),
+    });
+
+    return reply.send({
+      success: true,
+      data: analytics,
+    });
+  });
+
+  // Update strategy
+  app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const parseResult = updateStrategySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Invalid update', details: parseResult.error.format() },
+      });
+    }
+
+    const existingStrategy = await Strategy.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!existingStrategy) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Strategy not found' },
+      });
+    }
+
+    // Protection: variants referenced by trades can only be archived, never deleted
+    if (parseResult.data.variants) {
+      const incomingKeys = new Set(parseResult.data.variants.map((v) => v.key));
+      const removedVariants = (existingStrategy.variants || []).filter((v) => !incomingKeys.has(v.key));
+
+      for (const removed of removedVariants) {
+        const inUseCount = await Trade.countDocuments({
+          userId: req.user!.id,
+          strategyId: existingStrategy._id,
+          'setup.variantKey': removed.key,
+        });
+
+        if (inUseCount > 0) {
+          return reply.status(409).send({
+            success: false,
+            error: {
+              code: 'VARIANT_IN_USE',
+              message: `Variant "${removed.key}" cannot be deleted because it is referenced by ${inUseCount} trade(s). You can archive it by setting isActive: false.`,
+              inUseKeys: [removed.key],
+            },
+          });
+        }
+      }
+    }
+
+    const updated = await Strategy.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user!.id },
+      { $set: parseResult.data },
+      { new: true }
+    );
+
+    return reply.send({ success: true, data: updated });
   });
 
   // Delete strategy
@@ -234,3 +376,4 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     return reply.send({ success: true, message: 'Strategy deleted successfully' });
   });
 };
+

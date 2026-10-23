@@ -8,6 +8,7 @@ import {
   TradeOutcome,
   TradeStatus,
   TradingSession,
+  ITradeSetup,
 } from '@tradevault/shared';
 
 export interface ITradeDoc extends Document {
@@ -126,6 +127,7 @@ export interface ITradeDoc extends Document {
     averageExitPrice?: number;
   };
 
+  setup?: ITradeSetup;
   screenshotIds: mongoose.Types.ObjectId[];
   auditLog: Array<{
     action: string;
@@ -322,6 +324,25 @@ const TradeSchema = new Schema<ITradeDoc>(
       averageExitPrice: { type: Number },
     },
 
+    setup: {
+      variantKey: { type: String, trim: true, index: true },
+      variantStatus: {
+        type: String,
+        enum: ['CLASSIFIED', 'UNCLASSIFIED', 'NOT_APPLICABLE'],
+        default: 'UNCLASSIFIED',
+        index: true,
+      },
+      alsoMatches: [{ type: String }],
+      htfBias: { type: String, enum: ['BULLISH', 'BEARISH', 'NEUTRAL'] },
+      executionTimeframe: { type: String },
+      liquiditySide: { type: String, enum: ['SELL_SIDE', 'BUY_SIDE', 'NONE'] },
+      patternType: { type: String, enum: ['EQUAL_LOWS', 'EQUAL_HIGHS', 'W', 'M', 'OTHER'] },
+      secondLegStatus: { type: String, enum: ['SWEPT', 'UNSWEPT', 'NOT_APPLICABLE'] },
+      liquidityLevel: { type: Number },
+      sweepExtreme: { type: Number },
+      entryModel: { type: String, enum: ['CONFIRMATION_CANDLE', 'RETEST', 'OTHER'] },
+    },
+
     screenshotIds: [{ type: Schema.Types.ObjectId, ref: 'Attachment' }],
     auditLog: [
       {
@@ -339,5 +360,6 @@ TradeSchema.index({ userId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, accountId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, 'calculated.netPnL': -1 });
 TradeSchema.index({ userId: 1, templateId: 1 });
+TradeSchema.index({ userId: 1, strategyId: 1, 'setup.variantKey': 1, tradeDate: -1 });
 
 export const Trade = mongoose.model<ITradeDoc>('Trade', TradeSchema);

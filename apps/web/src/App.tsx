@@ -8,6 +8,7 @@ import { TradeDetailPage } from './pages/TradeDetailPage.js';
 import { JournalCalendarPage } from './pages/JournalCalendarPage.js';
 import { AnalyticsPage } from './pages/AnalyticsPage.js';
 import { StrategyPlaybookPage } from './pages/StrategyPlaybookPage.js';
+import { StrategyVariantAnalyticsPage } from './pages/StrategyVariantAnalyticsPage.js';
 import { RiskCalculatorPage } from './pages/RiskCalculatorPage.js';
 import { AccountsPage } from './pages/AccountsPage.js';
 import { InstrumentsPage } from './pages/InstrumentsPage.js';
@@ -59,6 +60,7 @@ export function App() {
           <Route path="journal" element={<JournalCalendarPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="strategies" element={<StrategyPlaybookPage />} />
+          <Route path="strategies/:id/analytics" element={<StrategyVariantAnalyticsPage />} />
           <Route path="risk-calculator" element={<RiskCalculatorPage />} />
           <Route path="accounts" element={<AccountsPage />} />
           <Route path="instruments" element={<InstrumentsPage />} />

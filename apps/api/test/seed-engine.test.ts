@@ -53,6 +53,7 @@ describe('SetupMint Heavy Seed Data Engine & Integrity Tests', () => {
   });
 
   it('3. Guarantees 100% Real User Isolation: never touches or deletes real users', async () => {
+    await User.deleteMany({ email: 'live_trader_real@gmail.com' });
     // Create a real user with a trade and account
     const realUser = await User.create({
       email: 'live_trader_real@gmail.com',

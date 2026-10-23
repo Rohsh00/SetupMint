@@ -43,6 +43,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -92,6 +93,8 @@ export function TradesPage() {
   const [outcomeFilter, setOutcomeFilter] = useState('');
   const [assetClassFilter, setAssetClassFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [strategyFilter, setStrategyFilter] = useState('');
+  const [variantFilter, setVariantFilter] = useState('');
   const [sortBy, setSortBy] = useState('tradeDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -99,6 +102,11 @@ export function TradesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [showBulkTagModal, setShowBulkTagModal] = useState(false);
+  const [isBulkClassifyOpen, setIsBulkClassifyOpen] = useState(false);
+  const [bulkStrategyId, setBulkStrategyId] = useState('');
+  const [bulkVariantKey, setBulkVariantKey] = useState('');
+  const [bulkVariantStatus, setBulkVariantStatus] = useState<'CLASSIFIED' | 'UNCLASSIFIED' | 'NOT_APPLICABLE'>('CLASSIFIED');
+
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -106,6 +114,18 @@ export function TradesPage() {
   // Modals
   const [isNewTradeModalOpen, setIsNewTradeModalOpen] = useState(false);
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
+
+  // Query strategies for filtering and bulk classifying
+  const { data: strategiesRes } = useQuery({
+    queryKey: ['strategies'],
+    queryFn: () => api.strategies.list(),
+  });
+  const strategiesList: any[] = Array.isArray(strategiesRes)
+    ? strategiesRes
+    : (strategiesRes as any)?.data || [];
+
+  const selectedStrategyForFilter = strategiesList.find((s) => (s.id || s._id) === strategyFilter);
+  const availableFilterVariants = selectedStrategyForFilter?.variants || [];
 
   // Query trades
   const { data, isLoading } = useQuery({
@@ -119,6 +139,8 @@ export function TradesPage() {
       outcomeFilter,
       assetClassFilter,
       statusFilter,
+      strategyFilter,
+      variantFilter,
       sortBy,
       sortOrder,
     ],
@@ -132,6 +154,8 @@ export function TradesPage() {
         outcome: outcomeFilter || undefined,
         assetClass: assetClassFilter || undefined,
         status: statusFilter || undefined,
+        strategyId: strategyFilter || undefined,
+        variantKey: variantFilter || undefined,
         sortBy,
         sortOrder,
       }),
@@ -206,6 +230,34 @@ export function TradesPage() {
     },
   });
 
+  const bulkClassifyMutation = useMutation({
+    mutationFn: ({
+      tradeIds,
+      strategyId,
+      variantKey,
+      variantStatus,
+    }: {
+      tradeIds: string[];
+      strategyId?: string;
+      variantKey?: string;
+      variantStatus?: 'CLASSIFIED' | 'UNCLASSIFIED' | 'NOT_APPLICABLE';
+    }) => api.trades.bulkClassify({ tradeIds, strategyId, variantKey, variantStatus }),
+    onSuccess: (res: any) => {
+      setSelectedIds([]);
+      setIsBulkClassifyOpen(false);
+      setBulkStrategyId('');
+      setBulkVariantKey('');
+      setActionError(null);
+      toast.success(res?.message || 'Trades classified successfully.');
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to classify trades';
+      setActionError(msg);
+      toast.error(msg);
+    },
+  });
+
   // Toggle selection
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -222,7 +274,7 @@ export function TradesPage() {
   };
 
   const hasActiveFilters = Boolean(
-    search || directionFilter || outcomeFilter || statusFilter || assetClassFilter
+    search || directionFilter || outcomeFilter || statusFilter || assetClassFilter || strategyFilter || variantFilter
   );
 
   const clearFilters = () => {
@@ -231,6 +283,8 @@ export function TradesPage() {
     setOutcomeFilter('');
     setStatusFilter('');
     setAssetClassFilter('');
+    setStrategyFilter('');
+    setVariantFilter('');
     setPage(1);
     toast.info('Filters reset.');
   };
@@ -419,6 +473,56 @@ export function TradesPage() {
             </Select>
           </FormControl>
 
+          {/* Strategy Filter */}
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <Select
+              value={strategyFilter}
+              onChange={(e) => {
+                setStrategyFilter(e.target.value);
+                setVariantFilter('');
+                setPage(1);
+                if (e.target.value) toast.info('Filters applied.');
+              }}
+              displayEmpty
+            >
+              <MenuItem value="">
+                <em>All Strategies</em>
+              </MenuItem>
+              {strategiesList.map((strat: any) => {
+                const sId = strat.id || strat._id;
+                return (
+                  <MenuItem key={sId} value={sId}>
+                    {strat.name}
+                  </MenuItem>
+                );
+              })}
+            </Select>
+          </FormControl>
+
+          {/* Setup Variant Filter (visible when chosen strategy has variants) */}
+          {availableFilterVariants.length > 0 && (
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <Select
+                value={variantFilter}
+                onChange={(e) => {
+                  setVariantFilter(e.target.value);
+                  setPage(1);
+                  if (e.target.value) toast.info('Filters applied.');
+                }}
+                displayEmpty
+              >
+                <MenuItem value="">
+                  <em>All Variants</em>
+                </MenuItem>
+                {availableFilterVariants.map((v: any) => (
+                  <MenuItem key={v.key} value={v.key}>
+                    {v.name} ({v.key})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
           {/* Sort By */}
           <FormControl size="small" sx={{ minWidth: 180 }}>
             <Select
@@ -468,6 +572,20 @@ export function TradesPage() {
             {selectedIds.length} trade{selectedIds.length > 1 ? 's' : ''} selected
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                setBulkStrategyId(strategyFilter || '');
+                setBulkVariantKey('');
+                setBulkVariantStatus('CLASSIFIED');
+                setIsBulkClassifyOpen(true);
+              }}
+              startIcon={<AccountTreeRoundedIcon fontSize="small" />}
+              sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600 }}
+            >
+              Classify Variant
+            </Button>
             <Button
               size="small"
               variant="outlined"
@@ -647,8 +765,51 @@ export function TradesPage() {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ color: muiTheme.palette.text.secondary, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t.strategyName || '—'}
+                      <TableCell sx={{ maxWidth: 180 }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 600,
+                              fontSize: '0.8125rem',
+                              color: muiTheme.palette.text.primary,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={t.strategyName || t.tradeTitle}
+                          >
+                            {t.strategyName || t.tradeTitle || '—'}
+                          </Typography>
+                          {t.setup?.variantKey ? (
+                            <Chip
+                              label={t.setup.variantKey}
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: '0.5625rem',
+                                fontWeight: 700,
+                                alignSelf: 'flex-start',
+                                bgcolor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+                                color: 'primary.main',
+                                border: '1px solid',
+                                borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)',
+                              }}
+                            />
+                          ) : t.setup?.variantStatus === 'UNCLASSIFIED' ? (
+                            <Chip
+                              label="Unclassified"
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                height: 16,
+                                fontSize: '0.5625rem',
+                                alignSelf: 'flex-start',
+                                color: 'text.secondary',
+                              }}
+                            />
+                          ) : null}
+                        </Box>
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
                         {t.simpleExecution?.entryPrice || t.calculated?.averageEntryPrice || '—'}
@@ -874,6 +1035,122 @@ export function TradesPage() {
             }}
           >
             Apply Tags
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk Classify Setup Variant Dialog */}
+      <Dialog
+        open={isBulkClassifyOpen}
+        onClose={() => setIsBulkClassifyOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          Classify Setup Variant ({selectedIds.length} Trades)
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Assign parent strategy and child setup variant to {selectedIds.length} selected trades:
+          </Typography>
+
+          <FormControl fullWidth size="small">
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+              Parent Strategy
+            </Typography>
+            <Select
+              value={bulkStrategyId}
+              onChange={(e) => {
+                setBulkStrategyId(e.target.value);
+                setBulkVariantKey('');
+              }}
+              displayEmpty
+            >
+              <MenuItem value="">
+                <em>Keep Current Strategy</em>
+              </MenuItem>
+              {strategiesList.map((strat: any) => {
+                const sId = strat.id || strat._id;
+                return (
+                  <MenuItem key={sId} value={sId}>
+                    {strat.name}
+                  </MenuItem>
+                );
+              })}
+            </Select>
+          </FormControl>
+
+          {(() => {
+            const strat = strategiesList.find((s) => (s.id || s._id) === bulkStrategyId);
+            const stratVariants = strat?.variants || [];
+
+            return (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <FormControl fullWidth size="small">
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                    Child Setup Variant
+                  </Typography>
+                  {stratVariants.length > 0 ? (
+                    <Select
+                      value={bulkVariantKey}
+                      onChange={(e) => setBulkVariantKey(e.target.value)}
+                      displayEmpty
+                    >
+                      <MenuItem value="">
+                        <em>None / Unclassified</em>
+                      </MenuItem>
+                      {stratVariants.map((v: any) => (
+                        <MenuItem key={v.key} value={v.key}>
+                          {v.name} ({v.key})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  ) : (
+                    <TextField
+                      size="small"
+                      fullWidth
+                      placeholder="e.g. VAR-01, BULL-SSL-EQL"
+                      value={bulkVariantKey}
+                      onChange={(e) => setBulkVariantKey(e.target.value.toUpperCase())}
+                      helperText={strat ? 'No variants defined on this strategy yet; type custom key' : 'Select a strategy or type a custom variant key'}
+                    />
+                  )}
+                </FormControl>
+
+                <FormControl fullWidth size="small">
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                    Variant Status
+                  </Typography>
+                  <Select
+                    value={bulkVariantStatus}
+                    onChange={(e) => setBulkVariantStatus(e.target.value as any)}
+                  >
+                    <MenuItem value="CLASSIFIED">CLASSIFIED (Variant Verified)</MenuItem>
+                    <MenuItem value="UNCLASSIFIED">UNCLASSIFIED (Pending Classification)</MenuItem>
+                    <MenuItem value="NOT_APPLICABLE">NOT_APPLICABLE (Discretionary)</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setIsBulkClassifyOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            disabled={bulkClassifyMutation.isPending}
+            onClick={() => {
+              bulkClassifyMutation.mutate({
+                tradeIds: selectedIds,
+                strategyId: bulkStrategyId || undefined,
+                variantKey: bulkVariantKey || undefined,
+                variantStatus: bulkVariantStatus,
+              });
+            }}
+          >
+            {bulkClassifyMutation.isPending ? 'Applying...' : 'Apply Classification'}
           </Button>
         </DialogActions>
       </Dialog>

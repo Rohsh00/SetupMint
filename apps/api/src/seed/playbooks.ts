@@ -1,4 +1,4 @@
-import { AssetClass } from '@tradevault/shared';
+import { AssetClass, IStrategyVariant } from '@tradevault/shared';
 
 export interface StrategyPlaybookSeed {
   name: string;
@@ -13,9 +13,10 @@ export interface StrategyPlaybookSeed {
   minRiskReward: number;
   tags: string[];
   isActive: boolean;
+  variants?: IStrategyVariant[];
 }
 
-export const SEED_STRATEGY_PLAYBOOKS: StrategyPlaybookSeed[] = [
+const CORE_SEED_PLAYBOOKS: StrategyPlaybookSeed[] = [
   {
     name: '15-Min Opening Range Breakout (ORB)',
     description: 'High momentum breakout of the 15-minute high/low with volume confirmation at market open.',
@@ -294,4 +295,240 @@ export const SEED_STRATEGY_PLAYBOOKS: StrategyPlaybookSeed[] = [
     tags: ['SupplyDemand', 'OrderBlock', 'Reversal'],
     isActive: true,
   },
+];
+
+export const LIQUIDITY_RETRACEMENT_PACK: StrategyPlaybookSeed[] = [
+  {
+    name: 'Bullish HTF Retracement - LTF Liquidity Sweep & Confirmation',
+    description:
+      'Bullish daily/4h/1h structure retracing into demand/support/bullish OB. Trades sell-side liquidity sweeps on 5m with MSS, displacement, and confirmation targeting opposing swing highs and external buy-side liquidity.',
+    assetClasses: ['EQUITY', 'FUTURES', 'COMMODITY', 'FOREX', 'OPTIONS', 'CRYPTO', 'INDEX'],
+    timeframes: ['5m', '15m', '1h', '4h', 'Daily'],
+    entryRules: [
+      'Bullish daily/4h/1h structure confirmed into support, demand zone, or bullish order block',
+      'Sell-side liquidity pool raid identified (equal lows sweep or W pattern second leg)',
+      'Bullish Market Structure Shift (MSS) or BOS with energetic displacement candle',
+      'Enter on predefined confirmation-candle close or retest of reclaimed level',
+    ],
+    stopLossRules: ['Hard stop beyond actual sweep low / structural invalidation extreme'],
+    targetRules: [
+      'First target: Nearest opposing swing high or W neckline',
+      'Final target: Predefined external buy-side liquidity pool',
+    ],
+    invalidationCriteria: [
+      'Sustained candle close below the structural sweep low',
+      'Failure to hold the reclaimed liquidity level',
+    ],
+    checklist: [
+      'Higher timeframe bullish context verified',
+      'Sell-side liquidity taken prior to entry (or unswept continuation satisfied)',
+      'Bullish displacement candle confirmed',
+      'Risk is strictly within defined account parameters',
+    ],
+    minRiskReward: 2.0,
+    tags: ['LiquiditySweep', 'SMC', 'BullishRetracement', 'MSS'],
+    isActive: true,
+    variants: [
+      {
+        key: 'BULL-SSL-EQL',
+        name: 'Equal Lows Sweep',
+        description:
+          'Equal or near-equal 5m swing lows swept taking sell-side liquidity; rejection, reclaim, bullish MSS/BOS and displacement.',
+        isActive: true,
+        sortOrder: 1,
+        expected: {
+          direction: 'LONG',
+          liquiditySide: 'SELL_SIDE',
+          patternType: 'EQUAL_LOWS',
+          secondLegStatus: 'NOT_APPLICABLE',
+          momentumRelation: 'WITH_HTF',
+        },
+        entryRules: [
+          'Equal/near-equal 5m swing lows swept below taking sell-side liquidity',
+          'Sharp rejection wick and clean reclaim of the sweep level',
+          'Bullish MSS/BOS accompanied by energetic displacement candle',
+          'Entry on confirmation candle close or optimal retest',
+        ],
+        stopLossRules: ['Hard stop beyond actual sweep low'],
+        targetRules: ['Nearest opposing swing high and external buy-side liquidity target'],
+        invalidationCriteria: ['Sustained 5m close below the sweep low'],
+        checklist: ['Equal lows clearly identified', 'Sell-side liquidity taken', 'Displacement confirmed'],
+        minRiskReward: 2.0,
+      },
+      {
+        key: 'BULL-SSL-W-SWEEP',
+        name: 'W Pattern, Second-Leg Sweep',
+        description:
+          'First 5m low forms W baseline; second low sweeps BELOW first low taking sell-side liquidity; reclaim, MSS + displacement.',
+        isActive: true,
+        sortOrder: 2,
+        expected: {
+          direction: 'LONG',
+          liquiditySide: 'SELL_SIDE',
+          patternType: 'W',
+          secondLegStatus: 'SWEPT',
+          momentumRelation: 'WITH_HTF',
+        },
+        entryRules: [
+          'First 5m low established, rally forms W neckline',
+          'Second low trades below first low taking resting sell-side liquidity',
+          'Reclaim and rejection followed by bullish MSS + displacement',
+          'Entry on confirmation candle close or retest',
+        ],
+        stopLossRules: ['Hard stop below second-leg sweep low'],
+        targetRules: ['W neckline and external buy-side liquidity target'],
+        invalidationCriteria: ['Clean close below second-leg sweep low'],
+        checklist: ['W structure clear', 'Second leg swept first low', 'MSS + displacement verified'],
+        minRiskReward: 2.0,
+      },
+      {
+        key: 'BULL-W-UNSWEPT',
+        name: 'W Pattern, Second-Leg Unswept',
+        description:
+          'Second low stays ABOVE first low (liquidity untaken; must NOT be labelled a sweep). Testable continuation model with bullish shift.',
+        isActive: true,
+        sortOrder: 3,
+        expected: {
+          direction: 'LONG',
+          liquiditySide: 'NONE',
+          patternType: 'W',
+          secondLegStatus: 'UNSWEPT',
+          momentumRelation: 'WITH_HTF',
+        },
+        entryRules: [
+          'Second low forms higher than first low (liquidity untaken; not a sweep)',
+          'Bullish structure shift and displacement through meaningful local swing high',
+          'Enter on confirmation candle or retest of demand/breakout level',
+        ],
+        stopLossRules: ['Hard stop below second low subject to structural invalidation'],
+        targetRules: ['W neckline and relevant buy-side liquidity'],
+        invalidationCriteria: ['Close below the second low'],
+        checklist: [
+          'Second leg confirmed higher than first low',
+          'Displacement through local swing high',
+          'Not classified as a liquidity sweep',
+        ],
+        minRiskReward: 2.0,
+      },
+    ],
+  },
+  {
+    name: 'Bearish HTF Retracement - LTF Liquidity Sweep & Confirmation',
+    description:
+      'Bearish daily/4h/1h structure retracing into supply/resistance/bearish OB. Trades buy-side liquidity sweeps on 5m with MSS, displacement, and confirmation targeting opposing swing lows and external sell-side liquidity.',
+    assetClasses: ['EQUITY', 'FUTURES', 'COMMODITY', 'FOREX', 'OPTIONS', 'CRYPTO', 'INDEX'],
+    timeframes: ['5m', '15m', '1h', '4h', 'Daily'],
+    entryRules: [
+      'Bearish daily/4h/1h structure confirmed into resistance, supply zone, or bearish order block',
+      'Buy-side liquidity pool raid identified (equal highs sweep or M pattern second leg)',
+      'Bearish Market Structure Shift (MSS) or BOS with energetic displacement candle',
+      'Enter on predefined confirmation-candle close or retest of reclaimed level',
+    ],
+    stopLossRules: ['Hard stop beyond actual sweep high / structural invalidation extreme'],
+    targetRules: [
+      'First target: Nearest opposing swing low or M neckline',
+      'Final target: Predefined external sell-side liquidity pool',
+    ],
+    invalidationCriteria: [
+      'Sustained candle close above the structural sweep high',
+      'Failure to hold the reclaimed liquidity level',
+    ],
+    checklist: [
+      'Higher timeframe bearish context verified',
+      'Buy-side liquidity taken prior to entry (or unswept continuation satisfied)',
+      'Bearish displacement candle confirmed',
+      'Risk is strictly within defined account parameters',
+    ],
+    minRiskReward: 2.0,
+    tags: ['LiquiditySweep', 'SMC', 'BearishRetracement', 'MSS'],
+    isActive: true,
+    variants: [
+      {
+        key: 'BEAR-BSL-EQH',
+        name: 'Equal Highs Sweep',
+        description:
+          'Equal or near-equal 5m swing highs swept taking buy-side liquidity; rejection, reclaim, bearish MSS/BOS and displacement.',
+        isActive: true,
+        sortOrder: 1,
+        expected: {
+          direction: 'SHORT',
+          liquiditySide: 'BUY_SIDE',
+          patternType: 'EQUAL_HIGHS',
+          secondLegStatus: 'NOT_APPLICABLE',
+          momentumRelation: 'WITH_HTF',
+        },
+        entryRules: [
+          'Equal/near-equal 5m swing highs swept above taking buy-side liquidity',
+          'Sharp rejection wick and clean reclaim of the sweep level back down',
+          'Bearish MSS/BOS accompanied by energetic displacement candle',
+          'Entry on confirmation candle close or optimal retest',
+        ],
+        stopLossRules: ['Hard stop above actual sweep high'],
+        targetRules: ['Nearest opposing swing low and external sell-side liquidity target'],
+        invalidationCriteria: ['Sustained 5m close above the sweep high'],
+        checklist: ['Equal highs clearly identified', 'Buy-side liquidity taken', 'Displacement confirmed'],
+        minRiskReward: 2.0,
+      },
+      {
+        key: 'BEAR-BSL-M-SWEEP',
+        name: 'M Pattern, Second-Leg Sweep',
+        description:
+          'First 5m high forms M baseline; second high sweeps ABOVE first high taking buy-side liquidity; reclaim, MSS + displacement.',
+        isActive: true,
+        sortOrder: 2,
+        expected: {
+          direction: 'SHORT',
+          liquiditySide: 'BUY_SIDE',
+          patternType: 'M',
+          secondLegStatus: 'SWEPT',
+          momentumRelation: 'WITH_HTF',
+        },
+        entryRules: [
+          'First 5m high established, pullback forms M neckline',
+          'Second high trades above first high taking resting buy-side liquidity',
+          'Reclaim and rejection followed by bearish MSS + displacement',
+          'Entry on confirmation candle close or retest',
+        ],
+        stopLossRules: ['Hard stop above second-leg sweep high'],
+        targetRules: ['M neckline and external sell-side liquidity target'],
+        invalidationCriteria: ['Clean close above second-leg sweep high'],
+        checklist: ['M structure clear', 'Second leg swept first high', 'MSS + displacement verified'],
+        minRiskReward: 2.0,
+      },
+      {
+        key: 'BEAR-M-UNSWEPT',
+        name: 'M Pattern, Second-Leg Unswept',
+        description:
+          'Second high stays BELOW first high (liquidity untaken; must NOT be labelled a sweep). Testable continuation model with bearish shift.',
+        isActive: true,
+        sortOrder: 3,
+        expected: {
+          direction: 'SHORT',
+          liquiditySide: 'NONE',
+          patternType: 'M',
+          secondLegStatus: 'UNSWEPT',
+          momentumRelation: 'WITH_HTF',
+        },
+        entryRules: [
+          'Second high forms lower than first high (liquidity untaken; not a sweep)',
+          'Bearish structure shift and displacement through meaningful local swing low',
+          'Enter on confirmation candle or retest of supply/breakdown level',
+        ],
+        stopLossRules: ['Hard stop above second high subject to structural invalidation'],
+        targetRules: ['M neckline and relevant sell-side liquidity'],
+        invalidationCriteria: ['Close above the second high'],
+        checklist: [
+          'Second leg confirmed lower than first high',
+          'Displacement through local swing low',
+          'Not classified as a liquidity sweep',
+        ],
+        minRiskReward: 2.0,
+      },
+    ],
+  },
+];
+
+export const SEED_STRATEGY_PLAYBOOKS: StrategyPlaybookSeed[] = [
+  ...CORE_SEED_PLAYBOOKS,
+  ...LIQUIDITY_RETRACEMENT_PACK,
 ];

@@ -7,7 +7,13 @@ import {
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
 } from '@tradevault/financial-engine';
-import { createTradeSchema, updateTradeSchema, tradeFilterQuerySchema, TradeOutcome } from '@tradevault/shared';
+import {
+  createTradeSchema,
+  updateTradeSchema,
+  tradeFilterQuerySchema,
+  bulkClassifySchema,
+  TradeOutcome,
+} from '@tradevault/shared';
 import { TradingAccount, Trade, Strategy, Instrument, Attachment, TradeTemplate } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -22,6 +28,199 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   function computeTradeCalculations(body: any) {
     return InstrumentService.computeTradeCalculations(body);
   }
+
+  // Helper function to validate classification rules and compute non-blocking warnings
+  async function validateTradeClassificationAndComputeWarnings(
+    userId: string,
+    tradeData: {
+      direction: string;
+      strategyId?: string;
+      setup?: any;
+      risk?: any;
+      thesis?: any;
+      simpleExecution?: any;
+    }
+  ): Promise<{ error?: { status: number; code: string; message: string }; warnings: string[] }> {
+    const warnings: string[] = [];
+    const strategyId = tradeData.strategyId;
+    const setup = tradeData.setup;
+
+    if (setup?.variantStatus === 'CLASSIFIED' && !setup?.variantKey) {
+      return {
+        error: {
+          status: 400,
+          code: 'INVALID_VARIANT_STATUS',
+          message: 'variantStatus is CLASSIFIED but no variantKey was provided',
+        },
+        warnings: [],
+      };
+    }
+
+    if (setup?.variantKey && setup?.variantStatus && setup.variantStatus !== 'CLASSIFIED') {
+      return {
+        error: {
+          status: 400,
+          code: 'INVALID_VARIANT_STATUS',
+          message: `variantKey "${setup.variantKey}" cannot be set when variantStatus is "${setup.variantStatus}"`,
+        },
+        warnings: [],
+      };
+    }
+
+    let strategy: any = null;
+    if (strategyId) {
+      strategy = await Strategy.findOne({ _id: strategyId, userId });
+      if (!strategy) {
+        return {
+          error: {
+            status: 400,
+            code: 'STRATEGY_NOT_FOUND',
+            message: 'Strategy does not exist or does not belong to the user',
+          },
+          warnings: [],
+        };
+      }
+    }
+
+    if (setup?.variantKey) {
+      if (!strategy) {
+        return {
+          error: {
+            status: 400,
+            code: 'STRATEGY_REQUIRED',
+            message: 'A valid strategyId is required when assigning a setup variantKey',
+          },
+          warnings: [],
+        };
+      }
+
+      const variant = (strategy.variants || []).find((v: any) => v.key === setup.variantKey);
+      if (!variant) {
+        return {
+          error: {
+            status: 400,
+            code: 'VARIANT_NOT_FOUND',
+            message: `Variant key "${setup.variantKey}" is not defined in strategy "${strategy.name}"`,
+          },
+          warnings: [],
+        };
+      }
+
+      // Direction validation: dynamic check against variant's configured expected direction
+      if (variant.expected?.direction && tradeData.direction && tradeData.direction !== variant.expected.direction) {
+        return {
+          error: {
+            status: 400,
+            code: 'DIRECTION_MISMATCH',
+            message: `Variant expects direction ${variant.expected.direction}, but trade direction is ${tradeData.direction}`,
+          },
+          warnings: [],
+        };
+      }
+
+      // Contradicting setup attributes
+      if (
+        variant.expected?.secondLegStatus === 'UNSWEPT' &&
+        setup.secondLegStatus === 'SWEPT'
+      ) {
+        return {
+          error: {
+            status: 400,
+            code: 'CONTRADICTION_ERROR',
+            message: 'Variant is UNSWEPT but trade setup specifies secondLegStatus=SWEPT',
+          },
+          warnings: [],
+        };
+      }
+      if (
+        variant.expected?.secondLegStatus === 'SWEPT' &&
+        setup.secondLegStatus === 'UNSWEPT'
+      ) {
+        return {
+          error: {
+            status: 400,
+            code: 'CONTRADICTION_ERROR',
+            message: 'Variant is SWEPT but trade setup specifies secondLegStatus=UNSWEPT',
+          },
+          warnings: [],
+        };
+      }
+      if (
+        variant.expected?.liquiditySide === 'NONE' &&
+        setup.liquiditySide &&
+        setup.liquiditySide !== 'NONE'
+      ) {
+        return {
+          error: {
+            status: 400,
+            code: 'CONTRADICTION_ERROR',
+            message: `Unswept variant expects liquiditySide=NONE, but trade setup has ${setup.liquiditySide}`,
+          },
+          warnings: [],
+        };
+      }
+
+      // Non-blocking Warnings:
+      // 1. Stop not beyond sweepExtreme
+      if (setup.sweepExtreme !== undefined && setup.sweepExtreme !== null && tradeData.risk?.initialStopLoss) {
+        const stop = tradeData.risk.initialStopLoss;
+        const extreme = setup.sweepExtreme;
+        if (tradeData.direction === 'LONG' && stop >= extreme) {
+          warnings.push(`Initial stop loss (${stop}) is at or above sweep extreme (${extreme}). For a long sweep setup, the stop should be placed beyond the sweep low.`);
+        } else if (tradeData.direction === 'SHORT' && stop <= extreme) {
+          warnings.push(`Initial stop loss (${stop}) is at or below sweep extreme (${extreme}). For a short sweep setup, the stop should be placed beyond the sweep high.`);
+        }
+      }
+
+      // 2. Sweep-type confluences on an UNSWEPT variant
+      const isUnswept = variant.expected?.secondLegStatus === 'UNSWEPT' || setup.secondLegStatus === 'UNSWEPT';
+      if (isUnswept && Array.isArray(tradeData.thesis?.confluences)) {
+        const sweepConfluences = [
+          'BUY_SIDE_LIQUIDITY_SWEEP',
+          'SELL_SIDE_LIQUIDITY_SWEEP',
+          'LIQUIDITY_SWEEP',
+          'PREV_DAY_HIGH_SWEEP',
+          'PREV_DAY_LOW_SWEEP',
+          'ASIAN_RANGE_SWEEP',
+          'SESSION_HIGH_LOW_SWEEP',
+        ];
+        const hasSweep = tradeData.thesis.confluences.some((c: string) => sweepConfluences.includes(c));
+        if (hasSweep) {
+          warnings.push('Trade confluences include liquidity sweep tags, but variant is an UNSWEPT continuation model.');
+        }
+      }
+
+      // 3. htfBias contradicting a WITH_HTF variant
+      if (variant.expected?.momentumRelation === 'WITH_HTF' && setup.htfBias) {
+        if (
+          (tradeData.direction === 'LONG' && setup.htfBias === 'BEARISH') ||
+          (tradeData.direction === 'SHORT' && setup.htfBias === 'BULLISH')
+        ) {
+          warnings.push(`Variant expects WITH_HTF momentum, but trade has HTF bias ${setup.htfBias} with direction ${tradeData.direction}.`);
+        }
+      }
+
+      // 4. planned R:R below effective min R:R
+      const effectiveMinRR = variant.minRiskReward ?? strategy.minRiskReward ?? 1.5;
+      let plannedRR = tradeData.risk?.plannedRewardRiskRatio;
+      if (!plannedRR && tradeData.risk?.plannedEntryPrice && tradeData.risk?.initialStopLoss && tradeData.risk?.plannedTarget) {
+        const entry = tradeData.risk.plannedEntryPrice;
+        const sl = tradeData.risk.initialStopLoss;
+        const tp = tradeData.risk.plannedTarget;
+        const riskDist = Math.abs(entry - sl);
+        const rewardDist = Math.abs(tp - entry);
+        if (riskDist > 0) {
+          plannedRR = Number((rewardDist / riskDist).toFixed(2));
+        }
+      }
+      if (plannedRR !== undefined && plannedRR < effectiveMinRR) {
+        warnings.push(`Planned R:R (${plannedRR.toFixed(2)}) is below the effective minimum R:R threshold (${effectiveMinRR.toFixed(2)}).`);
+      }
+    }
+
+    return { warnings };
+  }
+
 
   // List trades with pagination, global filtering, and sorting
   app.get('/', async (req, reply) => {
@@ -49,6 +248,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       startDate,
       endDate,
       tags,
+      variantKey,
+      variantStatus,
+      entryModel,
       sortBy,
       sortOrder,
     } = queryResult.data;
@@ -64,6 +266,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (strategyId) filter.strategyId = strategyId;
     if (templateId) filter.templateId = templateId;
     if (session) filter.session = session;
+    if (variantKey) filter['setup.variantKey'] = variantKey;
+    if (variantStatus) filter['setup.variantStatus'] = variantStatus;
+    if (entryModel) filter['setup.entryModel'] = entryModel;
 
     if (startDate || endDate) {
       filter.tradeDate = {};
@@ -135,6 +340,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       thesis: t.thesis,
       psychology: t.psychology,
       calculated: t.calculated,
+      setup: t.setup,
       screenshotIds: t.screenshotIds.map((id) => id.toString()),
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
@@ -164,6 +370,26 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const body = parseResult.data;
 
+    // Validate classification rules and compute warnings
+    const classValidation = await validateTradeClassificationAndComputeWarnings(req.user!.id, {
+      direction: body.direction,
+      strategyId: body.strategyId,
+      setup: body.setup,
+      risk: body.risk,
+      thesis: body.thesis,
+      simpleExecution: body.simpleExecution,
+    });
+
+    if (classValidation.error) {
+      return reply.status(classValidation.error.status).send({
+        success: false,
+        error: {
+          code: classValidation.error.code,
+          message: classValidation.error.message,
+        },
+      });
+    }
+
     // Verify account ownership
     const account = await TradingAccount.findOne({ _id: body.accountId, userId: req.user!.id });
     if (!account) {
@@ -176,6 +402,29 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Compute calculations
     const calculated = computeTradeCalculations(body);
 
+    const initialAuditLog: any[] = [
+      {
+        action: 'CREATED',
+        timestamp: new Date(),
+        changedBy: req.user!.email,
+        details: { initialPnl: calculated.netPnL },
+      },
+    ];
+
+    if (body.setup?.variantKey) {
+      initialAuditLog.push({
+        action: 'CLASSIFIED',
+        timestamp: new Date(),
+        changedBy: req.user!.email || 'user',
+        details: {
+          previousVariantKey: undefined,
+          newVariantKey: body.setup.variantKey,
+          previousStatus: 'UNCLASSIFIED',
+          newStatus: body.setup.variantStatus || 'CLASSIFIED',
+        },
+      });
+    }
+
     const tradeData: any = {
       ...body,
       userId: req.user!.id,
@@ -183,14 +432,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       entryTime: new Date(body.entryTime),
       exitTime: body.exitTime ? new Date(body.exitTime) : undefined,
       calculated,
-      auditLog: [
-        {
-          action: 'CREATED',
-          timestamp: new Date(),
-          changedBy: req.user!.email,
-          details: { initialPnl: calculated.netPnL },
-        },
-      ],
+      auditLog: initialAuditLog,
     };
 
     if (!tradeData.strategyId) delete tradeData.strategyId;
@@ -236,10 +478,94 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         symbol: trade.symbol,
         underlying: trade.underlying,
         instrumentId: trade.instrumentId?.toString(),
+        strategyId: trade.strategyId?.toString(),
+        strategyName: trade.strategyName,
         templateId: trade.templateId,
+        setup: trade.setup,
+        auditLog: trade.auditLog,
         netPnL: trade.calculated.netPnL,
         outcome: trade.calculated.outcome,
       },
+      warnings: classValidation.warnings.length > 0 ? classValidation.warnings : undefined,
+    });
+  });
+
+  // Bulk classify trades
+  app.post('/bulk-classify', async (req: any, reply) => {
+    const parseResult = bulkClassifySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Invalid bulk classify parameters', details: parseResult.error.format() },
+      });
+    }
+
+    const { tradeIds, strategyId, variantKey, variantStatus } = parseResult.data;
+
+    let targetStrategy: any = null;
+    if (strategyId) {
+      targetStrategy = await Strategy.findOne({ _id: strategyId, userId: req.user!.id });
+      if (!targetStrategy) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'STRATEGY_NOT_FOUND', message: 'Strategy not found' },
+        });
+      }
+      if (variantKey) {
+        const found = (targetStrategy.variants || []).some((v: any) => v.key === variantKey);
+        if (!found) {
+          return reply.status(400).send({
+            success: false,
+            error: { code: 'VARIANT_NOT_FOUND', message: `Variant "${variantKey}" not found in strategy "${targetStrategy.name}"` },
+          });
+        }
+      }
+    }
+
+    const trades = await Trade.find({ _id: { $in: tradeIds }, userId: req.user!.id });
+    let updatedCount = 0;
+
+    for (const trade of trades) {
+      const prevKey = trade.setup?.variantKey;
+      const prevStatus = trade.setup?.variantStatus || 'UNCLASSIFIED';
+
+      const newKey = variantKey !== undefined ? variantKey : prevKey;
+      const newStatus = variantStatus !== undefined
+        ? variantStatus
+        : (newKey ? 'CLASSIFIED' : prevStatus);
+
+      trade.setup = {
+        ...((trade.setup as any)?.toObject ? (trade.setup as any).toObject() : trade.setup || {}),
+        variantKey: newKey || undefined,
+        variantStatus: newStatus,
+      };
+
+      if (strategyId && targetStrategy) {
+        trade.strategyId = targetStrategy._id;
+        trade.strategyName = targetStrategy.name;
+      }
+
+      trade.auditLog.push({
+        action: 'CLASSIFIED',
+        timestamp: new Date(),
+        changedBy: req.user!.email || 'user',
+        details: {
+          previousVariantKey: prevKey,
+          newVariantKey: newKey,
+          previousStatus: prevStatus,
+          newStatus,
+          bulk: true,
+        },
+      });
+
+      await trade.save();
+      updatedCount++;
+    }
+
+    return reply.send({
+      success: true,
+      message: `Successfully classified ${updatedCount} trade(s)`,
+      data: { count: updatedCount },
     });
   });
 
@@ -309,6 +635,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         thesis: trade.thesis,
         psychology: trade.psychology,
         calculated: trade.calculated,
+        setup: trade.setup,
         screenshotIds: trade.screenshotIds.map((id) => id.toString()),
         attachments: formattedAttachments,
         auditLog: trade.auditLog,
@@ -349,6 +676,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const mergedData = {
       ...existingTrade.toObject(),
       ...parseResult.data,
+      setup: parseResult.data.setup
+        ? { ...((existingTrade.setup as any)?.toObject ? (existingTrade.setup as any).toObject() : existingTrade.setup || {}), ...parseResult.data.setup }
+        : existingTrade.setup,
       risk: { ...existingTrade.risk, ...parseResult.data.risk },
       thesis: { ...existingTrade.thesis, ...parseResult.data.thesis },
       psychology: { ...existingTrade.psychology, ...parseResult.data.psychology },
@@ -356,12 +686,66 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       fills: parseResult.data.fills || existingTrade.fills,
     };
 
+    // Validate classification rules and compute warnings on mergedData
+    const classValidation = await validateTradeClassificationAndComputeWarnings(req.user!.id, {
+      direction: mergedData.direction,
+      strategyId: mergedData.strategyId ? mergedData.strategyId.toString() : undefined,
+      setup: mergedData.setup,
+      risk: mergedData.risk,
+      thesis: mergedData.thesis,
+      simpleExecution: mergedData.simpleExecution,
+    });
+
+    if (classValidation.error) {
+      return reply.status(classValidation.error.status).send({
+        success: false,
+        error: {
+          code: classValidation.error.code,
+          message: classValidation.error.message,
+        },
+      });
+    }
+
+    const oldVariantKey = existingTrade.setup?.variantKey;
+    const oldVariantStatus = existingTrade.setup?.variantStatus || 'UNCLASSIFIED';
+    const newVariantKey = mergedData.setup?.variantKey;
+    const newVariantStatus = mergedData.setup?.variantStatus || (newVariantKey ? 'CLASSIFIED' : 'UNCLASSIFIED');
+    const classificationChanged = oldVariantKey !== newVariantKey || oldVariantStatus !== newVariantStatus;
+
     const oldNetPnL = existingTrade.calculated?.netPnL || 0;
     const newCalculated = computeTradeCalculations(mergedData);
     const isClosing = parseResult.data.status === 'CLOSED' && existingTrade.status !== 'CLOSED';
 
+    const auditEntriesToPush: any[] = [
+      {
+        action: isClosing ? 'CLOSED' : 'UPDATED',
+        timestamp: new Date(),
+        changedBy: req.user!.email,
+        details: {
+          oldNetPnL,
+          newNetPnL: newCalculated.netPnL,
+          ...(isClosing && mergedSimpleExecution?.exitPrice ? { exitPrice: mergedSimpleExecution.exitPrice } : {}),
+        },
+      },
+    ];
+
+    if (classificationChanged) {
+      auditEntriesToPush.push({
+        action: 'CLASSIFIED',
+        timestamp: new Date(),
+        changedBy: req.user!.email || 'user',
+        details: {
+          previousVariantKey: oldVariantKey,
+          newVariantKey: newVariantKey,
+          previousStatus: oldVariantStatus,
+          newStatus: newVariantStatus,
+        },
+      });
+    }
+
     const updatePayload: any = {
       ...parseResult.data,
+      setup: mergedData.setup,
       risk: mergedData.risk,
       thesis: mergedData.thesis,
       psychology: mergedData.psychology,
@@ -370,14 +754,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       calculated: newCalculated,
       $push: {
         auditLog: {
-          action: isClosing ? 'CLOSED' : 'UPDATED',
-          timestamp: new Date(),
-          changedBy: req.user!.email,
-          details: {
-            oldNetPnL,
-            newNetPnL: newCalculated.netPnL,
-            ...(isClosing && mergedSimpleExecution?.exitPrice ? { exitPrice: mergedSimpleExecution.exitPrice } : {}),
-          },
+          $each: auditEntriesToPush,
         },
       },
     };
@@ -439,7 +816,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       await AccountService.recalculateAccountBalances(parseResult.data.accountId, req.user!.id);
     }
 
-    return reply.send({ success: true, data: updated });
+    return reply.send({
+      success: true,
+      data: updated,
+      warnings: classValidation.warnings.length > 0 ? classValidation.warnings : undefined,
+    });
   });
 
   // Delete trade

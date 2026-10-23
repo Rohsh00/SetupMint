@@ -591,6 +591,12 @@ export const CONFLUENCES: IConfluenceDefinition[] = [
     description: 'Lower timeframe reversal trigger candle (pinbar/engulfing)',
   },
   {
+    value: 'LEVEL_RECLAIM',
+    label: 'Level Reclaim & Hold',
+    category: 'CONFIRMATION_STRUCTURE',
+    description: 'Price pierced and accepted back above/below key level with rejection',
+  },
+  {
     value: 'VOLUME_SPIKE_AT_LEVEL',
     label: 'Volume Spike at Key Level',
     category: 'CONFIRMATION_STRUCTURE',
@@ -1581,4 +1587,6 @@ export const BUILT_IN_TEMPLATES: ITradeTemplate[] = [
     isBuiltIn: true,
   },
 ];
+
+
 

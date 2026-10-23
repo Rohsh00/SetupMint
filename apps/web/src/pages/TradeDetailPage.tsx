@@ -38,6 +38,8 @@ import PsychologyIcon from '@mui/icons-material/PsychologyRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CloudUploadIcon from '@mui/icons-material/CloudUploadRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
@@ -60,11 +62,21 @@ export function TradeDetailPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data: trade, isLoading, isError } = useQuery({
+  const { data: rawTrade, isLoading, isError } = useQuery({
     queryKey: ['trade', id],
     queryFn: () => api.trades.get(id!),
     enabled: !!id,
   });
+
+  const trade = (rawTrade as any)?.data || rawTrade;
+
+  const { data: strategyData } = useQuery({
+    queryKey: ['strategy', trade?.strategyId],
+    queryFn: () => api.strategies.get(trade!.strategyId),
+    enabled: Boolean(trade?.strategyId),
+  });
+  const strategy = (strategyData as any)?.data?.strategy || (strategyData as any)?.strategy || strategyData;
+  const currentVariant = strategy?.variants?.find((v: any) => v.key === trade?.setup?.variantKey);
 
   const duplicateMutation = useMutation({
     mutationFn: () => api.trades.duplicate(id!),
@@ -349,6 +361,197 @@ export function TradeDetailPage() {
             </Typography>
           </Grid>
         </Grid>
+      </Card>
+
+      {/* Playbook Strategy & Setup Variant Classification Card */}
+      <Card sx={{ p: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}`, flexWrap: 'wrap', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <AccountTreeRoundedIcon sx={{ color: 'primary.main', fontSize: 22 }} />
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', lineHeight: 1.2 }}>
+                Playbook Strategy & Setup Variant
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Classification, structural criteria, and post-trade execution adherence
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {trade.strategyId && (
+              <Button
+                component={RouterLink}
+                to={`/strategies/${trade.strategyId}/analytics`}
+                size="small"
+                variant="outlined"
+                startIcon={<InsightsRoundedIcon fontSize="small" />}
+                sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 700 }}
+              >
+                Variant Analytics
+              </Button>
+            )}
+            <Chip
+              label={trade.setup?.variantStatus || 'UNCLASSIFIED'}
+              size="small"
+              color={
+                trade.setup?.variantStatus === 'CLASSIFIED'
+                  ? 'success'
+                  : trade.setup?.variantStatus === 'NOT_APPLICABLE'
+                  ? 'default'
+                  : 'warning'
+              }
+              sx={{ fontWeight: 800, fontSize: '0.6875rem' }}
+            />
+          </Box>
+        </Box>
+
+        <Grid container spacing={2.5}>
+          {/* Strategy Details */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', border: `1px solid ${muiTheme.palette.divider}`, height: '100%' }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'text.secondary', display: 'block', mb: 1 }}>
+                Parent Strategy
+              </Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary', mb: 0.5 }}>
+                {strategy?.name || trade.strategyName || 'None / Discretionary'}
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8125rem', mb: 1.5 }}>
+                {strategy?.description || 'No parent strategy description logged.'}
+              </Typography>
+
+              {strategy?.minRiskReward && (
+                <Chip
+                  label={`Strategy Target R:R 1:${strategy.minRiskReward}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ height: 20, fontSize: '0.625rem', fontWeight: 600 }}
+                />
+              )}
+            </Box>
+          </Grid>
+
+          {/* Setup Variant Details */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(99, 102, 241, 0.04)' : 'rgba(99, 102, 241, 0.02)', border: `1px solid ${isDark ? 'rgba(99, 102, 241, 0.2)' : 'rgba(99, 102, 241, 0.15)'}`, height: '100%' }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'primary.main', display: 'block', mb: 1 }}>
+                Child Setup Variant
+              </Typography>
+
+              {trade.setup?.variantKey ? (
+                <>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                      {currentVariant?.name || trade.setup.variantKey}
+                    </Typography>
+                    <Chip
+                      label={trade.setup.variantKey}
+                      size="small"
+                      color="primary"
+                      sx={{ height: 20, fontSize: '0.6875rem', fontWeight: 700 }}
+                    />
+                  </Box>
+
+                  {currentVariant?.description && (
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8125rem', mb: 1.5 }}>
+                      {currentVariant.description}
+                    </Typography>
+                  )}
+
+                  {/* Attributes chips */}
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 1 }}>
+                    {trade.setup.htfBias && (
+                      <Chip label={`HTF Bias: ${trade.setup.htfBias}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.625rem' }} />
+                    )}
+                    {trade.setup.executionTimeframe && (
+                      <Chip label={`Execution TF: ${trade.setup.executionTimeframe}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.625rem' }} />
+                    )}
+                    {trade.setup.liquiditySide && trade.setup.liquiditySide !== 'NONE' && (
+                      <Chip label={`Liquidity: ${trade.setup.liquiditySide}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.625rem' }} />
+                    )}
+                    {trade.setup.patternType && (
+                      <Chip label={`Pattern: ${trade.setup.patternType}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.625rem' }} />
+                    )}
+                    {trade.setup.secondLegStatus && trade.setup.secondLegStatus !== 'NOT_APPLICABLE' && (
+                      <Chip label={`Second Leg: ${trade.setup.secondLegStatus}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.625rem' }} />
+                    )}
+                    {trade.setup.entryModel && (
+                      <Chip label={`Model: ${trade.setup.entryModel}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.625rem' }} />
+                    )}
+                  </Box>
+                </>
+              ) : (
+                <Box sx={{ py: 1 }}>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+                    This trade does not have an assigned setup variant.
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setIsEditModalOpen(true)}
+                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
+                  >
+                    Assign Setup Variant
+                  </Button>
+                </Box>
+              )}
+            </Box>
+          </Grid>
+        </Grid>
+
+        {/* Audit Log / Classification Events */}
+        {(() => {
+          const classificationEvents = (trade.auditLog || []).filter(
+            (log: any) => log.event === 'CLASSIFIED' || log.action === 'CLASSIFIED'
+          );
+          if (classificationEvents.length === 0) return null;
+
+          return (
+            <Box sx={{ mt: 2.5, pt: 2, borderTop: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'text.secondary', display: 'block', mb: 1 }}>
+                Setup Classification Audit History
+              </Typography>
+              <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1.5 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Timestamp</TableCell>
+                      <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Action</TableCell>
+                      <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Variant Transition</TableCell>
+                      <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Status</TableCell>
+                      <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Reason / Notes</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {classificationEvents.map((evt: any, idx: number) => (
+                      <TableRow key={idx}>
+                        <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.6875rem', whiteSpace: 'nowrap' }}>
+                          {evt.timestamp ? new Date(evt.timestamp).toLocaleString() : '—'}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                          {evt.event || evt.action || 'CLASSIFIED'}
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem' }}>
+                          {evt.previousVariantKey ? (
+                            <span>{evt.previousVariantKey} &rarr; <strong>{evt.newVariantKey || 'None'}</strong></span>
+                          ) : (
+                            <strong>{evt.newVariantKey || 'Initial'}</strong>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={evt.newStatus || 'CLASSIFIED'} size="small" sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 700 }} />
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                          {evt.reason || 'Manual user classification'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          );
+        })()}
       </Card>
 
       {/* Execution Parameters & Risk Management Row */}

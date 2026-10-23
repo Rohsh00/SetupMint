@@ -235,7 +235,20 @@ SetupMint defines 13 core Mongoose models:
 - `lessonsLearned` (`String`)
 - `notes` (`String`)
 
-##### F. `calculated` (Authoritative Deterministic Metrics)
+##### F. `setup` (Setup Variant & Execution Context)
+- `variantKey` (`String`, optional): Identifier of the child setup variant (e.g. `'BULL-SSL-EQL'`, `'VAR-01'`, `'PULLBACK-A'`).
+- `variantStatus` (`String`, enum: `['CLASSIFIED', 'UNCLASSIFIED', 'NOT_APPLICABLE']`, default `'UNCLASSIFIED'`): Classification lifecycle status.
+- `alsoMatches` (`[String]`, default `[]`): Secondary matching variant keys.
+- `htfBias` (`String`, optional, enum: `['BULLISH', 'BEARISH', 'NEUTRAL']`): Higher timeframe directional bias.
+- `executionTimeframe` (`String`, optional): Execution chart timeframe (e.g. `'5m'`).
+- `liquiditySide` (`String`, optional, enum: `['SELL_SIDE', 'BUY_SIDE', 'NONE']`): Swept liquidity pool side.
+- `patternType` (`String`, optional, enum: `['EQUAL_LOWS', 'EQUAL_HIGHS', 'W', 'M', 'OTHER']`): Structural pattern type.
+- `secondLegStatus` (`String`, optional, enum: `['SWEPT', 'UNSWEPT', 'NOT_APPLICABLE']`): W/M second leg relation to first leg.
+- `liquidityLevel` (`Number`, optional): Sweep price level.
+- `sweepExtreme` (`Number`, optional): Maximum penetration beyond sweep level.
+- `entryModel` (`String`, optional, enum: `['CONFIRMATION_CANDLE', 'RETEST', 'OTHER']`): Trigger execution mechanism.
+
+##### G. `calculated` (Authoritative Deterministic Metrics)
 - `grossPnL` (`Number`, default `0`)
 - `totalCosts` (`Number`, default `0`)
 - `netPnL` (`Number`, default `0`)
@@ -247,7 +260,7 @@ SetupMint defines 13 core Mongoose models:
 - `averageEntryPrice` (`Number`, default `0`)
 - `averageExitPrice` (`Number`, optional)
 
-##### G. `screenshotIds` & `auditLog`
+##### H. `screenshotIds` & `auditLog`
 - `screenshotIds` (`[ObjectId]`, ref: `'Attachment'`): Associated chart screenshots.
 - `auditLog`: Array of `{ action: String, timestamp: Date, changedBy: String, details: Mixed }`.
 
@@ -256,6 +269,7 @@ SetupMint defines 13 core Mongoose models:
 - `{ userId: 1, accountId: 1, tradeDate: -1 }`
 - `{ userId: 1, 'calculated.netPnL': -1 }`
 - `{ userId: 1, templateId: 1 }`
+- `{ userId: 1, strategyId: 1, 'setup.variantKey': 1, tradeDate: -1 }`
 
 ---
 
@@ -309,7 +323,26 @@ SetupMint implements a strict **One-Instrument-Per-Underlying** architecture. Gl
 | `checklist` | `[String]` | No | `[]` | — | Pre-trade checklist items |
 | `minRiskReward` | `Number` | No | `1.5` | Non-negative | Minimum acceptable R:R |
 | `tags` | `[String]` | No | `[]` | — | Custom labels |
+| `notes` | `String` | No | — | — | Free-form strategy notes |
 | `isActive` | `Boolean` | No | `true` | Indexed | Active status |
+| `variants` | `[StrategyVariant]` | No | `[]` | Max 12, unique `key` per strategy (Zod) | User-defined child setup variants |
+
+#### Embedded Subdocument: `StrategyVariant` (`_id: false`)
+
+Child variants are **fully user-defined**. The application contains no hardcoded variant keys, names, or required setup criteria.
+
+| Field Name | Type | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `key` | `String` | **Yes** | — | Custom identifier, trimmed and uppercased (1–60 chars), e.g. `VAR-01`, `ORB-5M` |
+| `name` | `String` | **Yes** | — | Display name |
+| `description` | `String` | No | `''` | Variant thesis |
+| `isActive` | `Boolean` | No | `true` | `false` = archived (hidden from journal selector, kept in analytics) |
+| `sortOrder` | `Number` | No | `0` | Display order |
+| `expected` | `Mixed` | No | `{}` | Optional, free-form matching criteria (e.g. `direction`, `patternType`, or any custom key) used only for suggestions |
+| `entryRules` / `stopLossRules` / `targetRules` / `invalidationCriteria` / `checklist` | `[String]` | No | — | Variant-specific rules appended to the parent's rules |
+| `minRiskReward` | `Number \| null` | No | `null` | Overrides parent `minRiskReward` when set |
+
+**Referential integrity:** A variant referenced by any trade (`setup.variantKey`) cannot be removed via `PUT /api/v1/strategies/:id` — the API returns `409 VARIANT_IN_USE`. Archive it instead.
 
 **Compound Indexes:**
 - `{ userId: 1, name: 1 }` (Unique constraint)

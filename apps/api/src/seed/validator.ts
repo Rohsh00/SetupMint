@@ -193,6 +193,36 @@ export class SeedValidator {
       details: `Found ${attachments.length} SVG chart attachments linked to demo trades`,
     });
 
+    // Check 10: Parent Strategy & Child Setup Variants
+    const strategiesWithVariants = await Strategy.find({ userId, 'variants.0': { $exists: true } });
+    const classifiedTrades = await Trade.find({ userId, 'setup.variantKey': { $exists: true } });
+    let variantsValid = strategiesWithVariants.length >= 2 && classifiedTrades.length > 0;
+    let variantCheckDetails = `Found ${strategiesWithVariants.length} strategies with child variants and ${classifiedTrades.length} classified trades`;
+
+    if (variantsValid) {
+      for (const ct of classifiedTrades) {
+        const parent = strategiesWithVariants.find((s) => s._id.toString() === ct.strategyId?.toString());
+        if (!parent) {
+          variantsValid = false;
+          variantCheckDetails = `Classified trade ${ct._id} references unknown strategyId ${ct.strategyId}`;
+          break;
+        }
+        const hasVariant = (parent.variants || []).some((v: any) => v.key === ct.setup?.variantKey);
+        if (!hasVariant) {
+          variantsValid = false;
+          variantCheckDetails = `Classified trade ${ct._id} has variantKey "${ct.setup?.variantKey}" not found in parent strategy "${parent.name}"`;
+          break;
+        }
+      }
+    }
+
+    checks.push({
+      name: 'Parent Strategy & Setup Variants Integrity',
+      passed: variantsValid,
+      details: variantCheckDetails,
+    });
+    if (!variantsValid) errors.push(variantCheckDetails);
+
     const passedChecks = checks.filter((c) => c.passed).length;
     const failedChecks = checks.filter((c) => !c.passed).length;
 

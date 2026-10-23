@@ -8,7 +8,7 @@ import {
   calculateIndianCharges,
   deriveSessionFromTime,
 } from '@tradevault/financial-engine';
-import { Trade, TradingAccount, BrokerImportMapping, SupportedImportBroker } from '../db/models/index.js';
+import { Trade, TradingAccount, Strategy, BrokerImportMapping, SupportedImportBroker } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
@@ -372,7 +372,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     const trades = await Trade.find(filter)
       .sort({ tradeDate: -1 })
       .populate('accountId', 'name')
-      .populate('strategyId', 'name');
+      .populate('strategyId', 'name variants');
 
     const rows = trades.map((t) => ({
       TradeDate: t.tradeDate.toISOString().split('T')[0],
@@ -395,6 +395,8 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       EmotionBefore: t.psychology?.emotionBefore ?? '',
       Tags: t.tags?.join(';') || '',
       Notes: t.psychology?.notes || '',
+      SetupVariantKey: t.setup?.variantKey || '',
+      SetupVariantName: (t.strategyId as any)?.variants?.find((v: any) => v.key === t.setup?.variantKey)?.name || '',
     }));
 
     const csvData = stringify(rows, { header: true });
@@ -728,10 +730,38 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const session = deriveSessionFromTime(tradeDate, exchange, marketSegment);
           const inst = await getOrEnsureInstrument(symbolVal, { assetClass, exchange, marketSegment });
 
+          let strategyId: any = undefined;
+          let strategyName: string | undefined = undefined;
+          const stratNameOrKey = mapping.strategy ? row[mapping.strategy] : row['Strategy'];
+          if (stratNameOrKey) {
+            const strat = await Strategy.findOne({
+              userId: req.user!.id,
+              name: { $regex: new RegExp(`^${stratNameOrKey.trim()}$`, 'i') },
+            });
+            if (strat) {
+              strategyId = strat._id;
+              strategyName = strat.name;
+            } else {
+              strategyName = stratNameOrKey.trim();
+            }
+          }
+
+          let setup: any = undefined;
+          const variantKeyVal = mapping.setupVariantKey ? row[mapping.setupVariantKey] : row['SetupVariantKey'];
+          if (variantKeyVal) {
+            setup = {
+              variantKey: variantKeyVal.trim(),
+              variantStatus: 'CLASSIFIED',
+            };
+          }
+
           await Trade.create({
             userId: req.user!.id,
             accountId: account._id,
             instrumentId: inst._id,
+            strategyId,
+            strategyName,
+            setup,
             symbol: symbolVal,
             underlying: inst.symbol,
             instrumentName: inst.displayName,

@@ -80,6 +80,7 @@ Trading Vault/
 - `/journal` — Monthly P&L Calendar Heatmap & Daily Reflection (`JournalCalendarPage`)
 - `/analytics` — Psychology & Session Analytics (`AnalyticsPage`)
 - `/strategies` — Strategy Playbooks & Statistical Scores (`StrategyPlaybookPage`)
+- `/strategies/:id/analytics` — Strategy Setup Variant Analytics & Performance Buckets (`StrategyVariantAnalyticsPage`)
 - `/risk-calculator` — Position Sizing with Form Transfer (`RiskCalculatorPage`)
 - `/accounts` — Multi-Broker Accounts & Cash Flows (`AccountsPage`)
 - `/instruments` — User-Owned Market Specifications & Traded Summaries (`InstrumentsPage`)
@@ -91,20 +92,26 @@ Trading Vault/
 ## 6. Database Entities & Consistency Invariants
 
 ### Entities:
-- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade`, `Instrument`, `Strategy`, `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `AuditLog`.
+- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `AuditLog`.
 
 ### Invariants:
 1. **Tenant Isolation:** Every document includes `userId: ObjectId`. All queries must filter by `{ userId: req.user.id }`.
 2. **Authoritative Account Balance Invariant:**
    $$\text{Current Balance} = \text{Initial Balance} + \sum \text{Closed Trades Net P&L} + \sum \text{Deposits} - \sum \text{Withdrawals} + \sum \text{Adjustments}$$
    *Never modify account balances via client-side calculations. Always trigger `AccountService.recalculateAccountBalances(accountId, userId)`.*
-3. **Instrument Ownership & One-Underlying Invariant:**
+3. **Parent Strategy & Child Variant Integrity:**
+   - Strategies support arbitrary, full custom child setup variants (`variants: IStrategyVariant[]`).
+   - Setup matching attributes (`expected`) are 100% optional and custom — zero static restrictions or locked concepts.
+   - Child variants referenced by historical trades can only be archived (`isActive: false`), never deleted. Deletion attempts return `409 Conflict` (`VARIANT_IN_USE`).
+   - Setup variant classification modifications are recorded in the trade's `auditLog` with action `CLASSIFIED`.
+   - Starter/predefined parent strategies and variants are inserted on-demand into the database via seed or `POST /api/v1/strategies/pack/liquidity-retracement`.
+4. **Instrument Ownership & One-Underlying Invariant:**
    - The instruments collection contains **only** instruments the user has traded or custom created (`source: 'AUTO' | 'CUSTOM'`).
    - One instrument per underlying: option strikes, expiries, and call/put flags belong to `Trade` (`underlying`, `optionType`, `strikePrice`, `expiryDate`), pointing to a single root `Instrument` (`NIFTY`, `BANKNIFTY`, `CRUDEOIL`).
    - Editing an instrument can cascade to trades (`applyToTrades: true`), recalculating trade metrics and reconciling account balances in a single transaction.
    - Deleting an instrument referenced by trades returns `409 Conflict`.
-4. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
-5. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
+5. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
+6. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
 
 ---
 
@@ -120,6 +127,7 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 - **Position Sizing:** Raw quantity is **floored** to the nearest integer multiple of `lotSize`. Never round up.
 - **Profit Factor Zero-Loss Edge Case:** Returns `999.99` if losses are zero and gains are positive.
 - **Currency Conversion:** Requires explicit rate; never assumes a silent 1:1 fallback.
+- **Variant Performance Analytics:** Calculates exact bucket metrics, win rates, expectancy, profit factor states (`NORMAL`, `NO_LOSSES`, `NO_TRADES`), sample size warnings, and mathematical invariant reconciliation across all parent and child variants.
 
 ---
 
@@ -139,16 +147,16 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites (214 tests)
+# Run all test suites across the monorepo (301 verified tests)
 npm run test
 
-# Run financial engine unit tests (56 tests)
+# Run financial engine unit tests (135 tests)
 npm run test:engine
 
 # Backfill and normalize instruments for existing trades
 npm run instruments:backfill
 
-# Run API integration and regression tests (127 tests)
+# Run API integration and regression tests (166 tests)
 npm run test:api
 
 # Typecheck all packages

@@ -116,6 +116,7 @@ export class SetupMintSeedEngine {
         minRiskReward: pb.minRiskReward,
         tags: pb.tags,
         isActive: pb.isActive,
+        variants: pb.variants || [],
       });
       createdStrategies.push(strat);
     }
@@ -656,6 +657,38 @@ export class SetupMintSeedEngine {
         ? `Mistake identified: ${mistakes.join(', ')}. Avoid emotional impulses.`
         : 'Controlled loss according to risk budget is standard cost of doing business.';
 
+      let setupData: any = undefined;
+      const initialAuditLog: any[] = [{ action: 'SEEDED', timestamp: entryTime, changedBy: 'seed-engine' }];
+
+      if (strategy.variants && strategy.variants.length > 0) {
+        const matchingVariants = strategy.variants.filter((v: any) => !v.expected?.direction || v.expected.direction === direction);
+        const pickedVariant: any = matchingVariants.length > 0 ? prng.pick(matchingVariants) : prng.pick(strategy.variants);
+        setupData = {
+          variantKey: pickedVariant.key,
+          variantStatus: 'CLASSIFIED',
+          htfBias: direction === 'LONG' ? 'BULLISH' : 'BEARISH',
+          executionTimeframe: '5m',
+          liquiditySide: pickedVariant.expected?.liquiditySide || (direction === 'LONG' ? 'SELL_SIDE' : 'BUY_SIDE'),
+          patternType: pickedVariant.expected?.patternType || (direction === 'LONG' ? 'W' : 'M'),
+          secondLegStatus: pickedVariant.expected?.secondLegStatus || 'SWEPT',
+          entryModel: 'CONFIRMATION_CANDLE',
+        };
+        initialAuditLog.push({
+          action: 'CLASSIFIED',
+          timestamp: entryTime,
+          changedBy: 'seed-engine',
+          details: {
+            event: 'CLASSIFIED',
+            userId,
+            previousVariantKey: undefined,
+            newVariantKey: pickedVariant.key,
+            previousStatus: 'UNCLASSIFIED',
+            newStatus: 'CLASSIFIED',
+            reason: 'Initial setup variant classification during trade logging',
+          },
+        });
+      }
+
       const tradeDoc: any = {
         _id: new mongoose.Types.ObjectId(),
         userId,
@@ -742,8 +775,9 @@ export class SetupMintSeedEngine {
           averageEntryPrice: entryPrice,
           averageExitPrice: status === 'CLOSED' ? exitPrice : undefined,
         },
+        setup: setupData,
         screenshotIds: [],
-        auditLog: [{ action: 'SEEDED', timestamp: new Date(), changedBy: 'seed-engine' }],
+        auditLog: initialAuditLog,
         createdAt: entryTime,
         updatedAt: exitTime || entryTime,
       };

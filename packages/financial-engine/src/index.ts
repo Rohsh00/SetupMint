@@ -11,3 +11,4 @@ export * from './prng.js';
 export * from './edge.js';
 export * from './monte-carlo.js';
 export * from './tilt.js';
+export * from './variant-analytics.js';

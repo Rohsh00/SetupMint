@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -23,6 +23,8 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
@@ -74,7 +76,7 @@ export function StrategyPlaybookPage() {
     }
   };
 
-  // Strategy modal & queries
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<any>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -82,12 +84,44 @@ export function StrategyPlaybookPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isModalMaximized, setIsModalMaximized] = useState(false);
   const [modalLayoutMode, setModalLayoutMode] = useState<'SPLIT' | 'TABS'>('SPLIT');
-  const [modalActiveTab, setModalActiveTab] = useState<'THESIS' | 'RULES' | 'CHECKLIST'>('THESIS');
+  const [modalActiveTab, setModalActiveTab] = useState<'THESIS' | 'RULES' | 'VARIANTS' | 'CHECKLIST'>('THESIS');
   const [expandedStrategyId, setExpandedStrategyId] = useState<string | null>(null);
+
+  // Child variants state for strategy modal
+  const [variants, setVariants] = useState<any[]>([]);
+  const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [editingVariantIndex, setEditingVariantIndex] = useState<number | null>(null);
+  const [variantKey, setVariantKey] = useState('');
+  const [variantName, setVariantName] = useState('');
+  const [variantDesc, setVariantDesc] = useState('');
+  const [variantIsActive, setVariantIsActive] = useState(true);
+  const [variantMinRR, setVariantMinRR] = useState<number | ''>('');
+  const [variantDirection, setVariantDirection] = useState<'LONG' | 'SHORT' | ''>('');
+  const [variantPatternType, setVariantPatternType] = useState<string>('');
+  const [variantSecondLegStatus, setVariantSecondLegStatus] = useState<string>('');
+  const [variantLiquiditySide, setVariantLiquiditySide] = useState<string>('');
+  const [variantEntryModel, setVariantEntryModel] = useState<string>('');
+  const [variantEntryRules, setVariantEntryRules] = useState('');
+  const [variantStopLossRules, setVariantStopLossRules] = useState('');
+  const [variantTargetRules, setVariantTargetRules] = useState('');
+  const [variantInvalidation, setVariantInvalidation] = useState('');
+  const [variantChecklist, setVariantChecklist] = useState('');
 
   const { data: strategies = [], isLoading: isLoadingStrategies } = useQuery({
     queryKey: ['strategies'],
     queryFn: () => api.strategies.list(),
+  });
+
+  // Pack application mutation
+  const applyPackMutation = useMutation({
+    mutationFn: () => api.strategies.applyPack('liquidity-retracement'),
+    onSuccess: (res: any) => {
+      toast.success(res?.message || 'Liquidity Retracement Pack applied successfully!');
+      queryClient.invalidateQueries({ queryKey: ['strategies'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to apply strategy pack');
+    },
   });
 
   // Templates query
@@ -138,6 +172,7 @@ export function StrategyPlaybookPage() {
     setTargetRulesInput('');
     setInvalidationInput('');
     setChecklistInput('');
+    setVariants([]);
     setSaveError(null);
     setIsModalOpen(true);
   };
@@ -152,8 +187,115 @@ export function StrategyPlaybookPage() {
     setTargetRulesInput(strat.targetRules?.join('\n') || '');
     setInvalidationInput(strat.invalidationCriteria?.join('\n') || '');
     setChecklistInput(strat.checklist?.join('\n') || '');
+    setVariants(strat.variants ? JSON.parse(JSON.stringify(strat.variants)) : []);
     setSaveError(null);
     setIsModalOpen(true);
+  };
+
+  const handleOpenAddVariant = () => {
+    setEditingVariantIndex(null);
+    setVariantKey('');
+    setVariantName('');
+    setVariantDesc('');
+    setVariantIsActive(true);
+    setVariantMinRR('');
+    setVariantDirection('');
+    setVariantPatternType('');
+    setVariantSecondLegStatus('');
+    setVariantLiquiditySide('');
+    setVariantEntryModel('');
+    setVariantEntryRules('');
+    setVariantStopLossRules('');
+    setVariantTargetRules('');
+    setVariantInvalidation('');
+    setVariantChecklist('');
+    setIsVariantModalOpen(true);
+  };
+
+  const handleOpenEditVariant = (index: number) => {
+    const v = variants[index];
+    if (!v) return;
+    setEditingVariantIndex(index);
+    setVariantKey(v.key);
+    setVariantName(v.name);
+    setVariantDesc(v.description || '');
+    setVariantIsActive(v.isActive !== false);
+    setVariantMinRR(v.minRiskReward !== null && v.minRiskReward !== undefined ? v.minRiskReward : '');
+    setVariantDirection(v.expected?.direction || '');
+    setVariantPatternType(v.expected?.patternType || '');
+    setVariantSecondLegStatus(v.expected?.secondLegStatus || '');
+    setVariantLiquiditySide(v.expected?.liquiditySide || '');
+    setVariantEntryModel(v.expected?.entryModel || '');
+    setVariantEntryRules((v.entryRules || []).join('\n'));
+    setVariantStopLossRules((v.stopLossRules || []).join('\n'));
+    setVariantTargetRules((v.targetRules || []).join('\n'));
+    setVariantInvalidation((v.invalidationCriteria || []).join('\n'));
+    setVariantChecklist((v.checklist || []).join('\n'));
+    setIsVariantModalOpen(true);
+  };
+
+  const handleSaveVariant = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = variantKey.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+    if (!cleanKey) {
+      toast.warning('Variant Key is required (e.g. VAR-01, PULLBACK_A)');
+      return;
+    }
+    if (!variantName.trim()) {
+      toast.warning('Variant Name is required');
+      return;
+    }
+
+    const duplicateIdx = variants.findIndex((v, i) => v.key === cleanKey && i !== editingVariantIndex);
+    if (duplicateIdx >= 0) {
+      toast.error(`A variant with key "${cleanKey}" already exists on this strategy.`);
+      return;
+    }
+
+    const newVariant: any = {
+      key: cleanKey,
+      name: variantName.trim(),
+      description: variantDesc.trim() || undefined,
+      isActive: variantIsActive,
+      sortOrder:
+        editingVariantIndex !== null
+          ? variants[editingVariantIndex].sortOrder ?? editingVariantIndex + 1
+          : variants.length + 1,
+      minRiskReward: variantMinRR !== '' ? Number(variantMinRR) : null,
+      expected: {
+        direction: variantDirection || undefined,
+        patternType: variantPatternType || undefined,
+        secondLegStatus: variantSecondLegStatus || undefined,
+        liquiditySide: variantLiquiditySide || undefined,
+        entryModel: variantEntryModel || undefined,
+      },
+      entryRules: variantEntryRules.split('\n').map((s) => s.trim()).filter(Boolean),
+      stopLossRules: variantStopLossRules.split('\n').map((s) => s.trim()).filter(Boolean),
+      targetRules: variantTargetRules.split('\n').map((s) => s.trim()).filter(Boolean),
+      invalidationCriteria: variantInvalidation.split('\n').map((s) => s.trim()).filter(Boolean),
+      checklist: variantChecklist.split('\n').map((s) => s.trim()).filter(Boolean),
+    };
+
+    if (editingVariantIndex !== null) {
+      const updated = [...variants];
+      updated[editingVariantIndex] = newVariant;
+      setVariants(updated);
+    } else {
+      setVariants([...variants, newVariant]);
+    }
+
+    setIsVariantModalOpen(false);
+  };
+
+  const handleToggleArchiveVariant = (index: number) => {
+    const updated = [...variants];
+    updated[index].isActive = !updated[index].isActive;
+    setVariants(updated);
+  };
+
+  const handleDeleteVariant = (index: number) => {
+    const updated = variants.filter((_, i) => i !== index);
+    setVariants(updated);
   };
 
   const saveMutation = useMutation({
@@ -308,9 +450,10 @@ export function StrategyPlaybookPage() {
       targetRules: targetRulesInput.split('\n').map((s) => s.trim()).filter(Boolean),
       invalidationCriteria: invalidationInput.split('\n').map((s) => s.trim()).filter(Boolean),
       checklist: checklistInput.split('\n').map((s) => s.trim()).filter(Boolean),
-      assetClasses: ['EQUITY', 'FUTURES'],
-      timeframes: ['5m', '15m'],
-      tags: [],
+      variants,
+      assetClasses: editingStrategy?.assetClasses || ['EQUITY', 'FUTURES'],
+      timeframes: editingStrategy?.timeframes || ['5m', '15m'],
+      tags: editingStrategy?.tags || [],
     };
     saveMutation.mutate(payload);
   };
@@ -354,6 +497,123 @@ export function StrategyPlaybookPage() {
     }
   };
 
+  const renderVariantsManager = () => (
+    <Box sx={{ mt: 3, pt: 2.5, borderTop: `1px solid ${muiTheme.palette.divider}` }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+              Child Setup Variants ({variants.length})
+            </Typography>
+            <Chip label="Full Custom" size="small" color="primary" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            Define specific variants under this parent strategy. Each variant inherits parent rules and can override triggers, min R:R, and expected attributes.
+          </Typography>
+        </Box>
+        <Button
+          size="small"
+          variant="contained"
+          color="primary"
+          startIcon={<AddIcon />}
+          onClick={handleOpenAddVariant}
+          sx={{ textTransform: 'none', fontWeight: 700 }}
+        >
+          Add Setup Variant
+        </Button>
+      </Box>
+
+      {variants.length === 0 ? (
+        <Card sx={{ p: 3, textAlign: 'center', borderStyle: 'dashed', bgcolor: isDark ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)' }}>
+          <Typography variant="body2" color="text.secondary">
+            No child variants defined yet. Trades assigned to this strategy will be recorded as UNCLASSIFIED until a variant is assigned.
+          </Typography>
+        </Card>
+      ) : (
+        <Grid container spacing={2}>
+          {variants.map((v, idx) => (
+            <Grid key={v.key || idx} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Card
+                sx={{
+                  p: 2,
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: 1.5,
+                  border: `1px solid ${muiTheme.palette.divider}`,
+                  bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                  opacity: v.isActive === false ? 0.6 : 1,
+                }}
+              >
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                        {v.key}
+                      </Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.8125rem' }}>
+                        {v.name}
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label={v.isActive !== false ? 'Active' : 'Archived'}
+                      size="small"
+                      color={v.isActive !== false ? 'success' : 'default'}
+                      sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }}
+                    />
+                  </Box>
+
+                  {v.description && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      {v.description}
+                    </Typography>
+                  )}
+
+                  {/* Expected Attributes Chips */}
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                    {v.expected?.direction && (
+                      <Chip label={v.expected.direction} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {v.expected?.patternType && (
+                      <Chip label={`Pattern: ${v.expected.patternType}`} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {v.expected?.secondLegStatus && v.expected.secondLegStatus !== 'NOT_APPLICABLE' && (
+                      <Chip label={`Leg: ${v.expected.secondLegStatus}`} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {v.expected?.liquiditySide && v.expected.liquiditySide !== 'NONE' && (
+                      <Chip label={`Side: ${v.expected.liquiditySide}`} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {v.minRiskReward !== null && v.minRiskReward !== undefined && (
+                      <Chip label={`Min R:R 1:${v.minRiskReward}`} size="small" variant="outlined" color="primary" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, pt: 1, borderTop: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Button size="small" onClick={() => handleOpenEditVariant(idx)} sx={{ fontSize: '0.75rem', textTransform: 'none' }}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="small"
+                    color={v.isActive !== false ? 'warning' : 'success'}
+                    onClick={() => handleToggleArchiveVariant(idx)}
+                    sx={{ fontSize: '0.75rem', textTransform: 'none' }}
+                  >
+                    {v.isActive !== false ? 'Archive' : 'Activate'}
+                  </Button>
+                  <IconButton size="small" color="error" onClick={() => handleDeleteVariant(idx)}>
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+    </Box>
+  );
+
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
       {/* Header */}
@@ -377,16 +637,31 @@ export function StrategyPlaybookPage() {
           </Typography>
         </Box>
 
-        <Button
-          variant="contained"
-          color="primary"
-          size="small"
-          onClick={activeTab === 'TEMPLATES' ? openCreateTemplateModal : openCreateModal}
-          startIcon={<AddIcon />}
-          sx={{ fontWeight: 700, px: 2 }}
-        >
-          {activeTab === 'TEMPLATES' ? 'New Setup Template' : 'New Playbook Setup'}
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {activeTab === 'STRATEGIES' && (
+            <Button
+              variant="outlined"
+              color="secondary"
+              size="small"
+              onClick={() => applyPackMutation.mutate()}
+              disabled={applyPackMutation.isPending}
+              startIcon={applyPackMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <AutoAwesomeIcon />}
+              sx={{ fontWeight: 700, px: 2 }}
+            >
+              Insert Starter Strategies (Parent & Child)
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            onClick={activeTab === 'TEMPLATES' ? openCreateTemplateModal : openCreateModal}
+            startIcon={<AddIcon />}
+            sx={{ fontWeight: 700, px: 2 }}
+          >
+            {activeTab === 'TEMPLATES' ? 'New Setup Template' : 'New Playbook Setup'}
+          </Button>
+        </Box>
       </Box>
 
       {/* Navigation Tabs */}
@@ -711,19 +986,32 @@ export function StrategyPlaybookPage() {
                         <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
                           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
                             <Chip size="small" variant="outlined" label={`Min R:R 1:${strat.minRiskReward || 1.5}`} sx={{ fontWeight: 600, fontSize: '0.6875rem' }} />
+                            <Chip size="small" variant="outlined" color="primary" label={`${strat.variants?.length || 0} Variants`} sx={{ fontSize: '0.6875rem', fontWeight: 700 }} />
                             <Chip size="small" variant="outlined" color="success" label={`${strat.entryRules?.length || 0} Entry Rules`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
                             <Chip size="small" variant="outlined" color="error" label={`${strat.stopLossRules?.length || 0} SL Rules`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
                             <Chip size="small" variant="outlined" color="warning" label={`${strat.invalidationCriteria?.length || 0} Invalidation`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
                           </Box>
-                          <Button
-                            size="small"
-                            variant="text"
-                            onClick={() => setExpandedStrategyId(expandedStrategyId === (strat.id || strat._id) ? null : (strat.id || strat._id))}
-                            endIcon={<ExpandMoreIcon sx={{ transform: expandedStrategyId === (strat.id || strat._id) ? 'rotate(180deg)' : 'none', transition: '0.2s', fontSize: 16 }} />}
-                            sx={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'none', py: 0.25 }}
-                          >
-                            {expandedStrategyId === (strat.id || strat._id) ? 'Hide Rules' : 'Expand Rules'}
-                          </Button>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="primary"
+                              component={RouterLink}
+                              to={`/strategies/${strat.id || strat._id}/analytics`}
+                              sx={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'none', py: 0.25 }}
+                            >
+                              Compare Variants
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="text"
+                              onClick={() => setExpandedStrategyId(expandedStrategyId === (strat.id || strat._id) ? null : (strat.id || strat._id))}
+                              endIcon={<ExpandMoreIcon sx={{ transform: expandedStrategyId === (strat.id || strat._id) ? 'rotate(180deg)' : 'none', transition: '0.2s', fontSize: 16 }} />}
+                              sx={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'none', py: 0.25 }}
+                            >
+                              {expandedStrategyId === (strat.id || strat._id) ? 'Hide Rules' : 'Expand Rules'}
+                            </Button>
+                          </Box>
                         </Box>
 
                         {/* Collapsible Expanded Rules Section */}
@@ -1544,6 +1832,10 @@ export function StrategyPlaybookPage() {
                     </Grid>
                   </Grid>
                 </Grid>
+                {/* Full-Width Child Setup Variants Section in Split Mode */}
+                <Grid size={{ xs: 12 }}>
+                  {renderVariantsManager()}
+                </Grid>
               </Grid>
             ) : (
               /* ================== FOCUSED TABS MODE ================== */
@@ -1557,6 +1849,7 @@ export function StrategyPlaybookPage() {
                   <Tab label="2. Entry & Stop Loss Rules" value="RULES" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
                   <Tab label="3. Targets & Invalidation" value="TARGETS" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
                   <Tab label="4. Pre-Flight Checklist" value="CHECKLIST" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
+                  <Tab label={`5. Setup Variants (${variants.length})`} value="VARIANTS" sx={{ fontWeight: 700, fontSize: '0.8125rem' }} />
                 </Tabs>
 
                 <Grid container spacing={2}>
@@ -1677,6 +1970,8 @@ export function StrategyPlaybookPage() {
                     />
                   </Box>
                 )}
+
+                {modalActiveTab === 'VARIANTS' && renderVariantsManager()}
               </Box>
             )}
           </DialogContent>
@@ -1964,6 +2259,203 @@ export function StrategyPlaybookPage() {
             {deleteTemplateMutation.isPending ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* Variant Add / Edit Dialog */}
+      <Dialog
+        open={isVariantModalOpen}
+        onClose={() => setIsVariantModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>
+          {editingVariantIndex !== null ? 'Edit Setup Variant' : 'New Child Setup Variant'}
+        </DialogTitle>
+        <form onSubmit={handleSaveVariant}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  label="Variant Key *"
+                  size="small"
+                  fullWidth
+                  required
+                  placeholder="e.g. BULL-SSL-W-SWEEP, VAR-01"
+                  value={variantKey}
+                  onChange={(e) => setVariantKey(e.target.value.toUpperCase())}
+                  helperText="Uppercase unique identifier within this strategy"
+                  disabled={editingVariantIndex !== null}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  label="Variant Name *"
+                  size="small"
+                  fullWidth
+                  required
+                  placeholder="e.g. W Pattern, Second-Leg Sweep"
+                  value={variantName}
+                  onChange={(e) => setVariantName(e.target.value)}
+                />
+              </Grid>
+            </Grid>
+
+            <TextField
+              label="Description"
+              size="small"
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="Specific variant thesis, entry mechanics, or structural triggers..."
+              value={variantDesc}
+              onChange={(e) => setVariantDesc(e.target.value)}
+            />
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Expected Direction</InputLabel>
+                  <Select
+                    label="Expected Direction"
+                    value={variantDirection}
+                    onChange={(e) => setVariantDirection(e.target.value as any)}
+                  >
+                    <MenuItem value="">Any / Not Specified</MenuItem>
+                    <MenuItem value="LONG">LONG</MenuItem>
+                    <MenuItem value="SHORT">SHORT</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  label="Min R:R Override"
+                  size="small"
+                  type="number"
+                  fullWidth
+                  placeholder="Inherit parent"
+                  value={variantMinRR}
+                  onChange={(e) => setVariantMinRR(e.target.value === '' ? '' : Number(e.target.value))}
+                  slotProps={{ htmlInput: { step: 0.1, min: 0 } }}
+                />
+              </Grid>
+            </Grid>
+
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Setup Matching Attributes (Optional)
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Optional criteria used for automatic setup suggestion during trade journaling. Leave empty for general / discretionary variants.
+              </Typography>
+            </Box>
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Pattern Type</InputLabel>
+                  <Select
+                    label="Pattern Type"
+                    value={variantPatternType}
+                    onChange={(e) => setVariantPatternType(e.target.value)}
+                  >
+                    <MenuItem value="">Not Specified</MenuItem>
+                    <MenuItem value="W">W Pattern</MenuItem>
+                    <MenuItem value="M">M Pattern</MenuItem>
+                    <MenuItem value="EQUAL_LOWS">Equal Lows</MenuItem>
+                    <MenuItem value="EQUAL_HIGHS">Equal Highs</MenuItem>
+                    <MenuItem value="OTHER">Other Pattern</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Second Leg Status</InputLabel>
+                  <Select
+                    label="Second Leg Status"
+                    value={variantSecondLegStatus}
+                    onChange={(e) => setVariantSecondLegStatus(e.target.value)}
+                  >
+                    <MenuItem value="">Not Specified</MenuItem>
+                    <MenuItem value="SWEPT">SWEPT (Sweeps first leg)</MenuItem>
+                    <MenuItem value="UNSWEPT">UNSWEPT (Second leg stays higher/lower)</MenuItem>
+                    <MenuItem value="NOT_APPLICABLE">Not Applicable</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Liquidity Side</InputLabel>
+                  <Select
+                    label="Liquidity Side"
+                    value={variantLiquiditySide}
+                    onChange={(e) => setVariantLiquiditySide(e.target.value)}
+                  >
+                    <MenuItem value="">Not Specified</MenuItem>
+                    <MenuItem value="SELL_SIDE">Sell-Side Liquidity (SSL)</MenuItem>
+                    <MenuItem value="BUY_SIDE">Buy-Side Liquidity (BSL)</MenuItem>
+                    <MenuItem value="BOTH">Both Sides</MenuItem>
+                    <MenuItem value="NONE">None / Untaken</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Entry Model</InputLabel>
+                  <Select
+                    label="Entry Model"
+                    value={variantEntryModel}
+                    onChange={(e) => setVariantEntryModel(e.target.value)}
+                  >
+                    <MenuItem value="">Not Specified</MenuItem>
+                    <MenuItem value="CONFIRMATION_CANDLE">Confirmation Candle</MenuItem>
+                    <MenuItem value="RETEST">Retest / Limit</MenuItem>
+                    <MenuItem value="OTHER">Other</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, mt: 1 }}>
+              Variant Rule Overrides (Appended to Parent Rules)
+            </Typography>
+
+            <TextField
+              label="Variant Entry Rules (one per line)"
+              size="small"
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="Specific entry trigger for this variant..."
+              value={variantEntryRules}
+              onChange={(e) => setVariantEntryRules(e.target.value)}
+            />
+
+            <TextField
+              label="Variant Stop Loss Rules (one per line)"
+              size="small"
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="Specific stop loss rules for this variant..."
+              value={variantStopLossRules}
+              onChange={(e) => setVariantStopLossRules(e.target.value)}
+            />
+
+            <FormControlLabel
+              control={<Switch checked={variantIsActive} onChange={(e) => setVariantIsActive(e.target.checked)} />}
+              label="Active (Available in Trade Journal variant selector)"
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button onClick={() => setIsVariantModalOpen(false)} color="inherit">
+              Cancel
+            </Button>
+            <Button type="submit" variant="contained" color="primary">
+              {editingVariantIndex !== null ? 'Update Variant' : 'Add Variant'}
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
     </Box>
   );

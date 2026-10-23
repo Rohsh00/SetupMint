@@ -13,26 +13,30 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (217 Passing Tests)
+## 2. Test Suite Inventory (301 Passing Tests)
 
-The repository contains **217 fully automated tests** spanning mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **301 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (77 Tests)
+### A. Financial Engine Unit Tests (135 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
 | `pnl.test.ts` | 7 tests | Long gross P&L, Short gross P&L, fee deduction, open trade outcome, negative quantity error handling, contract multipliers. |
 | `fifo.test.ts` | 5 tests | Sequential lot dequeuing, partial exits, multi-fill weighted average price, excess exit quantity exception handling. |
-| `risk.test.ts` | 5 tests | Position size formula, lot rounding down to lot size step, stop distance validation, planned R:R, realized R-multiple. |
+| `risk.test.ts` | 6 tests | Position size formula, lot rounding down to lot size step, stop distance validation, planned R:R, realized R-multiple. |
 | `metrics.test.ts` | 2 tests | Comprehensive dashboard metrics: win rate, profit factor (including zero-loss 999.99 handling), peak-to-trough drawdowns, consecutive win/loss streaks. |
 | `currency.test.ts` | 3 tests | Identical currency pass-through, explicit conversion rates, rejection of silent 1:1 conversions when rate is missing. |
 | `charges.test.ts` | 6 tests | Indian statutory charges across segments (NSE_EQ, NSE_FNO futures, NSE_FNO options, MCX commodities), flat brokerage (₹20/leg, ₹0 Finvasia, custom), STT/CTT, SEBI, GST, stamp duty. |
 | `session.test.ts` | 5 tests | Automatic session derivation: NSE market hours (09:15-15:30 IST), MCX evening session, foreign exchanges (New York / London), weekends & Crypto off-hours. |
 | `mistakes.test.ts` | 12 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, rule-based discipline rating (1 to 5), and advisory liquidity/level checks (`NO_LIQUIDITY_TAKEN`, `NO_LIQUIDITY_TARGET`, `STOP_TOO_TIGHT`). |
-| `templates.test.ts` | 32 tests | Pure Decimal.js rule resolution (PERCENT, POINTS, PREMIUM_PERCENT, MANUAL), target calculation from minRR, instrument tick size rounding, dynamic ranking by market/session/expiry, NSE 2026 Tuesday holiday shifts to Monday (Dussehra 2026-10-20 to 2026-10-19, Guru Nanak Jayanti 2026-11-24 to 2026-11-23), Nifty-only weekly vs Bank Nifty/FinNifty/stock monthly expiry constraints, universal asset class coverage, 25 built-in templates validation, and liquidity template resolution. |
+| `templates.test.ts` | 34 tests | Pure Decimal.js rule resolution (PERCENT, POINTS, PREMIUM_PERCENT, MANUAL), target calculation from minRR, instrument tick size rounding, dynamic ranking by market/session/expiry, NSE 2026 Tuesday holiday shifts to Monday (Dussehra 2026-10-20 to 2026-10-19, Guru Nanak Jayanti 2026-11-24 to 2026-11-23), Nifty-only weekly vs Bank Nifty/FinNifty/stock monthly expiry constraints, universal asset class coverage, 25 built-in templates validation, and liquidity template resolution. |
+| `edge.test.ts` | 26 tests | Statistical edge validation: Bayesian win rate, bootstrap expectancy intervals, minimum sample size verdicts. |
+| `monte-carlo.test.ts` | 12 tests | Monte Carlo equity path simulation and drawdown distributions. |
+| `tilt.test.ts` | 8 tests | Tilt / emotional state detection heuristics. |
+| `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets (custom keys), UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring against user-defined variants. |
 
-### B. Backend API & Integration Tests (140 Tests)
+### B. Backend API & Integration Tests (166 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -42,7 +46,9 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 | `optimize-image.test.ts` | 7 tests | Pixel-identical raw RGBA decoding proof of losslessness, Display P3 / sRGB ICC profile retention, 10% savings threshold enforcement, fail-safe corrupted buffer pass-through, JPEG to WebP transcoding, WebP lossless repack, SVG pass-through. |
 | `attachment.test.ts` | 13 tests | Multipart upload, binary magic-bytes signature verification (PNG/JPEG/WebP), rejection of disguised binary files, server-side lossless optimization, matching stored WebP/PNG extension and stream Content-Type, 12-image cap enforcement, authenticated streaming, cloud storage cleanup upon deletion. |
 | `template.test.ts` | 12 tests | Authentication enforcement, 25 built-in templates listing with stats, custom template creation & uniqueness, update, built-in protection (`BUILT_IN_READ_ONLY`), strict tenant isolation between users, trade linking to `templateId`, trade query filtering by `templateId`, favorite toggling, usage incrementation. |
-| `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, 13 codified strategy playbooks, idempotency verification (reseeding cleanly replaces previous demo data), account balance consistency, seed validation engine. |
+| `strategy-variants.test.ts` | 8 tests | Custom parent strategy with arbitrary child variants (no static keys), tenant isolation, trade logging with `strategyId` + `setup.variantKey` and `CLASSIFIED` audit entry, `409 VARIANT_IN_USE` deletion protection, archiving via `isActive: false`, bulk classification, `GET /strategies/:id/analytics` buckets and invariant check, idempotent starter pack insertion. |
+| `instrument.test.ts` | 18 tests | User-owned instruments, on-demand creation, preview/apply-to-trades cascades, `INSTRUMENT_IN_USE` protection. |
+| `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, 15 strategy playbooks (including parent strategies with child variants and classified demo trades), idempotency verification (reseeding cleanly replaces previous demo data), account balance consistency, seed validation engine. |
 | `connection.test.ts` | 8 tests | Cloud-only Atlas URI validation, masking credentials in logs, rejection of local/memory addresses, fail-fast behavior. |
 | `storage.test.ts` | 13 tests | Cloudflare R2 bucket connection, signed uploads, streaming download, key formatting, object deletion. |
 | `regression.test.ts` | 38 tests | Exhaustive QA test matrix covering boundary scenarios: breakeven outcomes, soft delete account archival, bulk tagging, bulk deletion with multi-account reconciliation, CSV import duplicate prevention. |
@@ -52,13 +58,15 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 ## 3. Running Test Commands
 
 ```bash
-# 1. Run all test suites across the monorepo (217 tests)
+# 1. Run all test suites across the monorepo (301 tests)
 npm run test
 
-# 2. Run only financial engine mathematical unit tests (77 tests)
+# 2. Run only financial engine mathematical unit tests (135 tests)
 npm run test:engine
 
-# 3. Run only backend API, attachment, session, and regression tests (140 tests)
+# 3. Run only backend API, attachment, session, and regression tests (166 tests)
+#    Tip: if MongoMemoryServer reports "Port already in use", run sequentially:
+#    npx vitest run --no-file-parallelism   (inside apps/api)
 npm run test:api
 
 # 4. Run tests with live watch mode (in package directory)

@@ -30,6 +30,7 @@ import {
   LocalOfferRounded,
   RotateLeftRounded,
   InfoOutlined,
+  AccountTreeRounded,
 } from '@mui/icons-material';
 import {
   ASSET_CLASSES,
@@ -790,6 +791,99 @@ export function TradeQuickSection({
               />
             </Box>
           )}
+
+          {/* Child Setup Variant Select / Custom Entry */}
+          {(() => {
+            const stratId = watch('strategyId');
+            const currentStrat = strategies.find((s) => (s.id || s._id) === stratId);
+            const stratVariants = currentStrat?.variants || [];
+            const currentVariantKey = watch('setup.variantKey') || '';
+            const currentVariant = stratVariants.find((v: any) => v.key === currentVariantKey);
+            const isPredefined = Boolean(currentVariant);
+
+            if (!currentStrat && !currentVariantKey) {
+              return null;
+            }
+
+            return (
+              <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: (theme) => `1px solid ${theme.palette.divider}` }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <AccountTreeRounded sx={{ fontSize: 14, color: 'primary.main' }} /> Setup Variant (Child)
+                  </Typography>
+                  {stratVariants.length > 0 && (
+                    <Chip label={`${stratVariants.length} Available`} size="small" sx={{ height: 16, fontSize: '0.5625rem' }} />
+                  )}
+                </Box>
+
+                {stratVariants.length > 0 && (
+                  <TextField
+                    select
+                    size="small"
+                    fullWidth
+                    label="Select Setup Variant"
+                    value={isPredefined ? currentVariantKey : (currentVariantKey ? '__CUSTOM__' : '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__CUSTOM__') {
+                        return;
+                      }
+                      setValue('setup.variantKey', val || undefined, { shouldDirty: true });
+                      setValue('setup.variantStatus', val ? 'CLASSIFIED' : 'UNCLASSIFIED', { shouldDirty: true });
+                    }}
+                  >
+                    <MenuItem value="">
+                      <em>No Variant (Unclassified)</em>
+                    </MenuItem>
+                    {stratVariants.map((v: any) => (
+                      <MenuItem key={v.key} value={v.key} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                        <span>{v.name} ({v.key})</span>
+                        {!v.isActive && <Chip label="Archived" size="small" sx={{ height: 16, fontSize: '0.5625rem' }} />}
+                      </MenuItem>
+                    ))}
+                    <MenuItem value="__CUSTOM__" sx={{ borderTop: (theme) => `1px dashed ${theme.palette.divider}`, fontStyle: 'italic', color: 'primary.main' }}>
+                      + Enter Custom Variant Key...
+                    </MenuItem>
+                  </TextField>
+                )}
+
+                {/* Custom variant key input if user entered custom key or no variants exist on strategy */}
+                {(!isPredefined || stratVariants.length === 0) && (
+                  <TextField
+                    size="small"
+                    fullWidth
+                    label="Custom Setup Variant Key"
+                    placeholder="e.g. VAR-01, ORB-5M, BULL-SSL-EQL"
+                    value={currentVariantKey}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      setValue('setup.variantKey', val || undefined, { shouldDirty: true });
+                      setValue('setup.variantStatus', val ? 'CLASSIFIED' : 'UNCLASSIFIED', { shouldDirty: true });
+                    }}
+                    sx={{ mt: stratVariants.length > 0 ? 1 : 0 }}
+                    helperText="Custom variant identifier for this trade"
+                  />
+                )}
+
+                {currentVariant && (
+                  <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {currentVariant.expected?.direction && (
+                      <Chip label={`Dir: ${currentVariant.expected.direction}`} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {currentVariant.expected?.patternType && (
+                      <Chip label={`Pattern: ${currentVariant.expected.patternType}`} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {currentVariant.expected?.secondLegStatus && currentVariant.expected.secondLegStatus !== 'NOT_APPLICABLE' && (
+                      <Chip label={`Leg: ${currentVariant.expected.secondLegStatus}`} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                    {currentVariant.minRiskReward !== null && currentVariant.minRiskReward !== undefined && (
+                      <Chip label={`Min R:R 1:${currentVariant.minRiskReward}`} size="small" variant="outlined" color="primary" sx={{ height: 18, fontSize: '0.625rem' }} />
+                    )}
+                  </Box>
+                )}
+              </Box>
+            );
+          })()}
         </Box>
 
         <TextField

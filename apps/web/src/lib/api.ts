@@ -129,6 +129,17 @@ export const api = {
     update: (id: string, updates: any) =>
       request<any>(`/strategies/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
     delete: (id: string) => request(`/strategies/${id}`, { method: 'DELETE' }),
+    getAnalytics: (id: string, params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      return request<any>(`/strategies/${id}/analytics?${query.toString()}`);
+    },
+    applyPack: (packName = 'liquidity-retracement') =>
+      request<any>(`/strategies/pack/${packName}`, { method: 'POST' }),
   },
 
   // Trade Setup Templates
@@ -167,6 +178,17 @@ export const api = {
       request('/trades/bulk-tag', {
         method: 'POST',
         body: JSON.stringify({ tradeIds, tagsToAdd }),
+      }),
+    bulkClassify: (payload: {
+      tradeIds: string[];
+      strategyId?: string;
+      variantKey?: string;
+      variantStatus?: string;
+      setupAttributes?: any;
+    }) =>
+      request('/trades/bulk-classify', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }),
     bulkDelete: (tradeIds: string[]) =>
       request('/trades/bulk-delete', {

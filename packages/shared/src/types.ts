@@ -162,6 +162,7 @@ export type Confluence =
   | 'PREMIUM_ZONE_ENTRY'
   | 'DISCOUNT_ZONE_ENTRY'
   | 'LTF_CONFIRMATION_CANDLE'
+  | 'LEVEL_RECLAIM'
   | 'VOLUME_SPIKE_AT_LEVEL';
 
 export type TradingSession =
@@ -274,6 +275,7 @@ export interface IStrategy {
   tags: string[];
   notes?: string;
   isActive: boolean;
+  variants?: IStrategyVariant[];
   totalTrades?: number;
   winRate?: number;
   netPnL?: number;
@@ -446,6 +448,7 @@ export interface ITrade {
 
   screenshotIds: string[];
   attachments?: IAttachment[];
+  setup?: ITradeSetup;
   auditLog: IAuditEntry[];
 
   createdAt: string;
@@ -813,4 +816,229 @@ export interface TemplatePatch {
   };
   provenance: Record<string, ProvenanceSource>;
 }
+
+export type LiquiditySide = 'SELL_SIDE' | 'BUY_SIDE' | 'NONE';
+export type PatternType = 'EQUAL_LOWS' | 'EQUAL_HIGHS' | 'W' | 'M' | 'OTHER';
+export type SecondLegStatus = 'SWEPT' | 'UNSWEPT' | 'NOT_APPLICABLE';
+export type MomentumRelation = 'WITH_HTF' | 'AGAINST_HTF' | 'UNKNOWN';
+export type EntryModel = 'CONFIRMATION_CANDLE' | 'RETEST' | 'OTHER';
+export type VariantStatus = 'CLASSIFIED' | 'UNCLASSIFIED' | 'NOT_APPLICABLE';
+
+export interface IStrategyVariantExpected {
+  direction?: Direction;
+  liquiditySide?: LiquiditySide;
+  patternType?: PatternType;
+  secondLegStatus?: SecondLegStatus;
+  momentumRelation?: MomentumRelation;
+  [key: string]: any;
+}
+
+export interface IStrategyVariant {
+  key: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+  expected?: IStrategyVariantExpected;
+  entryRules?: string[];
+  stopLossRules?: string[];
+  targetRules?: string[];
+  invalidationCriteria?: string[];
+  checklist?: string[];
+  minRiskReward?: number | null;
+  [key: string]: any;
+}
+
+export interface ITradeSetup {
+  variantKey?: string;
+  variantStatus?: VariantStatus;
+  alsoMatches?: string[];
+  htfBias?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  executionTimeframe?: string;
+  liquiditySide?: LiquiditySide;
+  patternType?: PatternType;
+  secondLegStatus?: SecondLegStatus;
+  liquidityLevel?: number;
+  sweepExtreme?: number;
+  entryModel?: EntryModel;
+}
+
+export function deriveMomentumRelation(
+  direction?: Direction | null,
+  htfBias?: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null
+): MomentumRelation {
+  if (!direction || !htfBias || htfBias === 'NEUTRAL') return 'UNKNOWN';
+  if ((direction === 'LONG' && htfBias === 'BULLISH') || (direction === 'SHORT' && htfBias === 'BEARISH')) {
+    return 'WITH_HTF';
+  }
+  if ((direction === 'LONG' && htfBias === 'BEARISH') || (direction === 'SHORT' && htfBias === 'BULLISH')) {
+    return 'AGAINST_HTF';
+  }
+  return 'UNKNOWN';
+}
+
+export interface VariantSuggestionResult {
+  primaryVariantKey?: string;
+  suggestedStatus: VariantStatus;
+  alsoMatches: string[];
+}
+
+/**
+ * Pure dynamic suggestion logic for custom strategy setup variants.
+ * Matches input trade parameters dynamically against the provided availableVariants.
+ * No static keys, no hardcoded variants. Fully custom.
+ * UI suggests; user confirms; never silently assigned.
+ */
+export function suggestTradeVariant(params: {
+  direction?: Direction | null;
+  patternType?: PatternType | null;
+  secondLegStatus?: SecondLegStatus | null;
+  liquiditySide?: LiquiditySide | null;
+  availableVariants?: IStrategyVariant[];
+}): VariantSuggestionResult {
+  const { direction, patternType, secondLegStatus, liquiditySide, availableVariants } = params;
+
+  if (!availableVariants || availableVariants.length === 0) {
+    return {
+      primaryVariantKey: undefined,
+      suggestedStatus: 'UNCLASSIFIED',
+      alsoMatches: [],
+    };
+  }
+
+  const candidates = availableVariants.filter((v) => v.isActive !== false);
+  const pool = candidates.length > 0 ? candidates : availableVariants;
+
+  const scored: Array<{ variant: IStrategyVariant; score: number }> = [];
+
+  for (const v of pool) {
+    const exp = v.expected;
+    if (!exp) continue;
+
+    let score = 0;
+    let mismatch = false;
+
+    // Direction check
+    if (exp.direction && direction) {
+      if (exp.direction === direction) {
+        score += 10;
+      } else {
+        mismatch = true;
+      }
+    }
+
+    // Pattern type check
+    if (exp.patternType && patternType) {
+      if (exp.patternType === patternType) {
+        score += 20;
+      } else {
+        mismatch = true;
+      }
+    }
+
+    // Second leg status check
+    if (
+      exp.secondLegStatus &&
+      exp.secondLegStatus !== 'NOT_APPLICABLE' &&
+      secondLegStatus &&
+      secondLegStatus !== 'NOT_APPLICABLE'
+    ) {
+      if (exp.secondLegStatus === secondLegStatus) {
+        score += 15;
+      } else {
+        mismatch = true;
+      }
+    }
+
+    // Liquidity side check
+    if (
+      exp.liquiditySide &&
+      exp.liquiditySide !== 'NONE' &&
+      liquiditySide &&
+      liquiditySide !== 'NONE'
+    ) {
+      if (exp.liquiditySide === liquiditySide) {
+        score += 10;
+      } else {
+        mismatch = true;
+      }
+    }
+
+    if (!mismatch && score > 0) {
+      scored.push({ variant: v, score });
+    }
+  }
+
+  if (scored.length > 0) {
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (a.variant.sortOrder ?? 0) - (b.variant.sortOrder ?? 0);
+    });
+
+    return {
+      primaryVariantKey: scored[0].variant.key,
+      suggestedStatus: 'CLASSIFIED',
+      alsoMatches: scored.slice(1).map((s) => s.variant.key),
+    };
+  }
+
+  return {
+    primaryVariantKey: undefined,
+    suggestedStatus: 'UNCLASSIFIED',
+    alsoMatches: [],
+  };
+}
+
+/**
+ * Returns effective rules and parameters by combining strategy rules with variant overrides.
+ * Empty list on variant inherits parent list. Non-empty combines parent + variant.
+ * minRiskReward null/undefined on variant inherits parent.
+ */
+export function getEffectiveStrategyRules(
+  strategy: {
+    entryRules?: string[];
+    stopLossRules?: string[];
+    targetRules?: string[];
+    invalidationCriteria?: string[];
+    checklist?: string[];
+    minRiskReward?: number;
+  },
+  variant?: {
+    entryRules?: string[];
+    stopLossRules?: string[];
+    targetRules?: string[];
+    invalidationCriteria?: string[];
+    checklist?: string[];
+    minRiskReward?: number | null;
+  } | null
+) {
+  if (!variant) {
+    return {
+      entryRules: strategy.entryRules || [],
+      stopLossRules: strategy.stopLossRules || [],
+      targetRules: strategy.targetRules || [],
+      invalidationCriteria: strategy.invalidationCriteria || [],
+      checklist: strategy.checklist || [],
+      minRiskReward: strategy.minRiskReward ?? 1.5,
+    };
+  }
+
+  const combine = (parentRules?: string[], variantRules?: string[]): string[] => {
+    if (!variantRules || variantRules.length === 0) return parentRules || [];
+    return [...(parentRules || []), ...variantRules];
+  };
+
+  return {
+    entryRules: combine(strategy.entryRules, variant.entryRules),
+    stopLossRules: combine(strategy.stopLossRules, variant.stopLossRules),
+    targetRules: combine(strategy.targetRules, variant.targetRules),
+    invalidationCriteria: combine(strategy.invalidationCriteria, variant.invalidationCriteria),
+    checklist: combine(strategy.checklist, variant.checklist),
+    minRiskReward:
+      variant.minRiskReward !== null && variant.minRiskReward !== undefined
+        ? variant.minRiskReward
+        : (strategy.minRiskReward ?? 1.5),
+  };
+}
+
 

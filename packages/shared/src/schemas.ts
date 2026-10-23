@@ -78,6 +78,35 @@ export const createInstrumentSchema = z.object({
   description: z.string().optional(),
 });
 
+export const strategyVariantExpectedSchema = z
+  .object({
+    direction: z.enum(['LONG', 'SHORT']).optional(),
+    liquiditySide: z.enum(['SELL_SIDE', 'BUY_SIDE', 'NONE']).optional(),
+    patternType: z.enum(['EQUAL_LOWS', 'EQUAL_HIGHS', 'W', 'M', 'OTHER']).optional(),
+    secondLegStatus: z.enum(['SWEPT', 'UNSWEPT', 'NOT_APPLICABLE']).optional(),
+    momentumRelation: z.enum(['WITH_HTF', 'AGAINST_HTF', 'UNKNOWN']).optional(),
+  })
+  .passthrough();
+
+export const strategyVariantSchema = z.object({
+  key: z
+    .string()
+    .min(1, 'Variant key is required')
+    .max(60, 'Variant key must be under 60 characters')
+    .transform((val) => val.trim().toUpperCase()),
+  name: z.string().min(1, 'Variant name is required'),
+  description: z.string().default(''),
+  isActive: z.boolean().default(true),
+  sortOrder: z.number().int().default(0),
+  expected: strategyVariantExpectedSchema.optional().default({}),
+  entryRules: z.array(z.string()).optional(),
+  stopLossRules: z.array(z.string()).optional(),
+  targetRules: z.array(z.string()).optional(),
+  invalidationCriteria: z.array(z.string()).optional(),
+  checklist: z.array(z.string()).optional(),
+  minRiskReward: z.number().nonnegative().nullable().optional(),
+});
+
 export const createStrategySchema = z.object({
   name: z.string().min(1, 'Strategy name is required'),
   description: z.string().default(''),
@@ -92,7 +121,22 @@ export const createStrategySchema = z.object({
   tags: z.array(z.string()).default([]),
   notes: z.string().optional(),
   isActive: z.boolean().default(true),
+  variants: z
+    .array(strategyVariantSchema)
+    .max(12, 'Maximum of 12 variants allowed per strategy')
+    .default([])
+    .refine(
+      (variants) => {
+        const keys = variants.map((v) => v.key);
+        return new Set(keys).size === keys.length;
+      },
+      { message: 'Variant keys must be unique within a strategy' }
+    ),
 });
+export const updateStrategySchema = createStrategySchema.partial();
+export type CreateStrategyInput = z.infer<typeof createStrategySchema>;
+export type UpdateStrategyInput = z.infer<typeof updateStrategySchema>;
+
 
 export const tradeFillSchema = z.object({
   fillId: z.string(),
@@ -149,6 +193,27 @@ export const emotionEnum = z.enum([
   'REGRETFUL',
   'FEAR_OF_STOP_HUNT',
 ]);
+
+export const tradeSetupSchema = z.object({
+  variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  variantStatus: z.enum(['CLASSIFIED', 'UNCLASSIFIED', 'NOT_APPLICABLE']).default('UNCLASSIFIED'),
+  alsoMatches: z.array(z.string()).default([]),
+  htfBias: z.preprocess(emptyStringToUndefined, z.enum(['BULLISH', 'BEARISH', 'NEUTRAL']).optional()),
+  executionTimeframe: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  liquiditySide: z.preprocess(emptyStringToUndefined, z.enum(['SELL_SIDE', 'BUY_SIDE', 'NONE']).optional()),
+  patternType: z.preprocess(emptyStringToUndefined, z.enum(['EQUAL_LOWS', 'EQUAL_HIGHS', 'W', 'M', 'OTHER']).optional()),
+  secondLegStatus: z.preprocess(emptyStringToUndefined, z.enum(['SWEPT', 'UNSWEPT', 'NOT_APPLICABLE']).optional()),
+  liquidityLevel: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+  sweepExtreme: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+  entryModel: z.preprocess(emptyStringToUndefined, z.enum(['CONFIRMATION_CANDLE', 'RETEST', 'OTHER']).optional()),
+});
+export type TradeSetupInput = z.infer<typeof tradeSetupSchema>;
 
 export const createTradeSchema = z.object({
   accountId: z.string().min(1, 'Trading account is required'),
@@ -259,6 +324,7 @@ export const createTradeSchema = z.object({
       positionSizeViolation: false,
     }),
 
+  setup: tradeSetupSchema.optional(),
   screenshotIds: z.array(z.string()).default([]),
 });
 
@@ -283,9 +349,20 @@ export const tradeFilterQuerySchema = z.object({
   startDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
   endDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
   tags: z.preprocess(emptyStringToUndefined, z.string().optional()), // Comma-separated
+  variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  variantStatus: z.preprocess(emptyStringToUndefined, z.enum(['CLASSIFIED', 'UNCLASSIFIED', 'NOT_APPLICABLE']).optional()),
+  entryModel: z.preprocess(emptyStringToUndefined, z.enum(['CONFIRMATION_CANDLE', 'RETEST', 'OTHER']).optional()),
   sortBy: z.string().default('tradeDate'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
+
+export const bulkClassifySchema = z.object({
+  tradeIds: z.array(z.string()).min(1, 'At least one trade ID is required'),
+  strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  variantStatus: z.preprocess(emptyStringToUndefined, z.enum(['CLASSIFIED', 'UNCLASSIFIED', 'NOT_APPLICABLE']).optional()),
+});
+export type BulkClassifyInput = z.infer<typeof bulkClassifySchema>;
 
 export const slRuleSchema = z.object({
   type: z.enum(['PERCENT', 'POINTS', 'PREMIUM_PERCENT', 'MANUAL']),

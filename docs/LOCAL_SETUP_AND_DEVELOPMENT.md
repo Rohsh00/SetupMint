@@ -80,9 +80,9 @@ All commands are executed from the repository root:
 | :--- | :--- |
 | `npm run dev` | Runs Fastify backend and Vite frontend concurrently with live reloading. |
 | `npm run build` | Compiles `@tradevault/shared`, `@tradevault/financial-engine`, backend API, and frontend bundle. |
-| `npm run test` | Executes all Vitest test suites (301 tests: 135 financial engine + 166 API). |
+| `npm run test` | Executes all Vitest test suites (319 tests: 135 financial engine + 184 API). |
 | `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (135 tests). |
-| `npm run test:api` | Runs Fastify API integration, regression, storage, strategy-variant, and attachment test suites (166 tests). |
+| `npm run test:api` | Runs Fastify API integration, regression, storage, strategy-variant, and attachment test suites (184 tests). |
 | `npm run typecheck` | Validates TypeScript types across all 4 packages (`shared`, `financial-engine`, `api`, `web`). |
 | `npm run migrate:cloud` | Runs one-time migration of local data to Atlas and R2 (`--dry-run` default). |
 | `npm run db:seed` | Populates Atlas and R2 with default active-trader demo profile. |
@@ -91,6 +91,7 @@ All commands are executed from the repository root:
 | `npm run db:backup` | Dumps Atlas collections to JSON and downloads R2 screenshots to `./backups/`. |
 | `npm run db:restore` | Restores Atlas collections and uploads screenshots to R2 (requires `--yes-i-am-sure`). |
 | `npm run db:reconcile` | Authoritatively recalculates and persists ledger balances on Atlas. |
+| `npm run accounts:backfill` | Dry-runs the account/broker migration; add `-- --yes` to drop the legacy mapping index, backfill fields, encrypt plaintext broker secrets, and recalculate balances. |
 
 ---
 

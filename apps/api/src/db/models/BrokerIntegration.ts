@@ -7,9 +7,17 @@ export interface IBrokerIntegrationDoc extends Document {
   appId?: string;
   secretKey?: string;
   accessToken?: string;
+  refreshToken?: string;
+  clientId?: string;
+  linkedAccountId?: mongoose.Types.ObjectId;
+  tokenExpiresAt?: Date;
   authCodeExpiresAt?: Date;
+  oauthStateHash?: string;
+  oauthStateExpiresAt?: Date;
   autoSyncEnabled?: boolean;
   lastSyncAt?: Date;
+  lastFundsSyncAt?: Date;
+  fundsSyncError?: string;
   syncHistory: Array<{
     timestamp: Date;
     status: 'SUCCESS' | 'FAILED';
@@ -43,9 +51,17 @@ const BrokerIntegrationSchema = new Schema<IBrokerIntegrationDoc>(
     appId: { type: String },
     secretKey: { type: String },
     accessToken: { type: String },
+    refreshToken: { type: String },
+    clientId: { type: String, trim: true },
+    linkedAccountId: { type: Schema.Types.ObjectId, ref: 'TradingAccount' },
+    tokenExpiresAt: { type: Date },
     authCodeExpiresAt: { type: Date },
+    oauthStateHash: { type: String, index: true },
+    oauthStateExpiresAt: { type: Date },
     autoSyncEnabled: { type: Boolean, default: true },
     lastSyncAt: { type: Date },
+    lastFundsSyncAt: { type: Date },
+    fundsSyncError: { type: String },
     syncHistory: [
       {
         timestamp: { type: Date, default: Date.now },
@@ -60,6 +76,17 @@ const BrokerIntegrationSchema = new Schema<IBrokerIntegrationDoc>(
 );
 
 BrokerIntegrationSchema.index({ userId: 1, broker: 1 }, { unique: true });
+
+function redactBrokerSecrets(_doc: any, ret: Record<string, any>) {
+  delete ret.secretKey;
+  delete ret.accessToken;
+  delete ret.refreshToken;
+  delete ret.oauthStateHash;
+  return ret;
+}
+
+BrokerIntegrationSchema.set('toJSON', { transform: redactBrokerSecrets });
+BrokerIntegrationSchema.set('toObject', { transform: redactBrokerSecrets });
 
 export const BrokerIntegration = mongoose.model<IBrokerIntegrationDoc>(
   'BrokerIntegration',

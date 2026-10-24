@@ -147,7 +147,7 @@ Authentication is handled via stateful sessions:
 ### `GET /api/v1/accounts`
 - **Purpose:** List all trading accounts owned by authenticated user.
 - **Auth:** **Required**.
-- **Response:** Array of accounts with initial balance, realized P&L, deposits, withdrawals, and current balance.
+- **Response:** Array of accounts with initial balance, realized P&L, deposits, withdrawals, adjustments, current balance, and optional FYERS `brokerLink`.
 
 ### `POST /api/v1/accounts`
 - **Purpose:** Create new trading account.
@@ -207,10 +207,45 @@ Authentication is handled via stateful sessions:
 ### `GET /api/v1/accounts/:id/transactions`
 - **Purpose:** List cash transactions for an account.
 - **Auth:** **Required**.
+- **Response Fields:** `id`, `type`, `amount`, `currency`, `date`, `notes`, `source` (`MANUAL`, `BROKER_LEDGER_IMPORT`, `BROKER_SYNC`), `status` (`CONFIRMED`, `PENDING_REVIEW`, `REJECTED`), `idempotencyKey`, `importBatchId`.
 - **Responses:** `200 OK` (sorted by date desc).
 
+### `POST /api/v1/accounts/:id/broker-link`
+- **Purpose:** Link a FYERS trading account to the connected FYERS client.
+- **Auth:** **Required**.
+- **Request Body:** `{ "clientId": "FYERS_CLIENT_ID" }`.
+- **Behavior:** Requires an active FYERS session. Rejects client ID mismatch, non-FYERS accounts, and a client ID already linked to another account.
+- **Responses:** `200 OK`, `400 CLIENT_ID_REQUIRED`, `400 CLIENT_ID_MISMATCH`, `409 ACCOUNT_NOT_FYERS`, `409 CLIENT_ALREADY_LINKED`, `409 BROKER_NOT_CONNECTED`.
+
+### `DELETE /api/v1/accounts/:id/broker-link`
+- **Purpose:** Remove the FYERS link from an account.
+- **Auth:** **Required**.
+- **Responses:** `200 OK`, `404 ACCOUNT_NOT_FOUND`.
+
+### `POST /api/v1/accounts/:id/sync-funds`
+- **Purpose:** Fetch FYERS `/funds`, persist a broker snapshot, and create a pending reconciliation adjustment when the broker `Clear Balance` drifts beyond tolerance.
+- **Auth:** **Required**.
+- **Response:** `{ snapshot, currentBalance, brokerBalance, drift, tolerance, suggestionCreated, skipReason, pendingTransaction }`.
+- **Skip Reasons:** `WITHIN_TOLERANCE`, `OPEN_OR_PLANNED_TRADES`, `PENDING_REVIEW_EXISTS`, `ALREADY_REVIEWED_FOR_THIS_DRIFT`.
+- **Responses:** `200 OK`, `409 ACCOUNT_NOT_LINKED`, `409 BROKER_NOT_CONNECTED`, `502 FUNDS_SYNC_FAILED`, `503 FUNDS_SYNC_DISABLED`.
+
+### `GET /api/v1/accounts/:id/pending-transactions`
+- **Purpose:** List `PENDING_REVIEW` transactions and the latest FYERS funds snapshot for an account.
+- **Auth:** **Required**.
+- **Responses:** `200 OK` with `{ transactions: [...], latestSnapshot }`.
+
+### `POST /api/v1/accounts/:id/transactions/:txId/confirm`
+- **Purpose:** Confirm a pending broker adjustment and authoritatively recalculate the account balance.
+- **Auth:** **Required**.
+- **Responses:** `200 OK` with `{ transaction, balanceSummary }`, `404 PENDING_TRANSACTION_NOT_FOUND`.
+
+### `POST /api/v1/accounts/:id/transactions/:txId/reject`
+- **Purpose:** Reject a pending broker adjustment without changing account balances.
+- **Auth:** **Required**.
+- **Responses:** `200 OK`, `404 PENDING_TRANSACTION_NOT_FOUND`.
+
 ### `POST /api/v1/accounts/:id/reconcile`
-- **Purpose:** Force authoritative balance recalculation from all closed trades and cash transactions.
+- **Purpose:** Force authoritative balance recalculation from all closed trades and confirmed cash transactions.
 - **Auth:** **Required**.
 - **Responses:** `200 OK` with recalculated `AccountBalanceSummary`.
 
@@ -494,42 +529,52 @@ Authentication is handled via stateful sessions:
 - **Auth:** **Required**.
 
 ### `POST /api/v1/export/import/preview`
-- **Purpose:** Upload broker CSV, detect broker tradebook format (Zerodha, FYERS, Angel One, Upstox), load saved user column mappings or defaults, and inspect execution log mode.
+- **Purpose:** Upload a broker tradebook or FYERS cash-ledger CSV, detect headers/broker format, normalize ledger rows, load saved mappings, and optionally check duplicates for an account.
 - **Auth:** **Required**.
-- **Content-Type:** `multipart/form-data` (`file`).
-- **Response:** `{ totalRows, headers, detectedBroker, availableBrokers, suggestedMapping, isRawExecutionLog, hasSavedMapping, previewRows, allRows }`.
+- **Content-Type:** `multipart/form-data` (`file`) or JSON `{ csvText }`.
+- **Query/Body Parameters:**
+  - `importKind`: `TRADES` (default) or `CASH_FLOWS`
+  - `accountId`: required for ledger duplicate checks
+  - `broker`: optional broker override; ledger defaults to `FYERS`
+- **Trade Response:** `{ totalRows, headers, detectedBroker, availableBrokers, suggestedMapping, isRawExecutionLog, hasSavedMapping, previewRows, allRows }`.
+- **Ledger Response:** `{ importKind: "CASH_FLOWS", totalRows, headers, detectedBroker, suggestedMapping, hasSavedMapping, summary: { depositCount, withdrawalCount, adjustmentCount, ignoredCount, duplicateCount, errorCount }, previewRows, allRows }`.
 
 ### `POST /api/v1/export/import/commit`
-- **Purpose:** Commit parsed trade rows or raw execution fills. Groups raw executions into round-trip trades using `calculateFIFOExecution` (ADVANCED mode), auto-calculates statutory charges via `IndianChargesCalculator`, flags with `importBatchId` and `['IMPORTED']` tag, skips duplicates, and authoritatively recalculates account balances.
+- **Purpose:** Commit trade rows, raw execution fills, or ledger rows.
 - **Auth:** **Required**.
-- **Request Body:** `{ "accountId": "...", "rows": [...], "mapping": { "tradeDate": "...", "symbol": "...", ... }, "broker": "ZERODHA", "saveMapping": true }`.
-- **Response:** `{ batchId, importedCount, duplicateCount, errorCount, errors: [{ row, symbol, message }] }`.
+- **Trade Body:** `{ "accountId": "...", "rows": [...], "mapping": { ... }, "broker": "FYERS", "saveMapping": true }`.
+- **Ledger Body:** `{ "accountId": "...", "importKind": "CASH_FLOWS", "rows": [...], "broker": "FYERS", "mapping": { ... }, "saveMapping": true }`.
+- **Trade Behavior:** Groups raw executions with `calculateFIFOExecution`, calculates statutory charges, flags `importBatchId` + `['IMPORTED']`, prevents duplicates, and recalculates balances.
+- **Ledger Behavior:** Classifies `BR`/`BP`/`JV`/`SJ`, writes `BROKER_LEDGER_IMPORT` + `CONFIRMED` transactions, applies SHA-256 idempotency keys, assigns a `ledger_*` batch ID, and recalculates balances only when rows were imported.
+- **Response:** `{ batchId, importKind?, importedCount, duplicateCount, errorCount, errors, balanceSummary }`.
 
 ### `POST /api/v1/export/import/undo`
-- **Purpose:** Undo an imported trade batch, deleting all associated trades and reconciling authoritative account balances.
+- **Purpose:** Undo an imported trade or ledger batch, deleting its records and reconciling affected account balances.
 - **Auth:** **Required**.
-- **Request Body:** `{ "batchId": "batch_..." }` (omitting batchId automatically undos the user's most recent import batch).
-- **Response:** `{ batchId, deletedCount, affectedAccounts: ["..."] }`.
+- **Request Body:** `{ "batchId": "batch_..." }` or `{ "batchId": "ledger_..." }`. Omitting `batchId` selects the most recent trade or ledger batch.
+- **Response:** `{ batchId, deletedCount, tradeDeletedCount, ledgerDeletedCount, affectedAccounts }`.
 
 ### `GET /api/v1/export/import/batches`
-- **Purpose:** List recent import batches for the user with trade counts, timestamps, symbols, and net P&L.
+- **Purpose:** List recent trade and ledger import batches with timestamps and totals.
 - **Auth:** **Required**.
-- **Response:** Array of `{ batchId, tradeCount, accountId, createdAt, symbols, totalNetPnL }`.
+- **Response:** Array with `importKind` (`TRADES`/`CASH_FLOWS`), `tradeCount`, `ledgerCount`, `accountId`, `createdAt`, `symbols`, `totalNetPnL`, and `totalAmount` (net ledger flow).
 
 ### `GET /api/v1/export/mappings`
 - **Purpose:** List all saved broker column mappings for the authenticated user.
 - **Auth:** **Required**.
-- **Response:** Array of `{ id, broker, name, mapping, createdAt, updatedAt }`.
+- **Query Parameters:** `importKind` (`TRADES`/`CASH_FLOWS`, optional filter).
+- **Response:** Array of `{ id, broker, importKind, name, mapping, createdAt, updatedAt }`.
 
 ### `GET /api/v1/export/mappings/:broker`
 - **Purpose:** Retrieve saved column mapping for a specific broker (`ZERODHA`, `FYERS`, `ANGEL_ONE`, `UPSTOX`, `CUSTOM`).
 - **Auth:** **Required**.
+- **Query Parameters:** `importKind` (`TRADES`/`CASH_FLOWS`, default `TRADES`).
 
 ### `POST /api/v1/export/mappings`
-- **Purpose:** Upsert a custom column mapping for a broker (`userId`-scoped, unique per `userId+broker`).
+- **Purpose:** Upsert a custom column mapping for a broker. Unique per `{ userId, broker, importKind }`.
 - **Auth:** **Required**.
-- **Request Body:** `{ "broker": "ZERODHA", "name": "Zerodha Kite Mapping", "mapping": { ... } }`.
-- **Response:** `{ id, broker, name, mapping }`.
+- **Request Body:** `{ "broker": "ZERODHA", "importKind": "TRADES", "name": "Zerodha Kite Mapping", "mapping": { ... } }`.
+- **Response:** `{ id, broker, importKind, name, mapping }`.
 
 ---
 
@@ -573,8 +618,13 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 - `GET /api/v1/settings/system-status` — Return total trade count, account count, attachment count, database type, and version.
 
 ### Broker Integrations (`/api/v1/integrations`)
-- `GET /api/v1/integrations/fyers/status` — Return connection status (`DISABLED`/`IDLE`), App ID, and architecture capabilities.
-- `POST /api/v1/integrations/fyers/config` — Store FYERS App ID.
+- `GET /api/v1/integrations/fyers/status` — Return connection status (`DISABLED`/`IDLE`), App ID, client ID, token expiry, funds sync status/error, callback `redirectUri`, and architecture capabilities. Secrets/tokens are never returned.
+- `POST /api/v1/integrations/fyers/config` — Store an encrypted FYERS App ID and Secret Key. Changing the App ID requires the secret again; credential changes invalidate existing tokens.
+- `POST /api/v1/integrations/fyers/connect` — Create a short-lived OAuth state and return the FYERS login URL.
+- `GET /api/v1/integrations/fyers/login-url` — Legacy-compatible alias for creating an OAuth login URL.
+- `GET /api/v1/integrations/fyers/callback` — Public FYERS OAuth callback. Exchanges `auth_code`, stores encrypted tokens, clears the state, and redirects to `/settings`.
+- `POST /api/v1/integrations/fyers/sync` — Fetch and FIFO-import current-day FYERS executions, then recalculate balances.
+- `POST /api/v1/integrations/fyers/disconnect` — Clear encrypted tokens/state while preserving app credentials.
 
 ---
 

@@ -65,6 +65,7 @@ export class AccountService {
         $match: {
           accountId: accId,
           userId: uId,
+          $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
         },
       },
       {
@@ -105,6 +106,7 @@ export class AccountService {
     account.realizedPnL = mongoose.Types.Decimal128.fromString(realizedPnL.toFixed(2));
     account.totalDeposits = mongoose.Types.Decimal128.fromString(totalDeposits.toFixed(2));
     account.totalWithdrawals = mongoose.Types.Decimal128.fromString(totalWithdrawals.toFixed(2));
+    account.totalAdjustments = mongoose.Types.Decimal128.fromString(totalAdjustments.toFixed(2));
     account.currentBalance = mongoose.Types.Decimal128.fromString(currentBalance.toFixed(2));
 
     await account.save();

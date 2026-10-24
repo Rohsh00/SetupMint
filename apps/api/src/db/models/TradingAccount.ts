@@ -13,6 +13,12 @@ export interface ITradingAccountDoc extends Document {
   realizedPnL: mongoose.Types.Decimal128;
   totalDeposits: mongoose.Types.Decimal128;
   totalWithdrawals: mongoose.Types.Decimal128;
+  totalAdjustments: mongoose.Types.Decimal128;
+  brokerLink?: {
+    broker: 'FYERS';
+    clientId: string;
+    linkedAt: Date;
+  };
   status: AccountStatus;
   riskRules?: {
     maxDailyLoss?: number;
@@ -72,6 +78,15 @@ const TradingAccountSchema = new Schema<ITradingAccountDoc>(
     totalWithdrawals: {
       type: Schema.Types.Decimal128,
       default: mongoose.Types.Decimal128.fromString('0.00'),
+    },
+    totalAdjustments: {
+      type: Schema.Types.Decimal128,
+      default: mongoose.Types.Decimal128.fromString('0.00'),
+    },
+    brokerLink: {
+      broker: { type: String, enum: ['FYERS'] },
+      clientId: { type: String, trim: true },
+      linkedAt: { type: Date },
     },
     status: {
       type: String,

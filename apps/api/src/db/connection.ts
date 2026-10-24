@@ -73,7 +73,10 @@ export function validateAndFormatAtlasUri(rawUri: string | undefined): { uri: st
  */
 export async function connectDatabase(overrideUri?: string, forceAtlasValidation = false): Promise<string> {
   const isTest = (process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST)) && !forceAtlasValidation;
-  const rawUri = overrideUri !== undefined ? overrideUri : (config.mongodbUri || process.env.MONGODB_URI);
+  const rawUri =
+    overrideUri !== undefined
+      ? overrideUri
+      : process.env.MONGODB_URI || config.mongodbUri;
 
   if (isTest) {
     if (!rawUri) {

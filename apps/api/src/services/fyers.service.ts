@@ -1,9 +1,24 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { BrokerIntegration, TradingAccount, Trade } from '../db/models/index.js';
+import Decimal from 'decimal.js';
+import {
+  BrokerIntegration,
+  TradingAccount,
+  Trade,
+  BrokerFundsSnapshot,
+  AccountTransaction,
+} from '../db/models/index.js';
 import { calculateFIFOExecution, calculateIndianCharges } from '@tradevault/financial-engine';
-import { MarketSegment, AssetClass } from '@tradevault/shared';
+import {
+  IBrokerAuthTokens,
+  IBrokerFundLimit,
+  IBrokerFundsSnapshot,
+  MarketSegment,
+  AssetClass,
+} from '@tradevault/shared';
 import { AccountService } from './account.service.js';
+import { decryptSecret } from './crypto.service.js';
+import { config } from '../config.js';
 
 export interface IFyersExecutionRaw {
   clientId: string;
@@ -32,6 +47,123 @@ export interface IFyersSyncResult {
   accountId: string;
   accountName: string;
   lastSyncAt: Date;
+}
+
+export interface IFyersFundsResult {
+  snapshot: IBrokerFundsSnapshot;
+  exact: {
+    totalBalance: Decimal;
+    clearBalance: Decimal;
+    availableBalance: Decimal;
+    realizedPnL: Decimal;
+    utilizedAmount: Decimal;
+    fundLimits: Array<{
+      id?: number;
+      title: string;
+      equityAmount: Decimal;
+      commodityAmount: Decimal;
+    }>;
+  };
+}
+
+const IST_TOKEN_EXPIRY_HOUR_UTC = 1;
+const IST_TOKEN_EXPIRY_MINUTE_UTC = 0;
+
+/**
+ * FYERS daily access tokens expire at 06:30 IST (01:00 UTC).
+ */
+export function getNextFyersTokenExpiry(now: Date = new Date()): Date {
+  const expiry = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      IST_TOKEN_EXPIRY_HOUR_UTC,
+      IST_TOKEN_EXPIRY_MINUTE_UTC,
+      0,
+      0
+    )
+  );
+  if (now.getTime() >= expiry.getTime()) {
+    expiry.setUTCDate(expiry.getUTCDate() + 1);
+  }
+  return expiry;
+}
+
+function normalizeFundTitle(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function parseFundAmount(value: unknown): Decimal {
+  if (value === null || value === undefined || value === '') return new Decimal(0);
+  try {
+    const parsed = new Decimal(String(value).replace(/,/g, ''));
+    return parsed.isFinite() ? parsed : new Decimal(0);
+  } catch {
+    return new Decimal(0);
+  }
+}
+
+export function normalizeFyersFunds(raw: any[]): IFyersFundsResult {
+  const limits = Array.isArray(raw) ? raw : [];
+
+  const exactFundLimits = limits.map((item) => ({
+    id: item?.id != null ? Number(item.id) : undefined,
+    title: String(item?.title || '').trim(),
+    equityAmount: parseFundAmount(item?.equityAmount),
+    commodityAmount: parseFundAmount(item?.commodityAmount),
+  }));
+
+  const findLimit = (...titles: string[]) => {
+    for (const title of titles) {
+      const target = normalizeFundTitle(title);
+      const match = exactFundLimits.find((item) => normalizeFundTitle(item.title) === target);
+      if (match) return match;
+    }
+    return undefined;
+  };
+
+  const total = findLimit('Total Balance', 'Total');
+  const clear = findLimit('Clear Balance', 'Cleared Balance');
+  const available = findLimit('Available Balance');
+  const realized = findLimit('Realized Profit and Loss', 'Realised Profit and Loss', 'Realized P&L');
+  const utilized = findLimit('Utilized Amount', 'Utilised Amount', 'Amount Utilized');
+
+  const totalBalance = total?.equityAmount ?? new Decimal(0);
+  const availableBalance = available?.equityAmount ?? totalBalance;
+  const clearBalance = clear?.equityAmount ?? availableBalance;
+  const realizedPnL = realized?.equityAmount ?? new Decimal(0);
+  const utilizedAmount = utilized?.equityAmount ?? new Decimal(0);
+
+  const fundLimits: IBrokerFundLimit[] = exactFundLimits.map((item) => ({
+    id: item.id,
+    title: item.title,
+    equityAmount: item.equityAmount.toNumber(),
+    commodityAmount: item.commodityAmount.toNumber(),
+  }));
+
+  return {
+    snapshot: {
+      broker: 'FYERS',
+      fetchedAt: new Date().toISOString(),
+      totalBalance: totalBalance.toNumber(),
+      clearBalance: clearBalance.toNumber(),
+      availableBalance: availableBalance.toNumber(),
+      realizedPnL: realizedPnL.toNumber(),
+      utilizedAmount: utilizedAmount.toNumber(),
+      fundLimits,
+    },
+    exact: {
+      totalBalance,
+      clearBalance,
+      availableBalance,
+      realizedPnL,
+      utilizedAmount,
+      fundLimits: exactFundLimits,
+    },
+  };
 }
 
 /**
@@ -126,7 +258,9 @@ export function resolveContractMultiplier(cleanSymbol: string, exchange: string)
 }
 
 export class FyersService {
-  private static readonly FYERS_API_BASE = 'https://api-t1.fyers.in/api/v3';
+  private static get FYERS_API_BASE(): string {
+    return config.fyersApiBase.replace(/\/$/, '');
+  }
 
   /**
    * Generates the FYERS OAuth login URL
@@ -138,7 +272,11 @@ export class FyersService {
   /**
    * Exchanges an authorization code for a daily access token using SHA-256 hash of appId:secretKey
    */
-  static async validateAuthCode(appId: string, secretKey: string, authCode: string): Promise<string> {
+  static async validateAuthCode(
+    appId: string,
+    secretKey: string,
+    authCode: string
+  ): Promise<IBrokerAuthTokens & { clientId?: string; clientName?: string }> {
     const cleanAppId = appId.trim();
     const cleanSecret = secretKey.trim();
     const cleanCode = authCode.trim();
@@ -162,7 +300,331 @@ export class FyersService {
       throw new Error(`FYERS Authentication Rejected: ${errDetails}`);
     }
 
-    return data.access_token;
+    let clientId: string | undefined = data.client_id;
+    let clientName: string | undefined;
+
+    // Fetch authentic profile immediately using the validated access token
+    try {
+      const profile = await this.fetchProfile(cleanAppId, data.access_token);
+      if (profile?.fy_id) {
+        clientId = profile.fy_id;
+        clientName = profile.name;
+      }
+    } catch {
+      clientId = clientId || cleanAppId.split('-')[0];
+    }
+
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      accessTokenExpiresAt: getNextFyersTokenExpiry().toISOString(),
+      clientId: clientId || cleanAppId.split('-')[0] || undefined,
+      clientName,
+    };
+  }
+
+  /**
+   * Fetches authentic FYERS profile details to retrieve the genuine user client ID (fy_id) and account name.
+   */
+  static async fetchProfile(
+    appId: string,
+    accessToken: string
+  ): Promise<{ fy_id: string; name: string; email_id?: string }> {
+    const res = await fetch(`${this.FYERS_API_BASE}/profile`, {
+      method: 'GET',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok' || !data.data) {
+      throw new Error(
+        data.message || `Failed to fetch FYERS profile (code: ${data.code || res.status})`
+      );
+    }
+
+    return {
+      fy_id: data.data.fy_id,
+      name: data.data.name,
+      email_id: data.data.email_id,
+    };
+  }
+
+  /**
+   * Fetches normalized FYERS funds data using the v3 funds endpoint.
+   */
+  static async fetchFunds(appId: string, accessToken: string): Promise<IFyersFundsResult> {
+    const res = await fetch(`${this.FYERS_API_BASE}/funds`, {
+      method: 'GET',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok') {
+      throw new Error(
+        data.message || `Failed to fetch FYERS funds (code: ${data.code || res.status})`
+      );
+    }
+
+    return normalizeFyersFunds(data.fund_limit || []);
+  }
+
+  /**
+   * Synchronizes live FYERS funds for a specific account or user's linked/primary FYERS account,
+   * stores an immutable BrokerFundsSnapshot, and creates a pending reconciliation adjustment if drifted.
+   */
+  static async syncFundsForAccount(
+    accountId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId
+  ): Promise<{
+    account: any;
+    snapshot: any;
+    currentBalance: number;
+    brokerBalance: number;
+    drift: number;
+    tolerance: number;
+    suggestionCreated: boolean;
+    skipReason?: string;
+    pendingTransaction: any;
+  }> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const accId = typeof accountId === 'string' ? new mongoose.Types.ObjectId(accountId) : accountId;
+
+    const account = await TradingAccount.findOne({
+      _id: accId,
+      userId: uId,
+    });
+    if (!account) {
+      throw new Error('Account not found');
+    }
+
+    const integration = await BrokerIntegration.findOne({
+      userId: uId,
+      broker: 'FYERS',
+    });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      throw new Error('FYERS session is missing or expired. Reconnect FYERS.');
+    }
+
+    const tokenExpiry = integration.tokenExpiresAt || integration.authCodeExpiresAt;
+    if (tokenExpiry && new Date(tokenExpiry) <= new Date()) {
+      throw new Error('FYERS daily session has expired. Reconnect FYERS to authorize today.');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decryptSecret(integration.accessToken) as string;
+    } catch {
+      throw new Error('FYERS session could not be decrypted. Please reconnect FYERS.');
+    }
+
+    // Refresh authentic client ID if missing or matching app-id prefix
+    if (!integration.clientId || integration.clientId === integration.appId.split('-')[0]) {
+      try {
+        const profile = await this.fetchProfile(integration.appId, accessToken);
+        if (profile?.fy_id) {
+          integration.clientId = profile.fy_id;
+          await integration.save();
+        }
+      } catch {
+        // Continue even if profile endpoint is temporarily unreachable
+      }
+    }
+
+    const effectiveClientId = integration.clientId || integration.appId.split('-')[0] || 'FYERS';
+
+    // Auto-link account if not linked or if broker matches FYERS
+    if (!account.brokerLink || !account.brokerLink.clientId) {
+      account.brokerLink = {
+        broker: 'FYERS',
+        clientId: effectiveClientId,
+        linkedAt: new Date(),
+      };
+      await account.save();
+    }
+
+    if (!integration.linkedAccountId) {
+      integration.linkedAccountId = account._id;
+      await integration.save();
+    }
+
+    const funds = await this.fetchFunds(integration.appId, accessToken);
+    const fetchedAt = new Date(funds.snapshot.fetchedAt);
+
+    const snapshot = await BrokerFundsSnapshot.create({
+      userId: uId,
+      accountId: account._id,
+      broker: 'FYERS',
+      clientId: account.brokerLink.clientId,
+      fetchedAt,
+      totalBalance: mongoose.Types.Decimal128.fromString(
+        funds.exact.totalBalance.toFixed(2)
+      ),
+      clearBalance: mongoose.Types.Decimal128.fromString(
+        funds.exact.clearBalance.toFixed(2)
+      ),
+      availableBalance: mongoose.Types.Decimal128.fromString(
+        funds.exact.availableBalance.toFixed(2)
+      ),
+      realizedPnL: mongoose.Types.Decimal128.fromString(
+        funds.exact.realizedPnL.toFixed(2)
+      ),
+      utilizedAmount: mongoose.Types.Decimal128.fromString(
+        funds.exact.utilizedAmount.toFixed(2)
+      ),
+      fundLimits: funds.exact.fundLimits.map((limit) => ({
+        id: limit.id,
+        title: limit.title,
+        equityAmount: mongoose.Types.Decimal128.fromString(
+          limit.equityAmount.toFixed(2)
+        ),
+        commodityAmount: mongoose.Types.Decimal128.fromString(
+          limit.commodityAmount.toFixed(2)
+        ),
+      })),
+    });
+
+    const currentBalance = new Decimal(account.currentBalance.toString());
+    const brokerBalance = funds.exact.clearBalance;
+    const drift = brokerBalance.minus(currentBalance);
+    const tolerance = new Decimal(config.fyersFundsDriftTolerance);
+
+    const openOrPlannedTrades = await Trade.countDocuments({
+      userId: uId,
+      accountId: account._id,
+      status: { $in: ['OPEN', 'PLANNED'] },
+    });
+
+    let pendingTransaction = await AccountTransaction.findOne({
+      userId: uId,
+      accountId: account._id,
+      source: 'BROKER_SYNC',
+      status: 'PENDING_REVIEW',
+    }).sort({ createdAt: -1 });
+
+    let suggestionCreated = false;
+    let skipReason: string | undefined;
+
+    if (drift.abs().lte(tolerance)) {
+      skipReason = 'WITHIN_TOLERANCE';
+    } else if (openOrPlannedTrades > 0) {
+      skipReason = 'OPEN_OR_PLANNED_TRADES';
+    } else if (!pendingTransaction) {
+      const idempotencyKey = crypto
+        .createHash('sha256')
+        .update(
+          [
+            'fyers-funds',
+            account._id.toString(),
+            account.brokerLink.clientId,
+            fetchedAt.toISOString().slice(0, 10),
+            brokerBalance.toFixed(2),
+            currentBalance.toFixed(2),
+          ].join('|')
+        )
+        .digest('hex');
+
+      const existingForKey = await AccountTransaction.findOne({
+        userId: uId,
+        accountId: account._id,
+        idempotencyKey,
+      });
+
+      if (existingForKey) {
+        pendingTransaction =
+          existingForKey.status === 'PENDING_REVIEW' ? existingForKey : null;
+        skipReason = 'ALREADY_REVIEWED_FOR_THIS_DRIFT';
+      } else {
+        pendingTransaction = await AccountTransaction.create({
+          userId: uId,
+          accountId: account._id,
+          type: 'ADJUSTMENT',
+          amount: mongoose.Types.Decimal128.fromString(drift.toFixed(2)),
+          currency: account.baseCurrency,
+          date: fetchedAt,
+          notes: `FYERS Clear Balance ₹${brokerBalance.toFixed(2)} vs SetupMint ₹${currentBalance.toFixed(2)} (drift ₹${drift.toFixed(2)})`,
+          source: 'BROKER_SYNC',
+          status: 'PENDING_REVIEW',
+          idempotencyKey,
+        });
+        suggestionCreated = true;
+      }
+    } else {
+      skipReason = 'PENDING_REVIEW_EXISTS';
+    }
+
+    integration.lastFundsSyncAt = new Date();
+    integration.set('fundsSyncError', undefined);
+    await integration.save();
+
+    return {
+      account,
+      snapshot,
+      currentBalance: currentBalance.toNumber(),
+      brokerBalance: brokerBalance.toNumber(),
+      drift: drift.toNumber(),
+      tolerance: tolerance.toNumber(),
+      suggestionCreated,
+      skipReason,
+      pendingTransaction,
+    };
+  }
+
+  /**
+   * Finds or creates user's FYERS trading account and performs live funds synchronization.
+   */
+  static async syncFundsForUser(
+    userId: string | mongoose.Types.ObjectId
+  ): Promise<any> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      throw new Error('FYERS broker is not connected or session has expired.');
+    }
+
+    let account = integration.linkedAccountId
+      ? await TradingAccount.findOne({ _id: integration.linkedAccountId, userId: uId })
+      : null;
+
+    if (!account) {
+      account = await TradingAccount.findOne({
+        userId: uId,
+        $or: [
+          { broker: 'FYERS' },
+          { broker: new RegExp('^fyers$', 'i') },
+          { name: 'FYERS Trading Account' },
+          { name: new RegExp('^FYERS', 'i') },
+        ],
+      });
+    }
+
+    if (!account) {
+      account = await TradingAccount.create({
+        userId: uId,
+        name: 'FYERS Trading Account',
+        broker: 'FYERS',
+        accountType: 'EQUITY',
+        baseCurrency: 'INR',
+        initialBalance: mongoose.Types.Decimal128.fromString('0.00'),
+        currentBalance: mongoose.Types.Decimal128.fromString('0.00'),
+        realizedPnL: mongoose.Types.Decimal128.fromString('0.00'),
+        brokerLink: {
+          broker: 'FYERS',
+          clientId: integration.clientId || integration.appId.split('-')[0] || 'FYERS',
+          linkedAt: new Date(),
+        },
+      });
+      integration.linkedAccountId = account._id;
+      await integration.save();
+    }
+
+    return this.syncFundsForAccount(account._id, uId);
   }
 
   /**
@@ -196,7 +658,14 @@ export class FyersService {
       throw new Error('FYERS broker is not connected or session has expired. Please authenticate first.');
     }
 
-    const { appId, accessToken } = integration;
+    const appId = integration.appId;
+    let accessToken: string;
+    try {
+      accessToken = decryptSecret(integration.accessToken) as string;
+    } catch {
+      throw new Error('FYERS session could not be decrypted. Please reconnect FYERS.');
+    }
+
     integration.status = 'SYNCING';
     await integration.save();
 
@@ -216,15 +685,25 @@ export class FyersService {
       throw err;
     }
 
-    // Find or create user's FYERS trading account
-    let account = await TradingAccount.findOne({
-      userId: uId,
-      $or: [
-        { broker: 'FYERS' },
-        { name: 'FYERS Trading Account' },
-        { name: new RegExp('^FYERS', 'i') },
-      ],
-    });
+    // Prefer the account explicitly linked to this FYERS client.
+    let account = integration.linkedAccountId
+      ? await TradingAccount.findOne({
+          _id: integration.linkedAccountId,
+          userId: uId,
+        })
+      : null;
+
+    if (!account) {
+      account = await TradingAccount.findOne({
+        userId: uId,
+        $or: [
+          { broker: 'FYERS' },
+          { broker: new RegExp('^fyers$', 'i') },
+          { name: 'FYERS Trading Account' },
+          { name: new RegExp('^FYERS', 'i') },
+        ],
+      });
+    }
 
     if (account) {
       if (account.status === 'ARCHIVED') {

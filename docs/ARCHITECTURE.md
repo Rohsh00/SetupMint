@@ -36,7 +36,7 @@ graph TD
     API -->|Shared Types & Zod Validation| Shared["@tradevault/shared"]
     API -->|Mongoose ODM| DB[("MongoDB Atlas Cloud Database")]
     API -->|Private S3 Streaming| Storage[("Cloudflare R2 Object Storage")]
-    API -.->|Future Broker Sync Disabled| Fyers["Future FYERS Adapter Layer"]
+    API -->|OAuth + read-only sync| Fyers["FYERS API v3 (tradebook / funds)"]
 ```
 
 ---

@@ -1,5 +1,9 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { TransactionType } from '@tradevault/shared';
+import {
+  AccountTransactionSource,
+  AccountTransactionStatus,
+  TransactionType,
+} from '@tradevault/shared';
 
 export interface IAccountTransactionDoc extends Document {
   userId: mongoose.Types.ObjectId;
@@ -9,7 +13,12 @@ export interface IAccountTransactionDoc extends Document {
   currency: string;
   date: Date;
   notes?: string;
+  source: AccountTransactionSource;
+  status: AccountTransactionStatus;
+  idempotencyKey?: string;
+  importBatchId?: string;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const AccountTransactionSchema = new Schema<IAccountTransactionDoc>(
@@ -45,11 +54,30 @@ const AccountTransactionSchema = new Schema<IAccountTransactionDoc>(
       index: true,
     },
     notes: { type: String },
+    source: {
+      type: String,
+      enum: ['MANUAL', 'BROKER_LEDGER_IMPORT', 'BROKER_SYNC'],
+      default: 'MANUAL',
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ['CONFIRMED', 'PENDING_REVIEW', 'REJECTED'],
+      default: 'CONFIRMED',
+      required: true,
+    },
+    idempotencyKey: { type: String },
+    importBatchId: { type: String, index: true },
   },
   { timestamps: true }
 );
 
 AccountTransactionSchema.index({ userId: 1, accountId: 1, date: -1 });
+AccountTransactionSchema.index(
+  { userId: 1, accountId: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
+AccountTransactionSchema.index({ userId: 1, accountId: 1, importBatchId: 1 });
 
 export const AccountTransaction = mongoose.model<IAccountTransactionDoc>(
   'AccountTransaction',

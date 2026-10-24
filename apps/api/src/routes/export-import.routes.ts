@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
+import crypto from 'crypto';
+import Decimal from 'decimal.js';
 import mongoose from 'mongoose';
 import {
   calculateSimpleExecutionPnL,
@@ -8,7 +10,15 @@ import {
   calculateIndianCharges,
   deriveSessionFromTime,
 } from '@tradevault/financial-engine';
-import { Trade, TradingAccount, Strategy, BrokerImportMapping, SupportedImportBroker } from '../db/models/index.js';
+import {
+  AccountTransaction,
+  BrokerImportMapping,
+  Strategy,
+  SupportedImportBroker,
+  Trade,
+  TradingAccount,
+} from '../db/models/index.js';
+import { AccountTransactionSource, BrokerImportKind, TransactionType } from '@tradevault/shared';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
@@ -43,7 +53,32 @@ const TRADE_HEADER_KEYWORDS = [
   'exit',
 ];
 
-export function extractTableFromCsv(csvContent: string): { headers: string[]; records: Record<string, string>[] } {
+const LEDGER_HEADER_KEYWORDS = [
+  'date',
+  'transactiontype',
+  'transaction_type',
+  'description',
+  'narration',
+  'particulars',
+  'remarks',
+  'credit',
+  'creditamount',
+  'credit_amount',
+  'debit',
+  'debitamount',
+  'debit_amount',
+  'balance',
+  'runningbalance',
+  'running_balance',
+  'fundsadded',
+  'fundswithdrawn',
+  'amount',
+];
+
+export function extractTableFromCsv(
+  csvContent: string,
+  headerKeywords: string[] = TRADE_HEADER_KEYWORDS
+): { headers: string[]; records: Record<string, string>[] } {
   const rawRows: string[][] = parse(csvContent, {
     skip_empty_lines: true,
     trim: true,
@@ -65,7 +100,7 @@ export function extractTableFromCsv(csvContent: string): { headers: string[]; re
     let score = 0;
     for (const cell of row) {
       const clean = String(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (TRADE_HEADER_KEYWORDS.some((kw) => clean === kw || clean.includes(kw))) {
+      if (headerKeywords.some((kw) => clean === kw || clean.includes(kw))) {
         score++;
       }
     }
@@ -252,6 +287,99 @@ function getDefaultMappingForBroker(broker: SupportedImportBroker, headers: stri
   return mapping;
 }
 
+function cleanLedgerHeaderKey(header: string): string {
+  return header.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getLedgerHeader(headers: string[], patterns: string[]): string {
+  for (const pattern of patterns) {
+    const target = cleanLedgerHeaderKey(pattern);
+    const match = headers.find((h) => {
+      const clean = cleanLedgerHeaderKey(h);
+      return clean === target || clean.includes(target);
+    });
+    if (match) return match;
+  }
+  return '';
+}
+
+function getDefaultLedgerMapping(headers: string[]): Record<string, string> {
+  const mapping: Record<string, string> = {
+    date: getLedgerHeader(headers, ['date & time', 'date and time', 'transaction date', 'trade date', 'date']),
+    transactionType: getLedgerHeader(headers, [
+      'transaction type',
+      'transaction_type',
+      'voucher type',
+      'entry type',
+      'type',
+    ]),
+    description: getLedgerHeader(headers, [
+      'description',
+      'narration',
+      'particulars',
+      'remarks',
+      'details',
+      'transaction details',
+    ]),
+    credit: getLedgerHeader(headers, [
+      'credit amount',
+      'credit_amount',
+      'credit',
+      'funds added',
+      'deposit',
+      'payin',
+    ]),
+    debit: getLedgerHeader(headers, [
+      'debit amount',
+      'debit_amount',
+      'debit',
+      'funds withdrawn',
+      'withdrawal',
+      'payout',
+    ]),
+    balance: getLedgerHeader(headers, [
+      'running balance',
+      'running_balance',
+      'closing balance',
+      'closing_balance',
+      'balance',
+    ]),
+  };
+
+  for (const key of Object.keys(mapping)) {
+    if (!mapping[key]) delete mapping[key];
+  }
+
+  return mapping;
+}
+
+function sanitizeCsvCell(value: string): string {
+  if (!value) return '';
+  let cell = value.trim();
+  if (cell.startsWith('=')) {
+    cell = cell.replace(/^="?|"?$/g, '').replace(/^"|"$/g, '').trim();
+  }
+  if (/^[=+\-@\t\r]/.test(cell)) {
+    cell = `'${cell}`;
+  }
+  return cell;
+}
+
+function parseLedgerAmount(value: any): Decimal | null {
+  if (value === undefined || value === null || value === '') return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const cleaned = str.replace(/,/g, '').replace(/[^\d.-]/g, '');
+  if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
+  try {
+    const dec = new Decimal(cleaned);
+    if (dec.isNaN()) return null;
+    return dec;
+  } catch {
+    return null;
+  }
+}
+
 function parseFlexibleDate(dateStr: string | undefined): Date {
   if (!dateStr) return new Date();
   const trimmed = dateStr.trim();
@@ -352,6 +480,224 @@ function deriveInstrumentMeta(symbol: string, segment?: string): { assetClass: a
   }
 
   return { assetClass: 'EQUITY', marketSegment: 'NSE_EQ' };
+}
+
+type LedgerRowType = 'DEPOSIT' | 'WITHDRAWAL' | 'ADJUSTMENT' | 'IGNORE';
+
+interface LedgerClassification {
+  type: LedgerRowType;
+  amount: Decimal;
+  reason: string;
+}
+
+function parseLedgerDate(dateStr: string | undefined): Date | null {
+  if (!dateStr) return null;
+  const trimmed = String(dateStr).trim();
+  if (!trimmed) return null;
+
+  if (/^\d{10,13}$/.test(trimmed)) {
+    const epoch = Number(trimmed);
+    const parsed = new Date(trimmed.length === 10 ? epoch * 1000 : epoch);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (/Z$|[+-]\d{2}:?\d{2}$/i.test(trimmed)) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  if (/[a-zA-Z]{3,}/.test(trimmed) && !/^\d+$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const isPM = /\bpm\b/i.test(trimmed);
+  const isAM = /\bam\b/i.test(trimmed);
+  const cleaned = trimmed.replace(/,/g, ' ').trim();
+  const parts = cleaned.split(/[\s\-\/:T]+/).filter(Boolean);
+
+  if (parts.length >= 3) {
+    let day = 1;
+    let month = 0;
+    let year = 2026;
+
+    if (parts[0].length === 4) {
+      year = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      day = parseInt(parts[2], 10);
+    } else if (isNaN(parseInt(parts[1], 10))) {
+      day = parseInt(parts[0], 10);
+      const mStr = parts[1].toLowerCase();
+      const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const foundMonth = months.findIndex((m) => mStr.startsWith(m));
+      if (foundMonth === -1) return null;
+      month = foundMonth;
+      year = parseInt(parts[2], 10);
+    } else {
+      day = parseInt(parts[0], 10);
+      month = parseInt(parts[1], 10) - 1;
+      year = parseInt(parts[2], 10);
+    }
+
+    let hours = parts[3] ? parseInt(parts[3], 10) : 0;
+    const mins = parts[4] ? parseInt(parts[4], 10) : 0;
+    const secs = parts[5] && !isNaN(parseInt(parts[5], 10)) ? parseInt(parts[5], 10) : 0;
+
+    if (isPM && hours < 12) {
+      hours += 12;
+    } else if (isAM && hours === 12) {
+      hours = 0;
+    }
+
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const parsed = new Date(Date.UTC(year, month, day, hours, mins, secs) - istOffsetMs);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
+function classifyLedgerRow(input: {
+  externalType: string;
+  description: string;
+  credit: Decimal | null;
+  debit: Decimal | null;
+}): LedgerClassification {
+  const externalType = (input.externalType || '').toUpperCase().trim();
+  const description = input.description || '';
+  const credit = input.credit && !input.credit.isZero() ? input.credit.abs() : null;
+  const debit = input.debit && !input.debit.isZero() ? input.debit.abs() : null;
+
+  const isDepositType =
+    externalType === '1' ||
+    /\bBR\b/.test(externalType) ||
+    /FUNDS?\s+ADDED|DEPOSIT|PAYIN|PAY-IN|MONEY\s+ADDED/.test(externalType);
+  const isWithdrawalType =
+    externalType === '2' ||
+    /\bBP\b/.test(externalType) ||
+    /FUNDS?\s+WITHDRAWN|WITHDRAWAL|PAYOUT|PAY-OUT|MONEY\s+WITHDRAWN/.test(externalType);
+  const isTradingType =
+    externalType === '3' ||
+    externalType === '5' ||
+    /\bSJ\b|\bMTF\b|TRADING/.test(externalType);
+  const isAdjustmentType =
+    externalType === '4' ||
+    /\bJV\b|NON.?TRADING|CHARGE|BROKERAGE|GST|STT|SEBI|STAMP|DPC|INTEREST|ADJUSTMENT/.test(
+      `${externalType} ${description}`
+    );
+
+  const signedAmount = (credit || new Decimal(0)).minus(debit || new Decimal(0));
+
+  if (isDepositType) {
+    if (credit) return { type: 'DEPOSIT', amount: credit, reason: 'Funds added' };
+    return { type: 'IGNORE', amount: new Decimal(0), reason: 'Funds-added row has no credit amount' };
+  }
+
+  if (isWithdrawalType) {
+    if (debit) return { type: 'WITHDRAWAL', amount: debit, reason: 'Funds withdrawn' };
+    return { type: 'IGNORE', amount: new Decimal(0), reason: 'Withdrawal row has no debit amount' };
+  }
+
+  if (isTradingType) {
+    return { type: 'IGNORE', amount: new Decimal(0), reason: 'Trading ledger row defaults to ignore' };
+  }
+
+  if (isAdjustmentType) {
+    if (!signedAmount.isZero()) {
+      return { type: 'ADJUSTMENT', amount: signedAmount, reason: 'Non-trading adjustment' };
+    }
+    return { type: 'IGNORE', amount: new Decimal(0), reason: 'Zero-value adjustment' };
+  }
+
+  if (/FUNDS?\s+ADDED|DEPOSIT|PAYIN|PAY-IN|MONEY\s+ADDED/i.test(description) && credit) {
+    return { type: 'DEPOSIT', amount: credit, reason: 'Description indicates funds added' };
+  }
+  if (/FUNDS?\s+WITHDRAWN|WITHDRAWAL|PAYOUT|PAY-OUT|MONEY\s+WITHDRAWN/i.test(description) && debit) {
+    return { type: 'WITHDRAWAL', amount: debit, reason: 'Description indicates funds withdrawn' };
+  }
+  if (!signedAmount.isZero()) {
+    return {
+      type: 'ADJUSTMENT',
+      amount: signedAmount,
+      reason: 'Unrecognized ledger row treated as adjustment and requires review',
+    };
+  }
+
+  return { type: 'IGNORE', amount: new Decimal(0), reason: 'No usable amount or transaction type' };
+}
+
+function buildLedgerIdempotencyKey(input: {
+  accountId: string;
+  type: Exclude<LedgerRowType, 'IGNORE'>;
+  date: Date;
+  amount: Decimal;
+  description: string;
+}): string {
+  const normalizedDescription = (input.description || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+  return crypto
+    .createHash('sha256')
+    .update(
+      [
+        input.accountId,
+        'FYERS_LEDGER',
+        input.type,
+        input.date.toISOString(),
+        input.amount.toFixed(2),
+        normalizedDescription,
+      ].join('|')
+    )
+    .digest('hex');
+}
+
+function normalizeLedgerRecord(
+  record: Record<string, string>,
+  mapping: Record<string, string>,
+  rowIndex: number
+): {
+  rowIndex: number;
+  rawDate: string;
+  date: string | null;
+  dateISO: string | null;
+  type: LedgerRowType;
+  amount: number;
+  amountString: string;
+  description: string;
+  runningBalance: number | null;
+  externalType: string;
+  reason: string;
+  error?: string;
+} {
+  const rawDate = mapping.date ? String(record[mapping.date] || '').trim() : '';
+  const date = parseLedgerDate(rawDate);
+  const credit = parseLedgerAmount(mapping.credit ? record[mapping.credit] : undefined);
+  const debit = parseLedgerAmount(mapping.debit ? record[mapping.debit] : undefined);
+  const runningBalance = parseLedgerAmount(mapping.balance ? record[mapping.balance] : undefined);
+  const externalType = mapping.transactionType
+    ? sanitizeCsvCell(String(record[mapping.transactionType] || ''))
+    : '';
+  const description = mapping.description
+    ? sanitizeCsvCell(String(record[mapping.description] || ''))
+    : '';
+  const classification = classifyLedgerRow({ externalType, description, credit, debit });
+
+  return {
+    rowIndex,
+    rawDate,
+    date: date ? date.toISOString() : null,
+    dateISO: date ? date.toISOString() : null,
+    type: classification.type,
+    amount: classification.amount.toNumber(),
+    amountString: classification.amount.toFixed(2),
+    description,
+    runningBalance: runningBalance ? runningBalance.toNumber() : null,
+    externalType,
+    reason: classification.reason,
+    error: date ? undefined : 'Invalid or missing date',
+  };
 }
 
 export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -465,10 +811,31 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
     }
 
+    const importKind: BrokerImportKind =
+      req.query?.importKind === 'CASH_FLOWS' || req.body?.importKind === 'CASH_FLOWS'
+        ? 'CASH_FLOWS'
+        : 'TRADES';
+    const accountId =
+      typeof req.query?.accountId === 'string'
+        ? req.query.accountId
+        : typeof req.body?.accountId === 'string'
+          ? req.body.accountId
+          : undefined;
+
+    if (accountId && !mongoose.isValidObjectId(accountId)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_ACCOUNT', message: 'Invalid accountId' },
+      });
+    }
+
     let headers: string[] = [];
     let records: Record<string, string>[] = [];
     try {
-      const extracted = extractTableFromCsv(csvContent);
+      const extracted = extractTableFromCsv(
+        csvContent,
+        importKind === 'CASH_FLOWS' ? LEDGER_HEADER_KEYWORDS : TRADE_HEADER_KEYWORDS
+      );
       headers = extracted.headers;
       records = extracted.records;
     } catch (err: any) {
@@ -485,6 +852,107 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       });
     }
 
+    if (importKind === 'CASH_FLOWS') {
+      const requestedBroker =
+        typeof req.query?.broker === 'string'
+          ? req.query.broker
+          : typeof req.body?.broker === 'string'
+            ? req.body.broker
+            : 'FYERS';
+      const ledgerBroker = requestedBroker.toUpperCase() as SupportedImportBroker;
+
+      const savedLedgerMapping = await BrokerImportMapping.findOne({
+        userId: req.user!.id,
+        broker: ledgerBroker,
+        importKind: 'CASH_FLOWS',
+      });
+
+      const ledgerMapping =
+        savedLedgerMapping?.mapping instanceof Map
+          ? Object.fromEntries(savedLedgerMapping.mapping)
+          : (savedLedgerMapping?.mapping as Record<string, string> | undefined) ||
+            getDefaultLedgerMapping(headers);
+
+      const normalizedRows = records.map((record, index) =>
+        normalizeLedgerRecord(record, ledgerMapping, index + 1)
+      );
+
+      let existingKeys = new Set<string>();
+      if (accountId) {
+        const candidateKeys = normalizedRows
+          .filter((row) => row.type !== 'IGNORE' && row.dateISO)
+          .map((row) =>
+            buildLedgerIdempotencyKey({
+              accountId,
+              type: row.type as Exclude<LedgerRowType, 'IGNORE'>,
+              date: new Date(row.dateISO as string),
+              amount: new Decimal(row.amountString),
+              description: row.description,
+            })
+          );
+
+        if (candidateKeys.length > 0) {
+          const existing = await AccountTransaction.find({
+            userId: req.user!.id,
+            accountId,
+            idempotencyKey: { $in: candidateKeys },
+          }).select('idempotencyKey');
+          existingKeys = new Set(existing.map((tx) => tx.idempotencyKey).filter(Boolean) as string[]);
+        }
+      }
+
+      const rowsWithDuplicates = normalizedRows.map((row) => {
+        if (!accountId || row.type === 'IGNORE' || !row.dateISO) {
+          return { ...row, duplicate: false };
+        }
+        const key = buildLedgerIdempotencyKey({
+          accountId,
+          type: row.type as Exclude<LedgerRowType, 'IGNORE'>,
+          date: new Date(row.dateISO),
+          amount: new Decimal(row.amountString),
+          description: row.description,
+        });
+        return { ...row, duplicate: existingKeys.has(key) };
+      });
+
+      const summary = rowsWithDuplicates.reduce(
+        (acc, row) => {
+          if (row.duplicate) acc.duplicateCount += 1;
+          if (row.error) acc.errorCount += 1;
+          if (row.type === 'DEPOSIT') acc.depositCount += 1;
+          if (row.type === 'WITHDRAWAL') acc.withdrawalCount += 1;
+          if (row.type === 'ADJUSTMENT') acc.adjustmentCount += 1;
+          if (row.type === 'IGNORE') acc.ignoredCount += 1;
+          return acc;
+        },
+        {
+          depositCount: 0,
+          withdrawalCount: 0,
+          adjustmentCount: 0,
+          ignoredCount: 0,
+          duplicateCount: 0,
+          errorCount: 0,
+        }
+      );
+
+      return reply.send({
+        success: true,
+        data: {
+          importKind: 'CASH_FLOWS',
+          totalRows: records.length,
+          headers,
+          detectedBroker: ledgerBroker,
+          availableBrokers: ['FYERS', 'ZERODHA', 'ANGEL_ONE', 'UPSTOX', 'CUSTOM'],
+          suggestedMapping: ledgerMapping,
+          hasSavedMapping: Boolean(savedLedgerMapping),
+          requiresAccountForDuplicateCheck: !accountId,
+          summary,
+          previewRows: rowsWithDuplicates.slice(0, 10),
+          allRows: rowsWithDuplicates,
+        },
+      });
+    }
+
     const detectedBroker = detectBrokerFromHeaders(headers);
 
     // Check if user has a saved custom mapping for this broker
@@ -492,6 +960,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     const savedMappingDoc = await BrokerImportMapping.findOne({
       userId: req.user!.id,
       broker: detectedBroker,
+      importKind: 'TRADES',
     });
 
     if (savedMappingDoc && savedMappingDoc.mapping) {
@@ -514,6 +983,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     return reply.send({
       success: true,
       data: {
+        importKind: 'TRADES',
         totalRows: records.length,
         headers,
         detectedBroker,
@@ -535,6 +1005,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       data: mappings.map((m) => ({
         id: m._id,
         broker: m.broker,
+        importKind: m.importKind,
         name: m.name,
         mapping: m.mapping instanceof Map ? Object.fromEntries(m.mapping) : m.mapping,
         createdAt: m.createdAt,
@@ -546,7 +1017,8 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   // Broker Mappings: Get by Broker
   app.get('/mappings/:broker', async (req: any, reply) => {
     const broker = req.params.broker.toUpperCase();
-    const mapping = await BrokerImportMapping.findOne({ userId: req.user!.id, broker });
+    const importKind = (req.query?.importKind === 'CASH_FLOWS' ? 'CASH_FLOWS' : 'TRADES') as BrokerImportKind;
+    const mapping = await BrokerImportMapping.findOne({ userId: req.user!.id, broker, importKind });
     if (!mapping) {
       return reply.status(404).send({
         success: false,
@@ -558,6 +1030,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       data: {
         id: mapping._id,
         broker: mapping.broker,
+        importKind: mapping.importKind,
         name: mapping.name,
         mapping: mapping.mapping instanceof Map ? Object.fromEntries(mapping.mapping) : mapping.mapping,
       },
@@ -566,7 +1039,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
   // Broker Mappings: Upsert
   app.post('/mappings', async (req: any, reply) => {
-    const { broker, name, mapping } = req.body || {};
+    const { broker, name, mapping, importKind } = req.body || {};
     if (!broker || !mapping) {
       return reply.status(400).send({
         success: false,
@@ -575,11 +1048,13 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     }
 
     const brokerUpper = broker.toUpperCase() as SupportedImportBroker;
+    const kind: BrokerImportKind = importKind === 'CASH_FLOWS' ? 'CASH_FLOWS' : 'TRADES';
     const doc = await BrokerImportMapping.findOneAndUpdate(
-      { userId: req.user!.id, broker: brokerUpper },
+      { userId: req.user!.id, broker: brokerUpper, importKind: kind },
       {
-        name: name || `${brokerUpper} Mapping`,
+        name: name || `${brokerUpper} ${kind === 'CASH_FLOWS' ? 'Ledger' : 'Tradebook'} Mapping`,
         mapping,
+        importKind: kind,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -589,6 +1064,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       data: {
         id: doc._id,
         broker: doc.broker,
+        importKind: doc.importKind,
         name: doc.name,
         mapping: doc.mapping instanceof Map ? Object.fromEntries(doc.mapping) : doc.mapping,
       },
@@ -598,8 +1074,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   // CSV Import Commit (Supports FIFO Round-Trip Grouping, Auto-Charges, and Batch Tracking)
   app.post('/import/commit', async (req: any, reply) => {
     const { accountId, rows, mapping, broker, saveMapping } = req.body || {};
+    const importKind: BrokerImportKind =
+      req.body?.importKind === 'CASH_FLOWS' ? 'CASH_FLOWS' : 'TRADES';
 
-    if (!accountId || !Array.isArray(rows) || !mapping) {
+    if (!accountId || !Array.isArray(rows) || (importKind === 'TRADES' && !mapping)) {
       return reply.status(400).send({
         success: false,
         error: { code: 'INVALID_REQUEST', message: 'accountId, rows array, and mapping required' },
@@ -614,12 +1092,137 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       });
     }
 
-    // Optional: save or update broker mapping for user
+    if (importKind === 'CASH_FLOWS') {
+      if (saveMapping && broker && mapping) {
+        try {
+          const brokerUpper = broker.toUpperCase() as SupportedImportBroker;
+          await BrokerImportMapping.findOneAndUpdate(
+            { userId: req.user!.id, broker: brokerUpper, importKind: 'CASH_FLOWS' },
+            { name: `${brokerUpper} Ledger Mapping`, mapping, importKind: 'CASH_FLOWS' },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
+        } catch (err: any) {
+          req.log.warn(`Failed to auto-save ledger mapping: ${err.message}`);
+        }
+      }
+
+      const importBatchId = `ledger_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      let importedCount = 0;
+      let duplicateCount = 0;
+      const errors: Array<{ row: number; message: string }> = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] || {};
+        const rowNumber = Number(row.rowIndex) || i + 1;
+
+        if (row.action === 'IGNORE' || row.type === 'IGNORE') {
+          continue;
+        }
+
+        const type = String(row.type || '').toUpperCase() as LedgerRowType;
+        if (!['DEPOSIT', 'WITHDRAWAL', 'ADJUSTMENT'].includes(type)) {
+          errors.push({ row: rowNumber, message: `Unsupported transaction type "${row.type}"` });
+          continue;
+        }
+
+        const date = parseLedgerDate(row.dateISO || row.date || row.rawDate);
+        if (!date) {
+          errors.push({ row: rowNumber, message: 'Invalid or missing transaction date' });
+          continue;
+        }
+
+        let amount: Decimal;
+        try {
+          amount = new Decimal(String(row.amountString ?? row.amount ?? ''));
+        } catch {
+          errors.push({ row: rowNumber, message: 'Invalid transaction amount' });
+          continue;
+        }
+
+        if (!amount.isFinite() || amount.isZero()) {
+          errors.push({ row: rowNumber, message: 'Transaction amount must not be zero' });
+          continue;
+        }
+
+        if (type !== 'ADJUSTMENT' && amount.lt(0)) {
+          errors.push({ row: rowNumber, message: 'Deposit and withdrawal amounts must be positive' });
+          continue;
+        }
+
+        const normalizedAmount =
+          type === 'ADJUSTMENT' ? amount : amount.abs();
+        const description = sanitizeCsvCell(String(row.description || ''));
+        const externalType = sanitizeCsvCell(String(row.externalType || ''));
+        const idempotencyKey = buildLedgerIdempotencyKey({
+          accountId: account._id.toString(),
+          type: type as Exclude<LedgerRowType, 'IGNORE'>,
+          date,
+          amount: normalizedAmount,
+          description,
+        });
+
+        const existing = await AccountTransaction.findOne({
+          userId: req.user!.id,
+          accountId: account._id,
+          idempotencyKey,
+        }).select('_id');
+
+        if (existing) {
+          duplicateCount++;
+          continue;
+        }
+
+        try {
+          await AccountTransaction.create({
+            userId: req.user!.id,
+            accountId: account._id,
+            type: type as TransactionType,
+            amount: mongoose.Types.Decimal128.fromString(normalizedAmount.toFixed(2)),
+            currency: account.baseCurrency,
+            date,
+            notes:
+              description ||
+              `FYERS ledger import${externalType ? ` (${externalType})` : ''}`,
+            source: 'BROKER_LEDGER_IMPORT' as AccountTransactionSource,
+            status: 'CONFIRMED',
+            idempotencyKey,
+            importBatchId,
+          });
+          importedCount++;
+        } catch (err: any) {
+          if (err?.code === 11000) {
+            duplicateCount++;
+          } else {
+            errors.push({ row: rowNumber, message: err.message || 'Failed to save transaction' });
+          }
+        }
+      }
+
+      const balanceSummary =
+        importedCount > 0
+          ? await AccountService.recalculateAccountBalances(account._id, req.user!.id)
+          : null;
+
+      return reply.send({
+        success: true,
+        data: {
+          importKind: 'CASH_FLOWS',
+          batchId: importBatchId,
+          importedCount,
+          duplicateCount,
+          errorCount: errors.length,
+          errors,
+          balanceSummary,
+        },
+      });
+    }
+
+      // Optional: save or update broker mapping for user
     if (saveMapping && broker) {
       try {
         const brokerUpper = broker.toUpperCase() as SupportedImportBroker;
         await BrokerImportMapping.findOneAndUpdate(
-          { userId: req.user!.id, broker: brokerUpper },
+          { userId: req.user!.id, broker: brokerUpper, importKind: 'TRADES' },
           { name: `${brokerUpper} Tradebook Mapping`, mapping },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
@@ -1194,24 +1797,45 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     let { batchId } = req.body || {};
 
     if (!batchId) {
-      // Find the most recent import batch for this user
+      // Find the most recent import batch for this user (trades or ledger)
       const latestTrade = await Trade.findOne({
         userId: req.user!.id,
         importBatchId: { $exists: true, $ne: null },
       }).sort({ createdAt: -1 });
 
-      if (!latestTrade || !latestTrade.importBatchId) {
+      const latestLedgerTx = await AccountTransaction.findOne({
+        userId: req.user!.id,
+        importBatchId: { $exists: true, $ne: null },
+        source: 'BROKER_LEDGER_IMPORT',
+      }).sort({ createdAt: -1 });
+
+      let candidateBatchId: string | undefined;
+      if (latestTrade?.importBatchId && latestLedgerTx?.importBatchId) {
+        const tradeTime = latestTrade.createdAt?.getTime() || 0;
+        const ledgerTime = latestLedgerTx.createdAt?.getTime() || 0;
+        candidateBatchId = ledgerTime >= tradeTime ? latestLedgerTx.importBatchId : latestTrade.importBatchId;
+      } else {
+        candidateBatchId = latestTrade?.importBatchId || latestLedgerTx?.importBatchId;
+      }
+
+      if (!candidateBatchId) {
         return reply.status(404).send({
           success: false,
           error: { code: 'NO_IMPORT_BATCH', message: 'No import batch found to undo' },
         });
       }
-      batchId = latestTrade.importBatchId;
+      batchId = candidateBatchId;
     }
 
     // Find all trades for this batch
     const tradesToUndo = await Trade.find({ userId: req.user!.id, importBatchId: batchId });
-    if (tradesToUndo.length === 0) {
+    const ledgerTxsToUndo = await AccountTransaction.find({
+      userId: req.user!.id,
+      importBatchId: batchId,
+      source: 'BROKER_LEDGER_IMPORT',
+    });
+
+    if (tradesToUndo.length === 0 && ledgerTxsToUndo.length === 0) {
       return reply.status(404).send({
         success: false,
         error: { code: 'BATCH_NOT_FOUND', message: `Import batch "${batchId}" not found or already deleted` },
@@ -1219,10 +1843,20 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     }
 
     // Collect affected accounts
-    const affectedAccountIds = [...new Set(tradesToUndo.map((t) => t.accountId.toString()))];
+    const affectedAccountIds = [
+      ...new Set([
+        ...tradesToUndo.map((t) => t.accountId.toString()),
+        ...ledgerTxsToUndo.map((t) => t.accountId.toString()),
+      ]),
+    ];
 
     // Delete the batch
-    const deleteRes = await Trade.deleteMany({ userId: req.user!.id, importBatchId: batchId });
+    const tradeDeleteRes = await Trade.deleteMany({ userId: req.user!.id, importBatchId: batchId });
+    const ledgerDeleteRes = await AccountTransaction.deleteMany({
+      userId: req.user!.id,
+      importBatchId: batchId,
+      source: 'BROKER_LEDGER_IMPORT',
+    });
 
     // Reconcile all affected accounts
     for (const accId of affectedAccountIds) {
@@ -1233,7 +1867,9 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       success: true,
       data: {
         batchId,
-        deletedCount: deleteRes.deletedCount,
+        deletedCount: tradeDeleteRes.deletedCount + ledgerDeleteRes.deletedCount,
+        tradeDeletedCount: tradeDeleteRes.deletedCount,
+        ledgerDeletedCount: ledgerDeleteRes.deletedCount,
         affectedAccounts: affectedAccountIds,
       },
     });
@@ -1241,37 +1877,91 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
   // List Recent Import Batches
   app.get('/import/batches', async (req: any, reply) => {
-    const batches = await Trade.aggregate([
-      {
-        $match: {
-          userId: new mongoose.Types.ObjectId(req.user!.id),
-          importBatchId: { $exists: true, $ne: null },
+    const userObjId = new mongoose.Types.ObjectId(req.user!.id);
+
+    const [tradeBatches, ledgerBatches] = await Promise.all([
+      Trade.aggregate([
+        {
+          $match: {
+            userId: userObjId,
+            importBatchId: { $exists: true, $ne: null },
+          },
         },
-      },
-      {
-        $group: {
-          _id: '$importBatchId',
-          tradeCount: { $sum: 1 },
-          accountId: { $first: '$accountId' },
-          createdAt: { $first: '$createdAt' },
-          symbols: { $addToSet: '$symbol' },
-          totalNetPnL: { $sum: '$calculated.netPnL' },
+        {
+          $group: {
+            _id: '$importBatchId',
+            tradeCount: { $sum: 1 },
+            accountId: { $first: '$accountId' },
+            createdAt: { $first: '$createdAt' },
+            symbols: { $addToSet: '$symbol' },
+            totalNetPnL: { $sum: '$calculated.netPnL' },
+            kind: { $first: 'TRADES' },
+          },
         },
-      },
-      { $sort: { createdAt: -1 } },
-      { $limit: 10 },
+      ]),
+      AccountTransaction.aggregate([
+        {
+          $match: {
+            userId: userObjId,
+            importBatchId: { $exists: true, $ne: null },
+            source: 'BROKER_LEDGER_IMPORT',
+          },
+        },
+        {
+          $group: {
+            _id: '$importBatchId',
+            ledgerCount: { $sum: 1 },
+            accountId: { $first: '$accountId' },
+            createdAt: { $first: '$createdAt' },
+            totalAmount: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$type', 'WITHDRAWAL'] },
+                  { $multiply: ['$amount', -1] },
+                  '$amount',
+                ],
+              },
+            },
+            kind: { $first: 'CASH_FLOWS' },
+          },
+        },
+      ]),
     ]);
 
-    return reply.send({
-      success: true,
-      data: batches.map((b) => ({
+    const combined = [
+      ...tradeBatches.map((b) => ({
         batchId: b._id,
+        importKind: 'TRADES' as const,
         tradeCount: b.tradeCount,
+        ledgerCount: 0,
         accountId: b.accountId,
         createdAt: b.createdAt,
         symbols: b.symbols,
         totalNetPnL: b.totalNetPnL,
+        totalAmount: undefined,
       })),
+      ...ledgerBatches.map((b) => ({
+        batchId: b._id,
+        importKind: 'CASH_FLOWS' as const,
+        tradeCount: 0,
+        ledgerCount: b.ledgerCount,
+        accountId: b.accountId,
+        createdAt: b.createdAt,
+        symbols: [],
+        totalNetPnL: undefined,
+        totalAmount: b.totalAmount != null ? Number(b.totalAmount.toString()) : 0,
+      })),
+    ]
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      })
+      .slice(0, 20);
+
+    return reply.send({
+      success: true,
+      data: combined,
     });
   });
 };

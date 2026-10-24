@@ -118,16 +118,7 @@ Chart screenshot uploads are guarded against malicious file execution in [`apps/
 
 ## 7. Secrets Management & Log Redaction
 
-1. **Environment Variables:** All secrets (`SESSION_SECRET`, `MONGODB_URI`, R2 storage keys) are supplied via environment variables (`.env`).
-2. **Pino Structured Log Redaction:** In [`apps/api/src/server.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/server.ts), sensitive tokens, credentials, and headers are redacted automatically:
-   ```typescript
-   redact: [
-     'req.headers.cookie',
-     'req.headers.authorization',
-     'req.body.password',
-     'req.body.token',
-     'req.body.tokenHash',
-     'req.body.cookie'
-   ]
-   ```
-3. **Sanitized Error Responses:** The Fastify central error handler catches unhandled exceptions and returns a generic message (`"An unexpected internal error occurred. Your trading data is secure."`), preventing stack traces or database connection strings from leaking to the client in production.
+1. **Environment Variables:** All secrets (`SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, `MONGODB_URI`, R2 storage keys) are supplied via environment variables (`.env`). Production startup fails if the session or broker-encryption keys are missing, default, or shorter than 32 characters.
+2. **Broker Secret Encryption:** FYERS app secrets, access tokens, and refresh tokens are encrypted at rest with AES-256-GCM using a key derived from `TOKEN_ENCRYPTION_KEY`. Encrypted values use an `enc:v1:iv:tag:ciphertext` envelope. `BrokerIntegration` serialization strips secrets/tokens, and OAuth state values are stored only as SHA-256 hashes with a 10-minute expiry.
+3. **Pino Structured Log Redaction:** In [`apps/api/src/server.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/server.ts), sensitive tokens, credentials, and headers are redacted automatically, including `req.headers.cookie`, `req.headers.authorization`, `req.body.password`, `req.body.secretKey`, `req.body.appId`, `accessToken`, `refreshToken`, `req.query.auth_code`, and `req.query.code`.
+4. **Sanitized Error Responses:** The Fastify central error handler catches unhandled exceptions and returns a generic message (`"An unexpected internal error occurred. Your trading data is secure."`), preventing stack traces or database connection strings from leaking to the client in production.

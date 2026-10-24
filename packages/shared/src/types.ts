@@ -44,6 +44,12 @@ export type AccountStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type TransactionType = 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER' | 'ADJUSTMENT';
 
+export type AccountTransactionSource = 'MANUAL' | 'BROKER_LEDGER_IMPORT' | 'BROKER_SYNC';
+
+export type AccountTransactionStatus = 'CONFIRMED' | 'PENDING_REVIEW' | 'REJECTED';
+
+export type BrokerImportKind = 'TRADES' | 'CASH_FLOWS';
+
 export type Emotion =
   // Positive
   | 'CALM'
@@ -205,6 +211,20 @@ export interface ITradingAccount {
   realizedPnL: number;
   totalDeposits: number;
   totalWithdrawals: number;
+  totalAdjustments?: number;
+  liveBalance?: {
+    totalBalance: number;
+    clearBalance: number;
+    availableBalance: number;
+    realizedPnL: number;
+    utilizedAmount: number;
+    fetchedAt: string;
+  } | null;
+  brokerLink?: {
+    broker: 'FYERS';
+    clientId: string;
+    linkedAt: string;
+  };
   status: AccountStatus;
   riskRules?: {
     maxDailyLoss?: number;
@@ -225,7 +245,12 @@ export interface IAccountTransaction {
   currency: string;
   date: string;
   notes?: string;
+  source: AccountTransactionSource;
+  status: AccountTransactionStatus;
+  idempotencyKey?: string;
+  importBatchId?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type InstrumentSource = 'AUTO' | 'CUSTOM';
@@ -599,7 +624,46 @@ export interface IRiskCalculationResult {
   warnings: string[];
 }
 
-// Future FYERS Broker Integration Architecture Abstractions
+// FYERS Broker Integration Architecture Abstractions
+export interface IBrokerFundLimit {
+  id?: number;
+  title: string;
+  equityAmount: number;
+  commodityAmount: number;
+}
+
+export interface IBrokerFundsSnapshot {
+  broker: 'FYERS';
+  fetchedAt: string;
+  totalBalance: number;
+  clearBalance: number;
+  availableBalance: number;
+  realizedPnL: number;
+  utilizedAmount: number;
+  fundLimits: IBrokerFundLimit[];
+}
+
+export interface IBrokerAuthTokens {
+  accessToken: string;
+  refreshToken?: string;
+  accessTokenExpiresAt: string;
+  refreshTokenExpiresAt?: string;
+}
+
+export interface IBrokerCredentials {
+  appId: string;
+  secretKey: string;
+  pin?: string;
+}
+
+export interface IBrokerAdapter {
+  readonly broker: 'FYERS';
+  generateLoginUrl(state: string, redirectUri: string): string;
+  exchangeAuthCode(authCode: string, credentials: IBrokerCredentials): Promise<IBrokerAuthTokens>;
+  refreshAccessToken?(refreshToken: string, credentials: IBrokerCredentials): Promise<IBrokerAuthTokens>;
+  fetchFunds(accessToken: string, credentials: Pick<IBrokerCredentials, 'appId'>): Promise<IBrokerFundsSnapshot>;
+}
+
 export interface INormalizedExecution {
   broker: 'FYERS';
   brokerTradeId: string;
@@ -641,6 +705,7 @@ export interface IBrokerImportMapping {
   id: string;
   userId: string;
   broker: SupportedImportBroker;
+  importKind: BrokerImportKind;
   name: string;
   mapping: Record<string, string>;
   createdAt: string;

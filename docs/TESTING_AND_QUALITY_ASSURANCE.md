@@ -9,13 +9,13 @@ This document details the test framework, test suite organization, assertion cov
 SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 - **Test Framework:** Vitest native TypeScript test runner.
 - **API Injection Testing:** Fastify native `app.inject()` testing enabling rapid in-process HTTP integration tests without network port collisions.
-- **Database Isolation:** Vitest spins up dedicated, ephemeral in-memory MongoDB instances (`mongodb-memory-server` with `tradevault-test`), guaranteeing complete test isolation without polluting development databases.
+- **Database Isolation:** Vitest spins up an ephemeral in-memory MongoDB replica set (`mongodb-memory-server`), initializes model indexes, and connects through `MONGODB_URI` before tests run. This supports transactions without ever touching the configured Atlas database.
 
 ---
 
-## 2. Test Suite Inventory (301 Passing Tests)
+## 2. Test Suite Inventory (319 Passing Tests)
 
-The repository contains **301 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **319 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
 ### A. Financial Engine Unit Tests (135 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
@@ -36,7 +36,7 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `tilt.test.ts` | 8 tests | Tilt / emotional state detection heuristics. |
 | `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets (custom keys), UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring against user-defined variants. |
 
-### B. Backend API & Integration Tests (166 Tests)
+### B. Backend API & Integration Tests (184 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -51,6 +51,9 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 | `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, 15 strategy playbooks (including parent strategies with child variants and classified demo trades), idempotency verification (reseeding cleanly replaces previous demo data), account balance consistency, seed validation engine. |
 | `connection.test.ts` | 8 tests | Cloud-only Atlas URI validation, masking credentials in logs, rejection of local/memory addresses, fail-fast behavior. |
 | `storage.test.ts` | 13 tests | Cloudflare R2 bucket connection, signed uploads, streaming download, key formatting, object deletion. |
+| `broker-sync.test.ts` | 11 tests | FYERS OAuth state, encrypted token persistence, account linking, funds snapshot persistence, drift tolerance, open-trade pause, pending adjustment creation, confirm/reject balance effects, and tenant isolation. |
+| `account-backfill.test.ts` | 2 tests | Dry-run vs live migration coverage for legacy mapping indexes, transaction `source`/`status`, plaintext broker-secret encryption, and authoritative account recalculation. |
+| `ledger-import.test.ts` | 5 tests | FYERS ledger classification, signed adjustments, duplicate idempotency, net-flow batch totals, account balance recalculation, and ledger batch undo. |
 | `regression.test.ts` | 38 tests | Exhaustive QA test matrix covering boundary scenarios: breakeven outcomes, soft delete account archival, bulk tagging, bulk deletion with multi-account reconciliation, CSV import duplicate prevention. |
 
 ---
@@ -58,14 +61,14 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 ## 3. Running Test Commands
 
 ```bash
-# 1. Run all test suites across the monorepo (301 tests)
+# 1. Run all test suites across the monorepo (319 tests)
 npm run test
 
 # 2. Run only financial engine mathematical unit tests (135 tests)
 npm run test:engine
 
-# 3. Run only backend API, attachment, session, and regression tests (166 tests)
-#    Tip: if MongoMemoryServer reports "Port already in use", run sequentially:
+# 3. Run only backend API, attachment, session, broker, ledger, and regression tests (184 tests)
+#    Tip: if the in-memory replica set reports a port conflict, run sequentially:
 #    npx vitest run --no-file-parallelism   (inside apps/api)
 npm run test:api
 

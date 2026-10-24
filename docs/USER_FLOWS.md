@@ -125,7 +125,7 @@ sequenceDiagram
     actor User as Trader
     participant UI as TradeDetailPage / TradeFormModal
     participant API as Attachment API (/api/v1/attachments)
-    participant Disk as Local Disk (./data/uploads)
+    participant R2 as Cloudflare R2 (Private Bucket)
     participant DB as MongoDB (Attachment / Trade)
 
     User->>UI: Drags & drops chart image (PNG/JPEG/WebP)
@@ -138,7 +138,7 @@ sequenceDiagram
         API-->>UI: 400 INVALID_IMAGE_SIGNATURE
     else Valid Image
         API->>API: Generates secure UUID filename: <uuid>.<ext>
-        API->>Disk: Streams file to ./data/uploads/<uuid>.<ext>
+        API->>R2: Uploads object via storage.save() (PutObjectCommand)
         API->>DB: Attachment.create({ tradeId, storedFilename, category, ... })
         API->>DB: Trade.updateOne({ $push: { screenshotIds: attachment._id } })
         API-->>UI: 201 Created { id, downloadUrl: '/api/v1/attachments/:id/download' }

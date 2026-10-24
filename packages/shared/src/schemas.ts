@@ -38,13 +38,57 @@ export const createAccountSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const accountTransactionSchema = z.object({
-  accountId: z.string().min(1, 'Account is required'),
-  type: z.enum(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER', 'ADJUSTMENT']),
-  amount: z.number().positive('Amount must be positive'),
-  currency: z.string().default('INR'),
+export const accountTransactionSourceSchema = z.enum([
+  'MANUAL',
+  'BROKER_LEDGER_IMPORT',
+  'BROKER_SYNC',
+]);
+
+export const accountTransactionStatusSchema = z.enum([
+  'CONFIRMED',
+  'PENDING_REVIEW',
+  'REJECTED',
+]);
+
+export const brokerImportKindSchema = z.enum(['TRADES', 'CASH_FLOWS']);
+
+export const accountTransactionSchema = z
+  .object({
+    accountId: z.string().min(1, 'Account is required'),
+    type: z.enum(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER', 'ADJUSTMENT']),
+    amount: z.number().refine((value) => value !== 0, 'Amount must not be zero'),
+    currency: z.string().default('INR'),
+    date: z.string().min(1, 'Date is required'),
+    notes: z.string().optional(),
+    source: accountTransactionSourceSchema.optional(),
+    status: accountTransactionStatusSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.type !== 'ADJUSTMENT' && value.amount <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['amount'],
+        message: 'Amount must be positive for deposits, withdrawals, and transfers',
+      });
+    }
+  });
+
+export const ledgerImportRowSchema = z.object({
   date: z.string().min(1, 'Date is required'),
-  notes: z.string().optional(),
+  type: z.enum(['DEPOSIT', 'WITHDRAWAL', 'ADJUSTMENT', 'IGNORE']),
+  amount: z.number().refine((value) => value !== 0, 'Amount must not be zero'),
+  description: z.string().optional(),
+  runningBalance: z.number().optional(),
+  externalType: z.string().optional(),
+});
+
+export const ledgerImportCommitSchema = z.object({
+  accountId: z.string().min(1, 'Account is required'),
+  importKind: z.literal('CASH_FLOWS'),
+  rows: z.array(ledgerImportRowSchema).min(1, 'At least one row is required'),
+  broker: z.string().optional(),
+  saveMapping: z.boolean().optional(),
+  mapping: z.record(z.string()).optional(),
 });
 
 export const createInstrumentSchema = z.object({

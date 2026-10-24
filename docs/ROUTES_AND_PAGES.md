@@ -226,18 +226,26 @@ This document details all routes and pages discovered in the **SetupMint** front
 - **Page Component:** [`AccountsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AccountsPage.tsx)
 - **Purpose:** Ledger management for multi-broker accounts, cash deposits, withdrawals, and balance reconciliation.
 - **Main Components:**
-  - Account Cards: Broker badge, Account Type, Initial Balance, Realized P&L, Deposits, Withdrawals, Current Balance, Status (Active/Archived).
+  - Account Cards: Broker badge, Account Type, Initial Balance, Realized P&L, Deposits, Withdrawals, Net Adjustments, Current Balance, FYERS link status, and Status (Active/Archived).
   - Add Account Modal: Name, broker, account number, account type, initial balance.
   - Record Transaction Modal: Deposit / Withdrawal, amount, date, notes.
+  - FYERS Link Modal: Link a FYERS account to the connected client.
+  - Reconciliation Modal: Latest funds snapshot, drift suggestion, and confirm/reject actions.
   - Reconcile Button: Triggers server-side authoritative balance recalculation from raw trade records.
-- **Available Actions:** Add account, edit account, archive/delete account, add transaction, reconcile balance.
+- **Available Actions:** Add account, edit account, archive/delete account, add transaction, link/unlink FYERS, sync funds, review pending adjustments, reconcile balance.
 - **API Calls:**
   - `GET /api/v1/accounts`
   - `POST /api/v1/accounts`
   - `POST /api/v1/accounts/:id/transactions`
+  - `POST /api/v1/accounts/:id/broker-link`
+  - `DELETE /api/v1/accounts/:id/broker-link`
+  - `POST /api/v1/accounts/:id/sync-funds`
+  - `GET /api/v1/accounts/:id/pending-transactions`
+  - `POST /api/v1/accounts/:id/transactions/:txId/confirm`
+  - `POST /api/v1/accounts/:id/transactions/:txId/reject`
   - `POST /api/v1/accounts/:id/reconcile`
   - `DELETE /api/v1/accounts/:id`
-- **Database Models:** `TradingAccount`, `AccountTransaction`, `Trade`.
+- **Database Models:** `TradingAccount`, `AccountTransaction`, `BrokerFundsSnapshot`, `Trade`.
 - **Status:** **IMPLEMENTED**.
 
 ---
@@ -265,15 +273,17 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 12. `/reports` — Reports & Data Portability Page
 - **Page Component:** [`ReportsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/ReportsPage.tsx)
-- **Purpose:** Data export (CSV/JSON), smart broker tradebook import with auto-detection (Zerodha, FYERS, Angel One, Upstox), FIFO round-trip matching, automated fee calculations, saved column mappings, and reversible batch imports.
+- **Purpose:** Data export (CSV/JSON), smart broker tradebook import, FYERS cash-ledger import, FIFO round-trip matching, automated fee calculations, saved column mappings, and reversible batch imports.
 - **Main Components:**
   - Export Section: Account filter, date range filter, "Export CSV" and "Export JSON" action buttons.
+  - Import Mode Toggle: Tradebook imports vs FYERS cash-ledger imports.
+  - Ledger Options: Target account, net-flow preview, deposit/withdrawal/adjustment counts, duplicate and error counts.
   - Smart Import Section: File dropzone, auto-detected broker badge (`ZERODHA`, `FYERS`, `ANGEL_ONE`, `UPSTOX`, `CUSTOM`), execution mode indicator (Raw Executions / FIFO vs Completed Trades), saved custom mapping chip, broker preset switcher, "Save as default mapping" checkbox.
   - Column Mapping Grid: 10 field selectors (`tradeDate`, `symbol`, `direction`, `price`, `quantity`, `entryPrice`, `exitPrice`, `orderId`, `tradeId`, `notes`).
   - Preview Table: Top 10 parsed CSV rows.
   - Import Results Banner: Displays unique `batchId`, imported trade count, duplicate skipped count, per-row error list, and an immediate "Undo Import" button.
-  - Recent Import Batches: Interactive table showing past import batches with trade counts, timestamps, symbols, net P&L, and an "Undo Batch" action with confirmation dialog.
-- **Available Actions:** Export CSV/JSON, upload tradebook CSV, map columns, commit import with FIFO grouping, undo import batch.
+  - Recent Import Batches: Interactive table showing trade and ledger batches with counts, timestamps, symbols, net amounts/P&L, and an "Undo Batch" action with confirmation dialog.
+- **Available Actions:** Export CSV/JSON, upload tradebook or ledger CSV, map columns, commit import, undo import batch.
 - **API Calls:**
   - `GET /api/v1/export/csv`
   - `GET /api/v1/export/json`
@@ -302,9 +312,9 @@ This document details all routes and pages discovered in the **SetupMint** front
     - Interactive "Save Risk Settings" persistence with feedback snackbars.
   - Appearance Card: Theme toggle (Dark, Light, System).
   - Security Card: Change password form (current password, new password min 8 characters).
-  - FYERS Broker Integration Card: App ID input, connection status (`DISABLED`/`IDLE`), link to documentation.
+  - FYERS Broker Integration Card: App ID and secret inputs, dynamic callback URL, connection status, saved-secret/token-expiry/funds-sync chips, and connect/disconnect/sync actions.
   - System Diagnostic Card: Database engine status, total trades count, total accounts, total attachments, privacy mode verification.
-- **Available Actions:** Save profile, update discipline & risk guardrails, switch theme, update password, save FYERS app ID, logout.
+- **Available Actions:** Save profile, update discipline & risk guardrails, switch theme, update password, save FYERS credentials, connect/disconnect FYERS, sync trades, logout.
 - **API Calls:**
   - `GET /api/v1/settings/profile`
   - `PUT /api/v1/settings/profile`
@@ -312,6 +322,9 @@ This document details all routes and pages discovered in the **SetupMint** front
   - `GET /api/v1/settings/system-status`
   - `GET /api/v1/integrations/fyers/status`
   - `POST /api/v1/integrations/fyers/config`
+  - `GET /api/v1/integrations/fyers/login-url`
+  - `POST /api/v1/integrations/fyers/sync`
+  - `POST /api/v1/integrations/fyers/disconnect`
   - `POST /api/v1/auth/logout`
 - **Database Models:** `User`, `BrokerIntegration`, `Trade`, `TradingAccount`, `Attachment`.
 - **Status:** **IMPLEMENTED**.

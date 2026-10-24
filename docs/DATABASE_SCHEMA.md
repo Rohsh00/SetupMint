@@ -6,7 +6,7 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 13 core Mongoose models:
+SetupMint defines 14 core Mongoose models:
 1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
 2. `Session` — Stateful authentication tokens with SHA-256 token hashing, sliding renewal, absolute cap, and exact MongoDB TTL expiration (`expireAfterSeconds: 0`).
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
@@ -15,11 +15,12 @@ SetupMint defines 13 core Mongoose models:
 6. `Instrument` — Multi-asset instrument catalog with contract multipliers and lot sizes.
 7. `Strategy` — Discretionary strategy playbooks with rules, invalidation, and checklists.
 8. `DailyJournal` — Daily session reviews, market biases, and reflection ratings.
-9. `Attachment` — Metadata for chart screenshots stored on local disk.
+9. `Attachment` — Metadata for chart screenshots stored in private Cloudflare R2 bucket.
 10. `BrokerIntegration` — Broker connectivity status and sync history logs.
-11. `BrokerImportMapping` — Saved per-broker CSV column mapping configurations with unique `userId+broker` indexing.
+11. `BrokerImportMapping` — Saved per-broker CSV column mappings, unique per `userId+broker+importKind`.
 12. `AuditLog` — General audit trail entries for administrative tracking.
 13. `TradeTemplate` — Market-based, rule-driven trade setup templates with dynamic SL/target formulas and trade performance aggregation.
+14. `BrokerFundsSnapshot` — Immutable FYERS fund-limit snapshots with exact `Decimal128` balances.
 
 ---
 
@@ -85,6 +86,11 @@ SetupMint defines 13 core Mongoose models:
 | `realizedPnL` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative net realized P&L |
 | `totalDeposits` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative cash deposits |
 | `totalWithdrawals`| `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative cash withdrawals |
+| `totalAdjustments` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | Cumulative signed adjustments |
+| `brokerLink` | `Object` | No | — | Embedded subdocument | Optional FYERS account link |
+| `brokerLink.broker` | `String` | No | — | Enum: `['FYERS']` | Linked broker |
+| `brokerLink.clientId` | `String` | No | — | Trim | FYERS client ID |
+| `brokerLink.linkedAt` | `Date` | No | — | — | Link timestamp |
 | `status` | `String` | No | `'ACTIVE'` | Enum: `['ACTIVE', 'ARCHIVED']`, Indexed | Lifecycle status |
 | `riskRules` | `Object` | No | — | Embedded subdocument | Account-level risk parameters |
 | `riskRules.maxDailyLoss` | `Number` | No | — | — | Max allowable daily loss limit |
@@ -111,9 +117,15 @@ SetupMint defines 13 core Mongoose models:
 | `currency` | `String` | No | `'INR'` | — | Transaction currency |
 | `date` | `Date` | **Yes** | — | Indexed | Effective date |
 | `notes` | `String` | No | — | — | User notes |
+| `source` | `String` | No | `'MANUAL'` | Enum: `['MANUAL', 'BROKER_LEDGER_IMPORT', 'BROKER_SYNC']` | Transaction origin |
+| `status` | `String` | No | `'CONFIRMED'` | Enum: `['CONFIRMED', 'PENDING_REVIEW', 'REJECTED']` | Reconciliation status; legacy missing values are treated as confirmed |
+| `idempotencyKey` | `String` | No | — | Partial unique index | SHA-256 duplicate-prevention key |
+| `importBatchId` | `String` | No | — | Indexed | Import batch identifier for undo |
 
 **Compound Indexes:**
 - `{ userId: 1, accountId: 1, date: -1 }`
+- `{ userId: 1, accountId: 1, idempotencyKey: 1 }` (Unique, partial on string keys)
+- `{ userId: 1, accountId: 1, importBatchId: 1 }`
 
 ---
 
@@ -409,12 +421,25 @@ Child variants are **fully user-defined**. The application contains no hardcoded
 | `broker` | `String` | **Yes** | `'FYERS'` | Enum: `['FYERS']` | Broker identifier |
 | `status` | `String` | No | `'DISABLED'` | Enum: `['DISABLED', 'IDLE', 'SYNCING', 'ERROR']` | Integration status |
 | `appId` | `String` | No | — | — | FYERS registered App ID |
-| `authCodeExpiresAt` | `Date` | No | — | — | Auth token expiration |
-| `lastSyncAt` | `Date` | No | — | — | Timestamp of last sync attempt |
-| `syncHistory` | `Array` | No | `[]` | Embedded subdocuments | Log of past sync runs |
+| `secretKey` | `String` | No | — | AES-256-GCM encrypted | FYERS app secret |
+| `accessToken` | `String` | No | — | AES-256-GCM encrypted | Daily FYERS access token |
+| `refreshToken` | `String` | No | — | AES-256-GCM encrypted | Stored refresh token (exchange not enabled) |
+| `clientId` | `String` | No | — | Trim | FYERS client ID |
+| `linkedAccountId` | `ObjectId` | No | — | Ref: `'TradingAccount'` | Primary linked account |
+| `tokenExpiresAt` | `Date` | No | — | — | Next 06:30 IST token expiry |
+| `authCodeExpiresAt` | `Date` | No | — | — | Legacy-compatible token expiry |
+| `oauthStateHash` | `String` | No | — | Indexed | SHA-256 hash of OAuth state nonce |
+| `oauthStateExpiresAt` | `Date` | No | — | — | OAuth state TTL (10 minutes) |
+| `autoSyncEnabled` | `Boolean` | No | `true` | — | Automatic trade sync preference |
+| `lastSyncAt` | `Date` | No | — | — | Timestamp of last trade sync attempt |
+| `lastFundsSyncAt` | `Date` | No | — | — | Timestamp of last funds sync |
+| `fundsSyncError` | `String` | No | — | — | Last funds sync error |
+| `syncHistory` | `Array` | No | `[]` | Embedded subdocuments | Bounded log of past sync runs |
 
 **Compound Indexes:**
 - `{ userId: 1, broker: 1 }` (Unique constraint)
+
+**Serialization:** `secretKey`, `accessToken`, `refreshToken`, and `oauthStateHash` are removed by `toJSON`/`toObject` transforms.
 
 ---
 
@@ -427,13 +452,16 @@ Child variants are **fully user-defined**. The application contains no hardcoded
 | `_id` | `ObjectId` | Auto | Primary Key | Mapping document ID |
 | `userId` | `ObjectId` | **Yes** | Ref: `'User'`, Indexed | Owning user |
 | `broker` | `String` | **Yes** | Enum: `['ZERODHA', 'FYERS', 'ANGEL_ONE', 'UPSTOX', 'CUSTOM']` | Target broker identifier |
+| `importKind` | `String` | **Yes** | `'TRADES'`, Enum: `['TRADES', 'CASH_FLOWS']` | Mapping type |
 | `name` | `String` | **Yes** | Trim | Display title for saved preset |
 | `mapping` | `Map<String>` | **Yes** | Key-value pairs | CSV column header to model field mapping |
 | `createdAt` | `Date` | Auto | Timestamp | Document creation timestamp |
 | `updatedAt` | `Date` | Auto | Timestamp | Document update timestamp |
 
 **Compound Indexes:**
-- `{ userId: 1, broker: 1 }` (Unique constraint — one mapping per user per broker)
+- `{ userId: 1, broker: 1, importKind: 1 }` (Unique constraint — one mapping per user, broker, and import kind)
+
+The legacy `{ userId: 1, broker: 1 }` unique index must be dropped by `npm run accounts:backfill -- --yes`.
 
 ---
 
@@ -492,3 +520,29 @@ Child variants are **fully user-defined**. The application contains no hardcoded
 - `{ userId: 1, name: 1 }` (Unique constraint)
 - `{ userId: 1, isFavorite: 1 }`
 - `{ userId: 1, group: 1 }`
+
+---
+
+### 2.14 BrokerFundsSnapshot Model (`BrokerFundsSnapshot.ts`)
+- **Collection Name:** `brokerfundssnapshots`
+- **File:** [`apps/api/src/db/models/BrokerFundsSnapshot.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/BrokerFundsSnapshot.ts)
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Snapshot identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owner user ID |
+| `accountId` | `ObjectId` | **Yes** | — | Ref: `'TradingAccount'`, Indexed | Linked account |
+| `broker` | `String` | **Yes** | — | Enum: `['FYERS']` | Broker identifier |
+| `clientId` | `String` | **Yes** | — | Trim | FYERS client ID |
+| `fetchedAt` | `Date` | **Yes** | — | — | Time the snapshot was fetched |
+| `totalBalance` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | FYERS Total Balance |
+| `clearBalance` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | FYERS Clear Balance |
+| `availableBalance` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | FYERS Available Balance |
+| `realizedPnL` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | FYERS Realized P&L |
+| `utilizedAmount` | `Decimal128` | No | `0.00` | Exact 128-bit decimal | FYERS Utilized Amount |
+| `fundLimits` | `Array` | No | `[]` | Embedded subdocuments | Raw normalized FYERS fund limits |
+| `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
+| `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |
+
+**Compound Indexes:**
+- `{ userId: 1, accountId: 1, fetchedAt: -1 }`

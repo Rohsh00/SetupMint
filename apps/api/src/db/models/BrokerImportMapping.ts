@@ -1,10 +1,12 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { BrokerImportKind } from '@tradevault/shared';
 
 export type SupportedImportBroker = 'ZERODHA' | 'FYERS' | 'ANGEL_ONE' | 'UPSTOX' | 'CUSTOM';
 
 export interface IBrokerImportMappingDoc extends Document {
   userId: mongoose.Types.ObjectId;
   broker: SupportedImportBroker;
+  importKind: BrokerImportKind;
   name: string;
   mapping: Record<string, string>;
   createdAt: Date;
@@ -24,6 +26,12 @@ const BrokerImportMappingSchema = new Schema<IBrokerImportMappingDoc>(
       enum: ['ZERODHA', 'FYERS', 'ANGEL_ONE', 'UPSTOX', 'CUSTOM'],
       required: true,
     },
+    importKind: {
+      type: String,
+      enum: ['TRADES', 'CASH_FLOWS'],
+      default: 'TRADES',
+      required: true,
+    },
     name: {
       type: String,
       required: true,
@@ -38,8 +46,10 @@ const BrokerImportMappingSchema = new Schema<IBrokerImportMappingDoc>(
   { timestamps: true }
 );
 
-// Unique mapping per user and broker
-BrokerImportMappingSchema.index({ userId: 1, broker: 1 }, { unique: true });
+BrokerImportMappingSchema.index(
+  { userId: 1, broker: 1, importKind: 1 },
+  { unique: true }
+);
 
 export const BrokerImportMapping = mongoose.model<IBrokerImportMappingDoc>(
   'BrokerImportMapping',

@@ -17,11 +17,13 @@ erDiagram
     USER ||--o{ ATTACHMENT : "uploads"
     USER ||--o{ BROKER_INTEGRATION : "configures"
     USER ||--o{ BROKER_IMPORT_MAPPING : "saves"
+    USER ||--o{ BROKER_FUNDS_SNAPSHOT : "receives"
     USER ||--o{ AUDIT_LOG : "triggers"
     USER ||--o{ TRADE_TEMPLATE : "defines (custom)"
 
     TRADING_ACCOUNT ||--o{ ACCOUNT_TRANSACTION : "contains"
     TRADING_ACCOUNT ||--o{ TRADE : "executes within"
+    TRADING_ACCOUNT ||--o{ BROKER_FUNDS_SNAPSHOT : "tracks broker balance of"
 
     STRATEGY ||--o{ TRADE : "applies to"
     STRATEGY ||--o{ TRADE_TEMPLATE : "referenced by"
@@ -43,8 +45,9 @@ erDiagram
     SESSION {
         ObjectId _id PK
         ObjectId userId FK
-        string token UK
-        date expiresAt "TTL: 30d"
+        string tokenHash UK
+        date expiresAt "TTL: 0"
+        date absoluteExpiresAt
     }
 
     TRADING_ACCOUNT {
@@ -57,6 +60,8 @@ erDiagram
         Decimal128 realizedPnL
         Decimal128 totalDeposits
         Decimal128 totalWithdrawals
+        Decimal128 totalAdjustments
+        object brokerLink
         string status "ACTIVE | ARCHIVED"
     }
 
@@ -64,9 +69,13 @@ erDiagram
         ObjectId _id PK
         ObjectId userId FK
         ObjectId accountId FK
-        string type "DEPOSIT | WITHDRAWAL"
+        string type "DEPOSIT | WITHDRAWAL | ADJUSTMENT"
         Decimal128 amount
         date date
+        string source "MANUAL | BROKER_LEDGER_IMPORT | BROKER_SYNC"
+        string status "CONFIRMED | PENDING_REVIEW | REJECTED"
+        string idempotencyKey
+        string importBatchId
     }
 
     TRADE {
@@ -82,6 +91,8 @@ erDiagram
         object simpleExecution
         array fills
         object calculated
+        object setup
+        array auditLog
         string importBatchId
         string templateId FK
         array screenshotIds FK
@@ -101,6 +112,7 @@ erDiagram
         ObjectId userId FK
         string name
         number minRiskReward
+        array variants
         boolean isActive
     }
 
@@ -119,12 +131,15 @@ erDiagram
         string broker "FYERS"
         string status
         string appId
+        string clientId
+        date tokenExpiresAt
     }
 
     BROKER_IMPORT_MAPPING {
         ObjectId _id PK
         ObjectId userId FK
-        string broker UK
+        string broker
+        string importKind "TRADES | CASH_FLOWS"
         string name
         object mapping
     }
@@ -140,6 +155,18 @@ erDiagram
         string titlePattern
         boolean isFavorite
         number usageCount
+    }
+
+    BROKER_FUNDS_SNAPSHOT {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId accountId FK
+        string broker "FYERS"
+        string clientId
+        date fetchedAt
+        Decimal128 clearBalance
+        Decimal128 totalBalance
+        Decimal128 availableBalance
     }
 ```
 
@@ -160,7 +187,7 @@ MongoDB does not provide foreign key constraints at the database engine level. S
 
 ### A. Trade Deletion Cascading
 When a trade is deleted via `DELETE /api/v1/trades/:id` or `POST /api/v1/trades/bulk-delete`:
-1. **Attachment Unlinking & Disk Deletion:** All `Attachment` documents linked to `tradeId` are located. The actual files are physically unlinked and removed from disk (`./data/uploads/<storedFilename>`) to prevent orphaned storage waste.
+1. **Attachment Object Deletion:** All `Attachment` documents linked to `tradeId` are located. The actual files are physically deleted from the private Cloudflare R2 bucket via `storage.delete(attachment.storedFilename)` to prevent orphaned cloud storage waste.
 2. **Database Attachment Purge:** The `Attachment` records are deleted from MongoDB.
 3. **Trade Deletion:** The `Trade` document is removed.
 4. **Authoritative Account Re-balancing:** `AccountService.recalculateAccountBalances(accountId, userId)` is immediately invoked, subtracting the deleted trade's net P&L from the trading account's cumulative realized P&L and current balance.
@@ -172,7 +199,7 @@ When an account deletion is requested via `DELETE /api/v1/accounts/:id`:
 
 ### C. Attachment Deletion
 When an individual screenshot attachment is deleted via `DELETE /api/v1/attachments/:id`:
-1. The physical image is unlinked from `./data/uploads`.
+1. The physical object is deleted from the Cloudflare R2 bucket via `storage.delete(attachment.storedFilename)`.
 2. The `Attachment` record is deleted from MongoDB.
 3. The trade document is updated via `{ $pull: { screenshotIds: attachment._id } }`.
 

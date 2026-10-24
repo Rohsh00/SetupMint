@@ -105,7 +105,7 @@ The Fastify server is built using factory function `buildApp()` in [`src/server.
 - **Centralized Error Handler:** Intercepts all errors, formats structured JSON responses, logs via Pino, and sanitizes 500 errors to prevent leaking stack traces.
 
 ### Routing Hierarchy
-All routes are prefixed under `/api/v1/`:
+All routes are prefixed under `/api/v1/` across 15 route groups:
 - `/api/v1/auth` -> User registration, login, logout, profile
 - `/api/v1/accounts` -> Account ledgers, transactions, reconciliation
 - `/api/v1/instruments` -> Catalog presets and custom instruments
@@ -119,6 +119,8 @@ All routes are prefixed under `/api/v1/`:
 - `/api/v1/export` -> CSV/JSON exports and interactive CSV import
 - `/api/v1/settings` -> Profile updates, password changes, system stats
 - `/api/v1/integrations` -> Broker adapter configurations
+- `/api/v1/review` -> Daily review queue and mistake suggestions
+- `/api/v1/templates` -> Rule-driven trade setup templates and edge ranking
 
 ---
 

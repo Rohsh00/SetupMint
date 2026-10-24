@@ -55,6 +55,7 @@ export function ReportsPage() {
   const [endDate, setEndDate] = useState('');
 
   // Import states
+  const [importKind, setImportKind] = useState<'TRADES' | 'CASH_FLOWS'>('TRADES');
   const [importMode, setImportMode] = useState<'FILE' | 'PASTE'>('FILE');
   const [pastedText, setPastedText] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -74,7 +75,12 @@ export function ReportsPage() {
   });
 
   const previewMutation = useMutation({
-    mutationFn: (input: File | string) => api.exportImport.previewCsv(input),
+    mutationFn: (input: File | string) =>
+      api.exportImport.previewCsv(input, {
+        importKind,
+        accountId: importTargetAccount || undefined,
+        broker: importKind === 'CASH_FLOWS' ? selectedBroker : undefined,
+      }),
     onSuccess: (data) => {
       setImportError(null);
       setPreviewData(data);
@@ -82,9 +88,11 @@ export function ReportsPage() {
       setColumnMapping(data.suggestedMapping || {});
       setImportResult(null);
       toast.info(
-        `CSV analyzed: ${data.totalRows} rows. Format: ${data.detectedBroker} (${
-          data.isRawExecutionLog ? 'Raw Executions / FIFO' : 'Completed Trades'
-        }).`
+        data.importKind === 'CASH_FLOWS'
+          ? `Ledger analyzed: ${data.totalRows} rows. ${data.summary?.duplicateCount || 0} duplicates detected.`
+          : `CSV analyzed: ${data.totalRows} rows. Format: ${data.detectedBroker} (${
+              data.isRawExecutionLog ? 'Raw Executions / FIFO' : 'Completed Trades'
+            }).`
       );
     },
     onError: (err: any) => {
@@ -102,8 +110,13 @@ export function ReportsPage() {
       setPreviewData(null);
       setImportFile(null);
       setPastedText('');
-      toast.success(`Import completed successfully! (${data.importedCount} trades imported)`);
+      toast.success(
+        data.importKind === 'CASH_FLOWS'
+          ? `Ledger import completed! (${data.importedCount} transactions imported)`
+          : `Import completed successfully! (${data.importedCount} trades imported)`
+      );
       queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       refetchBatches();
@@ -118,10 +131,11 @@ export function ReportsPage() {
   const undoMutation = useMutation({
     mutationFn: (batchId?: string) => api.exportImport.undoImport(batchId),
     onSuccess: (data) => {
-      toast.success(`Undo successful! Removed ${data.deletedCount} imported trades and reconciled balance.`);
+      toast.success(`Undo successful! Removed ${data.deletedCount} imported records and reconciled balance.`);
       setImportResult(null);
       setUndoTargetBatch(null);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       refetchBatches();
@@ -143,7 +157,11 @@ export function ReportsPage() {
 
   const handlePastedAnalyze = () => {
     if (!pastedText.trim()) {
-      toast.error('Please paste CSV tradebook content first');
+      toast.error(
+        importKind === 'CASH_FLOWS'
+          ? 'Please paste ledger CSV content first'
+          : 'Please paste CSV tradebook content first'
+      );
       return;
     }
     previewMutation.mutate(pastedText);
@@ -157,8 +175,11 @@ export function ReportsPage() {
       mapping: columnMapping,
       broker: selectedBroker,
       saveMapping,
+      importKind: previewData.importKind || importKind,
     });
   };
+
+  const isLedgerPreview = previewData?.importKind === 'CASH_FLOWS';
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -374,6 +395,54 @@ export function ReportsPage() {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                 <ToggleButtonGroup
+                  value={importKind}
+                  exclusive
+                  onChange={(_, val) => {
+                    if (val) {
+                      setImportKind(val);
+                      setPreviewData(null);
+                      setColumnMapping({});
+                      setSelectedBroker(val === 'CASH_FLOWS' ? 'FYERS' : 'CUSTOM');
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                    p: 0.5,
+                    borderRadius: 2,
+                  }}
+                >
+                  <ToggleButton value="TRADES" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
+                    Tradebook Import
+                  </ToggleButton>
+                  <ToggleButton value="CASH_FLOWS" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
+                    Cash Ledger Import
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+
+              {importKind === 'CASH_FLOWS' && (
+                <TextField
+                  select
+                  size="small"
+                  label="Target Trading Account *"
+                  required
+                  fullWidth
+                  value={importTargetAccount}
+                  onChange={(e) => setImportTargetAccount(e.target.value)}
+                  helperText="Select the account before analyzing to detect previously imported ledger rows"
+                >
+                  <MenuItem value="">Select target account...</MenuItem>
+                  {accounts.map((acc: any) => (
+                    <MenuItem key={acc.id} value={acc.id}>
+                      {acc.name} ({acc.broker})
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <ToggleButtonGroup
                   value={importMode}
                   exclusive
                   onChange={(_, val) => val && setImportMode(val)}
@@ -421,7 +490,9 @@ export function ReportsPage() {
                     Click or drag & drop CSV file to upload
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                    Supports FYERS Tradebook, Zerodha Console, Angel One, Upstox, or custom spreadsheet exports
+                    {importKind === 'CASH_FLOWS'
+                      ? 'Supports FYERS cash ledger exports or custom funds statements'
+                      : 'Supports FYERS Tradebook, Zerodha Console, Angel One, Upstox, or custom spreadsheet exports'}
                   </Typography>
                   <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: 'none' }} />
                 </Box>
@@ -433,7 +504,11 @@ export function ReportsPage() {
                     fullWidth
                     value={pastedText}
                     onChange={(e) => setPastedText(e.target.value)}
-                    placeholder={`Paste tradebook CSV report or rows here (e.g. from FYERS, Zerodha, etc.):\n\nReport Title,Tradebook report\n...\nSymbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID\nNIFTY26O1923100PE,NIFTY 23100 PE,"16 Oct 2026, 10:48:23 AM",SELL,Overnight,130.00,124.30,"16,159.00",Derivatives,...`}
+                    placeholder={
+                      importKind === 'CASH_FLOWS'
+                        ? `Paste ledger CSV report here (e.g. FYERS funds statement):\n\nDate,Particulars,Credit,Debit,Balance\n16 Oct 2026,UPI deposit,"10,000.00",,"1,10,000.00"\n17 Oct 2026,Brokerage charges,,"23.60","1,09,976.40"`
+                        : `Paste tradebook CSV report or rows here (e.g. from FYERS, Zerodha, etc.):\n\nReport Title,Tradebook report\n...\nSymbol name,Symbol code,Date & time,Side,Product type,Qty,Traded price,Total value,Segment,Exchange order ID,OMS order ID\nNIFTY26O1923100PE,NIFTY 23100 PE,"16 Oct 2026, 10:48:23 AM",SELL,Overnight,130.00,124.30,"16,159.00",Derivatives,...`
+                    }
                     sx={{
                       '& .MuiInputBase-root': {
                         fontFamily: '"JetBrains Mono", monospace',
@@ -455,7 +530,11 @@ export function ReportsPage() {
                       disabled={!pastedText.trim() || previewMutation.isPending}
                       sx={{ fontWeight: 600, px: 3 }}
                     >
-                      {previewMutation.isPending ? 'Analyzing Data...' : 'Analyze Tradebook Data'}
+                      {previewMutation.isPending
+                        ? 'Analyzing Data...'
+                        : importKind === 'CASH_FLOWS'
+                          ? 'Analyze Ledger Data'
+                          : 'Analyze Tradebook Data'}
                     </Button>
                   </Box>
                 </Box>
@@ -487,8 +566,20 @@ export function ReportsPage() {
                 Import Processed! Batch ID: <code>{importResult.batchId}</code>
               </Typography>
               <Box sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', mt: 0.5 }}>
-                <div>Successfully imported: <strong>{importResult.importedCount} trades</strong></div>
-                <div>Duplicates skipped: <strong>{importResult.duplicateCount} trades</strong></div>
+                <div>
+                  Successfully imported:{' '}
+                  <strong>
+                    {importResult.importedCount}{' '}
+                    {importResult.importKind === 'CASH_FLOWS' ? 'transactions' : 'trades'}
+                  </strong>
+                </div>
+                <div>
+                  Duplicates skipped:{' '}
+                  <strong>
+                    {importResult.duplicateCount}{' '}
+                    {importResult.importKind === 'CASH_FLOWS' ? 'transactions' : 'trades'}
+                  </strong>
+                </div>
                 {importResult.errorCount > 0 && (
                   <div style={{ color: muiTheme.palette.error.main, marginTop: 4 }}>
                     Errors / Warnings ({importResult.errorCount}):
@@ -550,9 +641,11 @@ export function ReportsPage() {
                       )}
                     </Box>
                     <Typography variant="caption" color="text.secondary">
-                      {previewData.isRawExecutionLog
-                        ? 'Raw executions detected — will be matched into round-trip trades using FIFO with automated statutory charges'
-                        : 'Completed trade rows detected — will be imported with automated statutory fee calculation'}
+                      {isLedgerPreview
+                        ? 'Cash ledger rows detected — deposits, withdrawals, and signed adjustments will be imported as confirmed transactions'
+                        : previewData.isRawExecutionLog
+                          ? 'Raw executions detected — will be matched into round-trip trades using FIFO with automated statutory charges'
+                          : 'Completed trade rows detected — will be imported with automated statutory fee calculation'}
                     </Typography>
                   </Box>
                 </Box>
@@ -583,7 +676,11 @@ export function ReportsPage() {
                 fullWidth
                 value={importTargetAccount}
                 onChange={(e) => setImportTargetAccount(e.target.value)}
-                helperText="Select the account to receive imported trade records"
+                helperText={
+                  isLedgerPreview
+                    ? 'Select the account to receive confirmed ledger transactions'
+                    : 'Select the account to receive imported trade records'
+                }
               >
                 <MenuItem value="">Select target account...</MenuItem>
                 {accounts.map((acc: any) => (
@@ -627,19 +724,29 @@ export function ReportsPage() {
                 </Box>
 
                 <Grid container spacing={2}>
-                  {[
-                    { field: 'tradeDate', label: 'Trade Date / Time *' },
-                    { field: 'symbol', label: 'Symbol / Instrument *' },
-                    { field: 'direction', label: 'Direction / Side (Buy/Sell) *' },
-                    { field: 'price', label: 'Execution Price / Rate *' },
-                    { field: 'quantity', label: 'Quantity / Lots *' },
-                    { field: 'entryPrice', label: 'Entry Price (Simple Mode)' },
-                    { field: 'exitPrice', label: 'Exit Price (Simple Mode)' },
-                    { field: 'orderId', label: 'Order ID' },
-                    { field: 'tradeId', label: 'Trade ID' },
-                    { field: 'segment', label: 'Market Segment (MCX/NSE/BSE)' },
-                    { field: 'notes', label: 'Notes / Comments' },
-                  ].map((item) => (
+                  {(isLedgerPreview
+                    ? [
+                        { field: 'date', label: 'Transaction Date *' },
+                        { field: 'transactionType', label: 'Transaction Type' },
+                        { field: 'description', label: 'Description / Narration' },
+                        { field: 'credit', label: 'Credit / Deposit' },
+                        { field: 'debit', label: 'Debit / Withdrawal' },
+                        { field: 'balance', label: 'Running Balance' },
+                      ]
+                    : [
+                        { field: 'tradeDate', label: 'Trade Date / Time *' },
+                        { field: 'symbol', label: 'Symbol / Instrument *' },
+                        { field: 'direction', label: 'Direction / Side (Buy/Sell) *' },
+                        { field: 'price', label: 'Execution Price / Rate *' },
+                        { field: 'quantity', label: 'Quantity / Lots *' },
+                        { field: 'entryPrice', label: 'Entry Price (Simple Mode)' },
+                        { field: 'exitPrice', label: 'Exit Price (Simple Mode)' },
+                        { field: 'orderId', label: 'Order ID' },
+                        { field: 'tradeId', label: 'Trade ID' },
+                        { field: 'segment', label: 'Market Segment (MCX/NSE/BSE)' },
+                        { field: 'notes', label: 'Notes / Comments' },
+                      ]
+                  ).map((item) => (
                     <Grid size={{ xs: 12, sm: 6, md: 3 }} key={item.field}>
                       <TextField
                         select
@@ -667,29 +774,81 @@ export function ReportsPage() {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600 }}>
                   Preview Rows ({previewData.previewRows.length} of {previewData.totalRows} rows)
+                  {isLedgerPreview && previewData.summary && (
+                    <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                      Deposits: {previewData.summary.depositCount} · Withdrawals: {previewData.summary.withdrawalCount} · Adjustments: {previewData.summary.adjustmentCount} · Ignored: {previewData.summary.ignoredCount} · Duplicates: {previewData.summary.duplicateCount}
+                    </Typography>
+                  )}
                 </Typography>
                 <Card variant="outlined" sx={{ overflow: 'hidden' }}>
                   <TableContainer sx={{ maxHeight: 260 }}>
                     <Table size="small" stickyHeader>
                       <TableHead>
                         <TableRow>
-                          {previewData.headers.map((h: string) => (
-                            <TableCell key={h} sx={{ fontWeight: 600, py: 1, whiteSpace: 'nowrap' }}>
-                              {h}
-                            </TableCell>
-                          ))}
+                          {isLedgerPreview ? (
+                            <>
+                              <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 600 }}>Amount</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                            </>
+                          ) : (
+                            previewData.headers.map((h: string) => (
+                              <TableCell key={h} sx={{ fontWeight: 600, py: 1, whiteSpace: 'nowrap' }}>
+                                {h}
+                              </TableCell>
+                            ))
+                          )}
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {previewData.previewRows.map((row: any, i: number) => (
-                          <TableRow key={i}>
-                            {previewData.headers.map((h: string) => (
-                              <TableCell key={h} sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', py: 0.75, whiteSpace: 'nowrap' }}>
-                                {row[h]}
-                              </TableCell>
+                        {isLedgerPreview
+                          ? previewData.previewRows.map((row: any, i: number) => (
+                              <TableRow key={i}>
+                                <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                  {row.dateISO
+                                    ? new Date(row.dateISO).toLocaleDateString()
+                                    : row.rawDate || '—'}
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '0.75rem' }}>{row.type}</TableCell>
+                                <TableCell
+                                  align="right"
+                                  sx={{
+                                    fontFamily: '"JetBrains Mono", monospace',
+                                    fontSize: '0.75rem',
+                                    color: Number(row.amount) < 0 ? 'error.main' : 'success.main',
+                                  }}
+                                >
+                                  {formatCurrency(Number(row.amount || 0))}
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '0.75rem', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {row.description || '—'}
+                                </TableCell>
+                                <TableCell sx={{ fontSize: '0.75rem' }}>
+                                  {row.error ? (
+                                    <Typography component="span" variant="caption" color="error.main">
+                                      {row.error}
+                                    </Typography>
+                                  ) : row.duplicate ? (
+                                    <Chip label="Duplicate" size="small" color="warning" variant="outlined" />
+                                  ) : row.type === 'IGNORE' ? (
+                                    <Chip label="Ignored" size="small" variant="outlined" />
+                                  ) : (
+                                    <Chip label="Ready" size="small" color="success" variant="outlined" />
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          : previewData.previewRows.map((row: any, i: number) => (
+                              <TableRow key={i}>
+                                {previewData.headers.map((h: string) => (
+                                  <TableCell key={h} sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', py: 0.75, whiteSpace: 'nowrap' }}>
+                                    {row[h]}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
                             ))}
-                          </TableRow>
-                        ))}
                       </TableBody>
                     </Table>
                   </TableContainer>
@@ -709,7 +868,13 @@ export function ReportsPage() {
                   onClick={handleCommit}
                   sx={{ fontWeight: 600, px: 3 }}
                 >
-                  {commitMutation.isPending ? 'Processing FIFO Fills...' : `Commit Import (${previewData.totalRows} Rows)`}
+                  {commitMutation.isPending
+                    ? isLedgerPreview
+                      ? 'Importing Ledger...'
+                      : 'Processing FIFO Fills...'
+                    : isLedgerPreview
+                      ? `Commit Ledger Import (${previewData.totalRows} Rows)`
+                      : `Commit Import (${previewData.totalRows} Rows)`}
                 </Button>
               </Box>
             </Box>
@@ -729,7 +894,7 @@ export function ReportsPage() {
                 </Typography>
               </Box>
               <Typography variant="caption" color="text.secondary">
-                You can undo any batch. Deleting a batch removes its trades and reconciles account balances.
+                You can undo any batch. Deleting a batch removes its imported records and reconciles account balances.
               </Typography>
             </Box>
 
@@ -739,9 +904,10 @@ export function ReportsPage() {
                   <TableRow>
                     <TableCell sx={{ fontWeight: 600 }}>Batch ID</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Trades</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Symbols</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Total Realized P&L</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Kind</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Records</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Details</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Net Flow</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600 }}>Action</TableCell>
                   </TableRow>
                 </TableHead>
@@ -754,14 +920,35 @@ export function ReportsPage() {
                       <TableCell sx={{ fontSize: '0.8rem' }}>
                         {new Date(b.createdAt).toLocaleString()}
                       </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={b.importKind === 'CASH_FLOWS' ? 'Cash Ledger' : 'Trades'}
+                          size="small"
+                          color={b.importKind === 'CASH_FLOWS' ? 'info' : 'default'}
+                          variant="outlined"
+                        />
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
-                        {b.tradeCount} trades
+                        {b.importKind === 'CASH_FLOWS' ? `${b.ledgerCount} transactions` : `${b.tradeCount} trades`}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.75rem', color: 'text.secondary', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {b.symbols?.join(', ') || '—'}
+                        {b.importKind === 'CASH_FLOWS' ? 'Funds ledger' : b.symbols?.join(', ') || '—'}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 700, fontSize: '0.8rem', color: b.totalNetPnL >= 0 ? 'success.main' : 'error.main' }}>
-                        {formatCurrency(b.totalNetPnL)}
+                      <TableCell
+                        sx={{
+                          fontWeight: 700,
+                          fontSize: '0.8rem',
+                          color:
+                            b.importKind === 'CASH_FLOWS'
+                              ? 'text.primary'
+                              : b.totalNetPnL >= 0
+                                ? 'success.main'
+                                : 'error.main',
+                        }}
+                      >
+                        {b.importKind === 'CASH_FLOWS'
+                          ? formatCurrency(Number(b.totalAmount || 0))
+                          : formatCurrency(b.totalNetPnL)}
                       </TableCell>
                       <TableCell align="right">
                         <Button
@@ -789,7 +976,7 @@ export function ReportsPage() {
       <ConfirmDialog
         open={Boolean(undoTargetBatch)}
         title="Undo Import Batch"
-        message={`Are you sure you want to undo import batch "${undoTargetBatch}"? All trades created in this batch will be permanently removed and your account balance will be automatically recalculated.`}
+        message={`Are you sure you want to undo import batch "${undoTargetBatch}"? All trades and ledger transactions created in this batch will be permanently removed and your account balance will be automatically recalculated.`}
         confirmLabel="Undo Batch"
         severity="error"
         onConfirm={() => {

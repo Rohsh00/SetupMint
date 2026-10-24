@@ -12,6 +12,7 @@
     "seed:reset": "tsx src/scripts/reset-demo.ts",
     "seed:validate": "tsx src/scripts/validate-seed.ts",
     "instruments:backfill": "tsx src/scripts/backfill-instruments.ts",
+    "accounts:backfill": "tsx src/scripts/backfill-account-transactions.ts",
     "clean": "tsx src/scripts/clean.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

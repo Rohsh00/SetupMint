@@ -6,10 +6,11 @@ This document records confirmed limitations, incomplete features, architectural 
 
 ## 1. Confirmed Architectural Boundaries & Scope
 
-### 1. Live Automated Broker Polling is Disabled by Design
-- **Current Behavior:** The FYERS integration is architecturally modeled with `IBrokerAdapter`, `INormalizedExecution`, and database tracking, but live OAuth automated sync is intentionally disabled in release 1.0.
-- **Rationale:** To protect trader privacy, eliminate external cloud dependencies, and avoid dealing with mandatory daily 24-hour token invalidation mandated by Indian market regulations.
-- **Status:** Broker executions can be imported via the Smart CSV Import engine (`/reports`) supporting Zerodha, FYERS, Angel One, and Upstox tradebooks with automatic FIFO round-trip execution grouping and statutory charges. Automated live polling is planned for future releases.
+### 1. FYERS Integration Boundaries
+- **Current Behavior:** FYERS API v3 OAuth, tradebook sync, funds sync, and balance reconciliation are implemented and require an active broker session. CSV tradebook and cash-ledger imports remain available without a session.
+- **Limitation:** FYERS access tokens expire daily at 06:30 IST. Refresh-token exchange is not enabled; users must re-authenticate daily for live API access. No orders are ever placed, modified, or cancelled.
+- **Reconciliation Safety:** Broker balances create `PENDING_REVIEW` adjustments only. Suggestions are paused while trades are `OPEN` or `PLANNED`, and a trader must explicitly confirm or reject each adjustment.
+- **CSV Limitation:** Exact FYERS ledger export headers vary by account/export version; the alias-driven parser may need a new header alias for an unseen export format.
 
 ### 2. Multi-Currency Live Feed Omission
 - **Current Behavior:** The currency conversion engine ([`currency.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/currency.ts)) enforces that cross-currency conversions (e.g. USD to INR) fail cleanly (`isAvailable: false`) unless an explicit exchange rate is passed.
@@ -32,7 +33,7 @@ This document records confirmed limitations, incomplete features, architectural 
 | Item | Location | Description | Priority |
 | :--- | :--- | :--- | :--- |
 | **Legacy Namespace References** | Monorepo package naming (`@tradevault/*`) | Packages are named `@tradevault/api`, `@tradevault/web`, `@tradevault/financial-engine`, and `@tradevault/shared` while user-facing branding is **SetupMint Pro**. Maintain alias `StratumLogo` -> `SetupMintLogo`. | Low |
-| **E2E Automated Browser Tests** | `apps/web` | The application has 144 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
+| **E2E Automated Browser Tests** | `apps/web` | The application has 319 passing Vitest tests covering API and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
 | **Mobile Drawer Gesture Polish** | `AppLayout.tsx` | Mobile navigation uses an off-canvas drawer; edge swipe gesture support on iOS Safari could be improved. | Low |
 | **Atlas Free Tier Backup Discipline** | `scripts/backup.js` | MongoDB Atlas M0 free tier lacks automated snapshot backups. Users must run `npm run db:backup` regularly. | Medium |
 

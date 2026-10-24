@@ -274,7 +274,7 @@ This document provides a comprehensive, verified feature inventory of all module
   - Delete attachments.
 - **Inputs & Outputs:**
   - *Inputs:* Image files (PNG, JPEG, WebP, max 10MB).
-  - *Outputs:* Persisted file on disk (`./data/uploads/<uuid>.<ext>`), attachment record in MongoDB, authenticated download/stream URLs.
+  - *Outputs:* Persisted object in private Cloudflare R2 bucket, attachment record in MongoDB, authenticated download/stream URLs.
 - **Frontend Components:**
   - [`TradeScreenshotGallery.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeScreenshotGallery.tsx)
   - [`TradeAttachmentUploader.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeAttachmentUploader.tsx)
@@ -374,18 +374,19 @@ This document provides a comprehensive, verified feature inventory of all module
 
 ---
 
-## 13. FYERS Broker Integration Architecture
+## 13. FYERS Broker Integration
 
-- **Status:** **PARTIALLY IMPLEMENTED (Architecturally Modeled & Isolated)**
-- **Purpose:** Normalized broker execution schema and reconciliation layer for automated sync.
-- **Existing Implementation:**
-  - Decoupled `IBrokerAdapter` interface and `INormalizedExecution` schema in `@tradevault/shared`.
-  - Database collection `BrokerIntegration` storing connection status and sync history.
-  - Config endpoints `GET /api/v1/integrations/fyers/status` and `POST /api/v1/integrations/fyers/config`.
-  - Realistic FYERS brokerage calculation (flat ₹20/order) in `IndianChargesCalculator`.
-  - Comprehensive documentation in `docs/FYERS_INTEGRATION.md`.
-- **Status of Live Sync:** **DISABLED BY DESIGN** in release 1.0 to preserve complete local offline privacy and protect users from third-party broker API volatility.
-- **Intended Future Behavior:** Automated daily pull of order books and trade books via FYERS API v3 with interactive reconciliation screen.
+- **Status:** **IMPLEMENTED**
+- **Purpose:** Read-only FYERS API v3 tradebook and funds synchronization with explicit user-controlled reconciliation.
+- **Implemented Features:**
+  - Per-user App ID/Secret configuration with AES-256-GCM encryption at rest.
+  - Short-lived hashed OAuth state, daily token expiry handling, and encrypted access/refresh tokens.
+  - Tradebook sync with FIFO round-trip grouping and statutory charge calculation.
+  - Per-account FYERS linking and funds snapshot persistence.
+  - `PENDING_REVIEW` balance adjustments when broker `Clear Balance` drifts beyond tolerance; confirm/reject workflow recalculates balances only on confirmation.
+  - No order placement, modification, or cancellation.
+- **CSV Alternative:** FYERS tradebook and cash-ledger imports remain available without API authorization.
+- **Documentation:** See `docs/BROKER_INTEGRATIONS.md` and `docs/FYERS_INTEGRATION.md`.
 
 ---
 

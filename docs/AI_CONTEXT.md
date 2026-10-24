@@ -92,7 +92,7 @@ Trading Vault/
 ## 6. Database Entities & Consistency Invariants
 
 ### Entities:
-- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `AuditLog`.
+- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `AuditLog`.
 
 ### Invariants:
 1. **Tenant Isolation:** Every document includes `userId: ObjectId`. All queries must filter by `{ userId: req.user.id }`.
@@ -147,7 +147,7 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites across the monorepo (301 verified tests)
+# Run all test suites across the monorepo (319 verified tests)
 npm run test
 
 # Run financial engine unit tests (135 tests)
@@ -156,7 +156,7 @@ npm run test:engine
 # Backfill and normalize instruments for existing trades
 npm run instruments:backfill
 
-# Run API integration and regression tests (166 tests)
+# Run API integration and regression tests (184 tests)
 npm run test:api
 
 # Typecheck all packages

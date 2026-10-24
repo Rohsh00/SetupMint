@@ -141,8 +141,8 @@ export function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // FYERS Integration state
-  const [fyersAppId, setFyersAppId] = useState('CPCJNZWGA9-200');
-  const [fyersSecretKey, setFyersSecretKey] = useState('atRZ7ZpSgfZiUjoL');
+  const [fyersAppId, setFyersAppId] = useState('');
+  const [fyersSecretKey, setFyersSecretKey] = useState('');
   const [showSecretKey, setShowSecretKey] = useState(false);
   const [fyersSuccess, setFyersSuccess] = useState(false);
   const [fyersError, setFyersError] = useState<string | null>(null);
@@ -179,6 +179,8 @@ export function SettingsPage() {
   const fyersData = (fyersStatus as any)?.data ?? fyersStatus;
   const isFyersConfigured = Boolean(fyersData?.isConfigured || fyersData?.appId);
   const isFyersConnected = Boolean(fyersData?.isConnected);
+  const fyersRedirectUri =
+    fyersData?.redirectUri || `${window.location.origin}/api/v1/integrations/fyers/callback`;
 
   React.useEffect(() => {
     if (fyersData?.appId) {
@@ -268,6 +270,7 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
       setFyersError(null);
       setFyersSuccess(true);
+      setFyersSecretKey('');
       toast.success('FYERS credentials saved securely.');
       setTimeout(() => setFyersSuccess(false), 3000);
     },
@@ -280,8 +283,12 @@ export function SettingsPage() {
 
   const fyersConnectMutation = useMutation({
     mutationFn: async () => {
-      if (fyersAppId) {
+      const needsConfig =
+        Boolean(fyersAppId) &&
+        (fyersAppId !== fyersData?.appId || Boolean(fyersSecretKey.trim()));
+      if (needsConfig) {
         await api.integrations.fyersConfig({ appId: fyersAppId, secretKey: fyersSecretKey });
+        setFyersSecretKey('');
       }
       return api.integrations.fyersLoginUrl();
     },
@@ -738,6 +745,40 @@ export function SettingsPage() {
             )}
           </Alert>
 
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Chip
+              size="small"
+              variant="outlined"
+              label={fyersData?.hasSecretKey ? 'Secret saved (encrypted)' : 'Secret not saved'}
+              color={fyersData?.hasSecretKey ? 'success' : 'default'}
+              sx={{ fontSize: '0.6875rem', fontWeight: 600 }}
+            />
+            {fyersData?.clientId && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Client ${fyersData.clientId}`}
+                sx={{ fontSize: '0.6875rem', fontFamily: '"JetBrains Mono", monospace' }}
+              />
+            )}
+            {fyersData?.tokenExpiresAt && (
+              <Typography variant="caption" color="text.secondary">
+                Token expires: <strong>{new Date(fyersData.tokenExpiresAt).toLocaleString()}</strong>
+              </Typography>
+            )}
+            {fyersData?.lastFundsSyncAt && (
+              <Typography variant="caption" color="text.secondary">
+                Funds synced: <strong>{new Date(fyersData.lastFundsSyncAt).toLocaleString()}</strong>
+              </Typography>
+            )}
+          </Box>
+
+          {fyersData?.fundsSyncError && (
+            <Alert severity="warning" sx={{ fontSize: '0.8125rem', py: 0.75 }}>
+              Last funds sync failed: {fyersData.fundsSyncError}
+            </Alert>
+          )}
+
           {/* Configuration Inputs */}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
@@ -747,7 +788,7 @@ export function SettingsPage() {
               <TextField
                 fullWidth
                 size="small"
-                placeholder="e.g. CPCJNZWGA9-200"
+                placeholder="e.g. YOUR_APP_ID-100"
                 value={fyersAppId}
                 onChange={(e) => setFyersAppId(e.target.value.trim())}
                 slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 } } }}
@@ -762,7 +803,7 @@ export function SettingsPage() {
                 fullWidth
                 size="small"
                 type={showSecretKey ? 'text' : 'password'}
-                placeholder="Enter 32-char Secret Key"
+                placeholder={fyersData?.hasSecretKey ? 'Secret saved — enter a new key to replace it' : 'Enter 32-char Secret Key'}
                 value={fyersSecretKey}
                 onChange={(e) => setFyersSecretKey(e.target.value.trim())}
                 slotProps={{
@@ -805,7 +846,7 @@ export function SettingsPage() {
                     Registered Redirect / Callback URL (Saved in FYERS Dashboard):
                   </Typography>
                   <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: 'primary.main' }}>
-                    http://127.0.0.1:4000/api/v1/integrations/fyers/callback
+                    {fyersRedirectUri}
                   </Typography>
                 </Box>
                 <Tooltip title="Copy Redirect URL to clipboard">
@@ -814,7 +855,7 @@ export function SettingsPage() {
                     variant="outlined"
                     startIcon={<ContentCopyRounded fontSize="small" />}
                     onClick={() => {
-                      navigator.clipboard.writeText('http://127.0.0.1:4000/api/v1/integrations/fyers/callback');
+                      navigator.clipboard.writeText(fyersRedirectUri);
                       toast.info('Redirect URL copied to clipboard');
                     }}
                     sx={{ fontSize: '0.6875rem' }}

@@ -106,6 +106,27 @@ export const api = {
       request(`/accounts/${id}/transactions`, { method: 'POST', body: JSON.stringify(tx) }),
     getTransactions: (id: string) => request<any[]>(`/accounts/${id}/transactions`),
     reconcile: (id: string) => request<any>(`/accounts/${id}/reconcile`, { method: 'POST' }),
+    linkBroker: (id: string, clientId: string) =>
+      request<any>(`/accounts/${id}/broker-link`, {
+        method: 'POST',
+        body: JSON.stringify({ clientId }),
+      }),
+    unlinkBroker: (id: string) =>
+      request<any>(`/accounts/${id}/broker-link`, { method: 'DELETE' }),
+    syncFunds: (id: string) =>
+      request<any>(`/accounts/${id}/sync-funds`, { method: 'POST' }),
+    pendingTransactions: (id: string) =>
+      request<{ transactions: any[]; latestSnapshot: any | null }>(
+        `/accounts/${id}/pending-transactions`
+      ),
+    confirmTransaction: (accountId: string, txId: string) =>
+      request<any>(`/accounts/${accountId}/transactions/${txId}/confirm`, {
+        method: 'POST',
+      }),
+    rejectTransaction: (accountId: string, txId: string) =>
+      request<any>(`/accounts/${accountId}/transactions/${txId}/reject`, {
+        method: 'POST',
+      }),
   },
 
   // Instruments
@@ -281,16 +302,30 @@ export const api = {
       }
       return `${BASE_URL}/export/json?${query.toString()}`;
     },
-    previewCsv: (input: File | string) => {
+    previewCsv: (
+      input: File | string,
+      options: { importKind?: 'TRADES' | 'CASH_FLOWS'; accountId?: string; broker?: string } = {}
+    ) => {
+      const query = new URLSearchParams();
+      if (options.importKind) query.set('importKind', options.importKind);
+      if (options.accountId) query.set('accountId', options.accountId);
+      if (options.broker) query.set('broker', options.broker);
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+
       if (typeof input === 'string') {
-        return request<any>('/export/import/preview', {
+        return request<any>(`/export/import/preview${suffix}`, {
           method: 'POST',
-          body: JSON.stringify({ csvText: input }),
+          body: JSON.stringify({
+            csvText: input,
+            importKind: options.importKind,
+            accountId: options.accountId,
+            broker: options.broker,
+          }),
         });
       }
       const formData = new FormData();
       formData.append('file', input);
-      return request<any>('/export/import/preview', {
+      return request<any>(`/export/import/preview${suffix}`, {
         method: 'POST',
         body: formData,
       });
@@ -301,6 +336,7 @@ export const api = {
       mapping: any;
       broker?: string;
       saveMapping?: boolean;
+      importKind?: 'TRADES' | 'CASH_FLOWS';
     }) =>
       request<any>('/export/import/commit', {
         method: 'POST',

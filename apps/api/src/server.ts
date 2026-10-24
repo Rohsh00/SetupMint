@@ -40,9 +40,18 @@ export async function buildApp() {
         'req.body.password',
         'req.body.token',
         'req.body.tokenHash',
+        'req.body.secretKey',
+        'req.body.appId',
+        'req.query.auth_code',
+        'req.query.code',
         'cookie',
         'token',
         'tokenHash',
+        'secretKey',
+        'accessToken',
+        'refreshToken',
+        'appId',
+        'authorization',
       ],
       transport: config.isDev
         ? {

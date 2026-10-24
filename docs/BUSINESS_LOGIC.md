@@ -194,7 +194,7 @@ The core ledger architecture enforces that **the database is the authoritative s
    await AccountService.recalculateAccountBalances(accountId, userId);
    ```
 3. Balance reconciliation executes a clean aggregate query over all closed trade net P&Ls and cash transactions:
-   $$\text{Current Balance} = \text{Initial Balance} + \sum \text{Closed Trade Net P&L} + \sum \text{Deposits} - \sum \text{Withdrawals} + \sum \text{Adjustments}$$
+   $$\text{Current Balance} = \text{Initial Balance} + \sum \text{Closed Trade Net P\&L} + \sum \text{Deposits} - \sum \text{Withdrawals} + \sum \text{Confirmed Adjustments}$$
 4. If an account has existing trades, deletion is prohibited and the account is automatically shifted to `status: 'ARCHIVED'`.
 
 ---
@@ -210,7 +210,7 @@ The core ledger architecture enforces that **the database is the authoritative s
    - **Custom / Generic:** Flexible regex matching supporting both completed trade sheets (with `entryPrice` + `exitPrice`) and raw execution logs.
 
 2. **Saved User Column Mappings:**
-   - Saved in `BrokerImportMapping` (`userId`-scoped, unique per `userId+broker`).
+   - Saved in `BrokerImportMapping` (`userId`-scoped, unique per `userId+broker+importKind`), so tradebook and cash-ledger mappings are independent.
    - When a broker tradebook is detected, any saved mapping for that broker is automatically retrieved and applied; users can customize and save mappings per broker.
 
 3. **FIFO Round-Trip Execution Grouping (Advanced Mode):**
@@ -289,7 +289,7 @@ The core ledger architecture enforces that **the database is the authoritative s
 A trade enters the user's **Daily Review Queue** (`GET /api/v1/review/queue`) if any of the following review criteria are unmet:
 - **Missing Exit:** Status is `OPEN` or exit price/time is absent.
 - **Missing Psychology / Reflection:** Closed trade lacking emotional state (`emotionBefore`, `emotionAfter`), notes, or mistake tags.
-- **Missing Chart Screenshots:** Closed trade having zero linked attachments in `./data/uploads`.
+- **Missing Chart Screenshots:** Closed trade having zero linked attachments in Cloudflare R2 object storage.
 - **Unreviewed Trading Days:** Any date in the previous 30 calendar days that had executed trades but has no persisted `DailyJournal` reflection.
 
 ### 2. Rule-Based Mistake Suggestions (Never Auto-Applied)

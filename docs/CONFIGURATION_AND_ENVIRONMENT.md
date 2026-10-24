@@ -33,9 +33,11 @@ S3_PREFIX=journal-charts
 MAX_FILE_SIZE_MB=10
 
 # Session & Security Settings
-SESSION_SECRET=<your-32-character-session-secret-encryption-key>
+SESSION_SECRET=<your-32-character-session-secret>
+TOKEN_ENCRYPTION_KEY=<your-32-character-broker-token-encryption-key>
 COOKIE_DOMAIN=
 CORS_ORIGIN=http://localhost:5173
+WEB_APP_URL=http://localhost:5173
 
 # Persistent Session Lifetimes (Sliding & Absolute)
 SESSION_IDLE_DAYS=90
@@ -45,10 +47,12 @@ SESSION_RENEW_THRESHOLD=0.5
 # Default User Currency
 DEFAULT_BASE_CURRENCY=INR
 
-# Optional Broker Integrations (Future Live Sync)
-FYERS_APP_ID=<your-fyers-app-id>
-FYERS_SECRET_KEY=<your-fyers-app-secret-key>
+# Optional FYERS Integration
+# App ID and Secret Key are configured per-user in Settings and encrypted at rest.
+FYERS_API_BASE=https://api-t1.fyers.in/api/v3
 FYERS_REDIRECT_URI=http://127.0.0.1:4000/api/v1/integrations/fyers/callback
+FYERS_FUNDS_DRIFT_TOLERANCE=1
+FYERS_FUNDS_SYNC_ENABLED=true
 ```
 
 ---
@@ -69,6 +73,12 @@ FYERS_REDIRECT_URI=http://127.0.0.1:4000/api/v1/integrations/fyers/callback
 | `HOST` | No | `'127.0.0.1'` | Network interface binding. | Set to `127.0.0.1` for local privacy. Avoid `0.0.0.0` unless running behind a reverse proxy. |
 | `NODE_ENV` | No | `'development'` | Runtime environment (`development`, `production`, `test`). | In production, pretty-logging is disabled and secure cookie flags are enforced. |
 | `SESSION_SECRET` | Conditionally in Prod | Dev fallback outside prod | Secret key used for signing cookies. | **Fail-fast in production:** If `NODE_ENV=production`, must be set, cannot be default, and must be >= 32 characters or startup aborts immediately. |
+| `TOKEN_ENCRYPTION_KEY` | Conditionally in Prod | Dev fallback outside prod | AES-256-GCM key material for encrypting FYERS secrets and tokens. | **Fail-fast in production:** If `NODE_ENV=production`, must be set, cannot be default, and must be >= 32 characters. Rotating it requires re-entering broker credentials. |
+| `WEB_APP_URL` | No | `http://localhost:5173` | Frontend origin used for OAuth callback redirects. | Set to the public frontend URL in production. |
+| `FYERS_API_BASE` | No | `https://api-t1.fyers.in/api/v3` | FYERS API base URL. | Keep the official endpoint unless testing against a sanctioned sandbox. |
+| `FYERS_REDIRECT_URI` | No | `http://127.0.0.1:4000/api/v1/integrations/fyers/callback` | OAuth callback URL registered in the FYERS dashboard. | Must exactly match the FYERS dashboard setting. |
+| `FYERS_FUNDS_DRIFT_TOLERANCE` | No | `1` | Allowed ₹ drift before a reconciliation suggestion. | Must be a non-negative number. |
+| `FYERS_FUNDS_SYNC_ENABLED` | No | `true` | Enables/disables FYERS funds sync. | Set `false` to disable funds sync without deleting credentials. |
 | `COOKIE_DOMAIN` | No | `''` (omitted on localhost) | Domain scope for session cookies. | **Crucial:** Omit or leave empty for `localhost` / `127.0.0.1` because modern browsers reject `Domain=localhost`. Set to `.yourdomain.com` in production. |
 | `SESSION_IDLE_DAYS` | No | `90` | Sliding session lifetime in days. | Session expiry extends when active and idle remaining < 50%. |
 | `SESSION_ABSOLUTE_DAYS` | No | `365` | Hard upper limit on session age in days from creation. | Forces re-authentication after 1 year regardless of activity. |
@@ -82,9 +92,11 @@ FYERS_REDIRECT_URI=http://127.0.0.1:4000/api/v1/integrations/fyers/callback
 
 1. **Production Session Secret Validation:**
    `apps/api/src/config.ts` exports `validateConfig()` executed on startup in `buildApp()`. When `NODE_ENV === 'production'`, the server verifies `SESSION_SECRET` is set, is not the development fallback string, and contains at least 32 characters. Missing or weak secrets trigger an immediate exit (`process.exit(1)`).
-2. **MongoDB Atlas Enforced:**
+2. **Broker Token Encryption Validation:**
+   In production, `validateConfig()` also requires `TOKEN_ENCRYPTION_KEY` to be set, non-default, and at least 32 characters. It also validates that `FYERS_FUNDS_DRIFT_TOLERANCE` is non-negative.
+3. **MongoDB Atlas Enforced:**
    `apps/api/src/db/connection.ts` validates that `MONGODB_URI` starts with `mongodb+srv://` or contains `.mongodb.net`. If missing or invalid, the server throws immediately. On network connection failure, only the host is logged and the process terminates non-zero.
-3. **Cloudflare R2 Enforced:**
+4. **Cloudflare R2 Enforced:**
    `apps/api/src/storage/index.ts` verifies that `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are all present. If any is missing, it throws immediately. At server startup, `S3Storage.healthCheck()` tests read/write access to Cloudflare R2.
-4. **No Local Disk Fallbacks:**
+5. **No Local Disk Fallbacks:**
    `UPLOAD_DIR` and disk directory creation have been permanently removed. All uploads stream directly to and from Cloudflare R2 through authenticated proxy endpoints.

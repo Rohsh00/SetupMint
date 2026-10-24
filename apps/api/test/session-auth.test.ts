@@ -351,6 +351,7 @@ describe('Persistent Sliding Sessions & Device Management Integration Tests', ()
   it('12. Production startup fails fast if SESSION_SECRET is missing or weak', () => {
     const originalEnv = process.env.NODE_ENV;
     const originalSecret = process.env.SESSION_SECRET;
+    const originalTokenKey = process.env.TOKEN_ENCRYPTION_KEY;
 
     try {
       config.nodeEnv = 'production';
@@ -366,6 +367,7 @@ describe('Persistent Sliding Sessions & Device Management Integration Tests', ()
 
       // Strong production secret passes
       process.env.SESSION_SECRET = 'a_very_strong_production_secret_32chars_long!';
+      process.env.TOKEN_ENCRYPTION_KEY = 'a_very_strong_token_encryption_key_32chars!!';
       expect(() => validateConfig()).not.toThrow();
     } finally {
       config.nodeEnv = originalEnv || 'test';
@@ -373,6 +375,11 @@ describe('Persistent Sliding Sessions & Device Management Integration Tests', ()
         process.env.SESSION_SECRET = originalSecret;
       } else {
         delete process.env.SESSION_SECRET;
+      }
+      if (originalTokenKey) {
+        process.env.TOKEN_ENCRYPTION_KEY = originalTokenKey;
+      } else {
+        delete process.env.TOKEN_ENCRYPTION_KEY;
       }
     }
   });

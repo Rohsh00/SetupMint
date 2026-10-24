@@ -16,8 +16,6 @@ Trading Vault/
 │   └── shared/                    # Shared TypeScript types, Zod validation schemas, constants
 ├── scripts/                       # Database backup, restore, and reconciliation scripts
 ├── docs/                          # Comprehensive technical and product documentation
-├── data/                          # Private local disk storage (git-ignored)
-│   └── uploads/                   # Private chart screenshot files
 ├── docker-compose.yml             # Optional Docker configuration for MongoDB
 ├── package.json                   # Root monorepo workspace configuration
 ├── package-lock.json              # Monorepo lockfile
@@ -85,6 +83,7 @@ apps/api/
 │   │       ├── Attachment.ts      # Screenshot attachment records in Cloudflare R2
 │   │       ├── BrokerIntegration.ts # FYERS connection status and sync history
 │   │       ├── BrokerImportMapping.ts # Saved per-broker CSV column mapping configurations
+│   │       ├── BrokerFundsSnapshot.ts # Immutable FYERS fund-limit balance snapshots
 │   │       ├── AuditLog.ts        # Immutable system audit trail entries
 │   │       ├── TradeTemplate.ts   # Rule-driven trade setup templates with dynamic SL/target
 │   │       └── index.ts           # Models barrel export
@@ -108,7 +107,9 @@ apps/api/
 │   │   ├── settings.routes.ts     # /api/v1/settings (profile, password, system-status)
 │   │   └── integrations.routes.ts # /api/v1/integrations (FYERS config & status)
 │   ├── services/
-│   │   └── account.service.ts     # Authoritative account balance reconciliation service
+│   │   ├── account.service.ts     # Authoritative account balance reconciliation service
+│   │   ├── crypto.service.ts      # AES-256-GCM encryption for broker secrets and tokens
+│   │   └── fyers.service.ts       # FYERS API v3 OAuth, tradebook sync, and funds sync service
 │   ├── seed/                      # SetupMint Heavy Seed Data Engine
 │   │   ├── charges-calculator.ts  # Indian statutory charges calculator (re-exports from @tradevault/financial-engine)
 │   │   ├── chart-generator.ts     # Generates synthetic TradingView-style SVG candlestick charts
@@ -124,13 +125,23 @@ apps/api/
 │       ├── seed.ts                # CLI entry point for seeding (npm run db:seed)
 │       ├── reset-demo.ts          # Safe reset script for demo user data (npm run seed:reset)
 │       ├── validate-seed.ts       # CLI validator script (npm run seed:validate)
+│       ├── backfill-account-transactions.ts # Account and broker data backfill script
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (116 tests)
+└── test/                          # Vitest API and Seed Engine integration test suites (184 tests across 14 suites)
+    ├── account-backfill.test.ts   # Account and broker data backfill migration tests
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests
+    ├── broker-sync.test.ts        # FYERS OAuth, funds snapshot, and reconciliation tests
+    ├── connection.test.ts         # Cloud-only Atlas URI validation tests
+    ├── ledger-import.test.ts      # Cash ledger import, classification, and undo tests
+    ├── optimize-image.test.ts     # Server-side lossless image optimization tests
     ├── regression.test.ts         # Comprehensive 38-case QA regression test suite
     ├── seed-engine.test.ts        # Seed engine determinism, idempotency, and integrity tests
-    └── template.test.ts           # Template CRUD, tenant isolation, and edge stat tests (12 tests)
+    ├── session-auth.test.ts       # Sliding session, token hashing, and TTL tests
+    ├── storage.test.ts            # Cloudflare R2 object storage provider tests
+    ├── strategy-variants.test.ts  # Strategy setup variant CRUD and analytics tests
+    ├── template.test.ts           # Template CRUD, tenant isolation, and edge stat tests
+    └── setup.ts                   # Vitest setup with in-memory replica set and index bootstrap
 ```
 
 ---
@@ -192,6 +203,7 @@ apps/web/
 │       ├── JournalCalendarPage.tsx# /journal (Monthly green/red calendar & reflections)
 │       ├── AnalyticsPage.tsx      # /analytics (Psychology, weekday, session analytics)
 │       ├── StrategyPlaybookPage.tsx # /strategies (Dual tabs: Execution Playbooks & Trade Templates)
+│       ├── StrategyVariantAnalyticsPage.tsx # /strategies/:id/analytics (Setup variant buckets & performance)
 │       ├── RiskCalculatorPage.tsx # /risk-calculator (Position sizing & trade transfer)
 │       ├── AccountsPage.tsx       # /accounts (Multi-broker ledger & cash flows)
 │       ├── InstrumentsPage.tsx    # /instruments (Contract specifications & scrips)

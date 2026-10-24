@@ -133,25 +133,26 @@ export async function runBackfill(options?: {
             (isLive && t.instrumentId.toString() !== inst._id.toString()) ||
             !t.underlying ||
             t.underlying !== underlying ||
+            t.symbol !== inst.symbol ||
+            t.instrumentName !== inst.displayName ||
             (!t.optionType && parsed.optionType) ||
-            (!t.strikePrice && parsed.strikePrice);
+            (!t.strikePrice && parsed.strikePrice) ||
+            (t.tradeTitle && t.tradeTitle.endsWith(' FUT'));
 
           if (needsLink) {
-            console.log(`  [LINK TRADE] Trade ${t._id} (${t.symbol}) -> Instrument ${underlying}`);
+            console.log(`  [LINK TRADE] Trade ${t._id} (${t.symbol}) -> Instrument ${inst.symbol}`);
             if (isLive) {
               const updateDoc: any = {
                 instrumentId: inst._id,
-                underlying,
-                ...(t.instrumentName ? {} : { instrumentName: inst.displayName }),
+                underlying: inst.symbol,
+                instrumentName: inst.displayName,
+                symbol: inst.symbol,
               };
-              if (parsed.formattedSymbol && t.symbol !== parsed.formattedSymbol) {
-                updateDoc.symbol = parsed.formattedSymbol;
-              }
-              if (!t.tradeTitle || t.tradeTitle === t.symbol) {
+              if (!t.tradeTitle || t.tradeTitle === t.symbol || t.tradeTitle.endsWith(' FUT')) {
                 updateDoc.tradeTitle = parsed.isDerivative
                   ? parsed.optionType && parsed.strikePrice
-                    ? `${inst.displayName || underlying} ${parsed.strikePrice} ${parsed.optionType === 'CALL' ? 'CE' : 'PE'}`
-                    : `${inst.displayName || underlying} FUT`
+                    ? `${parsed.strikePrice} ${parsed.optionType === 'CALL' ? 'CE' : 'PE'}`
+                    : (inst.displayName || underlying)
                   : (inst.displayName || underlying);
               }
               if (parsed.optionType && !t.optionType) updateDoc.optionType = parsed.optionType;

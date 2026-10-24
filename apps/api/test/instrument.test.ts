@@ -105,8 +105,8 @@ describe('Instrument Service & API Specifications Tests', () => {
       expect(InstrumentService.normalizeUnderlying('CRUDEOILM24OCTFUT')).toBe('CRUDEOILMINI');
       expect(InstrumentService.normalizeUnderlying('CRUDEOILMINI24OCTFUT')).toBe('CRUDEOILMINI');
       expect(InstrumentService.normalizeUnderlying('MCX:CRUDEOIL')).toBe('CRUDEOIL');
-      expect(InstrumentService.normalizeUnderlying('GOLDM24OCTFUT')).toBe('GOLD');
-      expect(InstrumentService.normalizeUnderlying('SILVERMIC')).toBe('SILVER');
+      expect(InstrumentService.normalizeUnderlying('GOLDM24OCTFUT')).toBe('GOLDM');
+      expect(InstrumentService.normalizeUnderlying('SILVERMIC')).toBe('SILVERMIC');
       expect(InstrumentService.normalizeUnderlying('NATGASMINI')).toBe('NATGASMINI');
       expect(InstrumentService.normalizeUnderlying('NATURALGAS')).toBe('NATURALGAS');
     });

@@ -454,12 +454,12 @@ describe('FYERS funds sync and reconciliation', () => {
       symbol: 'NIFTY',
     });
     expect(niftyInst).toBeTruthy();
-    expect(niftyInst?.displayName).toBe('Nifty 50 Index Futures');
+    expect(niftyInst?.displayName).toBe('Nifty 50');
 
     // Verify the trade was recorded with proper linkage and option metadata
     const optionTrade = await Trade.findOne({
       userId: new mongoose.Types.ObjectId(userId),
-      symbol: 'NIFTY 24100 CE',
+      symbol: 'NIFTY',
     });
     expect(optionTrade).toBeTruthy();
     expect(optionTrade?.instrumentId?.toString()).toBe(niftyInst?._id.toString());
@@ -467,6 +467,7 @@ describe('FYERS funds sync and reconciliation', () => {
     expect(optionTrade?.instrumentName).toBe(niftyInst?.displayName);
     expect(optionTrade?.optionType).toBe('CALL');
     expect(optionTrade?.strikePrice).toBe(24100);
+    expect(optionTrade?.tradeTitle).toBe('24100 CE');
     expect(optionTrade?.assetClass).toBe('OPTIONS');
     expect(optionTrade?.status).toBe('CLOSED');
     expect(optionTrade?.calculated.netPnL).toBeGreaterThan(0);
@@ -524,7 +525,7 @@ describe('FYERS funds sync and reconciliation', () => {
 
     const crudeTrade = await Trade.findOne({
       userId: new mongoose.Types.ObjectId(userId),
-      symbol: 'CRUDEOILMINI FUT',
+      symbol: 'CRUDEOILMINI',
     });
     expect(crudeTrade).toBeTruthy();
     expect(crudeTrade?.instrumentId?.toString()).toBe(crudeInst?._id.toString());

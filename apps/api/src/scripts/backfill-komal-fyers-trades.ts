@@ -50,11 +50,11 @@ async function main() {
       }
     }
 
-    const newFormattedSymbol = parsed.formattedSymbol || t.symbol;
+    const newFormattedSymbol = inst.symbol;
     const newTitle = parsed.isDerivative
       ? parsed.optionType && parsed.strikePrice
-        ? `${inst.displayName || parsed.underlying} ${parsed.strikePrice} ${parsed.optionType === 'CALL' ? 'CE' : 'PE'}`
-        : `${inst.displayName || parsed.underlying} FUT`
+        ? `${parsed.strikePrice} ${parsed.optionType === 'CALL' ? 'CE' : 'PE'}`
+        : (inst.displayName || parsed.underlying)
       : (inst.displayName || parsed.underlying);
 
     const needsUpdate =
@@ -63,6 +63,8 @@ async function main() {
       !t.underlying ||
       t.underlying !== inst.symbol ||
       t.symbol !== newFormattedSymbol ||
+      t.instrumentName !== inst.displayName ||
+      (t.tradeTitle && t.tradeTitle.endsWith(' FUT')) ||
       (!t.optionType && parsed.optionType) ||
       (!t.strikePrice && parsed.strikePrice) ||
       (!t.tradeTitle && newTitle) ||
@@ -74,7 +76,7 @@ async function main() {
       console.log(`  Underlying:     "${t.underlying || 'NONE'}" -> "${inst.symbol}"`);
       console.log(`  Instrument:     "${t.instrumentName || 'NONE'}" -> "${inst.displayName}" (${inst._id})`);
       console.log(`  Option Details: Opt: ${parsed.optionType || 'NONE'}, Strike: ${parsed.strikePrice || 'NONE'}`);
-      console.log(`  Title:          "${t.tradeTitle || 'NONE'}" -> "${t.tradeTitle || newTitle}"`);
+      console.log(`  Title:          "${t.tradeTitle || 'NONE'}" -> "${newTitle}"`);
       console.log(`  Multiplier:     ${t.simpleExecution?.contractMultiplier || 1} -> ${inst.contractMultiplier || 1}`);
 
       if (isLive) {
@@ -82,7 +84,7 @@ async function main() {
         t.underlying = inst.symbol;
         t.instrumentName = inst.displayName;
         t.symbol = newFormattedSymbol;
-        if (!t.tradeTitle || t.tradeTitle === rawSym) {
+        if (!t.tradeTitle || t.tradeTitle === rawSym || t.tradeTitle.endsWith(' FUT')) {
           t.tradeTitle = newTitle;
         }
         if (parsed.optionType) t.optionType = parsed.optionType;

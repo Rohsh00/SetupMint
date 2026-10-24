@@ -228,7 +228,7 @@ export function parseFyersSymbol(rawSymbol: string): ParsedFyersSymbol {
   const underlying = InstrumentService.normalizeUnderlying(rawSymbol);
 
   let cleanSymbol = sym;
-  let formattedSymbol = sym;
+  let formattedSymbol = underlying;
   let assetClass: AssetClass = 'EQUITY';
   let marketSegment: MarketSegment = exchange === 'MCX' ? 'MCX' : 'NSE_EQ';
   let optionType: OptionType | undefined;
@@ -238,7 +238,7 @@ export function parseFyersSymbol(rawSymbol: string): ParsedFyersSymbol {
 
   if (cleanSymbol.endsWith('-EQ') || cleanSymbol.endsWith('-BE')) {
     cleanSymbol = cleanSymbol.replace(/-EQ|-BE$/, '');
-    formattedSymbol = cleanSymbol;
+    formattedSymbol = underlying;
     assetClass = 'EQUITY';
     marketSegment = exchange === 'BSE' ? 'BSE_EQ' : 'NSE_EQ';
   } else if (/CE$|PE$|CALL$|PUT$/i.test(cleanSymbol)) {
@@ -250,15 +250,13 @@ export function parseFyersSymbol(rawSymbol: string): ParsedFyersSymbol {
     const optMatch = cleanSymbol.match(/(?:(?:\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2})\s*)?(\d+(?:\.\d+)?)\s*(?:CE|PE|CALL|PUT)$/i);
     if (optMatch && optMatch[1]) {
       strikePrice = parseFloat(optMatch[1]);
-      formattedSymbol = `${underlying} ${strikePrice} ${optionType === 'CALL' ? 'CE' : 'PE'}`;
-    } else {
-      formattedSymbol = `${underlying} ${optionType === 'CALL' ? 'CE' : 'PE'}`;
     }
+    formattedSymbol = underlying;
   } else if (/FUT$|FUTURES$/i.test(cleanSymbol)) {
     assetClass = exchange === 'MCX' ? 'COMMODITY' : 'FUTURES';
     marketSegment = exchange === 'MCX' ? 'MCX' : 'NSE_FNO';
     isDerivative = true;
-    formattedSymbol = `${underlying} FUT`;
+    formattedSymbol = underlying;
   } else if (exchange === 'MCX') {
     assetClass = 'COMMODITY';
     marketSegment = 'MCX';
@@ -834,8 +832,8 @@ export class FyersService {
       // 3. Descriptive formatted title
       const tradeTitle = isDerivative
         ? optionType && strikePrice
-          ? `${inst.displayName || underlying} ${strikePrice} ${optionType === 'CALL' ? 'CE' : 'PE'}`
-          : `${inst.displayName || underlying} FUT`
+          ? `${strikePrice} ${optionType === 'CALL' ? 'CE' : 'PE'}`
+          : (inst.displayName || underlying)
         : (inst.displayName || underlying);
 
       interface ActiveGroup {
@@ -942,8 +940,8 @@ export class FyersService {
               existing.instrumentName = inst.displayName;
               updated = true;
             }
-            if (formattedSymbol && existing.symbol !== formattedSymbol) {
-              existing.symbol = formattedSymbol;
+            if (inst.symbol && existing.symbol !== inst.symbol) {
+              existing.symbol = inst.symbol;
               updated = true;
             }
             if (tradeTitle && (!existing.tradeTitle || existing.tradeTitle === cleanSymbol || existing.tradeTitle === sample.raw.symbol)) {
@@ -1012,7 +1010,7 @@ export class FyersService {
             instrumentId: inst._id,
             underlying: inst.symbol,
             instrumentName: inst.displayName,
-            symbol: formattedSymbol,
+            symbol: inst.symbol,
             tradeTitle,
             optionType,
             strikePrice,

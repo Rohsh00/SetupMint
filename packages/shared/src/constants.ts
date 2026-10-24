@@ -680,7 +680,7 @@ export const TRADING_SESSIONS: { value: TradingSession; label: string; timing: s
 export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
   {
     symbol: 'NIFTY',
-    displayName: 'Nifty 50 Index Futures',
+    displayName: 'Nifty 50',
     assetClass: 'FUTURES',
     exchange: 'NSE',
     marketSegment: 'NSE_FNO',
@@ -695,7 +695,7 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
   },
   {
     symbol: 'BANKNIFTY',
-    displayName: 'Bank Nifty Futures',
+    displayName: 'Bank Nifty',
     assetClass: 'FUTURES',
     exchange: 'NSE',
     marketSegment: 'NSE_FNO',
@@ -710,7 +710,7 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
   },
   {
     symbol: 'FINNIFTY',
-    displayName: 'Nifty Financial Services Futures',
+    displayName: 'Fin Nifty',
     assetClass: 'FUTURES',
     exchange: 'NSE',
     marketSegment: 'NSE_FNO',
@@ -946,7 +946,7 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
   },
   {
     symbol: 'SENSEX',
-    displayName: 'BSE Sensex Futures',
+    displayName: 'BSE Sensex',
     assetClass: 'FUTURES',
     exchange: 'BSE',
     marketSegment: 'BSE_EQ',
@@ -957,11 +957,11 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quantityIncrement: 10,
     pricePrecision: 2,
     isActive: true,
-    description: 'BSE Sensex Index future contract',
+    description: 'BSE Sensex Index contract',
   },
   {
     symbol: 'BANKEX',
-    displayName: 'BSE Bankex Futures',
+    displayName: 'BSE Bankex',
     assetClass: 'FUTURES',
     exchange: 'BSE',
     marketSegment: 'BSE_EQ',
@@ -972,11 +972,11 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quantityIncrement: 15,
     pricePrecision: 2,
     isActive: true,
-    description: 'BSE Bankex Index future contract',
+    description: 'BSE Bankex Index contract',
   },
   {
     symbol: 'MIDCPNIFTY',
-    displayName: 'Nifty Midcap Select Futures',
+    displayName: 'Nifty Midcap Select',
     assetClass: 'FUTURES',
     exchange: 'NSE',
     marketSegment: 'NSE_FNO',
@@ -987,11 +987,11 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quantityIncrement: 50,
     pricePrecision: 2,
     isActive: true,
-    description: 'Nifty Midcap Select Index future contract',
+    description: 'Nifty Midcap Select Index contract',
   },
   {
     symbol: 'CRUDEOILMINI',
-    displayName: 'Crude Oil Mini Futures',
+    displayName: 'Crude Oil Mini',
     assetClass: 'COMMODITY',
     exchange: 'MCX',
     marketSegment: 'MCX',
@@ -1006,7 +1006,7 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
   },
   {
     symbol: 'NATGASMINI',
-    displayName: 'Natural Gas Mini Futures',
+    displayName: 'Natural Gas Mini',
     assetClass: 'COMMODITY',
     exchange: 'MCX',
     marketSegment: 'MCX',
@@ -1018,6 +1018,21 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     pricePrecision: 2,
     isActive: true,
     description: 'MCX Natural Gas Mini 250 mmBtu contract',
+  },
+  {
+    symbol: 'GOLDM',
+    displayName: 'Gold Mini',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 10, // 10 grams per point / 100g lot
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Gold Mini 100g contract',
   },
 ];
 
@@ -1042,6 +1057,9 @@ export function getPresetSpec(symbol: string): PresetInstrumentSpec | undefined 
   }
   if (clean === 'NATGAS') {
     return PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATURALGAS');
+  }
+  if (clean === 'GOLDM') {
+    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'GOLDM');
   }
   return undefined;
 }

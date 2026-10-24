@@ -707,19 +707,43 @@ export function TradesPage() {
                       </TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.2 }}>
-                          <RouterLink
-                            to={`/trades/${tradeId}`}
-                            style={{
-                              color: muiTheme.palette.text.primary,
-                              textDecoration: 'none',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              fontWeight: 700,
-                              fontFamily: `'JetBrains Mono', monospace`,
-                            }}
-                          >
-                            {t.symbol}
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <RouterLink
+                              to={`/trades/${t._id || t.id}`}
+                              style={{
+                                textDecoration: 'none',
+                                color: muiTheme.palette.text.primary,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontWeight: 700,
+                                fontFamily: `'JetBrains Mono', monospace`,
+                              }}
+                            >
+                              {t.symbol}
+                            </RouterLink>
+
+                            {t.optionType && t.strikePrice ? (
+                              <Box
+                                component="span"
+                                sx={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  px: 0.75,
+                                  py: 0.2,
+                                  borderRadius: 1,
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 700,
+                                  fontFamily: `'JetBrains Mono', monospace`,
+                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+                                  color: isDark ? '#60a5fa' : '#2563eb',
+                                  border: `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)'}`,
+                                }}
+                              >
+                                {t.strikePrice} {t.optionType === 'CALL' ? 'CE' : 'PE'}
+                              </Box>
+                            ) : null}
+
                             {t.screenshotIds && t.screenshotIds.length > 0 && (
                               <Tooltip title={`${t.screenshotIds.length} chart screenshot${t.screenshotIds.length > 1 ? 's' : ''} attached`}>
                                 <Box
@@ -742,7 +766,7 @@ export function TradesPage() {
                                 </Box>
                               </Tooltip>
                             )}
-                          </RouterLink>
+                          </Box>
                           {t.instrumentName && t.instrumentName !== t.symbol && (
                             <Typography
                               variant="caption"

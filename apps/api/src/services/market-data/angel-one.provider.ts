@@ -24,10 +24,19 @@ export class AngelOneCandleProvider implements ICandleProvider {
     }
 
     // Verify symbol can be mapped
-    const underlying = trade.underlying || trade.symbol;
+    const underlying = (trade.underlying || trade.symbol || '').trim().toUpperCase();
+    const aliasUnderlying = underlying === 'CRUDEOILMINI' ? 'CRUDEOILM' : underlying;
     const count = await AngelOneInstrument.countDocuments({
-      $or: [{ userId: uId }, { userId: null }],
-      name: underlying.toUpperCase(),
+      $and: [
+        { $or: [{ userId: uId }, { userId: null }] },
+        {
+          $or: [
+            { name: underlying },
+            { name: aliasUnderlying },
+            { tradingsymbol: trade.symbol?.trim().toUpperCase() },
+          ],
+        },
+      ],
     });
 
     return count > 0;
@@ -85,12 +94,23 @@ export class AngelOneCandleProvider implements ICandleProvider {
     }
 
     // 4. Resolve symboltoken from AngelOneInstrument
-    const rawUnderlying = (isUnderlyingFallback && trade.underlying ? trade.underlying : trade.symbol).trim().toUpperCase();
+    const targetUnderlying = (isUnderlyingFallback && trade.underlying ? trade.underlying : (trade.underlying || trade.symbol || '')).trim().toUpperCase();
+    const targetSymbol = (trade.symbol || '').trim().toUpperCase();
+    const aliasUnderlying = targetUnderlying === 'CRUDEOILMINI' ? 'CRUDEOILM' : targetUnderlying;
 
-    // Query candidates matching underlying from user or global index cache
+    // Query candidates matching underlying or tradingsymbol from user or global index cache
     const candidates = await AngelOneInstrument.find({
-      $or: [{ userId: uId }, { userId: null }],
-      name: rawUnderlying,
+      $and: [
+        { $or: [{ userId: uId }, { userId: null }] },
+        {
+          $or: [
+            { name: targetUnderlying },
+            { name: aliasUnderlying },
+            { tradingsymbol: targetSymbol },
+            { tradingsymbol: targetUnderlying },
+          ],
+        },
+      ],
     }).lean();
 
     const mapped = mapTradeToAngelOneSymbol(

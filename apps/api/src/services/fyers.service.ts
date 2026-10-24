@@ -259,15 +259,45 @@ export function parseFyersSymbol(rawSymbol: string): ParsedFyersSymbol {
     optionType = /CE$|CALL$/i.test(cleanSymbol) ? 'CALL' : 'PUT';
     isDerivative = true;
 
-    const optMatch = cleanSymbol.match(/(?:(?:\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2})\s*)?(\d+(?:\.\d+)?)\s*(?:CE|PE|CALL|PUT)$/i);
-    if (optMatch && optMatch[1]) {
-      strikePrice = parseFloat(optMatch[1]);
+    const weeklyMatch = cleanSymbol.match(/(?:[A-Z]+)(\d{2})([1-9OND])(\d{2})(\d+(?:\.\d+)?)(?:CE|PE|CALL|PUT)$/i);
+    if (weeklyMatch) {
+      const yy = 2000 + parseInt(weeklyMatch[1], 10);
+      const mCode = weeklyMatch[2].toUpperCase();
+      const monthIndex = mCode === 'O' ? 9 : mCode === 'N' ? 10 : mCode === 'D' ? 11 : parseInt(mCode, 10) - 1;
+      const dd = parseInt(weeklyMatch[3], 10);
+      expiryDate = new Date(Date.UTC(yy, monthIndex, dd));
+      strikePrice = parseFloat(weeklyMatch[4]);
+    } else {
+      const monthlyOptMatch = cleanSymbol.match(/(?:[A-Z]+)(\d{2})([A-Z]{3})(\d+(?:\.\d+)?)(?:CE|PE|CALL|PUT)$/i);
+      if (monthlyOptMatch) {
+        const yy = 2000 + parseInt(monthlyOptMatch[1], 10);
+        const mmm = monthlyOptMatch[2].toUpperCase();
+        strikePrice = parseFloat(monthlyOptMatch[3]);
+        const m = moment(`${yy}-${mmm}-01`, 'YYYY-MMM-DD');
+        if (m.isValid()) {
+          expiryDate = m.endOf('month').toDate();
+        }
+      } else {
+        const optMatch = cleanSymbol.match(/(?:(?:\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2})\s*)?(\d+(?:\.\d+)?)\s*(?:CE|PE|CALL|PUT)$/i);
+        if (optMatch && optMatch[1]) {
+          strikePrice = parseFloat(optMatch[1]);
+        }
+      }
     }
     formattedSymbol = underlying;
   } else if (/FUT$|FUTURES$/i.test(cleanSymbol)) {
     assetClass = exchange === 'MCX' ? 'COMMODITY' : 'FUTURES';
     marketSegment = exchange === 'MCX' ? 'MCX' : 'NSE_FNO';
     isDerivative = true;
+    const futMatch = cleanSymbol.match(/(?:[A-Z]+)(\d{2})([A-Z]{3})FUT$/i);
+    if (futMatch) {
+      const yy = 2000 + parseInt(futMatch[1], 10);
+      const mmm = futMatch[2].toUpperCase();
+      const m = moment(`${yy}-${mmm}-01`, 'YYYY-MMM-DD');
+      if (m.isValid()) {
+        expiryDate = m.endOf('month').toDate();
+      }
+    }
     formattedSymbol = underlying;
   } else if (exchange === 'MCX') {
     assetClass = 'COMMODITY';

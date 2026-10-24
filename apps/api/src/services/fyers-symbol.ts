@@ -46,10 +46,37 @@ export function formatFyersSymbol(input: IFyersSymbolInput): string {
   if (underlying.includes(':')) {
     underlying = underlying.split(':')[1];
   }
+  if (exchange === 'MCX' && underlying === 'CRUDEOILMINI') {
+    underlying = 'CRUDEOILM';
+  }
 
   const assetClass = (input.assetClass || 'EQUITY').toUpperCase();
 
-  // 1. Cash Equity
+  // 1. Benchmark Index
+  if (assetClass === 'INDEX') {
+    const upper = underlying.toUpperCase();
+    if (upper === 'NIFTY' || upper === 'NIFTY50') {
+      return 'NSE:NIFTY50-INDEX';
+    }
+    if (upper === 'BANKNIFTY' || upper === 'NIFTYBANK') {
+      return 'NSE:NIFTYBANK-INDEX';
+    }
+    if (upper === 'FINNIFTY') {
+      return 'NSE:FINNIFTY-INDEX';
+    }
+    if (upper === 'MIDCPNIFTY') {
+      return 'NSE:MIDCPNIFTY-INDEX';
+    }
+    if (upper === 'SENSEX') {
+      return 'BSE:SENSEX-INDEX';
+    }
+    if (exchange === 'BSE') {
+      return `BSE:${underlying}-INDEX`;
+    }
+    return `NSE:${underlying}-INDEX`;
+  }
+
+  // 2. Cash Equity
   if (assetClass === 'EQUITY' || input.marketSegment === 'NSE_EQ' || input.marketSegment === 'BSE_EQ') {
     if (exchange === 'BSE') {
       return `BSE:${underlying}`;
@@ -59,8 +86,12 @@ export function formatFyersSymbol(input: IFyersSymbolInput): string {
 
   const expiry = input.expiryDate ? moment(input.expiryDate) : null;
 
-  // 2. Futures
+  // 3. Futures
   if (assetClass === 'FUTURES' || (assetClass === 'COMMODITY' && (!input.optionType || input.optionType === 'NONE'))) {
+    // If rawSymbol already has a specific contract symbol (e.g. CRUDEOILM26NOVFUT or GOLDM26NOVFUT)
+    if (/FUT$/i.test(rawSymbol) && rawSymbol.toUpperCase() !== `${underlying}FUT`) {
+      return `${exchange}:${rawSymbol.toUpperCase()}`;
+    }
     if (expiry && expiry.isValid()) {
       const yy = expiry.format('YY');
       const mmm = expiry.format('MMM').toUpperCase();
@@ -73,8 +104,13 @@ export function formatFyersSymbol(input: IFyersSymbolInput): string {
     return `${exchange}:${underlying}FUT`;
   }
 
-  // 3. Options
+  // 4. Options
   if (assetClass === 'OPTIONS' || input.optionType === 'CALL' || input.optionType === 'PUT') {
+    // If rawSymbol already has a complete option contract ticker, prefix with exchange
+    if (/(?:\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2})\d+(?:CE|PE)$/i.test(rawSymbol)) {
+      return `${exchange}:${rawSymbol.toUpperCase()}`;
+    }
+
     const optType =
       input.optionType === 'PUT' || input.optionType === 'PE' || /PE$/i.test(rawSymbol)
         ? 'PE'

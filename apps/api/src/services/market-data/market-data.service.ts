@@ -269,7 +269,16 @@ export class MarketDataService {
       'FINNIFTY',
       'MIDCPNIFTY',
       'SENSEX',
+      'CRUDEOIL',
+      'CRUDEOILM',
+      'NATURALGAS',
+      'NATGASMINI',
+      'GOLD',
+      'GOLDM',
+      'SILVER',
+      'SILVERM',
       ...userInstruments.map((i) => i.symbol.toUpperCase()),
+      ...userInstruments.map((i) => (i.symbol.toUpperCase() === 'CRUDEOILMINI' ? 'CRUDEOILM' : i.symbol.toUpperCase())),
     ]);
 
     // 2. Stream/fetch instrument master

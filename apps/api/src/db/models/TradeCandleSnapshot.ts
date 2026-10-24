@@ -7,6 +7,9 @@ export interface ITradeCandleSnapshotDoc extends Document {
   symbol: string;
   resolution: string;
   candles: ITradeCandle[];
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+  isUnderlyingFallback?: boolean;
+  droppedRowsCount?: number;
   fetchedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -48,6 +51,19 @@ const TradeCandleSnapshotSchema = new Schema<ITradeCandleSnapshotDoc>(
         _id: false,
       },
     ],
+    provider: {
+      type: String,
+      enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING'],
+      default: 'FYERS',
+    },
+    isUnderlyingFallback: {
+      type: Boolean,
+      default: false,
+    },
+    droppedRowsCount: {
+      type: Number,
+      default: 0,
+    },
     fetchedAt: {
       type: Date,
       default: Date.now,

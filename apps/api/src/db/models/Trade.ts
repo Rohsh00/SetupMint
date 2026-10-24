@@ -128,7 +128,9 @@ export interface ITradeDoc extends Document {
     excursion?: {
       status: 'PENDING' | 'COMPUTED' | 'UNAVAILABLE' | 'FAILED';
       computedAt?: Date;
-      source?: 'FYERS_HISTORY';
+      source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK';
+      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+      isUnderlyingFallback?: boolean;
       resolution?: string;
       failureReason?: string;
       maePoints?: number;
@@ -371,7 +373,17 @@ const TradeSchema = new Schema<ITradeDoc>(
           default: 'PENDING',
         },
         computedAt: { type: Date },
-        source: { type: String, default: 'FYERS_HISTORY' },
+        source: {
+          type: String,
+          enum: ['FYERS_HISTORY', 'ANGEL_ONE_HISTORY', 'UNDERLYING_FALLBACK'],
+          default: 'FYERS_HISTORY',
+        },
+        provider: {
+          type: String,
+          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING'],
+          default: 'FYERS',
+        },
+        isUnderlyingFallback: { type: Boolean, default: false },
         resolution: { type: String },
         failureReason: { type: String },
         maePoints: { type: Number },

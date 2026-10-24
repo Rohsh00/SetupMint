@@ -13,3 +13,6 @@ export * from './BrokerFundsSnapshot.js';
 export * from './BrokerImportMapping.js';
 export * from './TradeTemplate.js';
 export * from './TradeCandleSnapshot.js';
+export * from './MarketDataIntegration.js';
+export * from './AngelOneInstrument.js';
+

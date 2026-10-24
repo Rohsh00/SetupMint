@@ -26,6 +26,7 @@ import { settingsRoutes } from './routes/settings.routes.js';
 import { integrationsRoutes } from './routes/integrations.routes.js';
 import { reviewRoutes } from './routes/review.routes.js';
 import { templateRoutes } from './routes/template.routes.js';
+import { marketDataRoutes } from './routes/market-data.routes.js';
 
 export async function buildApp() {
   // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
@@ -37,11 +38,22 @@ export async function buildApp() {
       redact: [
         'req.headers.cookie',
         'req.headers.authorization',
+        'req.headers["x-privatekey"]',
+        'req.headers["x-macaddress"]',
+        'req.headers["x-clientlocalip"]',
+        'req.headers["x-clientpublicip"]',
         'req.body.password',
         'req.body.token',
         'req.body.tokenHash',
         'req.body.secretKey',
         'req.body.appId',
+        'req.body.apiKey',
+        'req.body.clientCode',
+        'req.body.pin',
+        'req.body.totp',
+        'req.body.jwtToken',
+        'req.body.refreshToken',
+        'req.body.feedToken',
         'req.query.auth_code',
         'req.query.code',
         'cookie',
@@ -52,6 +64,16 @@ export async function buildApp() {
         'refreshToken',
         'appId',
         'authorization',
+        'apiKey',
+        'clientCode',
+        'pin',
+        'totp',
+        'jwtToken',
+        'feedToken',
+        'x-privatekey',
+        'x-macaddress',
+        'x-clientlocalip',
+        'x-clientpublicip',
       ],
       transport: config.isDev
         ? {
@@ -152,6 +174,7 @@ export async function buildApp() {
   app.register(exportImportRoutes, { prefix: '/api/v1/export' });
   app.register(settingsRoutes, { prefix: '/api/v1/settings' });
   app.register(integrationsRoutes, { prefix: '/api/v1/integrations' });
+  app.register(marketDataRoutes, { prefix: '/api/v1/integrations/market-data' });
   app.register(reviewRoutes, { prefix: '/api/v1/review' });
   app.register(templateRoutes, { prefix: '/api/v1/templates' });
 

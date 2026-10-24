@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { BrokerIntegration } from '../db/models/index.js';
+import { BrokerIntegration, MarketDataIntegration } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { FyersService } from '../services/fyers.service.js';
 import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto.service.js';
@@ -318,21 +318,43 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         });
       }
 
+      const requestedProvider = parsed.data.provider || 'AUTO';
+
       const integration = await BrokerIntegration.findOne({
         userId: req.user.id,
         broker: 'FYERS',
       });
       const tokenExpiry = integration?.tokenExpiresAt || integration?.authCodeExpiresAt;
-      const isTokenValid = Boolean(
+      const isFyersValid = Boolean(
         integration?.accessToken && tokenExpiry && new Date(tokenExpiry) > new Date()
       );
 
-      if (!isTokenValid) {
+      const angelOneDoc = await MarketDataIntegration.findOne({
+        userId: req.user.id,
+        provider: 'ANGEL_ONE',
+      });
+      const isAngelOneValid = Boolean(
+        angelOneDoc?.tokenExpiresAt && new Date(angelOneDoc.tokenExpiresAt) > new Date()
+      );
+
+      if (requestedProvider === 'ANGEL_ONE' && !isAngelOneValid) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'MARKET_DATA_NOT_CONNECTED',
+            message:
+              'Active Angel One market data session is required. Please connect Angel One in Settings.',
+          },
+        });
+      }
+
+      if (requestedProvider === 'AUTO' && !isFyersValid && !isAngelOneValid) {
         return reply.status(409).send({
           success: false,
           error: {
             code: 'BROKER_NOT_CONNECTED',
-            message: 'Active FYERS broker session is required. Please reconnect FYERS in Settings.',
+            message:
+              'Active market data session (FYERS or Angel One) is required. Please reconnect in Settings.',
           },
         });
       }

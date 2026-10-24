@@ -13,9 +13,20 @@ import {
   tradeFilterQuerySchema,
   bulkClassifySchema,
   stopMoveDetectionSchema,
+  excursionComputeOptionsSchema,
+  chartGenerateOptionsSchema,
   TradeOutcome,
 } from '@tradevault/shared';
-import { TradingAccount, Trade, Strategy, Instrument, Attachment, TradeTemplate, BrokerIntegration } from '../db/models/index.js';
+import {
+  TradingAccount,
+  Trade,
+  Strategy,
+  Instrument,
+  Attachment,
+  TradeTemplate,
+  BrokerIntegration,
+  MarketDataIntegration,
+} from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
@@ -980,6 +991,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     '/:id/excursion/compute',
     { preHandler: [validateObjectIdParam('id')] },
     async (req: any, reply) => {
+      const parsedBody = excursionComputeOptionsSchema.safeParse(req.body || {});
+      if (!parsedBody.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid excursion compute parameters',
+            details: parsedBody.error.format(),
+          },
+        });
+      }
+
       const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
       if (!trade) {
         return reply.status(404).send({
@@ -998,31 +1021,55 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         });
       }
 
-      // Check active FYERS session
-      const integration = await BrokerIntegration.findOne({
+      const requestedProvider = parsedBody.data.provider;
+
+      // Check active provider sessions
+      const fyersIntegration = await BrokerIntegration.findOne({
         userId: req.user!.id,
         broker: 'FYERS',
       });
-      const tokenExpiry = integration?.tokenExpiresAt || integration?.authCodeExpiresAt;
-      const isTokenValid = Boolean(
-        integration?.accessToken && tokenExpiry && new Date(tokenExpiry) > new Date()
+      const fyersExpiry = fyersIntegration?.tokenExpiresAt || fyersIntegration?.authCodeExpiresAt;
+      const isFyersValid = Boolean(
+        fyersIntegration?.accessToken && fyersExpiry && new Date(fyersExpiry) > new Date()
       );
 
-      if (!isTokenValid) {
+      const angelOneDoc = await MarketDataIntegration.findOne({
+        userId: req.user!.id,
+        provider: 'ANGEL_ONE',
+      });
+      const isAngelOneValid = Boolean(
+        angelOneDoc?.tokenExpiresAt && new Date(angelOneDoc.tokenExpiresAt) > new Date()
+      );
+
+      if (requestedProvider === 'ANGEL_ONE' && !isAngelOneValid) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'MARKET_DATA_NOT_CONNECTED',
+            message:
+              'Active Angel One market data session is required. Please connect Angel One in Settings.',
+          },
+        });
+      }
+
+      if (requestedProvider === 'AUTO' && !isFyersValid && !isAngelOneValid) {
         return reply.status(409).send({
           success: false,
           error: {
             code: 'BROKER_NOT_CONNECTED',
-            message: 'Active FYERS broker session is required. Please reconnect FYERS in Settings.',
+            message:
+              'Active market data session (FYERS or Angel One) is required. Please connect in Settings.',
           },
         });
       }
 
       try {
+        const forceRefetch = parsedBody.data.forceRefetch ?? true;
         const excursion = await FyersService.computeExcursionForTrade(
           req.params.id,
           req.user!.id,
-          true
+          forceRefetch,
+          { provider: requestedProvider }
         );
         return reply.send({
           success: true,
@@ -1040,11 +1087,23 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
   );
 
-  // Generate automated SVG execution chart from FYERS candlestick data
+  // Generate automated SVG execution chart from candlestick data
   app.post(
     '/:id/chart/generate',
     { preHandler: [validateObjectIdParam('id')] },
     async (req: any, reply) => {
+      const parsedBody = chartGenerateOptionsSchema.safeParse(req.body || {});
+      if (!parsedBody.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid chart generation parameters',
+            details: parsedBody.error.format(),
+          },
+        });
+      }
+
       const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
       if (!trade) {
         return reply.status(404).send({
@@ -1064,11 +1123,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
 
       try {
-        const force = Boolean(req.body?.force);
+        const force = Boolean(parsedBody.data.force);
         const attachment = await ChartGeneratorService.createAndSaveAutoChartForTrade(
           trade._id,
           req.user!.id,
-          { force }
+          { force, provider: parsedBody.data.provider }
         );
 
         return reply.status(201).send({

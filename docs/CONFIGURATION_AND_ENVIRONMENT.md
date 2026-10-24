@@ -53,6 +53,12 @@ FYERS_API_BASE=https://api-t1.fyers.in/api/v3
 FYERS_REDIRECT_URI=http://127.0.0.1:4000/api/v1/integrations/fyers/callback
 FYERS_FUNDS_DRIFT_TOLERANCE=1
 FYERS_FUNDS_SYNC_ENABLED=true
+
+# Optional Angel One SmartAPI Integration (Market Data Historical Candles Fallback Only)
+# API Key, Client Code, and PIN are configured per-user in Settings and encrypted at rest (AES-256-GCM).
+ANGEL_ONE_API_BASE=https://apiconnect.angelone.in
+ANGEL_ONE_DAILY_BUDGET=500
+ANGEL_ONE_INSTRUMENT_MASTER_URL=https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json
 ```
 
 ---
@@ -79,6 +85,9 @@ FYERS_FUNDS_SYNC_ENABLED=true
 | `FYERS_REDIRECT_URI` | No | `http://127.0.0.1:4000/api/v1/integrations/fyers/callback` | OAuth callback URL registered in the FYERS dashboard. | Must exactly match the FYERS dashboard setting. |
 | `FYERS_FUNDS_DRIFT_TOLERANCE` | No | `1` | Allowed ₹ drift before a reconciliation suggestion. | Must be a non-negative number. |
 | `FYERS_FUNDS_SYNC_ENABLED` | No | `true` | Enables/disables FYERS funds sync. | Set `false` to disable funds sync without deleting credentials. |
+| `ANGEL_ONE_API_BASE` | No | `https://apiconnect.angelone.in` | SmartAPI endpoint base URL for market data historical candles. | Fixed allowlisted base URL. No user-supplied URLs permitted. |
+| `ANGEL_ONE_DAILY_BUDGET` | No | `500` | Default daily historical candle API call quota per user. | Validated in `validateConfig()` (bounded between 1 and 5,000 calls). |
+| `ANGEL_ONE_INSTRUMENT_MASTER_URL` | No | `https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json` | Public Angel One Scrip Master JSON download URL. | Fixed allowlisted URL. |
 | `COOKIE_DOMAIN` | No | `''` (omitted on localhost) | Domain scope for session cookies. | **Crucial:** Omit or leave empty for `localhost` / `127.0.0.1` because modern browsers reject `Domain=localhost`. Set to `.yourdomain.com` in production. |
 | `SESSION_IDLE_DAYS` | No | `90` | Sliding session lifetime in days. | Session expiry extends when active and idle remaining < 50%. |
 | `SESSION_ABSOLUTE_DAYS` | No | `365` | Hard upper limit on session age in days from creation. | Forces re-authentication after 1 year regardless of activity. |

@@ -89,13 +89,14 @@ Configured via `@fastify/rate-limit` in [`apps/api/src/server.ts`](file:///Users
 2. **Strict Auth Endpoint Rate Limits:**
    - `POST /api/v1/auth/register`: Limited to **15 requests per minute**.
    - `POST /api/v1/auth/login`: Limited to **15 requests per minute**.
+   - `POST /api/v1/integrations/market-data/angel-one/connect`: Limited to **15 requests per minute** to prevent TOTP brute-forcing.
    Mitigates credential stuffing and brute-force password cracking attacks.
 
 ---
 
 ## 5. Input Validation & Injection Defense
 
-1. **Shared Zod Schemas:** All request payloads are validated at runtime using strict Zod schemas (`registerSchema`, `createTradeSchema`, `createAccountSchema`, etc.). Unexpected or malicious fields are rejected with `400 VALIDATION_ERROR`.
+1. **Shared Zod Schemas:** All request payloads are validated at runtime using strict Zod schemas (`registerSchema`, `createTradeSchema`, `createAccountSchema`, `angelOneConnectSchema`, etc.). Unexpected or malicious fields are rejected with `400 VALIDATION_ERROR`.
 2. **Parameter Sanitization:** Route parameters representing ObjectIds (e.g., `:id`, `:tradeId`) are validated through [`validateObjectIdParam`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/middleware/validate.ts) using `mongoose.Types.ObjectId.isValid()`, preventing malformed queries from causing unhandled exceptions.
 3. **NoSQL Injection Prevention:** Mongoose schema compilation and explicit type casting protect against MongoDB operator injection attacks (e.g. `{ $ne: null }`).
 
@@ -119,6 +120,18 @@ Chart screenshot uploads are guarded against malicious file execution in [`apps/
 ## 7. Secrets Management & Log Redaction
 
 1. **Environment Variables:** All secrets (`SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, `MONGODB_URI`, R2 storage keys) are supplied via environment variables (`.env`). Production startup fails if the session or broker-encryption keys are missing, default, or shorter than 32 characters.
-2. **Broker Secret Encryption:** FYERS app secrets, access tokens, and refresh tokens are encrypted at rest with AES-256-GCM using a key derived from `TOKEN_ENCRYPTION_KEY`. Encrypted values use an `enc:v1:iv:tag:ciphertext` envelope. `BrokerIntegration` serialization strips secrets/tokens, and OAuth state values are stored only as SHA-256 hashes with a 10-minute expiry.
-3. **Pino Structured Log Redaction:** In [`apps/api/src/server.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/server.ts), sensitive tokens, credentials, and headers are redacted automatically, including `req.headers.cookie`, `req.headers.authorization`, `req.body.password`, `req.body.secretKey`, `req.body.appId`, `accessToken`, `refreshToken`, `req.query.auth_code`, and `req.query.code`.
+2. **Broker Secret Encryption:** FYERS and Angel One SmartAPI credentials and tokens (`apiKey`, `clientCode`, `pin`, `jwtToken`, `refreshToken`, `feedToken`) are encrypted at rest with AES-256-GCM using a key derived from `TOKEN_ENCRYPTION_KEY`. Encrypted values use an `enc:v1:iv:tag:ciphertext` envelope. `toJSON` / `toObject` transforms strip credentials/tokens from API serialization.
+3. **Pino Structured Log Redaction:** In [`apps/api/src/server.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/server.ts), sensitive tokens, credentials, and headers are redacted automatically with `[Redacted]`. The redaction list covers:
+   - Auth & Session: `req.headers.cookie`, `req.headers.authorization`, `req.body.password`
+   - FYERS: `req.body.secretKey`, `req.body.appId`, `accessToken`, `refreshToken`, `req.query.auth_code`, `req.query.code`
+   - Angel One SmartAPI: `apiKey`, `clientCode`, `pin`, `totp`, `jwtToken`, `refreshToken`, `feedToken`, `x-privatekey`, `x-macaddress`, `x-clientlocalip`, `x-clientpublicip`, and `*.apiKey`
 4. **Sanitized Error Responses:** The Fastify central error handler catches unhandled exceptions and returns a generic message (`"An unexpected internal error occurred. Your trading data is secure."`), preventing stack traces or database connection strings from leaking to the client in production.
+
+---
+
+## 8. Market-Data Fallback Security Controls
+1. **Dynamic TOTP Handling:** The trader supplies a fresh 6-digit TOTP upon each session connection. The TOTP is validated for exact 6-numeric-digit format, never persisted to disk or database, never logged, and cleared from React state immediately upon submission.
+2. **Strict Scope Enforcement:** Automated guard tests verify that the Angel One module contains zero order execution (`placeOrder`, `modifyOrder`, `cancelOrder`), position, holding, profile, funds, or tradebook methods.
+3. **Fixed Allowlisted Base URLs:** Only the official SmartAPI endpoints are called (`https://apiconnect.angelone.in`), completely eliminating Server-Side Request Forgery (SSRF) risks.
+4. **Tenant Isolation:** Every operation, credential query, and instrument scrip master record is strictly isolated to the authenticated user ID (`req.user.id`).
+

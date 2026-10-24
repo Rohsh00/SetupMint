@@ -261,3 +261,66 @@ The migration:
 - Adds `source: 'MANUAL'` and `status: 'CONFIRMED'` to legacy transactions.
 - Encrypts legacy plaintext FYERS secrets and tokens.
 - Recalculates all account balances from confirmed records.
+
+---
+
+## 10. Angel One SmartAPI (Market-Data-Only Fallback Candle Source)
+
+### Architectural Scope & Guarantees
+Angel One SmartAPI is integrated strictly as a **read-only historical candlestick market data fallback source** for MAE/MFE excursion analytics and automated chart screenshot generation.
+- **Strictly Market-Data Only:** Never used for broker linking, tradebook sync, order execution, order cancellation, positions, funds, holdings, profile fetching, or WebSocket feeds.
+- **Strict Tenant Isolation:** All market data records, stored credentials, session tokens, and instrument caches are scoped strictly by `userId`. Cross-tenant queries return 401/404.
+- **Fallback Chain Wiring:**
+  ```text
+  Cached Snapshot -> FYERS History -> Angel One SmartAPI -> Underlying Asset Fallback -> UNAVAILABLE
+  ```
+  If FYERS returns valid candles, Angel One is never called (short-circuit proven with test).
+
+### Pure Logic & Normalization
+1. **IST to UTC Explicit Conversion:** SmartAPI timestamps (`YYYY-MM-DD HH:mm`) are in Indian Standard Time (IST, UTC+05:30, no DST). All timestamps are converted to UTC Unix epoch seconds via `moment`.
+2. **Numeric Validity & Drop Counts:** Every candle must satisfy `h >= max(o,c)`, `l <= min(o,c)`, and non-negative volume. Violations are dropped and tracked in `droppedRowsCount`.
+3. **Timestamp Deduplication:** Unique, monotonically ascending timestamps are enforced; duplicate timestamps keep the first valid row.
+4. **Range Caps & Lookback Rules:**
+   - `ONE_MINUTE`: 30-day max provider lookback, chunked into 15-day range caps.
+   - `FIVE_MINUTE`: 90-day max provider lookback, chunked into 60-day range caps.
+   - `ONE_DAY`: 365-day max provider lookback, chunked into 365-day range caps.
+   - Max 8,000 candles per API request.
+
+### Resilience & Concurrency
+- **Circuit Breaker:** In-memory per-user circuit breaker opens after 3 consecutive upstream failures, triggering a 60-second cooldown before a half-open probe.
+- **Throttling Queue:** Single per-user queue enforcing a minimum 340ms spacing (~3 req/sec), preventing 429 rate limit errors.
+- **Atomic MongoDB Daily Budget:** Daily request quotas (default 500) are consumed using atomic MongoDB `findOneAndUpdate` conditional updates matching `dailyCallDate: today` and `$inc: { dailyCallCount: 1 }`, guaranteeing zero race conditions across concurrent processes.
+
+### Operational Runbook
+
+#### 1. How to Connect
+1. Navigate to **Settings → Angel One SmartAPI (Market Data Fallback Only)**.
+2. Enter your **SmartAPI Key**, **Client Code**, and **4-digit PIN**. Click **Save Credentials**. Credentials are encrypted at rest with AES-256-GCM.
+3. Click **Connect Session**.
+4. In the dialog, enter a fresh **6-digit TOTP** from your authenticator app (e.g. Google Authenticator) and click **Verify & Connect**.
+5. Once authenticated, the chip updates to **Connected** with token expiration set to 06:00 AM IST the next day.
+
+#### 2. What a Failed Login Means
+- **`Invalid TOTP format` (HTTP 400):** Must be exactly 6 numeric digits (`inputMode="numeric"`).
+- **`Invalid credentials` (HTTP 400):** Incorrect Client Code, PIN, or API Key. Check credentials in Angel One SmartAPI developer portal.
+- **`Token expired or invalid TOTP`:** The TOTP token expired or the system clock on your device is skewed. Ensure clock synchronization and generate a new code.
+- **`Upstream Error / Network Timeout`:** Angel One API gateway outage or rate limiting. Check system logs for sanitized correlation details.
+
+#### 3. How Daily Budgets Reset
+- The daily call budget resets automatically at **00:00 IST (Indian Standard Time)**.
+- Resetting requires zero scheduled cron jobs; the MongoDB atomic conditional operator detects when `dailyCallDate !== today` and atomically initializes `dailyCallCount = 1` for the new day.
+
+#### 4. How to Clear / Refresh Instrument Cache
+- Click the **Refresh Instrument Master** button on the Settings card.
+- This streams and parses the public `OpenAPIScripMaster.json`, filters relevant NSE, BSE, NFO, and MCX scrips, and bulk-upserts them using an ordered `bulkWrite(..., { ordered: false })` into the indexed `angeloneinstruments` collection in under 2 seconds.
+- To purge cached instruments entirely, click **Delete Configuration & Cache**.
+
+#### 5. How to Diagnose `UNAVAILABLE` Reasons
+When a trade's excursion badge displays `UNAVAILABLE`, hover or inspect `failureReason`:
+- **`NO_SYMBOL_TOKEN`:** The tradingsymbol could not be mapped to an Angel One token. Refresh the instrument master.
+- **`OUTSIDE_PROVIDER_LOOKBACK`:** The trade was closed beyond SmartAPI's lookback limits (e.g. 1m candles older than 30 days).
+- **`DAILY_BUDGET_EXHAUSTED`:** You have reached your configured daily call quota (`ANGEL_ONE_DAILY_BUDGET`). Quota resets at midnight IST.
+- **`NOT_CONNECTED` / `TOKEN_EXPIRED`:** The daily SmartAPI JWT token has expired (06:00 AM IST daily). Enter a fresh TOTP in Settings.
+- **`CIRCUIT_OPEN`:** Angel One encountered 3 consecutive upstream failures; circuit breaker is resting for 60 seconds.
+- **`EMPTY_RESULT`:** SmartAPI returned no candle bars for the requested symbol and time window (e.g. illiquid strike or holiday).
+

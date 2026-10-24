@@ -682,7 +682,16 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 - `GET /api/v1/integrations/fyers/callback` — Public FYERS OAuth callback. Exchanges `auth_code`, stores encrypted tokens, clears the state, and redirects to `/settings`.
 - `POST /api/v1/integrations/fyers/sync` — Fetch and FIFO-import current-day FYERS executions, then recalculate balances.
 - `POST /api/v1/integrations/fyers/disconnect` — Clear encrypted tokens/state while preserving app credentials.
-- `POST /api/v1/integrations/fyers/excursion-backfill` — Batch process excursion calculations for closed trades missing excursion metrics using rate-limited FYERS historical candles. Accepts `{ startDate, endDate, limit }`. Returns `{ processed, computed, failed, remaining }`.
+- `POST /api/v1/integrations/fyers/excursion-backfill` — Batch process excursion calculations for closed trades missing excursion metrics using rate-limited FYERS historical candles. Accepts `{ startDate, endDate, limit, provider }`. Returns `{ processed, computed, failed, remaining, fyersFilled, angelOneFilled }`.
+
+### Market Data Fallback Integrations (`/api/v1/integrations/market-data`)
+Historical candle market-data-only fallback source for MAE/MFE excursion analytics and automatic chart screenshot generation. Strictly read-only market data; zero trading, order placement, or fund management endpoints.
+- `GET /api/v1/integrations/market-data/angel-one/status` — Return sanitized connection status, clientCode, connected boolean, token expiry, atomic `dailyCallsUsed`, `dailyBudget`, and instrument cache timestamp. Credentials and tokens are never returned.
+- `POST /api/v1/integrations/market-data/angel-one/config` — Save or update AES-256-GCM encrypted credentials (`apiKey`, `clientCode`, `pin`). Invalidator on key/code change.
+- `POST /api/v1/integrations/market-data/angel-one/connect` — Authenticate session using dynamic 6-digit TOTP (`totp`). Rate limited to 15 req/min. TOTP is never stored or logged. Returns updated integration status.
+- `POST /api/v1/integrations/market-data/angel-one/disconnect` — Clear active session tokens and terminate upstream SmartAPI session.
+- `DELETE /api/v1/integrations/market-data/angel-one` — Purge credentials, tokens, and user-cached instrument records completely.
+- `POST /api/v1/integrations/market-data/angel-one/refresh-instruments` — Download and bulk upsert SmartAPI Scrip Master (`OpenAPIScripMaster.json`) into indexed MongoDB collection for fast O(1) symbol token resolution.
 
 ---
 

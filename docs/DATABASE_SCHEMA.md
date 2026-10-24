@@ -6,7 +6,7 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 15 core Mongoose models:
+SetupMint defines 17 core Mongoose models:
 1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
 2. `Session` — Stateful authentication tokens with SHA-256 token hashing, sliding renewal, absolute cap, and exact MongoDB TTL expiration (`expireAfterSeconds: 0`).
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
@@ -21,7 +21,9 @@ SetupMint defines 15 core Mongoose models:
 12. `AuditLog` — General audit trail entries for administrative tracking.
 13. `TradeTemplate` — Market-based, rule-driven trade setup templates with dynamic SL/target formulas and trade performance aggregation.
 14. `BrokerFundsSnapshot` — Immutable FYERS fund-limit snapshots with exact `Decimal128` balances.
-15. `TradeCandleSnapshot` — Cached 1m/5m FYERS historical candlestick snapshots during trade lifecycles for excursion calculation.
+15. `TradeCandleSnapshot` — Cached 1m/5m FYERS or Angel One historical candlestick snapshots during trade lifecycles for excursion calculation.
+16. `MarketDataIntegration` — Encrypted credentials, active session tokens, and atomic daily call budget counters for market data fallback providers.
+17. `AngelOneInstrument` — Scrip master catalog for SmartAPI token resolution and fast O(1) indexed lookups.
 
 ---
 
@@ -597,20 +599,87 @@ The legacy `{ userId: 1, broker: 1 }` unique index must be dropped by `npm run a
 - **Collection Name:** `trade_candle_snapshots`
 - **File:** [`apps/api/src/db/models/TradeCandleSnapshot.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/TradeCandleSnapshot.ts)
 
-Stores immutable, cached historical 1-minute and 5-minute candlestick snapshots fetched from FYERS API v3 during the trade lifecycle (from trade entry time to exit time) to enable pure, reproducible excursion analytics (MAE, MFE, Exit Efficiency).
+Stores immutable, cached historical 1-minute and 5-minute candlestick snapshots fetched from FYERS API v3 or Angel One SmartAPI during the trade lifecycle (from trade entry time to exit time) to enable pure, reproducible excursion analytics (MAE, MFE, Exit Efficiency).
 
 | Field Name | Type | Required | Default | Constraints | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `_id` | `ObjectId` | Auto | Generated | Primary Key | Snapshot identifier |
 | `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owning trader ID |
 | `tradeId` | `ObjectId` | **Yes** | — | Ref: `'Trade'`, Indexed | Evaluated trade identifier |
-| `symbol` | `String` | **Yes** | — | Trim | FYERS-formatted symbol (e.g. `NSE:SBIN-EQ`, `NSE:NIFTY24OCT24500CE`) |
-| `resolution` | `String` | **Yes** | `'1'` | Enum: `['1', '5']` | Candle resolution timeframe (`'1'` for <= 4h, `'5'` for longer) |
+| `symbol` | `String` | **Yes** | — | Trim | Clean formatted trading symbol |
+| `resolution` | `String` | **Yes** | `'1'` | String | Candle resolution timeframe (`'1'`, `'5'`, `'D'`) |
 | `candles` | `Array` | No | `[]` | Embedded subdocuments | Array of `{ t: Number, o: Number, h: Number, l: Number, c: Number, v: Number }` |
-| `fetchedAt` | `Date` | No | `Date.now` | — | Timestamp of FYERS history API response |
+| `provider` | `String` | No | `'FYERS'` | Enum: `['FYERS', 'ANGEL_ONE', 'UNDERLYING']` | Candle provider source |
+| `isUnderlyingFallback` | `Boolean` | No | `false` | Boolean | True if derivative fell back to underlying index/stock candles |
+| `droppedRowsCount` | `Number` | No | `0` | Number | Count of malformed/duplicate candles dropped during normalization |
+| `fetchedAt` | `Date` | No | `Date.now` | — | Timestamp of API response |
 | `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
 | `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |
 
 **Compound Indexes:**
 - `{ userId: 1, tradeId: 1, resolution: 1 }` (Unique constraint)
+
+---
+
+### 2.16 MarketDataIntegration Model (`MarketDataIntegration.ts`)
+- **Collection Name:** `marketdataintegrations`
+- **File:** [`apps/api/src/db/models/MarketDataIntegration.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/MarketDataIntegration.ts)
+
+Stores encrypted broker market-data-only integration credentials, active session tokens, and atomic daily API call usage counters. Completely segregated from trading accounts and orderbook execution.
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Integration identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owning trader ID |
+| `provider` | `String` | **Yes** | `'ANGEL_ONE'` | Enum: `['ANGEL_ONE']` | Market data fallback provider |
+| `apiKey` | `String` | No | — | Encrypted (AES-256-GCM) | SmartAPI API Key |
+| `clientCode` | `String` | No | — | Encrypted (AES-256-GCM) | SmartAPI Client Code |
+| `pin` | `String` | No | — | Encrypted (AES-256-GCM) | SmartAPI 4-digit Account PIN |
+| `jwtToken` | `String` | No | — | Encrypted (AES-256-GCM) | Active SmartAPI JWT Bearer Token |
+| `refreshToken` | `String` | No | — | Encrypted (AES-256-GCM) | Active SmartAPI Refresh Token |
+| `feedToken` | `String` | No | — | Encrypted (AES-256-GCM) | Active SmartAPI Feed Token |
+| `tokenExpiresAt` | `Date` | No | — | Indexed | JWT expiration timestamp (06:00 AM IST daily) |
+| `status` | `String` | **Yes** | `'IDLE'` | Enum: `['DISABLED', 'IDLE', 'ERROR']` | Integration health status |
+| `lastUsedAt` | `Date` | No | — | — | Last time fallback candles were fetched |
+| `lastError` | `String` | No | — | Sanitized | Redacted error message from last failed operation |
+| `dailyCallCount` | `Number` | **Yes** | `0` | Number | Atomic count of requests executed today |
+| `dailyCallDate` | `String` | No | — | Format: `YYYY-MM-DD` | Date key for atomic daily budget resets |
+| `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
+| `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |
+
+**Compound Indexes:**
+- `{ userId: 1, provider: 1 }` (Unique constraint)
+
+---
+
+### 2.17 AngelOneInstrument Model (`AngelOneInstrument.ts`)
+- **Collection Name:** `angeloneinstruments`
+- **File:** [`apps/api/src/db/models/AngelOneInstrument.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/AngelOneInstrument.ts)
+
+Stores the public SmartAPI instrument catalog downloaded from `OpenAPIScripMaster.json`. Enables O(1) in-memory or indexed symbol-to-token resolution for NSE, BSE, NFO, and MCX scrips without holding massive JSON files in memory.
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Instrument identifier |
+| `userId` | `ObjectId` | No | `null` | Ref: `'User'`, Indexed | Null for global catalog, or user-scoped cache |
+| `symboltoken` | `String` | **Yes** | — | Indexed | Angel One SmartAPI numeric token string |
+| `tradingsymbol` | `String` | **Yes** | — | Indexed, Uppercase | Full exchange trading symbol (e.g. `RELIANCE-EQ`, `NIFTY24OCT24500CE`) |
+| `name` | `String` | **Yes** | — | Indexed, Uppercase | Underlying asset name (e.g. `RELIANCE`, `NIFTY`) |
+| `exchange` | `String` | **Yes** | — | Indexed, Uppercase | Exchange segment (`NSE`, `BSE`, `NFO`, `MCX`) |
+| `instrumenttype` | `String` | No | `''` | — | Instrument type (`OPTIDX`, `OPTSTK`, `FUTIDX`, etc.) |
+| `expiry` | `String` | No | `''` | — | Formatted expiry date string (e.g. `28-OCT-2026`) |
+| `strike` | `Number` | No | `-1` | Number | Option strike price in points |
+| `lotsize` | `Number` | No | `1` | Number | Market lot size |
+| `tickSize` | `Number` | No | `0.05` | Number | Minimum price increment |
+| `refreshedAt` | `Date` | **Yes** | `Date.now` | Indexed | Master file ingestion timestamp |
+| `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
+| `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |
+
+**Indexes:**
+- `{ tradingsymbol: 1, exchange: 1 }`
+- `{ symboltoken: 1, exchange: 1 }`
+- `{ name: 1, exchange: 1, instrumenttype: 1 }`
+- `{ userId: 1, name: 1 }`
+- `{ userId: 1, refreshedAt: 1 }`
+
 

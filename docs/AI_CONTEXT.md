@@ -92,7 +92,7 @@ Trading Vault/
 ## 6. Database Entities & Consistency Invariants
 
 ### Entities:
-- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata, `calculated.excursion`, and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `TradeCandleSnapshot`, `AuditLog`.
+- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata, `calculated.excursion`, and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `TradeCandleSnapshot`, `MarketDataIntegration` (Angel One SmartAPI fallback), `AngelOneInstrument` (Scrip master token resolution), `AuditLog`.
 
 ### Invariants:
 1. **Tenant Isolation:** Every document includes `userId: ObjectId`. All queries must filter by `{ userId: req.user.id }`.
@@ -112,6 +112,7 @@ Trading Vault/
    - Deleting an instrument referenced by trades returns `409 Conflict`.
 5. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
 6. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
+7. **Market Data Fallback Chain:** Historical candles evaluate in order: `Cached Snapshot -> FYERS -> Angel One SmartAPI -> Underlying Fallback -> UNAVAILABLE`. SmartAPI is strictly market-data-only; zero trading methods or order manipulation.
 
 ---
 
@@ -147,7 +148,7 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites across the monorepo (381 verified tests)
+# Run all test suites across the monorepo (410 verified tests)
 npm run test
 
 # Run financial engine unit tests (163 tests)

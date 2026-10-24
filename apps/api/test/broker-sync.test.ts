@@ -7,6 +7,7 @@ import {
   BrokerIntegration,
   Trade,
   TradingAccount,
+  Instrument,
 } from '../src/db/models/index.js';
 import {
   getNextFyersTokenExpiry,
@@ -392,5 +393,144 @@ describe('FYERS funds sync and reconciliation', () => {
     expect(linkedTrade).toBeTruthy();
     expect(linkedTrade?.accountId.toString()).toBe(accountId);
     expect(linkedTrade?.status).toBe('CLOSED');
+    expect(linkedTrade?.instrumentId).toBeDefined();
+    expect(linkedTrade?.underlying).toBe('SBIN');
+
+    // Verify instrument was auto-created in user's instruments collection
+    const sbinInst = await Instrument.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      symbol: 'SBIN',
+    });
+    expect(sbinInst).toBeTruthy();
+    expect(sbinInst?._id.toString()).toBe(linkedTrade?.instrumentId?.toString());
+  });
+
+  it('syncs option derivative executions (e.g. NIFTY 24100 CE), auto-creates NIFTY underlying instrument, and sets trade fields', async () => {
+    tradebookExecutions = [
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '23-Oct-2026 11:00:00',
+        orderNumber: 'ORD-OPT-1',
+        tradeNumber: 'TRD-OPT-1',
+        tradePrice: 150,
+        tradeValue: 7500,
+        tradedQty: 50,
+        orderType: 2,
+        side: 1, // BUY
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-opt-1',
+        symbol: 'NSE:NIFTY24OCT24100CE',
+      },
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '23-Oct-2026 11:30:00',
+        orderNumber: 'ORD-OPT-2',
+        tradeNumber: 'TRD-OPT-2',
+        tradePrice: 180,
+        tradeValue: 9000,
+        tradedQty: 50,
+        orderType: 2,
+        side: -1, // SELL
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-opt-1',
+        symbol: 'NSE:NIFTY24OCT24100CE',
+      },
+    ];
+
+    const syncRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/integrations/fyers/sync',
+      headers: { cookie: authCookie },
+    });
+    expect(syncRes.statusCode).toBe(200);
+
+    // Verify NIFTY instrument was auto-created for this user
+    const niftyInst = await Instrument.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      symbol: 'NIFTY',
+    });
+    expect(niftyInst).toBeTruthy();
+    expect(niftyInst?.displayName).toBe('Nifty 50 Index Futures');
+
+    // Verify the trade was recorded with proper linkage and option metadata
+    const optionTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      symbol: 'NIFTY 24100 CE',
+    });
+    expect(optionTrade).toBeTruthy();
+    expect(optionTrade?.instrumentId?.toString()).toBe(niftyInst?._id.toString());
+    expect(optionTrade?.underlying).toBe('NIFTY');
+    expect(optionTrade?.instrumentName).toBe(niftyInst?.displayName);
+    expect(optionTrade?.optionType).toBe('CALL');
+    expect(optionTrade?.strikePrice).toBe(24100);
+    expect(optionTrade?.assetClass).toBe('OPTIONS');
+    expect(optionTrade?.status).toBe('CLOSED');
+    expect(optionTrade?.calculated.netPnL).toBeGreaterThan(0);
+  });
+
+  it('syncs MCX commodity futures (e.g. CRUDEOILM) with dynamic contract multiplier from instrument', async () => {
+    tradebookExecutions = [
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '23-Oct-2026 14:00:00',
+        orderNumber: 'ORD-COMM-1',
+        tradeNumber: 'TRD-COMM-1',
+        tradePrice: 6000,
+        tradeValue: 60000,
+        tradedQty: 1,
+        orderType: 2,
+        side: 1, // BUY
+        productType: 'MARGIN',
+        segment: 20,
+        exchange: 20,
+        fyToken: 'token-comm-1',
+        symbol: 'MCX:CRUDEOILM26NOVFUT',
+      },
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '23-Oct-2026 14:30:00',
+        orderNumber: 'ORD-COMM-2',
+        tradeNumber: 'TRD-COMM-2',
+        tradePrice: 6050,
+        tradeValue: 60500,
+        tradedQty: 1,
+        orderType: 2,
+        side: -1, // SELL
+        productType: 'MARGIN',
+        segment: 20,
+        exchange: 20,
+        fyToken: 'token-comm-1',
+        symbol: 'MCX:CRUDEOILM26NOVFUT',
+      },
+    ];
+
+    const syncRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/integrations/fyers/sync',
+      headers: { cookie: authCookie },
+    });
+    expect(syncRes.statusCode).toBe(200);
+
+    const crudeInst = await Instrument.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      symbol: 'CRUDEOILMINI',
+    });
+    expect(crudeInst).toBeTruthy();
+    expect(crudeInst?.contractMultiplier).toBe(10);
+
+    const crudeTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      symbol: 'CRUDEOILMINI FUT',
+    });
+    expect(crudeTrade).toBeTruthy();
+    expect(crudeTrade?.instrumentId?.toString()).toBe(crudeInst?._id.toString());
+    expect(crudeTrade?.underlying).toBe('CRUDEOILMINI');
+    expect(crudeTrade?.simpleExecution?.contractMultiplier).toBe(10);
+    // 50 points * 10 multiplier * 1 lot = 500 gross P&L
+    expect(crudeTrade?.calculated.grossPnL).toBe(500);
   });
 });

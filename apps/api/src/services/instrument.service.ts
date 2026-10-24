@@ -59,6 +59,9 @@ export class InstrumentService {
     // 1. Strip broker/exchange prefixes: NSE:, BSE:, MCX:, BINANCE:, FOREX:
     clean = clean.replace(/^(NSE|BSE|MCX|BINANCE|FOREX):/i, '').trim();
 
+    // 1b. Strip standard Indian cash equity series suffix: -EQ, -BE
+    clean = clean.replace(/-EQ|-BE$/i, '').trim();
+
     // 2. Direct check against known preset symbols
     const directPreset = getPresetSpec(clean);
     if (directPreset) {

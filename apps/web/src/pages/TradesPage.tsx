@@ -705,41 +705,58 @@ export function TradesPage() {
                       <TableCell sx={{ color: muiTheme.palette.text.secondary, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.accountName}>
                         {t.accountName}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, whiteSpace: 'nowrap' }}>
-                        <RouterLink
-                          to={`/trades/${tradeId}`}
-                          style={{
-                            color: muiTheme.palette.text.primary,
-                            textDecoration: 'none',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                        >
-                          {t.symbol}
-                          {t.screenshotIds && t.screenshotIds.length > 0 && (
-                            <Tooltip title={`${t.screenshotIds.length} chart screenshot${t.screenshotIds.length > 1 ? 's' : ''} attached`}>
-                              <Box
-                                component="span"
-                                sx={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '2px',
-                                  color: muiTheme.palette.primary.main,
-                                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
-                                  px: 0.6,
-                                  py: 0.15,
-                                  borderRadius: 1,
-                                  fontSize: '0.625rem',
-                                  fontWeight: 700,
-                                }}
-                              >
-                                <CollectionsIcon sx={{ fontSize: 12 }} />
-                                {t.screenshotIds.length}
-                              </Box>
-                            </Tooltip>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.2 }}>
+                          <RouterLink
+                            to={`/trades/${tradeId}`}
+                            style={{
+                              color: muiTheme.palette.text.primary,
+                              textDecoration: 'none',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontWeight: 700,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                            }}
+                          >
+                            {t.symbol}
+                            {t.screenshotIds && t.screenshotIds.length > 0 && (
+                              <Tooltip title={`${t.screenshotIds.length} chart screenshot${t.screenshotIds.length > 1 ? 's' : ''} attached`}>
+                                <Box
+                                  component="span"
+                                  sx={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '2px',
+                                    color: muiTheme.palette.primary.main,
+                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                                    px: 0.6,
+                                    py: 0.15,
+                                    borderRadius: 1,
+                                    fontSize: '0.625rem',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  <CollectionsIcon sx={{ fontSize: 12 }} />
+                                  {t.screenshotIds.length}
+                                </Box>
+                              </Tooltip>
+                            )}
+                          </RouterLink>
+                          {t.instrumentName && t.instrumentName !== t.symbol && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: 'text.secondary',
+                                fontSize: '0.6875rem',
+                                fontWeight: 500,
+                                lineHeight: 1.1,
+                              }}
+                            >
+                              {t.instrumentName}
+                            </Typography>
                           )}
-                        </RouterLink>
+                        </Box>
                       </TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Chip

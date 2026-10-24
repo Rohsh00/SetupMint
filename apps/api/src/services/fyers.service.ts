@@ -15,8 +15,10 @@ import {
   IBrokerFundsSnapshot,
   MarketSegment,
   AssetClass,
+  OptionType,
 } from '@tradevault/shared';
 import { AccountService } from './account.service.js';
+import { InstrumentService } from './instrument.service.js';
 import { decryptSecret } from './crypto.service.js';
 import { config } from '../config.js';
 
@@ -195,15 +197,26 @@ export function parseFyersDateTime(raw: string): Date {
   return isNaN(fallback.getTime()) ? new Date() : fallback;
 }
 
-/**
- * Parses FYERS symbol string into normalized metadata (e.g. "NSE:SBIN-EQ" -> "SBIN", "NSE_EQ", "EQUITY")
- */
-export function parseFyersSymbol(rawSymbol: string): {
+export interface ParsedFyersSymbol {
+  rawSymbol: string;
   cleanSymbol: string;
+  formattedSymbol: string;
+  underlying: string;
   exchange: string;
   marketSegment: MarketSegment;
   assetClass: AssetClass;
-} {
+  optionType?: OptionType;
+  strikePrice?: number;
+  expiryDate?: Date;
+  isDerivative: boolean;
+}
+
+/**
+ * Parses FYERS symbol string into normalized metadata, underlying asset, and derivative details.
+ * Strips broker prefixes, detects options strikes/types, futures, and links to root underlying.
+ * e.g. "NSE:NIFTY26OCT22650CE" -> underlying: "NIFTY", formatted: "NIFTY 22650 CE", strike: 22650, optionType: "CALL"
+ */
+export function parseFyersSymbol(rawSymbol: string): ParsedFyersSymbol {
   let exchange = 'NSE';
   let sym = (rawSymbol || '').trim();
   if (sym.includes(':')) {
@@ -211,50 +224,60 @@ export function parseFyersSymbol(rawSymbol: string): {
     exchange = parts[0].toUpperCase();
     sym = parts[1];
   }
+  sym = sym.trim();
+  const underlying = InstrumentService.normalizeUnderlying(rawSymbol);
+
   let cleanSymbol = sym;
+  let formattedSymbol = sym;
   let assetClass: AssetClass = 'EQUITY';
   let marketSegment: MarketSegment = exchange === 'MCX' ? 'MCX' : 'NSE_EQ';
+  let optionType: OptionType | undefined;
+  let strikePrice: number | undefined;
+  let expiryDate: Date | undefined;
+  let isDerivative = false;
 
   if (cleanSymbol.endsWith('-EQ') || cleanSymbol.endsWith('-BE')) {
     cleanSymbol = cleanSymbol.replace(/-EQ|-BE$/, '');
+    formattedSymbol = cleanSymbol;
     assetClass = 'EQUITY';
     marketSegment = exchange === 'BSE' ? 'BSE_EQ' : 'NSE_EQ';
-  } else if (/CE$|PE$/i.test(cleanSymbol)) {
+  } else if (/CE$|PE$|CALL$|PUT$/i.test(cleanSymbol)) {
     assetClass = 'OPTIONS';
     marketSegment = exchange === 'MCX' ? 'MCX' : 'NSE_FNO';
-  } else if (/FUT$/i.test(cleanSymbol)) {
+    optionType = /CE$|CALL$/i.test(cleanSymbol) ? 'CALL' : 'PUT';
+    isDerivative = true;
+
+    const optMatch = cleanSymbol.match(/(?:(?:\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2})\s*)?(\d+(?:\.\d+)?)\s*(?:CE|PE|CALL|PUT)$/i);
+    if (optMatch && optMatch[1]) {
+      strikePrice = parseFloat(optMatch[1]);
+      formattedSymbol = `${underlying} ${strikePrice} ${optionType === 'CALL' ? 'CE' : 'PE'}`;
+    } else {
+      formattedSymbol = `${underlying} ${optionType === 'CALL' ? 'CE' : 'PE'}`;
+    }
+  } else if (/FUT$|FUTURES$/i.test(cleanSymbol)) {
     assetClass = exchange === 'MCX' ? 'COMMODITY' : 'FUTURES';
     marketSegment = exchange === 'MCX' ? 'MCX' : 'NSE_FNO';
+    isDerivative = true;
+    formattedSymbol = `${underlying} FUT`;
   } else if (exchange === 'MCX') {
     assetClass = 'COMMODITY';
     marketSegment = 'MCX';
+    formattedSymbol = underlying;
   }
 
-  return { cleanSymbol, exchange, marketSegment, assetClass };
-}
-
-/**
- * Resolves standard contract multiplier for Indian exchange commodities and derivatives
- */
-export function resolveContractMultiplier(cleanSymbol: string, exchange: string): number {
-  const sym = (cleanSymbol || '').toUpperCase();
-  if (exchange === 'MCX') {
-    if (sym.startsWith('CRUDEOILM')) return 10;
-    if (sym.startsWith('CRUDEOIL')) return 100;
-    if (sym.startsWith('NATGASMINI') || sym.startsWith('NATURALGASMINI')) return 250;
-    if (sym.startsWith('NATGAS') || sym.startsWith('NATURALGAS')) return 1250;
-    if (sym.startsWith('GOLDM')) return 10;
-    if (sym.startsWith('GOLDGUINEA')) return 1;
-    if (sym.startsWith('GOLD')) return 100;
-    if (sym.startsWith('SILVERMIC')) return 1;
-    if (sym.startsWith('SILVERM')) return 5;
-    if (sym.startsWith('SILVER')) return 30;
-    if (sym.startsWith('COPPER')) return 2500;
-    if (sym.startsWith('ZINC')) return 5000;
-    if (sym.startsWith('ALUMINI')) return 1000;
-    if (sym.startsWith('ALUMINIUM')) return 5000;
-  }
-  return 1;
+  return {
+    rawSymbol,
+    cleanSymbol,
+    formattedSymbol,
+    underlying,
+    exchange,
+    marketSegment,
+    assetClass,
+    optionType,
+    strikePrice,
+    expiryDate,
+    isDerivative,
+  };
 }
 
 export class FyersService {
@@ -784,7 +807,36 @@ export class FyersService {
     for (const [cleanSymbol, execList] of executionsBySymbol.entries()) {
       execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
       const sample = execList[0];
-      const { exchange, marketSegment, assetClass } = sample.meta;
+      const {
+        exchange,
+        marketSegment,
+        assetClass,
+        underlying,
+        formattedSymbol,
+        optionType,
+        strikePrice,
+        expiryDate,
+        isDerivative,
+      } = sample.meta;
+
+      // 1. Dynamic instrument resolution: Ensure underlying exists in user's instruments
+      const inst = await InstrumentService.ensureForTrade(uId, {
+        symbol: underlying,
+        assetClass,
+        exchange,
+        marketSegment,
+        currency: account.baseCurrency,
+      });
+
+      // 2. Fully dynamic contract multiplier from user's instrument
+      const multiplier = inst?.contractMultiplier || 1;
+
+      // 3. Descriptive formatted title
+      const tradeTitle = isDerivative
+        ? optionType && strikePrice
+          ? `${inst.displayName || underlying} ${strikePrice} ${optionType === 'CALL' ? 'CE' : 'PE'}`
+          : `${inst.displayName || underlying} FUT`
+        : (inst.displayName || underlying);
 
       interface ActiveGroup {
         direction: 'LONG' | 'SHORT';
@@ -811,7 +863,6 @@ export class FyersService {
 
       const commitTrade = async (grp: ActiveGroup) => {
         try {
-          const multiplier = resolveContractMultiplier(cleanSymbol, exchange);
           const fifoSummary = calculateFIFOExecution(
             grp.direction,
             grp.fills.map((f) => ({
@@ -850,13 +901,13 @@ export class FyersService {
 
           // Robust Idempotency Check:
           // 1. Primary: Match on unique execution fill IDs (survives user updates, date changes, strategy tagging, account reassignments)
-          // 2. Secondary fallback: Match on symbol, direction, entry price, and time window
+          // 2. Secondary fallback: Match on symbol (clean, formatted, or raw), direction, entry price, and time window
           const existing = await Trade.findOne({
             userId: uId,
             $or: [
               ...(fillIdsToMatch.length > 0 ? [{ 'fills.fillId': { $in: fillIdsToMatch } }] : []),
               {
-                symbol: cleanSymbol,
+                symbol: { $in: [cleanSymbol, formattedSymbol, sample.raw.symbol] },
                 direction: grp.direction,
                 'simpleExecution.entryPrice': avgEntry,
                 entryTime: {
@@ -865,7 +916,7 @@ export class FyersService {
                 },
               },
               {
-                symbol: cleanSymbol,
+                symbol: { $in: [cleanSymbol, formattedSymbol, sample.raw.symbol] },
                 direction: grp.direction,
                 'simpleExecution.entryPrice': avgEntry,
                 'simpleExecution.quantity': totalTradeQty,
@@ -878,6 +929,40 @@ export class FyersService {
           });
 
           if (existing) {
+            let updated = false;
+            if (!existing.instrumentId || existing.instrumentId.toString() !== inst._id.toString()) {
+              existing.instrumentId = inst._id;
+              updated = true;
+            }
+            if (!existing.underlying || existing.underlying !== inst.symbol) {
+              existing.underlying = inst.symbol;
+              updated = true;
+            }
+            if (!existing.instrumentName || existing.instrumentName !== inst.displayName) {
+              existing.instrumentName = inst.displayName;
+              updated = true;
+            }
+            if (formattedSymbol && existing.symbol !== formattedSymbol) {
+              existing.symbol = formattedSymbol;
+              updated = true;
+            }
+            if (tradeTitle && (!existing.tradeTitle || existing.tradeTitle === cleanSymbol || existing.tradeTitle === sample.raw.symbol)) {
+              existing.tradeTitle = tradeTitle;
+              updated = true;
+            }
+            if (optionType && !existing.optionType) {
+              existing.optionType = optionType;
+              updated = true;
+            }
+            if (strikePrice && !existing.strikePrice) {
+              existing.strikePrice = strikePrice;
+              updated = true;
+            }
+            if (expiryDate && !existing.expiryDate) {
+              existing.expiryDate = expiryDate;
+              updated = true;
+            }
+
             // If existing trade was OPEN and the new sync data has closed it:
             if (existing.status === 'OPEN' && fifoSummary.isFullyClosed) {
               existing.status = 'CLOSED';
@@ -914,6 +999,9 @@ export class FyersService {
               return;
             }
 
+            if (updated) {
+              await existing.save();
+            }
             duplicateTradesCount++;
             return;
           }
@@ -921,7 +1009,14 @@ export class FyersService {
           await Trade.create({
             userId: uId,
             accountId: account._id,
-            symbol: cleanSymbol,
+            instrumentId: inst._id,
+            underlying: inst.symbol,
+            instrumentName: inst.displayName,
+            symbol: formattedSymbol,
+            tradeTitle,
+            optionType,
+            strikePrice,
+            expiryDate,
             assetClass,
             exchange,
             marketSegment,

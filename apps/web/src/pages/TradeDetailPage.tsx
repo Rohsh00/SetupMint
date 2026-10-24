@@ -239,7 +239,7 @@ export function TradeDetailPage() {
               />
             </Box>
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, mt: 0.25, display: 'block', fontFamily: `'JetBrains Mono', monospace` }}>
-              {trade.accountName} • {trade.exchange} ({trade.marketSegment}) • {trade.tradeDate}
+              {trade.instrumentName ? `${trade.instrumentName} • ` : ''}{trade.accountName} • {trade.exchange} ({trade.marketSegment}) • {trade.tradeDate}
             </Typography>
           </Box>
         </Box>

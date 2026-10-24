@@ -1,6 +1,7 @@
 import { connectDatabase, disconnectDatabase } from '../db/connection.js';
 import { Instrument, Trade, User } from '../db/models/index.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { parseFyersSymbol } from '../services/fyers.service.js';
 
 export async function runBackfill(options?: {
   isLive?: boolean;
@@ -124,25 +125,45 @@ export async function runBackfill(options?: {
           totalCreated++;
         }
 
-        // Check trades missing instrumentId or having outdated instrumentId
+        // Check trades missing instrumentId or having outdated instrumentId or missing derivative metadata
         for (const t of tradeList) {
+          const parsed = parseFyersSymbol(t.symbol);
           const needsLink =
             !t.instrumentId ||
             (isLive && t.instrumentId.toString() !== inst._id.toString()) ||
             !t.underlying ||
-            t.underlying !== underlying;
+            t.underlying !== underlying ||
+            (!t.optionType && parsed.optionType) ||
+            (!t.strikePrice && parsed.strikePrice);
 
           if (needsLink) {
             console.log(`  [LINK TRADE] Trade ${t._id} (${t.symbol}) -> Instrument ${underlying}`);
             if (isLive) {
+              const updateDoc: any = {
+                instrumentId: inst._id,
+                underlying,
+                ...(t.instrumentName ? {} : { instrumentName: inst.displayName }),
+              };
+              if (parsed.formattedSymbol && t.symbol !== parsed.formattedSymbol) {
+                updateDoc.symbol = parsed.formattedSymbol;
+              }
+              if (!t.tradeTitle || t.tradeTitle === t.symbol) {
+                updateDoc.tradeTitle = parsed.isDerivative
+                  ? parsed.optionType && parsed.strikePrice
+                    ? `${inst.displayName || underlying} ${parsed.strikePrice} ${parsed.optionType === 'CALL' ? 'CE' : 'PE'}`
+                    : `${inst.displayName || underlying} FUT`
+                  : (inst.displayName || underlying);
+              }
+              if (parsed.optionType && !t.optionType) updateDoc.optionType = parsed.optionType;
+              if (parsed.strikePrice && !t.strikePrice) updateDoc.strikePrice = parsed.strikePrice;
+              if (t.simpleExecution && inst.contractMultiplier && t.simpleExecution.contractMultiplier !== inst.contractMultiplier) {
+                updateDoc['simpleExecution.contractMultiplier'] = inst.contractMultiplier;
+              }
+
               await Trade.updateOne(
                 { _id: t._id },
                 {
-                  $set: {
-                    instrumentId: inst._id,
-                    underlying,
-                    ...(t.instrumentName ? {} : { instrumentName: inst.displayName }),
-                  },
+                  $set: updateDoc,
                 }
               );
             }

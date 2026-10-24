@@ -115,16 +115,18 @@ This document details all routes and pages discovered in the **SetupMint** front
     - *Risk & Planning Tab:* Initial stop loss, planned target, planned R:R, actual quantity vs suggested quantity.
     - *Thesis & Confluences Tab:* Pre-market bias, market structure, entry confirmation, SMC technical confluences.
     - *Psychology & Discipline Tab:* Emotions before/during/after, discipline rating (1–5), mistake tags, rules followed, lessons learned.
+    - *Excursion Analytics & Execution Quality Card:* Maximum Favorable Excursion (MFE), Maximum Adverse Excursion (MAE), Exit Efficiency progress bar gauge, diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`), post-stop reversal alerts, and interactive recompute action.
     - *Screenshots Gallery:* Uploaded chart screenshots categorized by trade stage with lightbox inspection and clipboard paste (Ctrl+V / Cmd+V) support.
     - *Audit Trail:* Immutable log of creation, updates, quick closures, and balance adjustments.
-- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
+- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
 - **API Calls:**
   - `GET /api/v1/trades/:id`
   - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
+  - `POST /api/v1/trades/:id/excursion/compute`
   - `POST /api/v1/attachments/trades/:id/upload`
   - `DELETE /api/v1/attachments/:attachmentId`
   - `DELETE /api/v1/trades/:id`
-- **Database Models:** `Trade`, `Attachment`, `TradingAccount`, `Strategy`.
+- **Database Models:** `Trade`, `Attachment`, `TradingAccount`, `Strategy`, `TradeCandleSnapshot`.
 - **Status:** **IMPLEMENTED**.
 
 ---
@@ -161,15 +163,17 @@ This document details all routes and pages discovered in the **SetupMint** front
 - **Page Component:** [`AnalyticsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AnalyticsPage.tsx)
 - **Purpose:** Advanced statistical breakdown across trading psychology, timeframes, instruments, strategies, weekdays, and sessions.
 - **Main Components:**
-  - Sub-Navigation Tabs: Overview, Psychology & Discipline, Time & Sessions.
+  - Sub-Navigation Tabs: Overview, Psychology & Discipline, Time & Sessions, Execution Quality (MAE/MFE).
   - Charts & Visualizations:
+    - *Execution Quality Tab:* Recharts Scatter Plot (`maeR` on X-axis vs `mfeR` on Y-axis) separating winners (green) and losers (red); summary KPI cards for Avg MFE (R), Avg MAE (R), Exit Efficiency %, % Gave Back Profit, and % Reversal After Stop Hit.
     - *Psychology Tab:* Bar chart comparing Discipline Rating (1 to 5) vs Net P&L; Mistake impact cards showing total monetary loss per mistake; Emotion before entry vs win rate.
     - *Time Tab:* Weekday P&L and win rate bar charts; Session performance (NSE Regular vs MCX Evening vs London/NY); Holding time distribution.
     - *Overview Tab:* P&L distribution histogram buckets (losses vs gains); Instrument performance table; Strategy ranking table.
 - **API Calls:**
   - `GET /api/v1/dashboard/stats?accountId=...`
   - `GET /api/v1/analytics/psychology?accountId=...`
-- **Database Models:** `Trade`, `TradingAccount`.
+  - `GET /api/v1/analytics/excursion?accountId=...`
+- **Database Models:** `Trade`, `TradingAccount`, `TradeCandleSnapshot`.
 - **Status:** **IMPLEMENTED**.
 
 ---

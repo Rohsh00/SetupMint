@@ -216,6 +216,20 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
       }),
+    computeExcursion: (id: string) =>
+      request<any>(`/trades/${id}/excursion/compute`, { method: 'POST' }),
+    generateChart: (id: string, force?: boolean) =>
+      request<any>(`/trades/${id}/chart/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ force }),
+      }),
+    detectStopMoves: (id: string, manualModifications?: any[]) =>
+      request<any>(`/trades/${id}/stop-moves/detect`, {
+        method: 'POST',
+        body: JSON.stringify({ manualModifications }),
+      }),
+    getStopMoves: (id: string) =>
+      request<any>(`/trades/${id}/stop-moves`),
   },
 
   // Dashboard
@@ -252,6 +266,13 @@ export const api = {
         if (val) query.set(key, String(val));
       }
       return request<any>(`/analytics/psychology?${query.toString()}`);
+    },
+    excursion: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') query.set(key, String(val));
+      }
+      return request<any>(`/analytics/excursion?${query.toString()}`);
     },
   },
 
@@ -381,6 +402,8 @@ export const api = {
     fyersLoginUrl: () => request<any>('/integrations/fyers/login-url'),
     fyersSync: () => request<any>('/integrations/fyers/sync', { method: 'POST' }),
     fyersDisconnect: () => request<any>('/integrations/fyers/disconnect', { method: 'POST' }),
+    fyersBackfillExcursion: (params: { startDate?: string; endDate?: string; limit?: number } = {}) =>
+      request<any>('/integrations/fyers/excursion-backfill', { method: 'POST', body: JSON.stringify(params) }),
   },
 };
 

@@ -23,6 +23,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
+import LinearProgress from '@mui/material/LinearProgress';
 import Alert from '@mui/material/Alert';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
@@ -40,6 +41,11 @@ import CloudUploadIcon from '@mui/icons-material/CloudUploadRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
+import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
+import ElectricBoltRoundedIcon from '@mui/icons-material/ElectricBoltRounded';
+import WarningRoundedIcon from '@mui/icons-material/WarningRounded';
+import moment from 'moment';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
@@ -138,6 +144,55 @@ export function TradeDetailPage() {
     },
     onError: (err: any) => {
       const msg = err.message || 'Failed to delete attachment';
+      setActionError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const computeExcursionMutation = useMutation({
+    mutationFn: () => api.trades.computeExcursion(id!),
+    onSuccess: () => {
+      setActionError(null);
+      toast.success('Excursion metrics computed successfully.');
+      queryClient.invalidateQueries({ queryKey: ['trade', id] });
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to compute excursion metrics from FYERS candles';
+      setActionError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const generateChartMutation = useMutation({
+    mutationFn: (force?: boolean) => api.trades.generateChart(id!, force),
+    onSuccess: () => {
+      setActionError(null);
+      toast.success('Automated execution chart generated successfully.');
+      queryClient.invalidateQueries({ queryKey: ['trade', id] });
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to generate automated chart screenshot';
+      setActionError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const detectStopMovesMutation = useMutation({
+    mutationFn: () => api.trades.detectStopMoves(id!),
+    onSuccess: (data: any) => {
+      setActionError(null);
+      const summary = data?.data?.stopMoveSummary;
+      if (summary?.hasWidenedRisk) {
+        toast.warning(`Detected ${summary.widenedCount} risk-widening stop modifications.`);
+      } else if (summary?.trailedCount > 0) {
+        toast.success(`Detected ${summary.trailedCount} favorable trailing stop modifications.`);
+      } else {
+        toast.success('Stop move analysis completed. No modifications detected.');
+      }
+      queryClient.invalidateQueries({ queryKey: ['trade', id] });
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to detect stop moves for trade';
       setActionError(msg);
       toast.error(msg);
     },
@@ -708,6 +763,629 @@ export function TradeDetailPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Excursion Analytics & Execution Quality Card */}
+      {(() => {
+        const exc = trade.calculated?.excursion;
+        const isComputed = exc?.status === 'COMPUTED';
+        const isPending = exc?.status === 'PENDING';
+        const isUnavailable = exc?.status === 'UNAVAILABLE';
+        const isErrorState = exc?.status === 'ERROR';
+
+        return (
+          <Card sx={{ p: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}`, flexWrap: 'wrap', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                <TimelineRoundedIcon sx={{ color: 'primary.main', fontSize: 22 }} />
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Excursion Analytics & Execution Quality
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    FYERS-powered Maximum Favorable Excursion (MFE), Adverse Excursion (MAE), and Exit Efficiency
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip
+                  label={exc?.status || (trade.status === 'CLOSED' ? 'NOT COMPUTED' : 'TRADE OPEN')}
+                  size="small"
+                  color={
+                    isComputed ? 'success' :
+                    isPending ? 'warning' :
+                    isErrorState ? 'error' : 'default'
+                  }
+                  sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                />
+
+                {trade.status === 'CLOSED' && (
+                  <>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={
+                        generateChartMutation.isPending ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <ElectricBoltRoundedIcon fontSize="small" sx={{ color: '#06b6d4' }} />
+                        )
+                      }
+                      disabled={generateChartMutation.isPending}
+                      onClick={() => generateChartMutation.mutate(true)}
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        fontSize: '0.75rem',
+                        borderColor: 'rgba(6, 182, 212, 0.4)',
+                        color: '#06b6d4',
+                        '&:hover': {
+                          borderColor: '#06b6d4',
+                          backgroundColor: 'rgba(6, 182, 212, 0.08)',
+                        },
+                      }}
+                    >
+                      {trade.attachments?.some((a: any) => a.category === 'AUTO_CHART')
+                        ? 'Regenerate Chart'
+                        : 'Generate Chart'}
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={
+                        computeExcursionMutation.isPending ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <SyncRoundedIcon fontSize="small" />
+                        )
+                      }
+                      disabled={computeExcursionMutation.isPending}
+                      onClick={() => computeExcursionMutation.mutate()}
+                      sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.75rem' }}
+                    >
+                      {isComputed ? 'Recompute' : 'Compute Excursion'}
+                    </Button>
+                  </>
+                )}
+              </Box>
+            </Box>
+
+            {isComputed && exc ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                <Grid container spacing={2}>
+                  {/* MFE */}
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.04)' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+                        Max Favorable Excursion (MFE)
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                        +{exc.mfePoints} pts
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                        +{formatCurrency(exc.mfeAmount)} {exc.mfeR !== undefined ? `• +${exc.mfeR}R` : ''}
+                      </Typography>
+                      {exc.timeToMfeMinutes !== undefined && (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                          Reached in {exc.timeToMfeMinutes}m
+                        </Typography>
+                      )}
+                    </Box>
+                  </Grid>
+
+                  {/* MAE */}
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.04)' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+                        Max Adverse Excursion (MAE)
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                        -{exc.maePoints} pts
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                        -{formatCurrency(exc.maeAmount)} {exc.maeR !== undefined ? `• -${exc.maeR}R` : ''}
+                      </Typography>
+                      {exc.timeToMaeMinutes !== undefined && (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                          Reached in {exc.timeToMaeMinutes}m
+                        </Typography>
+                      )}
+                    </Box>
+                  </Grid>
+
+                  {/* Exit Efficiency */}
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+                        Exit Efficiency
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                        {exc.exitEfficiency !== undefined ? `${(exc.exitEfficiency * 100).toFixed(1)}%` : '—'}
+                      </Typography>
+                      <Box sx={{ mt: 1, mb: 0.5 }}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.min(100, Math.max(0, (exc.exitEfficiency || 0) * 100))}
+                          sx={{
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                            '& .MuiLinearProgress-bar': {
+                              backgroundColor:
+                                (exc.exitEfficiency || 0) >= 0.7 ? muiTheme.palette.profit.main :
+                                (exc.exitEfficiency || 0) >= 0.4 ? muiTheme.palette.warning.main :
+                                muiTheme.palette.loss.main,
+                            },
+                          }}
+                        />
+                      </Box>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                        Captured % of maximum favorable run
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  {/* Analysis Metadata */}
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+                        Candle Coverage
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                        {exc.resolution}m • {exc.candleCount || 0} bars
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                        Source: {exc.source || 'FYERS_HISTORY'}
+                      </Typography>
+                      {exc.stopHit && (
+                        <Typography variant="caption" sx={{ color: exc.reversedAfterStopHit ? 'warning.main' : 'text.secondary', fontSize: '0.6875rem', fontWeight: 600 }}>
+                          {exc.reversedAfterStopHit ? 'Stop Hit (Reversed)' : 'Stop Hit'}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Grid>
+                </Grid>
+
+                {/* Excursion Flags & Reversal Alerts */}
+                {exc.reversedAfterStopHit && (
+                  <Alert severity="warning" sx={{ fontSize: '0.8125rem' }}>
+                    <strong>Stop-and-Reverse Evidence Detected:</strong> After your initial stop was hit, market price subsequently reversed and pushed back past your entry price into favorable territory. Consider reviewing if your initial stop was placed inside liquidity or set too tight.
+                  </Alert>
+                )}
+
+                {exc.excursionFlags && exc.excursionFlags.length > 0 && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                      Diagnostic Flags:
+                    </Typography>
+                    {exc.excursionFlags.map((flag: string) => {
+                      let label = flag;
+                      let color: 'default' | 'warning' | 'info' | 'error' | 'secondary' = 'default';
+                      if (flag === 'GAVE_BACK_PROFIT') {
+                        label = 'Gave Back Profit (>50% MFE surrendered)';
+                        color = 'warning';
+                      } else if (flag === 'STOP_TOO_TIGHT_EVIDENCE') {
+                        label = 'Stop Too Tight (Post-stop reversal)';
+                        color = 'secondary';
+                      } else if (flag === 'EXITED_EARLY') {
+                        label = 'Exited Early (<50% MFE captured)';
+                        color = 'info';
+                      } else if (flag === 'HELD_INTO_REVERSAL') {
+                        label = 'Held Into Reversal';
+                        color = 'error';
+                      }
+                      return (
+                        <Chip
+                          key={flag}
+                          label={label}
+                          size="small"
+                          color={color as any}
+                          sx={{ fontSize: '0.6875rem', fontWeight: 600, height: 22 }}
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+              </Box>
+            ) : trade.status !== 'CLOSED' ? (
+              <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Excursion analysis (MAE, MFE, and Exit Efficiency) is available once the trade is closed with entry/exit timestamps.
+                </Typography>
+              </Box>
+            ) : isUnavailable ? (
+              <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
+                  Historical candle data unavailable for this trade lifecycle {exc?.failureReason ? `(${exc.failureReason})` : ''}.
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => computeExcursionMutation.mutate()}
+                  disabled={computeExcursionMutation.isPending}
+                >
+                  Retry Fetch
+                </Button>
+              </Box>
+            ) : (
+              <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+                  Excursion metrics have not been computed yet for this trade. Compute now using FYERS historical candles to reveal your maximum potential vs captured profit.
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={computeExcursionMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
+                  onClick={() => computeExcursionMutation.mutate()}
+                  disabled={computeExcursionMutation.isPending}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Compute Excursion Metrics
+                </Button>
+              </Box>
+            )}
+          </Card>
+        );
+      })()}
+
+      {/* Stop-Loss Modification History & Trail Tracking Card */}
+      {(() => {
+        const events = trade.stopLossMoveEvents || [];
+        const summary = trade.calculated?.stopMoveSummary;
+        const isScanned = !!summary || events.length > 0;
+        const hasWidened = summary?.hasWidenedRisk || events.some((e: any) => e.moveType === 'WIDENED_RISK');
+        const trailedCount = summary?.trailedCount ?? events.filter((e: any) => e.moveType === 'TRAILED_FAVORABLY').length;
+        const widenedCount = summary?.widenedCount ?? events.filter((e: any) => e.moveType === 'WIDENED_RISK').length;
+        const initialStop = summary?.initialStop ?? trade.risk?.initialStopLoss;
+        const finalStop = summary?.finalStop ?? (events.length > 0 ? events[events.length - 1].newStop : null);
+
+        return (
+          <Card sx={{ p: 2.5 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'flex-start', sm: 'center' },
+                justifyContent: 'space-between',
+                pb: 2,
+                mb: 2,
+                borderBottom: `1px solid ${muiTheme.palette.divider}`,
+                gap: 1.5,
+              }}
+            >
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <SecurityIcon fontSize="small" sx={{ color: '#0EA5E9' }} />
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Stop-Loss Modifications & Trail Tracking
+                  </Typography>
+                </Box>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, mt: 0.25, display: 'block' }}>
+                  FYERS orderbook tracking of stop adjustments, trailing discipline, and downside risk expansion
+                </Typography>
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                {hasWidened ? (
+                  <Chip
+                    icon={<WarningRoundedIcon fontSize="small" />}
+                    label={`RISK WIDENED (${widenedCount})`}
+                    color="error"
+                    size="small"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                  />
+                ) : trailedCount > 0 ? (
+                  <Chip
+                    icon={<CheckCircleRoundedIcon fontSize="small" />}
+                    label={`TRAILED FAVORABLY (${trailedCount})`}
+                    color="success"
+                    size="small"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                  />
+                ) : isScanned ? (
+                  <Chip
+                    label="STOP MAINTAINED"
+                    size="small"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem', backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)' }}
+                  />
+                ) : (
+                  <Chip
+                    label="NOT SCANNED"
+                    variant="outlined"
+                    size="small"
+                    sx={{ fontWeight: 600, fontSize: '0.6875rem' }}
+                  />
+                )}
+
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
+                    detectStopMovesMutation.isPending ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <SyncRoundedIcon fontSize="small" sx={{ color: '#0EA5E9' }} />
+                    )
+                  }
+                  disabled={detectStopMovesMutation.isPending}
+                  onClick={() => detectStopMovesMutation.mutate()}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    borderColor: 'rgba(14, 165, 233, 0.4)',
+                    color: '#0EA5E9',
+                    '&:hover': {
+                      borderColor: '#0EA5E9',
+                      backgroundColor: 'rgba(14, 165, 233, 0.08)',
+                    },
+                  }}
+                >
+                  {isScanned ? 'Rescan Stop Moves' : 'Detect Stop Moves'}
+                </Button>
+              </Box>
+            </Box>
+
+            {/* Violation Alert Callout */}
+            {hasWidened && (
+              <Alert
+                severity="error"
+                icon={<WarningRoundedIcon />}
+                sx={{
+                  mb: 2,
+                  borderRadius: 2,
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgba(254, 242, 242, 0.9)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600, color: muiTheme.palette.loss.main }}>
+                  Discipline Warning: Stop-loss was widened during this trade ({widenedCount} time{widenedCount > 1 ? 's' : ''}), increasing downside capital risk
+                  {summary?.netRiskChangePoints ? ` by ${Math.abs(summary.netRiskChangePoints).toFixed(2)} pts` : ''}. This trade has been flagged with the <strong>STOP_MOVED</strong> mistake tag.
+                </Typography>
+              </Alert>
+            )}
+
+            {isScanned ? (
+              <>
+                {/* Metric Summary Tiles */}
+                <Grid container spacing={1.5} sx={{ mb: events.length > 0 ? 2.5 : 0 }}>
+                  <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.7)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
+                        Initial Stop Loss
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25, fontFamily: `'JetBrains Mono', monospace` }}>
+                        {initialStop != null ? Number(initialStop).toFixed(2) : '—'}
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.7)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
+                        Final Stop Loss
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25, fontFamily: `'JetBrains Mono', monospace` }}>
+                        {finalStop != null ? Number(finalStop).toFixed(2) : '—'}
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.7)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
+                        Modifications
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25 }}>
+                        {summary?.totalMoves ?? events.length}
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.7)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
+                        Trailed Favorably
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25, color: muiTheme.palette.profit.main }}>
+                        {trailedCount}
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.7)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
+                        Risk Widened
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          mt: 0.25,
+                          color: widenedCount > 0 ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
+                        }}
+                      >
+                        {widenedCount}
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 6, sm: 4, md: 2 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.7)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
+                        Net Risk Delta
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          mt: 0.25,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color:
+                            summary?.netRiskChangePoints != null && summary.netRiskChangePoints > 0
+                              ? muiTheme.palette.loss.main
+                              : summary?.netRiskChangePoints != null && summary.netRiskChangePoints < 0
+                              ? muiTheme.palette.profit.main
+                              : 'inherit',
+                        }}
+                      >
+                        {summary?.netRiskChangePoints != null
+                          ? `${summary.netRiskChangePoints > 0 ? '+' : ''}${summary.netRiskChangePoints.toFixed(2)} pts`
+                          : '0.00 pts'}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+
+                {/* Event Timeline Table */}
+                {events.length > 0 ? (
+                  <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                    <Table size="small">
+                      <TableHead sx={{ backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)' }}>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Time</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Action Type</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Previous Stop</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>New Stop</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Points Delta</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Order / Reason</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {events.map((evt: any, idx: number) => {
+                          const isTrailed = evt.moveType === 'TRAILED_FAVORABLY';
+                          const isWidened = evt.moveType === 'WIDENED_RISK';
+                          return (
+                            <TableRow key={idx} hover>
+                              <TableCell sx={{ fontSize: '0.75rem', fontFamily: `'JetBrains Mono', monospace` }}>
+                                {moment(evt.movedAt).format('DD MMM YYYY, HH:mm:ss')}
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  label={isTrailed ? 'Trailed Favorably' : isWidened ? 'Widened Risk' : 'Unchanged'}
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 700,
+                                    backgroundColor: isTrailed ? muiTheme.palette.profit.bg : isWidened ? muiTheme.palette.loss.bg : 'transparent',
+                                    color: isTrailed ? muiTheme.palette.profit.main : isWidened ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell sx={{ fontSize: '0.75rem', fontFamily: `'JetBrains Mono', monospace` }}>
+                                {Number(evt.previousStop).toFixed(2)}
+                              </TableCell>
+                              <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600, fontFamily: `'JetBrains Mono', monospace` }}>
+                                {Number(evt.newStop).toFixed(2)}
+                              </TableCell>
+                              <TableCell
+                                sx={{
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  fontFamily: `'JetBrains Mono', monospace`,
+                                  color: isTrailed ? muiTheme.palette.profit.main : isWidened ? muiTheme.palette.loss.main : 'inherit',
+                                }}
+                              >
+                                {evt.changePoints > 0 ? `+${Number(evt.changePoints).toFixed(2)}` : Number(evt.changePoints).toFixed(2)} pts ({evt.changePercent > 0 ? `+${Number(evt.changePercent).toFixed(2)}` : Number(evt.changePercent).toFixed(2)}%)
+                              </TableCell>
+                              <TableCell sx={{ fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
+                                {evt.reason || (evt.orderId ? `Order #${evt.orderId}` : 'FYERS Orderbook')}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      textAlign: 'center',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.6)',
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
+                      Stop-loss was maintained cleanly without modification throughout the trade. Zero trailing or widening adjustments were detected.
+                    </Typography>
+                  </Box>
+                )}
+              </>
+            ) : (
+              <Box
+                sx={{
+                  p: 3,
+                  borderRadius: 2,
+                  textAlign: 'center',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(248, 250, 252, 0.6)',
+                  border: `1px dashed ${muiTheme.palette.divider}`,
+                }}
+              >
+                <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mb: 2 }}>
+                  Stop-move tracking scans your FYERS orderbook modifications to detect whether your stop loss was trailed to protect capital or widened under market pressure.
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={detectStopMovesMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
+                  onClick={() => detectStopMovesMutation.mutate()}
+                  disabled={detectStopMovesMutation.isPending}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Scan Orderbook Stop Moves
+                </Button>
+              </Box>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* Psychology & Discipline Report */}
       <Card sx={{ p: 2.5 }}>

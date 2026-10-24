@@ -4,6 +4,7 @@ import { BrokerIntegration } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { FyersService } from '../services/fyers.service.js';
 import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto.service.js';
+import { excursionBackfillSchema } from '@tradevault/shared';
 import { config } from '../config.js';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -298,6 +299,56 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           error: {
             code: 'SYNC_ERROR',
             message: err.message || 'Failed to synchronize with FYERS.',
+          },
+        });
+      }
+    });
+
+    // Batch process PENDING closed trades for excursion analytics
+    protectedApp.post('/fyers/excursion-backfill', async (req: any, reply) => {
+      const parsed = excursionBackfillSchema.safeParse(req.body || {});
+      if (!parsed.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid backfill parameters',
+            details: parsed.error.format(),
+          },
+        });
+      }
+
+      const integration = await BrokerIntegration.findOne({
+        userId: req.user.id,
+        broker: 'FYERS',
+      });
+      const tokenExpiry = integration?.tokenExpiresAt || integration?.authCodeExpiresAt;
+      const isTokenValid = Boolean(
+        integration?.accessToken && tokenExpiry && new Date(tokenExpiry) > new Date()
+      );
+
+      if (!isTokenValid) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'BROKER_NOT_CONNECTED',
+            message: 'Active FYERS broker session is required. Please reconnect FYERS in Settings.',
+          },
+        });
+      }
+
+      try {
+        const result = await FyersService.batchBackfillExcursion(req.user.id, parsed.data);
+        return reply.send({
+          success: true,
+          data: result,
+        });
+      } catch (err: any) {
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'BACKFILL_FAILED',
+            message: err.message || 'Excursion backfill failed',
           },
         });
       }

@@ -7,7 +7,7 @@ export interface IAttachmentDoc extends Document {
   storedFilename: string;
   mimeType: string;
   sizeBytes: number;
-  category: 'SETUP' | 'ENTRY' | 'EXIT' | 'REVIEW' | 'OTHER' | 'BEFORE_ENTRY' | 'ANNOTATED' | 'ATTACHMENT';
+  category: 'SETUP' | 'ENTRY' | 'EXIT' | 'REVIEW' | 'OTHER' | 'BEFORE_ENTRY' | 'ANNOTATED' | 'ATTACHMENT' | 'AUTO_CHART';
   description?: string;
   timeframe?: string;
   chartTimestamp?: string;
@@ -34,7 +34,7 @@ const AttachmentSchema = new Schema<IAttachmentDoc>(
     sizeBytes: { type: Number, required: true },
     category: {
       type: String,
-      enum: ['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT'],
+      enum: ['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT', 'AUTO_CHART'],
       default: 'ENTRY',
     },
     description: { type: String },

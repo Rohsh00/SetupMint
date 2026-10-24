@@ -125,9 +125,51 @@ export interface ITradeDoc extends Document {
     openQuantity: number;
     averageEntryPrice: number;
     averageExitPrice?: number;
+    excursion?: {
+      status: 'PENDING' | 'COMPUTED' | 'UNAVAILABLE' | 'FAILED';
+      computedAt?: Date;
+      source?: 'FYERS_HISTORY';
+      resolution?: string;
+      failureReason?: string;
+      maePoints?: number;
+      mfePoints?: number;
+      maeAmount?: number;
+      mfeAmount?: number;
+      maeR?: number;
+      mfeR?: number;
+      exitEfficiency?: number;
+      stopEfficiency?: number;
+      stopHit?: boolean;
+      reversedAfterStopHit?: boolean;
+      timeToMfeMinutes?: number;
+      timeToMaeMinutes?: number;
+      candleCount?: number;
+      excursionFlags?: string[];
+    };
+    stopMoveSummary?: {
+      totalMoves: number;
+      widenedCount: number;
+      trailedCount: number;
+      initialStop?: number;
+      finalStop?: number;
+      netRiskChangePoints: number;
+      hasWidenedRisk: boolean;
+      detectedAt?: Date;
+    };
   };
 
   setup?: ITradeSetup;
+  stopLossMoveEvents?: Array<{
+    previousStop: number;
+    newStop: number;
+    changePoints: number;
+    changePercent: number;
+    moveType: 'TRAILED_FAVORABLY' | 'WIDENED_RISK' | 'UNCHANGED';
+    movedAt: Date;
+    orderId?: string;
+    orderType?: number;
+    reason?: string;
+  }>;
   screenshotIds: mongoose.Types.ObjectId[];
   auditLog: Array<{
     action: string;
@@ -322,6 +364,41 @@ const TradeSchema = new Schema<ITradeDoc>(
       openQuantity: { type: Number, default: 0 },
       averageEntryPrice: { type: Number, default: 0 },
       averageExitPrice: { type: Number },
+      excursion: {
+        status: {
+          type: String,
+          enum: ['PENDING', 'COMPUTED', 'UNAVAILABLE', 'FAILED'],
+          default: 'PENDING',
+        },
+        computedAt: { type: Date },
+        source: { type: String, default: 'FYERS_HISTORY' },
+        resolution: { type: String },
+        failureReason: { type: String },
+        maePoints: { type: Number },
+        mfePoints: { type: Number },
+        maeAmount: { type: Number },
+        mfeAmount: { type: Number },
+        maeR: { type: Number },
+        mfeR: { type: Number },
+        exitEfficiency: { type: Number },
+        stopEfficiency: { type: Number },
+        stopHit: { type: Boolean },
+        reversedAfterStopHit: { type: Boolean },
+        timeToMfeMinutes: { type: Number },
+        timeToMaeMinutes: { type: Number },
+        candleCount: { type: Number },
+        excursionFlags: [{ type: String }],
+      },
+      stopMoveSummary: {
+        totalMoves: { type: Number, default: 0 },
+        widenedCount: { type: Number, default: 0 },
+        trailedCount: { type: Number, default: 0 },
+        initialStop: { type: Number },
+        finalStop: { type: Number },
+        netRiskChangePoints: { type: Number, default: 0 },
+        hasWidenedRisk: { type: Boolean, default: false },
+        detectedAt: { type: Date },
+      },
     },
 
     setup: {
@@ -343,6 +420,25 @@ const TradeSchema = new Schema<ITradeDoc>(
       entryModel: { type: String, enum: ['CONFIRMATION_CANDLE', 'RETEST', 'OTHER'] },
     },
 
+    stopLossMoveEvents: [
+      {
+        previousStop: { type: Number, required: true },
+        newStop: { type: Number, required: true },
+        changePoints: { type: Number, required: true },
+        changePercent: { type: Number, required: true },
+        moveType: {
+          type: String,
+          enum: ['TRAILED_FAVORABLY', 'WIDENED_RISK', 'UNCHANGED'],
+          required: true,
+        },
+        movedAt: { type: Date, required: true },
+        orderId: { type: String },
+        orderType: { type: Number },
+        reason: { type: String },
+        _id: false,
+      },
+    ],
+
     screenshotIds: [{ type: Schema.Types.ObjectId, ref: 'Attachment' }],
     auditLog: [
       {
@@ -361,5 +457,7 @@ TradeSchema.index({ userId: 1, accountId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, 'calculated.netPnL': -1 });
 TradeSchema.index({ userId: 1, templateId: 1 });
 TradeSchema.index({ userId: 1, strategyId: 1, 'setup.variantKey': 1, tradeDate: -1 });
+TradeSchema.index({ userId: 1, 'calculated.excursion.status': 1 });
+TradeSchema.index({ userId: 1, 'calculated.stopMoveSummary.hasWidenedRisk': 1 });
 
 export const Trade = mongoose.model<ITradeDoc>('Trade', TradeSchema);

@@ -133,13 +133,33 @@ SetupMint allows traders to organize charts by trade progression:
 | `ENTRY` | Entry Trigger | Emerald (`#10b981`) | Lower timeframe execution candle, order fill confirmation. |
 | `EXIT` | Exit / Target | Amber (`#f59e0b`) | Take profit target, stop loss hit, trailing stop exit. |
 | `REVIEW` | Post-Trade Review | Purple (`#8b5cf6`) | Annotated chart review, post-session debrief. |
+| `AUTO_CHART` | Auto Execution Chart | Cyan (`#06b6d4`) | Automated candlestick chart generated from FYERS historical 1m/5m market data with execution overlays. |
 | `BEFORE_ENTRY` | Pre-Entry Setup | Blue | Setup before order placement. |
 | `ANNOTATED` | Markup Chart | Indigo | Technical drawings and marked price levels. |
 | `OTHER` | Reference / Macro | Slate (`#64748b`) | Orderbook depth, correlated market, or news catalyst. |
 
 ---
 
-## 7. Authenticated Image Streaming
+## 7. Server-Side Automated Candlestick Chart Generation (FYERS Market Data)
+
+SetupMint includes an automated server-side SVG chart generator (`ChartGeneratorService`) that converts FYERS historical candlestick snapshots into production TradingView-grade dark-mode SVG charts:
+
+- **Data Source:** Cached `TradeCandleSnapshot` records fetched from FYERS API v3 historical candlestick endpoint (`GET /data/history`).
+- **Candlestick Engine:** Pure SVG rendering of bullish (emerald `#10b981`) and bearish (rose `#f43f5e`) candle bodies and wicks with dynamic bar spacing and 5 horizontal price gridlines.
+- **Execution Overlays:**
+  - **Entry Level:** Cyan dashed line with right-hand pill badge `ENT: ₹X`, plus candle pinpoint marker with directional arrow (`▲ BUY` / `▼ SELL`).
+  - **Exit Level:** Purple dashed line with right-hand pill badge `EXIT: ₹X`, plus candle pinpoint marker `✕ EXIT @ ₹X`.
+  - **Stop Loss Level:** Red dotted line with right-hand pill badge `SL: ₹X` (if initial stop loss defined).
+  - **Target Level:** Green dotted line with right-hand pill badge `TP: ₹X` (if planned target defined).
+  - **Excursion HUD Box:** Real-time HUD inset displaying MFE (+pts, +R), MAE (-pts, -R), and Exit Efficiency (%) when calculated excursion metrics exist.
+- **Time Handling:** Uses `moment` exclusively for timestamp normalization, milestone time ticks, header date ranges, and watermark generation.
+- **Persistence & Cloudflare R2 Upload:** Chart SVGs are stored directly to R2 under `<uuid>.svg`, registered as `Attachment` records with `category: 'AUTO_CHART'`, and pushed to `trade.screenshotIds`.
+- **On-Demand Endpoint:** `POST /api/v1/trades/:id/chart/generate` (accepts `{ force?: boolean }` to regenerate and replace existing auto charts).
+
+
+---
+
+## 8. Authenticated Image Streaming
 
 Attachments are **not** served as public static assets. Instead, streaming is guarded by session authentication:
 
@@ -158,7 +178,7 @@ Attachments are **not** served as public static assets. Instead, streaming is gu
 
 ---
 
-## 8. Deletion & Cleanup Behavior
+## 9. Deletion & Cleanup Behavior
 
 When an attachment is removed:
 1. **Via `DELETE /api/v1/attachments/:id`:**

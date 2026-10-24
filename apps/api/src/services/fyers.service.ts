@@ -1,14 +1,21 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
+import moment from 'moment';
 import {
   BrokerIntegration,
   TradingAccount,
   Trade,
   BrokerFundsSnapshot,
   AccountTransaction,
+  TradeCandleSnapshot,
 } from '../db/models/index.js';
-import { calculateFIFOExecution, calculateIndianCharges } from '@tradevault/financial-engine';
+import {
+  calculateFIFOExecution,
+  calculateIndianCharges,
+  calculateExcursion,
+  detectStopMoves,
+} from '@tradevault/financial-engine';
 import {
   IBrokerAuthTokens,
   IBrokerFundLimit,
@@ -16,10 +23,13 @@ import {
   MarketSegment,
   AssetClass,
   OptionType,
+  ITradeCandle,
+  IExcursionBackfillResponse,
 } from '@tradevault/shared';
 import { AccountService } from './account.service.js';
 import { InstrumentService } from './instrument.service.js';
 import { decryptSecret } from './crypto.service.js';
+import { formatFyersSymbol } from './fyers-symbol.js';
 import { config } from '../config.js';
 
 export interface IFyersExecutionRaw {
@@ -669,6 +679,26 @@ export class FyersService {
   }
 
   /**
+   * Queries the FYERS Orderbook API for current-day orders
+   */
+  static async fetchOrderbook(appId: string, accessToken: string): Promise<any[]> {
+    const res = await fetch(`${this.FYERS_API_BASE}/orders`, {
+      method: 'GET',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok') {
+      throw new Error(data.message || `Failed to fetch FYERS orderbook (code: ${data.code || res.status})`);
+    }
+
+    return (data.orderBook || []) as any[];
+  }
+
+  /**
    * Synchronizes trades from FYERS into SetupMint journal with automatic FIFO pairing, statutory fee calculation, and deduplication
    */
   static async syncTradesForUser(userId: string | mongoose.Types.ObjectId): Promise<IFyersSyncResult> {
@@ -1149,6 +1179,514 @@ export class FyersService {
       accountId: account._id.toString(),
       accountName: account.name,
       lastSyncAt: integration.lastSyncAt,
+    };
+  }
+
+  /**
+   * Fetches historical OHLCV candles from FYERS data API v3 (/data/history).
+   * Supports chunking up to 90 days per request for intraday, rate limit backoff,
+   * and token decryption.
+   */
+  static async getHistoricalCandles(
+    userId: string | mongoose.Types.ObjectId,
+    symbol: string,
+    resolution: string = '1',
+    from: Date | string | number,
+    to: Date | string | number
+  ): Promise<ITradeCandle[]> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      throw new Error('FYERS broker session is missing or expired. Please connect FYERS in Settings.');
+    }
+
+    const tokenExpiry = integration.tokenExpiresAt || integration.authCodeExpiresAt;
+    if (tokenExpiry && new Date(tokenExpiry) <= new Date()) {
+      throw new Error('FYERS daily session has expired. Reconnect FYERS to authorize today.');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decryptSecret(integration.accessToken) as string;
+    } catch {
+      throw new Error('FYERS session could not be decrypted. Please reconnect FYERS.');
+    }
+
+    const cleanSymbol = symbol.trim().toUpperCase();
+    const cleanResolution = resolution.trim();
+
+    const fromEpochSec = Math.floor(moment(from).valueOf() / 1000);
+    const toEpochSec = Math.floor(moment(to).valueOf() / 1000);
+
+    if (toEpochSec < fromEpochSec) {
+      throw new Error('End date precedes start date');
+    }
+
+    // Historical API base URL (replace /api/v3 with /data)
+    const dataApiBase = this.FYERS_API_BASE.replace(/\/api\/v3\/?$/, '') + '/data';
+
+    // FYERS limit: up to 100 days per request for intraday resolutions (< 1D)
+    const maxRangeSec = cleanResolution === 'D' || cleanResolution === '1D' ? 365 * 86400 : 90 * 86400;
+
+    const chunks: Array<{ fromSec: number; toSec: number }> = [];
+    let curFrom = fromEpochSec;
+    while (curFrom <= toEpochSec) {
+      const curTo = Math.min(curFrom + maxRangeSec, toEpochSec);
+      chunks.push({ fromSec: curFrom, toSec: curTo });
+      curFrom = curTo + 1;
+    }
+
+    const allCandles: ITradeCandle[] = [];
+
+    for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+      const chunk = chunks[cIdx];
+      const queryParams = new URLSearchParams({
+        symbol: cleanSymbol,
+        resolution: cleanResolution,
+        date_format: '0',
+        range_from: String(chunk.fromSec),
+        range_to: String(chunk.toSec),
+        cont_flag: '1',
+        oi_flag: '0',
+      });
+
+      const url = `${dataApiBase}/history?${queryParams.toString()}`;
+
+      // Rate limit backoff retry loop (max 3 attempts)
+      let attempts = 0;
+      let success = false;
+
+      while (attempts < 3 && !success) {
+        attempts++;
+        try {
+          const res = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `${integration.appId}:${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (res.status === 429) {
+            // Rate limited: backoff and retry
+            await new Promise((r) => setTimeout(r, 600 * attempts));
+            continue;
+          }
+
+          const data = (await res.json()) as any;
+          if (data && data.s === 'ok' && Array.isArray(data.candles)) {
+            for (const item of data.candles) {
+              if (Array.isArray(item) && item.length >= 5) {
+                allCandles.push({
+                  t: Number(item[0]),
+                  o: Number(item[1]),
+                  h: Number(item[2]),
+                  l: Number(item[3]),
+                  c: Number(item[4]),
+                  v: item[5] !== undefined ? Number(item[5]) : undefined,
+                });
+              }
+            }
+            success = true;
+          } else {
+            success = true; // Non-ok response (e.g. no candles for derivative)
+          }
+        } catch {
+          if (attempts >= 3) break;
+          await new Promise((r) => setTimeout(r, 400 * attempts));
+        }
+      }
+
+      // Small throttle between chunk calls to respect 5 req/sec cap
+      if (cIdx < chunks.length - 1) {
+        await new Promise((r) => setTimeout(r, 220));
+      }
+    }
+
+    // Deduplicate candles by timestamp
+    const candleMap = new Map<number, ITradeCandle>();
+    for (const c of allCandles) {
+      candleMap.set(c.t, c);
+    }
+    return Array.from(candleMap.values()).sort((a, b) => a.t - b.t);
+  }
+
+  /**
+   * Computes MAE/MFE and exit efficiency for a closed trade using FYERS historical candles.
+   * If cached in TradeCandleSnapshot, reuses cached snapshot unless forceRefetch is true.
+   */
+  static async computeExcursionForTrade(
+    tradeId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId,
+    forceRefetch: boolean = false
+  ): Promise<any> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+
+    const trade = await Trade.findOne({ _id: tId, userId: uId });
+    if (!trade) {
+      throw new Error('Trade not found or unauthorized');
+    }
+
+    if (trade.status !== 'CLOSED' || !trade.exitTime) {
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.excursion = {
+        status: 'UNAVAILABLE',
+        failureReason: 'Excursion can only be calculated for closed trades',
+        source: 'FYERS_HISTORY',
+        computedAt: new Date(),
+      };
+      await trade.save();
+      return trade.calculated.excursion;
+    }
+
+    // Adaptive resolution rule:
+    // Holds <= 240m (4 hours) -> 1m resolution ('1')
+    // Holds > 240m up to 30 days -> 5m resolution ('5')
+    // Longer holds -> Daily ('D')
+    const holdMinutes = Math.max(1, moment(trade.exitTime).diff(moment(trade.entryTime), 'minutes'));
+    const resolution = holdMinutes <= 240 ? '1' : holdMinutes <= 43200 ? '5' : 'D';
+    const barMinutes = resolution === '1' ? 1 : resolution === '5' ? 5 : 1440;
+
+    // 1. Check if snapshot already cached
+    let candles: ITradeCandle[] = [];
+    if (!forceRefetch) {
+      const snapshot = await TradeCandleSnapshot.findOne({
+        userId: uId,
+        tradeId: trade._id,
+        resolution,
+      });
+      if (snapshot && snapshot.candles && snapshot.candles.length > 0) {
+        candles = snapshot.candles;
+      }
+    }
+
+    // 2. If not cached, fetch from FYERS data API
+    const symbol = formatFyersSymbol({
+      symbol: trade.symbol,
+      underlying: trade.underlying,
+      assetClass: trade.assetClass,
+      exchange: trade.exchange,
+      marketSegment: trade.marketSegment,
+      optionType: trade.optionType,
+      strikePrice: trade.strikePrice,
+      expiryDate: trade.expiryDate,
+    });
+
+    if (candles.length === 0) {
+      const from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
+      const to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
+
+      try {
+        candles = await this.getHistoricalCandles(uId, symbol, resolution, from, to);
+      } catch (err: any) {
+        trade.calculated = trade.calculated || ({} as any);
+        trade.calculated.excursion = {
+          status: 'UNAVAILABLE',
+          failureReason: err.message || `Failed to fetch historical candles for ${symbol}`,
+          source: 'FYERS_HISTORY',
+          resolution,
+          computedAt: new Date(),
+        };
+        await trade.save();
+        return trade.calculated.excursion;
+      }
+
+      if (candles.length > 0) {
+        // Save bounded candle slice in TradeCandleSnapshot
+        await TradeCandleSnapshot.findOneAndUpdate(
+          { userId: uId, tradeId: trade._id, resolution },
+          {
+            $set: {
+              symbol,
+              resolution,
+              candles,
+              fetchedAt: new Date(),
+            },
+          },
+          { upsert: true, new: true }
+        );
+      }
+    }
+
+    if (candles.length === 0) {
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.excursion = {
+        status: 'UNAVAILABLE',
+        failureReason: `No historical candles returned for ${symbol} around execution window`,
+        source: 'FYERS_HISTORY',
+        resolution,
+        computedAt: new Date(),
+      };
+      await trade.save();
+      return trade.calculated.excursion;
+    }
+
+    // 3. Compute excursion metrics using financial-engine
+    const entryPrice = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
+    const exitPrice = trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice ?? 0;
+    const quantity = trade.simpleExecution?.quantity ?? trade.calculated?.closedQuantity ?? 1;
+    const contractMultiplier = trade.simpleExecution?.contractMultiplier ?? 1;
+    const plannedRisk = trade.risk?.estimatedRiskAmount || trade.risk?.riskBudgetAmount || 0;
+
+    const result = calculateExcursion({
+      direction: trade.direction,
+      entryPrice,
+      exitPrice,
+      stopLoss: trade.risk?.initialStopLoss,
+      target: trade.risk?.plannedTarget,
+      quantity,
+      contractMultiplier,
+      candles,
+      entryTime: trade.entryTime,
+      exitTime: trade.exitTime,
+      plannedRiskAmount: plannedRisk > 0 ? plannedRisk : undefined,
+      resolution,
+    });
+
+    trade.calculated = trade.calculated || ({} as any);
+    trade.calculated.excursion = {
+      status: result.status,
+      computedAt: new Date(),
+      source: 'FYERS_HISTORY',
+      resolution,
+      failureReason: result.failureReason,
+      maePoints: result.maePoints,
+      mfePoints: result.mfePoints,
+      maeAmount: result.maeAmount,
+      mfeAmount: result.mfeAmount,
+      maeR: result.maeR,
+      mfeR: result.mfeR,
+      exitEfficiency: result.exitEfficiency,
+      stopEfficiency: result.stopEfficiency,
+      stopHit: result.stopHit,
+      reversedAfterStopHit: result.reversedAfterStopHit,
+      timeToMfeMinutes: result.timeToMfeMinutes,
+      timeToMaeMinutes: result.timeToMaeMinutes,
+      candleCount: result.candleCount,
+      excursionFlags: result.excursionFlags,
+    };
+
+    await trade.save();
+
+    // Trigger auto-chart screenshot generation if trade is closed and has candles
+    try {
+      const { ChartGeneratorService } = await import('./chart-generator.service.js');
+      await ChartGeneratorService.createAndSaveAutoChartForTrade(trade._id, uId, { force: false });
+    } catch {
+      // Non-fatal if chart generation or storage fails
+    }
+
+    return trade.calculated.excursion;
+  }
+
+  /**
+   * Backfills excursion analytics for closed trades in bounded batches.
+   */
+  static async batchBackfillExcursion(
+    userId: string | mongoose.Types.ObjectId,
+    options: {
+      accountId?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+    } = {}
+  ): Promise<IExcursionBackfillResponse> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      throw new Error('FYERS broker session is missing or expired. Connect FYERS in Settings.');
+    }
+    const tokenExpiry = integration.tokenExpiresAt || integration.authCodeExpiresAt;
+    if (tokenExpiry && new Date(tokenExpiry) <= new Date()) {
+      throw new Error('FYERS daily session has expired. Reconnect FYERS to authorize today.');
+    }
+
+    const filter: any = {
+      userId: uId,
+      status: 'CLOSED',
+      $or: [
+        { 'calculated.excursion.status': 'PENDING' },
+        { 'calculated.excursion': { $exists: false } },
+        { 'calculated.excursion.status': { $exists: false } },
+      ],
+    };
+
+    if (options.accountId) {
+      filter.accountId = new mongoose.Types.ObjectId(options.accountId);
+    }
+    if (options.startDate || options.endDate) {
+      filter.tradeDate = {};
+      if (options.startDate) filter.tradeDate.$gte = new Date(options.startDate);
+      if (options.endDate) filter.tradeDate.$lte = new Date(options.endDate);
+    }
+
+    const totalMatching = await Trade.countDocuments(filter);
+    const limit = Math.min(Math.max(1, options.limit || 50), 200);
+
+    const batch = await Trade.find(filter).sort({ tradeDate: -1 }).limit(limit);
+
+    let computed = 0;
+    let unavailable = 0;
+    let failed = 0;
+
+    for (const trade of batch) {
+      try {
+        const res = await this.computeExcursionForTrade(trade._id, uId);
+        if (res.status === 'COMPUTED') computed++;
+        else if (res.status === 'UNAVAILABLE') unavailable++;
+        else failed++;
+      } catch (err: any) {
+        failed++;
+        trade.calculated = trade.calculated || ({} as any);
+        trade.calculated.excursion = {
+          status: 'FAILED',
+          failureReason: err.message || 'Excursion backfill failed',
+          source: 'FYERS_HISTORY',
+          computedAt: new Date(),
+        };
+        await trade.save();
+      }
+
+      // Small delay between trade calculations to respect broker API limits
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    return {
+      processed: batch.length,
+      computed,
+      unavailable,
+      failed,
+      remaining: Math.max(0, totalMatching - batch.length),
+    };
+  }
+
+  /**
+   * Detects trailing and widening stop loss modifications for a trade,
+   * evaluates risk expansion, and flags STOP_MOVED mistake suggestions.
+   */
+  static async detectStopMovesForTrade(
+    tradeId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId,
+    options: { manualModifications?: any[] } = {}
+  ): Promise<any> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+
+    const trade = await Trade.findOne({ _id: tId, userId: uId });
+    if (!trade) {
+      throw new Error('Trade not found or unauthorized');
+    }
+
+    let rawModifications = options.manualModifications || [];
+
+    // If manual modifications were not explicitly provided, attempt to pull from FYERS orderbook
+    if (rawModifications.length === 0) {
+      const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+      if (integration?.appId && integration?.accessToken) {
+        try {
+          const accessToken = decryptSecret(integration.accessToken) as string;
+          const orderBook = await this.fetchOrderbook(integration.appId, accessToken);
+
+          // Find orders matching this trade's symbol
+          const symbol = formatFyersSymbol({
+            symbol: trade.symbol,
+            underlying: trade.underlying,
+            assetClass: trade.assetClass,
+            exchange: trade.exchange,
+            marketSegment: trade.marketSegment,
+            optionType: trade.optionType,
+            strikePrice: trade.strikePrice,
+            expiryDate: trade.expiryDate,
+          });
+
+          const tradeStart = moment(trade.entryTime).subtract(5, 'minutes');
+          const tradeEnd = trade.exitTime ? moment(trade.exitTime).add(5, 'minutes') : moment().add(5, 'minutes');
+
+          const stopOrders = orderBook.filter((ord: any) => {
+            const matchesSymbol = ord.symbol === symbol || ord.symbol === trade.symbol;
+            if (!matchesSymbol) return false;
+            const hasStop = Number(ord.stopPrice || 0) > 0 || ord.type === 3 || ord.type === 4;
+            if (!hasStop) return false;
+            const ordTime = moment(ord.orderDateTime, ['DD-MMM-YYYY HH:mm:ss', moment.ISO_8601]);
+            return ordTime.isValid() && ordTime.isBetween(tradeStart, tradeEnd, undefined, '[]');
+          });
+
+          rawModifications = stopOrders.map((ord: any) => ({
+            stopPrice: Number(ord.stopPrice),
+            modifiedAt: moment(ord.orderDateTime, ['DD-MMM-YYYY HH:mm:ss', moment.ISO_8601]).toDate(),
+            orderId: ord.id || ord.orderNumber,
+            orderType: ord.type,
+            reason: ord.message || 'FYERS Stop Order',
+          }));
+        } catch {
+          // If broker is offline and no manual modifications, proceed with empty
+        }
+      }
+    }
+
+    const entryPrice = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
+    const initialStop = trade.risk?.initialStopLoss;
+
+    const result = detectStopMoves({
+      direction: trade.direction,
+      entryPrice,
+      initialStopLoss: initialStop,
+      modifications: rawModifications,
+    });
+
+    trade.stopLossMoveEvents = result.moves.map((m: any) => ({
+      previousStop: m.previousStop,
+      newStop: m.newStop,
+      changePoints: m.changePoints,
+      changePercent: m.changePercent,
+      moveType: m.moveType,
+      movedAt: moment(m.movedAt).toDate(),
+      orderId: m.orderId,
+      orderType: m.orderType,
+      reason: m.reason,
+    }));
+
+    trade.calculated = trade.calculated || ({} as any);
+    trade.calculated.stopMoveSummary = {
+      totalMoves: result.summary.totalMoves,
+      widenedCount: result.summary.widenedCount,
+      trailedCount: result.summary.trailedCount,
+      initialStop: result.summary.initialStop,
+      finalStop: result.summary.finalStop,
+      netRiskChangePoints: result.summary.netRiskChangePoints,
+      hasWidenedRisk: result.summary.hasWidenedRisk,
+      detectedAt: new Date(),
+    };
+
+    if (result.summary.hasWidenedRisk) {
+      trade.psychology = trade.psychology || ({} as any);
+      trade.psychology.stopLossMoved = true;
+      trade.psychology.mistakes = trade.psychology.mistakes || [];
+      if (!trade.psychology.mistakes.includes('STOP_MOVED')) {
+        trade.psychology.mistakes.push('STOP_MOVED');
+      }
+
+      trade.auditLog = trade.auditLog || [];
+      trade.auditLog.push({
+        action: 'STOP_MOVED_DETECTED',
+        timestamp: new Date(),
+        changedBy: 'system',
+        details: {
+          widenedCount: result.summary.widenedCount,
+          netRiskChangePoints: result.summary.netRiskChangePoints,
+        },
+      });
+    }
+
+    await trade.save();
+
+    return {
+      stopLossMoveEvents: trade.stopLossMoveEvents,
+      stopMoveSummary: trade.calculated.stopMoveSummary,
+      mistakeSuggestions: result.mistakeSuggestions,
+      flags: result.flags,
     };
   }
 }

@@ -317,3 +317,118 @@ $$\text{Tilt Score} = 0.30 S_{\text{streak}} + 0.25 S_{\text{size}} + 0.25 S_{\t
 - Categorized as `CALM` ($0-30$), `ELEVATED` ($31-60$), `HIGH_TILT` ($61-80$), `SEVERE_TILT` ($81-100$).
 - Advisory and non-blocking in `TradeFormModal`.
 
+---
+
+## 14. Excursion Analytics & Execution Quality (`excursion.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/excursion.ts:1-260`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/excursion.ts)
+
+Excursion analytics evaluate the quality of trade execution and trade management by measuring the maximum adverse price move (heat endured) and maximum favorable price move (potential unrealized peak) using FYERS 1-minute historical candlestick data strictly within the trade's active lifecycle ($T_{\text{entry}}$ to $T_{\text{exit}}$). All calculations use `Decimal.js` with 30 digits of precision and banker's rounding (`ROUND_HALF_UP`), with `moment` powering strict time handling.
+
+### Mathematical Formulas:
+
+#### Maximum Favorable Excursion (MFE) Points:
+$$\text{Long MFE Points} = \max(0, \max_{i}(H_i) - P_{\text{entry}})$$
+
+$$\text{Short MFE Points} = \max(0, P_{\text{entry}} - \min_{i}(L_i))$$
+
+#### Maximum Adverse Excursion (MAE) Points:
+$$\text{Long MAE Points} = \max(0, P_{\text{entry}} - \min_{i}(L_i))$$
+
+$$\text{Short MAE Points} = \max(0, \max_{i}(H_i) - P_{\text{entry}})$$
+
+Where $H_i, L_i$ represent the high and low of the $i$-th candlestick whose timestamp range overlaps $[T_{\text{entry}}, T_{\text{exit}}]$.
+
+#### Monetary Excursions:
+$$\text{MFE Amount} = \text{MFE Points} \times Q \times M$$
+
+$$\text{MAE Amount} = \text{MAE Points} \times Q \times M$$
+
+#### Risk-Normalized Excursions (R-Multiple):
+$$\text{MFE (R)} = \frac{\text{MFE Points}}{\text{Stop Distance Points}} \quad \text{or} \quad \frac{\text{MFE Amount}}{\text{Planned Risk Amount}}$$
+
+$$\text{MAE (R)} = \frac{\text{MAE Points}}{\text{Stop Distance Points}} \quad \text{or} \quad \frac{\text{MAE Amount}}{\text{Planned Risk Amount}}$$
+
+#### Exit Efficiency:
+Measures what portion of the trade's maximum unrealized profit was captured at exit:
+
+$$\text{Exit Efficiency} = \begin{cases} 
+1.0 & \text{if } \text{MFE Points} = 0 \text{ and } P_{\text{exit}} = P_{\text{entry}} \\
+0.0 & \text{if } \text{MFE Points} = 0 \text{ or } \text{Realized Favorable Points} \le 0 \\
+\min\left(1.0, \max\left(0.0, \frac{\text{Realized Favorable Points}}{\text{MFE Points}}\right)\right) & \text{if } \text{MFE Points} > 0
+\end{cases}$$
+
+Where $\text{Realized Favorable Points} = (P_{\text{exit}} - P_{\text{entry}})$ for LONG, and $(P_{\text{entry}} - P_{\text{exit}})$ for SHORT.
+
+#### Stop Hit & Reversal Detection:
+- **Stop Hit:** Evaluates whether any candle's adverse extreme penetrated the initial stop loss level:
+  - Long: $L_i \le P_{\text{stop}}$
+  - Short: $H_i \ge P_{\text{stop}}$
+- **Reversed After Stop Hit (`reversedAfterStopHit`):** Detected if a subsequent candle ($j > \text{stopHitIndex}$) moved back in the trade's favorable direction past $P_{\text{entry}}$:
+  - Long: $H_j > P_{\text{entry}}$
+  - Short: $L_j < P_{\text{entry}}$
+
+#### Diagnostic Excursion Flags:
+- **`GAVE_BACK_PROFIT`:** Trade achieved substantial favorable run ($\text{MFE} \ge 1.0\text{R}$ or $\ge 15\text{ pts}$) but surrendered $> 50\%$ of peak profit before closing.
+- **`STOP_TOO_TIGHT_EVIDENCE`:** Initial stop was triggered, but subsequent market action reversed into target territory without further structural breakdown.
+- **`EXITED_EARLY`:** Trade exited with $< 50\%$ exit efficiency despite achieving $> 1.5\text{R}$ MFE.
+- **`HELD_INTO_REVERSAL`:** Trade experienced deep adverse run ($\text{MAE} > 1.2\text{R}$) without disciplined stop execution.
+
+---
+
+## 15. Stop-Loss Modification & Trail Tracking (`stop-move.ts`)
+
+### Code Location:
+[`packages/financial-engine/src/stop-move.ts:1-205`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/stop-move.ts)
+
+Stop-move tracking monitors modifications to stop-loss orders throughout the trade lifecycle to verify trade management discipline. It differentiates between disciplined favorable trailing (moving stop closer to price or into profit) and undisciplined risk widening (moving stop further away to avoid being stopped out).
+
+All calculations are evaluated with `Decimal.js` (30 digits of precision) and chronological order sorting via `moment`.
+
+### Mathematical Definitions:
+
+Given a sequence of stop modifications $S_1, S_2, \dots, S_n$ with timestamps $T_1 \le T_2 \le \dots \le T_n$, starting from initial stop $S_0$:
+
+#### Long Position:
+$$\text{Move Type}_k = \begin{cases}
+\text{TRAILED\_FAVORABLY} & \text{if } S_k > S_{k-1} \\
+\text{WIDENED\_RISK} & \text{if } S_k < S_{k-1} \\
+\text{UNCHANGED} & \text{if } S_k = S_{k-1}
+\end{cases}$$
+
+$$\Delta \text{Points}_k = |S_k - S_{k-1}|$$
+
+$$\Delta \text{Percent}_k = \frac{\Delta \text{Points}_k}{S_{k-1}} \times 100$$
+
+$$\text{Net Risk Change Points} = S_0 - S_n$$
+
+- A **positive** net risk change means the stop was moved downward below the initial level, increasing capital at risk.
+- A **negative** net risk change means the stop was trailed upward above the initial level, locking in profit or reducing risk.
+
+#### Short Position:
+$$\text{Move Type}_k = \begin{cases}
+\text{TRAILED\_FAVORABLY} & \text{if } S_k < S_{k-1} \\
+\text{WIDENED\_RISK} & \text{if } S_k > S_{k-1} \\
+\text{UNCHANGED} & \text{if } S_k = S_{k-1}
+\end{cases}$$
+
+$$\Delta \text{Points}_k = |S_k - S_{k-1}|$$
+
+$$\Delta \text{Percent}_k = \frac{\Delta \text{Points}_k}{S_{k-1}} \times 100$$
+
+$$\text{Net Risk Change Points} = S_n - S_0$$
+
+- A **positive** net risk change means the stop was moved upward above the initial level, increasing upside capital risk.
+- A **negative** net risk change means the stop was trailed downward below the initial level, locking in profit or reducing risk.
+
+#### Discipline Violation Trigger (`STOP_MOVED`):
+$$\text{hasWidenedRisk} = \text{widenedCount} > 0$$
+
+When $\text{hasWidenedRisk} = \text{true}$:
+1. The trade receives the `STOP_MOVED` mistake suggestion with `CRITICAL` severity in `detectMistakeSuggestions()`.
+2. The trade document automatically updates `trade.psychology.stopLossMoved = true`.
+3. If not already tagged, `'STOP_MOVED'` is appended to `trade.psychology.mistakes`.
+4. A system audit log entry (`action: 'STOP_MOVED_DETECTED'`) is recorded with the net point expansion.
+
+

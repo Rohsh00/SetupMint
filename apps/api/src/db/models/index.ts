@@ -12,3 +12,4 @@ export * from './BrokerIntegration.js';
 export * from './BrokerFundsSnapshot.js';
 export * from './BrokerImportMapping.js';
 export * from './TradeTemplate.js';
+export * from './TradeCandleSnapshot.js';

@@ -383,6 +383,111 @@ export interface IPsychologyDetails {
   notes?: string;
 }
 
+export type ExcursionStatus = 'PENDING' | 'COMPUTED' | 'UNAVAILABLE' | 'FAILED';
+
+export type ExcursionFlag =
+  | 'GAVE_BACK_PROFIT'
+  | 'EXITED_EARLY'
+  | 'STOP_TOO_TIGHT_EVIDENCE'
+  | 'STOP_TOO_LOOSE_EVIDENCE';
+
+export interface ITradeExcursion {
+  status: ExcursionStatus;
+  computedAt?: string;
+  source?: 'FYERS_HISTORY';
+  resolution?: string;
+  failureReason?: string;
+  maePoints?: number;
+  mfePoints?: number;
+  maeAmount?: number;
+  mfeAmount?: number;
+  maeR?: number;
+  mfeR?: number;
+  exitEfficiency?: number;
+  stopEfficiency?: number;
+  stopHit?: boolean;
+  reversedAfterStopHit?: boolean;
+  timeToMfeMinutes?: number;
+  timeToMaeMinutes?: number;
+  candleCount?: number;
+  excursionFlags?: ExcursionFlag[];
+}
+
+export interface ITradeCandle {
+  t: number; // Unix epoch timestamp in seconds
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v?: number;
+}
+
+export interface ITradeCandleSnapshot {
+  id?: string;
+  userId: string;
+  tradeId: string;
+  symbol: string;
+  resolution: string;
+  candles: ITradeCandle[];
+  fetchedAt: string;
+}
+
+export interface IExcursionScatterPoint {
+  tradeId: string;
+  symbol: string;
+  maeR?: number;
+  mfeR?: number;
+  netPnL: number;
+  outcome: TradeOutcome;
+  exitEfficiency?: number;
+  tradeDate: string;
+}
+
+export interface IExcursionAnalyticsResponse {
+  summary: {
+    totalEvaluated: number;
+    avgMaeR?: number;
+    avgMfeR?: number;
+    avgExitEfficiency?: number;
+    gaveBackProfitPercent: number;
+    reversalAfterStopPercent: number;
+  };
+  scatterPoints: IExcursionScatterPoint[];
+}
+
+export interface IExcursionBackfillResponse {
+  processed: number;
+  computed: number;
+  unavailable: number;
+  failed: number;
+  remaining: number;
+}
+
+export type StopMoveType = 'TRAILED_FAVORABLY' | 'WIDENED_RISK' | 'UNCHANGED';
+
+export interface IStopLossMoveEvent {
+  previousStop: number;
+  newStop: number;
+  changePoints: number;
+  changePercent: number;
+  moveType: StopMoveType;
+  movedAt: string;
+  orderId?: string;
+  orderType?: number;
+  reason?: string;
+}
+
+export interface IStopMoveSummary {
+  totalMoves: number;
+  widenedCount: number;
+  trailedCount: number;
+  initialStop?: number;
+  finalStop?: number;
+  netRiskChangePoints: number;
+  hasWidenedRisk: boolean;
+  detectedAt?: string;
+}
+
 export interface ICalculatedDetails {
   grossPnL: number;
   totalCosts: number;
@@ -394,6 +499,8 @@ export interface ICalculatedDetails {
   openQuantity: number;
   averageEntryPrice: number;
   averageExitPrice?: number;
+  excursion?: ITradeExcursion;
+  stopMoveSummary?: IStopMoveSummary;
 }
 
 export type AttachmentCategory =
@@ -404,7 +511,8 @@ export type AttachmentCategory =
   | 'OTHER'
   | 'BEFORE_ENTRY'
   | 'ANNOTATED'
-  | 'ATTACHMENT';
+  | 'ATTACHMENT'
+  | 'AUTO_CHART';
 
 export interface IAttachment {
   id: string;
@@ -474,6 +582,7 @@ export interface ITrade {
   screenshotIds: string[];
   attachments?: IAttachment[];
   setup?: ITradeSetup;
+  stopLossMoveEvents?: IStopLossMoveEvent[];
   auditLog: IAuditEntry[];
 
   createdAt: string;

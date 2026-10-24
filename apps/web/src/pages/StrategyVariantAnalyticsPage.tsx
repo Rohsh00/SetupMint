@@ -575,6 +575,9 @@ export function StrategyVariantAnalyticsPage() {
                     Adherence
                   </TableSortLabel>
                 </TableCell>
+                <TableCell align="right">Avg MFE</TableCell>
+                <TableCell align="right">Avg MAE</TableCell>
+                <TableCell align="right">Exit Eff</TableCell>
                 <TableCell align="center">Sample Size & Edge</TableCell>
                 <TableCell align="center">Action</TableCell>
               </TableRow>
@@ -704,6 +707,48 @@ export function StrategyVariantAnalyticsPage() {
                           {bucket.adherenceRate !== null ? formatPercent(bucket.adherenceRate) : '—'}
                         </Typography>
                       </Tooltip>
+                    </TableCell>
+
+                    {/* Excursion Avg MFE */}
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: bucket.avgMfeR !== null && bucket.avgMfeR !== undefined ? 'success.main' : 'text.secondary',
+                        }}
+                      >
+                        {bucket.avgMfeR !== null && bucket.avgMfeR !== undefined ? `+${bucket.avgMfeR}R` : '—'}
+                      </Typography>
+                    </TableCell>
+
+                    {/* Excursion Avg MAE */}
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: bucket.avgMaeR !== null && bucket.avgMaeR !== undefined ? 'error.main' : 'text.secondary',
+                        }}
+                      >
+                        {bucket.avgMaeR !== null && bucket.avgMaeR !== undefined ? `-${bucket.avgMaeR}R` : '—'}
+                      </Typography>
+                    </TableCell>
+
+                    {/* Excursion Exit Efficiency */}
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: 'text.primary',
+                        }}
+                      >
+                        {bucket.avgExitEfficiency !== null && bucket.avgExitEfficiency !== undefined ? `${(bucket.avgExitEfficiency * 100).toFixed(1)}%` : '—'}
+                      </Typography>
                     </TableCell>
 
                     {/* Sample Size & Edge */}

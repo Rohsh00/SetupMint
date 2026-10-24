@@ -404,3 +404,23 @@ This document provides a comprehensive, verified feature inventory of all module
 - **Frontend & CLI Components:**
   - CLI: `npm run db:seed`, `npm run seed:reset`, `npm run seed:validate`.
   - Engine: [`SetupMintSeedEngine`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/seed/seed-engine.ts).
+
+---
+
+## 15. Excursion Analytics & Execution Quality
+
+- **Status:** **IMPLEMENTED**
+- **Purpose:** FYERS historical candlestick-powered Maximum Favorable Excursion (MFE), Maximum Adverse Excursion (MAE), Exit Efficiency, and post-stop reversal detection.
+- **Problem Solved:** Pinpoints whether stop-losses were set too tightly inside liquidity pools, trades exited prematurely before reaching full potential, or large floating gains were surrendered before closing.
+- **Key Capabilities:**
+  - **MFE & MAE Calculation:** Evaluates exact high/low ticks across 1-minute (and 5-minute) historical candles strictly within trade lifecycle timestamps.
+  - **Exit Efficiency Rating:** Measures captured profit as a percentage of maximum favorable run.
+  - **Diagnostic Badges:** Automated heuristics detect `GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`, and `HELD_INTO_REVERSAL`.
+  - **Interactive Execution Quality Tab:** Recharts Scatter Plot (`maeR` vs `mfeR`) with win/loss color differentiation and hover trade inspection.
+  - **Trade Detail Excursion Card:** Displays MFE, MAE, R multiples, Exit Efficiency progress bar gauge, and one-click compute/recompute button.
+  - **Strategy Variant Metrics:** Variant performance buckets report Average MFE (R), Average MAE (R), and Exit Efficiency.
+  - **Batch Backfill Tooling:** In-app Settings backfill trigger and CLI script (`npm run excursion:backfill`).
+- **Frontend & Backend Components:**
+  - Frontend: `TradeDetailPage.tsx`, `AnalyticsPage.tsx`, `StrategyVariantAnalyticsPage.tsx`, `SettingsPage.tsx`.
+  - Backend: `excursion.ts` (`@tradevault/financial-engine`), `TradeCandleSnapshot` model, `/trades/:id/excursion/compute`, `/integrations/fyers/excursion-backfill`, `/analytics/excursion`.
+

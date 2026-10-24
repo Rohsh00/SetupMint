@@ -223,6 +223,97 @@ export class SeedValidator {
     });
     if (!variantsValid) errors.push(variantCheckDetails);
 
+    // Check 11: Excursion Invariants & Consistency
+    const tradesWithExcursion = trades.filter((t) => t.calculated?.excursion?.status === 'COMPUTED');
+    let excursionValid = true;
+    let excursionReason = `Found ${tradesWithExcursion.length} trades with computed excursion metrics`;
+    for (const t of tradesWithExcursion) {
+      const exc = t.calculated!.excursion!;
+      if (exc.mfePoints !== undefined && exc.mfePoints < 0) {
+        excursionValid = false;
+        excursionReason = `Trade ${t._id} has negative mfePoints: ${exc.mfePoints}`;
+        break;
+      }
+      if (exc.maePoints !== undefined && exc.maePoints < 0) {
+        excursionValid = false;
+        excursionReason = `Trade ${t._id} has negative maePoints: ${exc.maePoints}`;
+        break;
+      }
+      if (exc.exitEfficiency !== undefined && (exc.exitEfficiency < 0 || exc.exitEfficiency > 1.0001)) {
+        excursionValid = false;
+        excursionReason = `Trade ${t._id} has invalid exitEfficiency: ${exc.exitEfficiency}`;
+        break;
+      }
+      if (exc.maeR !== undefined && exc.maeR < 0) {
+        excursionValid = false;
+        excursionReason = `Trade ${t._id} has negative maeR: ${exc.maeR}`;
+        break;
+      }
+      if (exc.mfeR !== undefined && exc.mfeR < 0) {
+        excursionValid = false;
+        excursionReason = `Trade ${t._id} has negative mfeR: ${exc.mfeR}`;
+        break;
+      }
+    }
+    checks.push({
+      name: 'Trade Excursion Invariants & Consistency',
+      passed: excursionValid,
+      details: excursionReason,
+    });
+    if (!excursionValid) errors.push(excursionReason);
+
+    // Check 12: Stop-Loss Move Events & Discipline Invariants
+    const tradesWithStopMoves = trades.filter(
+      (t) => (t.stopLossMoveEvents && t.stopLossMoveEvents.length > 0) || t.calculated?.stopMoveSummary
+    );
+    let stopMovesValid = true;
+    let stopMovesReason = `Found ${tradesWithStopMoves.length} trades with stop-loss move tracking data`;
+
+    for (const t of tradesWithStopMoves) {
+      const summary = t.calculated?.stopMoveSummary;
+      const events = t.stopLossMoveEvents || [];
+
+      if (summary) {
+        if (summary.totalMoves !== summary.widenedCount + summary.trailedCount) {
+          stopMovesValid = false;
+          stopMovesReason = `Trade ${t._id} stopMoveSummary move count mismatch: totalMoves (${summary.totalMoves}) != widened (${summary.widenedCount}) + trailed (${summary.trailedCount})`;
+          break;
+        }
+
+        if (summary.hasWidenedRisk && (!t.psychology?.stopLossMoved || !t.psychology?.mistakes?.includes('STOP_MOVED'))) {
+          stopMovesValid = false;
+          stopMovesReason = `Trade ${t._id} has widened stop risk but missing psychology.stopLossMoved or STOP_MOVED mistake tag`;
+          break;
+        }
+      }
+
+      for (const ev of events) {
+        if (ev.previousStop <= 0 || ev.newStop <= 0) {
+          stopMovesValid = false;
+          stopMovesReason = `Trade ${t._id} has non-positive stop values: prev=${ev.previousStop}, new=${ev.newStop}`;
+          break;
+        }
+        if (ev.changePoints < 0) {
+          stopMovesValid = false;
+          stopMovesReason = `Trade ${t._id} has negative changePoints: ${ev.changePoints}`;
+          break;
+        }
+        if (!['TRAILED_FAVORABLY', 'WIDENED_RISK', 'UNCHANGED'].includes(ev.moveType)) {
+          stopMovesValid = false;
+          stopMovesReason = `Trade ${t._id} has invalid moveType: ${ev.moveType}`;
+          break;
+        }
+      }
+      if (!stopMovesValid) break;
+    }
+
+    checks.push({
+      name: 'Stop-Loss Move Events & Discipline Invariants',
+      passed: stopMovesValid,
+      details: stopMovesReason,
+    });
+    if (!stopMovesValid) errors.push(stopMovesReason);
+
     const passedChecks = checks.filter((c) => c.passed).length;
     const failedChecks = checks.filter((c) => !c.passed).length;
 

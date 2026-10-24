@@ -63,7 +63,7 @@ Trading Vault/
 │       ├── components/trades/     # TradeFormModal.tsx, TradeAdvancedFills.tsx, etc.
 │       └── pages/                 # 13 routed page components
 ├── packages/
-│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts, templates.ts
+│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts, templates.ts, excursion.ts
 │   └── shared/src/                # types.ts, schemas.ts, constants.ts
 ├── scripts/                       # backup.js, restore.js, reconcile.js
 └── docs/                          # Comprehensive markdown documentation library
@@ -78,21 +78,21 @@ Trading Vault/
 - `/trades` — Master Trade Ledger with filtering & bulk actions (`TradesPage`)
 - `/trades/:id` — In-Depth Trade Review & Chart Gallery (`TradeDetailPage`)
 - `/journal` — Monthly P&L Calendar Heatmap & Daily Reflection (`JournalCalendarPage`)
-- `/analytics` — Psychology & Session Analytics (`AnalyticsPage`)
+- `/analytics` — Psychology, Session Analytics & Execution Quality MAE/MFE (`AnalyticsPage`)
 - `/strategies` — Strategy Playbooks & Statistical Scores (`StrategyPlaybookPage`)
 - `/strategies/:id/analytics` — Strategy Setup Variant Analytics & Performance Buckets (`StrategyVariantAnalyticsPage`)
 - `/risk-calculator` — Position Sizing with Form Transfer (`RiskCalculatorPage`)
 - `/accounts` — Multi-Broker Accounts & Cash Flows (`AccountsPage`)
 - `/instruments` — User-Owned Market Specifications & Traded Summaries (`InstrumentsPage`)
 - `/reports` — CSV/JSON Export & Interactive Broker Import (`ReportsPage`)
-- `/settings` — User Profile, Password & FYERS Configuration (`SettingsPage`)
+- `/settings` — User Profile, Password, FYERS Configuration & Excursion Backfill (`SettingsPage`)
 
 ---
 
 ## 6. Database Entities & Consistency Invariants
 
 ### Entities:
-- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `AuditLog`.
+- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata, `calculated.excursion`, and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `TradeCandleSnapshot`, `AuditLog`.
 
 ### Invariants:
 1. **Tenant Isolation:** Every document includes `userId: ObjectId`. All queries must filter by `{ userId: req.user.id }`.
@@ -147,16 +147,16 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites across the monorepo (319 verified tests)
+# Run all test suites across the monorepo (381 verified tests)
 npm run test
 
-# Run financial engine unit tests (135 tests)
+# Run financial engine unit tests (163 tests)
 npm run test:engine
 
 # Backfill and normalize instruments for existing trades
 npm run instruments:backfill
 
-# Run API integration and regression tests (184 tests)
+# Run API integration and regression tests (218 tests)
 npm run test:api
 
 # Typecheck all packages

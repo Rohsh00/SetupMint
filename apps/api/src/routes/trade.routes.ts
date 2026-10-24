@@ -12,13 +12,16 @@ import {
   updateTradeSchema,
   tradeFilterQuerySchema,
   bulkClassifySchema,
+  stopMoveDetectionSchema,
   TradeOutcome,
 } from '@tradevault/shared';
-import { TradingAccount, Trade, Strategy, Instrument, Attachment, TradeTemplate } from '../db/models/index.js';
+import { TradingAccount, Trade, Strategy, Instrument, Attachment, TradeTemplate, BrokerIntegration } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { FyersService } from '../services/fyers.service.js';
+import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -971,4 +974,204 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     return reply.send({ success: true, message: `Deleted ${tradesToDelete.length} trades and reconciled balances` });
   });
+
+  // Compute excursion metrics for a closed trade
+  app.post(
+    '/:id/excursion/compute',
+    { preHandler: [validateObjectIdParam('id')] },
+    async (req: any, reply) => {
+      const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+      if (!trade) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found or unauthorized' },
+        });
+      }
+
+      if (trade.status !== 'CLOSED') {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'TRADE_NOT_CLOSED',
+            message: 'Excursion can only be calculated for closed trades',
+          },
+        });
+      }
+
+      // Check active FYERS session
+      const integration = await BrokerIntegration.findOne({
+        userId: req.user!.id,
+        broker: 'FYERS',
+      });
+      const tokenExpiry = integration?.tokenExpiresAt || integration?.authCodeExpiresAt;
+      const isTokenValid = Boolean(
+        integration?.accessToken && tokenExpiry && new Date(tokenExpiry) > new Date()
+      );
+
+      if (!isTokenValid) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'BROKER_NOT_CONNECTED',
+            message: 'Active FYERS broker session is required. Please reconnect FYERS in Settings.',
+          },
+        });
+      }
+
+      try {
+        const excursion = await FyersService.computeExcursionForTrade(
+          req.params.id,
+          req.user!.id,
+          true
+        );
+        return reply.send({
+          success: true,
+          data: excursion,
+        });
+      } catch (err: any) {
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'COMPUTATION_FAILED',
+            message: err.message || 'Failed to compute excursion metrics',
+          },
+        });
+      }
+    }
+  );
+
+  // Generate automated SVG execution chart from FYERS candlestick data
+  app.post(
+    '/:id/chart/generate',
+    { preHandler: [validateObjectIdParam('id')] },
+    async (req: any, reply) => {
+      const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+      if (!trade) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found or unauthorized' },
+        });
+      }
+
+      if (trade.status !== 'CLOSED') {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'TRADE_NOT_CLOSED',
+            message: 'Automated execution charts can only be generated for closed trades',
+          },
+        });
+      }
+
+      try {
+        const force = Boolean(req.body?.force);
+        const attachment = await ChartGeneratorService.createAndSaveAutoChartForTrade(
+          trade._id,
+          req.user!.id,
+          { force }
+        );
+
+        return reply.status(201).send({
+          success: true,
+          data: {
+            id: attachment._id.toString(),
+            tradeId: trade._id.toString(),
+            originalName: attachment.originalName,
+            category: attachment.category,
+            caption: attachment.description,
+            description: attachment.description,
+            timeframe: attachment.timeframe,
+            chartTimestamp: attachment.chartTimestamp,
+            sizeBytes: attachment.sizeBytes,
+            mimeType: attachment.mimeType,
+            downloadUrl: `/api/v1/attachments/${attachment._id}/download`,
+            uploadedAt: attachment.createdAt.toISOString(),
+          },
+        });
+      } catch (err: any) {
+        req.log.error('Auto chart generation failed for trade %s: %s', trade._id, err.message);
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'CHART_GENERATION_FAILED',
+            message: err.message || 'Failed to generate automated chart screenshot',
+          },
+        });
+      }
+    }
+  );
+
+  // Detect and track stop-loss modifications and risk expansion (trailing vs widening)
+  app.post(
+    '/:id/stop-moves/detect',
+    { preHandler: [validateObjectIdParam('id')] },
+    async (req: any, reply) => {
+      const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+      if (!trade) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found or unauthorized' },
+        });
+      }
+
+      const parseResult = stopMoveDetectionSchema.safeParse(req.body || {});
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid stop move detection payload',
+            details: parseResult.error.issues,
+          },
+        });
+      }
+
+      try {
+        const result = await FyersService.detectStopMovesForTrade(
+          trade._id,
+          req.user!.id,
+          { manualModifications: parseResult.data.manualModifications }
+        );
+
+        return reply.send({
+          success: true,
+          data: result,
+        });
+      } catch (err: any) {
+        req.log.error('Stop move detection failed for trade %s: %s', trade._id, err.message);
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'STOP_MOVE_DETECTION_FAILED',
+            message: err.message || 'Failed to detect stop moves for trade',
+          },
+        });
+      }
+    }
+  );
+
+  // Get recorded stop-loss modifications and summary for a trade
+  app.get(
+    '/:id/stop-moves',
+    { preHandler: [validateObjectIdParam('id')] },
+    async (req: any, reply) => {
+      const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+      if (!trade) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found or unauthorized' },
+        });
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          stopLossMoveEvents: trade.stopLossMoveEvents || [],
+          stopMoveSummary: trade.calculated?.stopMoveSummary || null,
+        },
+      });
+    }
+  );
 };
+
+

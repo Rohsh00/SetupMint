@@ -14,8 +14,9 @@ For the full configuration, reconciliation, and security model, see [`BROKER_INT
 | `POST /validate-authcode` | Exchange `auth_code` for access/refresh tokens |
 | `GET /tradebook` | Fetch current-day executions for FIFO import |
 | `GET /funds` | Fetch fund limits for balance reconciliation |
+| `GET /data/history` | Fetch historical 1m & 5m candlestick data for excursion analytics |
 
-The base URL is configured with `FYERS_API_BASE` and defaults to `https://api-t1.fyers.in/api/v3`.
+The base URL is configured with `FYERS_API_BASE` and defaults to `https://api-t1.fyers.in/api/v3`. Data history calls use `https://api-t1.fyers.in/data`.
 
 ---
 
@@ -81,9 +82,26 @@ Imports are idempotent, batched, and reversible. Deposits/withdrawals must be po
 
 ---
 
-## 6. Operational Notes
+## 6. Excursion Analytics Sync
+
+SetupMint queries FYERS historical market data to calculate Maximum Favorable Excursion (MFE), Maximum Adverse Excursion (MAE), Exit Efficiency, and stop-loss reversal evidence.
+
+1. **Symbol Formatting:** `formatFyersSymbol` maps internal trade contracts into FYERS v3 symbol formats:
+   - Equities: `NSE:SBIN-EQ`, `BSE:RELIANCE-A`
+   - Weekly Options: `{EX}:{UNDERLYING}{YY}{M}{DD}{STRIKE}{OPT}` where month `M` is 1-9 for Jan-Sep and O, N, D for Oct, Nov, Dec.
+   - Monthly Options: `{EX}:{UNDERLYING}{YY}{MMM}{STRIKE}{OPT}`
+   - Futures: `{EX}:{UNDERLYING}{YY}{MMM}FUT`
+2. **Adaptive Resolution:** Trades with duration $\le 4\text{ hours}$ use 1-minute candles (`resolution: '1'`); longer trades use 5-minute candles (`resolution: '5'`).
+3. **Snapshot Caching:** Candlestick responses are stored in `TradeCandleSnapshot` (`{ userId, tradeId, resolution }`), eliminating duplicate broker queries.
+4. **Rate Limiting & Backoff:** Background backfill scripts enforce FYERS rate limits (5 requests/sec, 220ms delay per request) with exponential backoff on HTTP 429.
+5. **Auto-Triggering:** FYERS sync automatically computes excursion metrics for newly closed trades synced during the session.
+
+---
+
+## 7. Operational Notes
 
 - Run `npm run accounts:backfill` before enabling the new ledger/broker fields on an existing database.
+- Run `npm run excursion:backfill` (or `--live`) to compute excursion metrics across closed trades.
 - `FYERS_FUNDS_DRIFT_TOLERANCE` defaults to ₹1.
 - `FYERS_FUNDS_SYNC_ENABLED=false` disables funds sync without removing credentials.
 - Never place broker secrets in frontend code, CSV files, screenshots, or committed `.env` files.

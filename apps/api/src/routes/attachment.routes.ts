@@ -128,7 +128,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
 
     // Extract form metadata from multipart fields
     const rawCategory = (data.fields.category as any)?.value;
-    const category = ['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT'].includes(rawCategory)
+    const category = ['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT', 'AUTO_CHART'].includes(rawCategory)
       ? rawCategory
       : 'ENTRY';
     const description = (data.fields.caption as any)?.value || (data.fields.description as any)?.value || '';

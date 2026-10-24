@@ -13,11 +13,11 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (319 Passing Tests)
+## 2. Test Suite Inventory (353 Passing Tests)
 
-The repository contains **319 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **353 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (135 Tests)
+### A. Financial Engine Unit Tests (156 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -29,14 +29,15 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `currency.test.ts` | 3 tests | Identical currency pass-through, explicit conversion rates, rejection of silent 1:1 conversions when rate is missing. |
 | `charges.test.ts` | 6 tests | Indian statutory charges across segments (NSE_EQ, NSE_FNO futures, NSE_FNO options, MCX commodities), flat brokerage (₹20/leg, ₹0 Finvasia, custom), STT/CTT, SEBI, GST, stamp duty. |
 | `session.test.ts` | 5 tests | Automatic session derivation: NSE market hours (09:15-15:30 IST), MCX evening session, foreign exchanges (New York / London), weekends & Crypto off-hours. |
-| `mistakes.test.ts` | 12 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, rule-based discipline rating (1 to 5), and advisory liquidity/level checks (`NO_LIQUIDITY_TAKEN`, `NO_LIQUIDITY_TARGET`, `STOP_TOO_TIGHT`). |
-| `templates.test.ts` | 34 tests | Pure Decimal.js rule resolution (PERCENT, POINTS, PREMIUM_PERCENT, MANUAL), target calculation from minRR, instrument tick size rounding, dynamic ranking by market/session/expiry, NSE 2026 Tuesday holiday shifts to Monday (Dussehra 2026-10-20 to 2026-10-19, Guru Nanak Jayanti 2026-11-24 to 2026-11-23), Nifty-only weekly vs Bank Nifty/FinNifty/stock monthly expiry constraints, universal asset class coverage, 25 built-in templates validation, and liquidity template resolution. |
+| `mistakes.test.ts` | 15 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, rule-based discipline rating (1 to 5), excursion-evidence rules (`STOP_TOO_TIGHT`, `PREMATURE_EXIT`, `BREAKEVEN_TOO_EARLY`), and advisory liquidity/level checks. |
+| `templates.test.ts` | 34 tests | Pure Decimal.js rule resolution (PERCENT, POINTS, PREMIUM_PERCENT, MANUAL), target calculation from minRR, instrument tick size rounding, dynamic ranking by market/session/expiry, NSE 2026 Tuesday holiday shifts to Monday, universal asset class coverage, 25 built-in templates validation, and liquidity template resolution. |
 | `edge.test.ts` | 26 tests | Statistical edge validation: Bayesian win rate, bootstrap expectancy intervals, minimum sample size verdicts. |
 | `monte-carlo.test.ts` | 12 tests | Monte Carlo equity path simulation and drawdown distributions. |
 | `tilt.test.ts` | 8 tests | Tilt / emotional state detection heuristics. |
-| `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets (custom keys), UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring against user-defined variants. |
+| `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets, UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring. |
+| `excursion.test.ts` | 18 tests | Pure Decimal.js 30-digit precision calculation of MAE/MFE points, amounts, R multiples, candle lifecycle overlap filtering, Exit Efficiency, stop hit & post-stop reversal detection, time-to-MFE/MAE, and diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`). |
 
-### B. Backend API & Integration Tests (184 Tests)
+### B. Backend API & Integration Tests (197 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -48,12 +49,14 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 | `template.test.ts` | 12 tests | Authentication enforcement, 25 built-in templates listing with stats, custom template creation & uniqueness, update, built-in protection (`BUILT_IN_READ_ONLY`), strict tenant isolation between users, trade linking to `templateId`, trade query filtering by `templateId`, favorite toggling, usage incrementation. |
 | `strategy-variants.test.ts` | 8 tests | Custom parent strategy with arbitrary child variants (no static keys), tenant isolation, trade logging with `strategyId` + `setup.variantKey` and `CLASSIFIED` audit entry, `409 VARIANT_IN_USE` deletion protection, archiving via `isActive: false`, bulk classification, `GET /strategies/:id/analytics` buckets and invariant check, idempotent starter pack insertion. |
 | `instrument.test.ts` | 18 tests | User-owned instruments, on-demand creation, preview/apply-to-trades cascades, `INSTRUMENT_IN_USE` protection. |
-| `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, 15 strategy playbooks (including parent strategies with child variants and classified demo trades), idempotency verification (reseeding cleanly replaces previous demo data), account balance consistency, seed validation engine. |
+| `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, 15 strategy playbooks, idempotency verification, account balance consistency, seed validation engine including Check 11 Excursion Invariants. |
 | `connection.test.ts` | 8 tests | Cloud-only Atlas URI validation, masking credentials in logs, rejection of local/memory addresses, fail-fast behavior. |
 | `storage.test.ts` | 13 tests | Cloudflare R2 bucket connection, signed uploads, streaming download, key formatting, object deletion. |
 | `broker-sync.test.ts` | 11 tests | FYERS OAuth state, encrypted token persistence, account linking, funds snapshot persistence, drift tolerance, open-trade pause, pending adjustment creation, confirm/reject balance effects, and tenant isolation. |
 | `account-backfill.test.ts` | 2 tests | Dry-run vs live migration coverage for legacy mapping indexes, transaction `source`/`status`, plaintext broker-secret encryption, and authoritative account recalculation. |
 | `ledger-import.test.ts` | 5 tests | FYERS ledger classification, signed adjustments, duplicate idempotency, net-flow batch totals, account balance recalculation, and ledger batch undo. |
+| `fyers-symbol.test.ts` | 7 tests | Pure helper mapping trade parameters to FYERS symbol formats across equities, indices, weekly options, monthly options, futures, and MCX commodities. |
+| `excursion.test.ts` | 6 tests | Excursion analytics integration: 409 BROKER_NOT_CONNECTED, 400 TRADE_NOT_CLOSED, compute excursion & TradeCandleSnapshot caching, tenant isolation, backfill batching, excursion analytics scatter points. |
 | `regression.test.ts` | 38 tests | Exhaustive QA test matrix covering boundary scenarios: breakeven outcomes, soft delete account archival, bulk tagging, bulk deletion with multi-account reconciliation, CSV import duplicate prevention. |
 
 ---

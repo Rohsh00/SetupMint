@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import {
   Direction,
   IStrategyVariant,
+  ITradeExcursion,
   LiquiditySide,
   PatternType,
   SecondLegStatus,
@@ -23,6 +24,7 @@ export interface VariantAnalyticsTradeInput {
     totalCosts?: number;
     realizedRMultiple?: number;
     outcome?: 'WIN' | 'LOSS' | 'BREAKEVEN' | 'OPEN' | 'CANCELLED';
+    excursion?: ITradeExcursion;
   };
   risk?: {
     plannedEntryPrice?: number;
@@ -113,6 +115,9 @@ export interface VariantMetricsBucket {
     AGAINST_HTF: number;
     UNKNOWN: number;
   };
+  avgMaeR?: number | null;
+  avgMfeR?: number | null;
+  avgExitEfficiency?: number | null;
 }
 
 export interface VariantAnalyticsResult {
@@ -229,6 +234,12 @@ export function calculateVariantAnalytics(params: {
     let adherentCount = 0;
     let sumR = new Decimal(0);
     let rEligibleCount = 0;
+    let totalMaeR = new Decimal(0);
+    let countMaeR = 0;
+    let totalMfeR = new Decimal(0);
+    let countMfeR = 0;
+    let totalExitEff = new Decimal(0);
+    let countExitEff = 0;
 
     const momentumCounts = {
       WITH_HTF: 0,
@@ -323,6 +334,23 @@ export function calculateVariantAnalytics(params: {
       if (currentDD.greaterThan(maxDrawdownDec)) {
         maxDrawdownDec = currentDD;
       }
+
+      // Excursion metrics aggregation
+      const exc = trade.calculated?.excursion;
+      if (exc) {
+        if (exc.maeR !== undefined && exc.maeR !== null) {
+          totalMaeR = totalMaeR.plus(exc.maeR);
+          countMaeR++;
+        }
+        if (exc.mfeR !== undefined && exc.mfeR !== null) {
+          totalMfeR = totalMfeR.plus(exc.mfeR);
+          countMfeR++;
+        }
+        if (exc.exitEfficiency !== undefined && exc.exitEfficiency !== null) {
+          totalExitEff = totalExitEff.plus(exc.exitEfficiency);
+          countExitEff++;
+        }
+      }
     }
 
     // Win Rate (null if 0 closed trades or 0 wins)
@@ -384,6 +412,11 @@ export function calculateVariantAnalytics(params: {
     // Rule adherence "as recorded"
     const adherenceRate = n > 0 ? Number(((adherentCount / n) * 100).toFixed(2)) : null;
 
+    // Excursion averages
+    const avgMaeR = countMaeR > 0 ? Number(totalMaeR.dividedBy(countMaeR).toFixed(2)) : null;
+    const avgMfeR = countMfeR > 0 ? Number(totalMfeR.dividedBy(countMfeR).toFixed(2)) : null;
+    const avgExitEfficiency = countExitEff > 0 ? Number(totalExitEff.dividedBy(countExitEff).toFixed(4)) : null;
+
     return {
       key,
       name,
@@ -419,6 +452,9 @@ export function calculateVariantAnalytics(params: {
       },
       edgeVerdict,
       momentumRelationCounts: momentumCounts,
+      avgMaeR,
+      avgMfeR,
+      avgExitEfficiency,
     };
   }
 

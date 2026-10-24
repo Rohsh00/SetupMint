@@ -144,7 +144,7 @@ SetupMint tracks 29 discrete behavioral and technical mistake tags grouped into 
    - `BREAKEVEN_TOO_EARLY`: Moved to breakeven too early
 
 3. **Risk & Discipline Mistakes (`RISK_DISCIPLINE`):**
-   - `STOP_MOVED`: Stop loss moved / widened
+   - `STOP_MOVED`: Stop loss moved / widened. Automatically detected via Rule J when orderbook stop modifications expand downside capital risk (`widenedCount > 0` or `netRiskChangePoints > 0`). Automatically tags `STOP_MOVED` with `CRITICAL` severity and marks `psychology.stopLossMoved = true`. Favorable trailing stops are recognized as disciplined trade management (`TRAILED_FAVORABLY`) and never penalized.
    - `SIZE_VIOLATION`: Position size too large
    - `ADDED_TO_LOSER`: Added to losing position
    - `REVENGE_TRADING`: Revenge trading after loss

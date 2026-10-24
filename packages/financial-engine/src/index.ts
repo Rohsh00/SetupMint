@@ -12,3 +12,6 @@ export * from './edge.js';
 export * from './monte-carlo.js';
 export * from './tilt.js';
 export * from './variant-analytics.js';
+export * from './excursion.js';
+export * from './stop-move.js';
+

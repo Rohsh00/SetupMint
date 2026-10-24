@@ -388,5 +388,93 @@ describe('Financial Engine - Mistake Detection & Discipline Scoring', () => {
       const tightStop = result.suggestions.find((s) => s.rule === 'STOP_TOO_TIGHT');
       expect(tightStop).toBeUndefined();
     });
+
+    it('suggests STOP_TOO_TIGHT when excursion shows reversedAfterStopHit', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 'trade-rev-stop',
+          symbol: 'NIFTY',
+          direction: 'LONG',
+          status: 'CLOSED',
+          entryTime: '2026-10-21T09:30:00.000Z',
+          exitTime: '2026-10-21T09:45:00.000Z',
+          quantity: 50,
+          entryPrice: 24500,
+          exitPrice: 24470,
+          initialStopLoss: 24480,
+          confluences: ['EQUAL_LOWS'],
+          plannedTarget: 24600,
+          excursion: {
+            status: 'COMPUTED',
+            stopHit: true,
+            reversedAfterStopHit: true,
+            excursionFlags: ['STOP_TOO_TIGHT_EVIDENCE'],
+          },
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const suggestion = result.suggestions.find((s) => s.rule === 'STOP_TOO_TIGHT_REVERSAL');
+      expect(suggestion).toBeDefined();
+      expect(suggestion?.mistakeTag).toBe('STOP_TOO_TIGHT');
+    });
+
+    it('suggests PREMATURE_EXIT when exit efficiency is low and market reached high MFE', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 'trade-premature',
+          symbol: 'BANKNIFTY',
+          direction: 'LONG',
+          status: 'CLOSED',
+          entryTime: '2026-10-21T10:00:00.000Z',
+          exitTime: '2026-10-21T10:15:00.000Z',
+          quantity: 25,
+          entryPrice: 51000,
+          exitPrice: 51050,
+          confluences: ['EQUAL_LOWS'],
+          plannedTarget: 51500,
+          excursion: {
+            status: 'COMPUTED',
+            exitEfficiency: 0.15,
+            mfeR: 2.5,
+            excursionFlags: ['GAVE_BACK_PROFIT'],
+          },
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const suggestion = result.suggestions.find((s) => s.rule === 'PREMATURE_EXIT_EXCURSION');
+      expect(suggestion).toBeDefined();
+      expect(suggestion?.mistakeTag).toBe('PREMATURE_EXIT');
+    });
+
+    it('suggests BREAKEVEN_TOO_EARLY when trade exited near BE before reaching high MFE', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 'trade-be',
+          symbol: 'CRUDEOIL',
+          direction: 'LONG',
+          status: 'CLOSED',
+          entryTime: '2026-10-21T17:00:00.000Z',
+          exitTime: '2026-10-21T17:30:00.000Z',
+          quantity: 100,
+          entryPrice: 6200,
+          exitPrice: 6202,
+          netPnL: 20,
+          confluences: ['EQUAL_LOWS'],
+          plannedTarget: 6350,
+          excursion: {
+            status: 'COMPUTED',
+            exitEfficiency: 0.05,
+            mfeR: 2.0,
+          },
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const suggestion = result.suggestions.find((s) => s.rule === 'BREAKEVEN_TOO_EARLY_EXCURSION');
+      expect(suggestion).toBeDefined();
+      expect(suggestion?.mistakeTag).toBe('BREAKEVEN_TOO_EARLY');
+    });
   });
 });

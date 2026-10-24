@@ -689,6 +689,82 @@ export class SetupMintSeedEngine {
         });
       }
 
+      // Generate realistic stop move events
+      const stopLossMoveEvents: any[] = [];
+      let stopMoveSummary: any = undefined;
+
+      if (status === 'CLOSED' && stopLoss > 0) {
+        if (stopLossMoved) {
+          // Widened risk under pressure
+          const widenedPts = Number((stopDist * prng.nextNumber(0.2, 0.5)).toFixed(inst.pricePrecision));
+          const newStop =
+            direction === 'LONG'
+              ? Number((stopLoss - widenedPts).toFixed(inst.pricePrecision))
+              : Number((stopLoss + widenedPts).toFixed(inst.pricePrecision));
+
+          const moveTime = new Date(entryTime.getTime() + Math.min(holdingMinutes * 0.4 * 60000, 30 * 60000));
+          stopLossMoveEvents.push({
+            previousStop: stopLoss,
+            newStop,
+            changePoints: widenedPts,
+            changePercent: Number(((widenedPts / stopLoss) * 100).toFixed(2)),
+            moveType: 'WIDENED_RISK',
+            movedAt: moveTime,
+            reason: 'Widened stop loss to give trade extra room',
+          });
+
+          stopMoveSummary = {
+            totalMoves: 1,
+            widenedCount: 1,
+            trailedCount: 0,
+            initialStop: stopLoss,
+            finalStop: newStop,
+            netRiskChangePoints: widenedPts,
+            hasWidenedRisk: true,
+            detectedAt: exitTime || entryTime,
+          };
+
+          initialAuditLog.push({
+            action: 'STOP_MOVED_DETECTED',
+            timestamp: moveTime,
+            changedBy: 'system',
+            details: {
+              widenedCount: 1,
+              netRiskChangePoints: widenedPts,
+            },
+          });
+        } else if (isWin && prng.chance(0.25)) {
+          // Trailed stop favorably
+          const trailPts = Number((stopDist * prng.nextNumber(0.5, 1.2)).toFixed(inst.pricePrecision));
+          const newStop =
+            direction === 'LONG'
+              ? Number((stopLoss + trailPts).toFixed(inst.pricePrecision))
+              : Number((stopLoss - trailPts).toFixed(inst.pricePrecision));
+
+          const moveTime = new Date(entryTime.getTime() + Math.min(holdingMinutes * 0.5 * 60000, 45 * 60000));
+          stopLossMoveEvents.push({
+            previousStop: stopLoss,
+            newStop,
+            changePoints: trailPts,
+            changePercent: Number(((trailPts / stopLoss) * 100).toFixed(2)),
+            moveType: 'TRAILED_FAVORABLY',
+            movedAt: moveTime,
+            reason: 'Trailed stop loss to lock in profits',
+          });
+
+          stopMoveSummary = {
+            totalMoves: 1,
+            widenedCount: 0,
+            trailedCount: 1,
+            initialStop: stopLoss,
+            finalStop: newStop,
+            netRiskChangePoints: -trailPts,
+            hasWidenedRisk: false,
+            detectedAt: exitTime || entryTime,
+          };
+        }
+      }
+
       const tradeDoc: any = {
         _id: new mongoose.Types.ObjectId(),
         userId,
@@ -763,18 +839,79 @@ export class SetupMintSeedEngine {
           lessonsLearned,
           notes,
         },
-        calculated: {
-          grossPnL: pnlRes.grossPnLNumber,
-          totalCosts: pnlRes.totalCostsNumber,
-          netPnL: pnlRes.netPnLNumber,
-          realizedRMultiple,
-          holdingTimeMinutes: holdingMinutes,
-          outcome: pnlRes.outcome,
-          closedQuantity: status === 'CLOSED' ? quantity : 0,
-          openQuantity: status === 'OPEN' ? quantity : 0,
-          averageEntryPrice: entryPrice,
-          averageExitPrice: status === 'CLOSED' ? exitPrice : undefined,
-        },
+        calculated: (() => {
+          let excursionData: any = undefined;
+          if (status === 'CLOSED') {
+            const resolution = holdingMinutes <= 240 ? '1' : '5';
+            let mfePts = 0;
+            let maePts = 0;
+            let exitEff = 0;
+            const flags: string[] = [];
+            let reversedAfterStop = false;
+
+            if (isWin) {
+              const favorablePts = Math.abs(exitPrice - entryPrice);
+              mfePts = Number((favorablePts * prng.nextNumber(1.05, 1.35)).toFixed(inst.pricePrecision));
+              maePts = Number((stopDist * prng.nextNumber(0.1, 0.65)).toFixed(inst.pricePrecision));
+              exitEff = mfePts > 0 ? Number(Math.min(1, Math.max(0, favorablePts / mfePts)).toFixed(4)) : 1;
+            } else if (isBreakeven) {
+              mfePts = Number((stopDist * prng.nextNumber(0.8, 1.8)).toFixed(inst.pricePrecision));
+              maePts = Number((stopDist * prng.nextNumber(0.2, 0.65)).toFixed(inst.pricePrecision));
+              exitEff = 0;
+              flags.push('GAVE_BACK_PROFIT');
+            } else {
+              maePts = Number((Math.abs(exitPrice - entryPrice) * prng.nextNumber(1.0, 1.05)).toFixed(inst.pricePrecision));
+              mfePts = Number((stopDist * prng.nextNumber(0.05, 0.4)).toFixed(inst.pricePrecision));
+              exitEff = 0;
+              if (prng.chance(0.3) || mistakes.includes('STOP_MOVED')) {
+                reversedAfterStop = true;
+                flags.push('STOP_TOO_TIGHT_EVIDENCE');
+              }
+            }
+
+            const mfeAmt = Number((mfePts * quantity * inst.contractMultiplier).toFixed(2));
+            const maeAmt = Number((maePts * quantity * inst.contractMultiplier).toFixed(2));
+            const mfeR = stopDist > 0 ? Number((mfePts / stopDist).toFixed(2)) : undefined;
+            const maeR = stopDist > 0 ? Number((maePts / stopDist).toFixed(2)) : undefined;
+
+            excursionData = {
+              status: 'COMPUTED',
+              computedAt: exitTime ? exitTime.toISOString() : entryTime.toISOString(),
+              source: 'FYERS_HISTORY',
+              resolution,
+              maePoints: maePts,
+              mfePoints: mfePts,
+              maeAmount: maeAmt,
+              mfeAmount: mfeAmt,
+              maeR,
+              mfeR,
+              exitEfficiency: exitEff,
+              stopEfficiency: exitEff,
+              stopHit: !isWin && !isBreakeven,
+              reversedAfterStopHit: reversedAfterStop,
+              timeToMfeMinutes: prng.nextInt(5, Math.max(6, holdingMinutes)),
+              timeToMaeMinutes: prng.nextInt(3, Math.max(4, holdingMinutes)),
+              candleCount: Math.max(3, Math.floor(holdingMinutes / (holdingMinutes <= 240 ? 1 : 5))),
+              excursionFlags: flags,
+            };
+          }
+
+          return {
+            grossPnL: pnlRes.grossPnLNumber,
+            totalCosts: pnlRes.totalCostsNumber,
+            netPnL: pnlRes.netPnLNumber,
+            realizedRMultiple,
+            holdingTimeMinutes: holdingMinutes,
+            outcome: pnlRes.outcome,
+            closedQuantity: status === 'CLOSED' ? quantity : 0,
+            openQuantity: status === 'OPEN' ? quantity : 0,
+            averageEntryPrice: entryPrice,
+            averageExitPrice: status === 'CLOSED' ? exitPrice : undefined,
+            excursion: excursionData,
+            stopMoveSummary,
+          };
+        })(),
+        stopLossMoveEvents,
         setup: setupData,
         screenshotIds: [],
         auditLog: initialAuditLog,
@@ -817,7 +954,7 @@ export class SetupMintSeedEngine {
       try {
         const chartDoc = await ChartGenerator.createSyntheticChart(userId, tr._id, {
           tradeSymbol: tr.symbol,
-          category: idx % 3 === 0 ? 'SETUP' : idx % 3 === 1 ? 'ENTRY' : 'EXIT',
+          category: idx % 4 === 0 ? 'AUTO_CHART' : idx % 4 === 1 ? 'SETUP' : idx % 4 === 2 ? 'ENTRY' : 'EXIT',
           timeframe: '15m',
           description: `${tr.tradeTitle} — Chart analysis with technical execution levels`,
           themeColor: tr.calculated.outcome === 'WIN' ? 'emerald' : 'rose',

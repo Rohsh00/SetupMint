@@ -377,6 +377,55 @@ Authentication is handled via stateful sessions:
 - **Request Body:** `{ "tradeIds": ["id1", "id2"] }`.
 - **Responses:** `200 OK`.
 
+### `POST /api/v1/trades/:id/excursion/compute`
+- **Purpose:** Fetch historical 1m/5m FYERS candles for the trade lifecycle ($T_{\text{entry}}$ to $T_{\text{exit}}$), compute MAE/MFE points, amounts, R-multiples, and Exit Efficiency, detect post-stop reversals, cache the candle snapshot, and persist `calculated.excursion` to the trade.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Responses:**
+  - `200 OK`: Returns `{ "success": true, "data": ITradeExcursion }`.
+  - `400 TRADE_NOT_CLOSED`: If trade status is not `'CLOSED'`.
+  - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
+  - `409 BROKER_NOT_CONNECTED`: If FYERS broker is not connected for the user.
+
+### `POST /api/v1/trades/:id/chart/generate`
+- **Purpose:** Server-side automated generation of TradingView-grade dark-mode SVG candlestick chart from cached/fetched FYERS historical candles with entry/exit/stop/target/excursion overlays, persisted to Cloudflare R2 and attached to the trade as `AUTO_CHART`.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:** `{ "force"?: boolean }` (if `true`, regenerates and replaces any previous auto chart).
+- **Responses:**
+  - `201 Created`: Returns `{ "success": true, "data": IAttachment }` with `category: "AUTO_CHART"` and `downloadUrl`.
+  - `400 TRADE_NOT_CLOSED`: If trade status is not `'CLOSED'`.
+  - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
+  - `500 CHART_GENERATION_FAILED`: If historical candles are unavailable or chart rendering fails.
+
+### `POST /api/v1/trades/:id/stop-moves/detect`
+- **Purpose:** Detect trailing vs risk-widening stop-loss modifications from the connected FYERS orderbook or manual order sequence, calculate point deltas, persist `stopLossMoveEvents` and `calculated.stopMoveSummary`, and automatically flag `STOP_MOVED` mistake tag if risk was widened.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:**
+  ```json
+  {
+    "manualModifications": [
+      {
+        "stopPrice": 2800.50,
+        "modifiedAt": "2026-10-25T09:45:00.000Z",
+        "orderId": "12345678",
+        "orderType": 3,
+        "reason": "Trailed to break-even"
+      }
+    ]
+  }
+  ```
+- **Responses:**
+  - `200 OK`: Returns `{ "success": true, "data": { "stopLossMoveEvents": [...], "stopMoveSummary": {...}, "mistakeSuggestions": ["STOP_MOVED"], "flags": [...] } }`.
+  - `400 VALIDATION_ERROR`: If manual modifications payload contains negative prices or invalid timestamps.
+  - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
+  - `500 STOP_MOVE_DETECTION_FAILED`: If detection fails.
+
+### `GET /api/v1/trades/:id/stop-moves`
+- **Purpose:** Retrieve recorded stop-loss modifications, timeline history, and net risk expansion summary for a trade.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Responses:**
+  - `200 OK`: Returns `{ "success": true, "data": { "stopLossMoveEvents": [...], "stopMoveSummary": {...} } }`.
+  - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
+
 ---
 
 ## 6. Dashboard & Analytics (`/api/v1/dashboard`, `/api/v1/analytics`)
@@ -400,6 +449,14 @@ Authentication is handled via stateful sessions:
   - `performanceByDiscipline`: P&L and win rate grouped by 1–5 discipline score.
   - `performanceByEmotion`: P&L and win rate grouped by emotion before trade.
   - `mistakeAnalysis`: Total occurrences and cumulative financial loss per mistake flag.
+
+### `GET /api/v1/analytics/excursion`
+- **Purpose:** Retrieve aggregate execution quality KPIs and MAE vs MFE scatter points for closed trades with computed excursion metrics.
+- **Auth:** **Required**.
+- **Query Parameters:** `accountId`, `strategyId`, `variantKey`, `startDate`, `endDate`, `session`.
+- **Responses:** `200 OK` with:
+  - `summary`: `{ totalEvaluated, avgMaeR, avgMfeR, avgExitEfficiency, gaveBackProfitPercent, reversalAfterStopPercent }`
+  - `scatterPoints`: Array of `{ tradeId, symbol, maeR, mfeR, netPnL, outcome, exitEfficiency, tradeDate }`
 
 ---
 
@@ -625,6 +682,7 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 - `GET /api/v1/integrations/fyers/callback` — Public FYERS OAuth callback. Exchanges `auth_code`, stores encrypted tokens, clears the state, and redirects to `/settings`.
 - `POST /api/v1/integrations/fyers/sync` — Fetch and FIFO-import current-day FYERS executions, then recalculate balances.
 - `POST /api/v1/integrations/fyers/disconnect` — Clear encrypted tokens/state while preserving app credentials.
+- `POST /api/v1/integrations/fyers/excursion-backfill` — Batch process excursion calculations for closed trades missing excursion metrics using rate-limited FYERS historical candles. Accepts `{ startDate, endDate, limit }`. Returns `{ processed, computed, failed, remaining }`.
 
 ---
 

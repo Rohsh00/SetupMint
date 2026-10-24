@@ -22,6 +22,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTimeRounded';
 import SecurityIcon from '@mui/icons-material/SecurityRounded';
 import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 
 import {
   Area,
@@ -31,9 +32,13 @@ import {
   CartesianGrid,
   Cell,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
+  ZAxis,
+  ReferenceLine,
 } from 'recharts';
 import { EMOTION_LABEL_MAP, MISTAKE_LABEL_MAP } from '@tradevault/shared';
 import { api } from '../lib/api.js';
@@ -41,7 +46,7 @@ import { formatCurrency, formatPercent } from '../lib/utils.js';
 
 export function AnalyticsPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION'>('OVERVIEW');
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -71,6 +76,15 @@ export function AnalyticsPage() {
       api.analytics.psychology({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
       }),
+  });
+
+  const { data: excursionData, isLoading: isExcursionLoading } = useQuery({
+    queryKey: ['analytics-excursion', selectedAccountId],
+    queryFn: () =>
+      api.analytics.excursion({
+        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+      }),
+    enabled: activeTab === 'EXECUTION',
   });
 
   if (isStatsLoading || isPsychLoading) {
@@ -136,6 +150,7 @@ export function AnalyticsPage() {
             { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
             { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
             { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
+            { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
           ].map((tab) => (
             <Button
               key={tab.id}
@@ -650,6 +665,226 @@ export function AnalyticsPage() {
             </Card>
           </Grid>
         </Grid>
+      )}
+
+      {/* TAB 4: EXECUTION QUALITY (MAE / MFE) */}
+      {activeTab === 'EXECUTION' && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {isExcursionLoading ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Skeleton variant="rounded" height={100} />
+              <Skeleton variant="rounded" height={400} />
+            </Box>
+          ) : (() => {
+            const summary = excursionData?.data?.summary;
+            const points = excursionData?.data?.scatterPoints || [];
+            const hasData = summary && summary.totalEvaluated > 0;
+
+            if (!hasData) {
+              return (
+                <Card sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                    No Excursion Analytics Found
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 500, mx: 'auto', mb: 2 }}>
+                    Excursion analytics calculate Maximum Adverse Excursion (MAE) and Maximum Favorable Excursion (MFE) using FYERS 1-minute historical candles. Compute excursion on your closed trades or run a backfill in Settings.
+                  </Typography>
+                </Card>
+              );
+            }
+
+            // Scatter data separated by win / loss
+            const winPoints = points.filter((p: any) => p.outcome === 'WIN' && p.maeR !== undefined && p.mfeR !== undefined);
+            const lossPoints = points.filter((p: any) => p.outcome !== 'WIN' && p.maeR !== undefined && p.mfeR !== undefined);
+
+            return (
+              <>
+                {/* KPI Summary Cards */}
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+                    <Card sx={{ p: 2, height: '100%' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Avg MFE (Favorable)
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                        +{summary.avgMfeR !== undefined ? `${summary.avgMfeR}R` : '—'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                        Average peak potential per trade
+                      </Typography>
+                    </Card>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+                    <Card sx={{ p: 2, height: '100%' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Avg MAE (Adverse)
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                        -{summary.avgMaeR !== undefined ? `${summary.avgMaeR}R` : '—'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                        Average drawdown before exit
+                      </Typography>
+                    </Card>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+                    <Card sx={{ p: 2, height: '100%' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Exit Efficiency
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                        {summary.avgExitEfficiency !== undefined ? `${(summary.avgExitEfficiency * 100).toFixed(1)}%` : '—'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                        Captured % of maximum run
+                      </Typography>
+                    </Card>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+                    <Card sx={{ p: 2, height: '100%' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Gave Back Profit
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
+                        {summary.gaveBackProfitPercent}%
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                        Trades surrendering &gt;50% MFE
+                      </Typography>
+                    </Card>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+                    <Card sx={{ p: 2, height: '100%' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Post-Stop Reversals
+                      </Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
+                        {summary.reversalAfterStopPercent}%
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                        Stopped trades reversing to target
+                      </Typography>
+                    </Card>
+                  </Grid>
+                </Grid>
+
+                {/* MAE vs MFE Scatter Plot */}
+                <Card sx={{ p: 2.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                        MAE vs MFE Scatter Analysis (R-Multiple)
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        X-Axis: Adverse excursion (drawdown in R) • Y-Axis: Favorable excursion (peak potential in R)
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.profit.main }} />
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>Winners ({winPoints.length})</Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.loss.main }} />
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>Losers ({lossPoints.length})</Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ width: '100%', height: 420 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                        <XAxis
+                          type="number"
+                          dataKey="maeR"
+                          name="MAE (R)"
+                          unit="R"
+                          stroke={chartAxisColor}
+                          fontSize={11}
+                          domain={[0, 'dataMax + 0.5']}
+                        />
+                        <YAxis
+                          type="number"
+                          dataKey="mfeR"
+                          name="MFE (R)"
+                          unit="R"
+                          stroke={chartAxisColor}
+                          fontSize={11}
+                          domain={[0, 'dataMax + 0.5']}
+                        />
+                        <ZAxis range={[60, 60]} />
+                        <ReferenceLine y={1} stroke={chartAxisColor} strokeDasharray="4 4" label={{ value: '1R Potential', fill: chartAxisColor, fontSize: 10, position: 'insideTopLeft' }} />
+                        <ReferenceLine x={1} stroke={chartAxisColor} strokeDasharray="4 4" label={{ value: '1R Stop Boundary', fill: chartAxisColor, fontSize: 10, position: 'insideBottomRight' }} />
+                        <RechartsTooltip
+                          cursor={{ strokeDasharray: '3 3' }}
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const d = payload[0].payload;
+                              return (
+                                <Paper sx={{ ...chartTooltipStyle, p: 1.5, border: `1px solid ${muiTheme.palette.divider}` }}>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                    {d.symbol}
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                                    {d.tradeDate} • {d.outcome}
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '0.75rem' }}>
+                                    <div><strong>MAE:</strong> {d.maeR} R</div>
+                                    <div><strong>MFE:</strong> {d.mfeR} R</div>
+                                    <div><strong>Exit Efficiency:</strong> {d.exitEfficiency !== undefined ? `${(d.exitEfficiency * 100).toFixed(1)}%` : '—'}</div>
+                                    <div style={{ color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
+                                      <strong>Net P&L:</strong> {formatCurrency(d.netPnL)}
+                                    </div>
+                                  </Box>
+                                </Paper>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Scatter name="Winners" data={winPoints} fill={muiTheme.palette.profit.main} />
+                        <Scatter name="Losers" data={lossPoints} fill={muiTheme.palette.loss.main} />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </Box>
+
+                  {/* Interpretation Guidance */}
+                  <Box sx={{ mt: 2.5, p: 2, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    <Box sx={{ flex: 1, minWidth: 200 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                        Clean Winners (Top Left)
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        Low MAE (&lt; 0.5R) and high MFE (&gt; 1.5R). Perfect execution with minimal heat.
+                      </Typography>
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 200 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                        Rollercoaster Trades (Top Right)
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        High MAE and high MFE. Large adverse heat taken before reaching target; review entries.
+                      </Typography>
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 200 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                        Exit Efficiency Opportunity
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        If MFE is consistently 2-3x higher than realized R, trail stops more tightly or take partials.
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Card>
+              </>
+            );
+          })()}
+        </Box>
       )}
     </Box>
   );

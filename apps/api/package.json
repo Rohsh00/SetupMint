@@ -13,6 +13,7 @@
     "seed:validate": "tsx src/scripts/validate-seed.ts",
     "instruments:backfill": "tsx src/scripts/backfill-instruments.ts",
     "accounts:backfill": "tsx src/scripts/backfill-account-transactions.ts",
+    "excursion:backfill": "tsx src/scripts/excursion-backfill.ts",
     "clean": "tsx src/scripts/clean.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -33,6 +34,7 @@
     "csv-stringify": "^6.5.2",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
+    "moment": "^2.31.0",
     "mongoose": "^8.10.1",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",

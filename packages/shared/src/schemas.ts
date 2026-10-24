@@ -493,3 +493,36 @@ export const updateProfileSchema = z.object({
   riskSettings: riskSettingsSchema.optional(),
 });
 
+export const excursionAnalyticsQuerySchema = z.object({
+  accountId: z.string().optional(),
+  strategyId: z.string().optional(),
+  variantKey: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  session: z
+    .enum(['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'])
+    .optional(),
+});
+
+export const excursionBackfillSchema = z.object({
+  accountId: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(500).default(50),
+});
+
+export const stopMoveDetectionSchema = z.object({
+  manualModifications: z
+    .array(
+      z.object({
+        stopPrice: z.coerce.number().positive(),
+        modifiedAt: z.union([z.string(), z.number(), z.date()]),
+        orderId: z.string().optional(),
+        orderType: z.number().optional(),
+        reason: z.string().optional(),
+      })
+    )
+    .optional(),
+});
+
+

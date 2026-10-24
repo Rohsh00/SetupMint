@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@tradevault/shared": "*",
-    "decimal.js": "^10.5.0"
+    "decimal.js": "^10.5.0",
+    "moment": "^2.31.0"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

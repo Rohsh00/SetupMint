@@ -31,6 +31,7 @@ import {
   CloseRounded,
   CheckCircleRounded,
   PhotoCameraRounded,
+  ElectricBoltRounded,
 } from '@mui/icons-material';
 import {
   AttachmentCategory,
@@ -76,6 +77,26 @@ export function TradeScreenshotGallery({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isGeneratingAutoChart, setIsGeneratingAutoChart] = useState(false);
+
+  const autoChartAttachment = attachments.find((a) => a.category === 'AUTO_CHART');
+
+  const handleGenerateAutoChart = async () => {
+    try {
+      setIsGeneratingAutoChart(true);
+      await api.trades.generateChart(tradeId, Boolean(autoChartAttachment));
+      toast.success(
+        autoChartAttachment
+          ? 'Auto chart regenerated from FYERS historical candles.'
+          : 'Auto chart generated and attached from FYERS market data.'
+      );
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate auto chart screenshot.');
+    } finally {
+      setIsGeneratingAutoChart(false);
+    }
+  };
 
   // Filter attachments based on category tab
   const filteredAttachments = attachments.filter((att) => {
@@ -217,22 +238,52 @@ export function TradeScreenshotGallery({
         </Box>
 
         {!readOnly && (
-          <Button
-            variant="contained"
-            color="primary"
-            size="small"
-            startIcon={<CloudUploadRounded />}
-            onClick={() => handleOpenUpload()}
-            sx={{
-              fontWeight: 700,
-              fontSize: '0.8125rem',
-              borderRadius: 2,
-              textTransform: 'none',
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-            }}
-          >
-            Attach Screenshot
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={
+                isGeneratingAutoChart ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <ElectricBoltRounded sx={{ color: '#06b6d4' }} />
+                )
+              }
+              onClick={handleGenerateAutoChart}
+              disabled={isGeneratingAutoChart}
+              sx={{
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+                borderRadius: 2,
+                textTransform: 'none',
+                borderColor: 'rgba(6, 182, 212, 0.4)',
+                color: '#06b6d4',
+                '&:hover': {
+                  borderColor: '#06b6d4',
+                  backgroundColor: 'rgba(6, 182, 212, 0.08)',
+                },
+              }}
+            >
+              {autoChartAttachment ? 'Regenerate Auto Chart' : 'Generate FYERS Chart'}
+            </Button>
+
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              startIcon={<CloudUploadRounded />}
+              onClick={() => handleOpenUpload()}
+              sx={{
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+                borderRadius: 2,
+                textTransform: 'none',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+              }}
+            >
+              Attach Screenshot
+            </Button>
+          </Box>
         )}
       </Box>
 
@@ -327,7 +378,12 @@ export function TradeScreenshotGallery({
 
                     {/* Category Chip Badge */}
                     <Chip
-                      label={catMeta?.label || att.category}
+                      icon={
+                        att.category === 'AUTO_CHART' ? (
+                          <ElectricBoltRounded sx={{ fontSize: 13, color: '#06b6d4 !important' }} />
+                        ) : undefined
+                      }
+                      label={att.category === 'AUTO_CHART' ? 'FYERS Auto Chart' : catMeta?.label || att.category}
                       size="small"
                       sx={{
                         position: 'absolute',
@@ -335,10 +391,10 @@ export function TradeScreenshotGallery({
                         left: 10,
                         fontWeight: 700,
                         fontSize: '0.6875rem',
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(8, 51, 68, 0.92)' : 'rgba(0, 0, 0, 0.8)',
                         color: catMeta?.badgeColor || '#fff',
                         backdropFilter: 'blur(6px)',
-                        border: `1px solid ${catMeta?.badgeColor ? `${catMeta.badgeColor}66` : 'rgba(255,255,255,0.2)'}`,
+                        border: `1px solid ${catMeta?.badgeColor ? `${catMeta.badgeColor}88` : 'rgba(255,255,255,0.2)'}`,
                       }}
                     />
 

@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { EMOTIONS, MISTAKE_TAGS } from '@tradevault/shared';
+import Decimal from 'decimal.js';
+import { EMOTIONS, MISTAKE_TAGS, excursionAnalyticsQuerySchema } from '@tradevault/shared';
 import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -113,6 +114,118 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         performanceByDiscipline,
         performanceByEmotion,
         mistakeAnalysis,
+      },
+    });
+  });
+
+  // Excursion performance aggregates and MAE vs MFE scatter
+  app.get('/excursion', async (req: any, reply) => {
+    const parsed = excursionAnalyticsQuerySchema.safeParse(req.query || {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Invalid query parameters', details: parsed.error.format() },
+      });
+    }
+
+    const { accountId, strategyId, variantKey, startDate, endDate, session } = parsed.data;
+
+    const filter: any = {
+      userId: req.user!.id,
+      status: 'CLOSED',
+      'calculated.excursion.status': 'COMPUTED',
+    };
+
+    if (accountId) filter.accountId = accountId;
+    if (strategyId) filter.strategyId = strategyId;
+    if (variantKey) filter['setup.variantKey'] = variantKey;
+    if (session) filter.session = session;
+    if (startDate || endDate) {
+      filter.tradeDate = {};
+      if (startDate) filter.tradeDate.$gte = new Date(startDate);
+      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    }
+
+    const trades = await Trade.find(filter).sort({ tradeDate: -1 });
+
+    let totalMaeR = new Decimal(0);
+    let countMaeR = 0;
+    let totalMfeR = new Decimal(0);
+    let countMfeR = 0;
+    let totalExitEff = new Decimal(0);
+    let countExitEff = 0;
+    let gaveBackProfitCount = 0;
+    let stopReversalCount = 0;
+    let totalWithStop = 0;
+
+    const scatterPoints: Array<{
+      tradeId: string;
+      symbol: string;
+      maeR?: number;
+      mfeR?: number;
+      netPnL: number;
+      outcome: any;
+      exitEfficiency?: number;
+      tradeDate: string;
+    }> = [];
+
+    for (const t of trades) {
+      const exc = t.calculated?.excursion;
+      if (!exc) continue;
+
+      if (exc.maeR !== undefined && exc.maeR !== null) {
+        totalMaeR = totalMaeR.plus(exc.maeR);
+        countMaeR++;
+      }
+      if (exc.mfeR !== undefined && exc.mfeR !== null) {
+        totalMfeR = totalMfeR.plus(exc.mfeR);
+        countMfeR++;
+      }
+      if (exc.exitEfficiency !== undefined && exc.exitEfficiency !== null) {
+        totalExitEff = totalExitEff.plus(exc.exitEfficiency);
+        countExitEff++;
+      }
+      if (exc.excursionFlags?.includes('GAVE_BACK_PROFIT')) {
+        gaveBackProfitCount++;
+      }
+      if (t.risk?.initialStopLoss) {
+        totalWithStop++;
+        if (exc.reversedAfterStopHit || exc.excursionFlags?.includes('STOP_TOO_TIGHT_EVIDENCE')) {
+          stopReversalCount++;
+        }
+      }
+
+      scatterPoints.push({
+        tradeId: t._id.toString(),
+        symbol: t.symbol,
+        maeR: exc.maeR,
+        mfeR: exc.mfeR,
+        netPnL: t.calculated?.netPnL || 0,
+        outcome: t.calculated?.outcome || 'BREAKEVEN',
+        exitEfficiency: exc.exitEfficiency,
+        tradeDate: t.tradeDate ? t.tradeDate.toISOString().split('T')[0] : '',
+      });
+    }
+
+    const totalEvaluated = trades.length;
+    const avgMaeR = countMaeR > 0 ? Number(totalMaeR.dividedBy(countMaeR).toFixed(2)) : undefined;
+    const avgMfeR = countMfeR > 0 ? Number(totalMfeR.dividedBy(countMfeR).toFixed(2)) : undefined;
+    const avgExitEfficiency = countExitEff > 0 ? Number(totalExitEff.dividedBy(countExitEff).toFixed(4)) : undefined;
+    const gaveBackProfitPercent = totalEvaluated > 0 ? Number(((gaveBackProfitCount / totalEvaluated) * 100).toFixed(1)) : 0;
+    const reversalAfterStopPercent = totalWithStop > 0 ? Number(((stopReversalCount / totalWithStop) * 100).toFixed(1)) : 0;
+
+    return reply.send({
+      success: true,
+      data: {
+        summary: {
+          totalEvaluated,
+          avgMaeR,
+          avgMfeR,
+          avgExitEfficiency,
+          gaveBackProfitPercent,
+          reversalAfterStopPercent,
+        },
+        scatterPoints,
       },
     });
   });

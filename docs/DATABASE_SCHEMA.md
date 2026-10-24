@@ -6,12 +6,12 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 14 core Mongoose models:
+SetupMint defines 15 core Mongoose models:
 1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
 2. `Session` — Stateful authentication tokens with SHA-256 token hashing, sliding renewal, absolute cap, and exact MongoDB TTL expiration (`expireAfterSeconds: 0`).
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
 4. `AccountTransaction` — Capital deposits, withdrawals, transfers, and adjustments.
-5. `Trade` — Master trade ledger recording execution fills, risk metrics, SMC thesis, psychology, and audit logs.
+5. `Trade` — Master trade ledger recording execution fills, risk metrics, SMC thesis, psychology, excursion analytics, and audit logs.
 6. `Instrument` — Multi-asset instrument catalog with contract multipliers and lot sizes.
 7. `Strategy` — Discretionary strategy playbooks with rules, invalidation, and checklists.
 8. `DailyJournal` — Daily session reviews, market biases, and reflection ratings.
@@ -21,6 +21,7 @@ SetupMint defines 14 core Mongoose models:
 12. `AuditLog` — General audit trail entries for administrative tracking.
 13. `TradeTemplate` — Market-based, rule-driven trade setup templates with dynamic SL/target formulas and trade performance aggregation.
 14. `BrokerFundsSnapshot` — Immutable FYERS fund-limit snapshots with exact `Decimal128` balances.
+15. `TradeCandleSnapshot` — Cached 1m/5m FYERS historical candlestick snapshots during trade lifecycles for excursion calculation.
 
 ---
 
@@ -271,9 +272,50 @@ SetupMint defines 14 core Mongoose models:
 - `openQuantity` (`Number`, default `0`)
 - `averageEntryPrice` (`Number`, default `0`)
 - `averageExitPrice` (`Number`, optional)
+- `excursion` (`Object`, optional):
+  - `status` (`String`, enum: `['PENDING', 'COMPUTED', 'UNAVAILABLE', 'ERROR']`, default `'PENDING'`)
+  - `computedAt` (`Date`)
+  - `source` (`String`, default `'FYERS_HISTORY'`)
+  - `resolution` (`String`, e.g. `'1'`, `'5'`)
+  - `failureReason` (`String`)
+  - `maePoints` (`Number`)
+  - `mfePoints` (`Number`)
+  - `maeAmount` (`Number`)
+  - `mfeAmount` (`Number`)
+  - `maeR` (`Number`)
+  - `mfeR` (`Number`)
+  - `exitEfficiency` (`Number`)
+  - `stopEfficiency` (`Number`)
+  - `stopHit` (`Boolean`)
+  - `reversedAfterStopHit` (`Boolean`)
+  - `timeToMfeMinutes` (`Number`)
+  - `timeToMaeMinutes` (`Number`)
+  - `candleCount` (`Number`)
+  - `excursionFlags` (`[String]`, enum: `['GAVE_BACK_PROFIT', 'STOP_TOO_TIGHT_EVIDENCE', 'STOP_TOO_LOOSE_EVIDENCE', 'EXITED_EARLY', 'HELD_INTO_REVERSAL']`)
+- `stopMoveSummary` (`Object`, optional):
+  - `totalMoves` (`Number`, default `0`)
+  - `widenedCount` (`Number`, default `0`)
+  - `trailedCount` (`Number`, default `0`)
+  - `initialStop` (`Number`, optional)
+  - `finalStop` (`Number`, optional)
+  - `netRiskChangePoints` (`Number`, default `0`)
+  - `hasWidenedRisk` (`Boolean`, default `false`)
+  - `detectedAt` (`Date`)
 
-##### H. `screenshotIds` & `auditLog`
-- `screenshotIds` (`[ObjectId]`, ref: `'Attachment'`): Associated chart screenshots.
+##### H. `stopLossMoveEvents`
+Array of historical stop-loss order modifications detected from FYERS orderbook or manual timeline:
+- `previousStop` (`Number`, required): Prior stop price level.
+- `newStop` (`Number`, required): Updated stop price level.
+- `changePoints` (`Number`, default `0`): Absolute price difference.
+- `changePercent` (`Number`, default `0`): Percentage adjustment relative to previous stop.
+- `moveType` (`String`, enum: `['TRAILED_FAVORABLY', 'WIDENED_RISK', 'UNCHANGED']`, required): Favorable trail vs risk expansion.
+- `movedAt` (`Date`, required): Timestamp of order modification.
+- `orderId` (`String`, optional): FYERS order number or client ID.
+- `orderType` (`Number`, optional): Broker order type code (3 = SL-M, 4 = SL-L).
+- `reason` (`String`, optional): Order trigger message or user tag.
+
+##### I. `screenshotIds` & `auditLog`
+- `screenshotIds` (`[ObjectId]`, ref: `'Attachment'`): Associated chart screenshots (including automated SVG execution charts).
 - `auditLog`: Array of `{ action: String, timestamp: Date, changedBy: String, details: Mixed }`.
 
 **Compound Indexes:**
@@ -282,6 +324,8 @@ SetupMint defines 14 core Mongoose models:
 - `{ userId: 1, 'calculated.netPnL': -1 }`
 - `{ userId: 1, templateId: 1 }`
 - `{ userId: 1, strategyId: 1, 'setup.variantKey': 1, tradeDate: -1 }`
+- `{ userId: 1, 'calculated.excursion.status': 1 }`
+- `{ userId: 1, 'calculated.stopMoveSummary.hasWidenedRisk': 1 }`
 
 ---
 
@@ -546,3 +590,27 @@ The legacy `{ userId: 1, broker: 1 }` unique index must be dropped by `npm run a
 
 **Compound Indexes:**
 - `{ userId: 1, accountId: 1, fetchedAt: -1 }`
+
+---
+
+### 2.15 TradeCandleSnapshot Model (`TradeCandleSnapshot.ts`)
+- **Collection Name:** `trade_candle_snapshots`
+- **File:** [`apps/api/src/db/models/TradeCandleSnapshot.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/TradeCandleSnapshot.ts)
+
+Stores immutable, cached historical 1-minute and 5-minute candlestick snapshots fetched from FYERS API v3 during the trade lifecycle (from trade entry time to exit time) to enable pure, reproducible excursion analytics (MAE, MFE, Exit Efficiency).
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Snapshot identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Owning trader ID |
+| `tradeId` | `ObjectId` | **Yes** | — | Ref: `'Trade'`, Indexed | Evaluated trade identifier |
+| `symbol` | `String` | **Yes** | — | Trim | FYERS-formatted symbol (e.g. `NSE:SBIN-EQ`, `NSE:NIFTY24OCT24500CE`) |
+| `resolution` | `String` | **Yes** | `'1'` | Enum: `['1', '5']` | Candle resolution timeframe (`'1'` for <= 4h, `'5'` for longer) |
+| `candles` | `Array` | No | `[]` | Embedded subdocuments | Array of `{ t: Number, o: Number, h: Number, l: Number, c: Number, v: Number }` |
+| `fetchedAt` | `Date` | No | `Date.now` | — | Timestamp of FYERS history API response |
+| `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
+| `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |
+
+**Compound Indexes:**
+- `{ userId: 1, tradeId: 1, resolution: 1 }` (Unique constraint)
+

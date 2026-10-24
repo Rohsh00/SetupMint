@@ -28,6 +28,30 @@ export interface ITradeSummaryForDetection {
   targetRationale?: string | null;
   initialStopLoss?: number | null;
   tickSize?: number | null;
+  excursion?: {
+    status?: string;
+    exitEfficiency?: number;
+    reversedAfterStopHit?: boolean;
+    stopHit?: boolean;
+    mfeR?: number;
+    maeR?: number;
+    mfePoints?: number;
+    maePoints?: number;
+    excursionFlags?: string[];
+  } | null;
+  stopLossMoved?: boolean;
+  stopMoveSummary?: {
+    hasWidenedRisk?: boolean;
+    widenedCount?: number;
+    trailedCount?: number;
+    netRiskChangePoints?: number;
+  } | null;
+  stopLossMoveEvents?: Array<{
+    moveType?: string;
+    previousStop?: number;
+    newStop?: number;
+    changePoints?: number;
+  }>;
 }
 
 export interface IDetectMistakesParams {
@@ -317,6 +341,98 @@ export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistak
           mistakeTag: 'STOP_TOO_TIGHT',
           severity: 'WARNING',
           message: `Initial stop distance (${stopDist.toString()} pts) is less than 3 ticks (${minDistance.toString()} pts) for ${current.symbol}. Prone to market noise.`,
+        });
+      }
+    }
+
+    // --- RULE G: Excursion Stop Reversal Evidence (STOP_TOO_TIGHT) ---
+    if (
+      current.excursion?.reversedAfterStopHit === true ||
+      current.excursion?.excursionFlags?.includes('STOP_TOO_TIGHT_EVIDENCE')
+    ) {
+      const alreadySuggested = suggestions.some(
+        (s) => s.tradeId === current.id && s.mistakeTag === 'STOP_TOO_TIGHT'
+      );
+      if (!alreadySuggested) {
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'STOP_TOO_TIGHT_REVERSAL',
+          mistakeTag: 'STOP_TOO_TIGHT',
+          severity: 'WARNING',
+          message: `Price breached stop loss and subsequently reversed back to entry on ${current.symbol}. Excursion data indicates stop was placed too tight.`,
+        });
+      }
+    }
+
+    // --- RULE H: Premature Exit from Excursion (PREMATURE_EXIT) ---
+    if (
+      current.excursion &&
+      current.excursion.status === 'COMPUTED' &&
+      current.excursion.exitEfficiency !== undefined &&
+      current.excursion.exitEfficiency < 0.35 &&
+      ((current.excursion.mfeR !== undefined && current.excursion.mfeR >= 1.5) ||
+        current.excursion.excursionFlags?.includes('GAVE_BACK_PROFIT') ||
+        current.excursion.excursionFlags?.includes('EXITED_EARLY'))
+    ) {
+      suggestions.push({
+        tradeId: current.id,
+        rule: 'PREMATURE_EXIT_EXCURSION',
+        mistakeTag: 'PREMATURE_EXIT',
+        severity: 'WARNING',
+        message: `Exited early with low exit efficiency (${(current.excursion.exitEfficiency * 100).toFixed(0)}%) while market reached favorable excursion on ${current.symbol}.`,
+      });
+    }
+
+    // --- RULE I: Breakeven Too Early from Excursion (BREAKEVEN_TOO_EARLY) ---
+    if (
+      current.excursion &&
+      current.excursion.status === 'COMPUTED' &&
+      current.entryPrice &&
+      current.exitPrice
+    ) {
+      const entry = new Decimal(current.entryPrice);
+      const exit = new Decimal(current.exitPrice);
+      const moveDiff = exit.minus(entry).abs();
+      const isNearBreakeven =
+        (current.netPnL !== undefined && current.netPnL !== null && Math.abs(current.netPnL) <= 50) ||
+        (entry.greaterThan(0) && moveDiff.dividedBy(entry).lessThanOrEqualTo(0.0015));
+
+      if (
+        isNearBreakeven &&
+        current.excursion.mfeR !== undefined &&
+        current.excursion.mfeR >= 1.5
+      ) {
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'BREAKEVEN_TOO_EARLY_EXCURSION',
+          mistakeTag: 'BREAKEVEN_TOO_EARLY',
+          severity: 'WARNING',
+          message: `Position on ${current.symbol} closed near breakeven before reaching ${current.excursion.mfeR}R peak favorable excursion.`,
+        });
+      }
+    }
+
+    // --- RULE J: Stop-Move Detection (STOP_MOVED) ---
+    const hasWidenedStop =
+      current.stopMoveSummary?.hasWidenedRisk === true ||
+      (current.stopMoveSummary?.widenedCount !== undefined && current.stopMoveSummary.widenedCount > 0) ||
+      current.stopLossMoveEvents?.some((e) => e.moveType === 'WIDENED_RISK') ||
+      current.stopLossMoved === true;
+
+    if (hasWidenedStop) {
+      const alreadySuggested = suggestions.some(
+        (s) => s.tradeId === current.id && s.mistakeTag === 'STOP_MOVED'
+      );
+      if (!alreadySuggested) {
+        const pointStr = current.stopMoveSummary?.netRiskChangePoints
+          ? ` (${current.stopMoveSummary.netRiskChangePoints > 0 ? '+' : ''}${current.stopMoveSummary.netRiskChangePoints} pts)`
+          : '';
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'STOP_MOVED_WIDENED',
+          mistakeTag: 'STOP_MOVED',
+          severity: 'CRITICAL',
+          message: `Stop loss on ${current.symbol} was moved further away from market during trade execution, widening downside risk${pointStr}.`,
         });
       }
     }

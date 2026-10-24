@@ -1101,6 +1101,12 @@ export const CHART_ATTACHMENT_CATEGORIES: {
     description: 'Macro correlation, orderbook depth, news catalyst, or alternate timeframe',
     badgeColor: '#64748b',
   },
+  {
+    value: 'AUTO_CHART',
+    label: 'Auto Execution Chart',
+    description: 'Automated candlestick chart generated from FYERS historical market data',
+    badgeColor: '#06b6d4',
+  },
 ];
 
 export const CHART_TIMEFRAMES = [

@@ -44,6 +44,7 @@ import {
   CloudDoneRounded,
   ContentCopyRounded,
   OpenInNewRounded,
+  TimelineRounded,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
@@ -328,6 +329,22 @@ export function SettingsPage() {
     },
     onError: (err: any) => {
       toast.error(err.message || 'Failed to disconnect FYERS session.');
+    },
+  });
+
+  const [backfillResult, setBackfillResult] = useState<any>(null);
+
+  const fyersBackfillMutation = useMutation({
+    mutationFn: (params: { limit?: number } = {}) => api.integrations.fyersBackfillExcursion(params),
+    onSuccess: (data: any) => {
+      const res = data?.data || data;
+      setBackfillResult(res);
+      toast.success(`Excursion backfill complete: ${res.computed} computed, ${res.remaining} remaining.`);
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics-excursion'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to backfill excursion data');
     },
   });
 
@@ -923,6 +940,19 @@ export function SettingsPage() {
             {isFyersConnected && (
               <Button
                 variant="outlined"
+                color="secondary"
+                startIcon={fyersBackfillMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <TimelineRounded />}
+                disabled={fyersBackfillMutation.isPending}
+                onClick={() => fyersBackfillMutation.mutate({})}
+                sx={{ fontWeight: 600 }}
+              >
+                {fyersBackfillMutation.isPending ? 'Backfilling Excursion...' : 'Backfill Excursion Data'}
+              </Button>
+            )}
+
+            {isFyersConnected && (
+              <Button
+                variant="outlined"
                 color="error"
                 startIcon={<LinkOffRounded />}
                 disabled={fyersDisconnectMutation.isPending}
@@ -933,6 +963,12 @@ export function SettingsPage() {
               </Button>
             )}
           </Box>
+
+          {backfillResult && (
+            <Alert severity="info" sx={{ fontSize: '0.8125rem' }}>
+              Excursion backfill batch: <strong>{backfillResult.computed}</strong> computed, <strong>{backfillResult.failed}</strong> failed, <strong>{backfillResult.remaining}</strong> remaining.
+            </Alert>
+          )}
 
           {/* Sync History & Diagnostics */}
           {fyersData?.lastSyncAt && (

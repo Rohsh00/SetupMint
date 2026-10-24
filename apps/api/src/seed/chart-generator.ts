@@ -4,7 +4,7 @@ import { getStorage } from '../storage/index.js';
 
 export interface GeneratedChartSpec {
   tradeSymbol: string;
-  category: 'SETUP' | 'ENTRY' | 'EXIT' | 'REVIEW';
+  category: 'SETUP' | 'ENTRY' | 'EXIT' | 'REVIEW' | 'AUTO_CHART';
   timeframe: string;
   description: string;
   themeColor: 'emerald' | 'rose' | 'blue' | 'amber';

@@ -25,11 +25,13 @@ import {
   OptionType,
   ITradeCandle,
   IExcursionBackfillResponse,
+  CandleFallbackProvider,
 } from '@tradevault/shared';
 import { AccountService } from './account.service.js';
 import { InstrumentService } from './instrument.service.js';
 import { decryptSecret } from './crypto.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
+import { MarketDataService } from './market-data/index.js';
 import { config } from '../config.js';
 
 export interface IFyersExecutionRaw {
@@ -1318,7 +1320,8 @@ export class FyersService {
   static async computeExcursionForTrade(
     tradeId: string | mongoose.Types.ObjectId,
     userId: string | mongoose.Types.ObjectId,
-    forceRefetch: boolean = false
+    forceRefetch: boolean = false,
+    options?: { provider?: CandleFallbackProvider }
   ): Promise<any> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
     const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
@@ -1348,73 +1351,25 @@ export class FyersService {
     const resolution = holdMinutes <= 240 ? '1' : holdMinutes <= 43200 ? '5' : 'D';
     const barMinutes = resolution === '1' ? 1 : resolution === '5' ? 5 : 1440;
 
-    // 1. Check if snapshot already cached
-    let candles: ITradeCandle[] = [];
-    if (!forceRefetch) {
-      const snapshot = await TradeCandleSnapshot.findOne({
-        userId: uId,
-        tradeId: trade._id,
-        resolution,
-      });
-      if (snapshot && snapshot.candles && snapshot.candles.length > 0) {
-        candles = snapshot.candles;
-      }
-    }
+    const from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
+    const to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
 
-    // 2. If not cached, fetch from FYERS data API
-    const symbol = formatFyersSymbol({
-      symbol: trade.symbol,
-      underlying: trade.underlying,
-      assetClass: trade.assetClass,
-      exchange: trade.exchange,
-      marketSegment: trade.marketSegment,
-      optionType: trade.optionType,
-      strikePrice: trade.strikePrice,
-      expiryDate: trade.expiryDate,
+    const candleResult = await MarketDataService.getCandlesWithFallback({
+      trade,
+      resolution,
+      from,
+      to,
+      userId: uId,
+      forceRefetch,
+      provider: options?.provider || 'AUTO',
     });
 
-    if (candles.length === 0) {
-      const from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
-      const to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
-
-      try {
-        candles = await this.getHistoricalCandles(uId, symbol, resolution, from, to);
-      } catch (err: any) {
-        trade.calculated = trade.calculated || ({} as any);
-        trade.calculated.excursion = {
-          status: 'UNAVAILABLE',
-          failureReason: err.message || `Failed to fetch historical candles for ${symbol}`,
-          source: 'FYERS_HISTORY',
-          resolution,
-          computedAt: new Date(),
-        };
-        await trade.save();
-        return trade.calculated.excursion;
-      }
-
-      if (candles.length > 0) {
-        // Save bounded candle slice in TradeCandleSnapshot
-        await TradeCandleSnapshot.findOneAndUpdate(
-          { userId: uId, tradeId: trade._id, resolution },
-          {
-            $set: {
-              symbol,
-              resolution,
-              candles,
-              fetchedAt: new Date(),
-            },
-          },
-          { upsert: true, new: true }
-        );
-      }
-    }
-
-    if (candles.length === 0) {
+    if (!candleResult.ok) {
       trade.calculated = trade.calculated || ({} as any);
       trade.calculated.excursion = {
         status: 'UNAVAILABLE',
-        failureReason: `No historical candles returned for ${symbol} around execution window`,
-        source: 'FYERS_HISTORY',
+        failureReason: candleResult.message || `No candles available (${candleResult.reason})`,
+        source: options?.provider === 'ANGEL_ONE' ? 'ANGEL_ONE_HISTORY' : 'FYERS_HISTORY',
         resolution,
         computedAt: new Date(),
       };
@@ -1422,7 +1377,11 @@ export class FyersService {
       return trade.calculated.excursion;
     }
 
-    // 3. Compute excursion metrics using financial-engine
+    const candles = candleResult.candles;
+    const providerUsed = candleResult.provider;
+    const isUnderlyingFallback = candleResult.isUnderlyingFallback;
+
+    // Compute excursion metrics using financial-engine
     const entryPrice = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
     const exitPrice = trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice ?? 0;
     const quantity = trade.simpleExecution?.quantity ?? trade.calculated?.closedQuantity ?? 1;
@@ -1444,11 +1403,20 @@ export class FyersService {
       resolution,
     });
 
+    const source =
+      providerUsed === 'ANGEL_ONE'
+        ? 'ANGEL_ONE_HISTORY'
+        : isUnderlyingFallback
+        ? 'UNDERLYING_FALLBACK'
+        : 'FYERS_HISTORY';
+
     trade.calculated = trade.calculated || ({} as any);
     trade.calculated.excursion = {
       status: result.status,
       computedAt: new Date(),
-      source: 'FYERS_HISTORY',
+      source,
+      provider: providerUsed,
+      isUnderlyingFallback,
       resolution,
       failureReason: result.failureReason,
       maePoints: result.maePoints,
@@ -1472,7 +1440,10 @@ export class FyersService {
     // Trigger auto-chart screenshot generation if trade is closed and has candles
     try {
       const { ChartGeneratorService } = await import('./chart-generator.service.js');
-      await ChartGeneratorService.createAndSaveAutoChartForTrade(trade._id, uId, { force: false });
+      await ChartGeneratorService.createAndSaveAutoChartForTrade(trade._id, uId, {
+        force: false,
+        provider: options?.provider,
+      });
     } catch {
       // Non-fatal if chart generation or storage fails
     }
@@ -1482,6 +1453,7 @@ export class FyersService {
 
   /**
    * Backfills excursion analytics for closed trades in bounded batches.
+   * Leverages the fallback chain (FYERS -> Angel One -> Underlying proxy).
    */
   static async batchBackfillExcursion(
     userId: string | mongoose.Types.ObjectId,
@@ -1490,17 +1462,31 @@ export class FyersService {
       startDate?: string;
       endDate?: string;
       limit?: number;
+      provider?: CandleFallbackProvider;
     } = {}
   ): Promise<IExcursionBackfillResponse> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const requestedProvider = options.provider || 'AUTO';
 
-    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
-    if (!integration || !integration.appId || !integration.accessToken) {
-      throw new Error('FYERS broker session is missing or expired. Connect FYERS in Settings.');
-    }
-    const tokenExpiry = integration.tokenExpiresAt || integration.authCodeExpiresAt;
-    if (tokenExpiry && new Date(tokenExpiry) <= new Date()) {
-      throw new Error('FYERS daily session has expired. Reconnect FYERS to authorize today.');
+    // Verify session validity
+    const fyersIntegration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+    const fyersExpiry = fyersIntegration?.tokenExpiresAt || fyersIntegration?.authCodeExpiresAt;
+    const isFyersConnected = Boolean(
+      fyersIntegration?.accessToken && fyersExpiry && new Date(fyersExpiry) > new Date()
+    );
+
+    const { MarketDataIntegration } = await import('../db/models/MarketDataIntegration.js');
+    const angelOneDoc = await MarketDataIntegration.findOne({ userId: uId, provider: 'ANGEL_ONE' });
+    const isAngelOneConnected = Boolean(
+      angelOneDoc?.tokenExpiresAt && new Date(angelOneDoc.tokenExpiresAt) > new Date()
+    );
+
+    if (requestedProvider === 'ANGEL_ONE' && !isAngelOneConnected) {
+      throw new Error('Angel One market data session is missing or expired. Connect Angel One in Settings.');
+    } else if (requestedProvider === 'AUTO' && !isFyersConnected && !isAngelOneConnected) {
+      throw new Error(
+        'No market data provider (FYERS or Angel One) is connected. Connect FYERS or Angel One in Settings.'
+      );
     }
 
     const filter: any = {
@@ -1530,26 +1516,39 @@ export class FyersService {
     let computed = 0;
     let unavailable = 0;
     let failed = 0;
+    let fyersFilled = 0;
+    let angelOneFilled = 0;
 
     for (const trade of batch) {
       try {
-        const res = await this.computeExcursionForTrade(trade._id, uId);
-        if (res.status === 'COMPUTED') computed++;
-        else if (res.status === 'UNAVAILABLE') unavailable++;
-        else failed++;
+        const res = await this.computeExcursionForTrade(trade._id, uId, false, {
+          provider: requestedProvider,
+        });
+        if (res.status === 'COMPUTED') {
+          computed++;
+          if (res.provider === 'ANGEL_ONE' || res.source === 'ANGEL_ONE_HISTORY') {
+            angelOneFilled++;
+          } else {
+            fyersFilled++;
+          }
+        } else if (res.status === 'UNAVAILABLE') {
+          unavailable++;
+        } else {
+          failed++;
+        }
       } catch (err: any) {
         failed++;
         trade.calculated = trade.calculated || ({} as any);
         trade.calculated.excursion = {
           status: 'FAILED',
           failureReason: err.message || 'Excursion backfill failed',
-          source: 'FYERS_HISTORY',
+          source: requestedProvider === 'ANGEL_ONE' ? 'ANGEL_ONE_HISTORY' : 'FYERS_HISTORY',
           computedAt: new Date(),
         };
         await trade.save();
       }
 
-      // Small delay between trade calculations to respect broker API limits
+      // Small delay between trade calculations to respect provider API limits
       await new Promise((r) => setTimeout(r, 200));
     }
 
@@ -1559,6 +1558,8 @@ export class FyersService {
       unavailable,
       failed,
       remaining: Math.max(0, totalMatching - batch.length),
+      fyersFilled,
+      angelOneFilled,
     };
   }
 

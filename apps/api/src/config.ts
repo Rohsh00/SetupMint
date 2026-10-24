@@ -38,6 +38,13 @@ export const config = {
   fyersFundsDriftTolerance: Number(process.env.FYERS_FUNDS_DRIFT_TOLERANCE || 1),
   fyersFundsSyncEnabled: process.env.FYERS_FUNDS_SYNC_ENABLED !== 'false',
 
+  // Angel One SmartAPI Market Data Fallback
+  angelOneApiBase: process.env.ANGEL_ONE_API_BASE || 'https://apiconnect.angelone.in',
+  angelOneDailyBudget: Number(process.env.ANGEL_ONE_DAILY_BUDGET || 500),
+  angelOneInstrumentMasterUrl:
+    process.env.ANGEL_ONE_INSTRUMENT_MASTER_URL ||
+    'https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json',
+
   // Session Lifetimes (Sliding & Absolute)
   sessionIdleDays: Number(process.env.SESSION_IDLE_DAYS || 90),
   sessionAbsoluteDays: Number(process.env.SESSION_ABSOLUTE_DAYS || 365),
@@ -55,6 +62,14 @@ export const config = {
  * In production mode, fails fast if SESSION_SECRET is missing, uses the dev fallback, or is under 32 characters.
  */
 export function validateConfig(): void {
+  if (
+    !Number.isFinite(config.angelOneDailyBudget) ||
+    config.angelOneDailyBudget <= 0 ||
+    config.angelOneDailyBudget > 5000
+  ) {
+    throw new Error('FATAL: ANGEL_ONE_DAILY_BUDGET must be a positive number up to 5000.');
+  }
+
   if (config.nodeEnv === 'production') {
     const secret = process.env.SESSION_SECRET;
     if (

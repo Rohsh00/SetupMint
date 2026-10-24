@@ -3,13 +3,15 @@ import mongoose from 'mongoose';
 import moment from 'moment';
 import { Trade, Attachment, TradeCandleSnapshot, IAttachmentDoc } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
-import { ITradeCandle } from '@tradevault/shared';
+import { ITradeCandle, CandleProviderName, CandleFallbackProvider } from '@tradevault/shared';
 
 export interface ChartGeneratorOptions {
   width?: number;
   height?: number;
   theme?: 'dark' | 'light';
   resolution?: string;
+  provider?: CandleProviderName;
+  isUnderlyingFallback?: boolean;
 }
 
 export class ChartGeneratorService {
@@ -297,7 +299,30 @@ export class ChartGeneratorService {
     </text>`;
     }
 
-    const watermarkStr = `SetupMint Visual Trade Audit • FYERS API v3 • ${moment().format('YYYY-MM-DD HH:mm:ss')} IST`;
+    const provider = options.provider || 'FYERS';
+    const isUnderlying = Boolean(options.isUnderlyingFallback);
+
+    let badgeLabel = '⚡ FYERS AUTO CHART';
+    let badgeBg = '#083344';
+    let badgeBorder = '#06b6d4';
+    let badgeText = '#22d3ee';
+    let watermarkSource = 'FYERS API v3';
+
+    if (provider === 'ANGEL_ONE') {
+      badgeLabel = '⚡ ANGEL ONE AUTO CHART';
+      badgeBg = '#451a03';
+      badgeBorder = '#d97706';
+      badgeText = '#fbbf24';
+      watermarkSource = 'Angel One SmartAPI';
+    } else if (isUnderlying) {
+      badgeLabel = '⚡ UNDERLYING PROXY';
+      badgeBg = '#3b0764';
+      badgeBorder = '#9333ea';
+      badgeText = '#c084fc';
+      watermarkSource = 'Underlying Proxy';
+    }
+
+    const watermarkStr = `SetupMint Visual Trade Audit • ${watermarkSource} • ${moment().format('YYYY-MM-DD HH:mm:ss')} IST`;
 
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -341,10 +366,10 @@ export class ChartGeneratorService {
     ${pnlLabel}
   </text>
 
-  <!-- FYERS AUTO CHART Badge -->
-  <rect x="${plotX1 - 275}" y="18" width="135" height="26" rx="5" fill="#083344" stroke="#06b6d4" stroke-width="1" />
-  <text x="${plotX1 - 207}" y="35" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#22d3ee" text-anchor="middle">
-    ⚡ FYERS AUTO CHART
+  <!-- Provider AUTO CHART Badge -->
+  <rect x="${plotX1 - 310}" y="18" width="170" height="26" rx="5" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
+  <text x="${plotX1 - 225}" y="35" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="${badgeText}" text-anchor="middle">
+    ${badgeLabel}
   </text>
 
   <!-- Price Gridlines -->
@@ -377,7 +402,7 @@ export class ChartGeneratorService {
   static async createAndSaveAutoChartForTrade(
     tradeId: string | mongoose.Types.ObjectId,
     userId: string | mongoose.Types.ObjectId,
-    options: { force?: boolean } = {}
+    options: { force?: boolean; provider?: CandleFallbackProvider } = {}
   ): Promise<IAttachmentDoc> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
     const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
@@ -411,7 +436,9 @@ export class ChartGeneratorService {
     // 2. If no snapshot cached, dynamically invoke excursion computation which fetches and caches candles
     if (!snapshot || !snapshot.candles || snapshot.candles.length === 0) {
       const { FyersService } = await import('./fyers.service.js');
-      await FyersService.computeExcursionForTrade(trade._id, uId, false);
+      await FyersService.computeExcursionForTrade(trade._id, uId, false, {
+        provider: options.provider,
+      });
 
       snapshot = await TradeCandleSnapshot.findOne({
         userId: uId,
@@ -430,6 +457,9 @@ export class ChartGeneratorService {
       resolution: snapshot.resolution || '5',
       width: 960,
       height: 520,
+      provider: snapshot.provider || trade.calculated?.excursion?.provider || 'FYERS',
+      isUnderlyingFallback:
+        snapshot.isUnderlyingFallback || trade.calculated?.excursion?.isUnderlyingFallback || false,
     });
     const svgBuffer = Buffer.from(svgString, 'utf-8');
 

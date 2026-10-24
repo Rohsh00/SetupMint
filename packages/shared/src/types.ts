@@ -394,7 +394,9 @@ export type ExcursionFlag =
 export interface ITradeExcursion {
   status: ExcursionStatus;
   computedAt?: string;
-  source?: 'FYERS_HISTORY';
+  source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK';
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+  isUnderlyingFallback?: boolean;
   resolution?: string;
   failureReason?: string;
   maePoints?: number;
@@ -413,6 +415,40 @@ export interface ITradeExcursion {
   excursionFlags?: ExcursionFlag[];
 }
 
+export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+export type CandleFallbackProvider = 'AUTO' | 'FYERS' | 'ANGEL_ONE';
+export type MarketDataProvider = 'ANGEL_ONE';
+export type MarketDataStatus = 'DISABLED' | 'IDLE' | 'ERROR';
+
+export type CandleUnavailableReason =
+  | 'NO_SYMBOL_TOKEN'
+  | 'OUTSIDE_PROVIDER_LOOKBACK'
+  | 'DAILY_BUDGET_EXHAUSTED'
+  | 'NOT_CONNECTED'
+  | 'TOKEN_EXPIRED'
+  | 'RATE_LIMITED'
+  | 'UPSTREAM_ERROR'
+  | 'EMPTY_RESULT'
+  | 'CIRCUIT_OPEN';
+
+export interface IMarketDataIntegrationStatus {
+  provider: MarketDataProvider;
+  status: MarketDataStatus;
+  hasApiKey: boolean;
+  hasClientCode: boolean;
+  hasPin: boolean;
+  clientCode?: string | null;
+  connected: boolean;
+  isTokenExpired: boolean;
+  instrumentCount: number;
+  tokenExpiresAt: string | null;
+  lastUsedAt: string | null;
+  lastError: string | null;
+  dailyCallsUsed: number;
+  dailyBudget: number;
+  instrumentCacheRefreshedAt: string | null;
+}
+
 export interface ITradeCandle {
   t: number; // Unix epoch timestamp in seconds
   o: number;
@@ -429,6 +465,9 @@ export interface ITradeCandleSnapshot {
   symbol: string;
   resolution: string;
   candles: ITradeCandle[];
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+  isUnderlyingFallback?: boolean;
+  droppedRowsCount?: number;
   fetchedAt: string;
 }
 
@@ -461,6 +500,8 @@ export interface IExcursionBackfillResponse {
   unavailable: number;
   failed: number;
   remaining: number;
+  fyersFilled?: number;
+  angelOneFilled?: number;
 }
 
 export type StopMoveType = 'TRAILED_FAVORABLY' | 'WIDENED_RISK' | 'UNCHANGED';

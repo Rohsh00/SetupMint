@@ -509,6 +509,7 @@ export const excursionBackfillSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   limit: z.coerce.number().int().positive().max(500).default(50),
+  provider: z.enum(['AUTO', 'ANGEL_ONE']).optional(),
 });
 
 export const stopMoveDetectionSchema = z.object({
@@ -523,6 +524,29 @@ export const stopMoveDetectionSchema = z.object({
       })
     )
     .optional(),
+});
+
+export const angelOneConfigSchema = z.object({
+  apiKey: z.string().trim().min(1, 'API key is required'),
+  clientCode: z.string().trim().min(1, 'Client code is required'),
+  pin: z.string().trim().min(4, 'PIN/MPIN must be at least 4 digits'),
+});
+
+export const angelOneConnectSchema = z.object({
+  totp: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'TOTP must be a valid 6-digit numeric string'),
+});
+
+export const excursionComputeOptionsSchema = z.object({
+  forceRefetch: z.boolean().optional(),
+  provider: z.enum(['AUTO', 'ANGEL_ONE']).default('AUTO'),
+});
+
+export const chartGenerateOptionsSchema = z.object({
+  force: z.boolean().optional(),
+  provider: z.enum(['AUTO', 'ANGEL_ONE']).default('AUTO'),
 });
 
 

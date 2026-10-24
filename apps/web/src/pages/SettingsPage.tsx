@@ -19,6 +19,11 @@ import {
   IconButton,
   InputAdornment,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  LinearProgress,
   useTheme as useMuiTheme,
 } from '@mui/material';
 import {
@@ -74,6 +79,7 @@ function parseUserAgent(ua?: string): { browser: string; os: string; full: strin
 
 export function SettingsPage() {
   const muiTheme = useMuiTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user, refreshUser, logout } = useAuth();
@@ -345,6 +351,91 @@ export function SettingsPage() {
     },
     onError: (err: any) => {
       toast.error(err.message || 'Failed to backfill excursion data');
+    },
+  });
+
+  // Angel One Market Data Fallback State
+  const [angelOneApiKey, setAngelOneApiKey] = useState('');
+  const [angelOneClientCode, setAngelOneClientCode] = useState('');
+  const [angelOnePin, setAngelOnePin] = useState('');
+  const [angelOneTotp, setAngelOneTotp] = useState('');
+  const [showAngelOneKey, setShowAngelOneKey] = useState(false);
+  const [showAngelOnePin, setShowAngelOnePin] = useState(false);
+  const [isTotpDialogOpen, setIsTotpDialogOpen] = useState(false);
+
+  const { data: angelOneStatus, isLoading: isAngelOneLoading } = useQuery({
+    queryKey: ['angel-one-status'],
+    queryFn: () => api.marketData.angelOne.status(),
+  });
+
+  const angelOneData = (angelOneStatus as any)?.data ?? angelOneStatus;
+  const isAngelOneConfigured = Boolean(
+    angelOneData?.hasApiKey && angelOneData?.hasClientCode && angelOneData?.hasPin
+  );
+  const isAngelOneConnected = Boolean(angelOneData?.connected && !angelOneData?.isTokenExpired);
+  const isAngelOneTokenExpired = Boolean(angelOneData?.connected && angelOneData?.isTokenExpired);
+
+  const angelOneConfigMutation = useMutation({
+    mutationFn: (payload: { apiKey: string; clientCode: string; pin: string }) =>
+      api.marketData.angelOne.saveConfig(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['angel-one-status'] });
+      setAngelOnePin('');
+      setAngelOneApiKey('');
+      toast.success('Angel One market data credentials saved securely.');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to save Angel One configuration');
+    },
+  });
+
+  const angelOneConnectMutation = useMutation({
+    mutationFn: (totp: string) => api.marketData.angelOne.connect(totp),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['angel-one-status'] });
+      setAngelOneTotp('');
+      setIsTotpDialogOpen(false);
+      toast.success('Authenticated with Angel One SmartAPI successfully.');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to authenticate with Angel One SmartAPI');
+    },
+  });
+
+  const angelOneDisconnectMutation = useMutation({
+    mutationFn: () => api.marketData.angelOne.disconnect(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['angel-one-status'] });
+      toast.info('Disconnected from Angel One SmartAPI.');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to disconnect from Angel One');
+    },
+  });
+
+  const angelOneDeleteMutation = useMutation({
+    mutationFn: () => api.marketData.angelOne.deleteIntegration(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['angel-one-status'] });
+      setAngelOneApiKey('');
+      setAngelOneClientCode('');
+      setAngelOnePin('');
+      toast.success('Angel One integration credentials removed.');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to delete Angel One integration');
+    },
+  });
+
+  const angelOneRefreshMutation = useMutation({
+    mutationFn: (force?: boolean) => api.marketData.angelOne.refreshInstruments(force),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['angel-one-status'] });
+      const count = res?.data?.cachedCount ?? res?.cachedCount;
+      toast.success(`Scrip master cached: ${count ?? 'symbols'} active symbols ready.`);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to refresh instrument master');
     },
   });
 
@@ -995,6 +1086,351 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Angel One SmartAPI Market Data Fallback Card */}
+      <Card variant="outlined" sx={{ p: 1, borderColor: isAngelOneConnected ? 'rgba(245, 158, 11, 0.4)' : undefined }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          {/* Header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TimelineRounded sx={{ color: '#f59e0b' }} />
+                Angel One SmartAPI (Market Data Fallback Only)
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Secondary candle source for MAE/MFE excursion analytics and automated chart generation when primary sources are unavailable.
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }} aria-live="polite">
+              {isAngelOneLoading ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : isAngelOneConnected ? (
+                <Chip
+                  icon={<CheckCircleRounded />}
+                  label="CONNECTED & ACTIVE"
+                  color="success"
+                  size="small"
+                  sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                />
+              ) : isAngelOneTokenExpired ? (
+                <Chip
+                  label="DAILY TOKEN EXPIRED"
+                  color="warning"
+                  size="small"
+                  sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                />
+              ) : isAngelOneConfigured ? (
+                <Chip
+                  label="READY TO CONNECT"
+                  color="info"
+                  size="small"
+                  sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                />
+              ) : (
+                <Chip
+                  label="NOT CONFIGURED"
+                  size="small"
+                  sx={{ fontWeight: 600, fontSize: '0.6875rem' }}
+                />
+              )}
+            </Box>
+          </Box>
+
+          {/* Read-Only Safety Disclaimer */}
+          <Alert
+            severity="info"
+            sx={{
+              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.06)' : 'rgba(245, 158, 11, 0.08)',
+              borderColor: 'rgba(245, 158, 11, 0.25)',
+              borderWidth: 1,
+              borderStyle: 'solid',
+              fontSize: '0.8125rem',
+              color: isDark ? '#fde68a' : '#92400e',
+              '& .MuiAlert-icon': { color: '#f59e0b' },
+            }}
+          >
+            <strong>Read-Only Historical Candle Feed:</strong> SetupMint connects to Angel One solely to query historical candlestick data (<code>getCandleData</code>) and instrument tokens. No trading orders, positions, funds, or holdings are ever accessed or executed.
+          </Alert>
+
+          {/* Credentials Inputs */}
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                label="SmartAPI Key"
+                value={angelOneApiKey}
+                onChange={(e) => setAngelOneApiKey(e.target.value)}
+                placeholder={angelOneData?.hasApiKey ? '••••••••••••••••' : 'Enter SmartAPI Key'}
+                fullWidth
+                size="small"
+                type={showAngelOneKey ? 'text' : 'password'}
+                autoComplete="off"
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={() => setShowAngelOneKey(!showAngelOneKey)}
+                          edge="end"
+                        >
+                          {showAngelOneKey ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+                helperText="From Angel One SmartAPI Developer Portal"
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                label="Client Code"
+                value={angelOneClientCode}
+                onChange={(e) => setAngelOneClientCode(e.target.value.toUpperCase().trim())}
+                placeholder={angelOneData?.clientCode || 'e.g. A123456'}
+                fullWidth
+                size="small"
+                autoComplete="off"
+                helperText="Your Angel One trading account client ID"
+              />
+            </Grid>
+
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField
+                label="Trading PIN / MPIN"
+                value={angelOnePin}
+                onChange={(e) => setAngelOnePin(e.target.value)}
+                placeholder={angelOneData?.hasPin ? '••••' : 'Enter 4-6 digit PIN'}
+                fullWidth
+                size="small"
+                type={showAngelOnePin ? 'text' : 'password'}
+                autoComplete="off"
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={() => setShowAngelOnePin(!showAngelOnePin)}
+                          edge="end"
+                        >
+                          {showAngelOnePin ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+                helperText="Used to authorize SmartAPI sessions with TOTP"
+              />
+            </Grid>
+          </Grid>
+
+          {/* Action Buttons */}
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
+            <Button
+              variant="outlined"
+              color="inherit"
+              disabled={angelOneConfigMutation.isPending || (!angelOneApiKey && !angelOneClientCode && !angelOnePin)}
+              onClick={() =>
+                angelOneConfigMutation.mutate({
+                  apiKey: angelOneApiKey,
+                  clientCode: angelOneClientCode,
+                  pin: angelOnePin,
+                })
+              }
+              sx={{ fontWeight: 600 }}
+            >
+              {angelOneConfigMutation.isPending ? 'Saving...' : 'Save Credentials'}
+            </Button>
+
+            <Button
+              variant={isAngelOneConnected ? 'outlined' : 'contained'}
+              color="warning"
+              startIcon={<LinkRounded />}
+              disabled={angelOneConnectMutation.isPending || (!isAngelOneConfigured && !angelOneApiKey)}
+              onClick={() => setIsTotpDialogOpen(true)}
+              sx={{ fontWeight: 700 }}
+            >
+              {isAngelOneConnected ? 'Re-authenticate with TOTP' : 'Connect with TOTP'}
+            </Button>
+
+            {isAngelOneConfigured && (
+              <Button
+                variant="outlined"
+                color="info"
+                startIcon={
+                  <SyncRounded
+                    sx={{
+                      animation: angelOneRefreshMutation.isPending ? 'spin 1s linear infinite' : 'none',
+                      '@keyframes spin': {
+                        '0%': { transform: 'rotate(0deg)' },
+                        '100%': { transform: 'rotate(360deg)' },
+                      },
+                    }}
+                  />
+                }
+                disabled={angelOneRefreshMutation.isPending}
+                onClick={() => angelOneRefreshMutation.mutate(true)}
+                sx={{ fontWeight: 600 }}
+              >
+                {angelOneRefreshMutation.isPending ? 'Caching Scrips...' : 'Refresh Instrument Cache'}
+              </Button>
+            )}
+
+            {isAngelOneConnected && (
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<LinkOffRounded />}
+                disabled={angelOneDisconnectMutation.isPending}
+                onClick={() => angelOneDisconnectMutation.mutate()}
+                sx={{ fontWeight: 600 }}
+              >
+                Disconnect
+              </Button>
+            )}
+
+            {isAngelOneConfigured && (
+              <Button
+                variant="text"
+                color="error"
+                disabled={angelOneDeleteMutation.isPending}
+                onClick={() => {
+                  if (window.confirm('Delete Angel One market data credentials and clear cached instruments?')) {
+                    angelOneDeleteMutation.mutate();
+                  }
+                }}
+                sx={{ fontWeight: 600, ml: 'auto' }}
+              >
+                Remove Integration
+              </Button>
+            )}
+          </Box>
+
+          {/* Usage, Quota & Diagnostic Stats */}
+          {angelOneData && (
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                border: 1,
+                borderColor: 'divider',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                  DAILY CANDLE API QUOTA
+                </Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                  {angelOneData.dailyCallsUsed ?? 0} / {angelOneData.dailyBudget ?? 500} calls used today
+                </Typography>
+              </Box>
+              <LinearProgress
+                variant="determinate"
+                value={Math.min(100, (((angelOneData.dailyCallsUsed ?? 0) / (angelOneData.dailyBudget ?? 500)) * 100))}
+                sx={{
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor:
+                      (angelOneData.dailyCallsUsed ?? 0) >= (angelOneData.dailyBudget ?? 500)
+                        ? '#ef4444'
+                        : '#f59e0b',
+                  },
+                }}
+              />
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, pt: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Cached Instruments: <strong>{Number(angelOneData.instrumentCount ?? 0).toLocaleString()} symbols</strong>
+                </Typography>
+                {angelOneData.tokenExpiresAt && (
+                  <Typography variant="caption" color="text.secondary">
+                    Session Valid Until: <strong>{new Date(angelOneData.tokenExpiresAt).toLocaleString()}</strong>
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          )}
+
+          {angelOneData?.lastError && (
+            <Alert severity="warning" sx={{ fontSize: '0.8125rem' }}>
+              Last Provider Issue: {angelOneData.lastError}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* TOTP Authentication Dialog */}
+      <Dialog
+        open={isTotpDialogOpen}
+        onClose={() => {
+          setIsTotpDialogOpen(false);
+          setAngelOneTotp('');
+        }}
+        maxWidth="xs"
+        fullWidth
+        aria-labelledby="angel-one-totp-dialog-title"
+      >
+        <DialogTitle id="angel-one-totp-dialog-title" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <KeyRounded sx={{ color: '#f59e0b' }} />
+          Angel One TOTP Authorization
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Enter the current 6-digit TOTP code generated by your authenticator app (Google Authenticator, Microsoft Authenticator, etc.) for client code <strong>{angelOneClientCode || angelOneData?.clientCode || 'your account'}</strong>.
+          </Typography>
+
+          <TextField
+            autoFocus
+            label="6-Digit TOTP Code"
+            value={angelOneTotp}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+              setAngelOneTotp(val);
+            }}
+            placeholder="000000"
+            fullWidth
+            slotProps={{
+              htmlInput: {
+                inputMode: 'numeric',
+                pattern: '[0-9]*',
+                maxLength: 6,
+                style: { textAlign: 'center', letterSpacing: '0.5em', fontSize: '1.25rem', fontWeight: 700 },
+              },
+            }}
+            autoComplete="one-time-code"
+            helperText="TOTP codes refresh every 30 seconds"
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            onClick={() => {
+              setIsTotpDialogOpen(false);
+              setAngelOneTotp('');
+            }}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={angelOneTotp.length !== 6 || angelOneConnectMutation.isPending}
+            onClick={() => angelOneConnectMutation.mutate(angelOneTotp)}
+            sx={{ fontWeight: 700 }}
+          >
+            {angelOneConnectMutation.isPending ? 'Verifying...' : 'Authorize Session'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Active Sessions & Device Management Card */}
       <Card variant="outlined" sx={{ p: 1 }}>

@@ -216,12 +216,15 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
       }),
-    computeExcursion: (id: string) =>
-      request<any>(`/trades/${id}/excursion/compute`, { method: 'POST' }),
-    generateChart: (id: string, force?: boolean) =>
+    computeExcursion: (id: string, options?: { provider?: 'AUTO' | 'ANGEL_ONE'; forceRefetch?: boolean }) =>
+      request<any>(`/trades/${id}/excursion/compute`, {
+        method: 'POST',
+        body: JSON.stringify(options || {}),
+      }),
+    generateChart: (id: string, force?: boolean, provider?: 'AUTO' | 'ANGEL_ONE') =>
       request<any>(`/trades/${id}/chart/generate`, {
         method: 'POST',
-        body: JSON.stringify({ force }),
+        body: JSON.stringify({ force, provider }),
       }),
     detectStopMoves: (id: string, manualModifications?: any[]) =>
       request<any>(`/trades/${id}/stop-moves/detect`, {
@@ -402,8 +405,44 @@ export const api = {
     fyersLoginUrl: () => request<any>('/integrations/fyers/login-url'),
     fyersSync: () => request<any>('/integrations/fyers/sync', { method: 'POST' }),
     fyersDisconnect: () => request<any>('/integrations/fyers/disconnect', { method: 'POST' }),
-    fyersBackfillExcursion: (params: { startDate?: string; endDate?: string; limit?: number } = {}) =>
-      request<any>('/integrations/fyers/excursion-backfill', { method: 'POST', body: JSON.stringify(params) }),
+    fyersBackfillExcursion: (
+      params: {
+        startDate?: string;
+        endDate?: string;
+        limit?: number;
+        provider?: 'AUTO' | 'ANGEL_ONE';
+      } = {}
+    ) =>
+      request<any>('/integrations/fyers/excursion-backfill', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
+  },
+
+  // Market Data (Fallback Candle Feeds)
+  marketData: {
+    angelOne: {
+      status: () => request<any>('/integrations/market-data/angel-one/status'),
+      saveConfig: (data: { apiKey: string; clientCode: string; pin: string }) =>
+        request<any>('/integrations/market-data/angel-one/config', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      connect: (totp: string) =>
+        request<any>('/integrations/market-data/angel-one/connect', {
+          method: 'POST',
+          body: JSON.stringify({ totp }),
+        }),
+      disconnect: () =>
+        request<any>('/integrations/market-data/angel-one/disconnect', { method: 'POST' }),
+      deleteIntegration: () =>
+        request<any>('/integrations/market-data/angel-one', { method: 'DELETE' }),
+      refreshInstruments: (force?: boolean) =>
+        request<any>('/integrations/market-data/angel-one/refresh-instruments', {
+          method: 'POST',
+          body: JSON.stringify({ force }),
+        }),
+    },
   },
 };
 

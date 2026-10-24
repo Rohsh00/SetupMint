@@ -150,21 +150,26 @@ export function TradeDetailPage() {
   });
 
   const computeExcursionMutation = useMutation({
-    mutationFn: () => api.trades.computeExcursion(id!),
+    mutationFn: (options?: { provider?: 'AUTO' | 'ANGEL_ONE'; forceRefetch?: boolean }) =>
+      api.trades.computeExcursion(id!, options),
     onSuccess: () => {
       setActionError(null);
       toast.success('Excursion metrics computed successfully.');
       queryClient.invalidateQueries({ queryKey: ['trade', id] });
     },
     onError: (err: any) => {
-      const msg = err.message || 'Failed to compute excursion metrics from FYERS candles';
+      const msg = err.message || 'Failed to compute excursion metrics';
       setActionError(msg);
       toast.error(msg);
     },
   });
 
   const generateChartMutation = useMutation({
-    mutationFn: (force?: boolean) => api.trades.generateChart(id!, force),
+    mutationFn: (args?: { force?: boolean; provider?: 'AUTO' | 'ANGEL_ONE' } | boolean) => {
+      const force = typeof args === 'boolean' ? args : args?.force ?? true;
+      const provider = typeof args === 'object' ? args?.provider : undefined;
+      return api.trades.generateChart(id!, force, provider);
+    },
     onSuccess: () => {
       setActionError(null);
       toast.success('Automated execution chart generated successfully.');
@@ -788,6 +793,43 @@ export function TradeDetailPage() {
               </Box>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {exc?.provider && (
+                  <Chip
+                    label={
+                      exc.provider === 'ANGEL_ONE'
+                        ? 'ANGEL ONE'
+                        : exc.isUnderlyingFallback
+                        ? 'UNDERLYING PROXY'
+                        : 'FYERS'
+                    }
+                    size="small"
+                    sx={{
+                      height: 22,
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                      backgroundColor:
+                        exc.provider === 'ANGEL_ONE'
+                          ? 'rgba(245, 158, 11, 0.15)'
+                          : exc.isUnderlyingFallback
+                          ? 'rgba(168, 85, 247, 0.15)'
+                          : 'rgba(6, 182, 212, 0.15)',
+                      color:
+                        exc.provider === 'ANGEL_ONE'
+                          ? '#f59e0b'
+                          : exc.isUnderlyingFallback
+                          ? '#a855f7'
+                          : '#06b6d4',
+                      border: `1px solid ${
+                        exc.provider === 'ANGEL_ONE'
+                          ? 'rgba(245, 158, 11, 0.3)'
+                          : exc.isUnderlyingFallback
+                          ? 'rgba(168, 85, 247, 0.3)'
+                          : 'rgba(6, 182, 212, 0.3)'
+                      }`,
+                    }}
+                  />
+                )}
+
                 <Chip
                   label={exc?.status || (trade.status === 'CLOSED' ? 'NOT COMPUTED' : 'TRADE OPEN')}
                   size="small"
@@ -996,17 +1038,30 @@ export function TradeDetailPage() {
               </Box>
             ) : isUnavailable ? (
               <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
                   Historical candle data unavailable for this trade lifecycle {exc?.failureReason ? `(${exc.failureReason})` : ''}.
                 </Typography>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => computeExcursionMutation.mutate()}
-                  disabled={computeExcursionMutation.isPending}
-                >
-                  Retry Fetch
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => computeExcursionMutation.mutate({ provider: 'AUTO' })}
+                    disabled={computeExcursionMutation.isPending}
+                    sx={{ textTransform: 'none', fontWeight: 600 }}
+                  >
+                    Retry Fetch (Auto)
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    onClick={() => computeExcursionMutation.mutate({ provider: 'ANGEL_ONE' })}
+                    disabled={computeExcursionMutation.isPending}
+                    sx={{ textTransform: 'none', fontWeight: 600 }}
+                  >
+                    Retry with Angel One
+                  </Button>
+                </Box>
               </Box>
             ) : (
               <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>

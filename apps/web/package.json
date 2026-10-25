@@ -19,6 +19,7 @@
     "@tradevault/financial-engine": "*",
     "@tradevault/shared": "*",
     "clsx": "^2.1.1",
+    "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.475.0",
     "moment": "^2.31.0",
     "react": "^19.0.0",

@@ -259,6 +259,43 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
       }),
+    getInteractiveCandles: (
+      id: string,
+      params?: {
+        resolution?: string;
+        from?: string | number;
+        to?: string | number;
+        preloadBefore?: number;
+        preloadAfter?: number;
+        force?: boolean;
+      }
+    ) => {
+      const query = new URLSearchParams();
+      if (params) {
+        for (const [key, val] of Object.entries(params)) {
+          if (val !== undefined && val !== null && val !== '') {
+            query.set(key, String(val));
+          }
+        }
+      }
+      return request<{
+        trade: any;
+        candles: Array<{
+          time: number;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+        }>;
+        resolution: string;
+        provider: string;
+        isUnderlyingFallback: boolean;
+        symbol: string;
+        firstTime: number | null;
+        lastTime: number | null;
+      }>(`/trades/${id}/interactive-candles?${query.toString()}`);
+    },
   },
 
   // Dashboard

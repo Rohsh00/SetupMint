@@ -33,6 +33,7 @@ import {
   TuneRounded,
   InfoOutlined,
   LayersRounded,
+  ShowChartRounded,
 } from '@mui/icons-material';
 import {
   CHART_RESOLUTIONS,
@@ -49,6 +50,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
 import { HelpHint } from '../help/index.js';
+import { InteractiveTradingViewModal } from './attachments/InteractiveTradingViewModal.js';
 
 const PREF_TIMEFRAMES_KEY = 'tradevault_chart_timeframes';
 const PREF_PADDING_BEFORE_KEY = 'tradevault_chart_padding_before';
@@ -158,6 +160,7 @@ export function GenerateExecutionChartsPanel({
 
   const [replaceExisting, setReplaceExisting] = useState<boolean>(false);
   const [lastResults, setLastResults] = useState<IChartGenerateResult[] | null>(null);
+  const [interactiveModalOpen, setInteractiveModalOpen] = useState(false);
 
   // Save preferences whenever state changes
   useEffect(() => {
@@ -523,6 +526,27 @@ export function GenerateExecutionChartsPanel({
               }}
             />
           )}
+
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ShowChartRounded sx={{ color: '#06b6d4' }} />}
+            onClick={() => setInteractiveModalOpen(true)}
+            sx={{
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              borderRadius: 2,
+              textTransform: 'none',
+              borderColor: 'rgba(6, 182, 212, 0.4)',
+              color: '#06b6d4',
+              '&:hover': {
+                borderColor: '#06b6d4',
+                backgroundColor: 'rgba(6, 182, 212, 0.08)',
+              },
+            }}
+          >
+            Interactive Real Chart
+          </Button>
         </Box>
       </Box>
 
@@ -986,6 +1010,13 @@ export function GenerateExecutionChartsPanel({
           </Box>
         </Box>
       )}
+      {/* Interactive Real TradingView Chart Modal */}
+      <InteractiveTradingViewModal
+        open={interactiveModalOpen}
+        onClose={() => setInteractiveModalOpen(false)}
+        tradeId={tradeId}
+        symbol={symbol}
+      />
     </Card>
   );
 }

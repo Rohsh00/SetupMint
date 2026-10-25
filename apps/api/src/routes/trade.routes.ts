@@ -6,6 +6,8 @@ import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
+  aggregateCandles,
+  estimateFetchRange,
 } from '@tradevault/financial-engine';
 import {
   createTradeSchema,
@@ -27,6 +29,7 @@ import {
   TradeTemplate,
   BrokerIntegration,
   MarketDataIntegration,
+  TradeCandleSnapshot,
 } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -35,6 +38,7 @@ import { InstrumentService } from '../services/instrument.service.js';
 import { FyersService } from '../services/fyers.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
+import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -1289,6 +1293,247 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         data: {
           stopLossMoveEvents: trade.stopLossMoveEvents || [],
           stopMoveSummary: trade.calculated?.stopMoveSummary || null,
+        },
+      });
+    }
+  );
+
+  // GET /:id/interactive-candles - Retrieve candles & execution overlays for interactive TradingView chart
+  app.get(
+    '/:id/interactive-candles',
+    { preHandler: [validateObjectIdParam('id')] },
+    async (req: any, reply) => {
+      const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+      if (!trade) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found or unauthorized' },
+        });
+      }
+
+      const query = (req.query || {}) as {
+        resolution?: string;
+        from?: string;
+        to?: string;
+        preloadBefore?: string | number;
+        preloadAfter?: string | number;
+        force?: string | boolean;
+      };
+
+      const resolution = (query.resolution || '5').trim();
+      const validResolutions = ['1', '3', '5', '15', '30', '60', '240', 'D'];
+      const targetRes = validResolutions.includes(resolution) ? resolution : '5';
+
+      let baseRes = '5';
+      let targetMinutes = 5;
+      if (targetRes === '1') {
+        baseRes = '1';
+        targetMinutes = 1;
+      } else if (targetRes === '3') {
+        baseRes = '1';
+        targetMinutes = 3;
+      } else if (targetRes === '5') {
+        baseRes = '5';
+        targetMinutes = 5;
+      } else if (targetRes === '15') {
+        baseRes = '5';
+        targetMinutes = 15;
+      } else if (targetRes === '30') {
+        baseRes = '5';
+        targetMinutes = 30;
+      } else if (targetRes === '60') {
+        baseRes = '5';
+        targetMinutes = 60;
+      } else if (targetRes === '240') {
+        baseRes = '5';
+        targetMinutes = 240;
+      } else if (targetRes === 'D') {
+        baseRes = 'D';
+        targetMinutes = 1440;
+      }
+
+      const sessionAnchor =
+        trade.exchange === 'MCX' || trade.marketSegment === 'MCX' ? '09:00' : '09:15';
+
+      const entryTime = trade.entryTime ? new Date(trade.entryTime) : new Date();
+      const exitTime = trade.exitTime ? new Date(trade.exitTime) : entryTime;
+
+      const pBefore = Math.max(20, Math.min(1000, Number(query.preloadBefore) || 150));
+      const pAfter = Math.max(10, Math.min(500, Number(query.preloadAfter) || 50));
+      const forceRefetch = query.force === 'true' || query.force === true;
+
+      let rangeFrom: Date;
+      let rangeTo: Date;
+
+      if (query.from && query.to) {
+        const parseTs = (v: string | number) => {
+          const n = Number(v);
+          if (!isNaN(n)) return new Date(n < 1e11 ? n * 1000 : n);
+          return new Date(v);
+        };
+        rangeFrom = parseTs(query.from);
+        rangeTo = parseTs(query.to);
+      } else if (query.to && !query.from) {
+        const toTs = Number(query.to);
+        const toDate = !isNaN(toTs) ? new Date(toTs < 1e11 ? toTs * 1000 : toTs) : new Date(query.to);
+        rangeTo = toDate;
+        const rawDeltaMs = pBefore * targetMinutes * 60 * 1000 * 2.8;
+        rangeFrom = new Date(rangeTo.getTime() - rawDeltaMs);
+      } else {
+        const est = estimateFetchRange(entryTime, exitTime, targetMinutes, pBefore, pAfter);
+        rangeFrom = est.from;
+        rangeTo = est.to;
+      }
+
+      let candlesResult: any = null;
+      let rawCandles: any[] = [];
+
+      // 1. Try to fetch from MarketDataService with fallback
+      try {
+        candlesResult = await MarketDataService.getCandlesWithFallback({
+          trade,
+          resolution: baseRes,
+          from: rangeFrom,
+          to: rangeTo,
+          userId: req.user!.id,
+          forceRefetch,
+        });
+
+        if (candlesResult && candlesResult.ok && candlesResult.candles?.length > 0) {
+          rawCandles = candlesResult.candles;
+        }
+      } catch (err: any) {
+        req.log.warn('MarketDataService fallback fetch threw for trade %s: %s', trade._id, err.message);
+      }
+
+      // 2. If provider call didn't yield candles, search cached TradeCandleSnapshot docs
+      if (rawCandles.length === 0) {
+        const snapshots = await TradeCandleSnapshot.find({
+          userId: req.user!.id,
+          tradeId: trade._id,
+        }).sort({ fetchedAt: -1 });
+
+        const exactSnap = snapshots.find((s) => s.resolution === targetRes);
+        if (exactSnap && exactSnap.candles && exactSnap.candles.length > 0) {
+          rawCandles = exactSnap.candles;
+          baseRes = exactSnap.resolution;
+        } else {
+          const snap5m = snapshots.find((s) => s.resolution === '5');
+          const snap1m = snapshots.find((s) => s.resolution === '1');
+          if (targetMinutes >= 5 && snap5m && snap5m.candles?.length) {
+            rawCandles = snap5m.candles;
+            baseRes = '5';
+          } else if (snap1m && snap1m.candles?.length) {
+            rawCandles = snap1m.candles;
+            baseRes = '1';
+          } else if (snapshots.length > 0 && snapshots[0].candles?.length) {
+            rawCandles = snapshots[0].candles;
+            baseRes = snapshots[0].resolution;
+          }
+        }
+      }
+
+      // If still no candles found:
+      if (rawCandles.length === 0) {
+        return reply.status(404).send({
+          success: false,
+          error: {
+            code: 'NO_CANDLE_DATA',
+            message: 'No candlestick data is available for this trade or timeframe yet.',
+          },
+        });
+      }
+
+      // 3. Aggregate if baseRes differs from targetRes
+      let processedCandles = rawCandles;
+      if (baseRes !== targetRes) {
+        if (baseRes === '1' || baseRes === '5') {
+          const agg = aggregateCandles(rawCandles as any, targetMinutes, sessionAnchor);
+          processedCandles = agg.candles;
+        }
+      }
+
+      // 4. Format into lightweight-charts schema (time in seconds, sorted ascending, deduplicated)
+      const formatted = processedCandles
+        .map((c: any) => ({
+          time: Math.floor(c.t < 1e11 ? c.t : c.t / 1000),
+          open: Number(c.o),
+          high: Number(c.h),
+          low: Number(c.l),
+          close: Number(c.c),
+          volume: Number(c.v || 0),
+        }))
+        .filter((c: any) => !isNaN(c.time) && !isNaN(c.open) && !isNaN(c.close))
+        .sort((a: any, b: any) => a.time - b.time);
+
+      const uniqueCandles: any[] = [];
+      const seenTimes = new Set<number>();
+      for (const c of formatted) {
+        if (!seenTimes.has(c.time)) {
+          seenTimes.add(c.time);
+          uniqueCandles.push(c);
+        }
+      }
+
+      let strategyName = trade.strategyName;
+      if (trade.strategyId && !strategyName) {
+        const strat = await Strategy.findById(trade.strategyId).select('name').lean();
+        if (strat) strategyName = (strat as any).name;
+      }
+
+      const entryPrice =
+        trade.simpleExecution?.entryPrice ??
+        trade.fills?.find((f) => f.type === 'ENTRY')?.price ??
+        trade.risk?.plannedEntryPrice ??
+        0;
+
+      const exitPrice =
+        trade.simpleExecution?.exitPrice ??
+        trade.fills?.find((f) => f.type === 'EXIT')?.price ??
+        undefined;
+
+      const quantity =
+        trade.simpleExecution?.quantity ??
+        trade.risk?.actualQuantity ??
+        trade.risk?.suggestedQuantity ??
+        0;
+
+      const stopLoss = trade.risk?.initialStopLoss;
+      const takeProfit = trade.risk?.plannedTarget;
+      const netPnL = trade.calculated?.netPnL;
+      const realizedRMultiple =
+        trade.calculated?.realizedRMultiple ?? trade.risk?.realizedRMultiple;
+
+      const tradeMeta = {
+        id: trade._id.toString(),
+        symbol: trade.symbol,
+        underlying: trade.underlying,
+        direction: trade.direction,
+        entryPrice,
+        exitPrice,
+        entryTime: trade.entryTime,
+        exitTime: trade.exitTime,
+        stopLoss,
+        takeProfit,
+        pnl: netPnL,
+        realizedRMultiple,
+        quantity,
+        exchange: trade.exchange || 'NSE',
+        strategyName,
+        setup: trade.setup,
+      };
+
+      return reply.send({
+        success: true,
+        data: {
+          trade: tradeMeta,
+          candles: uniqueCandles,
+          resolution: targetRes,
+          provider: candlesResult?.provider || 'FYERS',
+          isUnderlyingFallback: Boolean(candlesResult?.isUnderlyingFallback),
+          symbol: candlesResult?.symbol || trade.symbol,
+          firstTime: uniqueCandles.length > 0 ? uniqueCandles[0].time : null,
+          lastTime: uniqueCandles.length > 0 ? uniqueCandles[uniqueCandles.length - 1].time : null,
         },
       });
     }

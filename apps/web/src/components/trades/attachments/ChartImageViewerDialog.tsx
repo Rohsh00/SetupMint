@@ -21,6 +21,7 @@ import {
   DeleteOutlineRounded,
   AccessTimeRounded,
   LayersRounded,
+  ShowChartRounded,
 } from '@mui/icons-material';
 import { IAttachment, CHART_ATTACHMENT_CATEGORIES } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
@@ -33,6 +34,7 @@ interface ChartImageViewerDialogProps {
   initialIndex?: number;
   symbol?: string;
   onDelete?: (id: string) => void;
+  onOpenInteractive?: (resolution?: string) => void;
 }
 
 export function ChartImageViewerDialog({
@@ -42,6 +44,7 @@ export function ChartImageViewerDialog({
   initialIndex = 0,
   symbol,
   onDelete,
+  onOpenInteractive,
 }: ChartImageViewerDialogProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -234,6 +237,39 @@ export function ChartImageViewerDialog({
               </Tooltip>
             )}
           </Box>
+
+          {/* Open in Interactive TradingView Chart */}
+          {onOpenInteractive && (
+            <Tooltip title="Switch to Real Interactive TradingView Chart (with zoom & candle panning)">
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<ShowChartRounded />}
+                onClick={() => {
+                  onClose();
+                  onOpenInteractive(
+                    currentAttachment.timeframe ||
+                      (currentAttachment as any).chartMeta?.resolution ||
+                      '5'
+                  );
+                }}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: '0.75rem',
+                  borderRadius: 2,
+                  background: 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
+                  color: '#fff',
+                  boxShadow: '0 2px 8px rgba(6, 182, 212, 0.35)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #0891b2 0%, #0369a1 100%)',
+                  },
+                }}
+              >
+                Interactive Real Chart
+              </Button>
+            </Tooltip>
+          )}
 
           {/* Download Original */}
           <Tooltip title="Download Original Screenshot">

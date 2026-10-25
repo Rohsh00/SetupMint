@@ -32,6 +32,8 @@ import {
   CheckCircleRounded,
   PhotoCameraRounded,
   ElectricBoltRounded,
+  ShowChartRounded,
+  CandlestickChartRounded,
 } from '@mui/icons-material';
 import {
   AttachmentCategory,
@@ -42,6 +44,7 @@ import {
 import { api } from '../../../lib/api.js';
 import { toast } from '../../../context/ToastContext.js';
 import { ChartImageViewerDialog } from './ChartImageViewerDialog.js';
+import { InteractiveTradingViewModal } from './InteractiveTradingViewModal.js';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.js';
 
 interface TradeScreenshotGalleryProps {
@@ -65,6 +68,25 @@ export function TradeScreenshotGallery({
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('ALL');
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+
+  // Interactive TradingView Real Chart modal state
+  const [interactiveChartOpen, setInteractiveChartOpen] = useState(false);
+  const [interactiveResolution, setInteractiveResolution] = useState<string>('5');
+
+  const openInteractiveChart = (res = '5') => {
+    let cleanRes = res;
+    if (res === '1m') cleanRes = '1';
+    else if (res === '3m') cleanRes = '3';
+    else if (res === '5m') cleanRes = '5';
+    else if (res === '15m') cleanRes = '15';
+    else if (res === '30m') cleanRes = '30';
+    else if (res === '1h' || res === '60m') cleanRes = '60';
+    else if (res === '4h' || res === '240m') cleanRes = '240';
+    else if (res === '1D' || res === 'Daily') cleanRes = 'D';
+
+    setInteractiveResolution(cleanRes);
+    setInteractiveChartOpen(true);
+  };
 
   // Upload modal state
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -257,54 +279,77 @@ export function TradeScreenshotGallery({
           </Typography>
         </Box>
 
-        {!readOnly && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={
-                isGeneratingAutoChart ? (
-                  <CircularProgress size={14} color="inherit" />
-                ) : (
-                  <ElectricBoltRounded sx={{ color: '#06b6d4' }} />
-                )
-              }
-              onClick={handleGenerateAutoChart}
-              disabled={isGeneratingAutoChart}
-              sx={{
-                fontWeight: 700,
-                fontSize: '0.8125rem',
-                borderRadius: 2,
-                textTransform: 'none',
-                borderColor: 'rgba(6, 182, 212, 0.4)',
-                color: '#06b6d4',
-                '&:hover': {
-                  borderColor: '#06b6d4',
-                  backgroundColor: 'rgba(6, 182, 212, 0.08)',
-                },
-              }}
-            >
-              {autoChartAttachment ? 'Regenerate Auto Chart' : 'Generate FYERS Chart'}
-            </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<ShowChartRounded />}
+            onClick={() => openInteractiveChart('5')}
+            sx={{
+              fontWeight: 800,
+              fontSize: '0.8125rem',
+              borderRadius: 2,
+              textTransform: 'none',
+              background: 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
+              color: '#fff',
+              boxShadow: '0 4px 14px rgba(6, 182, 212, 0.35)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #0891b2 0%, #0369a1 100%)',
+              },
+            }}
+          >
+            Interactive Real Chart
+          </Button>
 
-            <Button
-              variant="contained"
-              color="primary"
-              size="small"
-              startIcon={<CloudUploadRounded />}
-              onClick={() => handleOpenUpload()}
-              sx={{
-                fontWeight: 700,
-                fontSize: '0.8125rem',
-                borderRadius: 2,
-                textTransform: 'none',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-              }}
-            >
-              Attach Screenshot
-            </Button>
-          </Box>
-        )}
+          {!readOnly && (
+            <>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={
+                  isGeneratingAutoChart ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : (
+                    <ElectricBoltRounded sx={{ color: '#06b6d4' }} />
+                  )
+                }
+                onClick={handleGenerateAutoChart}
+                disabled={isGeneratingAutoChart}
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.8125rem',
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  borderColor: 'rgba(6, 182, 212, 0.4)',
+                  color: '#06b6d4',
+                  '&:hover': {
+                    borderColor: '#06b6d4',
+                    backgroundColor: 'rgba(6, 182, 212, 0.08)',
+                  },
+                }}
+              >
+                {autoChartAttachment ? 'Regenerate Auto Chart' : 'Generate FYERS Chart'}
+              </Button>
+
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                startIcon={<CloudUploadRounded />}
+                onClick={() => handleOpenUpload()}
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.8125rem',
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                Attach Screenshot
+              </Button>
+            </>
+          )}
+        </Box>
       </Box>
 
       {/* Category Filter Tabs (if attachments exist) */}
@@ -374,7 +419,13 @@ export function TradeScreenshotGallery({
                 >
                   {/* Thumbnail Image Container */}
                   <Box
-                    onClick={() => openViewerAt(att.id)}
+                    onClick={() => {
+                      if (att.category === 'AUTO_CHART') {
+                        openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
+                      } else {
+                        openViewerAt(att.id);
+                      }
+                    }}
                     sx={{
                       position: 'relative',
                       height: 190,
@@ -445,36 +496,77 @@ export function TradeScreenshotGallery({
                       </Tooltip>
                     )}
 
-                    {/* Hover Overlay */}
+                    {/* Hover Overlay with Action Buttons */}
                     <Box
                       sx={{
                         position: 'absolute',
                         inset: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.45)',
                         opacity: 0,
                         transition: 'opacity 0.2s',
                         display: 'flex',
+                        flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        gap: 1,
+                        p: 1.5,
                         '&:hover': { opacity: 1 },
                       }}
                     >
                       <Box
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
+                        }}
                         sx={{
                           display: 'flex',
                           alignItems: 'center',
                           gap: 0.75,
-                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                          backgroundColor: 'rgba(6, 182, 212, 0.95)',
                           color: '#fff',
                           px: 2,
                           py: 0.75,
                           borderRadius: 2,
                           fontSize: '0.75rem',
-                          fontWeight: 700,
+                          fontWeight: 800,
                           backdropFilter: 'blur(4px)',
+                          boxShadow: '0 4px 12px rgba(6, 182, 212, 0.4)',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            backgroundColor: '#0891b2',
+                            transform: 'scale(1.03)',
+                          },
                         }}
                       >
-                        <VisibilityRounded sx={{ fontSize: 16 }} />
+                        <ShowChartRounded sx={{ fontSize: 16 }} />
+                        Interactive Real Chart
+                      </Box>
+
+                      <Box
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openViewerAt(att.id);
+                        }}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.75,
+                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                          color: '#e2e8f0',
+                          px: 1.75,
+                          py: 0.5,
+                          borderRadius: 2,
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          backdropFilter: 'blur(4px)',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                            transform: 'scale(1.03)',
+                          },
+                        }}
+                      >
+                        <VisibilityRounded sx={{ fontSize: 14 }} />
                         View Full Screen
                       </Box>
                     </Box>
@@ -531,6 +623,22 @@ export function TradeScreenshotGallery({
                       </Typography>
 
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Tooltip title="Open in Real Interactive TradingView Chart">
+                          <IconButton
+                            size="small"
+                            sx={{
+                              color: '#06b6d4',
+                              '&:hover': { backgroundColor: 'rgba(6, 182, 212, 0.15)' },
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
+                            }}
+                          >
+                            <CandlestickChartRounded fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+
                         <Tooltip title="Download Original">
                           <IconButton
                             size="small"
@@ -620,6 +728,16 @@ export function TradeScreenshotGallery({
         initialIndex={viewerIndex}
         symbol={symbol}
         onDelete={!readOnly ? handleDeleteAttachment : undefined}
+        onOpenInteractive={(res) => openInteractiveChart(res)}
+      />
+
+      {/* Real Interactive TradingView Modal */}
+      <InteractiveTradingViewModal
+        open={interactiveChartOpen}
+        onClose={() => setInteractiveChartOpen(false)}
+        tradeId={tradeId}
+        initialResolution={interactiveResolution}
+        symbol={symbol}
       />
 
       {/* Upload Screenshot Dialog */}

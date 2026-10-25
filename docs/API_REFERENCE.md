@@ -476,6 +476,52 @@ Authentication is handled via stateful sessions:
   - `200 OK`: Returns `{ "success": true, "data": { "stopLossMoveEvents": [...], "stopMoveSummary": {...} } }`.
   - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
 
+### `GET /api/v1/trades/:id/interactive-candles`
+- **Purpose:** Retrieve historical candlestick data and trade execution levels formatted for TradingView Lightweight Charts canvas.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Query Parameters:**
+  - `resolution`: Candlestick timeframe (`'1' | '3' | '5' | '15' | '30' | '60' | '240' | 'D'`). Default: `'5'`.
+  - `from`: Start timestamp or ISO date string (optional).
+  - `to`: End timestamp or ISO date string (optional).
+  - `preloadBefore`: Number of candles before entry to preload. Default: `150`.
+  - `preloadAfter`: Number of candles after exit to preload. Default: `50`.
+  - `force`: Force re-fetch from market data provider. Default: `false`.
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "trade": {
+          "id": "string",
+          "symbol": "string",
+          "direction": "LONG | SHORT",
+          "entryPrice": 24500,
+          "exitPrice": 24650,
+          "entryTime": "2026-10-23T04:00:00.000Z",
+          "exitTime": "2026-10-23T04:45:00.000Z",
+          "stopLoss": 24450,
+          "takeProfit": 24700,
+          "pnl": 7463,
+          "realizedRMultiple": 3.0,
+          "strategyName": "SWEEP TO FILL",
+          "setup": { "variantKey": "W-SWEEP" }
+        },
+        "candles": [
+          { "time": 1792728000, "open": 24480, "high": 24495, "low": 24470, "close": 24488, "volume": 12000 }
+        ],
+        "resolution": "5",
+        "provider": "FYERS",
+        "isUnderlyingFallback": false,
+        "symbol": "NSE:NIFTY50-INDEX",
+        "firstTime": 1792728000,
+        "lastTime": 1792737000
+      }
+    }
+    ```
+  - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
+  - `404 NO_CANDLE_DATA`: If neither provider nor cached snapshots contain candle data for this trade.
+
 ---
 
 ## 6. Dashboard & Analytics (`/api/v1/dashboard`, `/api/v1/analytics`)

@@ -119,6 +119,19 @@ export function TradeFormModal({
   });
   const recentTrades = recentTradesResponse?.data || [];
 
+  // When editing from ledger/tables where full attachments may not be populated, load full trade data
+  const { data: fullTradeData } = useQuery({
+    queryKey: ['trade', editTradeId],
+    queryFn: () => api.trades.get(editTradeId!),
+    enabled: Boolean(editTradeId && isOpen && (!initialValues?.attachments || initialValues.attachments.length === 0)),
+  });
+
+  useEffect(() => {
+    if (fullTradeData?.attachments && Array.isArray(fullTradeData.attachments) && fullTradeData.attachments.length > 0) {
+      setExistingAttachments(fullTradeData.attachments);
+    }
+  }, [fullTradeData]);
+
   const initialAccountId =
     defaultAccountId ||
     rememberedPrefs.preferredAccountId ||
@@ -302,6 +315,10 @@ export function TradeFormModal({
         }
 
         if (entryP > 0 && qty > 0) {
+          const matchedAcc = accounts.find(
+            (a: any) => a.id === (typeof initialValues.accountId === 'object' ? initialValues.accountId?.id || initialValues.accountId?._id : initialValues.accountId)
+          );
+          const brokerCode = matchedAcc?.broker || initialValues.accountId?.broker;
           const autoCharges = IndianChargesCalculator.calculate(
             initialAssetClass,
             initialMarketSegment,
@@ -310,7 +327,7 @@ export function TradeFormModal({
             qty,
             mult,
             20,
-            initialValues.accountId?.broker
+            brokerCode
           );
           if (autoCharges) {
             initialExec = {

@@ -34,6 +34,7 @@ import SearchIcon from '@mui/icons-material/SearchRounded';
 import AddIcon from '@mui/icons-material/AddRounded';
 import DownloadIcon from '@mui/icons-material/DownloadRounded';
 import VisibilityIcon from '@mui/icons-material/VisibilityRounded';
+import EditIcon from '@mui/icons-material/EditRounded';
 import ContentCopyIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
 import LocalOfferIcon from '@mui/icons-material/LocalOfferRounded';
@@ -125,6 +126,7 @@ export function TradesPage() {
 
   // Modals
   const [isNewTradeModalOpen, setIsNewTradeModalOpen] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<any | null>(null);
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
 
   // Query strategies for filtering and bulk classifying
@@ -888,6 +890,18 @@ export function TradesPage() {
                               <VisibilityIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
+                          <Tooltip title="Edit Trade" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => setEditingTrade(t)}
+                              sx={{
+                                color: muiTheme.palette.text.secondary,
+                                '&:hover': { color: muiTheme.palette.primary.main },
+                              }}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Duplicate Setup" arrow>
                             <IconButton
                               size="small"
@@ -990,6 +1004,16 @@ export function TradesPage() {
         onClose={() => setIsNewTradeModalOpen(false)}
         defaultAccountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
       />
+
+      {/* Edit Trade Modal */}
+      {editingTrade && (
+        <TradeFormModal
+          isOpen={Boolean(editingTrade)}
+          onClose={() => setEditingTrade(null)}
+          editTradeId={editingTrade.id || editingTrade._id}
+          initialValues={editingTrade}
+        />
+      )}
 
       {/* Bulk Tag Dialog */}
       <Dialog

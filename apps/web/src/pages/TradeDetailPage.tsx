@@ -462,6 +462,7 @@ export function TradeDetailPage() {
               <Button
                 component={RouterLink}
                 to={`/strategies/${trade.strategyId}/analytics`}
+                state={{ from: `/trades/${trade.id || trade._id}` }}
                 size="small"
                 variant="outlined"
                 startIcon={<InsightsRoundedIcon fontSize="small" />}

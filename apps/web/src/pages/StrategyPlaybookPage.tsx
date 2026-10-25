@@ -973,6 +973,7 @@ export function StrategyPlaybookPage() {
                               color="primary"
                               component={RouterLink}
                               to={`/strategies/${strat.id || strat._id}/analytics`}
+                              state={{ from: '/strategies' }}
                               sx={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'none', py: 0.25 }}
                             >
                               Compare Variants

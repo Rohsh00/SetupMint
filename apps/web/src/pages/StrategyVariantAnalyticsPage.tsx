@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useParams, useNavigate, Link as RouterLink, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link as RouterLink, useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -56,9 +56,28 @@ type SortColumn =
 export function StrategyVariantAnalyticsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const { selectedAccountId } = useOutletContext<{ selectedAccountId?: string }>() || {};
+
+  const backTarget = (location.state as any)?.from;
+
+  const handleBack = () => {
+    if (backTarget) {
+      navigate(backTarget);
+    } else if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/strategies');
+    }
+  };
+
+  const backTooltipTitle = backTarget?.includes('/trades/')
+    ? 'Back to Trade'
+    : backTarget === '/strategies'
+    ? 'Back to Playbook'
+    : 'Back';
 
   // Filter states
   const [datePreset, setDatePreset] = useState<'ALL' | '30D' | '90D' | 'YTD'>('ALL');
@@ -224,8 +243,8 @@ export function StrategyVariantAnalyticsPage() {
         <Alert severity="error" sx={{ mb: 2 }}>
           Failed to load analytics: {(analyticsError as any)?.message || 'Strategy not found or no data available'}
         </Alert>
-        <Button startIcon={<ArrowBackIcon />} component={RouterLink} to="/strategies">
-          Back to Playbook
+        <Button startIcon={<ArrowBackIcon />} onClick={handleBack}>
+          {backTooltipTitle}
         </Button>
       </Box>
     );
@@ -238,8 +257,8 @@ export function StrategyVariantAnalyticsPage() {
       {/* Header & Breadcrumb */}
       <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Tooltip title="Back to Playbook" arrow>
-            <IconButton component={RouterLink} to="/strategies" sx={{ border: `1px solid ${muiTheme.palette.divider}` }}>
+          <Tooltip title={backTooltipTitle} arrow>
+            <IconButton onClick={handleBack} sx={{ border: `1px solid ${muiTheme.palette.divider}` }}>
               <ArrowBackIcon />
             </IconButton>
           </Tooltip>

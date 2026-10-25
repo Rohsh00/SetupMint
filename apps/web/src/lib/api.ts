@@ -221,11 +221,30 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(options || {}),
       }),
-    generateChart: (id: string, force?: boolean, provider?: 'AUTO' | 'ANGEL_ONE') =>
-      request<any>(`/trades/${id}/chart/generate`, {
+    generateChart: (
+      id: string,
+      optionsOrForce?:
+        | boolean
+        | {
+            force?: boolean;
+            provider?: 'AUTO' | 'ANGEL_ONE';
+            resolutions?: string[];
+            paddingBefore?: number;
+            paddingAfter?: number;
+          },
+      legacyProvider?: 'AUTO' | 'ANGEL_ONE'
+    ) => {
+      let body: Record<string, any> = {};
+      if (typeof optionsOrForce === 'boolean') {
+        body = { force: optionsOrForce, provider: legacyProvider };
+      } else if (optionsOrForce) {
+        body = optionsOrForce;
+      }
+      return request<any>(`/trades/${id}/chart/generate`, {
         method: 'POST',
-        body: JSON.stringify({ force, provider }),
-      }),
+        body: JSON.stringify(body),
+      });
+    },
     detectStopMoves: (id: string, manualModifications?: any[]) =>
       request<any>(`/trades/${id}/stop-moves/detect`, {
         method: 'POST',

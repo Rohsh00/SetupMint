@@ -15,6 +15,7 @@ import {
   stopMoveDetectionSchema,
   excursionComputeOptionsSchema,
   chartGenerateOptionsSchema,
+  generateChartSchema,
   TradeOutcome,
 } from '@tradevault/shared';
 import {
@@ -1089,12 +1090,12 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
   );
 
-  // Generate automated SVG execution chart from candlestick data
+  // Generate automated SVG execution charts from candlestick data
   app.post(
     '/:id/chart/generate',
     { preHandler: [validateObjectIdParam('id')] },
     async (req: any, reply) => {
-      const parsedBody = chartGenerateOptionsSchema.safeParse(req.body || {});
+      const parsedBody = generateChartSchema.safeParse(req.body || {});
       if (!parsedBody.success) {
         return reply.status(400).send({
           success: false,
@@ -1125,36 +1126,51 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
 
       try {
-        const force = Boolean(parsedBody.data.force);
-        const attachment = await ChartGeneratorService.createAndSaveAutoChartForTrade(
+        const { force, provider, resolutions, paddingBefore, paddingAfter } = parsedBody.data;
+        const results = await ChartGeneratorService.generateAutoChartsForTrade(
           trade._id,
           req.user!.id,
-          { force, provider: parsedBody.data.provider }
+          {
+            force,
+            provider,
+            resolutions,
+            paddingBefore,
+            paddingAfter,
+          }
         );
+
+        // If resolutions was explicitly requested, return the multi-item envelope
+        if (resolutions && resolutions.length > 0) {
+          return reply.status(200).send({
+            success: true,
+            data: {
+              results,
+            },
+          });
+        }
+
+        // Legacy path (no resolutions specified): return single attachment or error
+        const primary = results[0];
+        if (!primary || primary.status === 'FAILED') {
+          return reply.status(500).send({
+            success: false,
+            error: {
+              code: primary?.errorCode || 'CHART_GENERATION_FAILED',
+              message: 'Failed to generate automated chart screenshot',
+            },
+          });
+        }
 
         return reply.status(201).send({
           success: true,
-          data: {
-            id: attachment._id.toString(),
-            tradeId: trade._id.toString(),
-            originalName: attachment.originalName,
-            category: attachment.category,
-            caption: attachment.description,
-            description: attachment.description,
-            timeframe: attachment.timeframe,
-            chartTimestamp: attachment.chartTimestamp,
-            sizeBytes: attachment.sizeBytes,
-            mimeType: attachment.mimeType,
-            downloadUrl: `/api/v1/attachments/${attachment._id}/download`,
-            uploadedAt: attachment.createdAt.toISOString(),
-          },
+          data: primary.attachment,
         });
       } catch (err: any) {
         req.log.error('Auto chart generation failed for trade %s: %s', trade._id, err.message);
         return reply.status(500).send({
           success: false,
           error: {
-            code: 'CHART_GENERATION_FAILED',
+            code: err.code || 'CHART_GENERATION_FAILED',
             message: err.message || 'Failed to generate automated chart screenshot',
           },
         });

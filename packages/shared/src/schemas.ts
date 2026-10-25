@@ -544,9 +544,25 @@ export const excursionComputeOptionsSchema = z.object({
   provider: z.enum(['AUTO', 'ANGEL_ONE']).default('AUTO'),
 });
 
-export const chartGenerateOptionsSchema = z.object({
-  force: z.boolean().optional(),
-  provider: z.enum(['AUTO', 'ANGEL_ONE']).default('AUTO'),
-});
+export const chartResolutionSchema = z.enum(['1', '5', '15', '30', '60', 'D']);
+
+export const generateChartSchema = z
+  .object({
+    force: z.boolean().default(false),
+    provider: z.enum(['AUTO', 'ANGEL_ONE']).default('AUTO'),
+    resolutions: z
+      .array(chartResolutionSchema)
+      .min(1)
+      .max(5)
+      .refine((items) => new Set(items).size === items.length, {
+        message: 'Resolutions must be unique',
+      })
+      .optional(),
+    paddingBefore: z.number().int().min(0).max(200).default(45),
+    paddingAfter: z.number().int().min(0).max(200).default(45),
+  })
+  .strict();
+
+export const chartGenerateOptionsSchema = generateChartSchema;
 
 

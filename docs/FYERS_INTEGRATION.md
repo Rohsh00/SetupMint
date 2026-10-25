@@ -91,10 +91,16 @@ SetupMint queries FYERS historical market data to calculate Maximum Favorable Ex
    - Weekly Options: `{EX}:{UNDERLYING}{YY}{M}{DD}{STRIKE}{OPT}` where month `M` is 1-9 for Jan-Sep and O, N, D for Oct, Nov, Dec.
    - Monthly Options: `{EX}:{UNDERLYING}{YY}{MMM}{STRIKE}{OPT}`
    - Futures: `{EX}:{UNDERLYING}{YY}{MMM}FUT`
-2. **Adaptive Resolution:** Trades with duration $\le 4\text{ hours}$ use 1-minute candles (`resolution: '1'`); longer trades use 5-minute candles (`resolution: '5'`).
-3. **Snapshot Caching:** Candlestick responses are stored in `TradeCandleSnapshot` (`{ userId, tradeId, resolution }`), eliminating duplicate broker queries.
-4. **Rate Limiting & Backoff:** Background backfill scripts enforce FYERS rate limits (5 requests/sec, 220ms delay per request) with exponential backoff on HTTP 429.
-5. **Auto-Triggering:** FYERS sync automatically computes excursion metrics for newly closed trades synced during the session.
+2. **Adaptive Resolution & Multi-Timeframe Grouping:**
+   - Trades with duration $\le 4\text{ hours}$ default to 1-minute candles (`resolution: '1'`); longer trades default to 5-minute candles (`resolution: '5'`).
+   - For chart generation, timeframes are grouped by base resolution (`'1'` -> 1m; `'5'`, `'15'`, `'30'`, `'60'` -> 5m; `'D'` -> Daily). Intermediate timeframes are derived via pure `aggregateCandles` anchored to IST session opens (`09:15` NSE / `09:00` MCX).
+3. **Fetch Range Estimation & Snapshot Caching:**
+   - Pre-entry and post-exit padding ranges are calculated with trading calendar buffers via `estimateFetchRange`.
+   - Base fetches use the union range of all requested target timeframes sharing that base.
+   - Candlestick responses are stored in `TradeCandleSnapshot` (`{ userId, tradeId, resolution }`) with `coverageFrom` and `coverageTo` timestamps. A cached snapshot is reused only if it covers the entire required range; otherwise, the wider range is re-fetched and merged. Legacy snapshots without explicit coverage dates are backfilled from their first to last candle timestamps.
+4. **Excursion Calculation Invariance:** Excursion metrics (MAE, MFE, Exit Efficiency) always filter strictly to the trade entry-to-exit overlap on the finest available candles. Widening cached candle snapshots for chart padding never alters stored excursion metrics or P&L.
+5. **Rate Limiting & Backoff:** Historical candle fetchers enforce strict broker pacing (220ms delay per request for FYERS, 340ms for Angel One) with exponential backoff on HTTP 429.
+6. **Auto-Triggering:** FYERS sync automatically computes excursion metrics for newly closed trades synced during the session.
 
 ---
 

@@ -555,6 +555,16 @@ export type AttachmentCategory =
   | 'ATTACHMENT'
   | 'AUTO_CHART';
 
+export interface IChartMeta {
+  resolution: string;
+  paddingBefore: number;
+  paddingAfter: number;
+  appliedBefore: number;
+  appliedAfter: number;
+  truncated: boolean;
+  generatedAt: string;
+}
+
 export interface IAttachment {
   id: string;
   userId: string;
@@ -568,8 +578,27 @@ export interface IAttachment {
   description?: string;
   timeframe?: string;
   chartTimestamp?: string;
+  chartMeta?: IChartMeta;
   downloadUrl?: string;
   createdAt: string;
+}
+
+export interface IChartGenerateResult {
+  resolution: string;
+  timeframe: string;
+  status: 'CREATED' | 'REPLACED' | 'SKIPPED_EXISTS' | 'FAILED';
+  attachment?: IAttachment;
+  errorCode?: string;
+  requestedBefore: number;
+  requestedAfter: number;
+  appliedBefore: number;
+  appliedAfter: number;
+  truncated: boolean;
+  warnings: string[];
+}
+
+export interface IChartGenerateResponse {
+  results: IChartGenerateResult[];
 }
 
 export interface IAuditEntry {

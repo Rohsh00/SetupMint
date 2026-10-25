@@ -53,6 +53,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
+import { GenerateExecutionChartsPanel } from '../components/trades/GenerateExecutionChartsPanel.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 
 export function TradeDetailPage() {
@@ -165,23 +166,6 @@ export function TradeDetailPage() {
     },
   });
 
-  const generateChartMutation = useMutation({
-    mutationFn: (args?: { force?: boolean; provider?: 'AUTO' | 'ANGEL_ONE' } | boolean) => {
-      const force = typeof args === 'boolean' ? args : args?.force ?? true;
-      const provider = typeof args === 'object' ? args?.provider : undefined;
-      return api.trades.generateChart(id!, force, provider);
-    },
-    onSuccess: () => {
-      setActionError(null);
-      toast.success('Automated execution chart generated successfully.');
-      queryClient.invalidateQueries({ queryKey: ['trade', id] });
-    },
-    onError: (err: any) => {
-      const msg = err.message || 'Failed to generate automated chart screenshot';
-      setActionError(msg);
-      toast.error(msg);
-    },
-  });
 
   const detectStopMovesMutation = useMutation({
     mutationFn: () => api.trades.detectStopMoves(id!),
@@ -850,15 +834,11 @@ export function TradeDetailPage() {
                     <Button
                       size="small"
                       variant="outlined"
-                      startIcon={
-                        generateChartMutation.isPending ? (
-                          <CircularProgress size={14} color="inherit" />
-                        ) : (
-                          <ElectricBoltRoundedIcon fontSize="small" sx={{ color: '#06b6d4' }} />
-                        )
-                      }
-                      disabled={generateChartMutation.isPending}
-                      onClick={() => generateChartMutation.mutate(true)}
+                      startIcon={<ElectricBoltRoundedIcon fontSize="small" sx={{ color: '#06b6d4' }} />}
+                      onClick={() => {
+                        const el = document.getElementById('execution-charts-panel');
+                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      }}
                       sx={{
                         textTransform: 'none',
                         fontWeight: 600,
@@ -871,9 +851,7 @@ export function TradeDetailPage() {
                         },
                       }}
                     >
-                      {trade.attachments?.some((a: any) => a.category === 'AUTO_CHART')
-                        ? 'Regenerate Chart'
-                        : 'Generate Chart'}
+                      Execution Charts
                     </Button>
 
                     <Button
@@ -1509,6 +1487,19 @@ export function TradeDetailPage() {
           </Box>
         )}
       </Card>
+
+      {/* Automated Execution Charts Generator Panel */}
+      <Box id="execution-charts-panel">
+        <GenerateExecutionChartsPanel
+          tradeId={id!}
+          symbol={trade.symbol}
+          status={trade.status}
+          entryDate={trade.entryDate}
+          exitDate={trade.exitDate}
+          attachments={trade.attachments || []}
+          onGenerated={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
+        />
+      </Box>
 
       {/* Chart Screenshots & Visual Review Gallery */}
       <TradeScreenshotGallery

@@ -387,14 +387,53 @@ Authentication is handled via stateful sessions:
   - `409 BROKER_NOT_CONNECTED`: If FYERS broker is not connected for the user.
 
 ### `POST /api/v1/trades/:id/chart/generate`
-- **Purpose:** Server-side automated generation of TradingView-grade dark-mode SVG candlestick chart from cached/fetched FYERS historical candles with entry/exit/stop/target/excursion overlays, persisted to Cloudflare R2 and attached to the trade as `AUTO_CHART`.
+- **Purpose:** Server-side automated generation of TradingView-grade dark-mode SVG candlestick execution charts with user-selected multi-timeframes ('1', '5', '15', '30', '60', 'D') and configurable pre-entry and post-exit candle padding (0..200, default 45 each). Persisted to Cloudflare R2 and attached to the trade as `AUTO_CHART`.
 - **Auth:** **Required** (enforces tenant isolation).
-- **Request Body:** `{ "force"?: boolean }` (if `true`, regenerates and replaces any previous auto chart).
+- **Request Body:**
+  ```json
+  {
+    "force": false,
+    "resolutions": ["1", "5", "15"],
+    "paddingBefore": 45,
+    "paddingAfter": 45,
+    "provider": "AUTO"
+  }
+  ```
+  - `force` *(optional boolean, default `false`)*: If `true`, replaces existing charts of matching timeframes (cleaning up older R2 storage objects and `screenshotIds`).
+  - `resolutions` *(optional array of strings `['1','5','15','30','60','D']`, 1..5 items, unique)*: Specific timeframes to generate. If omitted, triggers legacy auto-pick (`trade <= 4h -> '1', else '5'`).
+  - `paddingBefore` *(optional integer `0..200`, default `45`)*: Number of timeframe candles to display before trade entry.
+  - `paddingAfter` *(optional integer `0..200`, default `45`)*: Number of timeframe candles to display after trade exit.
 - **Responses:**
-  - `201 Created`: Returns `{ "success": true, "data": IAttachment }` with `category: "AUTO_CHART"` and `downloadUrl`.
+  - `200 OK` *(when `resolutions` is provided)*: Multi-item execution envelope:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "results": [
+          {
+            "resolution": "5",
+            "timeframe": "5m",
+            "status": "CREATED",
+            "attachment": { "id": "...", "category": "AUTO_CHART", "downloadUrl": "..." },
+            "requestedBefore": 45,
+            "requestedAfter": 45,
+            "appliedBefore": 45,
+            "appliedAfter": 45,
+            "truncated": false,
+            "warnings": []
+          }
+        ]
+      }
+    }
+    ```
+    - Status values: `'CREATED'`, `'REPLACED'`, `'SKIPPED_EXISTS'`, `'FAILED'`.
+    - Warning codes: `'PADDING_REDUCED_LOOKBACK'`, `'PADDING_REDUCED_DATA'`, `'WINDOW_TRUNCATED'`, `'UNDERLYING_FALLBACK'`.
+    - Failure error codes: `'OUTSIDE_PROVIDER_LOOKBACK'`, `'EMPTY_RESULT'`, `'DAILY_BUDGET_EXHAUSTED'`, `'NOT_CONNECTED'`, `'TOKEN_EXPIRED'`, `'CIRCUIT_OPEN'`, `'NO_SYMBOL_TOKEN'`, `'ATTACHMENT_LIMIT_EXCEEDED'`, `'CHART_GENERATION_FAILED'`.
+  - `201 Created` *(legacy path when `resolutions` is omitted)*: Returns `{ "success": true, "data": IAttachment }` for backwards compatibility with single-chart consumers.
+  - `400 VALIDATION_ERROR`: If parameters are invalid (e.g. padding < 0 or > 200, non-integer, duplicate resolutions, > 5 resolutions, or unknown fields).
   - `400 TRADE_NOT_CLOSED`: If trade status is not `'CLOSED'`.
   - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
-  - `500 CHART_GENERATION_FAILED`: If historical candles are unavailable or chart rendering fails.
+  - `500 CHART_GENERATION_FAILED`: If legacy generation fails.
 
 ### `POST /api/v1/trades/:id/stop-moves/detect`
 - **Purpose:** Detect trailing vs risk-widening stop-loss modifications from the connected FYERS orderbook or manual order sequence, calculate point deltas, persist `stopLossMoveEvents` and `calculated.stopMoveSummary`, and automatically flag `STOP_MOVED` mistake tag if risk was widened.

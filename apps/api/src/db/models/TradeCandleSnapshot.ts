@@ -10,6 +10,8 @@ export interface ITradeCandleSnapshotDoc extends Document {
   provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
   isUnderlyingFallback?: boolean;
   droppedRowsCount?: number;
+  coverageFrom?: Date;
+  coverageTo?: Date;
   fetchedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -63,6 +65,12 @@ const TradeCandleSnapshotSchema = new Schema<ITradeCandleSnapshotDoc>(
     droppedRowsCount: {
       type: Number,
       default: 0,
+    },
+    coverageFrom: {
+      type: Date,
+    },
+    coverageTo: {
+      type: Date,
     },
     fetchedAt: {
       type: Date,

@@ -445,14 +445,16 @@ Child variants are **fully user-defined**. The application contains no hardcoded
 | `storedFilename` | `String` | **Yes** | — | Unique | Server UUID filename on disk |
 | `mimeType` | `String` | **Yes** | — | Validated magic bytes | `image/png`, `image/jpeg`, `image/webp` |
 | `sizeBytes` | `Number` | **Yes** | — | Max 10MB | File size in bytes |
-| `category` | `String` | No | `'ENTRY'` | Enum: `['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT']` | Screenshot trade phase |
+| `category` | `String` | No | `'ENTRY'` | Enum: `['SETUP', 'ENTRY', 'EXIT', 'REVIEW', 'OTHER', 'BEFORE_ENTRY', 'ANNOTATED', 'ATTACHMENT', 'AUTO_CHART']` | Screenshot trade phase |
 | `description` | `String` | No | — | — | Caption or description |
-| `timeframe` | `String` | No | — | — | Chart timeframe (e.g. 5m, 1h) |
+| `timeframe` | `String` | No | — | — | Chart timeframe (e.g. 1m, 5m, 15m, 30m, 1h, 1D) |
 | `chartTimestamp`| `String` | No | — | — | Timestamp on the chart |
+| `chartMeta` | `Object` | No | — | Subdocument | Generation metadata: `{ resolution, paddingBefore, paddingAfter, appliedBefore, appliedAfter, truncated, generatedAt }` |
 
 **Compound Indexes:**
 - `{ userId: 1, tradeId: 1 }`
 - `{ tradeId: 1, category: 1 }`
+- `{ tradeId: 1, category: 1, timeframe: 1 }`
 
 ---
 
@@ -612,6 +614,8 @@ Stores immutable, cached historical 1-minute and 5-minute candlestick snapshots 
 | `provider` | `String` | No | `'FYERS'` | Enum: `['FYERS', 'ANGEL_ONE', 'UNDERLYING']` | Candle provider source |
 | `isUnderlyingFallback` | `Boolean` | No | `false` | Boolean | True if derivative fell back to underlying index/stock candles |
 | `droppedRowsCount` | `Number` | No | `0` | Number | Count of malformed/duplicate candles dropped during normalization |
+| `coverageFrom` | `Date` | No | — | Timestamp | Earliest timestamp covered by cached snapshot |
+| `coverageTo` | `Date` | No | — | Timestamp | Latest timestamp covered by cached snapshot |
 | `fetchedAt` | `Date` | No | `Date.now` | — | Timestamp of API response |
 | `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
 | `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |

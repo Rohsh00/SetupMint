@@ -140,21 +140,49 @@ SetupMint allows traders to organize charts by trade progression:
 
 ---
 
-## 7. Server-Side Automated Candlestick Chart Generation (FYERS Market Data)
+## 7. Server-Side Automated Candlestick Execution Charts (Multi-Timeframe & Padding)
 
-SetupMint includes an automated server-side SVG chart generator (`ChartGeneratorService`) that converts FYERS historical candlestick snapshots into production TradingView-grade dark-mode SVG charts:
+SetupMint includes an automated server-side SVG chart generator (`ChartGeneratorService`) that converts market data historical candlestick snapshots into production TradingView-grade dark-mode SVG charts:
 
-- **Data Source:** Cached `TradeCandleSnapshot` records fetched from FYERS API v3 historical candlestick endpoint (`GET /data/history`).
-- **Candlestick Engine:** Pure SVG rendering of bullish (emerald `#10b981`) and bearish (rose `#f43f5e`) candle bodies and wicks with dynamic bar spacing and 5 horizontal price gridlines.
+- **Data Sources & Fallback Chain:**
+  1. Cached `TradeCandleSnapshot` (if coverage covers required range).
+  2. FYERS API v3 historical candlestick endpoint (`GET /data/history`).
+  3. Angel One SmartAPI historical candle endpoint (fallback).
+  4. Underlying cash index proxy fallback for option derivatives.
+- **Base Resolution Grouping & In-Memory Aggregation:**
+  - Base provider fetches are grouped: `'1'` -> 1m; `'5'` -> 5m; `'D'` -> Daily.
+  - Intermediate timeframes (`15m`, `30m`, `1h`) are synthesized in-memory via `aggregateCandles` anchored to IST session opens (`09:15` for NSE, `09:00` for MCX), never the Unix epoch.
+- **Window Selection & Candle Padding:**
+  - Evaluated via pure `selectChartWindow` in `@tradevault/financial-engine`.
+  - Padding is counted in **candles of the selected timeframe** (e.g. 45 candles on 15m is ~11h 15m; 45 candles on 1D is 45 trading days).
+  - Handles gaps, weekends, and holidays naturally as no candles exist for non-trading intervals.
+  - If total window exceeds `MAX_RENDERED_CANDLES` (1,500), the trade execution window is preserved and pre/post padding are scaled down proportionally. If the execution span alone exceeds 1,500 candles, the window centers around entry/exit with zero padding and `truncated: true`.
+- **Candlestick Engine & Aesthetics:**
+  - Bullish (emerald `#10b981`) and bearish (rose `#f43f5e`) candle bodies and wicks with dynamic spacing.
+  - Subtle shaded band (`#0ea5e9` with 0.06 opacity) highlighting the active trade entry-to-exit execution window.
+  - Header displays symbol, timeframe, and padding (e.g. `NIFTY  5m  -45/+45`).
 - **Execution Overlays:**
-  - **Entry Level:** Cyan dashed line with right-hand pill badge `ENT: ₹X`, plus candle pinpoint marker with directional arrow (`▲ BUY` / `▼ SELL`).
-  - **Exit Level:** Purple dashed line with right-hand pill badge `EXIT: ₹X`, plus candle pinpoint marker `✕ EXIT @ ₹X`.
+  - **Entry Level:** Cyan dashed line with right-hand pill badge `ENT: ₹X`, plus candle pinpoint marker with directional arrow (`▲ BUY` / `▼ SELL`). Snaps to containing candle.
+  - **Exit Level:** Purple dashed line with right-hand pill badge `EXIT: ₹X`, plus candle pinpoint marker `✕ EXIT @ ₹X`. Snaps to containing candle.
   - **Stop Loss Level:** Red dotted line with right-hand pill badge `SL: ₹X` (if initial stop loss defined).
   - **Target Level:** Green dotted line with right-hand pill badge `TP: ₹X` (if planned target defined).
-  - **Excursion HUD Box:** Real-time HUD inset displaying MFE (+pts, +R), MAE (-pts, -R), and Exit Efficiency (%) when calculated excursion metrics exist.
-- **Time Handling:** Uses `moment` exclusively for timestamp normalization, milestone time ticks, header date ranges, and watermark generation.
-- **Persistence & Cloudflare R2 Upload:** Chart SVGs are stored directly to R2 under `<uuid>.svg`, registered as `Attachment` records with `category: 'AUTO_CHART'`, and pushed to `trade.screenshotIds`.
-- **On-Demand Endpoint:** `POST /api/v1/trades/:id/chart/generate` (accepts `{ force?: boolean }` to regenerate and replace existing auto charts).
+  - **Excursion HUD Box:** Real-time HUD inset displaying MFE (+pts, +R), MAE (-pts, -R), and Exit Efficiency (%) reading from stored excursion calculations.
+- **Persistence & Cloudflare R2 Upload:** Chart SVGs are stored directly to R2 under `<uuid>.svg`, registered as `Attachment` records with `category: 'AUTO_CHART'`, `timeframe`, and `chartMeta`:
+  ```ts
+  chartMeta: {
+    resolution: string;
+    paddingBefore: number;
+    paddingAfter: number;
+    appliedBefore: number;
+    appliedAfter: number;
+    truncated: boolean;
+    generatedAt: Date;
+  }
+  ```
+- **Dedup & Cap Limits:**
+  - Dedup key: `{ tradeId, category: 'AUTO_CHART', timeframe }`.
+  - Net new attachments enforce the 12-screenshot cap up front (replacing an existing chart of the same timeframe counts as net zero).
+- **On-Demand Endpoint:** `POST /api/v1/trades/:id/chart/generate` supports multi-timeframe requests and legacy backwards-compatible single-chart calls.
 
 
 ---

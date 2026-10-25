@@ -98,11 +98,31 @@ export function TradeScreenshotGallery({
     }
   };
 
-  // Filter attachments based on category tab
-  const filteredAttachments = attachments.filter((att) => {
-    if (activeCategoryFilter === 'ALL') return true;
-    return att.category === activeCategoryFilter;
-  });
+  const TIMEFRAME_ORDER: Record<string, number> = {
+    '1m': 1,
+    '5m': 2,
+    '15m': 3,
+    '30m': 4,
+    '1h': 5,
+    '1D': 6,
+  };
+
+  // Filter attachments based on category tab and sort AUTO_CHARTs by timeframe order (1m to 1D)
+  const filteredAttachments = [...attachments]
+    .filter((att) => {
+      if (activeCategoryFilter === 'ALL') return true;
+      return att.category === activeCategoryFilter;
+    })
+    .sort((a, b) => {
+      if (a.category === 'AUTO_CHART' && b.category === 'AUTO_CHART') {
+        const tfA = a.timeframe || a.chartMeta?.resolution || '';
+        const tfB = b.timeframe || b.chartMeta?.resolution || '';
+        const orderA = TIMEFRAME_ORDER[tfA] ?? 99;
+        const orderB = TIMEFRAME_ORDER[tfB] ?? 99;
+        if (orderA !== orderB) return orderA - orderB;
+      }
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
 
   const handleOpenUpload = (defaultCat?: AttachmentCategory) => {
     setSelectedFile(null);
@@ -383,7 +403,7 @@ export function TradeScreenshotGallery({
                           <ElectricBoltRounded sx={{ fontSize: 13, color: '#06b6d4 !important' }} />
                         ) : undefined
                       }
-                      label={att.category === 'AUTO_CHART' ? 'FYERS Auto Chart' : catMeta?.label || att.category}
+                      label={att.category === 'AUTO_CHART' ? 'Auto Chart' : catMeta?.label || att.category}
                       size="small"
                       sx={{
                         position: 'absolute',
@@ -399,22 +419,30 @@ export function TradeScreenshotGallery({
                     />
 
                     {/* Timeframe Badge */}
-                    {att.timeframe && (
-                      <Chip
-                        icon={<AccessTimeRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
-                        label={att.timeframe}
-                        size="small"
-                        sx={{
-                          position: 'absolute',
-                          top: 10,
-                          right: 10,
-                          fontWeight: 700,
-                          fontSize: '0.6875rem',
-                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                          color: '#fff',
-                          backdropFilter: 'blur(6px)',
-                        }}
-                      />
+                    {(att.timeframe || att.chartMeta?.resolution) && (
+                      <Tooltip
+                        title={
+                          att.chartMeta
+                            ? `Padding: ${att.chartMeta.appliedBefore ?? att.chartMeta.paddingBefore} pre / ${att.chartMeta.appliedAfter ?? att.chartMeta.paddingAfter} post`
+                            : ''
+                        }
+                      >
+                        <Chip
+                          icon={<AccessTimeRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
+                          label={att.timeframe || att.chartMeta?.resolution}
+                          size="small"
+                          sx={{
+                            position: 'absolute',
+                            top: 10,
+                            right: 10,
+                            fontWeight: 700,
+                            fontSize: '0.6875rem',
+                            backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(6, 182, 212, 0.85)' : 'rgba(0, 0, 0, 0.75)',
+                            color: '#fff',
+                            backdropFilter: 'blur(6px)',
+                          }}
+                        />
+                      </Tooltip>
                     )}
 
                     {/* Hover Overlay */}

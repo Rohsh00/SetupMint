@@ -355,15 +355,29 @@ export class MarketDataService {
     const { trade, resolution, from, to, userId, forceRefetch, provider = 'AUTO' } = params;
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
-    // 1. Check cached snapshot
-    if (!forceRefetch) {
-      const snapshot = await TradeCandleSnapshot.findOne({
-        userId: uId,
-        tradeId: trade._id,
-        resolution,
-      });
+    let partialSnapshot: any = null;
 
-      if (snapshot && snapshot.candles && snapshot.candles.length > 0) {
+    // 1. Check cached snapshot
+    const snapshot = await TradeCandleSnapshot.findOne({
+      userId: uId,
+      tradeId: trade._id,
+      resolution,
+    });
+
+    if (snapshot && snapshot.candles && snapshot.candles.length > 0) {
+      let covFrom = snapshot.coverageFrom;
+      let covTo = snapshot.coverageTo;
+
+      if (!covFrom || !covTo) {
+        // Backfill legacy snapshot coverage from first to last candle timestamp
+        const firstT = snapshot.candles[0].t;
+        const lastT = snapshot.candles[snapshot.candles.length - 1].t;
+        covFrom = new Date(firstT < 1e11 ? firstT * 1000 : firstT);
+        covTo = new Date(lastT < 1e11 ? lastT * 1000 : lastT);
+      }
+
+      // Reuse cached snapshot only if not forceRefetch and it covers the required range [from, to]
+      if (!forceRefetch && covFrom.getTime() <= from.getTime() && covTo.getTime() >= to.getTime()) {
         return {
           ok: true,
           candles: snapshot.candles,
@@ -374,6 +388,8 @@ export class MarketDataService {
           droppedRowsCount: snapshot.droppedRowsCount || 0,
         };
       }
+
+      partialSnapshot = snapshot;
     }
 
     // 2. Explicit Angel One requested
@@ -400,7 +416,7 @@ export class MarketDataService {
       });
 
       if (res.ok) {
-        await this.persistSnapshot(uId, trade._id, res);
+        await this.persistSnapshot(uId, trade._id, res, from, to);
       }
       return res;
     }
@@ -421,7 +437,7 @@ export class MarketDataService {
         });
 
         if (fyersResult.ok && fyersResult.candles.length > 0) {
-          await this.persistSnapshot(uId, trade._id, fyersResult);
+          await this.persistSnapshot(uId, trade._id, fyersResult, from, to);
           return fyersResult;
         }
       }
@@ -443,7 +459,7 @@ export class MarketDataService {
         });
 
         if (angelResult.ok && angelResult.candles.length > 0) {
-          await this.persistSnapshot(uId, trade._id, angelResult);
+          await this.persistSnapshot(uId, trade._id, angelResult, from, to);
           return angelResult;
         }
       }
@@ -464,7 +480,7 @@ export class MarketDataService {
           isUnderlyingFallback: true,
         });
         if (undFyers.ok && undFyers.candles.length > 0) {
-          await this.persistSnapshot(uId, trade._id, undFyers);
+          await this.persistSnapshot(uId, trade._id, undFyers, from, to);
           return undFyers;
         }
       } catch {
@@ -482,12 +498,25 @@ export class MarketDataService {
           isUnderlyingFallback: true,
         });
         if (undAngel.ok && undAngel.candles.length > 0) {
-          await this.persistSnapshot(uId, trade._id, undAngel);
+          await this.persistSnapshot(uId, trade._id, undAngel, from, to);
           return undAngel;
         }
       } catch {
         // Fallback chain exhausted
       }
+    }
+
+    // If provider fetch failed, but we had a partial cached snapshot, fallback to it
+    if (partialSnapshot) {
+      return {
+        ok: true,
+        candles: partialSnapshot.candles,
+        resolution: partialSnapshot.resolution,
+        provider: partialSnapshot.provider || 'FYERS',
+        isUnderlyingFallback: Boolean(partialSnapshot.isUnderlyingFallback),
+        symbol: partialSnapshot.symbol,
+        droppedRowsCount: partialSnapshot.droppedRowsCount || 0,
+      };
     }
 
     // If FYERS returned an explicit error reason, preserve it; otherwise indicate no candles found
@@ -503,18 +532,55 @@ export class MarketDataService {
   private static async persistSnapshot(
     userId: mongoose.Types.ObjectId,
     tradeId: mongoose.Types.ObjectId,
-    result: CandleProviderResult & { ok: true }
+    result: CandleProviderResult & { ok: true },
+    requestedFrom?: Date,
+    requestedTo?: Date
   ): Promise<void> {
+    const firstT = result.candles.length > 0 ? result.candles[0].t : 0;
+    const lastT = result.candles.length > 0 ? result.candles[result.candles.length - 1].t : 0;
+    const candleStart = firstT ? new Date(firstT < 1e11 ? firstT * 1000 : firstT) : new Date();
+    const candleEnd = lastT ? new Date(lastT < 1e11 ? lastT * 1000 : lastT) : new Date();
+
+    const existing = await TradeCandleSnapshot.findOne({
+      userId,
+      tradeId,
+      resolution: result.resolution,
+    });
+
+    let covFrom = requestedFrom || candleStart;
+    let covTo = requestedTo || candleEnd;
+
+    if (existing?.coverageFrom && existing.coverageFrom.getTime() < covFrom.getTime()) {
+      covFrom = existing.coverageFrom;
+    }
+    if (existing?.coverageTo && existing.coverageTo.getTime() > covTo.getTime()) {
+      covTo = existing.coverageTo;
+    }
+
+    // Merge existing and new candles without duplicates
+    const candleMap = new Map<number, any>();
+    if (existing?.candles) {
+      for (const c of existing.candles) {
+        candleMap.set(c.t, c);
+      }
+    }
+    for (const c of result.candles) {
+      candleMap.set(c.t, c);
+    }
+    const mergedCandles = Array.from(candleMap.values()).sort((a, b) => a.t - b.t);
+
     await TradeCandleSnapshot.findOneAndUpdate(
       { userId, tradeId, resolution: result.resolution },
       {
         $set: {
           symbol: result.symbol,
           resolution: result.resolution,
-          candles: result.candles,
+          candles: mergedCandles,
           provider: result.provider,
           isUnderlyingFallback: result.isUnderlyingFallback,
           droppedRowsCount: result.droppedRowsCount,
+          coverageFrom: covFrom,
+          coverageTo: covTo,
           fetchedAt: new Date(),
         },
       },

@@ -1109,6 +1109,24 @@ export const CHART_ATTACHMENT_CATEGORIES: {
   },
 ];
 
+export const CHART_RESOLUTIONS = ['1', '5', '15', '30', '60', 'D'] as const;
+export type ChartResolution = (typeof CHART_RESOLUTIONS)[number];
+
+export const CHART_RESOLUTION_LABELS: Record<string, string> = {
+  '1': '1m',
+  '5': '5m',
+  '15': '15m',
+  '30': '30m',
+  '60': '1h',
+  'D': '1D',
+};
+
+export const DEFAULT_CHART_PADDING_CANDLES = 45;
+export const MAX_CHART_PADDING_CANDLES = 200;
+export const CHART_PADDING_PRESETS: readonly number[] = [0, 15, 30, 45, 60, 100, 150];
+export const MAX_CHART_TIMEFRAMES_PER_REQUEST = 5;
+export const MAX_RENDERED_CANDLES = 1500;
+
 export const CHART_TIMEFRAMES = [
   '1m',
   '3m',

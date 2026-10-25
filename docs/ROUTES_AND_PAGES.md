@@ -116,13 +116,15 @@ This document details all routes and pages discovered in the **SetupMint** front
     - *Thesis & Confluences Tab:* Pre-market bias, market structure, entry confirmation, SMC technical confluences.
     - *Psychology & Discipline Tab:* Emotions before/during/after, discipline rating (1–5), mistake tags, rules followed, lessons learned.
     - *Excursion Analytics & Execution Quality Card:* Maximum Favorable Excursion (MFE), Maximum Adverse Excursion (MAE), Exit Efficiency progress bar gauge, diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`), post-stop reversal alerts, and interactive recompute action.
-    - *Screenshots Gallery:* Uploaded chart screenshots categorized by trade stage with lightbox inspection and clipboard paste (Ctrl+V / Cmd+V) support.
+    - *Automated Execution Charts Generator Panel:* Multi-timeframe execution chart generator with multi-select timeframes ('Auto', '1m', '5m', '15m', '30m', '1h', '1D'; max 5), customizable pre-entry and post-exit candle padding controls (presets 0, 15, 30, 45, 60, 100, 150; 0..200 validated range), "Same on both sides" linked padding toggle, live window duration hints, provider lookback warnings, slot limit usage counter (12 cap), "Replace existing charts" toggle, and inline per-timeframe results breakdown.
+    - *Screenshots Gallery:* Uploaded chart screenshots categorized by trade stage with lightbox inspection, clipboard paste (Ctrl+V / Cmd+V) support, timeframe badges for `AUTO_CHART` items, and chronological timeframe sorting (`1m` through `1D`).
     - *Audit Trail:* Immutable log of creation, updates, quick closures, and balance adjustments.
-- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
+- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, generate multi-timeframe execution charts, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
 - **API Calls:**
   - `GET /api/v1/trades/:id`
   - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/trades/:id/excursion/compute`
+  - `POST /api/v1/trades/:id/chart/generate`
   - `POST /api/v1/attachments/trades/:id/upload`
   - `DELETE /api/v1/attachments/:attachmentId`
   - `DELETE /api/v1/trades/:id`

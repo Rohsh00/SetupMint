@@ -3,21 +3,56 @@ import mongoose from 'mongoose';
 import moment from 'moment';
 import { Trade, Attachment, TradeCandleSnapshot, IAttachmentDoc } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
-import { ITradeCandle, CandleProviderName, CandleFallbackProvider } from '@tradevault/shared';
+import {
+  ITradeCandle,
+  CandleProviderName,
+  CandleFallbackProvider,
+  ChartResolution,
+  CHART_RESOLUTIONS,
+  CHART_RESOLUTION_LABELS,
+  DEFAULT_CHART_PADDING_CANDLES,
+  MAX_RENDERED_CANDLES,
+  IChartGenerateResult,
+} from '@tradevault/shared';
+import {
+  aggregateCandles,
+  selectChartWindow,
+  estimateFetchRange,
+} from '@tradevault/financial-engine';
+import { MarketDataService } from './market-data/index.js';
 
 export interface ChartGeneratorOptions {
   width?: number;
   height?: number;
   theme?: 'dark' | 'light';
   resolution?: string;
+  timeframe?: string;
   provider?: CandleProviderName;
   isUnderlyingFallback?: boolean;
+  appliedBefore?: number;
+  appliedAfter?: number;
+  entryIndex?: number;
+  exitIndex?: number;
+}
+
+export interface GenerateChartsOptions {
+  force?: boolean;
+  provider?: CandleFallbackProvider;
+  resolutions?: ChartResolution[];
+  paddingBefore?: number;
+  paddingAfter?: number;
+}
+
+function resolutionOrder(r: string): number {
+  const map: Record<string, number> = { '1': 1, '5': 2, '15': 3, '30': 4, '60': 5, 'D': 6 };
+  return map[r] || 99;
 }
 
 export class ChartGeneratorService {
   /**
    * Generates a sleek, high-fidelity dark mode TradingView-style SVG candlestick chart
-   * with complete trade execution markers (Entry, Exit, Stop Loss, Target, MAE/MFE).
+   * with complete trade execution markers (Entry, Exit, Stop Loss, Target, MAE/MFE,
+   * shaded execution window, and timeframe padding indicator).
    */
   static generateChartSvg(
     candles: ITradeCandle[],
@@ -67,8 +102,12 @@ export class ChartGeneratorService {
     const stopLoss = trade.risk?.initialStopLoss ? Number(trade.risk.initialStopLoss) : undefined;
     const target = trade.risk?.plannedTarget ? Number(trade.risk.plannedTarget) : undefined;
     const direction = trade.direction || 'LONG';
-    const netPnl = Number(trade.calculated?.netPnl ?? trade.netPnl ?? 0);
-    const rMultiple = trade.calculated?.realizedR !== undefined ? Number(trade.calculated.realizedR) : undefined;
+    const netPnl = Number(trade.calculated?.netPnL ?? trade.calculated?.netPnl ?? trade.netPnl ?? 0);
+    const rMultiple = trade.calculated?.realizedRMultiple !== undefined
+      ? Number(trade.calculated.realizedRMultiple)
+      : trade.calculated?.realizedR !== undefined
+      ? Number(trade.calculated.realizedR)
+      : undefined;
     const excursion = trade.calculated?.excursion;
 
     // Calculate vertical price scaling bounds
@@ -138,33 +177,11 @@ export class ChartGeneratorService {
       const c = sortedCandles[i];
       const cx = plotX0 + (i + 0.5) * stepX;
       const tMs = c.t > 1e11 ? c.t : c.t * 1000;
-      const timeLabel = moment(tMs).format('HH:mm');
+      const timeLabel = resolution === 'D' ? moment(tMs).format('DD MMM') : moment(tMs).format('HH:mm');
 
       timeGridSvg += `
     <line x1="${cx}" y1="${plotY0}" x2="${cx}" y2="${plotY1}" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4" />
     <text x="${cx}" y="${plotY1 + 20}" font-family="'JetBrains Mono', monospace" font-size="10" fill="#64748b" text-anchor="middle">${timeLabel}</text>`;
-    }
-
-    // Render Candlesticks
-    let candlesSvg = '';
-    for (let i = 0; i < candleCount; i++) {
-      const c = sortedCandles[i];
-      const cx = plotX0 + (i + 0.5) * stepX;
-      const isBullish = c.c >= c.o;
-      const color = isBullish ? '#10b981' : '#f43f5e';
-
-      const yHigh = priceToY(c.h);
-      const yLow = priceToY(c.l);
-      const yOpen = priceToY(c.o);
-      const yClose = priceToY(c.c);
-
-      const bodyY = Math.min(yOpen, yClose);
-      const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
-
-      candlesSvg += `
-    <!-- Candle ${i} -->
-    <line x1="${cx}" y1="${yHigh}" x2="${cx}" y2="${yLow}" stroke="${color}" stroke-width="1.2" />
-    <rect x="${cx - barWidth / 2}" y="${bodyY}" width="${barWidth}" height="${bodyHeight}" fill="${color}" rx="1" />`;
     }
 
     // Execution Overlays
@@ -206,27 +223,28 @@ export class ChartGeneratorService {
     <text x="${plotX1 + 45}" y="${yExit + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">EXIT: ${exitPrice.toFixed(1)}</text>`;
     }
 
-    // Identify entry and exit candle indices to draw pinpoint markers
+    // Identify entry and exit candle indices to draw pinpoint markers and shaded band
     const entryMs = trade.entryTime ? moment(trade.entryTime).valueOf() : null;
     const exitMs = trade.exitTime ? moment(trade.exitTime).valueOf() : null;
 
-    let closestEntryIdx = -1;
-    let minEntryDiff = Infinity;
-    let closestExitIdx = -1;
-    let minExitDiff = Infinity;
+    let closestEntryIdx = options.entryIndex !== undefined ? options.entryIndex : -1;
+    let closestExitIdx = options.exitIndex !== undefined ? options.exitIndex : -1;
 
-    if (entryMs !== null || exitMs !== null) {
+    if (closestEntryIdx === -1 || closestExitIdx === -1) {
+      let minEntryDiff = Infinity;
+      let minExitDiff = Infinity;
+
       for (let i = 0; i < candleCount; i++) {
         const c = sortedCandles[i];
         const tMs = c.t > 1e11 ? c.t : c.t * 1000;
-        if (entryMs !== null) {
+        if (entryMs !== null && closestEntryIdx === -1) {
           const diff = Math.abs(tMs - entryMs);
           if (diff < minEntryDiff) {
             minEntryDiff = diff;
             closestEntryIdx = i;
           }
         }
-        if (exitMs !== null) {
+        if (exitMs !== null && closestExitIdx === -1) {
           const diff = Math.abs(tMs - exitMs);
           if (diff < minExitDiff) {
             minExitDiff = diff;
@@ -236,13 +254,47 @@ export class ChartGeneratorService {
       }
     }
 
+    // Shaded Active Trade Span Band
+    let shadedBandSvg = '';
+    if (closestEntryIdx !== -1 && closestExitIdx !== -1 && closestExitIdx >= closestEntryIdx) {
+      const entryX = plotX0 + (closestEntryIdx + 0.5) * stepX;
+      const exitX = plotX0 + (closestExitIdx + 0.5) * stepX;
+      const bandX = entryX - barWidth / 2;
+      const bandWidth = Math.max(barWidth, exitX - entryX + barWidth);
+
+      shadedBandSvg = `
+    <!-- Active Trade Execution Shaded Band -->
+    <rect x="${bandX}" y="${plotY0}" width="${bandWidth}" height="${plotHeight}" fill="#0ea5e9" fill-opacity="0.06" stroke="#0ea5e9" stroke-opacity="0.2" stroke-dasharray="3,3" />`;
+    }
+
+    // Render Candlesticks
+    let candlesSvg = '';
+    for (let i = 0; i < candleCount; i++) {
+      const c = sortedCandles[i];
+      const cx = plotX0 + (i + 0.5) * stepX;
+      const isBullish = c.c >= c.o;
+      const color = isBullish ? '#10b981' : '#f43f5e';
+
+      const yHigh = priceToY(c.h);
+      const yLow = priceToY(c.l);
+      const yOpen = priceToY(c.o);
+      const yClose = priceToY(c.c);
+
+      const bodyY = Math.min(yOpen, yClose);
+      const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
+
+      candlesSvg += `
+    <!-- Candle ${i} -->
+    <line x1="${cx}" y1="${yHigh}" x2="${cx}" y2="${yLow}" stroke="${color}" stroke-width="1.2" />
+    <rect x="${cx - barWidth / 2}" y="${bodyY}" width="${barWidth}" height="${bodyHeight}" fill="${color}" rx="1" />`;
+    }
+
     // Entry Marker Badge on specific candle
-    if (closestEntryIdx !== -1 && entryPrice > 0) {
+    if (closestEntryIdx >= 0 && closestEntryIdx < candleCount && entryPrice > 0) {
       const c = sortedCandles[closestEntryIdx];
       const cx = plotX0 + (closestEntryIdx + 0.5) * stepX;
       const isLong = direction === 'LONG';
       const anchorY = isLong ? priceToY(c.l) + 16 : priceToY(c.h) - 16;
-      const arrowY = isLong ? anchorY - 6 : anchorY + 6;
       const badgeColor = isLong ? '#10b981' : '#f43f5e';
       const label = `${isLong ? '▲ BUY' : '▼ SELL'} @ ${entryPrice.toFixed(1)}`;
 
@@ -254,11 +306,10 @@ export class ChartGeneratorService {
     }
 
     // Exit Marker Badge on specific candle
-    if (closestExitIdx !== -1 && exitPrice > 0) {
+    if (closestExitIdx >= 0 && closestExitIdx < candleCount && exitPrice > 0) {
       const c = sortedCandles[closestExitIdx];
       const cx = plotX0 + (closestExitIdx + 0.5) * stepX;
       const isProfitable = netPnl >= 0;
-      const exitBadgeColor = isProfitable ? '#10b981' : '#f43f5e';
       const anchorY = priceToY(c.h) - 18;
       const label = `✕ EXIT @ ${exitPrice.toFixed(1)}`;
 
@@ -273,7 +324,15 @@ export class ChartGeneratorService {
     const symbolStr = trade.symbol || 'UNKNOWN';
     const dateStr = trade.entryTime ? moment(trade.entryTime).format('DD MMM YYYY, HH:mm') : '';
     const exitDateStr = trade.exitTime ? moment(trade.exitTime).format('HH:mm') : '';
-    const timeframeStr = `${resolution}m`;
+
+    const timeframeStr = options.timeframe || (resolution === 'D' ? '1D' : `${resolution}m`);
+    let paddingStr = '';
+    if (options.appliedBefore !== undefined && options.appliedAfter !== undefined) {
+      paddingStr = ` -${options.appliedBefore}/+${options.appliedAfter}`;
+    }
+    const timeframeDisplay = `${timeframeStr}${paddingStr}`;
+    const tfChipWidth = Math.max(40, timeframeDisplay.length * 8 + 14);
+
     const directionColor = direction === 'LONG' ? '#10b981' : '#f43f5e';
     const pnlColor = netPnl >= 0 ? '#10b981' : '#f43f5e';
     const pnlPrefix = netPnl >= 0 ? '+' : '';
@@ -324,6 +383,9 @@ export class ChartGeneratorService {
 
     const watermarkStr = `SetupMint Visual Trade Audit • ${watermarkSource} • ${moment().format('YYYY-MM-DD HH:mm:ss')} IST`;
 
+    const tfChipX = plotX0 + symbolStr.length * 11 + 10;
+    const dirChipX = tfChipX + tfChipWidth + 8;
+
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="chartBg" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -343,15 +405,15 @@ export class ChartGeneratorService {
     ${symbolStr}
   </text>
   
-  <!-- Timeframe Chip -->
-  <rect x="${plotX0 + symbolStr.length * 11 + 10}" y="18" width="38" height="20" rx="4" fill="#1e293b" />
-  <text x="${plotX0 + symbolStr.length * 11 + 29}" y="32" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="600" fill="#94a3b8" text-anchor="middle">
-    ${timeframeStr}
+  <!-- Timeframe & Padding Chip -->
+  <rect x="${tfChipX}" y="18" width="${tfChipWidth}" height="20" rx="4" fill="#1e293b" />
+  <text x="${tfChipX + tfChipWidth / 2}" y="32" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="600" fill="#94a3b8" text-anchor="middle">
+    ${timeframeDisplay}
   </text>
 
   <!-- Direction Chip -->
-  <rect x="${plotX0 + symbolStr.length * 11 + 54}" y="18" width="52" height="20" rx="4" fill="${directionColor}" fill-opacity="0.18" stroke="${directionColor}" stroke-width="1" />
-  <text x="${plotX0 + symbolStr.length * 11 + 80}" y="32" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" fill="${directionColor}" text-anchor="middle">
+  <rect x="${dirChipX}" y="18" width="52" height="20" rx="4" fill="${directionColor}" fill-opacity="0.18" stroke="${directionColor}" stroke-width="1" />
+  <text x="${dirChipX + 26}" y="32" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" fill="${directionColor}" text-anchor="middle">
     ${direction}
   </text>
 
@@ -378,6 +440,9 @@ export class ChartGeneratorService {
   <!-- Time Gridlines -->
   ${timeGridSvg}
 
+  <!-- Active Trade Duration Shaded Band -->
+  ${shadedBandSvg}
+
   <!-- Candlesticks -->
   ${candlesSvg}
 
@@ -395,112 +460,415 @@ export class ChartGeneratorService {
   }
 
   /**
-   * Generates an automated SVG execution chart for a closed trade using cached FYERS candles,
-   * uploads to Cloudflare R2 / S3 storage, creates an Attachment record with category 'AUTO_CHART',
-   * and links it to trade.screenshotIds.
+   * Generates automated SVG execution charts for a closed trade across requested user timeframes
+   * and custom candle padding before entry and after exit.
+   */
+  static async generateAutoChartsForTrade(
+    tradeId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId,
+    options: GenerateChartsOptions = {}
+  ): Promise<IChartGenerateResult[]> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+
+    const trade = await Trade.findOne({ _id: tId, userId: uId });
+    if (!trade) {
+      const err: any = new Error('Trade not found or unauthorized');
+      err.code = 'TRADE_NOT_FOUND';
+      throw err;
+    }
+
+    if (trade.status !== 'CLOSED' || !trade.exitTime) {
+      const err: any = new Error('Automated execution charts can only be generated for closed trades');
+      err.code = 'TRADE_NOT_CLOSED';
+      throw err;
+    }
+
+    const holdMinutes = Math.max(1, moment(trade.exitTime).diff(moment(trade.entryTime), 'minutes'));
+    let defaultRes: ChartResolution = holdMinutes <= 240 ? '1' : '5';
+
+    let targetResolutions: ChartResolution[];
+    if (options.resolutions && options.resolutions.length > 0) {
+      targetResolutions = options.resolutions;
+    } else {
+      // Check if trade already has a cached snapshot (legacy single-chart path)
+      const existingSnapshot = await TradeCandleSnapshot.findOne({
+        userId: uId,
+        tradeId: trade._id,
+      }).sort({ fetchedAt: -1 });
+
+      if (
+        existingSnapshot?.resolution &&
+        ['1', '5', '15', '30', '60', 'D'].includes(existingSnapshot.resolution as any)
+      ) {
+        defaultRes = existingSnapshot.resolution as ChartResolution;
+      }
+      targetResolutions = [defaultRes];
+    }
+
+    const paddingBefore =
+      options.paddingBefore !== undefined ? options.paddingBefore : DEFAULT_CHART_PADDING_CANDLES;
+    const paddingAfter =
+      options.paddingAfter !== undefined ? options.paddingAfter : DEFAULT_CHART_PADDING_CANDLES;
+
+    // Sort timeframes in ascending order
+    const sortedResolutions = [...targetResolutions].sort(
+      (a, b) => resolutionOrder(a) - resolutionOrder(b)
+    );
+
+    // Fetch existing AUTO_CHART attachments for this trade
+    const existingAutoCharts = await Attachment.find({
+      userId: uId,
+      tradeId: trade._id,
+      category: 'AUTO_CHART',
+    });
+
+    const currentAttachmentsCount = trade.screenshotIds ? trade.screenshotIds.length : 0;
+    let availableSlots = 12 - currentAttachmentsCount;
+
+    const results: IChartGenerateResult[] = [];
+    const actionableResolutions: ChartResolution[] = [];
+
+    // Pre-evaluate cap and existing items
+    for (const res of sortedResolutions) {
+      const timeframeLabel = CHART_RESOLUTION_LABELS[res] || `${res}m`;
+      const existing = existingAutoCharts.find(
+        (a) =>
+          a.timeframe === timeframeLabel ||
+          (res === 'D' && (a.timeframe === 'Daily' || a.timeframe === '1D')) ||
+          a.timeframe === `${res}m`
+      );
+
+      if (existing && !options.force) {
+        results.push({
+          resolution: res,
+          timeframe: timeframeLabel,
+          status: 'SKIPPED_EXISTS',
+          attachment: this.formatAttachmentDoc(existing),
+          requestedBefore: paddingBefore,
+          requestedAfter: paddingAfter,
+          appliedBefore: existing.chartMeta?.appliedBefore ?? paddingBefore,
+          appliedAfter: existing.chartMeta?.appliedAfter ?? paddingAfter,
+          truncated: Boolean(existing.chartMeta?.truncated),
+          warnings: [],
+        });
+        continue;
+      }
+
+      // Check slot availability if net-new attachment
+      if (!existing) {
+        if (availableSlots <= 0) {
+          results.push({
+            resolution: res,
+            timeframe: timeframeLabel,
+            status: 'FAILED',
+            errorCode: 'ATTACHMENT_LIMIT_EXCEEDED',
+            requestedBefore: paddingBefore,
+            requestedAfter: paddingAfter,
+            appliedBefore: 0,
+            appliedAfter: 0,
+            truncated: false,
+            warnings: [],
+          });
+          continue;
+        }
+        availableSlots--;
+      }
+
+      actionableResolutions.push(res);
+    }
+
+    if (actionableResolutions.length === 0) {
+      return results.sort((a, b) => resolutionOrder(a.resolution) - resolutionOrder(b.resolution));
+    }
+
+    // Group actionable resolutions by base provider resolution:
+    // '1' -> base '1' (target: 1m)
+    // '5', '15', '30', '60' -> base '5' (derive via aggregateCandles)
+    // 'D' -> base 'D' (target: 1D)
+    const baseGroups = new Map<string, Array<{ resolution: ChartResolution; targetMinutes: number }>>();
+
+    for (const res of actionableResolutions) {
+      let baseRes = '5';
+      let targetMins = 5;
+
+      if (res === '1') {
+        baseRes = '1';
+        targetMins = 1;
+      } else if (res === '5') {
+        baseRes = '5';
+        targetMins = 5;
+      } else if (res === '15') {
+        baseRes = '5';
+        targetMins = 15;
+      } else if (res === '30') {
+        baseRes = '5';
+        targetMins = 30;
+      } else if (res === '60') {
+        baseRes = '5';
+        targetMins = 60;
+      } else if (res === 'D') {
+        baseRes = 'D';
+        targetMins = 1440;
+      }
+
+      let group = baseGroups.get(baseRes);
+      if (!group) {
+        group = [];
+        baseGroups.set(baseRes, group);
+      }
+      group.push({ resolution: res, targetMinutes: targetMins });
+    }
+
+    const storage = getStorage();
+    const sessionAnchor =
+      trade.exchange === 'MCX' || trade.marketSegment === 'MCX' ? '09:00' : '09:15';
+
+    // Process each base resolution group sequentially
+    for (const [baseRes, groupItems] of baseGroups.entries()) {
+      // Compute union fetch range across all target resolutions in this base group
+      let unionFromMs = Infinity;
+      let unionToMs = -Infinity;
+
+      for (const item of groupItems) {
+        const range = estimateFetchRange(
+          trade.entryTime,
+          trade.exitTime,
+          item.targetMinutes,
+          paddingBefore,
+          paddingAfter
+        );
+        if (range.from.getTime() < unionFromMs) unionFromMs = range.from.getTime();
+        if (range.to.getTime() > unionToMs) unionToMs = range.to.getTime();
+      }
+
+      let fetchFrom = new Date(unionFromMs);
+      const fetchTo = new Date(unionToMs);
+      let isLookbackClamped = false;
+
+      // Lookback clamp check for Angel One fallback lookback ceilings
+      const nowMs = Date.now();
+      const maxLookbackDays = baseRes === '1' ? 30 : baseRes === '5' ? 90 : 365;
+      const lookbackLimitMs = nowMs - maxLookbackDays * 86_400_000;
+
+      if (fetchFrom.getTime() < lookbackLimitMs) {
+        if (new Date(trade.entryTime).getTime() >= lookbackLimitMs) {
+          fetchFrom = new Date(lookbackLimitMs);
+          isLookbackClamped = true;
+        }
+      }
+
+      // Fetch base candles via MarketDataService sequential fallback chain
+      const candleResult = await MarketDataService.getCandlesWithFallback({
+        trade,
+        resolution: baseRes,
+        from: fetchFrom,
+        to: fetchTo,
+        userId: uId,
+        forceRefetch: options.force,
+        provider: options.provider || 'AUTO',
+      });
+
+      if (!candleResult.ok) {
+        for (const item of groupItems) {
+          const timeframeLabel = CHART_RESOLUTION_LABELS[item.resolution] || `${item.resolution}m`;
+          results.push({
+            resolution: item.resolution,
+            timeframe: timeframeLabel,
+            status: 'FAILED',
+            errorCode: candleResult.reason || 'CHART_GENERATION_FAILED',
+            requestedBefore: paddingBefore,
+            requestedAfter: paddingAfter,
+            appliedBefore: 0,
+            appliedAfter: 0,
+            truncated: false,
+            warnings: [],
+          });
+        }
+        continue;
+      }
+
+      const baseCandles = candleResult.candles;
+
+      // Generate charts for each target resolution in this group
+      for (const item of groupItems) {
+        const timeframeLabel = CHART_RESOLUTION_LABELS[item.resolution] || `${item.resolution}m`;
+        let targetCandles = baseCandles;
+
+        if (item.targetMinutes > (baseRes === '1' ? 1 : baseRes === '5' ? 5 : 1440)) {
+          // Derive higher timeframe via aggregateCandles
+          const aggRes = aggregateCandles(baseCandles, item.targetMinutes, sessionAnchor);
+          targetCandles = aggRes.candles;
+        }
+
+        const windowResult = selectChartWindow(
+          targetCandles,
+          trade.entryTime,
+          trade.exitTime,
+          paddingBefore,
+          paddingAfter,
+          MAX_RENDERED_CANDLES
+        );
+
+        const warnings: string[] = [];
+        if (isLookbackClamped) {
+          warnings.push('PADDING_REDUCED_LOOKBACK');
+        }
+        if (
+          windowResult.appliedBefore < paddingBefore ||
+          windowResult.appliedAfter < paddingAfter
+        ) {
+          warnings.push('PADDING_REDUCED_DATA');
+        }
+        if (windowResult.truncated) {
+          warnings.push('WINDOW_TRUNCATED');
+        }
+        if (candleResult.isUnderlyingFallback) {
+          warnings.push('UNDERLYING_FALLBACK');
+        }
+
+        // Render clean SVG chart
+        const svgString = this.generateChartSvg(windowResult.candles, trade, {
+          resolution: item.resolution,
+          timeframe: timeframeLabel,
+          width: 960,
+          height: 520,
+          provider: candleResult.provider,
+          isUnderlyingFallback: candleResult.isUnderlyingFallback,
+          appliedBefore: windowResult.appliedBefore,
+          appliedAfter: windowResult.appliedAfter,
+          entryIndex: windowResult.entryIndex,
+          exitIndex: windowResult.exitIndex,
+        });
+
+        const svgBuffer = Buffer.from(svgString, 'utf-8');
+
+        // Check if an attachment of the SAME timeframe already exists (to replace)
+        const existingSameTimeframe = existingAutoCharts.find(
+          (a) =>
+            a.timeframe === timeframeLabel ||
+            (item.resolution === 'D' && (a.timeframe === 'Daily' || a.timeframe === '1D')) ||
+            a.timeframe === `${item.resolution}m`
+        );
+
+        if (existingSameTimeframe && options.force) {
+          try {
+            await storage.delete(existingSameTimeframe.storedFilename);
+          } catch {
+            // ignore missing storage object
+          }
+          await Attachment.deleteOne({ _id: existingSameTimeframe._id });
+          await Trade.findByIdAndUpdate(trade._id, {
+            $pull: { screenshotIds: existingSameTimeframe._id },
+          });
+        }
+
+        // Save new SVG to Cloudflare R2 / S3
+        const safeFilename = `${crypto.randomUUID()}.svg`;
+        await storage.save(safeFilename, svgBuffer, 'image/svg+xml');
+
+        // Create Attachment record
+        const attachment = await Attachment.create({
+          userId: uId,
+          tradeId: trade._id,
+          originalName: `${trade.symbol}_autochart_${timeframeLabel}.svg`,
+          storedFilename: safeFilename,
+          mimeType: 'image/svg+xml',
+          sizeBytes: svgBuffer.length,
+          category: 'AUTO_CHART',
+          description: `${timeframeLabel} chart, ${paddingBefore} before / ${paddingAfter} after`,
+          timeframe: timeframeLabel,
+          chartTimestamp: moment(trade.entryTime).toISOString(),
+          chartMeta: {
+            resolution: item.resolution,
+            paddingBefore,
+            paddingAfter,
+            appliedBefore: windowResult.appliedBefore,
+            appliedAfter: windowResult.appliedAfter,
+            truncated: windowResult.truncated,
+            generatedAt: new Date(),
+          },
+        });
+
+        // Link to trade.screenshotIds
+        await Trade.findByIdAndUpdate(trade._id, {
+          $addToSet: { screenshotIds: attachment._id },
+        });
+
+        results.push({
+          resolution: item.resolution,
+          timeframe: timeframeLabel,
+          status: existingSameTimeframe ? 'REPLACED' : 'CREATED',
+          attachment: this.formatAttachmentDoc(attachment),
+          requestedBefore: paddingBefore,
+          requestedAfter: paddingAfter,
+          appliedBefore: windowResult.appliedBefore,
+          appliedAfter: windowResult.appliedAfter,
+          truncated: windowResult.truncated,
+          warnings,
+        });
+      }
+    }
+
+    return results.sort((a, b) => resolutionOrder(a.resolution) - resolutionOrder(b.resolution));
+  }
+
+  /**
+   * Backwards compatible single-chart creation method.
    */
   static async createAndSaveAutoChartForTrade(
     tradeId: string | mongoose.Types.ObjectId,
     userId: string | mongoose.Types.ObjectId,
     options: { force?: boolean; provider?: CandleFallbackProvider } = {}
   ): Promise<IAttachmentDoc> {
-    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
-    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
-
-    const trade = await Trade.findOne({ _id: tId, userId: uId });
-    if (!trade) {
-      throw new Error('Trade not found or unauthorized');
-    }
-
-    if (trade.status !== 'CLOSED' || !trade.exitTime) {
-      throw new Error('Automated execution charts can only be generated for closed trades');
-    }
-
-    // Check if an AUTO_CHART attachment already exists for this trade
-    const existingAutoChart = await Attachment.findOne({
-      userId: uId,
-      tradeId: trade._id,
-      category: 'AUTO_CHART',
+    const results = await this.generateAutoChartsForTrade(tradeId, userId, {
+      force: options.force,
+      provider: options.provider,
     });
 
-    if (existingAutoChart && !options.force) {
-      return existingAutoChart;
+    const successItem = results.find(
+      (r) => r.status === 'CREATED' || r.status === 'REPLACED' || r.status === 'SKIPPED_EXISTS'
+    );
+
+    if (successItem && successItem.attachment) {
+      const doc = await Attachment.findById(successItem.attachment.id);
+      if (doc) return doc;
     }
 
-    // 1. Retrieve cached candle snapshot
-    let snapshot = await TradeCandleSnapshot.findOne({
-      userId: uId,
-      tradeId: trade._id,
-    }).sort({ fetchedAt: -1 });
+    throw new Error(
+      results[0]?.errorCode || 'Failed to generate automated chart screenshot'
+    );
+  }
 
-    // 2. If no snapshot cached, dynamically invoke excursion computation which fetches and caches candles
-    if (!snapshot || !snapshot.candles || snapshot.candles.length === 0) {
-      const { FyersService } = await import('./fyers.service.js');
-      await FyersService.computeExcursionForTrade(trade._id, uId, false, {
-        provider: options.provider,
-      });
-
-      snapshot = await TradeCandleSnapshot.findOne({
-        userId: uId,
-        tradeId: trade._id,
-      }).sort({ fetchedAt: -1 });
-    }
-
-    if (!snapshot || !snapshot.candles || snapshot.candles.length === 0) {
-      throw new Error(
-        `Cannot generate automated chart: no historical candles cached or available for ${trade.symbol}`
-      );
-    }
-
-    // 3. Render clean SVG chart
-    const svgString = this.generateChartSvg(snapshot.candles, trade, {
-      resolution: snapshot.resolution || '5',
-      width: 960,
-      height: 520,
-      provider: snapshot.provider || trade.calculated?.excursion?.provider || 'FYERS',
-      isUnderlyingFallback:
-        snapshot.isUnderlyingFallback || trade.calculated?.excursion?.isUnderlyingFallback || false,
-    });
-    const svgBuffer = Buffer.from(svgString, 'utf-8');
-
-    const storage = getStorage();
-
-    // 4. If replacing an existing chart, remove old object from storage
-    if (existingAutoChart) {
-      try {
-        await storage.delete(existingAutoChart.storedFilename);
-      } catch {
-        // ignore missing object in storage
-      }
-      await Attachment.deleteOne({ _id: existingAutoChart._id });
-      await Trade.findByIdAndUpdate(trade._id, {
-        $pull: { screenshotIds: existingAutoChart._id },
-      });
-    }
-
-    // 5. Store to Cloudflare R2 / S3
-    const safeFilename = `${crypto.randomUUID()}.svg`;
-    await storage.save(safeFilename, svgBuffer, 'image/svg+xml');
-
-    // 6. Create Attachment record
-    const attachment = await Attachment.create({
-      userId: uId,
-      tradeId: trade._id,
-      originalName: `${trade.symbol}_autochart_${snapshot.resolution}m.svg`,
-      storedFilename: safeFilename,
-      mimeType: 'image/svg+xml',
-      sizeBytes: svgBuffer.length,
-      category: 'AUTO_CHART',
-      description: `Automated execution chart generated from FYERS ${snapshot.resolution}m historical candles`,
-      timeframe: `${snapshot.resolution}m`,
-      chartTimestamp: moment(trade.entryTime).toISOString(),
-    });
-
-    // 7. Link to trade.screenshotIds
-    await Trade.findByIdAndUpdate(trade._id, {
-      $addToSet: { screenshotIds: attachment._id },
-    });
-
-    return attachment;
+  private static formatAttachmentDoc(att: any): any {
+    return {
+      id: att._id ? att._id.toString() : att.id,
+      tradeId: att.tradeId ? att.tradeId.toString() : undefined,
+      userId: att.userId ? att.userId.toString() : undefined,
+      originalName: att.originalName,
+      storedFilename: att.storedFilename,
+      category: att.category,
+      caption: att.description,
+      description: att.description,
+      timeframe: att.timeframe,
+      chartTimestamp: att.chartTimestamp,
+      chartMeta: att.chartMeta
+        ? {
+            resolution: att.chartMeta.resolution,
+            paddingBefore: att.chartMeta.paddingBefore,
+            paddingAfter: att.chartMeta.paddingAfter,
+            appliedBefore: att.chartMeta.appliedBefore,
+            appliedAfter: att.chartMeta.appliedAfter,
+            truncated: att.chartMeta.truncated,
+            generatedAt: att.chartMeta.generatedAt
+              ? new Date(att.chartMeta.generatedAt).toISOString()
+              : undefined,
+          }
+        : undefined,
+      sizeBytes: att.sizeBytes,
+      mimeType: att.mimeType,
+      downloadUrl: `/api/v1/attachments/${att._id || att.id}/download`,
+      createdAt: att.createdAt ? new Date(att.createdAt).toISOString() : new Date().toISOString(),
+    };
   }
 }

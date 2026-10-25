@@ -58,6 +58,19 @@ const AVAILABLE_RESOLUTIONS: Array<{ key: string; label: string; desc: string }>
   { key: 'D', label: '1D', desc: 'Daily' },
 ];
 
+const normalizeResolution = (res?: string): string => {
+  if (!res) return '5';
+  if (res === '1m' || res === '1') return '1';
+  if (res === '3m' || res === '3') return '3';
+  if (res === '5m' || res === '5') return '5';
+  if (res === '15m' || res === '15') return '15';
+  if (res === '30m' || res === '30') return '30';
+  if (res === '1h' || res === '60m' || res === '60') return '60';
+  if (res === '4h' || res === '240m' || res === '240') return '240';
+  if (res === '1D' || res === 'Daily' || res === 'D') return 'D';
+  return res;
+};
+
 export function InteractiveTradingViewModal({
   open,
   onClose,
@@ -67,7 +80,7 @@ export function InteractiveTradingViewModal({
 }: InteractiveTradingViewModalProps) {
   const muiTheme = useTheme();
 
-  const [resolution, setResolution] = useState<string>(initialResolution || '5');
+  const [resolution, setResolution] = useState<string>(() => normalizeResolution(initialResolution));
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -99,6 +112,7 @@ export function InteractiveTradingViewModal({
 
   // State refs to prevent stale closures and infinite re-render loops
   const candlesRef = useRef<any[]>([]);
+  const tradeDataRef = useRef<any>(null);
   const firstTimeRef = useRef<number | null>(null);
   const resolutionRef = useRef<string>(resolution);
   resolutionRef.current = resolution;
@@ -299,6 +313,7 @@ export function InteractiveTradingViewModal({
         if (resp && resp.candles && resp.candles.length > 0) {
           candlesRef.current = resp.candles;
           firstTimeRef.current = resp.firstTime;
+          tradeDataRef.current = resp.trade;
           setTradeData(resp.trade);
           setProviderName(resp.provider || 'FYERS');
           setIsUnderlying(resp.isUnderlyingFallback);
@@ -360,7 +375,7 @@ export function InteractiveTradingViewModal({
           const combined = [...newOlder, ...candlesRef.current].sort((a, b) => a.time - b.time);
           candlesRef.current = combined;
           firstTimeRef.current = combined[0].time;
-          applyDataToSeries(combined, tradeData);
+          applyDataToSeries(combined, tradeDataRef.current);
         }
       } else {
         hasMoreHistoryRef.current = false;
@@ -371,12 +386,18 @@ export function InteractiveTradingViewModal({
       isLoadingOlderRef.current = false;
       setLoadingMore(false);
     }
-  }, [tradeId, tradeData, applyDataToSeries]);
+  }, [tradeId, applyDataToSeries]);
+
+  const fetchCandlesRef = useRef(fetchCandles);
+  fetchCandlesRef.current = fetchCandles;
+
+  const fetchOlderHistoryRef = useRef(fetchOlderHistory);
+  fetchOlderHistoryRef.current = fetchOlderHistory;
 
   // Synchronize initialResolution whenever modal opens
   useEffect(() => {
     if (open) {
-      const clean = initialResolution || '5';
+      const clean = normalizeResolution(initialResolution);
       setResolution(clean);
       resolutionRef.current = clean;
     }
@@ -388,9 +409,11 @@ export function InteractiveTradingViewModal({
 
     let chart: IChartApi | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let isCancelled = false;
 
     // Small delay to ensure Dialog container has rendered dimensions
     const initTimer = setTimeout(() => {
+      if (isCancelled) return;
       const container = chartContainerRef.current;
       if (!container) return;
 
@@ -509,8 +532,14 @@ export function InteractiveTradingViewModal({
 
       // Infinite scroll listener for panning left
       chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
-        if (logicalRange && logicalRange.from < 5) {
-          fetchOlderHistory();
+        if (
+          logicalRange &&
+          logicalRange.from < 5 &&
+          !isInitialLoadRef.current &&
+          !isLoadingOlderRef.current &&
+          hasMoreHistoryRef.current
+        ) {
+          fetchOlderHistoryRef.current();
         }
       });
 
@@ -525,14 +554,17 @@ export function InteractiveTradingViewModal({
       resizeObserver.observe(container);
 
       // Trigger initial candle fetch
-      fetchCandles(resolutionRef.current);
+      fetchCandlesRef.current(resolutionRef.current);
     }, 50);
 
     return () => {
+      isCancelled = true;
       clearTimeout(initTimer);
       if (resizeObserver) resizeObserver.disconnect();
       if (chart) {
-        chart.remove();
+        try {
+          chart.remove();
+        } catch {}
       }
       chartInstanceRef.current = null;
       candlestickSeriesRef.current = null;
@@ -540,19 +572,16 @@ export function InteractiveTradingViewModal({
       markersPluginRef.current = null;
       priceLinesRef.current = [];
       candlesRef.current = [];
+      tradeDataRef.current = null;
     };
-  }, [open, fetchOlderHistory, fetchCandles]);
-
-  // Separate effect: when resolution changes while chart is alive, smoothly update data
-  useEffect(() => {
-    if (!open || !chartInstanceRef.current) return;
-    fetchCandles(resolution);
-  }, [open, resolution, fetchCandles]);
+  }, [open]);
 
   // Handle switching timeframe without destroying chart
   const handleResolutionChange = (newRes: string) => {
-    if (newRes === resolution) return;
+    if (newRes === resolution || loading) return;
     setResolution(newRes);
+    resolutionRef.current = newRes;
+    fetchCandles(newRes);
   };
 
   // Focus zoom on trade execution range

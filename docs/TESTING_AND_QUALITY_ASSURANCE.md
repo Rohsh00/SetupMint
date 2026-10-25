@@ -15,7 +15,7 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ## 2. Test Suite Inventory (353 Passing Tests)
 
-The repository contains **431 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **430 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
 ### A. Financial Engine Unit Tests (178 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):

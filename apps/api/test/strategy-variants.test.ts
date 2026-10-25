@@ -340,27 +340,4 @@ describe('Custom Parent Strategy & Child Setup Variants Integration Tests', () =
     expect(bucketB.closedTrades).toBe(1);
     expect(bucketB.winRate).toBe(100);
   });
-
-  it('8. Inserts starter parent strategies with child variants on demand (idempotent)', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/strategies/pack/liquidity-retracement',
-      headers: { cookie: user1Cookie },
-    });
-
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-    expect(body.createdCount).toBeGreaterThan(0);
-
-    // Running again is idempotent (no duplicates)
-    const res2 = await app.inject({
-      method: 'POST',
-      url: '/api/v1/strategies/pack/liquidity-retracement',
-      headers: { cookie: user1Cookie },
-    });
-    expect(res2.statusCode).toBe(200);
-    const body2 = JSON.parse(res2.body);
-    expect(body2.createdCount).toBe(0);
-  });
 });

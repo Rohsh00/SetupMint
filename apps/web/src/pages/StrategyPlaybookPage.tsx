@@ -36,7 +36,6 @@ import EditIcon from '@mui/icons-material/EditRounded';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import CloseIcon from '@mui/icons-material/CloseRounded';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
 import LayersIcon from '@mui/icons-material/LayersRounded';
 import StarIcon from '@mui/icons-material/StarRounded';
 import StarBorderIcon from '@mui/icons-material/StarBorderRounded';
@@ -112,17 +111,6 @@ export function StrategyPlaybookPage() {
     queryFn: () => api.strategies.list(),
   });
 
-  // Pack application mutation
-  const applyPackMutation = useMutation({
-    mutationFn: () => api.strategies.applyPack('liquidity-retracement'),
-    onSuccess: (res: any) => {
-      toast.success(res?.message || 'Liquidity Retracement Pack applied successfully!');
-      queryClient.invalidateQueries({ queryKey: ['strategies'] });
-    },
-    onError: (err: any) => {
-      toast.error(err.message || 'Failed to apply strategy pack');
-    },
-  });
 
   // Templates query
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<ITradeTemplate[]>({
@@ -638,19 +626,6 @@ export function StrategyPlaybookPage() {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          {activeTab === 'STRATEGIES' && (
-            <Button
-              variant="outlined"
-              color="secondary"
-              size="small"
-              onClick={() => applyPackMutation.mutate()}
-              disabled={applyPackMutation.isPending}
-              startIcon={applyPackMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <AutoAwesomeIcon />}
-              sx={{ fontWeight: 700, px: 2 }}
-            >
-              Insert Starter Strategies (Parent & Child)
-            </Button>
-          )}
           <Button
             variant="contained"
             color="primary"

@@ -104,7 +104,7 @@ Trading Vault/
    - Setup matching attributes (`expected`) are 100% optional and custom — zero static restrictions or locked concepts.
    - Child variants referenced by historical trades can only be archived (`isActive: false`), never deleted. Deletion attempts return `409 Conflict` (`VARIANT_IN_USE`).
    - Setup variant classification modifications are recorded in the trade's `auditLog` with action `CLASSIFIED`.
-   - Starter/predefined parent strategies and variants are inserted on-demand into the database via seed or `POST /api/v1/strategies/pack/liquidity-retracement`.
+   - Starter/predefined parent strategies and variants are populated into the database via demo seed.
 4. **Instrument Ownership & One-Underlying Invariant:**
    - The instruments collection contains **only** instruments the user has traded or custom created (`source: 'AUTO' | 'CUSTOM'`).
    - One instrument per underlying: option strikes, expiries, and call/put flags belong to `Trade` (`underlying`, `optionType`, `strikePrice`, `expiryDate`), pointing to a single root `Instrument` (`NIFTY`, `BANKNIFTY`, `CRUDEOIL`).

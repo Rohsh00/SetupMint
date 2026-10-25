@@ -683,7 +683,6 @@ Authentication is handled via stateful sessions:
 - `GET /api/v1/strategies/:id/analytics` — Compute Strategy Variant Analytics breakdown. Supports filtering by `startDate`, `endDate`, `accountId`, `symbol`, `session`, `entryModel`, `direction`, and `momentum`. Returns parent metrics, child variant performance buckets, `countsByStatus`, and mathematical invariant check (`invariantCheck.reconciled`).
 - `PUT /api/v1/strategies/:id` — Update parent strategy and variants. **Referential Integrity Protection:** If an update attempts to delete a variant that is currently referenced by historical trade records, the API rejects the request with `409 Conflict` (error code: `VARIANT_IN_USE`, containing `inUseKeys`). In-use variants must be archived (`isActive: false`) instead of deleted.
 - `DELETE /api/v1/strategies/:id` — Delete parent strategy.
-- `POST /api/v1/strategies/pack/liquidity-retracement` — Idempotently insert institutional starter playbook with parent strategies and child setup variants into the user's database. Missing variants are merged without duplicating existing records.
 
 ### Trade Setup Templates (`/api/v1/templates`)
 - `GET /api/v1/templates` — List all 25 built-in institutional templates (including 5 specialized Liquidity and Support/Resistance setups) and user custom templates merged with aggregated tenant-isolated trade performance metrics (`totalTrades`, `winTrades`, `winRate`, `netPnL`, `profitFactor`).

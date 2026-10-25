@@ -159,8 +159,6 @@ export const api = {
       }
       return request<any>(`/strategies/${id}/analytics?${query.toString()}`);
     },
-    applyPack: (packName = 'liquidity-retracement') =>
-      request<any>(`/strategies/pack/${packName}`, { method: 'POST' }),
   },
 
   // Trade Setup Templates

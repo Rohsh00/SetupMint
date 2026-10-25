@@ -8,7 +8,6 @@ import { validateStrategyEdge, calculateVariantAnalytics } from '@tradevault/fin
 import { Strategy, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
-import { LIQUIDITY_RETRACEMENT_PACK } from '../seed/playbooks.js';
 
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -208,38 +207,6 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   });
 
 
-  // Idempotent Liquidity Retracement Pack creation
-  app.post('/pack/liquidity-retracement', async (req: any, reply) => {
-    let createdCount = 0;
-    let updatedCount = 0;
-
-    for (const packItem of LIQUIDITY_RETRACEMENT_PACK) {
-      let strat = await Strategy.findOne({ userId: req.user!.id, name: packItem.name });
-      if (!strat) {
-        await Strategy.create({
-          ...packItem,
-          userId: req.user!.id,
-        });
-        createdCount++;
-      } else {
-        // Parent exists: merge any missing variants by key
-        const existingKeys = new Set((strat.variants || []).map((v) => v.key));
-        const missingVariants = (packItem.variants || []).filter((v) => !existingKeys.has(v.key));
-        if (missingVariants.length > 0) {
-          strat.variants = [...(strat.variants || []), ...missingVariants];
-          await strat.save();
-          updatedCount++;
-        }
-      }
-    }
-
-    return reply.send({
-      success: true,
-      message: 'Liquidity Retracement pack applied successfully',
-      createdCount,
-      updatedCount,
-    });
-  });
 
   // Strategy Variant Analytics endpoint
   app.get('/:id/analytics', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {

@@ -73,16 +73,17 @@ export function TradeScreenshotGallery({
   const [interactiveChartOpen, setInteractiveChartOpen] = useState(false);
   const [interactiveResolution, setInteractiveResolution] = useState<string>('5');
 
-  const openInteractiveChart = (res = '5') => {
-    let cleanRes = res;
-    if (res === '1m') cleanRes = '1';
-    else if (res === '3m') cleanRes = '3';
-    else if (res === '5m') cleanRes = '5';
-    else if (res === '15m') cleanRes = '15';
-    else if (res === '30m') cleanRes = '30';
-    else if (res === '1h' || res === '60m') cleanRes = '60';
-    else if (res === '4h' || res === '240m') cleanRes = '240';
-    else if (res === '1D' || res === 'Daily') cleanRes = 'D';
+  const openInteractiveChart = (res?: string) => {
+    let cleanRes = res || '5';
+    if (cleanRes === '1m' || cleanRes === '1') cleanRes = '1';
+    else if (cleanRes === '3m' || cleanRes === '3') cleanRes = '3';
+    else if (cleanRes === '5m' || cleanRes === '5') cleanRes = '5';
+    else if (cleanRes === '15m' || cleanRes === '15') cleanRes = '15';
+    else if (cleanRes === '30m' || cleanRes === '30') cleanRes = '30';
+    else if (cleanRes === '1h' || cleanRes === '60m' || cleanRes === '60') cleanRes = '60';
+    else if (cleanRes === '4h' || cleanRes === '240m' || cleanRes === '240') cleanRes = '240';
+    else if (cleanRes === '1D' || cleanRes === 'Daily' || cleanRes === 'D') cleanRes = 'D';
+    else cleanRes = '5';
 
     setInteractiveResolution(cleanRes);
     setInteractiveChartOpen(true);
@@ -420,11 +421,9 @@ export function TradeScreenshotGallery({
                   {/* Thumbnail Image Container */}
                   <Box
                     onClick={() => {
-                      if (att.category === 'AUTO_CHART') {
-                        openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
-                      } else {
-                        openViewerAt(att.id);
-                      }
+                      openInteractiveChart(
+                        att.timeframe || (att.chartMeta as any)?.resolution || '5'
+                      );
                     }}
                     sx={{
                       position: 'relative',

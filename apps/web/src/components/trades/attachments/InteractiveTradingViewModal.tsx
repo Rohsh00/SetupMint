@@ -6,6 +6,7 @@ import {
   IconButton,
   Chip,
   Tooltip,
+  LinearProgress,
   CircularProgress,
   Button,
   ButtonGroup,
@@ -23,7 +24,6 @@ import {
   TrendingUpRounded,
   TrendingDownRounded,
   LayersRounded,
-  AccessTimeRounded,
 } from '@mui/icons-material';
 import {
   createChart,
@@ -66,22 +66,19 @@ export function InteractiveTradingViewModal({
   symbol: fallbackSymbol,
 }: InteractiveTradingViewModalProps) {
   const muiTheme = useTheme();
-  const isDark = muiTheme.palette.mode === 'dark';
 
-  const [resolution, setResolution] = useState<string>(initialResolution);
+  const [resolution, setResolution] = useState<string>(initialResolution || '5');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Trade metadata returned from API
+  // Trade metadata
   const [tradeData, setTradeData] = useState<any | null>(null);
-  const [candlesData, setCandlesData] = useState<any[]>([]);
   const [providerName, setProviderName] = useState<string>('FYERS');
   const [isUnderlying, setIsUnderlying] = useState(false);
 
-  // Crosshair HUD hover state
+  // Crosshair HUD state
   const [hoveredCandle, setHoveredCandle] = useState<{
     time: string;
     open: number;
@@ -92,17 +89,23 @@ export function InteractiveTradingViewModal({
     changePct: number;
   } | null>(null);
 
+  // Chart DOM and API references (persistent across re-renders)
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartInstanceRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const markersPluginRef = useRef<any | null>(null);
+  const priceLinesRef = useRef<any[]>([]);
 
-  // Keep track of loaded bounds
+  // State refs to prevent stale closures and infinite re-render loops
+  const candlesRef = useRef<any[]>([]);
   const firstTimeRef = useRef<number | null>(null);
-  const lastTimeRef = useRef<number | null>(null);
   const resolutionRef = useRef<string>(resolution);
   resolutionRef.current = resolution;
+
+  const isInitialLoadRef = useRef(true);
+  const isLoadingOlderRef = useRef(false);
+  const hasMoreHistoryRef = useRef(true);
 
   // Format currency
   const formatCurrency = (val: number | undefined | null) => {
@@ -115,7 +118,7 @@ export function InteractiveTradingViewModal({
   };
 
   // Find closest candle time to an execution timestamp
-  const findClosestCandleTime = useCallback((targetEpochSec: number, candles: any[]): number | null => {
+  const findClosestCandleTime = (targetEpochSec: number, candles: any[]): number | null => {
     if (!candles || candles.length === 0) return null;
     let closestTime = candles[0].time;
     let minDiff = Math.abs(candles[0].time - targetEpochSec);
@@ -128,200 +131,219 @@ export function InteractiveTradingViewModal({
       }
     }
     return closestTime;
+  };
+
+  // Apply candles, price lines, and markers smoothly to the existing chart instance
+  const applyDataToSeries = useCallback((candles: any[], trade: any) => {
+    if (!candlestickSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) {
+      return;
+    }
+
+    const csSeries = candlestickSeriesRef.current;
+    const volSeries = volumeSeriesRef.current;
+
+    // 1. Candlestick series data
+    const chartCandles = candles.map((c) => ({
+      time: c.time as UTCTimestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    csSeries.setData(chartCandles);
+
+    // 2. Volume series data
+    const chartVolumes = candles.map((c) => ({
+      time: c.time as UTCTimestamp,
+      value: c.volume || 0,
+      color: c.close >= c.open ? 'rgba(16, 185, 129, 0.45)' : 'rgba(244, 63, 94, 0.45)',
+    }));
+    volSeries.setData(chartVolumes);
+
+    // 3. Clear existing price lines
+    if (priceLinesRef.current.length > 0) {
+      for (const pl of priceLinesRef.current) {
+        try {
+          csSeries.removePriceLine(pl);
+        } catch {
+          // ignore
+        }
+      }
+      priceLinesRef.current = [];
+    }
+
+    // 4. Attach trade level price lines
+    if (trade) {
+      const isLong = trade.direction === 'LONG';
+
+      // Entry Price Line
+      if (trade.entryPrice) {
+        try {
+          const entryLine = csSeries.createPriceLine({
+            price: trade.entryPrice,
+            color: '#10b981',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `Entry (${trade.direction || 'BUY'})`,
+          });
+          priceLinesRef.current.push(entryLine);
+        } catch {}
+      }
+
+      // Exit Price Line
+      if (trade.exitPrice) {
+        try {
+          const exitLine = csSeries.createPriceLine({
+            price: trade.exitPrice,
+            color: '#f59e0b',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: 'Exit',
+          });
+          priceLinesRef.current.push(exitLine);
+        } catch {}
+      }
+
+      // Stop Loss Line
+      if (trade.stopLoss) {
+        try {
+          const slLine = csSeries.createPriceLine({
+            price: trade.stopLoss,
+            color: '#f43f5e',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Stop Loss',
+          });
+          priceLinesRef.current.push(slLine);
+        } catch {}
+      }
+
+      // Take Profit Line
+      if (trade.takeProfit) {
+        try {
+          const tpLine = csSeries.createPriceLine({
+            price: trade.takeProfit,
+            color: '#06b6d4',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Target (TP)',
+          });
+          priceLinesRef.current.push(tpLine);
+        } catch {}
+      }
+
+      // 5. Overlaid Markers for Entry and Exit
+      const markers: any[] = [];
+      if (trade.entryTime && trade.entryPrice) {
+        const entrySec = Math.floor(new Date(trade.entryTime).getTime() / 1000);
+        const snappedTime = findClosestCandleTime(entrySec, candles);
+        if (snappedTime) {
+          markers.push({
+            time: snappedTime as UTCTimestamp,
+            position: isLong ? 'belowBar' : 'aboveBar',
+            color: '#10b981',
+            shape: isLong ? 'arrowUp' : 'arrowDown',
+            text: `ENTRY @ ₹${trade.entryPrice}`,
+          });
+        }
+      }
+
+      if (trade.exitTime && trade.exitPrice) {
+        const exitSec = Math.floor(new Date(trade.exitTime).getTime() / 1000);
+        const snappedTime = findClosestCandleTime(exitSec, candles);
+        if (snappedTime) {
+          markers.push({
+            time: snappedTime as UTCTimestamp,
+            position: isLong ? 'aboveBar' : 'belowBar',
+            color: '#f43f5e',
+            shape: isLong ? 'arrowDown' : 'arrowUp',
+            text: `EXIT @ ₹${trade.exitPrice}`,
+          });
+        }
+      }
+
+      if (markersPluginRef.current) {
+        try {
+          markersPluginRef.current.setMarkers(markers);
+        } catch {}
+      } else if (markers.length > 0) {
+        try {
+          markersPluginRef.current = createSeriesMarkers(csSeries, markers);
+        } catch {}
+      }
+    }
   }, []);
 
-  // Update chart series, price lines, and markers
-  const applyDataToChart = useCallback(
-    (candles: any[], trade: any) => {
-      if (!candlestickSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) {
-        return;
-      }
-
-      const csSeries = candlestickSeriesRef.current;
-      const volSeries = volumeSeriesRef.current;
-
-      // 1. Candlestick series data
-      const chartCandles = candles.map((c) => ({
-        time: c.time as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      }));
-      csSeries.setData(chartCandles);
-
-      // 2. Volume series data
-      const chartVolumes = candles.map((c) => ({
-        time: c.time as UTCTimestamp,
-        value: c.volume || 0,
-        color: c.close >= c.open ? 'rgba(16, 185, 129, 0.45)' : 'rgba(244, 63, 94, 0.45)',
-      }));
-      volSeries.setData(chartVolumes);
-
-      // 3. Clear existing price lines
-      // Note: in lightweight-charts, removing existing lines requires reference, or re-adding
-      // We will attach trade level price lines
-      if (trade) {
-        const isLong = trade.direction === 'LONG';
-
-        // Entry Price Line
-        if (trade.entryPrice) {
-          try {
-            csSeries.createPriceLine({
-              price: trade.entryPrice,
-              color: '#10b981',
-              lineWidth: 2,
-              lineStyle: LineStyle.Solid,
-              axisLabelVisible: true,
-              title: `Entry (${trade.direction || 'BUY'})`,
-            });
-          } catch {
-            // ignore
-          }
-        }
-
-        // Exit Price Line
-        if (trade.exitPrice) {
-          try {
-            csSeries.createPriceLine({
-              price: trade.exitPrice,
-              color: '#f59e0b',
-              lineWidth: 2,
-              lineStyle: LineStyle.Solid,
-              axisLabelVisible: true,
-              title: 'Exit',
-            });
-          } catch {
-            // ignore
-          }
-        }
-
-        // Stop Loss Line
-        if (trade.stopLoss) {
-          try {
-            csSeries.createPriceLine({
-              price: trade.stopLoss,
-              color: '#f43f5e',
-              lineWidth: 1,
-              lineStyle: LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: 'Stop Loss',
-            });
-          } catch {
-            // ignore
-          }
-        }
-
-        // Take Profit Line
-        if (trade.takeProfit) {
-          try {
-            csSeries.createPriceLine({
-              price: trade.takeProfit,
-              color: '#06b6d4',
-              lineWidth: 1,
-              lineStyle: LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: 'Target (TP)',
-            });
-          } catch {
-            // ignore
-          }
-        }
-
-        // 4. Overlaid Markers for Entry and Exit
-        const markers: any[] = [];
-        if (trade.entryTime && trade.entryPrice) {
-          const entrySec = Math.floor(new Date(trade.entryTime).getTime() / 1000);
-          const snappedTime = findClosestCandleTime(entrySec, candles);
-          if (snappedTime) {
-            markers.push({
-              time: snappedTime as UTCTimestamp,
-              position: isLong ? 'belowBar' : 'aboveBar',
-              color: '#10b981',
-              shape: isLong ? 'arrowUp' : 'arrowDown',
-              text: `ENTRY @ ₹${trade.entryPrice}`,
-            });
-          }
-        }
-
-        if (trade.exitTime && trade.exitPrice) {
-          const exitSec = Math.floor(new Date(trade.exitTime).getTime() / 1000);
-          const snappedTime = findClosestCandleTime(exitSec, candles);
-          if (snappedTime) {
-            markers.push({
-              time: snappedTime as UTCTimestamp,
-              position: isLong ? 'aboveBar' : 'belowBar',
-              color: '#f43f5e',
-              shape: isLong ? 'arrowDown' : 'arrowUp',
-              text: `EXIT @ ₹${trade.exitPrice}`,
-            });
-          }
-        }
-
-        if (markersPluginRef.current) {
-          markersPluginRef.current.setMarkers(markers);
-        } else if (markers.length > 0) {
-          try {
-            markersPluginRef.current = createSeriesMarkers(csSeries, markers);
-          } catch {
-            // ignore
-          }
-        }
-      }
-    },
-    [findClosestCandleTime]
-  );
-
-  // Fetch candles from backend
+  // Fetch candles for a specific resolution
   const fetchCandles = useCallback(
     async (res: string, force = false) => {
+      if (!tradeId) return;
+
       try {
         setLoading(true);
         setErrorMsg(null);
+        isInitialLoadRef.current = true;
+        hasMoreHistoryRef.current = true;
 
         const resp = await api.trades.getInteractiveCandles(tradeId, {
           resolution: res,
           force,
-          preloadBefore: 180,
+          preloadBefore: 200,
           preloadAfter: 60,
         });
 
         if (resp && resp.candles && resp.candles.length > 0) {
+          candlesRef.current = resp.candles;
+          firstTimeRef.current = resp.firstTime;
           setTradeData(resp.trade);
-          setCandlesData(resp.candles);
           setProviderName(resp.provider || 'FYERS');
           setIsUnderlying(resp.isUnderlyingFallback);
-          firstTimeRef.current = resp.firstTime;
-          lastTimeRef.current = resp.lastTime;
-          setHasMoreHistory(true);
 
-          // Apply data to chart
-          applyDataToChart(resp.candles, resp.trade);
+          // Apply data to existing series without recreating chart
+          applyDataToSeries(resp.candles, resp.trade);
 
-          // Auto-fit content
+          // Fit viewport
           if (chartInstanceRef.current) {
             chartInstanceRef.current.timeScale().fitContent();
           }
+
+          // Release initial load lock after viewport settles
+          setTimeout(() => {
+            isInitialLoadRef.current = false;
+          }, 400);
         } else {
-          setErrorMsg('No candle data available for this timeframe.');
+          setErrorMsg('No candlestick data is available for this timeframe.');
         }
       } catch (err: any) {
-        setErrorMsg(err.message || 'Failed to load interactive chart candles.');
+        setErrorMsg(err.message || 'Failed to stream interactive candles.');
       } finally {
         setLoading(false);
       }
     },
-    [tradeId, applyDataToChart]
+    [tradeId, applyDataToSeries]
   );
 
   // Fetch older candles when user pans left
   const fetchOlderHistory = useCallback(async () => {
-    if (loadingMore || !hasMoreHistory || !firstTimeRef.current) return;
+    if (
+      isInitialLoadRef.current ||
+      isLoadingOlderRef.current ||
+      !hasMoreHistoryRef.current ||
+      !firstTimeRef.current ||
+      candlesRef.current.length < 20
+    ) {
+      return;
+    }
 
     try {
+      isLoadingOlderRef.current = true;
       setLoadingMore(true);
-      const toTime = firstTimeRef.current - 1;
 
+      const toTime = firstTimeRef.current - 1;
       const resp = await api.trades.getInteractiveCandles(tradeId, {
         resolution: resolutionRef.current,
         to: toTime,
@@ -329,201 +351,228 @@ export function InteractiveTradingViewModal({
       });
 
       if (resp && resp.candles && resp.candles.length > 0) {
-        // Prepend candles
-        setCandlesData((prev) => {
-          const seen = new Set(prev.map((c) => c.time));
-          const newCandles = resp.candles.filter((c) => !seen.has(c.time));
-          if (newCandles.length === 0) {
-            setHasMoreHistory(false);
-            return prev;
-          }
-          const combined = [...newCandles, ...prev].sort((a, b) => a.time - b.time);
+        const existingMap = new Set(candlesRef.current.map((c) => c.time));
+        const newOlder = resp.candles.filter((c) => !existingMap.has(c.time));
+
+        if (newOlder.length === 0) {
+          hasMoreHistoryRef.current = false;
+        } else {
+          const combined = [...newOlder, ...candlesRef.current].sort((a, b) => a.time - b.time);
+          candlesRef.current = combined;
           firstTimeRef.current = combined[0].time;
-          applyDataToChart(combined, tradeData);
-          return combined;
-        });
+          applyDataToSeries(combined, tradeData);
+        }
       } else {
-        setHasMoreHistory(false);
+        hasMoreHistoryRef.current = false;
       }
     } catch {
-      setHasMoreHistory(false);
+      hasMoreHistoryRef.current = false;
     } finally {
+      isLoadingOlderRef.current = false;
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMoreHistory, tradeId, tradeData, applyDataToChart]);
+  }, [tradeId, tradeData, applyDataToSeries]);
 
-  // Initialize TradingView Lightweight Chart canvas
+  // Synchronize initialResolution whenever modal opens
   useEffect(() => {
-    if (!open || !chartContainerRef.current) return;
+    if (open) {
+      const clean = initialResolution || '5';
+      setResolution(clean);
+      resolutionRef.current = clean;
+    }
+  }, [open, initialResolution]);
 
-    const container = chartContainerRef.current;
+  // Initialize the TradingView Canvas ONCE when modal is open
+  useEffect(() => {
+    if (!open) return;
 
-    // Create chart instance
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: container.clientHeight,
-      layout: {
-        background: { type: ColorType.Solid, color: '#090d16' },
-        textColor: '#94a3b8',
-        fontFamily: `'JetBrains Mono', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`,
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          color: '#64748b',
-          width: 1,
-          style: LineStyle.Dashed,
-          labelBackgroundColor: '#1e293b',
+    let chart: IChartApi | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    // Small delay to ensure Dialog container has rendered dimensions
+    const initTimer = setTimeout(() => {
+      const container = chartContainerRef.current;
+      if (!container) return;
+
+      const width = container.clientWidth || 1000;
+      const height = container.clientHeight || 600;
+
+      // Create single chart instance
+      chart = createChart(container, {
+        width,
+        height,
+        layout: {
+          background: { type: ColorType.Solid, color: '#090d16' },
+          textColor: '#94a3b8',
+          fontFamily: `'JetBrains Mono', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`,
+          fontSize: 11,
         },
-        horzLine: {
-          color: '#64748b',
-          width: 1,
-          style: LineStyle.Dashed,
-          labelBackgroundColor: '#1e293b',
+        grid: {
+          vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
+          horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
         },
-      },
-      rightPriceScale: {
-        borderColor: '#1e293b',
-        autoScale: true,
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: {
+            color: '#64748b',
+            width: 1,
+            style: LineStyle.Dashed,
+            labelBackgroundColor: '#1e293b',
+          },
+          horzLine: {
+            color: '#64748b',
+            width: 1,
+            style: LineStyle.Dashed,
+            labelBackgroundColor: '#1e293b',
+          },
+        },
+        rightPriceScale: {
+          borderColor: '#1e293b',
+          autoScale: true,
+          scaleMargins: {
+            top: 0.1,
+            bottom: 0.2,
+          },
+        },
+        timeScale: {
+          borderColor: '#1e293b',
+          timeVisible: true,
+          secondsVisible: false,
+          rightOffset: 12,
+          barSpacing: 8,
+          minBarSpacing: 3,
+        },
+      });
+
+      // Add Candlestick series
+      const candlestickSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#10b981',
+        downColor: '#f43f5e',
+        borderUpColor: '#10b981',
+        borderDownColor: '#f43f5e',
+        wickUpColor: '#10b981',
+        wickDownColor: '#f43f5e',
+      });
+
+      // Add Volume series (Histogram overlay at bottom)
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        color: 'rgba(16, 185, 129, 0.45)',
+        priceFormat: {
+          type: 'volume',
+        },
+        priceScaleId: '', // Overlay over main pane
+      });
+
+      volumeSeries.priceScale().applyOptions({
         scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
+          top: 0.82,
+          bottom: 0,
         },
-      },
-      timeScale: {
-        borderColor: '#1e293b',
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 12,
-        barSpacing: 8,
-        minBarSpacing: 3,
-      },
-    });
+      });
 
-    // Add Candlestick series
-    const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10b981',
-      downColor: '#f43f5e',
-      borderUpColor: '#10b981',
-      borderDownColor: '#f43f5e',
-      wickUpColor: '#10b981',
-      wickDownColor: '#f43f5e',
-    });
+      chartInstanceRef.current = chart;
+      candlestickSeriesRef.current = candlestickSeries;
+      volumeSeriesRef.current = volumeSeries;
 
-    // Add Volume series (Histogram overlay at bottom)
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      color: 'rgba(16, 185, 129, 0.45)',
-      priceFormat: {
-        type: 'volume',
-      },
-      priceScaleId: '', // Overlay over main pane
-    });
+      // Crosshair move listener for HUD details
+      chart.subscribeCrosshairMove((param) => {
+        if (!param || !param.time || !param.seriesData) {
+          setHoveredCandle(null);
+          return;
+        }
 
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: {
-        top: 0.82,
-        bottom: 0,
-      },
-    });
+        const bar: any = param.seriesData.get(candlestickSeries);
+        const volBar: any = param.seriesData.get(volumeSeries);
 
-    chartInstanceRef.current = chart;
-    candlestickSeriesRef.current = candlestickSeries;
-    volumeSeriesRef.current = volumeSeries;
+        if (bar) {
+          const chg = bar.open ? ((bar.close - bar.open) / bar.open) * 100 : 0;
+          const dateStr = new Date((param.time as number) * 1000).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
 
-    // Crosshair move listener for HUD details
-    chart.subscribeCrosshairMove((param) => {
-      if (!param || !param.time || !param.seriesData) {
-        setHoveredCandle(null);
-        return;
-      }
+          setHoveredCandle({
+            time: dateStr,
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+            volume: volBar?.value || 0,
+            changePct: chg,
+          });
+        }
+      });
 
-      const bar: any = param.seriesData.get(candlestickSeries);
-      const volBar: any = param.seriesData.get(volumeSeries);
+      // Infinite scroll listener for panning left
+      chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+        if (logicalRange && logicalRange.from < 5) {
+          fetchOlderHistory();
+        }
+      });
 
-      if (bar) {
-        const chg = bar.open ? ((bar.close - bar.open) / bar.open) * 100 : 0;
-        const dateStr = new Date((param.time as number) * 1000).toLocaleString('en-IN', {
-          timeZone: 'Asia/Kolkata',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        });
+      // Resize observer
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!entries || entries.length === 0 || !chartInstanceRef.current) return;
+        const { width: w, height: h } = entries[0].contentRect;
+        if (w > 0 && h > 0) {
+          chartInstanceRef.current.applyOptions({ width: w, height: h });
+        }
+      });
+      resizeObserver.observe(container);
 
-        setHoveredCandle({
-          time: dateStr,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-          volume: volBar?.value || 0,
-          changePct: chg,
-        });
-      }
-    });
-
-    // Infinite scroll / lazy loading on pan left
-    chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
-      if (logicalRange && logicalRange.from < 5) {
-        fetchOlderHistory();
-      }
-    });
-
-    // Resize observer for responsive layout
-    const resizeObserver = new ResizeObserver((entries) => {
-      if (!entries || entries.length === 0) return;
-      const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) {
-        chart.applyOptions({ width, height });
-      }
-    });
-    resizeObserver.observe(container);
-
-    // Initial fetch
-    fetchCandles(resolution);
+      // Trigger initial candle fetch
+      fetchCandles(resolutionRef.current);
+    }, 50);
 
     return () => {
-      resizeObserver.disconnect();
-      chart.remove();
+      clearTimeout(initTimer);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (chart) {
+        chart.remove();
+      }
       chartInstanceRef.current = null;
       candlestickSeriesRef.current = null;
       volumeSeriesRef.current = null;
       markersPluginRef.current = null;
+      priceLinesRef.current = [];
+      candlesRef.current = [];
     };
-  }, [open, resolution, fetchCandles, fetchOlderHistory]);
+  }, [open, fetchOlderHistory, fetchCandles]);
 
-  // Handle switching timeframe
+  // Separate effect: when resolution changes while chart is alive, smoothly update data
+  useEffect(() => {
+    if (!open || !chartInstanceRef.current) return;
+    fetchCandles(resolution);
+  }, [open, resolution, fetchCandles]);
+
+  // Handle switching timeframe without destroying chart
   const handleResolutionChange = (newRes: string) => {
     if (newRes === resolution) return;
     setResolution(newRes);
-    fetchCandles(newRes);
   };
 
   // Focus zoom on trade execution range
   const handleFocusExecution = () => {
-    if (!chartInstanceRef.current || !tradeData || candlesData.length === 0) return;
+    if (!chartInstanceRef.current || !tradeData || candlesRef.current.length === 0) return;
 
     const entrySec = tradeData.entryTime ? Math.floor(new Date(tradeData.entryTime).getTime() / 1000) : null;
     const exitSec = tradeData.exitTime ? Math.floor(new Date(tradeData.exitTime).getTime() / 1000) : entrySec;
 
     if (entrySec && exitSec) {
-      const entryCandleTime = findClosestCandleTime(entrySec, candlesData);
-      const exitCandleTime = findClosestCandleTime(exitSec, candlesData);
+      const entryCandleTime = findClosestCandleTime(entrySec, candlesRef.current);
+      const exitCandleTime = findClosestCandleTime(exitSec, candlesRef.current);
 
       if (entryCandleTime && exitCandleTime) {
-        // Find indices
-        const entryIdx = candlesData.findIndex((c) => c.time === entryCandleTime);
-        const exitIdx = candlesData.findIndex((c) => c.time === exitCandleTime);
+        const entryIdx = candlesRef.current.findIndex((c) => c.time === entryCandleTime);
+        const exitIdx = candlesRef.current.findIndex((c) => c.time === exitCandleTime);
 
         if (entryIdx !== -1 && exitIdx !== -1) {
           const fromIdx = Math.max(0, Math.min(entryIdx, exitIdx) - 15);
-          const toIdx = Math.min(candlesData.length - 1, Math.max(entryIdx, exitIdx) + 15);
+          const toIdx = Math.min(candlesRef.current.length - 1, Math.max(entryIdx, exitIdx) + 15);
 
           chartInstanceRef.current.timeScale().setVisibleLogicalRange({
             from: fromIdx,
@@ -766,7 +815,7 @@ export function InteractiveTradingViewModal({
             variant="outlined"
             startIcon={<TrackChangesRounded sx={{ color: '#10b981' }} />}
             onClick={handleFocusExecution}
-            disabled={loading || candlesData.length === 0}
+            disabled={loading || candlesRef.current.length === 0}
             sx={{
               textTransform: 'none',
               fontSize: '0.75rem',
@@ -787,7 +836,7 @@ export function InteractiveTradingViewModal({
             variant="outlined"
             startIcon={<ZoomOutMapRounded sx={{ color: '#06b6d4' }} />}
             onClick={() => chartInstanceRef.current?.timeScale().fitContent()}
-            disabled={loading || candlesData.length === 0}
+            disabled={loading || candlesRef.current.length === 0}
             sx={{
               textTransform: 'none',
               fontSize: '0.75rem',
@@ -853,7 +902,15 @@ export function InteractiveTradingViewModal({
                 L: <span style={{ color: '#f43f5e', fontWeight: 600 }}>{hoveredCandle.low.toFixed(2)}</span>
               </Box>
               <Box>
-                C: <span style={{ color: hoveredCandle.close >= hoveredCandle.open ? '#10b981' : '#f43f5e', fontWeight: 700 }}>{hoveredCandle.close.toFixed(2)}</span>
+                C:{' '}
+                <span
+                  style={{
+                    color: hoveredCandle.close >= hoveredCandle.open ? '#10b981' : '#f43f5e',
+                    fontWeight: 700,
+                  }}
+                >
+                  {hoveredCandle.close.toFixed(2)}
+                </span>
               </Box>
               <Box>
                 Vol: <span style={{ color: '#94a3b8' }}>{hoveredCandle.volume.toLocaleString('en-IN')}</span>
@@ -910,28 +967,23 @@ export function InteractiveTradingViewModal({
       </Box>
 
       {/* 4. Main Chart Canvas Area */}
-      <Box sx={{ flex: 1, position: 'relative', width: '100%', minHeight: 0 }}>
-        {/* Loading Spinner */}
+      <Box sx={{ flex: 1, position: 'relative', width: '100%', minHeight: 0, backgroundColor: '#090d16' }}>
+        {/* Subtle Non-Blocking Top Progress Bar (Never blocks canvas or causes screen flashing) */}
         {loading && (
-          <Box
+          <LinearProgress
             sx={{
               position: 'absolute',
-              inset: 0,
-              backgroundColor: 'rgba(9, 13, 22, 0.75)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10,
-              backdropFilter: 'blur(3px)',
-              gap: 1.5,
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 2.5,
+              zIndex: 20,
+              backgroundColor: 'rgba(6, 182, 212, 0.15)',
+              '& .MuiLinearProgress-bar': {
+                backgroundColor: '#06b6d4',
+              },
             }}
-          >
-            <CircularProgress size={36} sx={{ color: '#06b6d4' }} />
-            <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>
-              Streaming {AVAILABLE_RESOLUTIONS.find((r) => r.key === resolution)?.label || resolution} historical candles...
-            </Typography>
-          </Box>
+          />
         )}
 
         {/* Loading More Indicator (when panning left) */}
@@ -939,38 +991,39 @@ export function InteractiveTradingViewModal({
           <Box
             sx={{
               position: 'absolute',
-              top: 16,
-              left: 16,
-              zIndex: 9,
-              backgroundColor: 'rgba(15, 23, 42, 0.9)',
-              border: '1px solid rgba(6, 182, 212, 0.3)',
+              top: 14,
+              left: 14,
+              zIndex: 15,
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              border: '1px solid rgba(6, 182, 212, 0.35)',
               borderRadius: 2,
               px: 1.5,
               py: 0.5,
               display: 'flex',
               alignItems: 'center',
               gap: 1,
-              backdropFilter: 'blur(4px)',
+              backdropFilter: 'blur(6px)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
             }}
           >
-            <CircularProgress size={14} sx={{ color: '#06b6d4' }} />
-            <Typography variant="caption" sx={{ color: '#cbd5e1', fontSize: '0.7rem', fontWeight: 600 }}>
-              Loading earlier history...
+            <CircularProgress size={13} sx={{ color: '#06b6d4' }} />
+            <Typography variant="caption" sx={{ color: '#cbd5e1', fontSize: '0.7rem', fontWeight: 700 }}>
+              Paging earlier candles...
             </Typography>
           </Box>
         )}
 
-        {/* Error Alert Overlay */}
-        {errorMsg && !loading && (
+        {/* Error Alert Overlay (only if completely empty) */}
+        {errorMsg && !loading && candlesRef.current.length === 0 && (
           <Box
             sx={{
               position: 'absolute',
-              top: '30%',
+              top: '40%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              zIndex: 8,
+              zIndex: 15,
               width: '90%',
-              maxWidth: 520,
+              maxWidth: 480,
             }}
           >
             <Alert
@@ -988,7 +1041,7 @@ export function InteractiveTradingViewModal({
           </Box>
         )}
 
-        {/* Canvas DOM Node */}
+        {/* Canvas DOM Node (Stable and persistent) */}
         <Box
           ref={chartContainerRef}
           sx={{

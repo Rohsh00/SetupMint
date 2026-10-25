@@ -1388,48 +1388,73 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       let candlesResult: any = null;
       let rawCandles: any[] = [];
 
-      // 1. Try to fetch from MarketDataService with fallback
-      try {
-        candlesResult = await MarketDataService.getCandlesWithFallback({
-          trade,
-          resolution: baseRes,
-          from: rangeFrom,
-          to: rangeTo,
-          userId: req.user!.id,
-          forceRefetch,
-        });
-
-        if (candlesResult && candlesResult.ok && candlesResult.candles?.length > 0) {
-          rawCandles = candlesResult.candles;
-        }
-      } catch (err: any) {
-        req.log.warn('MarketDataService fallback fetch threw for trade %s: %s', trade._id, err.message);
-      }
-
-      // 2. If provider call didn't yield candles, search cached TradeCandleSnapshot docs
-      if (rawCandles.length === 0) {
+      // 1. Fast cache-first retrieval from MongoDB snapshot docs (when not forcing refetch)
+      if (!forceRefetch) {
         const snapshots = await TradeCandleSnapshot.find({
           userId: req.user!.id,
           tradeId: trade._id,
         }).sort({ fetchedAt: -1 });
 
+        // A. Look for exact resolution snapshot
         const exactSnap = snapshots.find((s) => s.resolution === targetRes);
         if (exactSnap && exactSnap.candles && exactSnap.candles.length > 0) {
           rawCandles = exactSnap.candles;
           baseRes = exactSnap.resolution;
+          candlesResult = {
+            provider: exactSnap.provider || 'FYERS',
+            isUnderlyingFallback: Boolean(exactSnap.isUnderlyingFallback),
+            symbol: exactSnap.symbol || trade.symbol,
+          };
         } else {
+          // B. Look for 5m or 1m snapshot from which to derive target resolution
           const snap5m = snapshots.find((s) => s.resolution === '5');
           const snap1m = snapshots.find((s) => s.resolution === '1');
+
           if (targetMinutes >= 5 && snap5m && snap5m.candles?.length) {
             rawCandles = snap5m.candles;
             baseRes = '5';
+            candlesResult = {
+              provider: snap5m.provider || 'FYERS',
+              isUnderlyingFallback: Boolean(snap5m.isUnderlyingFallback),
+              symbol: snap5m.symbol || trade.symbol,
+            };
           } else if (snap1m && snap1m.candles?.length) {
             rawCandles = snap1m.candles;
             baseRes = '1';
+            candlesResult = {
+              provider: snap1m.provider || 'FYERS',
+              isUnderlyingFallback: Boolean(snap1m.isUnderlyingFallback),
+              symbol: snap1m.symbol || trade.symbol,
+            };
           } else if (snapshots.length > 0 && snapshots[0].candles?.length) {
             rawCandles = snapshots[0].candles;
             baseRes = snapshots[0].resolution;
+            candlesResult = {
+              provider: snapshots[0].provider || 'FYERS',
+              isUnderlyingFallback: Boolean(snapshots[0].isUnderlyingFallback),
+              symbol: snapshots[0].symbol || trade.symbol,
+            };
           }
+        }
+      }
+
+      // 2. If no cached candles found, or forceRefetch is true, query MarketDataService
+      if (rawCandles.length === 0) {
+        try {
+          candlesResult = await MarketDataService.getCandlesWithFallback({
+            trade,
+            resolution: baseRes,
+            from: rangeFrom,
+            to: rangeTo,
+            userId: req.user!.id,
+            forceRefetch,
+          });
+
+          if (candlesResult && candlesResult.ok && candlesResult.candles?.length > 0) {
+            rawCandles = candlesResult.candles;
+          }
+        } catch (err: any) {
+          req.log.warn('MarketDataService fallback fetch threw for trade %s: %s', trade._id, err.message);
         }
       }
 

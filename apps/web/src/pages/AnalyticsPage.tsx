@@ -710,16 +710,20 @@ export function AnalyticsPage() {
                 Measures execution efficiency, profit giveback, and optimal stop placement across evaluated trades.
               </Typography>
             </Box>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={excursionBackfillMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
-              onClick={() => excursionBackfillMutation.mutate({ limit: 50 })}
-              disabled={excursionBackfillMutation.isPending}
-              sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
-            >
-              {excursionBackfillMutation.isPending ? 'Backfilling Excursion...' : 'Run Excursion Backfill'}
-            </Button>
+            <Tooltip title="Fetch 1-minute historical candle snapshots from FYERS or Angel One and compute peak excursion metrics for all closed trades">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={excursionBackfillMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
+                  onClick={() => excursionBackfillMutation.mutate({ limit: 50 })}
+                  disabled={excursionBackfillMutation.isPending}
+                  sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
+                >
+                  {excursionBackfillMutation.isPending ? 'Backfilling Excursion...' : 'Run Excursion Backfill'}
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
 
           {isExcursionLoading ? (
@@ -799,12 +803,19 @@ export function AnalyticsPage() {
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card sx={{ p: 2, height: '100%' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Avg MFE (Favorable)
-                      </Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
-                        +{summary.avgMfeR !== undefined ? `${summary.avgMfeR}R` : '—'}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Tooltip title="Maximum Favorable Excursion: The peak unrealized profit or maximum favorable price reach before exit.">
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                            Avg MFE (Favorable)
+                          </Typography>
+                        </Tooltip>
+                        <HelpHint hintKey="metric.mfe" />
+                      </Box>
+                      <Tooltip title="Average peak favorable potential reached across trades with stop losses">
+                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                          +{summary.avgMfeR !== undefined ? `${summary.avgMfeR}R` : '—'}
+                        </Typography>
+                      </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Average peak potential per trade
                       </Typography>
@@ -813,12 +824,19 @@ export function AnalyticsPage() {
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card sx={{ p: 2, height: '100%' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Avg MAE (Adverse)
-                      </Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
-                        -{summary.avgMaeR !== undefined ? `${summary.avgMaeR}R` : '—'}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Tooltip title="Maximum Adverse Excursion: The deepest unrealized loss or adverse price dip experienced while the trade was open.">
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                            Avg MAE (Adverse)
+                          </Typography>
+                        </Tooltip>
+                        <HelpHint hintKey="metric.mae" />
+                      </Box>
+                      <Tooltip title="Average maximum adverse drawdown experienced across trades with stop losses">
+                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                          -{summary.avgMaeR !== undefined ? `${summary.avgMaeR}R` : '—'}
+                        </Typography>
+                      </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Average drawdown before exit
                       </Typography>
@@ -827,12 +845,19 @@ export function AnalyticsPage() {
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card sx={{ p: 2, height: '100%' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Exit Efficiency
-                      </Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                        {summary.avgExitEfficiency !== undefined ? `${(summary.avgExitEfficiency * 100).toFixed(1)}%` : '—'}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Tooltip title="Exit Efficiency: Percentage of the maximum favorable price move (MFE) captured at actual exit.">
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                            Exit Efficiency
+                          </Typography>
+                        </Tooltip>
+                        <HelpHint hintKey="metric.exitEfficiency" />
+                      </Box>
+                      <Tooltip title="Percentage of peak favorable excursion captured at exit (higher is better)">
+                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                          {summary.avgExitEfficiency !== undefined ? `${(summary.avgExitEfficiency * 100).toFixed(1)}%` : '—'}
+                        </Typography>
+                      </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Captured % of maximum run
                       </Typography>
@@ -841,12 +866,19 @@ export function AnalyticsPage() {
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card sx={{ p: 2, height: '100%' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Gave Back Profit
-                      </Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
-                        {summary.gaveBackProfitPercent}%
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Tooltip title="Gave Back Profit: Percentage of trades that achieved significant favorable excursion (>1R) but surrendered >50% of peak gains before closing.">
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                            Gave Back Profit
+                          </Typography>
+                        </Tooltip>
+                        <HelpHint hintKey="metric.gaveBackProfit" />
+                      </Box>
+                      <Tooltip title="Trades with strong initial run that gave back >50% peak potential">
+                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
+                          {summary.gaveBackProfitPercent}%
+                        </Typography>
+                      </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Trades surrendering &gt;50% MFE
                       </Typography>
@@ -855,12 +887,19 @@ export function AnalyticsPage() {
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card sx={{ p: 2, height: '100%' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Post-Stop Reversals
-                      </Typography>
-                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
-                        {summary.reversalAfterStopPercent}%
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Tooltip title="Post-Stop Reversals: Percentage of stopped-out trades where market price reversed and subsequently reached original profit targets.">
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                            Post-Stop Reversals
+                          </Typography>
+                        </Tooltip>
+                        <HelpHint hintKey="metric.postStopReversals" />
+                      </Box>
+                      <Tooltip title="Stopped trades reversing to original profit target (indicates stop too tight)">
+                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
+                          {summary.reversalAfterStopPercent}%
+                        </Typography>
+                      </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Stopped trades reversing to target
                       </Typography>
@@ -872,9 +911,12 @@ export function AnalyticsPage() {
                 <Card sx={{ p: 2.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
                     <Box>
-                      <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                        MAE vs MFE Scatter Analysis ({isModeR ? 'R-Multiple' : isModePoints ? 'Points' : '₹ Amount'})
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                          MAE vs MFE Scatter Analysis ({isModeR ? 'R-Multiple' : isModePoints ? 'Points' : '₹ Amount'})
+                        </Typography>
+                        <HelpHint hintKey="analytics.excursion.scatter" />
+                      </Box>
                       <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                         X-Axis: Adverse excursion (drawdown) • Y-Axis: Favorable excursion (peak potential)
                       </Typography>
@@ -882,41 +924,57 @@ export function AnalyticsPage() {
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                       <ButtonGroup size="small" variant="outlined" sx={{ borderRadius: 2 }}>
-                        <Button
-                          variant={currentMode === 'R' ? 'contained' : 'outlined'}
-                          onClick={() => setScatterMode('R')}
-                          size="small"
-                          sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
-                        >
-                          R-Multiple {summary?.countWithStop !== undefined ? `(${summary.countWithStop})` : ''}
-                        </Button>
-                        <Button
-                          variant={currentMode === 'POINTS' ? 'contained' : 'outlined'}
-                          onClick={() => setScatterMode('POINTS')}
-                          size="small"
-                          sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
-                        >
-                          Points ({points.filter((p: any) => p.maePoints !== undefined).length})
-                        </Button>
-                        <Button
-                          variant={currentMode === 'AMOUNT' ? 'contained' : 'outlined'}
-                          onClick={() => setScatterMode('AMOUNT')}
-                          size="small"
-                          sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
-                        >
-                          Amount (₹)
-                        </Button>
+                        <Tooltip title="View excursion normalized to initial risk (1R). Only includes trades where stop loss was set.">
+                          <span>
+                            <Button
+                              variant={currentMode === 'R' ? 'contained' : 'outlined'}
+                              onClick={() => setScatterMode('R')}
+                              size="small"
+                              sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
+                            >
+                              R-Multiple {summary?.countWithStop !== undefined ? `(${summary.countWithStop})` : ''}
+                            </Button>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="View excursion in price points/ticks across all evaluated trades.">
+                          <span>
+                            <Button
+                              variant={currentMode === 'POINTS' ? 'contained' : 'outlined'}
+                              onClick={() => setScatterMode('POINTS')}
+                              size="small"
+                              sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
+                            >
+                              Points ({points.filter((p: any) => p.maePoints !== undefined).length})
+                            </Button>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="View excursion in Indian Rupee (₹) monetary drawdown and profit potential across all trades.">
+                          <span>
+                            <Button
+                              variant={currentMode === 'AMOUNT' ? 'contained' : 'outlined'}
+                              onClick={() => setScatterMode('AMOUNT')}
+                              size="small"
+                              sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
+                            >
+                              Amount (₹)
+                            </Button>
+                          </span>
+                        </Tooltip>
                       </ButtonGroup>
 
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.profit.main }} />
-                          <Typography variant="caption" sx={{ fontWeight: 600 }}>Winners ({winPoints.length})</Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.loss.main }} />
-                          <Typography variant="caption" sx={{ fontWeight: 600 }}>Losers ({lossPoints.length})</Typography>
-                        </Box>
+                        <Tooltip title="Winning trades with Net P&L >= ₹0">
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'default' }}>
+                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.profit.main }} />
+                            <Typography variant="caption" sx={{ fontWeight: 600 }}>Winners ({winPoints.length})</Typography>
+                          </Box>
+                        </Tooltip>
+                        <Tooltip title="Losing trades with Net P&L < ₹0">
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'default' }}>
+                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.loss.main }} />
+                            <Typography variant="caption" sx={{ fontWeight: 600 }}>Losers ({lossPoints.length})</Typography>
+                          </Box>
+                        </Tooltip>
                       </Box>
                     </Box>
                   </Box>
@@ -998,30 +1056,36 @@ export function AnalyticsPage() {
 
                   {/* Interpretation Guidance */}
                   <Box sx={{ mt: 2.5, p: 2, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                    <Box sx={{ flex: 1, minWidth: 200 }}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                        Clean Winners (Top Left)
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        Low MAE (&lt; 0.5R) and high MFE (&gt; 1.5R). Perfect execution with minimal heat.
-                      </Typography>
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 200 }}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                        Rollercoaster Trades (Top Right)
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        High MAE and high MFE. Large adverse heat taken before reaching target; review entries.
-                      </Typography>
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 200 }}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                        Exit Efficiency Opportunity
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        If MFE is consistently 2-3x higher than realized R, trail stops more tightly or take partials.
-                      </Typography>
-                    </Box>
+                    <Tooltip title="Benchmark execution: The entry was so accurate that market price barely moved against your position before running to target." arrow>
+                      <Box sx={{ flex: 1, minWidth: 200, cursor: 'help' }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                          Clean Winners (Top Left)
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          Low MAE (&lt; 0.5R) and high MFE (&gt; 1.5R). Perfect execution with minimal heat.
+                        </Typography>
+                      </Box>
+                    </Tooltip>
+                    <Tooltip title="Stressful execution: Price suffered significant drawdown before recovering. Check if entries are premature or if stops were saved by luck." arrow>
+                      <Box sx={{ flex: 1, minWidth: 200, cursor: 'help' }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                          Rollercoaster Trades (Top Right)
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          High MAE and high MFE. Large adverse heat taken before reaching target; review entries.
+                        </Typography>
+                      </Box>
+                    </Tooltip>
+                    <Tooltip title="Trade management edge: If peak MFE is high but realized P&L is low, tighten trailing stops or take partial profits at +1.5R to +2R." arrow>
+                      <Box sx={{ flex: 1, minWidth: 200, cursor: 'help' }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                          Exit Efficiency Opportunity
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          If MFE is consistently 2-3x higher than realized R, trail stops more tightly or take partials.
+                        </Typography>
+                      </Box>
+                    </Tooltip>
                   </Box>
                 </Card>
               </>

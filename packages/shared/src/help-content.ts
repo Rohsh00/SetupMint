@@ -36,6 +36,9 @@ export type HelpKey =
   | 'metric.mfe'
   | 'metric.exitEfficiency'
   | 'metric.excursionFlags'
+  | 'metric.gaveBackProfit'
+  | 'metric.postStopReversals'
+  | 'analytics.excursion.scatter'
   | 'metric.sampleReliability'
 
   // Trade Detail & Execution Keys
@@ -317,6 +320,34 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     details: 'Flags: GAVE_BACK_PROFIT (hit >2R MFE but exited for a loss or scratch), EXITED_EARLY (closed before 1R while price ran past target), STOP_TOO_TIGHT_EVIDENCE (stopped out before price ran to target).',
     seeAlso: ['metric.mae', 'metric.mfe'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#excursion-flags',
+  },
+
+  'metric.gaveBackProfit': {
+    title: 'Gave Back Profit Rate',
+    summary: 'Percentage of evaluated trades that achieved significant favorable excursion (>1R or >50% run) but surrendered profits before exit.',
+    details: 'Highlights premature profit giveback and trailing stop inefficiencies. A high rate indicates greed, lack of partial profit-taking, or holding runners too long after momentum dissipates.',
+    formula: 'Gave Back Profit % = (Count of Trades with GAVE_BACK_PROFIT Flag / Total Evaluated Trades) * 100',
+    example: 'A trade reaching +2.5R peak unrealized gain that reverses and closes at +0.2R triggers the gave-back profit metric.',
+    seeAlso: ['metric.mfe', 'metric.exitEfficiency'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#mae-mfe',
+  },
+
+  'metric.postStopReversals': {
+    title: 'Post-Stop Reversals (Stop Too Tight)',
+    summary: 'Percentage of stopped-out trades where market price reversed and subsequently reached original profit targets.',
+    details: 'Pinpoints stop-hunting or placing stop losses inside standard market noise / volatility bands. If high (>20%), consider widening stops to structural swing levels or ATR multiples.',
+    formula: 'Reversal After Stop % = (Count of Stopped Trades Reversing to Target / Total Trades with Stops) * 100',
+    example: 'Buying NIFTY at 22,000 with SL at 21,980. Price dips to 21,975, stops you out, then rallies to 22,100.',
+    seeAlso: ['metric.mae', 'analytics.whatIf.calibration'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#mae-mfe',
+  },
+
+  'analytics.excursion.scatter': {
+    title: 'MAE vs. MFE Scatter Matrix',
+    summary: '2D mapping of trade drawdown (X-axis) against trade peak profit potential (Y-axis).',
+    details: 'Top-Left Quadrant: Clean winners with low drawdown (<0.5R) and large runs. Top-Right: Rollercoaster trades that took high heat before winning. Bottom-Right: Heavy losers with zero favorable traction.',
+    seeAlso: ['metric.mae', 'metric.mfe', 'metric.exitEfficiency'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#mae-mfe',
   },
 
   'metric.sampleReliability': {

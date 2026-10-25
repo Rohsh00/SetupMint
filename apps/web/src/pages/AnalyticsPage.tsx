@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useOutletContext } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
@@ -13,7 +13,9 @@ import Paper from '@mui/material/Paper';
 import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
+import CircularProgress from '@mui/material/CircularProgress';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
+import { toast } from '../context/ToastContext.js';
 
 // Icons
 import ShowChartIcon from '@mui/icons-material/ShowChartRounded';
@@ -24,6 +26,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 
 import {
   Area,
@@ -88,6 +91,20 @@ export function AnalyticsPage() {
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
       }),
     enabled: activeTab === 'EXECUTION',
+  });
+
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const excursionBackfillMutation = useMutation({
+    mutationFn: (params: { limit?: number } = {}) => api.integrations.fyersBackfillExcursion(params),
+    onSuccess: (res) => {
+      toast.success(`Excursion backfill: ${res.computed} computed, ${res.remaining} remaining.`);
+      queryClient.invalidateQueries({ queryKey: ['analytics-excursion'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to backfill excursion data');
+    },
   });
 
   if (isStatsLoading || isPsychLoading) {
@@ -674,6 +691,29 @@ export function AnalyticsPage() {
       {/* TAB 4: EXECUTION QUALITY (MAE / MFE) */}
       {activeTab === 'EXECUTION' && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Header Action Bar */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TimelineRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                Maximum Adverse Excursion (MAE) & Favorable Excursion (MFE)
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Measures execution efficiency, profit giveback, and optimal stop placement across evaluated trades.
+              </Typography>
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={excursionBackfillMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
+              onClick={() => excursionBackfillMutation.mutate({ limit: 50 })}
+              disabled={excursionBackfillMutation.isPending}
+              sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
+            >
+              {excursionBackfillMutation.isPending ? 'Backfilling Excursion...' : 'Run Excursion Backfill'}
+            </Button>
+          </Box>
+
           {isExcursionLoading ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Skeleton variant="rounded" height={100} />
@@ -686,13 +726,47 @@ export function AnalyticsPage() {
 
             if (!hasData) {
               return (
-                <Card sx={{ p: 4, textAlign: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                    No Excursion Analytics Found
+                <Card sx={{ p: 5, textAlign: 'center', borderRadius: 3, border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                  <Box
+                    sx={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: '50%',
+                      backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mx: 'auto',
+                      mb: 2,
+                    }}
+                  >
+                    <TimelineRoundedIcon sx={{ color: '#06b6d4', fontSize: 32 }} />
+                  </Box>
+                  <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>
+                    No Excursion Analytics Computed Yet
                   </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 500, mx: 'auto', mb: 2 }}>
-                    Excursion analytics calculate Maximum Adverse Excursion (MAE) and Maximum Favorable Excursion (MFE) using FYERS 1-minute historical candles. Compute excursion on your closed trades or run a backfill in Settings.
+                  <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 520, mx: 'auto', mb: 3 }}>
+                    Excursion analytics calculate Maximum Adverse Excursion (MAE) and Maximum Favorable Excursion (MFE) using 1-minute historical candles to measure trade drawdown and peak unrealized potential.
                   </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      startIcon={excursionBackfillMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <SyncRoundedIcon />}
+                      onClick={() => excursionBackfillMutation.mutate({ limit: 50 })}
+                      disabled={excursionBackfillMutation.isPending}
+                      sx={{ textTransform: 'none', fontWeight: 700, px: 3, py: 1, borderRadius: 2 }}
+                    >
+                      {excursionBackfillMutation.isPending ? 'Computing Excursion...' : 'Run Excursion Backfill'}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={() => navigate('/settings')}
+                      sx={{ textTransform: 'none', fontWeight: 600, px: 2.5, py: 1, borderRadius: 2, borderColor: 'rgba(255, 255, 255, 0.15)' }}
+                    >
+                      Market Data Settings
+                    </Button>
+                  </Box>
                 </Card>
               );
             }

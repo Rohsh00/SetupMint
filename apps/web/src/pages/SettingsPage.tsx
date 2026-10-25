@@ -51,7 +51,17 @@ import {
   ContentCopyRounded,
   OpenInNewRounded,
   TimelineRounded,
+  AddRounded,
+  DeleteRounded,
+  EditRounded,
+  AutoAwesomeRounded,
+  TuneRounded,
+  LayersRounded,
 } from '@mui/icons-material';
+import {
+  IInstrumentDetectionSetting,
+  DEFAULT_PATTERN_DETECTION_SETTINGS,
+} from '@tradevault/shared';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { api } from '../lib/api.js';
@@ -165,6 +175,35 @@ export function SettingsPage() {
   const [riskSuccess, setRiskSuccess] = useState(false);
   const [riskError, setRiskError] = useState<string | null>(null);
 
+  // Active Strategies for Preferred Routing
+  const { data: userStrategies = [] } = useQuery({
+    queryKey: ['strategies-active'],
+    queryFn: () => api.strategies.list(),
+  });
+
+  // Pattern Detection Settings state
+  const [defaultHtf, setDefaultHtf] = useState(user?.patternDetectionSettings?.defaultHtf || '240');
+  const [defaultLtf, setDefaultLtf] = useState(user?.patternDetectionSettings?.defaultLtf || '5');
+  const [autoDetectOnImport, setAutoDetectOnImport] = useState(
+    user?.patternDetectionSettings?.autoDetectOnImport ?? true
+  );
+  const [autoDetectMistakes, setAutoDetectMistakes] = useState(
+    user?.patternDetectionSettings?.autoDetectMistakes ?? true
+  );
+  const [instrumentOverrides, setInstrumentOverrides] = useState<IInstrumentDetectionSetting[]>(
+    user?.patternDetectionSettings?.instrumentOverrides || DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides
+  );
+  const [patternSuccess, setPatternSuccess] = useState(false);
+  const [patternError, setPatternError] = useState<string | null>(null);
+
+  // Dialog state for adding/editing instrument override
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
+  const [editingOverrideIndex, setEditingOverrideIndex] = useState<number | null>(null);
+  const [overrideSymbol, setOverrideSymbol] = useState('');
+  const [overrideHtf, setOverrideHtf] = useState('60');
+  const [overrideLtf, setOverrideLtf] = useState('1');
+  const [overridePreferredStrategyId, setOverridePreferredStrategyId] = useState('');
+
   React.useEffect(() => {
     if (user?.riskSettings) {
       if (user.riskSettings.maxDailyLoss !== undefined) setMaxDailyLoss(user.riskSettings.maxDailyLoss);
@@ -172,6 +211,13 @@ export function SettingsPage() {
       if (user.riskSettings.maxOpenTrades !== undefined) setMaxOpenTrades(user.riskSettings.maxOpenTrades);
       if (user.riskSettings.maxRiskPerTradePercent !== undefined) setMaxRiskPerTradePercent(user.riskSettings.maxRiskPerTradePercent);
       if (user.riskSettings.revengeTradingMinutes !== undefined) setRevengeTradingMinutes(user.riskSettings.revengeTradingMinutes);
+    }
+    if (user?.patternDetectionSettings) {
+      if (user.patternDetectionSettings.defaultHtf) setDefaultHtf(user.patternDetectionSettings.defaultHtf);
+      if (user.patternDetectionSettings.defaultLtf) setDefaultLtf(user.patternDetectionSettings.defaultLtf);
+      if (user.patternDetectionSettings.autoDetectOnImport !== undefined) setAutoDetectOnImport(user.patternDetectionSettings.autoDetectOnImport);
+      if (user.patternDetectionSettings.autoDetectMistakes !== undefined) setAutoDetectMistakes(user.patternDetectionSettings.autoDetectMistakes);
+      if (user.patternDetectionSettings.instrumentOverrides) setInstrumentOverrides(user.patternDetectionSettings.instrumentOverrides);
     }
   }, [user]);
 
@@ -270,6 +316,126 @@ export function SettingsPage() {
       revengeTradingMinutes: Number(revengeTradingMinutes),
     });
   };
+
+  const patternMutation = useMutation({
+    mutationFn: (payload: any) => api.settings.updateProfile({ patternDetectionSettings: payload }),
+    onSuccess: () => {
+      refreshUser();
+      setPatternError(null);
+      setPatternSuccess(true);
+      toast.success('Market structure & timeframe detection settings saved.');
+      setTimeout(() => setPatternSuccess(false), 3000);
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Failed to update pattern detection settings';
+      setPatternError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const handlePatternSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    patternMutation.mutate({
+      defaultHtf,
+      defaultLtf,
+      autoDetectOnImport,
+      autoDetectMistakes,
+      instrumentOverrides,
+    });
+  };
+
+  const handleResetPatternDefaults = () => {
+    setDefaultHtf(DEFAULT_PATTERN_DETECTION_SETTINGS.defaultHtf);
+    setDefaultLtf(DEFAULT_PATTERN_DETECTION_SETTINGS.defaultLtf);
+    setAutoDetectOnImport(true);
+    setAutoDetectMistakes(true);
+    setInstrumentOverrides(DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides);
+    toast.info('Reset detection settings to recommended institutional defaults (4H Trend, 5M Confirmation). Click "Save Detection Settings" to persist.');
+  };
+
+  const handleAddPreset = (symbol: string, htf: string, ltf: string) => {
+    setInstrumentOverrides((prev) => {
+      const existingIdx = prev.findIndex((o) => o.symbol.toUpperCase() === symbol.toUpperCase());
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], htf, ltf };
+        return updated;
+      }
+      return [...prev, { symbol, htf, ltf }];
+    });
+    toast.success(`Preset for ${symbol} (${formatResLabel(htf)} HTF + ${formatResLabel(ltf)} LTF) added.`);
+  };
+
+  const handleOpenAddOverride = () => {
+    setEditingOverrideIndex(null);
+    setOverrideSymbol('');
+    setOverrideHtf('60');
+    setOverrideLtf('1');
+    setOverridePreferredStrategyId('');
+    setOverrideDialogOpen(true);
+  };
+
+  const handleEditOverride = (idx: number) => {
+    const item = instrumentOverrides[idx];
+    if (!item) return;
+    setEditingOverrideIndex(idx);
+    setOverrideSymbol(item.symbol);
+    setOverrideHtf(item.htf);
+    setOverrideLtf(item.ltf);
+    setOverridePreferredStrategyId(item.preferredStrategyId || '');
+    setOverrideDialogOpen(true);
+  };
+
+  const handleDeleteOverride = (idx: number) => {
+    setInstrumentOverrides((prev) => prev.filter((_, i) => i !== idx));
+    toast.info('Instrument override removed.');
+  };
+
+  const handleSaveOverride = () => {
+    const sym = overrideSymbol.trim().toUpperCase();
+    if (!sym) return;
+
+    const strat = userStrategies.find((s: any) => String(s._id || s.id) === overridePreferredStrategyId);
+    const newOverride: IInstrumentDetectionSetting = {
+      symbol: sym,
+      htf: overrideHtf,
+      ltf: overrideLtf,
+      preferredStrategyId: overridePreferredStrategyId || undefined,
+      preferredStrategyName: strat?.name || undefined,
+    };
+
+    setInstrumentOverrides((prev) => {
+      if (editingOverrideIndex !== null) {
+        const updated = [...prev];
+        updated[editingOverrideIndex] = newOverride;
+        return updated;
+      }
+      const existingIdx = prev.findIndex((o) => o.symbol.toUpperCase() === sym);
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx] = newOverride;
+        return updated;
+      }
+      return [...prev, newOverride];
+    });
+
+    setOverrideDialogOpen(false);
+    toast.success(`Override saved for ${sym} (${formatResLabel(overrideHtf)} + ${formatResLabel(overrideLtf)}).`);
+  };
+
+  function formatResLabel(res: string): string {
+    const map: Record<string, string> = {
+      '1': '1m',
+      '3': '3m',
+      '5': '5m',
+      '15': '15m',
+      '30': '30m',
+      '60': '1h',
+      '240': '4h',
+      'D': '1D',
+    };
+    return map[res] || `${res}m`;
+  }
 
 
   const fyersConfigMutation = useMutation({
@@ -752,6 +918,297 @@ export function SettingsPage() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Market Structure & Pattern Detection Engine */}
+      <Card variant="outlined" sx={{ p: 1 }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TimelineRounded sx={{ color: 'primary.main' }} />
+                Market Structure & Pattern Detection Engine
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Configure higher timeframe trend analysis, lower timeframe confirmation timeframes, and instrument-specific rules (e.g. NIFTY 1h+1m, CRUDEOIL 4h+5m) with automatic mistake detection.
+              </Typography>
+            </Box>
+            <Chip
+              icon={<AutoAwesomeRounded sx={{ fontSize: '1rem !important' }} />}
+              label="4H Trend + 5M Confirmation Engine"
+              color="primary"
+              variant="outlined"
+              size="small"
+              sx={{ fontWeight: 600, fontFamily: '"JetBrains Mono", monospace' }}
+            />
+          </Box>
+
+          <form onSubmit={handlePatternSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Global Default Timeframes */}
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                border: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LayersRounded fontSize="small" sx={{ color: 'text.secondary' }} />
+                Global Timeframe Defaults (Fallback for Any Instrument)
+              </Typography>
+
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    select
+                    label="Default Higher Timeframe (HTF) Trend"
+                    size="small"
+                    fullWidth
+                    value={defaultHtf}
+                    onChange={(e) => setDefaultHtf(e.target.value)}
+                    helperText="Calculates institutional bias & structural trend (EMA 20/50 + swing points)"
+                  >
+                    <MenuItem value="60">1 Hour (60m) — Fast Intraday Trend</MenuItem>
+                    <MenuItem value="240">4 Hours (240m) — Recommended Institutional Baseline</MenuItem>
+                    <MenuItem value="D">Daily (1D) — Macro Swing Bias</MenuItem>
+                  </TextField>
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    select
+                    label="Default Lower Timeframe (LTF) Confirmation"
+                    size="small"
+                    fullWidth
+                    value={defaultLtf}
+                    onChange={(e) => setDefaultLtf(e.target.value)}
+                    helperText="Evaluates entry candlestick window, liquidity sweeps (EQL/EQH/W/M), and wicks"
+                  >
+                    <MenuItem value="1">1 Minute (1m) — Precision Scalping Confirmation</MenuItem>
+                    <MenuItem value="3">3 Minutes (3m) — Fast Execution Window</MenuItem>
+                    <MenuItem value="5">5 Minutes (5m) — Recommended Confirmation Baseline</MenuItem>
+                    <MenuItem value="15">15 Minutes (15m) — Conservative Setup Confirmation</MenuItem>
+                  </TextField>
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Auto-Classify on Import & Chart Gen
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Automatically evaluate HTF trend + LTF sweep pattern on trade sync
+                      </Typography>
+                    </Box>
+                    <Switch
+                      checked={autoDetectOnImport}
+                      onChange={(e) => setAutoDetectOnImport(e.target.checked)}
+                      color="primary"
+                    />
+                  </Box>
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Auto-Detect Execution Mistakes
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Detect counter-trend entries, missing sweeps, premature unswept entries
+                      </Typography>
+                    </Box>
+                    <Switch
+                      checked={autoDetectMistakes}
+                      onChange={(e) => setAutoDetectMistakes(e.target.checked)}
+                      color="primary"
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </Box>
+
+            {/* Instrument-Specific Overrides & Strategy Routing */}
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                border: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TuneRounded fontSize="small" sx={{ color: 'text.secondary' }} />
+                    Instrument-Specific Overrides & Strategy Routing
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Assign custom timeframes and preferred strategies to specific assets (e.g. NIFTY 1h+1m, CRUDEOIL 4h+5m).
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddRounded />}
+                  onClick={() => handleOpenAddOverride()}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Add Instrument Override
+                </Button>
+              </Box>
+
+              {/* Quick Presets */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                  Quick Presets:
+                </Typography>
+                <Chip
+                  label="+ NIFTY (1h Trend • 1m Confirmation)"
+                  size="small"
+                  clickable
+                  onClick={() => handleAddPreset('NIFTY', '60', '1')}
+                  sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                />
+                <Chip
+                  label="+ BANKNIFTY (1h Trend • 1m Confirmation)"
+                  size="small"
+                  clickable
+                  onClick={() => handleAddPreset('BANKNIFTY', '60', '1')}
+                  sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                />
+                <Chip
+                  label="+ CRUDEOIL (4h Trend • 5m Confirmation)"
+                  size="small"
+                  clickable
+                  onClick={() => handleAddPreset('CRUDEOIL', '240', '5')}
+                  sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                />
+                <Chip
+                  label="+ GOLD (4h Trend • 5m Confirmation)"
+                  size="small"
+                  clickable
+                  onClick={() => handleAddPreset('GOLD', '240', '5')}
+                  sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                />
+              </Box>
+
+              {/* Overrides List */}
+              {instrumentOverrides.length === 0 ? (
+                <Box sx={{ py: 3, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No instrument-specific overrides configured. All trades will use global defaults (
+                    {formatResLabel(defaultHtf)} HTF + {formatResLabel(defaultLtf)} LTF).
+                  </Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {instrumentOverrides.map((item, idx) => (
+                    <Box
+                      key={`${item.symbol}-${idx}`}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        p: 1.5,
+                        borderRadius: 1.5,
+                        bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                        border: 1,
+                        borderColor: 'divider',
+                        gap: 2,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                        <Chip
+                          label={item.symbol}
+                          color="primary"
+                          size="small"
+                          sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}
+                        />
+                        <Chip
+                          label={`HTF: ${formatResLabel(item.htf)}`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontFamily: '"JetBrains Mono", monospace' }}
+                        />
+                        <Chip
+                          label={`LTF: ${formatResLabel(item.ltf)}`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontFamily: '"JetBrains Mono", monospace' }}
+                        />
+                        {item.preferredStrategyName ? (
+                          <Chip
+                            label={`Preferred: ${item.preferredStrategyName}`}
+                            size="small"
+                            color="info"
+                            variant="outlined"
+                          />
+                        ) : (
+                          <Chip
+                            label="Strategy: Dynamic Pattern Match"
+                            size="small"
+                            sx={{ color: 'text.secondary', bgcolor: 'transparent' }}
+                          />
+                        )}
+                      </Box>
+
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Tooltip title="Edit override">
+                          <IconButton size="small" onClick={() => handleEditOverride(idx)}>
+                            <EditRounded fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete override">
+                          <IconButton size="small" color="error" onClick={() => handleDeleteOverride(idx)}>
+                            <DeleteRounded fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+
+            {patternSuccess && (
+              <Alert severity="success" icon={<CheckCircleRounded fontSize="inherit" />}>
+                Market structure & timeframe detection settings saved successfully.
+              </Alert>
+            )}
+
+            {patternError && (
+              <Alert severity="error" onClose={() => setPatternError(null)}>
+                {patternError}
+              </Alert>
+            )}
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pt: 1 }}>
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                disabled={patternMutation.isPending}
+                sx={{ fontWeight: 600, px: 3 }}
+              >
+                {patternMutation.isPending ? 'Saving Detection Settings...' : 'Save Detection Settings'}
+              </Button>
+              <Button
+                variant="outlined"
+                color="inherit"
+                onClick={handleResetPatternDefaults}
+                sx={{ fontWeight: 600 }}
+              >
+                Reset to Recommended Defaults
+              </Button>
+            </Box>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* System Status & Local Privacy Panel */}
       <Card variant="outlined" sx={{ p: 1 }}>
@@ -1450,6 +1907,89 @@ export function SettingsPage() {
             sx={{ fontWeight: 700 }}
           >
             {angelOneConnectMutation.isPending ? 'Verifying...' : 'Authorize Session'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add / Edit Instrument Override Dialog */}
+      <Dialog
+        open={overrideDialogOpen}
+        onClose={() => setOverrideDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {editingOverrideIndex !== null ? 'Edit Instrument Override' : 'Add Instrument Override'}
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+          <TextField
+            label="Underlying Symbol *"
+            size="small"
+            required
+            fullWidth
+            placeholder="e.g. NIFTY, BANKNIFTY, CRUDEOIL"
+            value={overrideSymbol}
+            onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase().trim())}
+            helperText="Matches underlying index, futures, or option contracts"
+            slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+          />
+
+          <TextField
+            select
+            label="Higher Timeframe (HTF) Trend"
+            size="small"
+            fullWidth
+            value={overrideHtf}
+            onChange={(e) => setOverrideHtf(e.target.value)}
+          >
+            <MenuItem value="60">1 Hour (60m)</MenuItem>
+            <MenuItem value="240">4 Hours (240m) — Recommended</MenuItem>
+            <MenuItem value="D">Daily (1D)</MenuItem>
+          </TextField>
+
+          <TextField
+            select
+            label="Lower Timeframe (LTF) Confirmation"
+            size="small"
+            fullWidth
+            value={overrideLtf}
+            onChange={(e) => setOverrideLtf(e.target.value)}
+          >
+            <MenuItem value="1">1 Minute (1m)</MenuItem>
+            <MenuItem value="3">3 Minutes (3m)</MenuItem>
+            <MenuItem value="5">5 Minutes (5m) — Recommended</MenuItem>
+            <MenuItem value="15">15 Minutes (15m)</MenuItem>
+          </TextField>
+
+          <TextField
+            select
+            label="Preferred Strategy (Optional)"
+            size="small"
+            fullWidth
+            value={overridePreferredStrategyId}
+            onChange={(e) => setOverridePreferredStrategyId(e.target.value)}
+            helperText="Auto-routes this instrument to preferred strategy if pattern aligns"
+          >
+            <MenuItem value="">Auto-Classify by Pattern (No Preference)</MenuItem>
+            {userStrategies.map((strat: any) => (
+              <MenuItem key={strat._id || strat.id} value={strat._id || strat.id}>
+                {strat.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setOverrideDialogOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveOverride}
+            variant="contained"
+            color="primary"
+            disabled={!overrideSymbol.trim()}
+            sx={{ fontWeight: 600 }}
+          >
+            Save Override
           </Button>
         </DialogActions>
       </Dialog>

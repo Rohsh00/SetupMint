@@ -176,6 +176,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           baseCurrency: user.baseCurrency,
           theme: user.theme,
           riskSettings: user.riskSettings,
+          patternDetectionSettings: user.patternDetectionSettings,
           createdAt: user.createdAt,
         },
       },

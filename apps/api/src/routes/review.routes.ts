@@ -43,6 +43,12 @@ function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
     plannedTarget: t.risk?.plannedTarget,
     targetRationale: t.thesis?.targetRationale,
     initialStopLoss: t.risk?.initialStopLoss,
+    setup: t.setup,
+    excursion: t.calculated?.excursion,
+    stopLossMoved: (t.calculated as any)?.stopLossMoved ?? (t as any).tradeManagement?.stopLossMoved,
+    stopMoveSummary: t.calculated?.stopMoveSummary,
+    stopLossMoveEvents: (t as any).stopLossMoveEvents,
+    tickSize: 0.05,
   };
 }
 

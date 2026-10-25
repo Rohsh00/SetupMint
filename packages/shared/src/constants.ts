@@ -1109,7 +1109,7 @@ export const CHART_ATTACHMENT_CATEGORIES: {
   },
 ];
 
-export const CHART_RESOLUTIONS = ['1', '5', '15', '30', '60', 'D'] as const;
+export const CHART_RESOLUTIONS = ['1', '5', '15', '30', '60', '240', 'D'] as const;
 export type ChartResolution = (typeof CHART_RESOLUTIONS)[number];
 
 export const CHART_RESOLUTION_LABELS: Record<string, string> = {
@@ -1118,6 +1118,7 @@ export const CHART_RESOLUTION_LABELS: Record<string, string> = {
   '15': '15m',
   '30': '30m',
   '60': '1h',
+  '240': '4h',
   'D': '1D',
 };
 

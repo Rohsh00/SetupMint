@@ -187,6 +187,34 @@ export interface IRiskSettings {
   revengeTradingMinutes?: number;
 }
 
+export interface IInstrumentDetectionSetting {
+  symbol: string;
+  htf: string;
+  ltf: string;
+  preferredStrategyId?: string;
+  preferredStrategyName?: string;
+}
+
+export interface IPatternDetectionSettings {
+  defaultHtf: string;
+  defaultLtf: string;
+  autoDetectOnImport?: boolean;
+  autoDetectMistakes?: boolean;
+  instrumentOverrides: IInstrumentDetectionSetting[];
+}
+
+export const DEFAULT_PATTERN_DETECTION_SETTINGS: IPatternDetectionSettings = {
+  defaultHtf: '240',
+  defaultLtf: '5',
+  autoDetectOnImport: true,
+  autoDetectMistakes: true,
+  instrumentOverrides: [
+    { symbol: 'NIFTY', htf: '60', ltf: '1' },
+    { symbol: 'BANKNIFTY', htf: '60', ltf: '1' },
+    { symbol: 'CRUDEOIL', htf: '240', ltf: '5' },
+  ],
+};
+
 export interface IUser {
   id: string;
   email: string;
@@ -194,6 +222,7 @@ export interface IUser {
   baseCurrency: string;
   theme: 'dark' | 'light' | 'system';
   riskSettings?: IRiskSettings;
+  patternDetectionSettings?: IPatternDetectionSettings;
   createdAt: string;
   updatedAt: string;
 }

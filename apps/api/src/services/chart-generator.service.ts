@@ -44,7 +44,7 @@ export interface GenerateChartsOptions {
 }
 
 function resolutionOrder(r: string): number {
-  const map: Record<string, number> = { '1': 1, '5': 2, '15': 3, '30': 4, '60': 5, 'D': 6 };
+  const map: Record<string, number> = { '1': 1, '5': 2, '15': 3, '30': 4, '60': 5, '240': 6, 'D': 7 };
   return map[r] || 99;
 }
 
@@ -499,7 +499,7 @@ export class ChartGeneratorService {
 
       if (
         existingSnapshot?.resolution &&
-        ['1', '5', '15', '30', '60', 'D'].includes(existingSnapshot.resolution as any)
+        ['1', '5', '15', '30', '60', '240', 'D'].includes(existingSnapshot.resolution as any)
       ) {
         defaultRes = existingSnapshot.resolution as ChartResolution;
       }
@@ -607,6 +607,9 @@ export class ChartGeneratorService {
       } else if (res === '60') {
         baseRes = '5';
         targetMins = 60;
+      } else if (res === '240') {
+        baseRes = '5';
+        targetMins = 240;
       } else if (res === 'D') {
         baseRes = 'D';
         targetMins = 1440;

@@ -476,5 +476,78 @@ describe('Financial Engine - Mistake Detection & Discipline Scoring', () => {
       expect(suggestion).toBeDefined();
       expect(suggestion?.mistakeTag).toBe('BREAKEVEN_TOO_EARLY');
     });
+
+    it('suppresses NO_LIQUIDITY_TAKEN when setup auto-detected liquidity sweep even if manual confluences empty', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 'trade-sweep',
+          symbol: 'NIFTY',
+          direction: 'LONG',
+          status: 'CLOSED',
+          entryTime: '2026-10-21T09:30:00.000Z',
+          exitTime: '2026-10-21T10:00:00.000Z',
+          quantity: 50,
+          entryPrice: 24500,
+          exitPrice: 24600,
+          confluences: [], // manual confluences empty
+          setup: {
+            variantKey: 'EQL',
+            liquiditySide: 'SELL_SIDE',
+            patternType: 'EQUAL_LOWS',
+          },
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const noLiq = result.suggestions.find((s) => s.rule === 'NO_LIQUIDITY_TAKEN');
+      expect(noLiq).toBeUndefined();
+    });
+
+    it('flags COUNTER_TREND_NO_SWEEP when trade opposes HTF bias without reversal sweep', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 'trade-counter',
+          symbol: 'BANKNIFTY',
+          direction: 'SHORT',
+          status: 'CLOSED',
+          entryTime: '2026-10-21T09:30:00.000Z',
+          quantity: 30,
+          entryPrice: 51200,
+          setup: {
+            htfBias: 'BULLISH',
+            liquiditySide: 'NONE',
+            variantKey: 'UNCLASSIFIED',
+          },
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const counterTrend = result.suggestions.find((s) => s.rule === 'COUNTER_TREND_NO_SWEEP');
+      expect(counterTrend).toBeDefined();
+      expect(counterTrend?.mistakeTag).toBe('COUNTER_TREND_NO_SWEEP');
+    });
+
+    it('flags ENTERED_BEFORE_SWEEP when setup indicates unswept second leg', () => {
+      const trades: ITradeSummaryForDetection[] = [
+        {
+          id: 'trade-unswept',
+          symbol: 'CRUDEOIL',
+          direction: 'LONG',
+          status: 'CLOSED',
+          entryTime: '2026-10-21T17:00:00.000Z',
+          quantity: 100,
+          entryPrice: 6200,
+          setup: {
+            variantKey: 'W-UNSWEPT',
+            secondLegStatus: 'UNSWEPT',
+          },
+        },
+      ];
+
+      const result = detectMistakeSuggestions({ trades });
+      const unswept = result.suggestions.find((s) => s.rule === 'ENTERED_BEFORE_SWEEP');
+      expect(unswept).toBeDefined();
+      expect(unswept?.mistakeTag).toBe('ENTERED_BEFORE_SWEEP');
+    });
   });
 });

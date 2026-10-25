@@ -55,7 +55,7 @@ const PREF_PADDING_BEFORE_KEY = 'tradevault_chart_padding_before';
 const PREF_PADDING_AFTER_KEY = 'tradevault_chart_padding_after';
 const PREF_SAME_PADDING_KEY = 'tradevault_chart_same_padding';
 
-const TIMEFRAME_OPTIONS = ['Auto', '1m', '5m', '15m', '30m', '1h', '1D'] as const;
+const TIMEFRAME_OPTIONS = ['Auto', '1m', '5m', '15m', '30m', '1h', '4h', '1D'] as const;
 type TimeframeOption = typeof TIMEFRAME_OPTIONS[number];
 
 // Label to API resolution mapping
@@ -65,6 +65,7 @@ const LABEL_TO_RESOLUTION: Record<string, ChartResolution> = {
   '15m': '15',
   '30m': '30',
   '1h': '60',
+  '4h': '240',
   '1D': 'D',
 };
 
@@ -75,6 +76,7 @@ const RESOLUTION_TO_LABEL: Record<string, string> = {
   '15': '15m',
   '30': '30m',
   '60': '1h',
+  '240': '4h',
   'D': '1D',
 };
 

@@ -791,8 +791,8 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 ## 12. Settings & Integrations
 
 ### Settings (`/api/v1/settings`)
-- `GET /api/v1/settings/profile` — Return user profile including base currency, theme, and `riskSettings`.
-- `PUT /api/v1/settings/profile` — Update name, base currency, theme, and `riskSettings` (`maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`).
+- `GET /api/v1/settings/profile` — Return user profile including base currency, theme, `riskSettings`, and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides`).
+- `PUT /api/v1/settings/profile` — Update name, base currency, theme, `riskSettings` (`maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`), and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides: [{ symbol, htf, ltf, preferredStrategyId?, preferredStrategyName? }]`).
 - `POST /api/v1/settings/change-password` — Change password (`currentPassword`, `newPassword`).
 - `GET /api/v1/settings/system-status` — Return total trade count, account count, attachment count, database type, and version.
 

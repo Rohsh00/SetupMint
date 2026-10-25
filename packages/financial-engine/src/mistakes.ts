@@ -6,6 +6,7 @@ import {
   IDailyLossBreach,
   TradeStatus,
   LIQUIDITY_OR_SR_CONFLUENCE_VALUES,
+  ITradeSetup,
 } from '@tradevault/shared';
 
 export interface ITradeSummaryForDetection {
@@ -28,6 +29,7 @@ export interface ITradeSummaryForDetection {
   targetRationale?: string | null;
   initialStopLoss?: number | null;
   tickSize?: number | null;
+  setup?: ITradeSetup | null;
   excursion?: {
     status?: string;
     exitEfficiency?: number;
@@ -284,10 +286,16 @@ export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistak
 
     // --- RULE D: Liquidity Confluence Check (NO_LIQUIDITY_TAKEN) ---
     // Advisory check for closed trades: must contain at least one liquidity or support/resistance confluence
+    const setupHasLiquidity =
+      (current.setup?.liquiditySide !== undefined && current.setup.liquiditySide !== 'NONE') ||
+      ['EQL', 'EQH', 'W-SWEEP', 'M-SWEEP'].includes(current.setup?.variantKey || '') ||
+      current.setup?.patternType === 'EQUAL_LOWS' ||
+      current.setup?.patternType === 'EQUAL_HIGHS';
+
     if (current.status === 'CLOSED' && current.confluences !== undefined) {
       const confluences = current.confluences || [];
       const hasLiquidityOrSR = confluences.some((c) => LIQUIDITY_OR_SR_CONFLUENCE_VALUES.has(c));
-      if (!hasLiquidityOrSR) {
+      if (!hasLiquidityOrSR && !setupHasLiquidity) {
         suggestions.push({
           tradeId: current.id,
           rule: 'NO_LIQUIDITY_TAKEN',
@@ -435,6 +443,37 @@ export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistak
           message: `Stop loss on ${current.symbol} was moved further away from market during trade execution, widening downside risk${pointStr}.`,
         });
       }
+    }
+
+    // --- RULE K: Counter-Trend Without Liquidity Setup (COUNTER_TREND_NO_SWEEP) ---
+    if (current.setup?.htfBias && current.direction) {
+      const htf = current.setup.htfBias;
+      const dir = current.direction;
+      const isAgainstHtf = (htf === 'BULLISH' && dir === 'SHORT') || (htf === 'BEARISH' && dir === 'LONG');
+      if (isAgainstHtf && !setupHasLiquidity) {
+        suggestions.push({
+          tradeId: current.id,
+          rule: 'COUNTER_TREND_NO_SWEEP',
+          mistakeTag: 'COUNTER_TREND_NO_SWEEP',
+          severity: 'WARNING',
+          message: `${dir === 'LONG' ? 'Long' : 'Short'} trade on ${current.symbol} was taken against ${htf} HTF trend without an identified liquidity sweep or reversal setup.`,
+        });
+      }
+    }
+
+    // --- RULE L: Premature Entry Before Liquidity Raid (ENTERED_BEFORE_SWEEP) ---
+    if (
+      current.setup?.variantKey === 'W-UNSWEPT' ||
+      current.setup?.variantKey === 'M-UNSWEPT' ||
+      current.setup?.secondLegStatus === 'UNSWEPT'
+    ) {
+      suggestions.push({
+        tradeId: current.id,
+        rule: 'ENTERED_BEFORE_SWEEP',
+        mistakeTag: 'ENTERED_BEFORE_SWEEP',
+        severity: 'WARNING',
+        message: `Entered ${current.symbol} prematurely on unswept second leg (${current.setup?.variantKey || 'UNSWEPT'}) before resting liquidity was purged.`,
+      });
     }
   }
 

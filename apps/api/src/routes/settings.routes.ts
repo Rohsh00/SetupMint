@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_PATTERN_DETECTION_SETTINGS } from '@tradevault/shared';
 import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -7,7 +8,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.addHook('preHandler', requireAuth);
 
   // Update profile / base currency / theme
-  // Get user profile including riskSettings
+  // Get user profile including riskSettings & patternDetectionSettings
   app.get('/profile', async (req: any, reply) => {
     const user = await User.findById(req.user!.id);
     if (!user) {
@@ -22,13 +23,14 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         baseCurrency: user.baseCurrency,
         theme: user.theme,
         riskSettings: user.riskSettings,
+        patternDetectionSettings: user.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
       },
     });
   });
 
-  // Update profile / base currency / theme / riskSettings
+  // Update profile / base currency / theme / riskSettings / patternDetectionSettings
   app.put('/profile', async (req: any, reply) => {
-    const { name, baseCurrency, theme, riskSettings } = req.body;
+    const { name, baseCurrency, theme, riskSettings, patternDetectionSettings } = req.body;
 
     const update: any = {};
     if (name) update.name = name;
@@ -43,6 +45,25 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         revengeTradingMinutes: riskSettings.revengeTradingMinutes !== undefined ? Number(riskSettings.revengeTradingMinutes) : undefined,
       };
     }
+    if (patternDetectionSettings) {
+      update.patternDetectionSettings = {
+        defaultHtf: patternDetectionSettings.defaultHtf || '240',
+        defaultLtf: patternDetectionSettings.defaultLtf || '5',
+        autoDetectOnImport: patternDetectionSettings.autoDetectOnImport !== undefined ? Boolean(patternDetectionSettings.autoDetectOnImport) : true,
+        autoDetectMistakes: patternDetectionSettings.autoDetectMistakes !== undefined ? Boolean(patternDetectionSettings.autoDetectMistakes) : true,
+        instrumentOverrides: Array.isArray(patternDetectionSettings.instrumentOverrides)
+          ? patternDetectionSettings.instrumentOverrides
+              .map((item: any) => ({
+                symbol: String(item.symbol || '').toUpperCase().trim(),
+                htf: String(item.htf || '240'),
+                ltf: String(item.ltf || '5'),
+                preferredStrategyId: item.preferredStrategyId ? String(item.preferredStrategyId) : undefined,
+                preferredStrategyName: item.preferredStrategyName ? String(item.preferredStrategyName) : undefined,
+              }))
+              .filter((item: any) => item.symbol.length > 0)
+          : [],
+      };
+    }
 
     const user = await User.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
 
@@ -55,6 +76,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         baseCurrency: user!.baseCurrency,
         theme: user!.theme,
         riskSettings: user!.riskSettings,
+        patternDetectionSettings: user!.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
       },
     });
   });

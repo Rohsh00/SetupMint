@@ -1,4 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import {
+  IPatternDetectionSettings,
+  DEFAULT_PATTERN_DETECTION_SETTINGS,
+} from '@tradevault/shared';
 
 export interface IUserRiskSettings {
   maxDailyLoss?: number;
@@ -15,6 +19,7 @@ export interface IUserDoc extends Document {
   baseCurrency: string;
   theme: 'dark' | 'light' | 'system';
   riskSettings?: IUserRiskSettings;
+  patternDetectionSettings?: IPatternDetectionSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +59,24 @@ const UserSchema = new Schema<IUserDoc>(
       maxOpenTrades: { type: Number, default: 3 },
       maxRiskPerTradePercent: { type: Number, default: 2.0 },
       revengeTradingMinutes: { type: Number, default: 30 },
+    },
+    patternDetectionSettings: {
+      defaultHtf: { type: String, default: '240' },
+      defaultLtf: { type: String, default: '5' },
+      autoDetectOnImport: { type: Boolean, default: true },
+      autoDetectMistakes: { type: Boolean, default: true },
+      instrumentOverrides: {
+        type: [
+          {
+            symbol: { type: String, required: true },
+            htf: { type: String, required: true },
+            ltf: { type: String, required: true },
+            preferredStrategyId: { type: String },
+            preferredStrategyName: { type: String },
+          },
+        ],
+        default: DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides,
+      },
     },
   },
   { timestamps: true }

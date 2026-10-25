@@ -164,6 +164,10 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       symbol: string;
       maeR?: number;
       mfeR?: number;
+      maePoints?: number;
+      mfePoints?: number;
+      maeAmount?: number;
+      mfeAmount?: number;
       netPnL: number;
       outcome: any;
       exitEfficiency?: number;
@@ -201,6 +205,10 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         symbol: t.symbol,
         maeR: exc.maeR,
         mfeR: exc.mfeR,
+        maePoints: exc.maePoints,
+        mfePoints: exc.mfePoints,
+        maeAmount: exc.maeAmount,
+        mfeAmount: exc.mfeAmount,
         netPnL: t.calculated?.netPnL || 0,
         outcome: t.calculated?.outcome || 'BREAKEVEN',
         exitEfficiency: exc.exitEfficiency,
@@ -220,6 +228,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       data: {
         summary: {
           totalEvaluated,
+          countWithStop: countMaeR,
           avgMaeR,
           avgMfeR,
           avgExitEfficiency,

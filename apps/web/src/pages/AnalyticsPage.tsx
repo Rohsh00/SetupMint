@@ -53,6 +53,7 @@ import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.j
 export function AnalyticsPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
+  const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -97,9 +98,16 @@ export function AnalyticsPage() {
   const navigate = useNavigate();
 
   const excursionBackfillMutation = useMutation({
-    mutationFn: (params: { limit?: number } = {}) => api.integrations.fyersBackfillExcursion(params),
-    onSuccess: (res) => {
-      toast.success(`Excursion backfill: ${res.computed} computed, ${res.remaining} remaining.`);
+    mutationFn: (params: { limit?: number; forceRecompute?: boolean } = {}) =>
+      api.integrations.fyersBackfillExcursion(params),
+    onSuccess: (res: any) => {
+      const computed = res?.computed ?? res?.data?.computed ?? 0;
+      const remaining = res?.remaining ?? res?.data?.remaining ?? 0;
+      if (computed > 0) {
+        toast.success(`Excursion backfill: ${computed} trades computed (${remaining} remaining).`);
+      } else {
+        toast.info(`All eligible trades are already computed (${remaining} remaining).`);
+      }
       queryClient.invalidateQueries({ queryKey: ['analytics-excursion'] });
     },
     onError: (err: any) => {
@@ -720,9 +728,9 @@ export function AnalyticsPage() {
               <Skeleton variant="rounded" height={400} />
             </Box>
           ) : (() => {
-            const summary = excursionData?.data?.summary;
-            const points = excursionData?.data?.scatterPoints || [];
-            const hasData = summary && summary.totalEvaluated > 0;
+            const summary = (excursionData as any)?.summary ?? (excursionData as any)?.data?.summary;
+            const points = (excursionData as any)?.scatterPoints ?? (excursionData as any)?.data?.scatterPoints ?? [];
+            const hasData = Boolean(summary && summary.totalEvaluated > 0);
 
             if (!hasData) {
               return (
@@ -772,8 +780,18 @@ export function AnalyticsPage() {
             }
 
             // Scatter data separated by win / loss
-            const winPoints = points.filter((p: any) => p.outcome === 'WIN' && p.maeR !== undefined && p.mfeR !== undefined);
-            const lossPoints = points.filter((p: any) => p.outcome !== 'WIN' && p.maeR !== undefined && p.mfeR !== undefined);
+            const hasStops = (summary?.countWithStop ?? 0) > 0;
+            const currentMode = (!hasStops && scatterMode === 'R') ? 'POINTS' : scatterMode;
+            const isModeR = currentMode === 'R';
+            const isModePoints = currentMode === 'POINTS';
+            const isModeAmount = currentMode === 'AMOUNT';
+
+            const getX = (p: any) => (isModeR ? p.maeR : isModePoints ? p.maePoints : p.maeAmount);
+            const getY = (p: any) => (isModeR ? p.mfeR : isModePoints ? p.mfePoints : p.mfeAmount);
+
+            const validPoints = points.filter((p: any) => getX(p) !== undefined && getY(p) !== undefined);
+            const winPoints = validPoints.filter((p: any) => p.outcome === 'WIN');
+            const lossPoints = validPoints.filter((p: any) => p.outcome !== 'WIN');
 
             return (
               <>
@@ -852,23 +870,53 @@ export function AnalyticsPage() {
 
                 {/* MAE vs MFE Scatter Plot */}
                 <Card sx={{ p: 2.5 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
                     <Box>
                       <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                        MAE vs MFE Scatter Analysis (R-Multiple)
+                        MAE vs MFE Scatter Analysis ({isModeR ? 'R-Multiple' : isModePoints ? 'Points' : '₹ Amount'})
                       </Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        X-Axis: Adverse excursion (drawdown in R) • Y-Axis: Favorable excursion (peak potential in R)
+                        X-Axis: Adverse excursion (drawdown) • Y-Axis: Favorable excursion (peak potential)
                       </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.profit.main }} />
-                        <Typography variant="caption" sx={{ fontWeight: 600 }}>Winners ({winPoints.length})</Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.loss.main }} />
-                        <Typography variant="caption" sx={{ fontWeight: 600 }}>Losers ({lossPoints.length})</Typography>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                      <ButtonGroup size="small" variant="outlined" sx={{ borderRadius: 2 }}>
+                        <Button
+                          variant={currentMode === 'R' ? 'contained' : 'outlined'}
+                          onClick={() => setScatterMode('R')}
+                          size="small"
+                          sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
+                        >
+                          R-Multiple {summary?.countWithStop !== undefined ? `(${summary.countWithStop})` : ''}
+                        </Button>
+                        <Button
+                          variant={currentMode === 'POINTS' ? 'contained' : 'outlined'}
+                          onClick={() => setScatterMode('POINTS')}
+                          size="small"
+                          sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
+                        >
+                          Points ({points.filter((p: any) => p.maePoints !== undefined).length})
+                        </Button>
+                        <Button
+                          variant={currentMode === 'AMOUNT' ? 'contained' : 'outlined'}
+                          onClick={() => setScatterMode('AMOUNT')}
+                          size="small"
+                          sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
+                        >
+                          Amount (₹)
+                        </Button>
+                      </ButtonGroup>
+
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.profit.main }} />
+                          <Typography variant="caption" sx={{ fontWeight: 600 }}>Winners ({winPoints.length})</Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.loss.main }} />
+                          <Typography variant="caption" sx={{ fontWeight: 600 }}>Losers ({lossPoints.length})</Typography>
+                        </Box>
                       </Box>
                     </Box>
                   </Box>
@@ -879,25 +927,29 @@ export function AnalyticsPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                         <XAxis
                           type="number"
-                          dataKey="maeR"
-                          name="MAE (R)"
-                          unit="R"
+                          dataKey={isModeR ? 'maeR' : isModePoints ? 'maePoints' : 'maeAmount'}
+                          name={isModeR ? 'MAE (R)' : isModePoints ? 'MAE (Points)' : 'MAE (₹)'}
+                          unit={isModeR ? 'R' : isModePoints ? ' pts' : ' ₹'}
                           stroke={chartAxisColor}
                           fontSize={11}
                           domain={[0, 'dataMax + 0.5']}
                         />
                         <YAxis
                           type="number"
-                          dataKey="mfeR"
-                          name="MFE (R)"
-                          unit="R"
+                          dataKey={isModeR ? 'mfeR' : isModePoints ? 'mfePoints' : 'mfeAmount'}
+                          name={isModeR ? 'MFE (R)' : isModePoints ? 'MFE (Points)' : 'MFE (₹)'}
+                          unit={isModeR ? 'R' : isModePoints ? ' pts' : ' ₹'}
                           stroke={chartAxisColor}
                           fontSize={11}
                           domain={[0, 'dataMax + 0.5']}
                         />
                         <ZAxis range={[60, 60]} />
-                        <ReferenceLine y={1} stroke={chartAxisColor} strokeDasharray="4 4" label={{ value: '1R Potential', fill: chartAxisColor, fontSize: 10, position: 'insideTopLeft' }} />
-                        <ReferenceLine x={1} stroke={chartAxisColor} strokeDasharray="4 4" label={{ value: '1R Stop Boundary', fill: chartAxisColor, fontSize: 10, position: 'insideBottomRight' }} />
+                        {isModeR && (
+                          <>
+                            <ReferenceLine y={1} stroke={chartAxisColor} strokeDasharray="4 4" label={{ value: '1R Potential', fill: chartAxisColor, fontSize: 10, position: 'insideTopLeft' }} />
+                            <ReferenceLine x={1} stroke={chartAxisColor} strokeDasharray="4 4" label={{ value: '1R Stop Boundary', fill: chartAxisColor, fontSize: 10, position: 'insideBottomRight' }} />
+                          </>
+                        )}
                         <RechartsTooltip
                           cursor={{ strokeDasharray: '3 3' }}
                           content={({ active, payload }) => {
@@ -912,9 +964,22 @@ export function AnalyticsPage() {
                                     {d.tradeDate} • {d.outcome}
                                   </Typography>
                                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, fontSize: '0.75rem' }}>
-                                    <div><strong>MAE:</strong> {d.maeR} R</div>
-                                    <div><strong>MFE:</strong> {d.mfeR} R</div>
-                                    <div><strong>Exit Efficiency:</strong> {d.exitEfficiency !== undefined ? `${(d.exitEfficiency * 100).toFixed(1)}%` : '—'}</div>
+                                    <div>
+                                      <strong>MAE:</strong>{' '}
+                                      {d.maeR !== undefined ? `${d.maeR} R` : '—'}
+                                      {d.maePoints !== undefined ? ` (${d.maePoints} pts)` : ''}
+                                      {d.maeAmount !== undefined ? ` • ₹${Math.abs(d.maeAmount).toLocaleString('en-IN')}` : ''}
+                                    </div>
+                                    <div>
+                                      <strong>MFE:</strong>{' '}
+                                      {d.mfeR !== undefined ? `${d.mfeR} R` : '—'}
+                                      {d.mfePoints !== undefined ? ` (${d.mfePoints} pts)` : ''}
+                                      {d.mfeAmount !== undefined ? ` • ₹${Math.abs(d.mfeAmount).toLocaleString('en-IN')}` : ''}
+                                    </div>
+                                    <div>
+                                      <strong>Exit Efficiency:</strong>{' '}
+                                      {d.exitEfficiency !== undefined ? `${(d.exitEfficiency * 100).toFixed(1)}%` : '—'}
+                                    </div>
                                     <div style={{ color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
                                       <strong>Net P&L:</strong> {formatCurrency(d.netPnL)}
                                     </div>

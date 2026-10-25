@@ -480,6 +480,7 @@ export const api = {
         endDate?: string;
         limit?: number;
         provider?: 'AUTO' | 'ANGEL_ONE';
+        forceRecompute?: boolean;
       } = {}
     ) =>
       request<any>('/integrations/fyers/excursion-backfill', {

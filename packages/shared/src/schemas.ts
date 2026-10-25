@@ -510,6 +510,7 @@ export const excursionBackfillSchema = z.object({
   endDate: z.string().optional(),
   limit: z.coerce.number().int().positive().max(500).default(50),
   provider: z.enum(['AUTO', 'ANGEL_ONE']).optional(),
+  forceRecompute: z.boolean().optional(),
 });
 
 export const stopMoveDetectionSchema = z.object({

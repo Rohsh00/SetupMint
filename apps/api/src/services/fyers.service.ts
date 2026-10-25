@@ -1514,6 +1514,7 @@ export class FyersService {
       endDate?: string;
       limit?: number;
       provider?: CandleFallbackProvider;
+      forceRecompute?: boolean;
     } = {}
   ): Promise<IExcursionBackfillResponse> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
@@ -1543,12 +1544,15 @@ export class FyersService {
     const filter: any = {
       userId: uId,
       status: 'CLOSED',
-      $or: [
+    };
+
+    if (!options.forceRecompute) {
+      filter.$or = [
         { 'calculated.excursion.status': 'PENDING' },
         { 'calculated.excursion': { $exists: false } },
         { 'calculated.excursion.status': { $exists: false } },
-      ],
-    };
+      ];
+    }
 
     if (options.accountId) {
       filter.accountId = new mongoose.Types.ObjectId(options.accountId);

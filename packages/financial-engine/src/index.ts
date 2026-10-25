@@ -15,4 +15,5 @@ export * from './variant-analytics.js';
 export * from './excursion.js';
 export * from './stop-move.js';
 export * from './chart-helpers.js';
+export * from './analytics/what-if/index.js';
 

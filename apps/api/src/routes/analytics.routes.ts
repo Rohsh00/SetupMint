@@ -1,8 +1,9 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import Decimal from 'decimal.js';
-import { EMOTIONS, MISTAKE_TAGS, excursionAnalyticsQuerySchema } from '@tradevault/shared';
+import { EMOTIONS, MISTAKE_TAGS, excursionAnalyticsQuerySchema, whatIfRequestSchema } from '@tradevault/shared';
 import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { computeWhatIf, WhatIfScopeTooLargeError } from '../services/what-if.service.js';
 
 export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -228,5 +229,50 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         scatterPoints,
       },
     });
+  });
+
+  // What-If Stop/Target Candle-Replay Simulation
+  app.post('/what-if', async (req: any, reply) => {
+    const parsed = whatIfRequestSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid What-If simulation parameters',
+          details: parsed.error.format(),
+        },
+      });
+    }
+
+    try {
+      const result = await computeWhatIf(req.user!.id, parsed.data);
+      return reply.send({
+        success: true,
+        data: result,
+      });
+    } catch (err: any) {
+      if (err instanceof WhatIfScopeTooLargeError || err.code === 'SCOPE_TOO_LARGE') {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'SCOPE_TOO_LARGE',
+            message: err.message,
+            details: {
+              count: err.count,
+              limit: err.limit,
+            },
+          },
+        });
+      }
+      req.log.error(err, 'What-If simulation error');
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'SIMULATION_ERROR',
+          message: err.message || 'Internal simulation error occurred',
+        },
+      });
+    }
   });
 };

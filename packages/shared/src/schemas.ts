@@ -565,4 +565,50 @@ export const generateChartSchema = z
 
 export const chartGenerateOptionsSchema = generateChartSchema;
 
+export const analyticsFilterSchema = z
+  .object({
+    accountId: z.string().optional(),
+    symbol: z.string().optional(),
+    assetClass: z.string().optional(),
+    marketSegment: z.string().optional(),
+    direction: z.enum(['LONG', 'SHORT']).optional(),
+    strategyId: z.string().optional(),
+    variantKey: z.string().optional(),
+    session: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    tags: z.string().optional(),
+  })
+  .partial()
+  .strict();
+
+export const whatIfRequestSchema = z
+  .object({
+    filters: analyticsFilterSchema.optional().default({}),
+    stopRGrid: z
+      .array(z.union([z.number().min(0.25).max(3.0), z.null()]))
+      .default([null, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]),
+    targetRGrid: z
+      .array(z.union([z.number().min(0.5).max(10.0), z.null()]))
+      .default([null, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]),
+    fillModel: z.enum(['GAP_AWARE', 'AT_LEVEL']).default('GAP_AWARE'),
+    slippageTicks: z.number().int().min(0).max(20).default(0),
+    resolutionPolicy: z.enum(['FINEST_AVAILABLE', 'ONE_MINUTE_ONLY']).default('FINEST_AVAILABLE'),
+    excludeManagedStopTrades: z.boolean().default(true),
+    holdoutFraction: z.number().min(0.2).max(0.5).default(0.3),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      const stopCount = data.stopRGrid.length;
+      const targetCount = data.targetRGrid.length;
+      return stopCount * targetCount <= 100;
+    },
+    {
+      message: 'Grid cannot exceed 100 cells (stopRGrid.length * targetRGrid.length <= 100)',
+    }
+  );
+
+export type WhatIfRequestInput = z.infer<typeof whatIfRequestSchema>;
+
 

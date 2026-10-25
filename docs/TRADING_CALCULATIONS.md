@@ -431,4 +431,84 @@ When $\text{hasWidenedRisk} = \text{true}$:
 3. If not already tagged, `'STOP_MOVED'` is appended to `trade.psychology.mistakes`.
 4. A system audit log entry (`action: 'STOP_MOVED_DETECTED'`) is recorded with the net point expansion.
 
+---
+
+## 11. What-If Stop/Target Candle-Replay Simulator
+
+### 11.1 Purpose and Statistically Honest Design Principles
+The Stop/Target "What-If" simulator answers: *"If I had systematically applied a stop at $S$ and/or a target at $T$ on top of what I actually did, what would my results have been?"*
+
+Unlike naive simulators that rely on stored `maeR` or `mfeR` (which destroys path information and assumes perfect execution), TradeVault uses a **true candle-replay engine** executing against cached 1-minute (or 5-minute) OHLCV candles.
+
+#### Mandatory Design Principles:
+1. **Zero Hindsight / Lookahead:** The simulation strictly operates on intraday candles within the observed trade lifecycle window $[e, x]$. Candles prior to entry or following actual exit are never replayed.
+2. **Deterministic Pessimistic & Optimistic Brackets:** Because bar-level OHLC does not preserve tick ordering, any ambiguous candle (touching both stop and target) is evaluated under both a conservative **Pessimistic** policy (Stop hit first; trade-through required for target) and an **Optimistic** policy (Target hit first; touch accepted).
+3. **Apples-to-Apples Baseline:** Every cell's baseline metrics are calculated strictly on that cell's evaluable subset ($N_{eval}$). Trades excluded or censored for a cell are also excluded from that cell's comparison baseline.
+4. **Gap-Aware Fill Mechanics:** If a candle opens beyond a stop level (adverse gap), the fill price is set to the opening price minus adverse slippage ticks, accurately reproducing real-world market stop execution.
+5. **Multiple Comparisons Mitigation:** Scanning 49 cells inflates false-positive discovery. A cell is only awarded the **BETTER_ROBUST** verdict if its Pessimistic lower bootstrap bound exceeds 0, $n_{eval} \ge 30$, and its performance confirms out-of-sample in the 30% chronological holdout.
+
+---
+
+### 11.2 Trade Eligibility & Exclusion Rules
+To participate in candle-replay simulation, a trade must satisfy:
+1. `status === 'CLOSED'`.
+2. **Single-Fill Execution:** Either `executionMode === 'SIMPLE'` or `executionMode === 'ADVANCED'` with exactly 1 entry fill and 1 exit fill (1E1X). Multi-fill scaled executions are excluded under `EXCLUDED_MULTI_FILL`.
+3. **Valid Initial Stop:** Must have `risk.initialStopLoss > 0` on the correct side of entry (`LONG`: stop < entry; `SHORT`: stop > entry) and positive unit risk. Otherwise excluded under `EXCLUDED_NO_STOP`.
+4. **Cached Snapshot:** Must have cached `TradeCandleSnapshot` overlapping $[entryTime, exitTime]$ in resolution `'1'` or `'5'`. Otherwise excluded under `EXCLUDED_NO_CANDLES`.
+5. **No Synthetic Proxies:** Snapshots flagged `isUnderlyingFallback === true` are rejected under `EXCLUDED_UNDERLYING_FALLBACK` when options demand true contract candles.
+6. **Managed Stops:** If `excludeManagedStopTrades === true`, any trade with recorded trailing or widening stop moves is excluded under `EXCLUDED_MANAGED_STOP`.
+
+---
+
+### 11.3 Mathematical Formulas & Execution Logic
+
+#### 1. Price Level Calculation:
+$$\text{Unit Risk} = |\text{Entry Price} - \text{Initial Stop Loss}|$$
+
+$$\text{LONG Stop Level} = \text{roundToTick}(\text{Entry} - \text{stopR} \times \text{Unit Risk}, \text{tickSize})$$
+$$\text{LONG Target Level} = \text{roundToTick}(\text{Entry} + \text{targetR} \times \text{Unit Risk}, \text{tickSize})$$
+
+$$\text{SHORT Stop Level} = \text{roundToTick}(\text{Entry} + \text{stopR} \times \text{Unit Risk}, \text{tickSize})$$
+$$\text{SHORT Target Level} = \text{roundToTick}(\text{Entry} - \text{targetR} \times \text{Unit Risk}, \text{tickSize})$$
+
+#### 2. Gap-Aware Adverse Fills & Slippage:
+On any candle $i > e$:
+$$\text{Stop Fill (LONG)} = \min(\text{Stop Level}, \text{Open}_i) - (\text{slippageTicks} \times \text{tickSize})$$
+$$\text{Stop Fill (SHORT)} = \max(\text{Stop Level}, \text{Open}_i) + (\text{slippageTicks} \times \text{tickSize})$$
+$$\text{Target Fill (LONG)} = \max(\text{Target Level}, \text{Open}_i)$$
+$$\text{Target Fill (SHORT)} = \min(\text{Target Level}, \text{Open}_i)$$
+
+#### 3. Right-Censoring Detection:
+If neither simulated level is breached through candle $x$, we inspect the actual exit reason:
+- If actual trade exited at or beyond the original stop, and the simulated cell tests a looser stop ($\text{stopR} > 1.0$ or $\text{stopR} = \text{null}$), the trade is **RIGHT-CENSORED**.
+- If actual trade exited at planned target, and the simulated cell tests a farther target ($\text{targetR} > \text{plannedTargetR}$), the trade is **RIGHT-CENSORED**.
+- Censored trades are marked `status: 'CENSORED'` and excluded from $N_{eval}$.
+
+#### 4. Precomputation & First-Passage Optimization:
+For each eligible trade, first-passage indices are precomputed across all unique stop and target price levels:
+$$\text{Precomputation Time} = O((S + T) \times C)$$
+$$\text{Cell Evaluation Time} = O(1)$$
+For a 7×7 grid (49 cells), this reduces candle iterations from $49 \times C$ to $(7 + 7) \times C = 14 \times C$, providing a 3.5× computational acceleration.
+
+#### 5. Paired Differences & 10,000 Bootstrap Confidence Intervals:
+For every evaluable trade $i \in [1, N_{eval}]$:
+$$d_i = R_{sim, i} - R_{actual, i}$$
+$$\bar{d} = \frac{1}{N_{eval}} \sum_{i=1}^{N_{eval}} d_i$$
+
+A deterministic PRNG (`Mulberry32PRNG`) seeded by `hash(scopeKey, stopR, targetR, policy)` resamples 10,000 bootstrap means. The 5th and 95th percentiles yield the empirical 90% confidence interval $[\text{ciLow}, \text{ciHigh}]$.
+
+#### 6. Statistical Verdicts:
+- **BETTER_ROBUST:** Pessimistic lower bound $> 0$ and $N_{eval} \ge 30$.
+- **WORSE_ROBUST:** Optimistic upper bound $< 0$ and $N_{eval} \ge 30$.
+- **INCONCLUSIVE:** Confidence interval spans zero or $N_{eval} < 30$.
+
+#### 7. Chronological Out-of-Sample Holdout Split:
+The oldest 70% of eligible trades form the In-Sample set; the newest 30% form the Holdout set. A rule **holdsOutOfSample** only if:
+$$\text{verdict}_{InSample} == \text{BETTER\_ROBUST} \quad \text{and} \quad \bar{d}_{Holdout} > 0 \quad \text{and} \quad n_{Holdout} \ge 10$$
+
+#### 8. Identity Calibration Gate:
+Trades that exited at the original stop are replayed with $\text{stopR} = 1.0$ and no target. The match rate must equal or exceed $\text{CALIBRATION\_MIN\_AGREEMENT}$ (90%):
+$$\text{Agreement} = \frac{\text{Matching Stop Hits}}{\text{Tested Real Stop Outs}} \ge 0.90$$
+If below 90%, `calibrationWarning: true` is emitted, warning that candle timestamp alignment or data continuity requires review.
+
 

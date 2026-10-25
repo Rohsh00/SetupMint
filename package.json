@@ -26,7 +26,8 @@
     "db:clean": "npm run clean -w apps/api",
     "db:backup": "node scripts/backup.js",
     "db:restore": "node scripts/restore.js",
-    "db:reconcile": "node scripts/reconcile.js"
+    "db:reconcile": "node scripts/reconcile.js",
+    "docs:glossary": "tsx scripts/generate-glossary.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

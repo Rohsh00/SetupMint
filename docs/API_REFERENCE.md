@@ -497,6 +497,79 @@ Authentication is handled via stateful sessions:
   - `summary`: `{ totalEvaluated, avgMaeR, avgMfeR, avgExitEfficiency, gaveBackProfitPercent, reversalAfterStopPercent }`
   - `scatterPoints`: Array of `{ tradeId, symbol, maeR, mfeR, netPnL, outcome, exitEfficiency, tradeDate }`
 
+### `POST /api/v1/analytics/what-if`
+- **Purpose:** Execute statistically honest, candle-replay Stop/Target parameter matrix simulation against cached trade snapshots.
+- **Auth:** **Required**.
+- **Request Body:**
+  ```json
+  {
+    "filters": {
+      "accountId": "string (optional)",
+      "strategyId": "string (optional)",
+      "variantKey": "string (optional)",
+      "symbol": "string (optional)",
+      "session": "string (optional)",
+      "direction": "LONG | SHORT (optional)",
+      "assetClass": "string (optional)",
+      "marketSegment": "string (optional)",
+      "startDate": "YYYY-MM-DD (optional)",
+      "endDate": "YYYY-MM-DD (optional)"
+    },
+    "stopRGrid": [null, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+    "targetRGrid": [null, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0],
+    "fillModel": "GAP_AWARE | AT_LEVEL (default: GAP_AWARE)",
+    "slippageTicks": 0,
+    "resolutionPolicy": "FINEST_AVAILABLE | ONE_MINUTE_ONLY (default: FINEST_AVAILABLE)",
+    "excludeManagedStopTrades": true,
+    "holdoutFraction": 0.3
+  }
+  ```
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "meta": { "filters": {}, "fillModel": "GAP_AWARE", "holdoutFraction": 0.3 },
+        "scope": {
+          "tradesInScope": 75,
+          "nEligible": 48,
+          "exclusions": { "EXCLUDED_MULTI_FILL": 12, "EXCLUDED_NO_STOP": 8, "EXCLUDED_NO_CANDLES": 7 }
+        },
+        "calibration": {
+          "testedCount": 18,
+          "matchingStopCount": 17,
+          "agreement": 0.9444,
+          "calibrationWarning": false
+        },
+        "baseline": {
+          "nEligible": 48,
+          "meanR_actual": 0.42,
+          "totalNet_actual": 12450.00,
+          "winRate_actual": 54.17,
+          "profitFactor_actual": 1.82
+        },
+        "cells": [
+          {
+            "stopR": 1.0,
+            "targetR": 2.0,
+            "all": { "nEval": 48, "meanR_pess": 0.58, "meanR_opt": 0.65, "winRate_pess": 56.25 },
+            "inSample": { "nEval": 34, "meanR_pess": 0.60 },
+            "holdout": { "nEval": 14, "meanR_pess": 0.54 },
+            "verdict": "BETTER_ROBUST",
+            "holdsOutOfSample": true,
+            "bootstrapIntervalPess": [0.08, 0.28],
+            "bootstrapIntervalOpt": [0.14, 0.35]
+          }
+        ],
+        "drillDescriptors": { "ambiguous": [], "censored": [], "exclusions": {} },
+        "winnersMaeDistribution": [{ "rangeLabel": "0.0 - 0.5R", "count": 22, "pct": 45.8 }],
+        "allTradesMfeDistribution": [{ "rangeLabel": "1.0 - 2.0R", "count": 18, "pct": 37.5 }]
+      }
+    }
+    ```
+  - `400 Bad Request`: `VALIDATION_ERROR` or `SCOPE_TOO_LARGE` (if closed trades matching filter exceed 500).
+
 ---
 
 ## 7. Monthly Journal Calendar (`/api/v1/journal`)

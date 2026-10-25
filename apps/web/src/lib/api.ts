@@ -294,6 +294,12 @@ export const api = {
       }
       return request<any>(`/analytics/excursion?${query.toString()}`);
     },
+    whatIf: (params: Record<string, any> = {}) => {
+      return request<any>('/analytics/what-if', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+    },
   },
 
   // Risk Calculator

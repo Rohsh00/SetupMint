@@ -23,6 +23,7 @@ import SecurityIcon from '@mui/icons-material/SecurityRounded';
 import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 
 import {
   Area,
@@ -43,10 +44,12 @@ import {
 import { EMOTION_LABEL_MAP, MISTAKE_LABEL_MAP } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
+import { HelpHint, WithHelp } from '../components/help/index.js';
+import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 
 export function AnalyticsPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -151,6 +154,7 @@ export function AnalyticsPage() {
             { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
             { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
             { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
+            { id: 'WHAT_IF', label: 'Stops & Targets', icon: <TuneRoundedIcon fontSize="small" /> },
           ].map((tab) => (
             <Button
               key={tab.id}
@@ -885,6 +889,11 @@ export function AnalyticsPage() {
             );
           })()}
         </Box>
+      )}
+
+      {/* TAB 5: WHAT-IF SIMULATOR */}
+      {activeTab === 'WHAT_IF' && (
+        <WhatIfSimulatorTab accountId={selectedAccountId} />
       )}
     </Box>
   );

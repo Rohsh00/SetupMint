@@ -26,6 +26,12 @@ This document records confirmed limitations, incomplete features, architectural 
 - **Current Behavior:** The frontend synchronizes state via TanStack Query refetching and mutation invalidation.
 - **Limitation:** There is no WebSocket/SSE connection broadcasting live order executions. For a post-trade journal and analytics platform, REST request-response is sufficient, but live tick updates are out of scope.
 
+### 5. What-If Candle-Replay Simulation Boundaries
+- **Single-Fill Requirement:** Only trades with `SIMPLE` execution mode or `ADVANCED` mode with exactly 1 entry fill and 1 exit fill (1E1X) are eligible. Scaled entries or partial scaling exits are excluded (`EXCLUDED_MULTI_FILL`) because simulated stops/targets assume a single position lot.
+- **500-Trade Scope Limit:** To maintain snappy interactive response times and prevent Node.js memory exhaustion across 49 simultaneous parameter evaluations with 10,000 bootstrap resamples, simulation scopes exceeding 500 trades return `SCOPE_TOO_LARGE`, prompting the user to narrow date or filter ranges.
+- **Right-Censoring Boundary:** When a real trade exited at its original stop loss or planned target, the post-exit price trajectory is unobserved in the trade lifecycle. Simulating a looser stop or farther target cannot guess what price would have done without lookahead bias; such trades are marked `status: 'CENSORED'` and omitted from evaluable statistics for that cell.
+- **250-Chunking Batch Loading:** Candle snapshots are batch-queried in 250-trade slices to avoid MongoDB cursor buffer limits and large payload overhead.
+
 ---
 
 ## 2. Verified Technical Debt & Codebase Opportunities

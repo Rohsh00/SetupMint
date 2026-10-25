@@ -63,10 +63,10 @@ Trading Vault/
 │       ├── components/trades/     # TradeFormModal.tsx, TradeAdvancedFills.tsx, etc.
 │       └── pages/                 # 13 routed page components
 ├── packages/
-│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts, templates.ts, excursion.ts
-│   └── shared/src/                # types.ts, schemas.ts, constants.ts
-├── scripts/                       # backup.js, restore.js, reconcile.js
-└── docs/                          # Comprehensive markdown documentation library
+│   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts, templates.ts, excursion.ts, analytics/what-if/
+│   └── shared/src/                # types.ts, schemas.ts, constants.ts, help-content.ts
+├── scripts/                       # backup.js, restore.js, reconcile.js, generate-glossary.ts
+└── docs/                          # Comprehensive markdown documentation library (including GLOSSARY.md)
 ```
 
 ---

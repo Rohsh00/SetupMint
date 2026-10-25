@@ -1285,4 +1285,173 @@ export function getEffectiveStrategyRules(
   };
 }
 
+// ----------------------------------------------------------------------------
+// WHAT-IF CANDLE-REPLAY SIMULATION TYPES
+// ----------------------------------------------------------------------------
+export type WhatIfFillModel = 'GAP_AWARE' | 'AT_LEVEL';
+export type WhatIfResolutionPolicy = 'FINEST_AVAILABLE' | 'ONE_MINUTE_ONLY';
+export type WhatIfPolicy = 'PESSIMISTIC' | 'OPTIMISTIC';
+export type WhatIfExclusionReason =
+  | 'EXCLUDED_MULTI_FILL'
+  | 'EXCLUDED_NO_STOP'
+  | 'EXCLUDED_NO_CANDLES'
+  | 'EXCLUDED_UNDERLYING_FALLBACK'
+  | 'EXCLUDED_MANAGED_STOP'
+  | 'EXCLUDED_OTHER';
+export type WhatIfVerdict = 'BETTER_ROBUST' | 'WORSE_ROBUST' | 'INCONCLUSIVE';
+export type WhatIfCellStatus = 'EVALUABLE' | 'CENSORED';
+export type WhatIfOutcome = 'STOP' | 'TARGET' | 'ACTUAL';
+export type WhatIfCostModel = 'RECOMPUTED' | 'ACTUAL_FALLBACK';
+
+export interface IWhatIfFilters {
+  accountId?: string;
+  symbol?: string;
+  assetClass?: string;
+  direction?: 'LONG' | 'SHORT';
+  strategyId?: string;
+  session?: string;
+  startDate?: string;
+  endDate?: string;
+  tags?: string;
+}
+
+export interface IWhatIfRequest {
+  filters?: IWhatIfFilters;
+  stopRGrid?: (number | null)[];
+  targetRGrid?: (number | null)[];
+  fillModel?: WhatIfFillModel;
+  slippageTicks?: number;
+  resolutionPolicy?: WhatIfResolutionPolicy;
+  excludeManagedStopTrades?: boolean;
+  holdoutFraction?: number;
+}
+
+export interface IWhatIfExclusionsCount {
+  EXCLUDED_MULTI_FILL: number;
+  EXCLUDED_NO_STOP: number;
+  EXCLUDED_NO_CANDLES: number;
+  EXCLUDED_UNDERLYING_FALLBACK: number;
+  EXCLUDED_MANAGED_STOP: number;
+  EXCLUDED_OTHER: number;
+}
+
+export interface IWhatIfScope {
+  tradesInScope: number;
+  nEligible: number;
+  exclusions: IWhatIfExclusionsCount;
+  resolutionCounts: Record<string, number>;
+  costModelCounts: Record<string, number>;
+}
+
+export interface IWhatIfCalibration {
+  testedCount: number;
+  matchingStopCount: number;
+  agreement: number;
+  pessOptSpread: number;
+  calibrationWarning: boolean;
+}
+
+export interface IWhatIfCellStats {
+  nEval: number;
+  nCensored: number;
+  nAmbiguous: number;
+  meanR_pess: number;
+  meanR_opt: number;
+  meanR_actual_sameSubset: number;
+  totalNet_pess: number;
+  totalNet_opt: number;
+  totalNet_actual: number;
+  winRate_pess: number;
+  winRate_opt: number;
+  profitFactor_pess: number;
+  profitFactor_opt: number;
+  stopHitRate: number;
+  targetHitRate: number;
+  exitsByPartialCandle: number;
+}
+
+export interface IWhatIfCellResult {
+  stopR: number | null;
+  targetR: number | null;
+  all: IWhatIfCellStats;
+  inSample: IWhatIfCellStats;
+  holdout: IWhatIfCellStats;
+  verdict: WhatIfVerdict;
+  holdsOutOfSample: boolean;
+  bootstrapIntervalPess: [number, number];
+  bootstrapIntervalOpt: [number, number];
+}
+
+export interface IWhatIfDrillTrade {
+  tradeId: string;
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  entryTime: string;
+  exitTime?: string;
+  entryPrice: number;
+  actualExitPrice?: number;
+  initialStopLoss?: number;
+  plannedTarget?: number;
+  realizedR?: number;
+  reason?: string;
+}
+
+export interface IWhatIfDrillDescriptors {
+  ambiguous: Array<{
+    stopR: number | null;
+    targetR: number | null;
+    tradeIds: string[];
+    count: number;
+  }>;
+  censored: Array<{
+    stopR: number | null;
+    targetR: number | null;
+    tradeIds: string[];
+    count: number;
+  }>;
+  exclusions: Record<
+    WhatIfExclusionReason,
+    {
+      count: number;
+      tradeIds: string[];
+      trades?: IWhatIfDrillTrade[];
+    }
+  >;
+}
+
+export interface IWhatIfExcursionDistributionBucket {
+  range: string;
+  count: number;
+  minR: number;
+  maxR: number;
+  tradeIds: string[];
+}
+
+export interface IWhatIfBaseline {
+  nEligible: number;
+  meanR_actual: number;
+  totalNet_actual: number;
+  winRate_actual: number;
+  profitFactor_actual: number;
+}
+
+export interface IWhatIfResponse {
+  meta: {
+    filters: IWhatIfFilters;
+    fillModel: WhatIfFillModel;
+    slippageTicks: number;
+    resolutionPolicy: WhatIfResolutionPolicy;
+    excludeManagedStopTrades: boolean;
+    holdoutFraction: number;
+    generatedAt: string;
+  };
+  scope: IWhatIfScope;
+  calibration: IWhatIfCalibration;
+  baseline: IWhatIfBaseline;
+  cells: IWhatIfCellResult[];
+  drillDescriptors: IWhatIfDrillDescriptors;
+  winnersMaeDistribution: IWhatIfExcursionDistributionBucket[];
+  allTradesMfeDistribution: IWhatIfExcursionDistributionBucket[];
+}
+
 

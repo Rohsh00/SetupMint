@@ -1630,5 +1630,33 @@ export const BUILT_IN_TEMPLATES: ITradeTemplate[] = [
   },
 ];
 
+// ----------------------------------------------------------------------------
+// WHAT-IF CANDLE-REPLAY SIMULATION CONSTANTS
+// ----------------------------------------------------------------------------
+export const DEFAULT_STOP_R_GRID: (number | null)[] = [null, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+export const DEFAULT_TARGET_R_GRID: (number | null)[] = [null, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0];
+export const MAX_WHAT_IF_GRID_CELLS = 100;
+export const MAX_WHAT_IF_TRADES_SCOPE = 5000;
+export const CALIBRATION_MIN_AGREEMENT = 0.90;
+export const HOLDOUT_FRACTION = 0.30;
+export const MIN_RELIABLE_SAMPLE = 30;
+export const MIN_HOLDOUT_SAMPLE = 15;
+
+export const WHAT_IF_FILL_MODELS = ['GAP_AWARE', 'AT_LEVEL'] as const;
+export const WHAT_IF_RESOLUTION_POLICIES = ['FINEST_AVAILABLE', 'ONE_MINUTE_ONLY'] as const;
+export const WHAT_IF_POLICIES = ['PESSIMISTIC', 'OPTIMISTIC'] as const;
+export const WHAT_IF_EXCLUSION_REASONS = [
+  'EXCLUDED_MULTI_FILL',
+  'EXCLUDED_NO_STOP',
+  'EXCLUDED_NO_CANDLES',
+  'EXCLUDED_UNDERLYING_FALLBACK',
+  'EXCLUDED_MANAGED_STOP',
+  'EXCLUDED_OTHER',
+] as const;
+export const WHAT_IF_VERDICTS = ['BETTER_ROBUST', 'WORSE_ROBUST', 'INCONCLUSIVE'] as const;
+export const WHAT_IF_CELL_STATUSES = ['EVALUABLE', 'CENSORED'] as const;
+export const WHAT_IF_OUTCOMES = ['STOP', 'TARGET', 'ACTUAL'] as const;
+export const WHAT_IF_COST_MODELS = ['RECOMPUTED', 'ACTUAL_FALLBACK'] as const;
+
 
 

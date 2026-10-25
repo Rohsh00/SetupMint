@@ -24,6 +24,7 @@ import {
   DialogContent,
   DialogActions,
   LinearProgress,
+  Switch,
   useTheme as useMuiTheme,
 } from '@mui/material';
 import {
@@ -84,6 +85,7 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const { user, refreshUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const [showHelpHints, setShowHelpHints] = useState(() => localStorage.getItem('tv_show_help_hints') !== 'false');
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -533,6 +535,26 @@ export function SettingsPage() {
                       System
                     </ToggleButton>
                   </ToggleButtonGroup>
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, pb: 0.5 }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Show Contextual Help Hints
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Display interactive tooltips and calculation explainers throughout the app.
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={showHelpHints}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setShowHelpHints(val);
+                      localStorage.setItem('tv_show_help_hints', String(val));
+                      window.dispatchEvent(new Event('tv_help_hints_changed'));
+                    }}
+                  />
                 </Box>
 
                 {profileSuccess && (

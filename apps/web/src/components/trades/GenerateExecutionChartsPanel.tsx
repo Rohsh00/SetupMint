@@ -48,6 +48,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
+import { HelpHint } from '../help/index.js';
 
 const PREF_TIMEFRAMES_KEY = 'tradevault_chart_timeframes';
 const PREF_PADDING_BEFORE_KEY = 'tradevault_chart_padding_before';
@@ -621,6 +622,7 @@ export function GenerateExecutionChartsPanel({
                   <Typography variant="caption" sx={{ fontWeight: 700, color: muiTheme.palette.text.secondary }}>
                     Candles Around Trade (0 – {MAX_CHART_PADDING_CANDLES})
                   </Typography>
+                  <HelpHint hintKey="trade.chartGen.padding" />
                 </Box>
 
                 <FormControlLabel

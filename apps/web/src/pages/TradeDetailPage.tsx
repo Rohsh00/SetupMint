@@ -55,6 +55,7 @@ import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
 import { GenerateExecutionChartsPanel } from '../components/trades/GenerateExecutionChartsPanel.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
+import { HelpHint } from '../components/help/index.js';
 
 export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -383,18 +384,24 @@ export function TradeDetailPage() {
           </Grid>
 
           <Grid size={{ xs: 6, sm: 2.4 }}>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-              Total Costs
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Total Costs
+              </Typography>
+              <HelpHint hintKey="trade.fees.autoManual" />
+            </Box>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, mt: 0.5 }}>
               {formatCurrency(trade.calculated?.totalCosts)}
             </Typography>
           </Grid>
 
           <Grid size={{ xs: 6, sm: 2.4 }}>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-              Realized R
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Realized R
+              </Typography>
+              <HelpHint hintKey="metric.rMultiple" />
+            </Box>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
               {formatR(trade.calculated?.realizedRMultiple)}
             </Typography>
@@ -1097,6 +1104,7 @@ export function TradeDetailPage() {
                   <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
                     Stop-Loss Modifications & Trail Tracking
                   </Typography>
+                  <HelpHint hintKey="trade.stopMoves.audit" />
                 </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, mt: 0.25, display: 'block' }}>
                   FYERS orderbook tracking of stop adjustments, trailing discipline, and downside risk expansion

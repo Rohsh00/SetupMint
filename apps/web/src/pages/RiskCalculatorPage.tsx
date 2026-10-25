@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -59,6 +60,9 @@ export function RiskCalculatorPage() {
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
   const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
 
+  const [searchParams] = useSearchParams();
+  const urlSymbol = searchParams.get('symbol');
+
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
 
@@ -101,6 +105,13 @@ export function RiskCalculatorPage() {
       }
     }
   }, [accounts, selectedAccountId]);
+
+  // Pre-fill symbol if specified via URL param (e.g. from TradeInstrumentBadge)
+  useEffect(() => {
+    if (urlSymbol) {
+      handleSymbolChange(urlSymbol);
+    }
+  }, [urlSymbol, instruments]);
 
   // Account change handler (live updates connected risk budget)
   const handleAccountChange = (accId: string) => {

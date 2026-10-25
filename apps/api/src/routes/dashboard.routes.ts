@@ -41,6 +41,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       id: t._id.toString(),
       tradeDate: t.tradeDate.toISOString().split('T')[0],
       symbol: t.symbol,
+      underlying: t.underlying || t.symbol,
       strategyId: t.strategyId?._id ? (t.strategyId as any)._id.toString() : undefined,
       strategyName: (t.strategyId as any)?.name || t.strategyName || 'Discretionary',
       status: t.status,

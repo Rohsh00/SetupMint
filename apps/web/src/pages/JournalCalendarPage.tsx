@@ -35,6 +35,7 @@ import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
 import { MISTAKE_TAGS } from '@tradevault/shared';
+import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 
 export function JournalCalendarPage() {
   const queryClient = useQueryClient();
@@ -521,20 +522,37 @@ export function JournalCalendarPage() {
                         },
                       }}
                     >
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
-                          <Box
-                            component="span"
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            label={t.direction}
+                            size="small"
                             sx={{
-                              color: t.direction === 'LONG' ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                              mr: 0.75,
+                              height: 18,
+                              fontSize: '0.625rem',
+                              fontWeight: 700,
+                              backgroundColor:
+                                t.direction === 'LONG'
+                                  ? muiTheme.palette.profit.bg
+                                  : muiTheme.palette.loss.bg,
+                              color:
+                                t.direction === 'LONG'
+                                  ? muiTheme.palette.profit.main
+                                  : muiTheme.palette.loss.main,
+                              border: `1px solid ${
+                                t.direction === 'LONG'
+                                  ? isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.25)'
+                                  : isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'
+                              }`,
                             }}
-                          >
-                            {t.direction}
-                          </Box>
-                          {t.symbol}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          />
+                          <TradeInstrumentBadge
+                            trade={t}
+                            size="small"
+                            showSubtitle={false}
+                          />
+                        </Box>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, pl: 0.25 }}>
                           {t.strategyName || 'Discretionary'}
                         </Typography>
                       </Box>

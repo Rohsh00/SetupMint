@@ -298,6 +298,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (search) {
       filter.$or = [
         { symbol: new RegExp(search, 'i') },
+        { underlying: new RegExp(search, 'i') },
+        { instrumentName: new RegExp(search, 'i') },
         { tradeTitle: new RegExp(search, 'i') },
         { 'psychology.notes': new RegExp(search, 'i') },
         { 'thesis.entryRationale': new RegExp(search, 'i') },

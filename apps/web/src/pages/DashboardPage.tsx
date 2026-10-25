@@ -48,6 +48,7 @@ import {
 } from 'recharts';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
+import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 
 export function DashboardPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
@@ -948,16 +949,12 @@ export function DashboardPage() {
                     <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary }}>
                       {t.tradeDate}
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
-                      <RouterLink
-                        to={`/trades/${t.id}`}
-                        style={{
-                          color: muiTheme.palette.text.primary,
-                          textDecoration: 'none',
-                        }}
-                      >
-                        {t.symbol}
-                      </RouterLink>
+                    <TableCell sx={{ minWidth: 140 }}>
+                      <TradeInstrumentBadge
+                        trade={t}
+                        size="small"
+                        showSubtitle={false}
+                      />
                     </TableCell>
                     <TableCell>
                       <Chip

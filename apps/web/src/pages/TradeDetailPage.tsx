@@ -48,6 +48,7 @@ import WarningRoundedIcon from '@mui/icons-material/WarningRounded';
 import moment from 'moment';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
+import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
@@ -260,10 +261,13 @@ export function TradeDetailPage() {
             <ArrowBackIcon fontSize="small" />
           </IconButton>
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>
-                {trade.symbol}
-              </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <TradeInstrumentBadge
+                trade={trade}
+                linkToTrade={false}
+                size="large"
+                showSubtitle={false}
+              />
               <Chip
                 label={trade.direction}
                 size="small"
@@ -298,8 +302,8 @@ export function TradeDetailPage() {
                 }}
               />
             </Box>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, mt: 0.25, display: 'block', fontFamily: `'JetBrains Mono', monospace` }}>
-              {trade.instrumentName ? `${trade.instrumentName} • ` : ''}{trade.accountName} • {trade.exchange} ({trade.marketSegment}) • {trade.tradeDate}
+            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, mt: 0.5, display: 'block', fontFamily: `'JetBrains Mono', monospace` }}>
+              {trade.instrumentName && trade.instrumentName !== trade.symbol ? `${trade.instrumentName} • ` : ''}{trade.accountName} • {trade.exchange} ({trade.marketSegment}) • {trade.tradeDate}
             </Typography>
           </Box>
         </Box>

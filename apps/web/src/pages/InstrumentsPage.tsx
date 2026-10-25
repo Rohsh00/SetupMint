@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -74,7 +75,15 @@ const defaultFormData: InstrumentFormData = {
 export function InstrumentsPage() {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('search') || '');
+
+  React.useEffect(() => {
+    const s = searchParams.get('search');
+    if (s !== null && s !== search) {
+      setSearch(s);
+    }
+  }, [searchParams]);
 
   // Creation modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);

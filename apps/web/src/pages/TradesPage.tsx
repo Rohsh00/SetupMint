@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link as RouterLink, useOutletContext, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
@@ -51,6 +51,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
+import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
@@ -86,9 +87,20 @@ export function TradesPage() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   // Filter state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || searchParams.get('underlying') || '';
+
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(urlSearch);
+
+  React.useEffect(() => {
+    const q = searchParams.get('search') || searchParams.get('underlying');
+    if (q !== null && q !== search) {
+      setSearch(q);
+      setPage(1);
+    }
+  }, [searchParams]);
   const [directionFilter, setDirectionFilter] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState('');
   const [assetClassFilter, setAssetClassFilter] = useState('');
@@ -705,82 +717,21 @@ export function TradesPage() {
                       <TableCell sx={{ color: muiTheme.palette.text.secondary, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.accountName}>
                         {t.accountName}
                       </TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.2 }}>
-                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <RouterLink
-                              to={`/trades/${t._id || t.id}`}
-                              style={{
-                                textDecoration: 'none',
-                                color: muiTheme.palette.text.primary,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                fontWeight: 700,
-                                fontFamily: `'JetBrains Mono', monospace`,
-                              }}
-                            >
-                              {t.symbol}
-                            </RouterLink>
-
-                            {t.optionType && t.strikePrice ? (
-                              <Box
-                                component="span"
-                                sx={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  px: 0.75,
-                                  py: 0.2,
-                                  borderRadius: 1,
-                                  fontSize: '0.6875rem',
-                                  fontWeight: 700,
-                                  fontFamily: `'JetBrains Mono', monospace`,
-                                  backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
-                                  color: isDark ? '#60a5fa' : '#2563eb',
-                                  border: `1px solid ${isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)'}`,
-                                }}
-                              >
-                                {t.strikePrice} {t.optionType === 'CALL' ? 'CE' : 'PE'}
-                              </Box>
-                            ) : null}
-
-                            {t.screenshotIds && t.screenshotIds.length > 0 && (
-                              <Tooltip title={`${t.screenshotIds.length} chart screenshot${t.screenshotIds.length > 1 ? 's' : ''} attached`}>
-                                <Box
-                                  component="span"
-                                  sx={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '2px',
-                                    color: muiTheme.palette.primary.main,
-                                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
-                                    px: 0.6,
-                                    py: 0.15,
-                                    borderRadius: 1,
-                                    fontSize: '0.625rem',
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  <CollectionsIcon sx={{ fontSize: 12 }} />
-                                  {t.screenshotIds.length}
-                                </Box>
-                              </Tooltip>
-                            )}
-                          </Box>
-                          {t.instrumentName && t.instrumentName !== t.symbol && (
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                color: 'text.secondary',
-                                fontSize: '0.6875rem',
-                                fontWeight: 500,
-                                lineHeight: 1.1,
-                              }}
-                            >
-                              {t.instrumentName}
-                            </Typography>
-                          )}
-                        </Box>
+                      <TableCell sx={{ minWidth: 150 }}>
+                        <TradeInstrumentBadge
+                          trade={t}
+                          linkToTrade={true}
+                          size="small"
+                          onFilterUnderlying={(und) => {
+                            setSearch(und);
+                            setPage(1);
+                            setSearchParams((prev) => {
+                              const next = new URLSearchParams(prev);
+                              next.set('search', und);
+                              return next;
+                            });
+                          }}
+                        />
                       </TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Chip

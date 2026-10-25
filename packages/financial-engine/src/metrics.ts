@@ -5,6 +5,7 @@ export interface PerformanceInputTrade {
   id: string;
   tradeDate: string;
   symbol: string;
+  underlying?: string;
   strategyId?: string;
   strategyName?: string;
   status: string;
@@ -191,8 +192,9 @@ export function calculateDashboardMetrics(
     if (pnl.greaterThan(0)) monthRecord.wins++;
     monthlyMap.set(ym, monthRecord);
 
-    // Symbol breakdown
-    const symRecord = symbolMap.get(trade.symbol) ?? {
+    // Symbol breakdown (grouped by underlying if present)
+    const instrumentKey = trade.underlying || trade.symbol;
+    const symRecord = symbolMap.get(instrumentKey) ?? {
       netPnL: new Decimal(0),
       count: 0,
       wins: 0,
@@ -207,7 +209,7 @@ export function calculateDashboardMetrics(
     } else if (pnl.lessThan(0)) {
       symRecord.sumLoss = symRecord.sumLoss.plus(pnl.abs());
     }
-    symbolMap.set(trade.symbol, symRecord);
+    symbolMap.set(instrumentKey, symRecord);
 
     // Strategy breakdown
     const stratId = trade.strategyId || 'unclassified';

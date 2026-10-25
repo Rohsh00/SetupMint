@@ -250,6 +250,15 @@ export const api = {
       }),
     getStopMoves: (id: string) =>
       request<any>(`/trades/${id}/stop-moves`),
+    autoClassify: (id: string) =>
+      request<any>(`/trades/${id}/auto-classify`, {
+        method: 'POST',
+      }),
+    autoClassifyBatch: (tradeIds: string[]) =>
+      request<any>('/trades/auto-classify-batch', {
+        method: 'POST',
+        body: JSON.stringify({ tradeIds }),
+      }),
   },
 
   // Dashboard

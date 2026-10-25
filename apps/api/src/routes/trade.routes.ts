@@ -34,6 +34,7 @@ import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
 import { FyersService } from '../services/fyers.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
+import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -585,6 +586,49 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       message: `Successfully classified ${updatedCount} trade(s)`,
       data: { count: updatedCount },
     });
+  });
+
+  // Batch auto-classify trades using 4H Trend + 5M Setup pattern recognition
+  app.post('/auto-classify-batch', async (req: any, reply) => {
+    const tradeIds = Array.isArray(req.body?.tradeIds) ? req.body.tradeIds : [];
+    if (tradeIds.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'tradeIds array is required and must not be empty' },
+      });
+    }
+
+    try {
+      const summary = await PatternRecognitionService.classifyBatch(tradeIds, req.user!.id);
+      return reply.send({
+        success: true,
+        message: `Processed ${summary.total} trade(s): ${summary.classified} classified, ${summary.failed} failed`,
+        data: summary,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'CLASSIFICATION_FAILED', message: err.message || 'Batch classification failed' },
+      });
+    }
+  });
+
+  // Auto-classify single trade using 4H Trend + 5M Setup pattern recognition
+  app.post('/:id/auto-classify', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    try {
+      const result = await PatternRecognitionService.classifyTrade(req.params.id, req.user!.id);
+      return reply.send({
+        success: true,
+        message: `Successfully classified trade with ${result.strategyName} (${result.variantKey || 'Standard'})`,
+        data: result,
+      });
+    } catch (err: any) {
+      const statusCode = err.message.includes('not found') ? 404 : 500;
+      return reply.status(statusCode).send({
+        success: false,
+        error: { code: 'CLASSIFICATION_FAILED', message: err.message || 'Auto classification failed' },
+      });
+    }
   });
 
   // Get trade details

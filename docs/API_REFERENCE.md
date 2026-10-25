@@ -371,6 +371,17 @@ Authentication is handled via stateful sessions:
   ```
 - **Responses:** `200 OK` with `{ "success": true, "data": { "count": 2 } }`.
 
+### `POST /api/v1/trades/:id/auto-classify`
+- **Purpose:** Automatically evaluate 4H higher-timeframe trend and 5M lower-timeframe candle market structure around entry time, detect pattern/liquidity sweep (`EQL`, `W-SWEEP`, `W-UNSWEPT`, `EQH`, `M-SWEEP`, `M-UNSWEPT`), match to the trader's active strategy and child variant, update `trade.setup`, `thesis`, and record an `AUTO_CLASSIFIED` audit log.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Responses:** `200 OK` with `{ "success": true, "data": IAutoClassifyResult }`.
+
+### `POST /api/v1/trades/auto-classify-batch`
+- **Purpose:** Batch execute automated 4H trend + 5M setup pattern recognition and variant classification across multiple trades.
+- **Auth:** **Required**.
+- **Request Body:** `{ "tradeIds": ["id1", "id2"] }`.
+- **Responses:** `200 OK` with `{ "success": true, "data": { "total": 2, "classified": 2, "failed": 0, "results": [] } }`.
+
 ### `POST /api/v1/trades/bulk-delete`
 - **Purpose:** Delete multiple trades, clean attachments from disk, and reconcile all affected accounts.
 - **Auth:** **Required**.

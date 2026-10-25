@@ -45,6 +45,7 @@ import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import ElectricBoltRoundedIcon from '@mui/icons-material/ElectricBoltRounded';
 import WarningRoundedIcon from '@mui/icons-material/WarningRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import moment from 'moment';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -149,6 +150,18 @@ export function TradeDetailPage() {
       const msg = err.message || 'Failed to delete attachment';
       setActionError(msg);
       toast.error(msg);
+    },
+  });
+
+  const autoClassifyMutation = useMutation({
+    mutationFn: () => api.trades.autoClassify(id!),
+    onSuccess: (res: any) => {
+      toast.success(res?.message || 'Trade classified successfully!');
+      queryClient.invalidateQueries({ queryKey: ['trade', id] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Auto classification failed');
     },
   });
 
@@ -434,6 +447,17 @@ export function TradeDetailPage() {
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              size="small"
+              variant="contained"
+              color="primary"
+              disabled={autoClassifyMutation.isPending}
+              onClick={() => autoClassifyMutation.mutate()}
+              startIcon={autoClassifyMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeRoundedIcon fontSize="small" />}
+              sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 700, textTransform: 'none' }}
+            >
+              {autoClassifyMutation.isPending ? 'Detecting 4H + 5M...' : 'Auto-Detect Setup (4H + 5M)'}
+            </Button>
             {trade.strategyId && (
               <Button
                 component={RouterLink}
@@ -540,14 +564,27 @@ export function TradeDetailPage() {
                   <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
                     This trade does not have an assigned setup variant.
                   </Typography>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => setIsEditModalOpen(true)}
-                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
-                  >
-                    Assign Setup Variant
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="primary"
+                      disabled={autoClassifyMutation.isPending}
+                      onClick={() => autoClassifyMutation.mutate()}
+                      startIcon={autoClassifyMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeRoundedIcon fontSize="small" />}
+                      sx={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'none' }}
+                    >
+                      {autoClassifyMutation.isPending ? 'Detecting 4H + 5M...' : 'Auto-Detect Setup (4H + 5M)'}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => setIsEditModalOpen(true)}
+                      sx={{ fontSize: '0.75rem', fontWeight: 700 }}
+                    >
+                      Assign Setup Variant
+                    </Button>
+                  </Box>
                 </Box>
               )}
             </Box>
@@ -557,7 +594,10 @@ export function TradeDetailPage() {
         {/* Audit Log / Classification Events */}
         {(() => {
           const classificationEvents = (trade.auditLog || []).filter(
-            (log: any) => log.event === 'CLASSIFIED' || log.action === 'CLASSIFIED'
+            (log: any) =>
+              log.event === 'CLASSIFIED' ||
+              log.action === 'CLASSIFIED' ||
+              log.action === 'AUTO_CLASSIFIED'
           );
           if (classificationEvents.length === 0) return null;
 

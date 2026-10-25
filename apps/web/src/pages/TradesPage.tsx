@@ -45,6 +45,7 @@ import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -269,6 +270,19 @@ export function TradesPage() {
       const msg = err.message || 'Failed to classify trades';
       setActionError(msg);
       toast.error(msg);
+    },
+  });
+
+  const autoClassifyMutation = useMutation({
+    mutationFn: (tradeIds: string[]) => api.trades.autoClassifyBatch(tradeIds),
+    onSuccess: (res: any) => {
+      setSelectedIds([]);
+      toast.success(res?.message || 'Pattern recognition completed successfully!');
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['trade'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Auto pattern classification failed');
     },
   });
 
@@ -586,6 +600,17 @@ export function TradesPage() {
             {selectedIds.length} trade{selectedIds.length > 1 ? 's' : ''} selected
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Button
+              size="small"
+              variant="contained"
+              color="primary"
+              disabled={autoClassifyMutation.isPending}
+              onClick={() => autoClassifyMutation.mutate(selectedIds)}
+              startIcon={autoClassifyMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeRoundedIcon fontSize="small" />}
+              sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600, textTransform: 'none' }}
+            >
+              {autoClassifyMutation.isPending ? 'Detecting 4H + 5M...' : 'Auto-Detect Setup (4H + 5M)'}
+            </Button>
             <Button
               size="small"
               variant="outlined"

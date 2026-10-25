@@ -1411,6 +1411,27 @@ export class FyersService {
     const providerUsed = candleResult.provider;
     const isUnderlyingFallback = candleResult.isUnderlyingFallback;
 
+    // Guard: Option contracts cannot use spot underlying candles directly (e.g. NIFTY spot 23,000 vs 15.00 option premium)
+    const isOptionTrade =
+      trade.assetClass === 'OPTIONS' ||
+      Boolean(trade.optionType) ||
+      Boolean(trade.strikePrice) ||
+      /(\d+(?:CE|PE))$/i.test(trade.symbol);
+
+    if (isUnderlyingFallback && isOptionTrade) {
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.excursion = {
+        status: 'UNAVAILABLE',
+        failureReason:
+          'Option contract candles unavailable; cannot calculate MAE/MFE using spot underlying index without delta translation',
+        source: 'UNDERLYING_FALLBACK',
+        resolution,
+        computedAt: new Date(),
+      };
+      await trade.save();
+      return trade.calculated.excursion;
+    }
+
     // Compute excursion metrics using financial-engine
     const entryPrice = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
     const exitPrice = trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice ?? 0;

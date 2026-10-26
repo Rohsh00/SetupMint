@@ -534,4 +534,101 @@ describe('FYERS funds sync and reconciliation', () => {
     // 50 points * 10 multiplier * 1 lot = 500 gross P&L
     expect(crudeTrade?.calculated.grossPnL).toBe(500);
   });
+
+  it('correctly updates an OPEN trade to CLOSED when user fetches at entry and fetches again at exit', async () => {
+    // Phase 1: Entry only
+    tradebookExecutions = [
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '26-Oct-2026 10:00:00',
+        orderNumber: 'ORD-PHASE-ENTRY',
+        tradeNumber: 'TRD-PHASE-ENTRY-1',
+        tradePrice: 100,
+        tradeValue: 5000,
+        tradedQty: 50,
+        orderType: 2,
+        side: 1, // BUY
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-phase-1',
+        symbol: 'NSE:BANKNIFTY26OCT52000CE',
+      },
+    ];
+
+    const sync1Res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/integrations/fyers/sync',
+      headers: { cookie: authCookie },
+    });
+    expect(sync1Res.statusCode).toBe(200);
+
+    const openTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      'fills.fillId': 'TRD-PHASE-ENTRY-1',
+    });
+    expect(openTrade).toBeTruthy();
+    expect(openTrade?.status).toBe('OPEN');
+    expect(openTrade?.fills.length).toBe(1);
+    expect(openTrade?.calculated.openQuantity).toBe(50);
+    expect(openTrade?.calculated.closedQuantity).toBe(0);
+
+    // Phase 2: Exit execution is added to tradebook
+    tradebookExecutions = [
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '26-Oct-2026 10:00:00',
+        orderNumber: 'ORD-PHASE-ENTRY',
+        tradeNumber: 'TRD-PHASE-ENTRY-1',
+        tradePrice: 100,
+        tradeValue: 5000,
+        tradedQty: 50,
+        orderType: 2,
+        side: 1, // BUY
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-phase-1',
+        symbol: 'NSE:BANKNIFTY26OCT52000CE',
+      },
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '26-Oct-2026 10:15:00',
+        orderNumber: 'ORD-PHASE-EXIT',
+        tradeNumber: 'TRD-PHASE-EXIT-1',
+        tradePrice: 130,
+        tradeValue: 6500,
+        tradedQty: 50,
+        orderType: 2,
+        side: -1, // SELL
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-phase-1',
+        symbol: 'NSE:BANKNIFTY26OCT52000CE',
+      },
+    ];
+
+    const sync2Res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/integrations/fyers/sync',
+      headers: { cookie: authCookie },
+    });
+    expect(sync2Res.statusCode).toBe(200);
+
+    const closedTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      'fills.fillId': 'TRD-PHASE-ENTRY-1',
+    });
+    expect(closedTrade).toBeTruthy();
+    expect(closedTrade?.status).toBe('CLOSED');
+    expect(closedTrade?.fills.length).toBe(2);
+    expect(closedTrade?.exitTime).toBeDefined();
+    expect(closedTrade?.simpleExecution?.exitPrice).toBe(130);
+    expect(closedTrade?.calculated.closedQuantity).toBe(50);
+    expect(closedTrade?.calculated.openQuantity).toBe(0);
+    expect(closedTrade?.calculated.grossPnL).toBe(1500); // (130 - 100) * 50
+    expect(closedTrade?.calculated.outcome).toBe('WIN');
+  });
 });
+

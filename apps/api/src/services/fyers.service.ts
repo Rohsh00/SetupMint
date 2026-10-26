@@ -1025,18 +1025,26 @@ export class FyersService {
               updated = true;
             }
 
-            // If existing trade was OPEN and the new sync data has closed it:
-            if (existing.status === 'OPEN' && fifoSummary.isFullyClosed) {
-              existing.status = 'CLOSED';
+            // If existing trade was OPEN and the new sync data has closed it, or added new fills:
+            const hasNewFills = grp.fills.length !== (existing.fills?.length || 0);
+            const isClosing = existing.status === 'OPEN' && fifoSummary.isFullyClosed;
+
+            if (isClosing || (existing.status === 'OPEN' && hasNewFills) || (existing.status === 'CLOSED' && hasNewFills)) {
+              existing.status = fifoSummary.isFullyClosed ? 'CLOSED' : 'OPEN';
               existing.exitTime = exitTime;
-              if (existing.simpleExecution) {
-                existing.simpleExecution.contractMultiplier = multiplier;
-                existing.simpleExecution.exitPrice = avgExit;
-                existing.simpleExecution.brokerage = charges.brokerage;
-                existing.simpleExecution.exchangeFees = charges.exchangeFees;
-                existing.simpleExecution.regulatoryFees = charges.regulatoryFees;
-                existing.simpleExecution.taxes = charges.taxes;
-              }
+              existing.simpleExecution = {
+                contractMultiplier: multiplier,
+                entryPrice: avgEntry,
+                exitPrice: avgExit,
+                quantity: totalTradeQty,
+                brokerage: charges.brokerage,
+                exchangeFees: charges.exchangeFees,
+                regulatoryFees: charges.regulatoryFees,
+                taxes: charges.taxes,
+                otherFees: existing.simpleExecution?.otherFees || 0,
+                explicitAdjustments: existing.simpleExecution?.explicitAdjustments || 0,
+              };
+
               existing.fills = grp.fills.map((f) => ({
                 fillId: f.fillId,
                 timestamp: f.timestamp,
@@ -1044,21 +1052,41 @@ export class FyersService {
                 price: f.price,
                 quantity: f.quantity,
                 fee: 0,
-              }));
-              existing.calculated = {
-                ...existing.calculated,
-                averageEntryPrice: avgEntry,
-                averageExitPrice: avgExit,
-                closedQuantity: closedQty,
-                openQuantity: fifoSummary.openQuantity.toNumber(),
-                totalCosts: charges.totalCosts,
-                grossPnL,
-                netPnL,
-                outcome: netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN',
-              };
+              })) as any;
+
+              if (!existing.calculated) {
+                existing.calculated = {} as any;
+              }
+              existing.calculated.averageEntryPrice = avgEntry;
+              existing.calculated.averageExitPrice = avgExit;
+              existing.calculated.closedQuantity = closedQty;
+              existing.calculated.openQuantity = fifoSummary.openQuantity.toNumber();
+              existing.calculated.totalCosts = charges.totalCosts;
+              existing.calculated.grossPnL = grossPnL;
+              existing.calculated.netPnL = netPnL;
+              if (exitTime) {
+                existing.calculated.holdingTimeMinutes = Math.max(
+                  0,
+                  Math.round((exitTime.getTime() - grp.entryTime.getTime()) / (1000 * 60))
+                );
+              }
+              existing.calculated.outcome = !fifoSummary.isFullyClosed
+                ? 'OPEN'
+                : netPnL > 0
+                ? 'WIN'
+                : netPnL < 0
+                ? 'LOSS'
+                : 'BREAKEVEN';
+
+              existing.markModified('calculated');
+              existing.markModified('fills');
+              existing.markModified('simpleExecution');
+
               await existing.save();
               syncedTradesCount++;
-              closedTradeIds.push(existing._id.toString());
+              if (fifoSummary.isFullyClosed) {
+                closedTradeIds.push(existing._id.toString());
+              }
               return;
             }
 

@@ -63,9 +63,11 @@ import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 
 interface WhatIfSimulatorTabProps {
   accountId?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
-export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountId }) => {
+export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountId, startDate, endDate }) => {
   const { openDrill } = useTradeDrilldown();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -88,6 +90,8 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
     data: simData,
     isLoading,
     isFetching,
+    isError,
+    error,
     refetch,
   } = useQuery<IWhatIfResponse>({
     queryKey: [
@@ -97,11 +101,15 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
       slippageTicks,
       excludeManaged,
       holdoutFraction,
+      startDate,
+      endDate,
     ],
     queryFn: () =>
       api.analytics.whatIf({
         filters: {
           accountId: accountId && accountId !== 'ALL' ? accountId : undefined,
+          startDate,
+          endDate,
         },
         stopRGrid: stopGrid,
         targetRGrid: targetGrid,
@@ -556,6 +564,16 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
             <HelpHint hintKey="analytics.whatIf.verdicts" />
           </Box>
         </Box>
+
+        {isError && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {(error as any)?.message?.includes('SCOPE_TOO_LARGE') ||
+            (error as any)?.message?.includes('500') ||
+            String(error).includes('500')
+              ? 'The selected date range includes more than 500 trades, exceeding What-If simulation limits. Please narrow your date range filter.'
+              : (error as any)?.message || 'Failed to compute What-If matrix. Please narrow your date range or check trade filters.'}
+          </Alert>
+        )}
 
         {isLoading ? (
           <Skeleton variant="rounded" height={400} />

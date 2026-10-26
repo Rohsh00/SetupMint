@@ -85,6 +85,10 @@ graph TD
 ### 5. `Modal.tsx` ([`apps/web/src/components/ui/Modal.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/Modal.tsx))
 - Base modal wrapper with smooth backdrop transition, keyboard `Esc` listener, and focus trapping.
 
+### 6. `DateRangeFilter.tsx` ([`apps/web/src/components/ui/DateRangeFilter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/DateRangeFilter.tsx))
+- Universal date range selector button and popover supporting 14 financial presets plus custom start/end dates.
+- See **Section 9** for full architectural and visual specification.
+
 ---
 
 ## 4. Trade Entry & Form Architecture
@@ -157,4 +161,50 @@ Implemented in [`apps/web/src/context/ToastContext.tsx`](file:///Users/komal/pro
   - Exposes `openDrill(descriptor)` and `closeDrill()`.
   - Automatically synchronizes active drill descriptor with the browser URL (`?drill=<base64-json>`), enabling browser history back/forward navigation and shareable deep links.
   - 150ms debounced prefetching cache to ensure instant drawer opening upon click.
+
+---
+
+## 9. Global Date Range Filter Architecture (`DateRangeFilter.tsx` & `DateRangeContext.tsx`)
+
+### 1. `DateRangeFilter.tsx` ([`apps/web/src/components/ui/DateRangeFilter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/DateRangeFilter.tsx))
+- **Role:** Reusable, theme-aware date range picker component built with MUI v9 `Popover` and Tailwind CSS.
+- **Visual Design & Aesthetics:**
+  - **Trigger Button:** Polished terminal pill button showing a calendar icon (`CalendarTodayRounded`), the currently active preset badge (e.g. `THIS_FY`), and a formatted human-readable date span (e.g. `01 Apr 2026 – 26 Oct 2026`). Features subtle border glow (`focus:ring-1 focus:ring-emerald-500/50`) and chevron dropdown indicator.
+  - **Popover Overlay:** 360px structured overlay with backdrop blur, deep slate background (`#0F172A` / `#020617`), and emerald border accent.
+  - **Categorized Presets:** Presets are categorized into semantic groups:
+    - *Quick:* `TODAY`, `YESTERDAY`, `7D`, `30D`, `90D`
+    - *Calendar Periods:* `THIS_WEEK`, `LAST_WEEK`, `THIS_MONTH`, `LAST_MONTH`, `THIS_QUARTER`, `YTD`, `ALL_TIME`
+    - *Fiscal Year:* `THIS_FY`, `LAST_FY` (Indian FY: April 1 to March 31, clipped to today for active FY)
+  - **Custom Range Controls:**
+    - Dual HTML5 date inputs (`Start Date`, `End Date`) with calendar picker icon and automatic max date clamping (`max={todayStr}`).
+    - Dynamic inline validation alerts with warning icons for:
+      - Start date after end date (`"Start date cannot be after end date"`).
+      - Invalid calendar dates (`"Invalid start/end date format (YYYY-MM-DD)"`).
+    - Disabled `"Apply Range"` button when invalid inputs exist, preventing bad network requests.
+    - Quick `"Reset to All Time"` button to restore baseline view with single click.
+- **Responsiveness & Mobile Ergonomics:**
+  - Supports `fullWidth` prop for stacked layouts and mobile viewports (`< 900px`).
+  - Native date picker interfaces trigger seamless mobile OS date wheels on touch devices.
+
+### 2. `DateRangeContext.tsx` ([`apps/web/src/context/DateRangeContext.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/context/DateRangeContext.tsx))
+- **Role:** Monorepo-wide temporal state orchestrator wrapping the root component tree.
+- **State Interface:**
+  ```typescript
+  interface DateRangeContextValue {
+    preset: DateRangePreset;
+    startDate?: string; // YYYY-MM-DD
+    endDate?: string;   // YYYY-MM-DD
+    formattedRange: string;
+    setPreset: (preset: DateRangePreset) => void;
+    setCustomRange: (startDate?: string, endDate?: string) => void;
+    resetToDefault: () => void;
+  }
+  ```
+- **URL Parameter Synchronization:**
+  - Synchronizes filter state with URL search parameters (`?from=YYYY-MM-DD&to=YYYY-MM-DD&range=PRESET`), matching the deep-linking model of `TradeDrillContext`.
+  - Enables browser back/forward history navigation and shareable link reproduction.
+  - No `localStorage` pollution for active ranges; preserves clean URL truth.
+- **Query Key Integration:**
+  - Changing the date range updates `startDate` and `endDate`, which are incorporated into TanStack Query keys across all consumption views (Dashboard, Trades, Analytics, Strategies, Reports, Instruments), triggering clean surgical refetches without invalidating unrelated caches.
+
 

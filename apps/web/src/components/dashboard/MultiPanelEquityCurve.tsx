@@ -48,9 +48,10 @@ const STRATEGY_COLORS = ['#8B5CF6', '#EC4899', '#F59E0B', '#06B6D4', '#10B981', 
 interface MultiPanelEquityCurveProps {
   selectedAccountId?: string;
   startDate?: string;
+  endDate?: string;
 }
 
-export function MultiPanelEquityCurve({ selectedAccountId, startDate }: MultiPanelEquityCurveProps) {
+export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }: MultiPanelEquityCurveProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const { openDrill, prefetchDrill } = useTradeDrilldown();
@@ -68,11 +69,12 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate }: MultiPan
 
   // Fetch full multi-panel dataset computed by Decimal.js
   const { data: curveData, isLoading, isError } = useQuery<IEquityCurvesResponse>({
-    queryKey: ['equity-curves', selectedAccountId, startDate],
+    queryKey: ['equity-curves', selectedAccountId, startDate, endDate],
     queryFn: () =>
       api.dashboard.equityCurves({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
         startDate,
+        endDate,
       }),
     staleTime: 60 * 1000,
   });

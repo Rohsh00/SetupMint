@@ -51,11 +51,13 @@ import { formatCurrency, formatPercent, formatR, formatDate } from '../lib/utils
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { MultiPanelEquityCurve } from '../components/dashboard/MultiPanelEquityCurve.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 
 export function DashboardPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const { openDrill } = useTradeDrilldown();
-  const [dateRange, setDateRange] = useState<string>('ALL');
+  const { startDate, endDate, preset } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -73,25 +75,13 @@ export function DashboardPage() {
     padding: '8px 12px',
   };
 
-  // Compute startDate based on filter
-  let startDate: string | undefined;
-  const now = new Date();
-  if (dateRange === '30D') {
-    const d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    startDate = d.toISOString().split('T')[0];
-  } else if (dateRange === 'MONTH') {
-    startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-  } else if (dateRange === 'WEEK') {
-    const d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    startDate = d.toISOString().split('T')[0];
-  }
-
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['dashboard-stats', selectedAccountId, dateRange],
+    queryKey: ['dashboard-stats', selectedAccountId, startDate, endDate],
     queryFn: () =>
       api.dashboard.stats({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
         startDate,
+        endDate,
       }),
   });
 
@@ -214,51 +204,7 @@ export function DashboardPage() {
         </Box>
 
         {/* Date Range Selector */}
-        <ButtonGroup
-          variant="outlined"
-          size="small"
-          sx={{
-            backgroundColor: muiTheme.palette.background.paper,
-            borderRadius: 2,
-            p: 0.5,
-            border: `1px solid ${muiTheme.palette.divider}`,
-            '& .MuiButtonGroup-grouped': {
-              border: 'none !important',
-              borderRadius: '6px !important',
-              px: 1.5,
-              py: 0.6,
-              fontSize: '0.75rem',
-              fontWeight: 600,
-            },
-          }}
-        >
-          {[
-            { id: 'ALL', label: 'All Time' },
-            { id: 'MONTH', label: 'This Month' },
-            { id: '30D', label: '30 Days' },
-            { id: 'WEEK', label: '7 Days' },
-          ].map((r) => (
-            <Button
-              key={r.id}
-              onClick={() => setDateRange(r.id)}
-              sx={{
-                backgroundColor:
-                  dateRange === r.id
-                    ? `${muiTheme.palette.primary.main} !important`
-                    : 'transparent',
-                color:
-                  dateRange === r.id
-                    ? '#FFFFFF !important'
-                    : `${muiTheme.palette.text.secondary} !important`,
-                '&:hover': {
-                  color: `${muiTheme.palette.text.primary} !important`,
-                },
-              }}
-            >
-              {r.label}
-            </Button>
-          ))}
-        </ButtonGroup>
+        <DateRangeFilter />
       </Box>
 
       {/* KPI Stats Grid */}
@@ -269,7 +215,7 @@ export function DashboardPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { status: 'CLOSED' },
+                filter: { status: 'CLOSED', startDate, endDate },
                 label: 'All Closed Portfolio Trades',
               })
             }
@@ -331,7 +277,7 @@ export function DashboardPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { outcome: 'WIN' },
+                filter: { outcome: 'WIN', startDate, endDate },
                 label: 'Winning Trades',
               })
             }
@@ -382,7 +328,7 @@ export function DashboardPage() {
                   component="span"
                   onClick={(e: React.MouseEvent) => {
                     e.stopPropagation();
-                    openDrill({ kind: 'FILTER', filter: { outcome: 'WIN' }, label: 'Winning Trades' });
+                    openDrill({ kind: 'FILTER', filter: { outcome: 'WIN', startDate, endDate }, label: 'Winning Trades' });
                   }}
                   sx={{ color: muiTheme.palette.profit.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
                 >
@@ -392,13 +338,20 @@ export function DashboardPage() {
                   component="span"
                   onClick={(e: React.MouseEvent) => {
                     e.stopPropagation();
-                    openDrill({ kind: 'FILTER', filter: { outcome: 'LOSS' }, label: 'Losing Trades' });
+                    openDrill({ kind: 'FILTER', filter: { outcome: 'LOSS', startDate, endDate }, label: 'Losing Trades' });
                   }}
                   sx={{ color: muiTheme.palette.loss.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
                 >
                   {stats?.losingTradesCount || 0} Losses
                 </Box>
-                <Box component="span" sx={{ color: muiTheme.palette.text.secondary }}>
+                <Box
+                  component="span"
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    openDrill({ kind: 'FILTER', filter: { status: 'CLOSED', startDate, endDate }, label: 'All Closed Trades' });
+                  }}
+                  sx={{ color: muiTheme.palette.text.secondary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                >
                   {stats?.closedTradesCount || 0} Total
                 </Box>
               </Box>
@@ -412,7 +365,7 @@ export function DashboardPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { status: 'CLOSED' },
+                filter: { status: 'CLOSED', startDate, endDate },
                 label: 'Closed Trades (Expectancy Subset)',
               })
             }
@@ -472,7 +425,7 @@ export function DashboardPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { outcome: 'LOSS' },
+                filter: { outcome: 'LOSS', startDate, endDate },
                 label: 'Drawdown / Losing Trades',
               })
             }
@@ -531,7 +484,7 @@ export function DashboardPage() {
 
       {/* Multi-Panel Performance Curves Row */}
       <Box sx={{ width: '100%' }}>
-        <MultiPanelEquityCurve selectedAccountId={selectedAccountId} startDate={startDate} />
+        <MultiPanelEquityCurve selectedAccountId={selectedAccountId} startDate={startDate} endDate={endDate} />
       </Box>
 
       {/* Daily Net P&L Row */}
@@ -618,7 +571,7 @@ export function DashboardPage() {
                     onClick={() =>
                       openDrill({
                         kind: 'FILTER',
-                        filter: { symbol: inst.symbol },
+                        filter: { symbol: inst.symbol, startDate, endDate },
                         label: `${inst.symbol} Executions`,
                       })
                     }
@@ -682,7 +635,7 @@ export function DashboardPage() {
                     onClick={() =>
                       openDrill({
                         kind: 'FILTER',
-                        filter: { strategyId: strat.strategyId },
+                        filter: { strategyId: strat.strategyId, startDate, endDate },
                         label: `${strat.strategyName} Playbook Trades`,
                       })
                     }

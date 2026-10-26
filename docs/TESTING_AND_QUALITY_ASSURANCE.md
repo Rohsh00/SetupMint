@@ -13,15 +13,16 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (519 Passing Tests)
+## 2. Test Suite Inventory (568 Passing Tests)
 
-The repository contains **519 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **568 fully automated tests** spanning custom date range filters & Indian FY presets, parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (246 Tests)
+### A. Financial Engine Unit Tests (269 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
+| `date-range.test.ts` | 23 tests | Preset resolution (`TODAY`, `YESTERDAY`, `7D`, `30D`, `90D`, `THIS_WEEK`, `LAST_WEEK`, `THIS_MONTH`, `LAST_MONTH`, `THIS_QUARTER`, `YTD`, `THIS_FY`, `LAST_FY`, `ALL_TIME`), Indian FY April 1–March 31 boundaries clipped to today, leap year February 29 handling, ISO Monday week start, inclusive IST (+05:30) session date boundary normalization (00:00:00.000 IST start to 23:59:59.999 IST end), invalid calendar date rejection (e.g. Feb 30), and `startDate > endDate` Zod validation. |
 | `drawdown.test.ts` | 14 tests | Underwater series generation, high-water mark tracking, peak-to-trough max drawdown, current drawdown, longest recovery duration in calendar days and trade count, ongoing drawdown edge cases, and 30-digit Decimal.js precision. |
 | `cumulative-r.test.ts` | 11 tests | Sequential cumulative R series calculation, exclusion of trades with undefined/invalid initial risk budgets matching `edge.ts`, R-multiple sample coverage percentage, per-strategy cumulative-R overlays (up to 6), and sample size warning threshold (< 30 trades). |
 | `monte-carlo.test.ts` | 12 tests | Bootstrap resampling with replacement, deterministic Mulberry32 PRNG reproducibility, edge qualification gating ($N \ge 30$, verdict $\neq$ `NO_EDGE`/`INSUFFICIENT_DATA`), and per-step percentile envelope extraction (P5, P25, P50, P75, P95) across 50, 100, and 200 trade steps. |
@@ -45,11 +46,12 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets, UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring. |
 | `excursion.test.ts` | 18 tests | Pure Decimal.js 30-digit precision calculation of MAE/MFE points, amounts, R multiples, candle lifecycle overlap filtering, Exit Efficiency, stop hit & post-stop reversal detection, time-to-MFE/MAE, and diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`). |
 
-### B. Backend API & Integration Tests (273 Tests)
+### B. Backend API & Integration Tests (299 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
+| `date-range-api.test.ts` | 10 tests | Validation error rejection (`400 VALIDATION_ERROR`) on invalid calendar dates and `startDate > endDate`; inclusive IST session boundaries across `GET /api/v1/trades`, `GET /api/v1/dashboard/stats`, `GET /api/v1/dashboard/equity-curves`, `GET /api/v1/analytics/psychology`, `GET /api/v1/analytics/excursion`, `GET /api/v1/export/json`, `GET /api/v1/strategies`, and `GET /api/v1/instruments`; mid-history starting equity calculation accounting for prior closed trades; strict multi-tenant isolation; and mathematical parity between `/trades`, `/dashboard/stats`, and `POST /trades/drilldown` aggregate net P&L and win rate. |
 | `drilldown-and-equity-curves.test.ts` | 10 tests | Authentication enforcement, `kind: TRADE` single-lookup, `kind: TRADES` array lookup, `kind: FILTER` with numerical ranges (`netPnLMin`/`netPnLMax`, `mfeR`/`maeR`), `kind: FILTER` with temporal/categorical conditions (`weekday`, `session`, `emotion`, `mistakes`), strict multi-tenant isolation, limit clamping (capped at 200), and aggregate reconciliation consistency. |
 | `auto-chart-snapshot.test.ts` | 6 tests | Automated snapshot lifecycle: skipping OPEN trades, creating permanent AUTO_CHART snapshots on CLOSED trades using settings & overrides, deduplicating existing snapshots (`SKIPPED_EXISTS`), marking snapshots stale (`isStale: true`) on closed trade edits, 12-screenshot cap enforcement with net-zero slot accounting, and strict multi-tenant isolation. |
 | `trade-chart.test.ts` | 13 tests | Automated execution chart API: default 45/45 padding, custom asymmetric padding, validation rejections (negative, > 200, non-integer, duplicates, > 5 resolutions, unknown keys), legacy single-attachment backwards compatibility, multi-resolution results array (`200 OK`), `SKIPPED_EXISTS` without force, `REPLACED` with force, Cloudflare R2 cleanup, 12-screenshot cap enforcement with net-zero replacements, and excursion calculation invariance. |
@@ -109,6 +111,7 @@ npm run test:watch -w packages/financial-engine
 
 ## 5. Coverage Gaps & Recommended QA Enhancements
 
-1. **End-to-End (E2E) Browser Testing:** Currently, frontend components are tested via manual testing and backend integration tests. Implementing Playwright or Cypress E2E flows is recommended for automated browser regression testing.
-2. **Visual Regression Testing:** Adding screenshot comparison tests for the Recharts equity curve and dark/light mode renders.
-3. **High-Concurrency Stress Testing:** Load testing Fastify's rate limiter under 10,000 req/sec conditions using `autocannon`.
+1. **Frontend Component Unit/Integration Testing:** `apps/web` currently does not have a Vitest + React Testing Library runner configured in its workspace scripts; frontend component logic (`DateRangeFilter.tsx`, `DateRangeContext.tsx`, etc.) is validated via TypeScript compiler typechecking (`tsc -b`), full integration coverage at the API boundary, and interactive browser verification. Configuring a dedicated Vitest environment with `@testing-library/react` and `jsdom` for `apps/web` is recommended.
+2. **End-to-End (E2E) Browser Testing:** Currently, frontend components are tested via manual testing and backend integration tests. Implementing Playwright or Cypress E2E flows is recommended for automated browser regression testing.
+3. **Visual Regression Testing:** Adding screenshot comparison tests for the Recharts equity curve and dark/light mode renders.
+4. **High-Concurrency Stress Testing:** Load testing Fastify's rate limiter under 10,000 req/sec conditions using `autocannon`.

@@ -18,7 +18,13 @@ import {
   Trade,
   TradingAccount,
 } from '../db/models/index.js';
-import { AccountTransactionSource, BrokerImportKind, TransactionType } from '@tradevault/shared';
+import {
+  AccountTransactionSource,
+  BrokerImportKind,
+  TransactionType,
+  dateRangeSchema,
+  buildDateRangeClause,
+} from '@tradevault/shared';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
@@ -684,12 +690,26 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   app.get('/csv', async (req: any, reply) => {
     const { accountId, startDate, endDate } = req.query;
 
+    if (startDate || endDate) {
+      const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+      if (!dateRangeResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+            details: dateRangeResult.error.format(),
+          },
+        });
+      }
+    }
+
     const filter: any = { userId: req.user!.id };
     if (accountId) filter.accountId = accountId;
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
     const trades = await Trade.find(filter)
@@ -736,12 +756,26 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   app.get('/json', async (req: any, reply) => {
     const { accountId, startDate, endDate } = req.query;
 
+    if (startDate || endDate) {
+      const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+      if (!dateRangeResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+            details: dateRangeResult.error.format(),
+          },
+        });
+      }
+    }
+
     const filter: any = { userId: req.user!.id };
     if (accountId) filter.accountId = accountId;
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
     const trades = await Trade.find(filter).sort({ tradeDate: -1 });

@@ -43,6 +43,8 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutlineRounded';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 
 type SortColumn =
   | 'key'
@@ -56,6 +58,7 @@ type SortColumn =
 
 export function StrategyVariantAnalyticsPage() {
   const { openDrill } = useTradeDrilldown();
+  const { startDate, endDate, resetRange } = useDateRange();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -82,9 +85,6 @@ export function StrategyVariantAnalyticsPage() {
     : 'Back';
 
   // Filter states
-  const [datePreset, setDatePreset] = useState<'ALL' | '30D' | '90D' | 'YTD'>('ALL');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
   const [symbolFilter, setSymbolFilter] = useState<string>('');
   const [directionFilter, setDirectionFilter] = useState<string>('');
   const [entryModelFilter, setEntryModelFilter] = useState<string>('');
@@ -98,36 +98,9 @@ export function StrategyVariantAnalyticsPage() {
   const [selectedBucketKey, setSelectedBucketKey] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Quick Preset handler
-  const handlePresetChange = (preset: 'ALL' | '30D' | '90D' | 'YTD') => {
-    setDatePreset(preset);
-    const today = new Date();
-    const endStr = today.toISOString().split('T')[0];
-    if (preset === 'ALL') {
-      setStartDate('');
-      setEndDate('');
-    } else if (preset === '30D') {
-      const past = new Date();
-      past.setDate(past.getDate() - 30);
-      setStartDate(past.toISOString().split('T')[0]);
-      setEndDate(endStr);
-    } else if (preset === '90D') {
-      const past = new Date();
-      past.setDate(past.getDate() - 90);
-      setStartDate(past.toISOString().split('T')[0]);
-      setEndDate(endStr);
-    } else if (preset === 'YTD') {
-      const ytd = new Date(today.getFullYear(), 0, 1);
-      setStartDate(ytd.toISOString().split('T')[0]);
-      setEndDate(endStr);
-    }
-  };
-
   // Reset filters
   const resetFilters = () => {
-    setDatePreset('ALL');
-    setStartDate('');
-    setEndDate('');
+    resetRange();
     setSymbolFilter('');
     setDirectionFilter('');
     setEntryModelFilter('');
@@ -277,48 +250,12 @@ export function StrategyVariantAnalyticsPage() {
           </Box>
         </Box>
 
-        {/* Quick Date Presets */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {(['ALL', '30D', '90D', 'YTD'] as const).map((p) => (
-            <Button
-              key={p}
-              size="small"
-              variant={datePreset === p ? 'contained' : 'outlined'}
-              onClick={() => handlePresetChange(p)}
-              sx={{ textTransform: 'none', fontWeight: 600, minWidth: 60 }}
-            >
-              {p === 'ALL' ? 'All Time' : p}
-            </Button>
-          ))}
-        </Box>
+        {/* Date Range Filter */}
+        <DateRangeFilter />
       </Box>
 
       {/* Filter Toolbar */}
       <Card sx={{ p: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
-        <TextField
-          label="Start Date"
-          type="date"
-          size="small"
-          value={startDate}
-          onChange={(e) => {
-            setStartDate(e.target.value);
-            setDatePreset('ALL');
-          }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ width: 150 }}
-        />
-        <TextField
-          label="End Date"
-          type="date"
-          size="small"
-          value={endDate}
-          onChange={(e) => {
-            setEndDate(e.target.value);
-            setDatePreset('ALL');
-          }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ width: 150 }}
-        />
         <TextField
           label="Symbol"
           size="small"

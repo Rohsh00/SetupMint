@@ -3,6 +3,8 @@ import {
   createStrategySchema,
   updateStrategySchema,
   deriveMomentumRelation,
+  dateRangeSchema,
+  buildDateRangeClause,
 } from '@tradevault/shared';
 import { validateStrategyEdge, calculateVariantAnalytics } from '@tradevault/financial-engine';
 import { Strategy, Trade, TradingAccount } from '../db/models/index.js';
@@ -14,18 +16,39 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
   // List strategies with aggregated performance statistics and edge validation
   app.get('/', async (req, reply) => {
+    const { startDate, endDate } = (req.query || {}) as any;
+    if (startDate || endDate) {
+      const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+      if (!dateRangeResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+            details: dateRangeResult.error.format(),
+          },
+        });
+      }
+    }
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+
     const strategies = await Strategy.find({ userId: req.user!.id }).sort({ name: 1 });
 
     const strategyIds = strategies.map((s) => s._id);
 
+    const matchCriteria: any = {
+      userId: new (Trade.base.Types.ObjectId as any)(req.user!.id),
+      strategyId: { $in: strategyIds },
+      status: 'CLOSED',
+    };
+    if (dateClause.tradeDate) {
+      matchCriteria.tradeDate = dateClause.tradeDate;
+    }
+
     // Aggregate trade statistics grouped by strategyId
     const statsAgg = await Trade.aggregate([
       {
-        $match: {
-          userId: new (Trade.base.Types.ObjectId as any)(req.user!.id),
-          strategyId: { $in: strategyIds },
-          status: 'CLOSED',
-        },
+        $match: matchCriteria,
       },
       {
         $group: {
@@ -50,13 +73,18 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       statsMap.set(stat._id.toString(), stat);
     }
 
+    const closedTradesFilter: any = {
+      userId: req.user!.id,
+      strategyId: { $in: strategyIds },
+      status: 'CLOSED',
+    };
+    if (dateClause.tradeDate) {
+      closedTradesFilter.tradeDate = dateClause.tradeDate;
+    }
+
     // Load closed trades for statistical edge validation per strategy
     const closedTrades = await Trade.find(
-      {
-        userId: req.user!.id,
-        strategyId: { $in: strategyIds },
-        status: 'CLOSED',
-      },
+      closedTradesFilter,
       {
         _id: 1,
         strategyId: 1,
@@ -229,6 +257,20 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       momentum,
     } = req.query || {};
 
+    if (startDate || endDate) {
+      const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+      if (!dateRangeResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+            details: dateRangeResult.error.format(),
+          },
+        });
+      }
+    }
+
     // Validate account ownership if accountId provided
     if (accountId) {
       const acc = await TradingAccount.findOne({ _id: accountId, userId: req.user!.id });
@@ -246,10 +288,10 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     if (session) filter.session = session;
     if (direction) filter.direction = direction;
     if (entryModel) filter['setup.entryModel'] = entryModel;
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
     let trades = await Trade.find(filter).lean();

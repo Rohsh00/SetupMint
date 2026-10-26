@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { createInstrumentSchema } from '@tradevault/shared';
+import { createInstrumentSchema, dateRangeSchema } from '@tradevault/shared';
 import { Instrument, Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
@@ -16,8 +16,23 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
 
   // List only the current user's instruments (strict tenant isolation, no presets)
   app.get('/', async (req, reply) => {
+    const { startDate, endDate } = (req.query || {}) as any;
+    if (startDate || endDate) {
+      const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+      if (!dateRangeResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+            details: dateRangeResult.error.format(),
+          },
+        });
+      }
+    }
+
     const userInstruments = await Instrument.find({ userId: req.user!.id }).sort({ symbol: 1 });
-    const tradedSummaries = await InstrumentService.getTradedSummary(req.user!.id);
+    const tradedSummaries = await InstrumentService.getTradedSummary(req.user!.id, { startDate, endDate });
 
     const formatted = userInstruments.map((i) => {
       const summary = tradedSummaries.get(i._id.toString());

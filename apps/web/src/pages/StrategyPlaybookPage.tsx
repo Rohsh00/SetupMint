@@ -53,6 +53,8 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 import {
   ITradeTemplate,
   TemplateGroup,
@@ -63,6 +65,7 @@ import {
 export function StrategyPlaybookPage() {
   const { openDrill } = useTradeDrilldown();
   const queryClient = useQueryClient();
+  const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -109,8 +112,8 @@ export function StrategyPlaybookPage() {
   const [variantChecklist, setVariantChecklist] = useState('');
 
   const { data: strategies = [], isLoading: isLoadingStrategies } = useQuery({
-    queryKey: ['strategies'],
-    queryFn: () => api.strategies.list(),
+    queryKey: ['strategies', startDate, endDate],
+    queryFn: () => api.strategies.list({ startDate, endDate }),
   });
 
 
@@ -627,7 +630,8 @@ export function StrategyPlaybookPage() {
           </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <DateRangeFilter />
           <Button
             variant="contained"
             color="primary"

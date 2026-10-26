@@ -584,5 +584,74 @@ $$\text{avgRealizedR} = \frac{\text{sumRealizedR}}{N_R}$$
 $$\text{winRatePercent} = \frac{N_{win}}{N} \times 100$$
 All calculations use 30-digit Decimal arithmetic, ensuring complete mathematical consistency between drilldown summary cards and individual trade rows.
 
+---
+
+### 12.5 Opening Equity & High-Water Mark for Mid-History Date Ranges
+**Code Location:** [`apps/api/src/routes/dashboard.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/dashboard.routes.ts)
+
+When a trader filters by a date range whose start date $t_{\text{start}}$ begins mid-history (e.g. 7D, 30D, or a custom slice), initializing starting equity from zero or from the raw account opening balance $B_0$ causes severe mathematical distortions:
+- The equity curve would appear artificially depressed or detached from the trader's actual portfolio value.
+- Peak equity would be falsified, distorting subsequent peak-to-trough drawdown percentages.
+
+#### Mid-History Opening Equity Formula:
+SetupMint computes the exact opening equity $E_{\text{opening}}$ at $t_{\text{start}}$ by summing initial balance plus all closed trade net realized P&L and net cash flows settled strictly prior to $t_{\text{start}}$:
+
+$$E_{\text{opening}} = B_0 + \sum_{\substack{k \in \text{Trades} \\ \text{tradeDate}_k < \text{startUtc}}} \text{netPnL}_k + \sum_{\substack{j \in \text{Deposits} \\ \text{date}_j < \text{startUtc}}} A_j - \sum_{\substack{m \in \text{Withdrawals} \\ \text{date}_m < \text{startUtc}}} A_m + \sum_{\substack{p \in \text{Adjustments} \\ \text{date}_p < \text{startUtc}}} A_p$$
+
+Where:
+- $B_0$: Account initial opening balance (`initialBalance`).
+- $\text{startUtc}$: The inclusive IST session opening boundary (`YYYY-MM-DD 00:00:00.000 IST`, converted to UTC: previous calendar day at `18:30:00.000Z`).
+- All calculations are performed with 30-digit `Decimal.js` precision.
+
+#### Cumulative Curve in Range:
+Within the filtered date range $[t_{\text{start}}, t_{\text{end}}]$, each chronological trade $i \in [1, N]$ updates portfolio equity:
+$$E_i = E_{\text{opening}} + \sum_{r=1}^i \text{netPnL}_r$$
+The high-water mark begins at $H_0 = E_{\text{opening}}$ and tracks peak equity:
+$$H_i = \max(H_{i-1}, E_i)$$
+$$\text{Drawdown}_i = H_i - E_i$$
+
+---
+
+## 13. Date Range Normalization & Indian Financial Year Calculations
+
+### Code Location:
+[`packages/shared/src/date-range.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/date-range.ts)
+
+### 13.1 Inclusive IST Session Date Normalization
+Indian financial markets operate under Indian Standard Time ($\text{IST} = \text{UTC} + 05:30$). In order to avoid date-shifting anomalies across UTC servers and browsers, all date range boundaries are normalized from string format (`YYYY-MM-DD`) into inclusive UTC timestamps anchored to the IST trading session:
+
+$$\text{startUtc}(YYYY\text{-}MM\text{-}DD) = \text{Date.UTC}(YYYY, MM-1, DD, 0, 0, 0, 0) - (5.5 \times 3,600,000) \text{ ms}$$
+$$\text{endUtc}(YYYY\text{-}MM\text{-}DD) = \text{Date.UTC}(YYYY, MM-1, DD, 23, 59, 59, 999) - (5.5 \times 3,600,000) \text{ ms}$$
+
+- A trade executed at `09:15:00 IST` on the start date falls strictly within $[\text{startUtc}, \text{endUtc}]$.
+- A trade executed at `23:59:59 IST` (e.g., MCX commodity session) on the end date is inclusive.
+- A trade executed at `00:00:00 IST` the next calendar day is excluded.
+
+### 13.2 Indian Financial Year (FY) Presets
+The Indian fiscal calendar runs from **April 1** to **March 31**. For any given reference timestamp with year $Y$ and month $M \in [1, 12]$:
+
+$$\text{FY Start Year} = \begin{cases} Y & \text{if } M \ge 4 \text{ (April through December)} \\ Y - 1 & \text{if } M < 4 \text{ (January through March)} \end{cases}$$
+$$\text{FY End Year} = \text{FY Start Year} + 1$$
+
+#### Preset Resolutions:
+- **`THIS_FY`:**
+  - $\text{startDate} = (\text{FY Start Year})\text{-04-01}$
+  - $\text{endDate} = \min((\text{FY End Year})\text{-03-31}, \text{today})$
+  *(Clipped to today so active reports do not span future dates).*
+- **`LAST_FY`:**
+  - $\text{startDate} = (\text{FY Start Year} - 1)\text{-04-01}$
+  - $\text{endDate} = (\text{FY Start Year})\text{-03-31}$
+- **`THIS_QUARTER`:** Indian market quarter boundaries:
+  - Q1: April 1 – June 30
+  - Q2: July 1 – September 30
+  - Q3: October 1 – December 31
+  - Q4: January 1 – March 31
+  *(Clipped to today if current quarter).*
+- **`THIS_WEEK`:** Monday of the current week to today (ISO-8601 standard week start).
+- **`LAST_WEEK`:** Monday to Sunday of the preceding week.
+- **`THIS_MONTH`:** 1st calendar day of current month to today.
+- **`LAST_MONTH`:** 1st to last calendar day of preceding month (accounting for leap years).
+
+
 
 

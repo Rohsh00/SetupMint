@@ -44,6 +44,8 @@ import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatDate } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 
 interface InstrumentFormData {
   symbol: string;
@@ -75,6 +77,7 @@ const defaultFormData: InstrumentFormData = {
 
 export function InstrumentsPage() {
   const { openDrill } = useTradeDrilldown();
+  const { startDate, endDate } = useDateRange();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -111,8 +114,8 @@ export function InstrumentsPage() {
 
   // Fetch only user's traded/created instruments (no presets!)
   const { data: instruments = [], isLoading } = useQuery({
-    queryKey: ['instruments'],
-    queryFn: () => api.instruments.list(),
+    queryKey: ['instruments', startDate, endDate],
+    queryFn: () => api.instruments.list({ startDate, endDate }),
   });
 
   // Create Custom Instrument Mutation
@@ -315,23 +318,26 @@ export function InstrumentsPage() {
       )}
 
       {instruments.length > 0 && (
-        <Box sx={{ maxWidth: 360 }}>
-          <TextField
-            size="small"
-            fullWidth
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search symbol, exchange, or name..."
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRounded sx={{ fontSize: 18, color: 'text.secondary' }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <DateRangeFilter />
+          <Box sx={{ minWidth: 260, maxWidth: 360 }}>
+            <TextField
+              size="small"
+              fullWidth
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search symbol, exchange, or name..."
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchRounded sx={{ fontSize: 18, color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          </Box>
         </Box>
       )}
 

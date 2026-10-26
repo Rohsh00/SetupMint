@@ -17,6 +17,7 @@ import { SettingsPage } from './pages/SettingsPage.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { RegisterPage } from './pages/RegisterPage.js';
 import { TradeDrillProvider } from './context/TradeDrillContext.js';
+import { DateRangeProvider } from './context/DateRangeContext.js';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -42,7 +43,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export function App() {
   return (
     <BrowserRouter>
-      <TradeDrillProvider>
+      <DateRangeProvider>
+        <TradeDrillProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -72,7 +74,8 @@ export function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      </TradeDrillProvider>
+        </TradeDrillProvider>
+      </DateRangeProvider>
     </BrowserRouter>
   );
 }

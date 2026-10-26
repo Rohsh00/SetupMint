@@ -1,6 +1,13 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import Decimal from 'decimal.js';
-import { EMOTIONS, MISTAKE_TAGS, excursionAnalyticsQuerySchema, whatIfRequestSchema } from '@tradevault/shared';
+import {
+  EMOTIONS,
+  MISTAKE_TAGS,
+  excursionAnalyticsQuerySchema,
+  whatIfRequestSchema,
+  dateRangeSchema,
+  buildDateRangeClause,
+} from '@tradevault/shared';
 import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { computeWhatIf, WhatIfScopeTooLargeError } from '../services/what-if.service.js';
@@ -11,12 +18,24 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
   app.get('/psychology', async (req: any, reply) => {
     const { startDate, endDate, accountId } = req.query;
 
+    const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
     const filter: any = { userId: req.user!.id, status: 'CLOSED' };
     if (accountId) filter.accountId = accountId;
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
     const trades = await Trade.find(filter);
@@ -141,10 +160,9 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (strategyId) filter.strategyId = strategyId;
     if (variantKey) filter['setup.variantKey'] = variantKey;
     if (session) filter.session = session;
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
     const trades = await Trade.find(filter).sort({ tradeDate: -1 });

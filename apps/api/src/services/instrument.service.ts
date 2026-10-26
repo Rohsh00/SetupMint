@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import {
   getPresetSpec,
   TradeOutcome,
+  IDateRange,
+  buildDateRangeClause,
 } from '@tradevault/shared';
 import {
   calculateFIFOExecution,
@@ -205,16 +207,23 @@ export class InstrumentService {
    * firstTradedAt, and lastTradedAt for each instrument.
    */
   static async getTradedSummary(
-    userId: string | mongoose.Types.ObjectId
+    userId: string | mongoose.Types.ObjectId,
+    dateRange?: IDateRange
   ): Promise<Map<string, TradedSummaryItem>> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
+    const matchCriteria: any = {
+      userId: uId,
+      instrumentId: { $exists: true, $ne: null },
+    };
+    const dateClause = buildDateRangeClause(dateRange);
+    if (dateClause.tradeDate) {
+      matchCriteria.tradeDate = dateClause.tradeDate;
+    }
+
     const stats = await Trade.aggregate([
       {
-        $match: {
-          userId: uId,
-          instrumentId: { $exists: true, $ne: null },
-        },
+        $match: matchCriteria,
       },
       {
         $group: {

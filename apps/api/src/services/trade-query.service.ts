@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { ExtendedTradeFilter } from '@tradevault/shared';
+import { ExtendedTradeFilter, buildDateRangeClause } from '@tradevault/shared';
 
 const WEEKDAY_TO_MONGO_DAY: Record<string, number> = {
   sunday: 1,
@@ -109,31 +109,27 @@ export function buildTradeMongooseFilter(
     filter['setup.entryModel'] = entryModel;
   }
 
-  // Exact single date (e.g. from calendar day or marker click)
+  // Date filtering: single exact date, range, or delimited string
+  // All normalized to inclusive IST trading day boundaries on tradeDate
   if (date) {
-    const startOfDay = new Date(`${date}T00:00:00.000Z`);
-    const endOfDay = new Date(`${date}T23:59:59.999Z`);
-    andClauses.push({
-      $or: [
-        { tradeDate: { $gte: startOfDay, $lte: endOfDay } },
-        { entryTime: { $gte: startOfDay, $lte: endOfDay } },
-      ],
-    });
+    const clause = buildDateRangeClause({ startDate: date, endDate: date });
+    if (clause.tradeDate) {
+      filter.tradeDate = clause.tradeDate;
+    }
   } else if (startDate || endDate) {
-    const range: any = {};
-    if (startDate) range.$gte = new Date(startDate);
-    if (endDate) range.$lte = new Date(endDate);
-    andClauses.push({
-      $or: [{ tradeDate: range }, { entryTime: range }],
-    });
+    const clause = buildDateRangeClause({ startDate, endDate });
+    if (clause.tradeDate) {
+      filter.tradeDate = clause.tradeDate;
+    }
   } else if (dateRange && dateRange.includes('..')) {
     const [start, end] = dateRange.split('..');
-    const range: any = {};
-    if (start) range.$gte = new Date(start);
-    if (end) range.$lte = new Date(end);
-    andClauses.push({
-      $or: [{ tradeDate: range }, { entryTime: range }],
+    const clause = buildDateRangeClause({
+      startDate: start || undefined,
+      endDate: end || undefined,
     });
+    if (clause.tradeDate) {
+      filter.tradeDate = clause.tradeDate;
+    }
   }
 
   if (tags) {

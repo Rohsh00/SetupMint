@@ -50,10 +50,13 @@ import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 
 export function AnalyticsPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const { openDrill } = useTradeDrilldown();
+  const { startDate, endDate } = useDateRange();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
   const muiTheme = useMuiTheme();
@@ -72,26 +75,32 @@ export function AnalyticsPage() {
   };
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['dashboard-stats', selectedAccountId],
+    queryKey: ['dashboard-stats', selectedAccountId, startDate, endDate],
     queryFn: () =>
       api.dashboard.stats({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        startDate,
+        endDate,
       }),
   });
 
   const { data: psychologyData, isLoading: isPsychLoading } = useQuery({
-    queryKey: ['analytics-psychology', selectedAccountId],
+    queryKey: ['analytics-psychology', selectedAccountId, startDate, endDate],
     queryFn: () =>
       api.analytics.psychology({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        startDate,
+        endDate,
       }),
   });
 
   const { data: excursionData, isLoading: isExcursionLoading } = useQuery({
-    queryKey: ['analytics-excursion', selectedAccountId],
+    queryKey: ['analytics-excursion', selectedAccountId, startDate, endDate],
     queryFn: () =>
       api.analytics.excursion({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        startDate,
+        endDate,
       }),
     enabled: activeTab === 'EXECUTION',
   });
@@ -174,15 +183,19 @@ export function AnalyticsPage() {
           </Typography>
         </Box>
 
-        {/* Tab Switcher */}
-        <ButtonGroup
-          variant="outlined"
-          size="small"
-          sx={{
-            backgroundColor: muiTheme.palette.background.paper,
-            borderRadius: 2,
-            p: 0.5,
-            border: `1px solid ${muiTheme.palette.divider}`,
+        {/* Controls: Date Filter & Tab Switcher */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <DateRangeFilter />
+
+          {/* Tab Switcher */}
+          <ButtonGroup
+            variant="outlined"
+            size="small"
+            sx={{
+              backgroundColor: muiTheme.palette.background.paper,
+              borderRadius: 2,
+              p: 0.5,
+              border: `1px solid ${muiTheme.palette.divider}`,
             '& .MuiButtonGroup-grouped': {
               border: 'none !important',
               borderRadius: '6px !important',
@@ -222,6 +235,7 @@ export function AnalyticsPage() {
             </Button>
           ))}
         </ButtonGroup>
+        </Box>
       </Box>
 
       {/* TAB 1: OVERVIEW & DISTRIBUTION */}
@@ -1318,7 +1332,11 @@ export function AnalyticsPage() {
 
       {/* TAB 5: WHAT-IF SIMULATOR */}
       {activeTab === 'WHAT_IF' && (
-        <WhatIfSimulatorTab accountId={selectedAccountId} />
+        <WhatIfSimulatorTab
+          accountId={selectedAccountId}
+          startDate={startDate}
+          endDate={endDate}
+        />
       )}
     </Box>
   );

@@ -525,21 +525,23 @@ Authentication is handled via stateful sessions:
 ### `POST /api/v1/trades/drilldown`
 - **Purpose:** Universal trade drill-down resolver endpoint. Accepts a `DrillDescriptor` (`kind: 'TRADE' | 'TRADES' | 'FILTER'`) and returns matching trade documents with strict tenant isolation, server-side pagination, and Decimal.js aggregate reconciliation.
 - **Auth:** **Required** (enforces tenant isolation).
+- **Date Range Consistency:** When `filter.startDate` and/or `filter.endDate` (`YYYY-MM-DD`) are supplied in a `FILTER` descriptor, queries filter strictly on the indexed session date `tradeDate` using inclusive UTC boundaries computed from IST (+05:30) via `buildDateRangeClause`. This guarantees exact 1-to-1 parity between trades list queries, dashboard KPI metrics, and drilldown aggregates.
 - **Request Body:**
   ```json
   {
     "descriptor": {
       "kind": "FILTER",
-      "title": "Losses > ₹2,000",
+      "label": "Losses > ₹2,000",
       "filter": {
         "netPnLMax": -2000,
-        "startDate": "2026-01-01T00:00:00.000Z"
+        "startDate": "2026-01-01",
+        "endDate": "2026-10-26"
       }
     },
     "page": 1,
     "limit": 50,
-    "sortBy": "exitTime",
-    "sortDirection": "desc"
+    "sortBy": "tradeDate",
+    "sortOrder": "desc"
   }
   ```
   *(Note: `limit` is clamped to a maximum of 200 per page).*
@@ -609,6 +611,7 @@ Authentication is handled via stateful sessions:
 ### `GET /api/v1/analytics/psychology`
 - **Purpose:** Correlate emotional states and discipline scores with profitability.
 - **Auth:** **Required**.
+- **Query Parameters:** `accountId` (optional), `startDate` (optional `YYYY-MM-DD`), `endDate` (optional `YYYY-MM-DD`). Inclusive session date filtering via `tradeDate`.
 - **Responses:** `200 OK` with:
   - `performanceByDiscipline`: P&L and win rate grouped by 1–5 discipline score.
   - `performanceByEmotion`: P&L and win rate grouped by emotion before trade.
@@ -819,8 +822,10 @@ Authentication is handled via stateful sessions:
 - **Response:** Content-Type `text/csv`, attachment filename `tradevault-export-<date>.csv`.
 
 ### `GET /api/v1/export/json`
-- **Purpose:** Download full JSON backup of trade documents.
+- **Purpose:** Download full JSON backup of trade documents with optional date range and account filtering.
 - **Auth:** **Required**.
+- **Query Parameters:** `accountId` (optional), `startDate` (optional `YYYY-MM-DD`), `endDate` (optional `YYYY-MM-DD`). Inclusive session date filtering via `tradeDate`.
+- **Response:** Content-Type `application/json`, attachment filename `tradevault-export-<date>.json`.
 
 ### `POST /api/v1/export/import/preview`
 - **Purpose:** Upload a broker tradebook or FYERS cash-ledger CSV, detect headers/broker format, normalize ledger rows, load saved mappings, and optionally check duplicates for an account.

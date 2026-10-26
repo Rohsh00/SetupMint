@@ -82,12 +82,12 @@ This document details all routes and pages discovered in the **SetupMint** front
   - Performance by Instrument & Performance by Strategy breakdown tables with clickable drilldown rows.
   - Quick Actions Bar: "Log New Trade", "Risk Calculator", "Daily Review".
   - Recent Trades Table with clickable rows launching the drilldown drawer.
-  - Date Range Quick Filters (7D, 30D, 90D, YTD, All Time).
-- **Available Actions:** Change date range filter, select global account filter, toggle Money/R/Both equity views, toggle strategy overlays, change Monte Carlo projection steps, click any chart point or table row to drill down into trades, click "Log New Trade", navigate to trade details.
+  - Global Date Range Filter ([`DateRangeFilter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/ui/DateRangeFilter.tsx)): 14 presets (Today, Yesterday, 7D, 30D, 90D, This Week, Last Week, This Month, Last Month, This Quarter, YTD, This FY, Last FY, All Time) plus Custom Range popover with start/end inputs, calendar picker, and inline validation. Persisted via URL query params (`?from=YYYY-MM-DD&to=YYYY-MM-DD&range=PRESET`).
+- **Available Actions:** Change date range filter via presets or custom popover, select global account filter, toggle Money/R/Both equity views, toggle strategy overlays, change Monte Carlo projection steps, click any chart point or table row to drill down into trades (carrying the active date range into drilldown filters), click "Log New Trade", navigate to trade details.
 - **API Calls:**
-  - `GET /api/v1/dashboard/stats?accountId=...&startDate=...`
+  - `GET /api/v1/dashboard/stats?accountId=...&startDate=...&endDate=...`
   - `GET /api/v1/dashboard/equity-curves?accountId=...&startDate=...&endDate=...&overlayStrategies=...&coneTrades=...`
-  - `POST /api/v1/trades/drilldown` (via `useTradeDrilldown`)
+  - `POST /api/v1/trades/drilldown` (via `useTradeDrilldown`, carrying active `startDate` & `endDate`)
   - `GET /api/v1/trades?accountId=...&limit=5&sortBy=tradeDate&sortOrder=desc`
   - `GET /api/v1/review/queue`
 - **Database Models:** `Trade`, `TradingAccount`, `DailyJournal`, `User`.
@@ -379,3 +379,22 @@ This document details all routes and pages discovered in the **SetupMint** front
     - `Open Risk Calculator` (`C`): Navigates directly to `/risk-calculator`.
   - **Page Navigation:** Search and jump to any view: Overview (`/`), Trades (`/trades`), Journal (`/journal`), Analytics (`/analytics`), Strategies (`/strategies`), Risk Calculator (`/risk-calculator`), Accounts (`/accounts`), Instruments (`/instruments`), Reports (`/reports`), Settings (`/settings`).
 - **Status:** **IMPLEMENTED**.
+
+---
+
+## 4. Global vs. Local Date Range Filter Architecture
+
+SetupMint implements a unified, reusable `DateRangeFilter` component and `DateRangeContext` holding `{ preset, startDate, endDate }`. The active filter state is synchronized with URL search parameters (`?from=YYYY-MM-DD&to=YYYY-MM-DD&range=PRESET`) following the pattern established by `TradeDrillContext` (`?drill=...`).
+
+### Page Scope Decisions:
+1. **Global Views (URL query synced, cross-navigable):**
+   - **Dashboard Overview (`/`):** KPI cards, multi-panel equity curves, daily P&L bar chart, performance by instrument, and performance by strategy. All KPI and breakdown drilldowns carry active `startDate` & `endDate` into the `FILTER` descriptor to ensure exact aggregate reconciliation.
+   - **Master Trades Ledger (`/trades`):** Queries filtered by inclusive `tradeDate` range; CSV export link automatically downloads the active range.
+   - **Analytics (`/analytics`):** All 5 sub-tabs (Overview Drawdown Curve, Psychology & Discipline Correlations, Time & Weekday Heatmaps, Execution Quality MAE/MFE, and What-If Simulator) inherit the active date range.
+   - **Strategy Playbook & Variant Analytics (`/strategies`, `/strategies/:id/analytics`):** Playbook stats and variant breakdowns filter trades inside the range.
+   - **Reports & Export (`/reports`):** CSV and JSON export links stream trades inside the active date range.
+   - **Instruments (`/instruments`):** Traded volume and execution counts calculate over the active range.
+
+2. **Local / Fixed Views (Excluded from Global Date Range):**
+   - **Journal Calendar (`/journal`):** Stays strictly month-based using `?yearMonth=YYYY-MM` to maintain the monthly calendar heatmap UI paradigm.
+   - **Daily Review Queue (`/review/queue`):** Stays fixed to the last 30 calendar days of unreviewed sessions to prevent old unreviewed trades from being hidden by a narrow date range.

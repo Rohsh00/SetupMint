@@ -319,7 +319,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (!queryResult.success) {
       return reply.status(400).send({
         success: false,
-        error: { code: 'INVALID_QUERY', message: 'Invalid query parameters', details: queryResult.error.format() },
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: queryResult.error.issues.map((i) => i.message).join(', ') || 'Invalid query parameters',
+          details: queryResult.error.format(),
+        },
       });
     }
 
@@ -360,8 +364,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       return reply.status(400).send({
         success: false,
         error: {
-          code: 'INVALID_DRILLDOWN_REQUEST',
-          message: 'Invalid drilldown payload',
+          code: 'VALIDATION_ERROR',
+          message: parseResult.error.issues.map((i) => i.message).join(', ') || 'Invalid drilldown payload',
           details: parseResult.error.format(),
         },
       });

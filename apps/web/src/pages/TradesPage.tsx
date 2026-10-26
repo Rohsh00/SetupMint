@@ -54,11 +54,14 @@ import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
+  const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -158,6 +161,8 @@ export function TradesPage() {
       variantFilter,
       sortBy,
       sortOrder,
+      startDate,
+      endDate,
     ],
     queryFn: () =>
       api.trades.list({
@@ -173,6 +178,8 @@ export function TradesPage() {
         variantKey: variantFilter || undefined,
         sortBy,
         sortOrder,
+        startDate,
+        endDate,
       }),
   });
 
@@ -392,6 +399,8 @@ export function TradesPage() {
             component="a"
             href={api.exportImport.csvUrl({
               accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+              startDate,
+              endDate,
             })}
             download
             variant="outlined"
@@ -420,6 +429,9 @@ export function TradesPage() {
       {/* Filter and Search Bar */}
       <Card sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}>
+          {/* Date Range Filter */}
+          <DateRangeFilter />
+
           {/* Search Input */}
           <TextField
             size="small"

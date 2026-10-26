@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidCalendarDate } from './date-range.js';
 
 export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -377,7 +378,14 @@ export const updateTradeSchema = createTradeSchema.partial().extend({
 });
 export type UpdateTradeInput = z.infer<typeof updateTradeSchema>;
 
-export const tradeFilterQuerySchema = z.object({
+const tradeDateRangeRefinement = (data: { startDate?: string; endDate?: string }) => {
+  if (data.startDate && data.endDate) {
+    return data.startDate <= data.endDate;
+  }
+  return true;
+};
+
+export const tradeFilterQueryBaseSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(200).default(50),
   search: z.preprocess(emptyStringToUndefined, z.string().optional()),
@@ -390,8 +398,22 @@ export const tradeFilterQuerySchema = z.object({
   strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
   templateId: z.preprocess(emptyStringToUndefined, z.string().optional()),
   session: z.preprocess(emptyStringToUndefined, z.string().optional()),
-  startDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
-  endDate: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  startDate: z.preprocess(
+    emptyStringToUndefined,
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid startDate format (expected YYYY-MM-DD)')
+      .refine(isValidCalendarDate, 'Invalid calendar startDate')
+      .optional()
+  ),
+  endDate: z.preprocess(
+    emptyStringToUndefined,
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid endDate format (expected YYYY-MM-DD)')
+      .refine(isValidCalendarDate, 'Invalid calendar endDate')
+      .optional()
+  ),
   tags: z.preprocess(emptyStringToUndefined, z.string().optional()), // Comma-separated
   variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
   variantStatus: z.preprocess(emptyStringToUndefined, z.enum(['CLASSIFIED', 'UNCLASSIFIED', 'NOT_APPLICABLE']).optional()),
@@ -399,9 +421,17 @@ export const tradeFilterQuerySchema = z.object({
   sortBy: z.string().default('tradeDate'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
-export type TradeFilterQuery = z.infer<typeof tradeFilterQuerySchema>;
 
-export const extendedTradeFilterSchema = tradeFilterQuerySchema.extend({
+export const tradeFilterQuerySchema = tradeFilterQueryBaseSchema.refine(
+  tradeDateRangeRefinement,
+  {
+    message: 'startDate must be on or before endDate',
+    path: ['startDate'],
+  }
+);
+export type TradeFilterQuery = z.infer<typeof tradeFilterQueryBaseSchema>;
+
+export const extendedTradeFilterBaseSchema = tradeFilterQueryBaseSchema.extend({
   date: z.preprocess(emptyStringToUndefined, z.string().optional()),
   dateRange: z.preprocess(emptyStringToUndefined, z.string().optional()),
   weekday: z.preprocess(emptyStringToUndefined, z.string().optional()),
@@ -418,7 +448,15 @@ export const extendedTradeFilterSchema = tradeFilterQuerySchema.extend({
   holdingTimeMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
   excursionFlag: z.preprocess(emptyStringToUndefined, z.string().optional()),
 });
-export type ExtendedTradeFilter = z.infer<typeof extendedTradeFilterSchema>;
+
+export const extendedTradeFilterSchema = extendedTradeFilterBaseSchema.refine(
+  tradeDateRangeRefinement,
+  {
+    message: 'startDate must be on or before endDate',
+    path: ['startDate'],
+  }
+);
+export type ExtendedTradeFilter = z.infer<typeof extendedTradeFilterBaseSchema>;
 
 export const drillDescriptorSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -435,7 +473,10 @@ export const drillDescriptorSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('FILTER'),
-    filter: extendedTradeFilterSchema.partial(),
+    filter: extendedTradeFilterBaseSchema.partial().refine(tradeDateRangeRefinement, {
+      message: 'startDate must be on or before endDate',
+      path: ['startDate'],
+    }),
     label: z.string().min(1, 'label is required'),
     metadata: z.record(z.any()).optional(),
     targetTradeId: z.string().nullable().optional(),
@@ -545,16 +586,43 @@ export const updateProfileSchema = z.object({
   riskSettings: riskSettingsSchema.optional(),
 });
 
-export const excursionAnalyticsQuerySchema = z.object({
-  accountId: z.string().optional(),
-  strategyId: z.string().optional(),
-  variantKey: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  session: z
-    .enum(['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'])
-    .optional(),
-});
+export const excursionAnalyticsQuerySchema = z
+  .object({
+    accountId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+    strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+    variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
+    startDate: z.preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid startDate format (expected YYYY-MM-DD)')
+        .refine(isValidCalendarDate, 'Invalid calendar startDate')
+        .optional()
+    ),
+    endDate: z.preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid endDate format (expected YYYY-MM-DD)')
+        .refine(isValidCalendarDate, 'Invalid calendar endDate')
+        .optional()
+    ),
+    session: z
+      .enum(['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'])
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        return data.startDate <= data.endDate;
+      }
+      return true;
+    },
+    {
+      message: 'startDate must be on or before endDate',
+      path: ['startDate'],
+    }
+  );
 
 export const excursionBackfillSchema = z.object({
   accountId: z.string().optional(),
@@ -628,12 +696,38 @@ export const analyticsFilterSchema = z
     strategyId: z.string().optional(),
     variantKey: z.string().optional(),
     session: z.string().optional(),
-    startDate: z.string().optional(),
-    endDate: z.string().optional(),
+    startDate: z.preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid startDate format (expected YYYY-MM-DD)')
+        .refine(isValidCalendarDate, 'Invalid calendar startDate')
+        .optional()
+    ),
+    endDate: z.preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid endDate format (expected YYYY-MM-DD)')
+        .refine(isValidCalendarDate, 'Invalid calendar endDate')
+        .optional()
+    ),
     tags: z.string().optional(),
   })
   .partial()
-  .strict();
+  .strict()
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        return data.startDate <= data.endDate;
+      }
+      return true;
+    },
+    {
+      message: 'startDate must be on or before endDate',
+      path: ['startDate'],
+    }
+  );
 
 export const whatIfRequestSchema = z
   .object({

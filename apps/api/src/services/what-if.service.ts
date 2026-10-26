@@ -6,6 +6,7 @@ import {
   MAX_WHAT_IF_TRADES_SCOPE,
   DEFAULT_STOP_R_GRID,
   DEFAULT_TARGET_R_GRID,
+  buildDateRangeClause,
 } from '@tradevault/shared';
 import { runWhatIfSimulation, IWhatIfSnapshotInput } from '@tradevault/financial-engine';
 import { Trade, TradeCandleSnapshot } from '../db/models/index.js';
@@ -84,10 +85,9 @@ export async function computeWhatIf(
   if (filters.marketSegment) {
     tradeFilter.marketSegment = filters.marketSegment;
   }
-  if (filters.startDate || filters.endDate) {
-    tradeFilter.tradeDate = {};
-    if (filters.startDate) tradeFilter.tradeDate.$gte = new Date(filters.startDate);
-    if (filters.endDate) tradeFilter.tradeDate.$lte = new Date(filters.endDate);
+  const dateClause = buildDateRangeClause(filters);
+  if (dateClause.tradeDate) {
+    tradeFilter.tradeDate = dateClause.tradeDate;
   }
 
   // 2. Count trades to enforce scope limits before loading large documents

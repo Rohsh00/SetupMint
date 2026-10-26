@@ -133,7 +133,16 @@ export const api = {
 
   // Instruments
   instruments: {
-    list: () => request<any[]>('/instruments'),
+    list: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any[]>(`/instruments${suffix}`);
+    },
     create: (instrument: any) =>
       request<any>('/instruments', { method: 'POST', body: JSON.stringify(instrument) }),
     previewUpdate: (id: string, updates: any) =>
@@ -145,7 +154,16 @@ export const api = {
 
   // Strategies
   strategies: {
-    list: () => request<any[]>('/strategies'),
+    list: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any[]>(`/strategies${suffix}`);
+    },
     get: (id: string) => request<any>(`/strategies/${id}`),
     create: (strategy: any) =>
       request<any>('/strategies', { method: 'POST', body: JSON.stringify(strategy) }),

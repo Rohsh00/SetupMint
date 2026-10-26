@@ -44,15 +44,16 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
+import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
+import { useDateRange } from '../context/DateRangeContext.js';
 
 export function ReportsPage() {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
+  const { startDate, endDate } = useDateRange();
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
 
   const [selectedAccountId, setSelectedAccountId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
 
   // Import states
   const [importKind, setImportKind] = useState<'TRADES' | 'CASH_FLOWS'>('TRADES');
@@ -226,26 +227,7 @@ export function ReportsPage() {
                 ))}
               </TextField>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                <TextField
-                  size="small"
-                  label="From Date"
-                  type="date"
-                  fullWidth
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                <TextField
-                  size="small"
-                  label="To Date"
-                  type="date"
-                  fullWidth
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-              </Box>
+              <DateRangeFilter fullWidth />
 
               <Box sx={{ display: 'flex', gap: 2, pt: 1 }}>
                 <Button

@@ -1,4 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import mongoose from 'mongoose';
+import Decimal from 'decimal.js';
 import {
   calculateDashboardMetrics,
   cumulativeRCurve,
@@ -7,14 +9,112 @@ import {
   calculateMonteCarloBands,
   validateStrategyEdge,
 } from '@tradevault/financial-engine';
-import { Trade, TradingAccount, User } from '../db/models/index.js';
+import {
+  dateRangeSchema,
+  buildDateRangeClause,
+  normalizeRange,
+} from '@tradevault/shared';
+import { Trade, TradingAccount, AccountTransaction, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+
+async function computeStartingEquity(
+  userId: string | mongoose.Types.ObjectId,
+  accountId?: string,
+  startUtc?: Date
+): Promise<number> {
+  const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+  let initialBalance = new Decimal(0);
+
+  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
+    const acc = await TradingAccount.findOne({ _id: accountId, userId: uId });
+    if (acc) initialBalance = new Decimal(acc.initialBalance.toString());
+  } else {
+    const accounts = await TradingAccount.find({ userId: uId });
+    initialBalance = accounts.reduce(
+      (sum, a) => sum.plus(new Decimal(a.initialBalance.toString())),
+      new Decimal(0)
+    );
+  }
+
+  // If no startUtc, starting equity is initial balance
+  if (!startUtc) {
+    return initialBalance.toNumber();
+  }
+
+  // Aggregate closed trades P&L strictly before startUtc
+  const tradeMatch: any = {
+    userId: uId,
+    status: 'CLOSED',
+    tradeDate: { $lt: startUtc },
+  };
+  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
+    tradeMatch.accountId = new mongoose.Types.ObjectId(accountId);
+  }
+
+  const priorTradesAgg = await Trade.aggregate([
+    { $match: tradeMatch },
+    { $group: { _id: null, totalNetPnL: { $sum: '$calculated.netPnL' } } },
+  ]);
+  const priorPnL = new Decimal(priorTradesAgg[0]?.totalNetPnL || 0);
+
+  // Aggregate cash flows strictly before startUtc
+  const txMatch: any = {
+    userId: uId,
+    date: { $lt: startUtc },
+    $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
+  };
+  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
+    txMatch.accountId = new mongoose.Types.ObjectId(accountId);
+  }
+
+  const priorTxAgg = await AccountTransaction.aggregate([
+    { $match: txMatch },
+    { $group: { _id: '$type', totalAmount: { $sum: '$amount' } } },
+  ]);
+
+  let priorDeposits = new Decimal(0);
+  let priorWithdrawals = new Decimal(0);
+  let priorAdjustments = new Decimal(0);
+
+  for (const stat of priorTxAgg) {
+    const amountDec = new Decimal(stat.totalAmount.toString());
+    if (stat._id === 'DEPOSIT') {
+      priorDeposits = priorDeposits.plus(amountDec);
+    } else if (stat._id === 'WITHDRAWAL') {
+      priorWithdrawals = priorWithdrawals.plus(amountDec);
+    } else if (stat._id === 'ADJUSTMENT') {
+      priorAdjustments = priorAdjustments.plus(amountDec);
+    }
+  }
+
+  return initialBalance
+    .plus(priorPnL)
+    .plus(priorDeposits)
+    .minus(priorWithdrawals)
+    .plus(priorAdjustments)
+    .toNumber();
+}
 
 export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
   app.get('/stats', async (req: any, reply) => {
     const { startDate, endDate, accountId, assetClass, strategyId, direction, session } = req.query;
+
+    const dateRangeResult = dateRangeSchema.safeParse({
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+    });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
 
     const filter: any = { userId: req.user!.id };
 
@@ -24,21 +124,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (direction) filter.direction = direction;
     if (session) filter.session = session;
 
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    const { startUtc } = normalizeRange({ startDate, endDate });
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
-    // Determine initial balance for equity curve
-    let startingEquity = 0;
-    if (accountId) {
-      const acc = await TradingAccount.findById(accountId);
-      if (acc) startingEquity = Number(acc.initialBalance.toString());
-    } else {
-      const accounts = await TradingAccount.find({ userId: req.user!.id });
-      startingEquity = accounts.reduce((sum, a) => sum + Number(a.initialBalance.toString()), 0);
-    }
+    // Determine starting equity: initial balance + all closed P&L and cash flows BEFORE startDate
+    const startingEquity = await computeStartingEquity(req.user!.id, accountId, startUtc);
 
     const trades = await Trade.find(filter)
       .sort({ tradeDate: 1 })
@@ -85,6 +178,21 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       monteCarloTrades = 100,
     } = req.query;
 
+    const dateRangeResult = dateRangeSchema.safeParse({
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+    });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
     const filter: any = { userId: req.user!.id };
     if (accountId) filter.accountId = accountId;
     if (assetClass) filter.assetClass = assetClass;
@@ -92,21 +200,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (direction) filter.direction = direction;
     if (session) filter.session = session;
 
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    const { startUtc } = normalizeRange({ startDate, endDate });
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
     }
 
-    // Determine initial balance for equity curve
-    let startingEquity = 0;
-    if (accountId) {
-      const acc = await TradingAccount.findById(accountId);
-      if (acc) startingEquity = Number(acc.initialBalance.toString());
-    } else {
-      const accounts = await TradingAccount.find({ userId: req.user!.id });
-      startingEquity = accounts.reduce((sum, a) => sum + Number(a.initialBalance.toString()), 0);
-    }
+    // Determine starting equity: initial balance + all closed P&L and cash flows BEFORE startDate
+    const startingEquity = await computeStartingEquity(req.user!.id, accountId, startUtc);
 
     // Fetch user's risk settings for daily loss limit
     const userDoc = await User.findById(req.user!.id).select('riskSettings');

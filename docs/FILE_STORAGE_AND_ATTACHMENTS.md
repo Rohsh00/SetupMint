@@ -177,12 +177,23 @@ SetupMint includes an automated server-side SVG chart generator (`ChartGenerator
     appliedAfter: number;
     truncated: boolean;
     generatedAt: Date;
+    settingsSource?: string;
+    isStale?: boolean;
   }
   ```
+- **Automatic Lifecycle Triggers & Permanent Snapshots:**
+  - Whenever a trade transitions to `CLOSED` (via manual creation, Quick Close, FYERS sync, or CSV import), `ChartGeneratorService.ensureTradeSnapshot` is automatically triggered.
+  - Snapshot resolutions are determined purely by `resolveSnapshotTimeframes()` using user `PatternDetectionSettings` and instrument-specific overrides (defaulting to user settings, or adaptive fallback if unspecified).
+  - Preserves visual auditability permanently in Cloudflare R2 even after broker historical candle lookback periods expire.
+- **Staleness Tracking & Regeneration:**
+  - If an already-closed trade's parameters (e.g. stop loss, exit price, notes, thesis) are modified via `PUT /api/v1/trades/:id`, `ChartGeneratorService.markSnapshotsStale` flags existing snapshots with `isStale: true`.
+  - The UI presents a warning chip and a one-click "Regenerate" button to refresh snapshots against current trade parameters.
 - **Dedup & Cap Limits:**
   - Dedup key: `{ tradeId, category: 'AUTO_CHART', timeframe }`.
   - Net new attachments enforce the 12-screenshot cap up front (replacing an existing chart of the same timeframe counts as net zero).
-- **On-Demand Endpoint:** `POST /api/v1/trades/:id/chart/generate` supports multi-timeframe requests and legacy backwards-compatible single-chart calls.
+  - When slots are limited, LTF (execution view) is given first priority over HTF (context view).
+- **On-Demand Endpoint:** `POST /api/v1/trades/:id/chart/generate` supports multi-timeframe requests and legacy backwards-compatible single-chart calls with optional `force: true`.
+- **Backfill Utility:** CLI script `npm run chart:backfill` (`apps/api/src/scripts/chart-backfill.ts`) scans closed trades without snapshots (dry-run by default, `--yes` to generate live).
 
 
 ---

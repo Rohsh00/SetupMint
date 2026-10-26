@@ -54,6 +54,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
+import { TradeInteractiveChart } from '../components/trades/TradeInteractiveChart.js';
 import { GenerateExecutionChartsPanel } from '../components/trades/GenerateExecutionChartsPanel.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 import { HelpHint } from '../components/help/index.js';
@@ -430,6 +431,13 @@ export function TradeDetailPage() {
           </Grid>
         </Grid>
       </Card>
+
+      {/* Primary Interactive Candlestick Chart */}
+      <TradeInteractiveChart
+        trade={trade}
+        attachments={trade.attachments || []}
+        onRefreshTrade={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
+      />
 
       {/* Playbook Strategy & Setup Variant Classification Card */}
       <Card sx={{ p: 2.5 }}>

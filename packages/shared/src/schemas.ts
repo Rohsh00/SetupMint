@@ -545,7 +545,7 @@ export const excursionComputeOptionsSchema = z.object({
   provider: z.enum(['AUTO', 'ANGEL_ONE']).default('AUTO'),
 });
 
-export const chartResolutionSchema = z.enum(['1', '5', '15', '30', '60', 'D']);
+export const chartResolutionSchema = z.enum(['1', '5', '15', '30', '60', '240', 'D']);
 
 export const generateChartSchema = z
   .object({

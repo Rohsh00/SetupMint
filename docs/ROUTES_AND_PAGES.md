@@ -110,18 +110,25 @@ This document details all routes and pages discovered in the **SetupMint** front
 - **Main Components:**
   - Trade Header: Symbol, asset class, direction, status, trade title, net P&L badge, R-multiple badge, Quick Close button (for OPEN/PLANNED positions).
   - Metrics Cards: Gross P&L, Total Costs Breakdown (brokerage, exchange, regulatory, taxes), ROI %, holding time.
+  - Primary Interactive Candlestick Chart ([`TradeInteractiveChart.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/TradeInteractiveChart.tsx)):
+    - TradingView Lightweight Charts v5 candlestick series, volume histogram, execution window shaded band (`AreaSeries`), stop loss trail steps (`LineSeries` with `LineType.WithSteps`).
+    - Dynamic timeframe switching (`1m`, `5m`, `15m`, `30m`, `1h`, `1D`) with adaptive default (`5m` for duration <= 4h, `15m` for > 4h).
+    - Horizontal price levels: SL (red), TP (green), Planned Entry (grey dashed), Weighted Average Entry, +1R/+2R/+3R target ladders, liquidity sweeps.
+    - Interactive overlay controls persisted to `localStorage`, fullscreen toggle, reset zoom, dark/light theme synchronization.
+    - Underlying index proxy fallback badge (`isUnderlyingFallback`) and permanent SVG fallback when broker lookback expires.
   - Tabbed Sections:
     - *Execution Tab:* Simple execution details or FIFO fills breakdown with lot match pairs.
     - *Risk & Planning Tab:* Initial stop loss, planned target, planned R:R, actual quantity vs suggested quantity.
     - *Thesis & Confluences Tab:* Pre-market bias, market structure, entry confirmation, SMC technical confluences.
     - *Psychology & Discipline Tab:* Emotions before/during/after, discipline rating (1–5), mistake tags, rules followed, lessons learned.
     - *Excursion Analytics & Execution Quality Card:* Maximum Favorable Excursion (MFE), Maximum Adverse Excursion (MAE), Exit Efficiency progress bar gauge, diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`), post-stop reversal alerts, and interactive recompute action.
-    - *Automated Execution Charts Generator Panel:* Multi-timeframe execution chart generator with multi-select timeframes ('Auto', '1m', '5m', '15m', '30m', '1h', '1D'; max 5), customizable pre-entry and post-exit candle padding controls (presets 0, 15, 30, 45, 60, 100, 150; 0..200 validated range), "Same on both sides" linked padding toggle, live window duration hints, provider lookback warnings, slot limit usage counter (12 cap), "Replace existing charts" toggle, and inline per-timeframe results breakdown.
-    - *Screenshots Gallery:* Uploaded chart screenshots categorized by trade stage with lightbox inspection, clipboard paste (Ctrl+V / Cmd+V) support, timeframe badges for `AUTO_CHART` items, and chronological timeframe sorting (`1m` through `1D`).
+    - *Automated Execution Charts Generator Panel:* Multi-timeframe execution chart generator with multi-select timeframes ('Auto', '1m', '5m', '15m', '30m', '1h', '1D'; max 5), customizable pre-entry and post-exit candle padding controls, slot limit usage counter (12 cap), "Replace existing charts" toggle, and inline per-timeframe results breakdown.
+    - *Saved Snapshots & Visual Review Gallery ([`TradeScreenshotGallery.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeScreenshotGallery.tsx)):* Permanent historical SVG snapshots and user uploads with lightbox inspection, clipboard paste (Ctrl+V / Cmd+V), staleness indicators with one-click regeneration, `settingsSource` attribution, and timeframe badges (`1m` through `1D`).
     - *Audit Trail:* Immutable log of creation, updates, quick closures, and balance adjustments.
-- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, generate multi-timeframe execution charts, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
+- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, generate multi-timeframe execution charts, regenerate stale snapshots, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
 - **API Calls:**
   - `GET /api/v1/trades/:id`
+  - `GET /api/v1/trades/:id/interactive-candles`
   - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/trades/:id/excursion/compute`
   - `POST /api/v1/trades/:id/chart/generate`

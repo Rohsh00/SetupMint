@@ -14,6 +14,7 @@
     "instruments:backfill": "tsx src/scripts/backfill-instruments.ts",
     "accounts:backfill": "tsx src/scripts/backfill-account-transactions.ts",
     "excursion:backfill": "tsx src/scripts/excursion-backfill.ts",
+    "chart:backfill": "tsx src/scripts/chart-backfill.ts",
     "clean": "tsx src/scripts/clean.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

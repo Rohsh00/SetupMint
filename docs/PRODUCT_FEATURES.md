@@ -104,6 +104,8 @@ This document provides a comprehensive, verified feature inventory of all module
 - **Frontend Components:**
   - [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
   - [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx)
+  - [`TradeInteractiveChart.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/TradeInteractiveChart.tsx) (Primary TradingView Lightweight Charts v5 candlestick engine with live resolution switching, stop trail step lines, execution window bands, R-ladder targets, and underlying proxy fallback)
+  - [`TradeScreenshotGallery.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeScreenshotGallery.tsx) (Saved Snapshots gallery with permanent SVG audit trail, staleness detection, and one-click regeneration)
   - [`TradeFormModal.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/TradeFormModal.tsx)
   - [`MarketTemplateBar.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/form/MarketTemplateBar.tsx)
   - [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx)
@@ -111,10 +113,11 @@ This document provides a comprehensive, verified feature inventory of all module
   - Sub-components: `TradeQuickSection`, `TradeAdvancedFills`, `TradeCalculationBanner`, `TradeJournalDetails`, `TradeTemplateSelector`.
 - **Backend APIs & Services:**
   - `GET /api/v1/trades` (supports filtering by `templateId`, sorting, pagination)
-  - `POST /api/v1/trades` (persists `templateId` and increments template usage count)
-  - `GET /api/v1/trades/:id`
-  - `PUT /api/v1/trades/:id` (supports partial simple execution payload for quick closing)
-  - `DELETE /api/v1/trades/:id` (unlinks private files from disk and recalculates account balance)
+  - `POST /api/v1/trades` (persists `templateId`, triggers auto-snapshot if status is `CLOSED`, recalculates account balance)
+  - `GET /api/v1/trades/:id` (returns populated trade with `formattedAttachments` including `settingsSource` and `isStale`)
+  - `GET /api/v1/trades/:id/interactive-candles` (provides normalized candle data for the primary chart with underlying proxy fallback)
+  - `PUT /api/v1/trades/:id` (supports partial simple execution payload for quick closing; auto-generates snapshot on close or marks snapshots stale if edited)
+  - `DELETE /api/v1/trades/:id` (unlinks cloud storage objects and recalculates account balance)
   - `POST /api/v1/trades/:id/duplicate`
   - `POST /api/v1/trades/bulk-tag`
   - `POST /api/v1/trades/bulk-delete`
@@ -129,6 +132,8 @@ This document provides a comprehensive, verified feature inventory of all module
   - Linear Gross P&L computed via `@tradevault/financial-engine`.
   - Advanced mode uses strict FIFO lot matching via `calculateFIFOExecution`.
   - Every trade modification appends an immutable entry to `auditLog` (actions: `CREATED`, `UPDATED`, `CLOSED`, `DUPLICATED`).
+  - Closed trades automatically trigger `ChartGeneratorService.ensureTradeSnapshot`, generating permanent SVG snapshots stored in Cloudflare R2 based on user `PatternDetectionSettings` and instrument overrides, eliminating historical visual loss when broker lookback expires.
+  - Modifying closed trade execution parameters marks existing snapshots with `isStale: true` until regenerated.
   - Account balances are authoritatively recomputed on every trade creation, update, closure, or deletion.
   - Template performance statistics (total trades, win rate, net P&L, profit factor) are aggregated authoritatively by tenant.
 

@@ -8,6 +8,8 @@ export interface IAttachmentChartMetaDoc {
   appliedAfter: number;
   truncated: boolean;
   generatedAt: Date;
+  settingsSource?: string;
+  isStale?: boolean;
 }
 
 export interface IAttachmentDoc extends Document {
@@ -59,6 +61,8 @@ const AttachmentSchema = new Schema<IAttachmentDoc>(
       appliedAfter: { type: Number },
       truncated: { type: Boolean },
       generatedAt: { type: Date },
+      settingsSource: { type: String },
+      isStale: { type: Boolean, default: false },
     },
   },
   { timestamps: true }

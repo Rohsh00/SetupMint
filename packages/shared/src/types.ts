@@ -592,6 +592,8 @@ export interface IChartMeta {
   appliedAfter: number;
   truncated: boolean;
   generatedAt: string;
+  settingsSource?: string;
+  isStale?: boolean;
 }
 
 export interface IAttachment {

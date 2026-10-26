@@ -92,6 +92,7 @@ All commands are executed from the repository root:
 | `npm run db:restore` | Restores Atlas collections and uploads screenshots to R2 (requires `--yes-i-am-sure`). |
 | `npm run db:reconcile` | Authoritatively recalculates and persists ledger balances on Atlas. |
 | `npm run accounts:backfill` | Dry-runs the account/broker migration; add `-- --yes` to drop the legacy mapping index, backfill fields, encrypt plaintext broker secrets, and recalculate balances. |
+| `npm run chart:backfill` | Dry-runs auto-chart snapshot generation for all closed trades missing snapshots; add `-- --yes` to execute live generation. |
 
 ---
 

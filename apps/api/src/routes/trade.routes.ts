@@ -487,6 +487,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Recalculate account realized P&L and balance authoritatively
     await AccountService.recalculateAccountBalances(account._id, req.user!.id);
 
+    // Auto-generate snapshot if trade was created in CLOSED status
+    if (trade.status === 'CLOSED') {
+      ChartGeneratorService.ensureTradeSnapshot(trade._id, req.user!.id).catch((err: any) => {
+        req.log.warn('Auto snapshot generation threw for trade %s: %s', trade._id, err.message);
+      });
+    }
+
     if (body.templateId) {
       await TradeTemplate.findOneAndUpdate(
         { _id: body.templateId, userId: req.user!.id },
@@ -662,6 +669,22 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       mimeType: att.mimeType,
       downloadUrl: `/api/v1/attachments/${att._id}/download`,
       uploadedAt: att.createdAt.toISOString(),
+      createdAt: att.createdAt.toISOString(),
+      chartMeta: att.chartMeta
+        ? {
+            resolution: att.chartMeta.resolution,
+            paddingBefore: att.chartMeta.paddingBefore,
+            paddingAfter: att.chartMeta.paddingAfter,
+            appliedBefore: att.chartMeta.appliedBefore,
+            appliedAfter: att.chartMeta.appliedAfter,
+            truncated: att.chartMeta.truncated,
+            generatedAt: att.chartMeta.generatedAt
+              ? new Date(att.chartMeta.generatedAt).toISOString()
+              : undefined,
+            settingsSource: att.chartMeta.settingsSource,
+            isStale: Boolean(att.chartMeta.isStale),
+          }
+        : undefined,
     }));
 
     return reply.send({
@@ -881,6 +904,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     await AccountService.recalculateAccountBalances(existingTrade.accountId, req.user!.id);
     if (parseResult.data.accountId && parseResult.data.accountId !== existingTrade.accountId.toString()) {
       await AccountService.recalculateAccountBalances(parseResult.data.accountId, req.user!.id);
+    }
+
+    if (updated?.status === 'CLOSED') {
+      if (existingTrade.status !== 'CLOSED') {
+        // Transitioned to CLOSED (e.g. Quick Close): auto-generate snapshot
+        ChartGeneratorService.ensureTradeSnapshot(updated._id, req.user!.id).catch((err: any) => {
+          req.log.warn('Auto snapshot generation threw for trade %s: %s', updated._id, err.message);
+        });
+      } else {
+        // Already closed trade was edited: mark snapshots as stale
+        await ChartGeneratorService.markSnapshotsStale(updated._id, req.user!.id);
+      }
     }
 
     return reply.send({

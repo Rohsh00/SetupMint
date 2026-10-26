@@ -32,6 +32,7 @@ import { InstrumentService } from './instrument.service.js';
 import { decryptSecret } from './crypto.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
 import { MarketDataService } from './market-data/index.js';
+import { ChartGeneratorService } from './chart-generator.service.js';
 import { config } from '../config.js';
 
 export interface IFyersExecutionRaw {
@@ -861,6 +862,7 @@ export class FyersService {
 
     let syncedTradesCount = 0;
     let duplicateTradesCount = 0;
+    const closedTradeIds: string[] = [];
     const batchId = `fyers_sync_${Date.now()}`;
 
     // For each symbol, match fills chronologically via FIFO
@@ -1056,6 +1058,7 @@ export class FyersService {
               };
               await existing.save();
               syncedTradesCount++;
+              closedTradeIds.push(existing._id.toString());
               return;
             }
 
@@ -1066,7 +1069,7 @@ export class FyersService {
             return;
           }
 
-          await Trade.create({
+          const createdTrade = await Trade.create({
             userId: uId,
             accountId: account._id,
             instrumentId: inst._id,
@@ -1126,6 +1129,10 @@ export class FyersService {
                 : 'BREAKEVEN',
             },
           });
+
+          if (fifoSummary.isFullyClosed) {
+            closedTradeIds.push(createdTrade._id.toString());
+          }
 
           syncedTradesCount++;
         } catch (e) {
@@ -1189,6 +1196,21 @@ export class FyersService {
     // Recalculate account balance
     if (syncedTradesCount > 0) {
       await AccountService.recalculateAccountBalances(account._id, uId);
+    }
+
+    // Fire-and-forget background auto-snapshot generation for closed trades (cap 25, 220ms pacing)
+    if (closedTradeIds.length > 0) {
+      (async () => {
+        const batchToProcess = closedTradeIds.slice(0, 25);
+        for (const tId of batchToProcess) {
+          try {
+            await ChartGeneratorService.ensureTradeSnapshot(tId, uId);
+          } catch (err: any) {
+            console.warn(`[FYERS Sync] Snapshot auto-generation failed for trade ${tId}:`, err.message);
+          }
+          await new Promise((r) => setTimeout(r, 220));
+        }
+      })().catch(() => {});
     }
 
     integration.status = 'CONNECTED';

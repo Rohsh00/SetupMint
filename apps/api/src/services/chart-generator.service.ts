@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import moment from 'moment';
-import { Trade, Attachment, TradeCandleSnapshot, IAttachmentDoc } from '../db/models/index.js';
+import { Trade, Attachment, TradeCandleSnapshot, IAttachmentDoc, User } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import {
   ITradeCandle,
@@ -18,6 +18,7 @@ import {
   aggregateCandles,
   selectChartWindow,
   estimateFetchRange,
+  resolveSnapshotTimeframes,
 } from '@tradevault/financial-engine';
 import { MarketDataService } from './market-data/index.js';
 
@@ -33,6 +34,7 @@ export interface ChartGeneratorOptions {
   appliedAfter?: number;
   entryIndex?: number;
   exitIndex?: number;
+  strategyName?: string;
 }
 
 export interface GenerateChartsOptions {
@@ -41,6 +43,8 @@ export interface GenerateChartsOptions {
   resolutions?: ChartResolution[];
   paddingBefore?: number;
   paddingAfter?: number;
+  settingsSource?: string;
+  strategyName?: string;
 }
 
 function resolutionOrder(r: string): number {
@@ -382,6 +386,8 @@ export class ChartGeneratorService {
     }
 
     const watermarkStr = `SetupMint Visual Trade Audit • ${watermarkSource} • ${moment().format('YYYY-MM-DD HH:mm:ss')} IST`;
+    const stratName = options.strategyName || trade.strategyName;
+    const stratStr = stratName ? ` • Strategy: ${stratName}` : '';
 
     const tfChipX = plotX0 + symbolStr.length * 11 + 10;
     const dirChipX = tfChipX + tfChipWidth + 8;
@@ -419,7 +425,7 @@ export class ChartGeneratorService {
 
   <!-- Date Range Subheader -->
   <text x="${plotX0}" y="52" font-family="'JetBrains Mono', monospace" font-size="11" fill="#64748b">
-    ${dateStr}${exitDateStr ? ` → ${exitDateStr}` : ''}
+    ${dateStr}${exitDateStr ? ` → ${exitDateStr}` : ''}${stratStr}
   </text>
 
   <!-- PnL Outcome Pill (Top Right) -->
@@ -742,6 +748,7 @@ export class ChartGeneratorService {
           appliedAfter: windowResult.appliedAfter,
           entryIndex: windowResult.entryIndex,
           exitIndex: windowResult.exitIndex,
+          strategyName: options.strategyName || trade.strategyName,
         });
 
         const svgBuffer = Buffer.from(svgString, 'utf-8');
@@ -790,6 +797,8 @@ export class ChartGeneratorService {
             appliedAfter: windowResult.appliedAfter,
             truncated: windowResult.truncated,
             generatedAt: new Date(),
+            settingsSource: options.settingsSource,
+            isStale: false,
           },
         });
 
@@ -866,6 +875,8 @@ export class ChartGeneratorService {
             generatedAt: att.chartMeta.generatedAt
               ? new Date(att.chartMeta.generatedAt).toISOString()
               : undefined,
+            settingsSource: att.chartMeta.settingsSource,
+            isStale: Boolean(att.chartMeta.isStale),
           }
         : undefined,
       sizeBytes: att.sizeBytes,
@@ -873,5 +884,93 @@ export class ChartGeneratorService {
       downloadUrl: `/api/v1/attachments/${att._id || att.id}/download`,
       createdAt: att.createdAt ? new Date(att.createdAt).toISOString() : new Date().toISOString(),
     };
+  }
+
+  /**
+   * Ensures automated snapshot SVG(s) exist for a closed trade, driven by the user's
+   * Pattern Detection settings & instrument overrides.
+   *
+   * Idempotent (force: false by default, SKIPPED_EXISTS), respects the 12-screenshot cap
+   * with net-new accounting, prioritizing LTF first if only 1 slot fits.
+   */
+  static async ensureTradeSnapshot(
+    tradeId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId,
+    options: { force?: boolean } = {}
+  ): Promise<IChartGenerateResult[]> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+
+    const trade = await Trade.findOne({ _id: tId, userId: uId });
+    if (!trade || trade.status !== 'CLOSED' || !trade.exitTime) {
+      return [];
+    }
+
+    const user = await User.findById(uId).select('patternDetectionSettings').lean();
+    const resolved = resolveSnapshotTimeframes(
+      trade.toObject ? trade.toObject() : trade,
+      (user as any)?.patternDetectionSettings
+    );
+
+    // Evaluate 12-screenshot cap with net-new accounting
+    const currentAttachmentsCount = trade.screenshotIds ? trade.screenshotIds.length : 0;
+    let availableSlots = 12 - currentAttachmentsCount;
+
+    const existingAutoCharts = await Attachment.find({
+      userId: uId,
+      tradeId: trade._id,
+      category: 'AUTO_CHART',
+    });
+
+    // Check which resolutions need net-new slots
+    const targetResolutions: ChartResolution[] = [];
+    for (const res of resolved.resolutions) {
+      const timeframeLabel = CHART_RESOLUTION_LABELS[res] || `${res}m`;
+      const existing = existingAutoCharts.find(
+        (a) =>
+          a.timeframe === timeframeLabel ||
+          (res === 'D' && (a.timeframe === 'Daily' || a.timeframe === '1D')) ||
+          a.timeframe === `${res}m`
+      );
+
+      if (existing) {
+        // Already exists: can be skipped (or replaced if force=true) without net-new slot
+        targetResolutions.push(res);
+      } else if (availableSlots > 0) {
+        // Net-new slot available
+        targetResolutions.push(res);
+        availableSlots--;
+      }
+    }
+
+    if (targetResolutions.length === 0) {
+      return [];
+    }
+
+    return this.generateAutoChartsForTrade(trade._id, uId, {
+      resolutions: targetResolutions,
+      paddingBefore: DEFAULT_CHART_PADDING_CANDLES,
+      paddingAfter: DEFAULT_CHART_PADDING_CANDLES,
+      force: Boolean(options.force),
+      settingsSource: resolved.settingsDescription,
+      strategyName: resolved.preferredStrategyName || trade.strategyName,
+    });
+  }
+
+  /**
+   * Marks existing AUTO_CHART snapshots for a trade as stale.
+   * Called when a closed trade is edited or modified so the UI can prompt the user to regenerate.
+   */
+  static async markSnapshotsStale(
+    tradeId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId
+  ): Promise<void> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+
+    await Attachment.updateMany(
+      { userId: uId, tradeId: tId, category: 'AUTO_CHART' },
+      { $set: { 'chartMeta.isStale': true } }
+    );
   }
 }

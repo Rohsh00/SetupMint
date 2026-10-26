@@ -8,6 +8,7 @@ import {
   calculateIndianCharges,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
+  normalizeUnderlying,
 } from '@tradevault/financial-engine';
 import { Instrument, IInstrumentDoc, Trade, ITradeDoc } from '../db/models/index.js';
 import { AccountService } from './account.service.js';
@@ -52,99 +53,7 @@ export class InstrumentService {
    *   EURUSD               -> EURUSD
    */
   static normalizeUnderlying(symbol: string): string {
-    if (!symbol || typeof symbol !== 'string') return '';
-
-    let clean = symbol.trim().toUpperCase();
-
-    // 1. Strip broker/exchange prefixes: NSE:, BSE:, MCX:, BINANCE:, FOREX:
-    clean = clean.replace(/^(NSE|BSE|MCX|BINANCE|FOREX):/i, '').trim();
-
-    // 1b. Strip standard Indian cash equity series suffix: -EQ, -BE
-    clean = clean.replace(/-EQ|-BE$/i, '').trim();
-
-    // 2. Direct check against known preset symbols
-    const directPreset = getPresetSpec(clean);
-    if (directPreset) {
-      return directPreset.symbol;
-    }
-
-    // 3. Known index roots & commodity prefixes check
-    const knownRoots: Array<{ root: string; standard: string }> = [
-      { root: 'BANKNIFTY', standard: 'BANKNIFTY' },
-      { root: 'FINNIFTY', standard: 'FINNIFTY' },
-      { root: 'MIDCPNIFTY', standard: 'MIDCPNIFTY' },
-      { root: 'NIFTY', standard: 'NIFTY' },
-      { root: 'BANKEX', standard: 'BANKEX' },
-      { root: 'SENSEX', standard: 'SENSEX' },
-      { root: 'CRUDEOILMINI', standard: 'CRUDEOILMINI' },
-      { root: 'CRUDEOILM', standard: 'CRUDEOILMINI' },
-      { root: 'CRUDEOIL', standard: 'CRUDEOIL' },
-      { root: 'NATGASMINI', standard: 'NATGASMINI' },
-      { root: 'NATGAS', standard: 'NATURALGAS' },
-      { root: 'NATURALGAS', standard: 'NATURALGAS' },
-      { root: 'GOLDGUINEA', standard: 'GOLDGUINEA' },
-      { root: 'GOLDPETAL', standard: 'GOLDPETAL' },
-      { root: 'GOLDM', standard: 'GOLDM' },
-      { root: 'GOLD', standard: 'GOLD' },
-      { root: 'SILVERMIC', standard: 'SILVERMIC' },
-      { root: 'SILVERM', standard: 'SILVERM' },
-      { root: 'SILVER', standard: 'SILVER' },
-      { root: 'COPPER', standard: 'COPPER' },
-      { root: 'ZINC', standard: 'ZINC' },
-      { root: 'NICKEL', standard: 'NICKEL' },
-      { root: 'ALUMINIUM', standard: 'ALUMINIUM' },
-      { root: 'LEAD', standard: 'LEAD' },
-    ];
-
-    for (const { root, standard } of knownRoots) {
-      if (clean === root) return standard;
-      if (clean.startsWith(root)) {
-        const remainder = clean.slice(root.length).trim();
-        // If remainder matches typical derivative patterns:
-        // - Dates/strikes/CE/PE/FUT: e.g. "24OCT24500CE", " 24500 CE", "24NOVFUT", "24OCTFUT"
-        if (
-          remainder === '' ||
-          /^(\s*|\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2}|\d+).*(CE|PE|FUT|FUTURES)?$/i.test(remainder) ||
-          /^(FUT|CE|PE)$/i.test(remainder)
-        ) {
-          return standard;
-        }
-      }
-    }
-
-    // 4. Common Indian Stock / Currency Derivative Patterns
-    // A) Standard Monthly Options: e.g. RELIANCE24OCT3000CE, INFY24NOV1800PE
-    const monthlyOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[A-Z]{3})\s*(\d+(?:\.\d+)?)\s*(CE|PE)$/);
-    if (monthlyOptionMatch && monthlyOptionMatch[1]) {
-      return monthlyOptionMatch[1];
-    }
-
-    // B) Weekly Options: e.g. RELIANCE24O173000CE (YY + MonthCode + DD + Strike + CE/PE)
-    const weeklyOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[1-9OND]\d{2})\s*(\d+(?:\.\d+)?)\s*(CE|PE)$/);
-    if (weeklyOptionMatch && weeklyOptionMatch[1]) {
-      return weeklyOptionMatch[1];
-    }
-
-    // C) Spaced Option formats: e.g. "RELIANCE 3000 CE", "TCS 4200 PE", "NIFTY 24500 CALL"
-    const spacedOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s+(?:\d{2}\s+[A-Z]{3}\s+)?(\d+(?:\.\d+)?)\s+(CE|PE|CALL|PUT)$/);
-    if (spacedOptionMatch && spacedOptionMatch[1]) {
-      return spacedOptionMatch[1];
-    }
-
-    // D) Futures contracts: e.g. TCS24OCTFUT, INFY24NOVFUT, RELIANCEFUT
-    const futuresMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[A-Z]{3})?\s*(FUT|FUTURES)$/);
-    if (futuresMatch && futuresMatch[1]) {
-      return futuresMatch[1];
-    }
-
-    // E) General Trailing Strike + Option Type
-    const trailingOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{4,})\s*(CE|PE)$/);
-    if (trailingOptionMatch && trailingOptionMatch[1]) {
-      return trailingOptionMatch[1];
-    }
-
-    // 5. If no derivative patterns match or symbol is unnormalizable, return clean as-is
-    return clean;
+    return normalizeUnderlying(symbol);
   }
 
   /**

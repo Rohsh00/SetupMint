@@ -34,6 +34,8 @@ import {
   ElectricBoltRounded,
   ShowChartRounded,
   CandlestickChartRounded,
+  WarningAmberRounded,
+  RefreshRounded,
 } from '@mui/icons-material';
 import {
   AttachmentCategory,
@@ -101,8 +103,12 @@ export function TradeScreenshotGallery({
   const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isGeneratingAutoChart, setIsGeneratingAutoChart] = useState(false);
+  const [regeneratingAttachmentId, setRegeneratingAttachmentId] = useState<string | null>(null);
 
   const autoChartAttachment = attachments.find((a) => a.category === 'AUTO_CHART');
+  const hasStaleSnapshots = attachments.some(
+    (a) => a.category === 'AUTO_CHART' && a.chartMeta?.isStale
+  );
 
   const handleGenerateAutoChart = async () => {
     try {
@@ -117,6 +123,24 @@ export function TradeScreenshotGallery({
     } catch (err: any) {
       toast.error(err.message || 'Failed to generate auto chart screenshot.');
     } finally {
+      setIsGeneratingAutoChart(false);
+    }
+  };
+
+  const handleRegenerateSnapshot = async (attId?: string) => {
+    try {
+      if (attId) {
+        setRegeneratingAttachmentId(attId);
+      } else {
+        setIsGeneratingAutoChart(true);
+      }
+      await api.trades.generateChart(tradeId, true);
+      toast.success('Auto chart snapshots regenerated with current trade parameters and settings.');
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to regenerate snapshot.');
+    } finally {
+      setRegeneratingAttachmentId(null);
       setIsGeneratingAutoChart(false);
     }
   };
@@ -262,10 +286,10 @@ export function TradeScreenshotGallery({
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <CollectionsRounded sx={{ color: muiTheme.palette.primary.main, fontSize: 22 }} />
             <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>
-              Chart Screenshots & Visual Review
+              Saved Snapshots & Visual Review
             </Typography>
             <Chip
-              label={`${attachments.length} ${attachments.length === 1 ? 'chart' : 'charts'}`}
+              label={`${attachments.length} ${attachments.length === 1 ? 'snapshot' : 'snapshots'}`}
               size="small"
               sx={{
                 fontWeight: 700,
@@ -276,7 +300,7 @@ export function TradeScreenshotGallery({
             />
           </Box>
           <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-            Visual audit trail with multi-timeframe opportunity, execution triggers, targets, and annotated post-mortems
+            Permanent historical SVG snapshots and user attachments ensuring visual trade auditability when broker lookback expires
           </Typography>
         </Box>
 
@@ -352,6 +376,37 @@ export function TradeScreenshotGallery({
           )}
         </Box>
       </Box>
+
+      {/* Stale Snapshots Notice Banner */}
+      {hasStaleSnapshots && (
+        <Alert
+          severity="warning"
+          icon={<WarningAmberRounded />}
+          action={
+            !readOnly && (
+              <Button
+                color="inherit"
+                size="small"
+                startIcon={
+                  isGeneratingAutoChart ? (
+                    <CircularProgress size={12} color="inherit" />
+                  ) : (
+                    <RefreshRounded fontSize="small" />
+                  )
+                }
+                disabled={isGeneratingAutoChart}
+                onClick={() => handleRegenerateSnapshot()}
+                sx={{ fontWeight: 700, textTransform: 'none', borderRadius: 1.5 }}
+              >
+                Regenerate All Snapshots
+              </Button>
+            )
+          }
+          sx={{ mt: 2, borderRadius: 2 }}
+        >
+          One or more auto-generated snapshots were created before trade parameters were updated and are marked stale.
+        </Alert>
+      )}
 
       {/* Category Filter Tabs (if attachments exist) */}
       {attachments.length > 0 && (
@@ -495,6 +550,25 @@ export function TradeScreenshotGallery({
                       </Tooltip>
                     )}
 
+                    {/* Stale Badge on Image Thumbnail */}
+                    {att.category === 'AUTO_CHART' && att.chartMeta?.isStale && (
+                      <Chip
+                        icon={<WarningAmberRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
+                        label="Stale Snapshot"
+                        size="small"
+                        color="warning"
+                        sx={{
+                          position: 'absolute',
+                          bottom: 10,
+                          left: 10,
+                          fontWeight: 700,
+                          fontSize: '0.6875rem',
+                          backdropFilter: 'blur(6px)',
+                          boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)',
+                        }}
+                      />
+                    )}
+
                     {/* Hover Overlay with Action Buttons */}
                     <Box
                       sx={{
@@ -595,8 +669,28 @@ export function TradeScreenshotGallery({
                           variant="caption"
                           sx={{ color: muiTheme.palette.text.secondary, fontStyle: 'italic' }}
                         >
-                          No caption recorded
+                          {att.category === 'AUTO_CHART' ? 'Permanent SVG Snapshot' : 'No caption recorded'}
                         </Typography>
+                      )}
+
+                      {/* Settings Source indicator */}
+                      {att.chartMeta?.settingsSource && (
+                        <Box sx={{ mt: 0.75 }}>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={att.chartMeta.settingsSource}
+                            sx={{
+                              fontSize: '0.65rem',
+                              fontWeight: 600,
+                              height: 20,
+                              maxWidth: '100%',
+                              borderColor: isDark ? 'rgba(6, 182, 212, 0.35)' : 'rgba(6, 182, 212, 0.5)',
+                              color: isDark ? '#38bdf8' : '#0284c7',
+                              backgroundColor: isDark ? 'rgba(6, 182, 212, 0.08)' : 'rgba(6, 182, 212, 0.05)',
+                            }}
+                          />
+                        </Box>
                       )}
                     </Box>
 
@@ -610,16 +704,47 @@ export function TradeScreenshotGallery({
                         borderTop: `1px solid ${muiTheme.palette.divider}`,
                       }}
                     >
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          fontSize: '0.6875rem',
-                          color: muiTheme.palette.text.secondary,
-                        }}
-                      >
-                        {(att.sizeBytes / 1024 / 1024).toFixed(2)} MB
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            fontSize: '0.6875rem',
+                            color: muiTheme.palette.text.secondary,
+                          }}
+                        >
+                          {(att.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                        </Typography>
+
+                        {att.category === 'AUTO_CHART' && att.chartMeta?.isStale && !readOnly && (
+                          <Button
+                            size="small"
+                            variant="text"
+                            color="warning"
+                            startIcon={
+                              regeneratingAttachmentId === att.id ? (
+                                <CircularProgress size={10} color="inherit" />
+                              ) : (
+                                <RefreshRounded sx={{ fontSize: 13 }} />
+                              )
+                            }
+                            disabled={Boolean(regeneratingAttachmentId)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRegenerateSnapshot(att.id);
+                            }}
+                            sx={{
+                              fontSize: '0.6875rem',
+                              fontWeight: 700,
+                              p: 0,
+                              minWidth: 'auto',
+                              textTransform: 'none',
+                            }}
+                          >
+                            Regenerate
+                          </Button>
+                        )}
+                      </Box>
 
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <Tooltip title="Open in Real Interactive TradingView Chart">

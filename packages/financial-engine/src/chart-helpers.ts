@@ -1,6 +1,12 @@
 import Decimal from 'decimal.js';
 import { IExcursionCandle } from './excursion.js';
-import { NSE_HOLIDAYS_2026 } from '@tradevault/shared';
+import {
+  NSE_HOLIDAYS_2026,
+  getPresetSpec,
+  ChartResolution,
+  CHART_RESOLUTIONS,
+  CHART_RESOLUTION_LABELS,
+} from '@tradevault/shared';
 
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
@@ -387,3 +393,400 @@ export function estimateFetchRange(
     to: new Date(finalToMs),
   };
 }
+
+/**
+ * Normalizes any trading symbol into its base underlying.
+ * Strips broker prefixes (NSE:, BSE:, MCX:), option details (strikes, expiries, CE/PE),
+ * and futures tokens (FUT).
+ */
+export function normalizeUnderlying(symbol: string): string {
+  if (!symbol || typeof symbol !== 'string') return '';
+
+  let clean = symbol.trim().toUpperCase();
+
+  // 1. Strip broker/exchange prefixes: NSE:, BSE:, MCX:, BINANCE:, FOREX:
+  clean = clean.replace(/^(NSE|BSE|MCX|BINANCE|FOREX):/i, '').trim();
+
+  // 1b. Strip standard Indian cash equity series suffix: -EQ, -BE and Yahoo/broker .NS, .BO suffixes
+  clean = clean.replace(/-EQ|-BE$/i, '').replace(/\.(NS|BO)$/i, '').trim();
+
+  // 2. Direct check against known preset symbols
+  const directPreset = getPresetSpec(clean);
+  if (directPreset) {
+    return directPreset.symbol;
+  }
+
+  // 3. Known index roots & commodity prefixes check
+  const knownRoots: Array<{ root: string; standard: string }> = [
+    { root: 'BANKNIFTY', standard: 'BANKNIFTY' },
+    { root: 'FINNIFTY', standard: 'FINNIFTY' },
+    { root: 'MIDCPNIFTY', standard: 'MIDCPNIFTY' },
+    { root: 'NIFTY', standard: 'NIFTY' },
+    { root: 'BANKEX', standard: 'BANKEX' },
+    { root: 'SENSEX', standard: 'SENSEX' },
+    { root: 'CRUDEOILMINI', standard: 'CRUDEOILMINI' },
+    { root: 'CRUDEOILM', standard: 'CRUDEOILMINI' },
+    { root: 'CRUDEOIL', standard: 'CRUDEOIL' },
+    { root: 'NATGASMINI', standard: 'NATGASMINI' },
+    { root: 'NATGAS', standard: 'NATURALGAS' },
+    { root: 'NATURALGAS', standard: 'NATURALGAS' },
+    { root: 'GOLDGUINEA', standard: 'GOLDGUINEA' },
+    { root: 'GOLDPETAL', standard: 'GOLDPETAL' },
+    { root: 'GOLDM', standard: 'GOLDM' },
+    { root: 'GOLD', standard: 'GOLD' },
+    { root: 'SILVERMIC', standard: 'SILVERMIC' },
+    { root: 'SILVERM', standard: 'SILVERM' },
+    { root: 'SILVER', standard: 'SILVER' },
+    { root: 'COPPER', standard: 'COPPER' },
+    { root: 'ZINC', standard: 'ZINC' },
+    { root: 'NICKEL', standard: 'NICKEL' },
+    { root: 'ALUMINIUM', standard: 'ALUMINIUM' },
+    { root: 'LEAD', standard: 'LEAD' },
+  ];
+
+  for (const { root, standard } of knownRoots) {
+    if (clean === root) return standard;
+    if (clean.startsWith(root)) {
+      const remainder = clean.slice(root.length).trim();
+      if (
+        remainder === '' ||
+        /^(\s*|\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2}|\d+).*(CE|PE|FUT|FUTURES)?$/i.test(remainder) ||
+        /^(FUT|CE|PE)$/i.test(remainder)
+      ) {
+        return standard;
+      }
+    }
+  }
+
+  // 4. Common Indian Stock / Currency Derivative Patterns
+  // A) Standard Monthly Options: e.g. RELIANCE24OCT3000CE
+  const monthlyOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[A-Z]{3})\s*(\d+(?:\.\d+)?)\s*(CE|PE)$/);
+  if (monthlyOptionMatch && monthlyOptionMatch[1]) {
+    return monthlyOptionMatch[1];
+  }
+
+  // B) Weekly Options: e.g. RELIANCE24O173000CE
+  const weeklyOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[1-9OND]\d{2})\s*(\d+(?:\.\d+)?)\s*(CE|PE)$/);
+  if (weeklyOptionMatch && weeklyOptionMatch[1]) {
+    return weeklyOptionMatch[1];
+  }
+
+  // C) Spaced Option formats: e.g. "RELIANCE 3000 CE", "TCS 4200 PE"
+  const spacedOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s+(?:\d{2}\s+[A-Z]{3}\s+)?(\d+(?:\.\d+)?)\s+(CE|PE|CALL|PUT)$/);
+  if (spacedOptionMatch && spacedOptionMatch[1]) {
+    return spacedOptionMatch[1];
+  }
+
+  // D) Futures contracts: e.g. TCS24OCTFUT, INFY24NOVFUT, RELIANCEFUT
+  const futuresMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[A-Z]{3})?\s*(FUT|FUTURES)$/);
+  if (futuresMatch && futuresMatch[1]) {
+    return futuresMatch[1];
+  }
+
+  // E) General Trailing Strike + Option Type
+  const trailingOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{4,})\s*(CE|PE)$/);
+  if (trailingOptionMatch && trailingOptionMatch[1]) {
+    return trailingOptionMatch[1];
+  }
+
+  return clean;
+}
+
+export type SnapshotResolutionSource = 'INSTRUMENT_OVERRIDE' | 'DEFAULT' | 'ADAPTIVE_FALLBACK';
+
+export interface ISnapshotTimeframeResolution {
+  resolutions: ChartResolution[];
+  source: SnapshotResolutionSource;
+  warnings: string[];
+  htf: ChartResolution;
+  ltf: ChartResolution;
+  matchedSymbol?: string;
+  preferredStrategyId?: string;
+  preferredStrategyName?: string;
+  settingsDescription: string;
+}
+
+/**
+ * Normalizes timeframe string (e.g. '4h', '5m', '240', '5', '1D') into a supported ChartResolution.
+ * Supported resolutions: ['1', '5', '15', '30', '60', '240', 'D'].
+ * If unsupported, maps to the nearest supported resolution and returns a warning.
+ */
+export function normalizeChartResolution(rawVal?: string | number): {
+  resolution: ChartResolution;
+  warning?: string;
+} {
+  if (rawVal === undefined || rawVal === null || rawVal === '') {
+    return { resolution: '5', warning: 'Missing resolution value, defaulted to 5m' };
+  }
+
+  const str = String(rawVal).trim().toLowerCase();
+
+  // Direct matches
+  if (str === '1' || str === '1m' || str === '1min') return { resolution: '1' };
+  if (str === '5' || str === '5m' || str === '5min') return { resolution: '5' };
+  if (str === '15' || str === '15m' || str === '15min') return { resolution: '15' };
+  if (str === '30' || str === '30m' || str === '30min') return { resolution: '30' };
+  if (str === '60' || str === '60m' || str === '1h' || str === '1hour') return { resolution: '60' };
+  if (str === '240' || str === '240m' || str === '4h' || str === '4hours') return { resolution: '240' };
+  if (str === 'd' || str === '1d' || str === 'daily' || str === 'day') return { resolution: 'D' };
+
+  // Nearest mappings for common unsupported timeframes
+  if (str === '3' || str === '3m') {
+    return { resolution: '5', warning: "Unsupported timeframe '3m' mapped to nearest supported '5m'" };
+  }
+  if (str === '2' || str === '2m') {
+    return { resolution: '1', warning: "Unsupported timeframe '2m' mapped to nearest supported '1m'" };
+  }
+  if (str === '10' || str === '10m') {
+    return { resolution: '5', warning: "Unsupported timeframe '10m' mapped to nearest supported '5m'" };
+  }
+  if (str === '45' || str === '45m') {
+    return { resolution: '30', warning: "Unsupported timeframe '45m' mapped to nearest supported '30m'" };
+  }
+  if (str === '120' || str === '120m' || str === '2h') {
+    return { resolution: '60', warning: "Unsupported timeframe '2h' mapped to nearest supported '1h'" };
+  }
+  if (str === 'w' || str === '1w' || str === 'weekly') {
+    return { resolution: 'D', warning: "Unsupported timeframe 'Weekly' mapped to nearest supported '1D'" };
+  }
+
+  // Parse numeric minutes as fallback
+  const num = parseInt(str, 10);
+  if (!isNaN(num) && num > 0) {
+    if (num <= 2) return { resolution: '1', warning: `Unsupported timeframe '${rawVal}' mapped to '1m'` };
+    if (num <= 8) return { resolution: '5', warning: `Unsupported timeframe '${rawVal}' mapped to '5m'` };
+    if (num <= 20) return { resolution: '15', warning: `Unsupported timeframe '${rawVal}' mapped to '15m'` };
+    if (num <= 45) return { resolution: '30', warning: `Unsupported timeframe '${rawVal}' mapped to '30m'` };
+    if (num <= 150) return { resolution: '60', warning: `Unsupported timeframe '${rawVal}' mapped to '1h'` };
+    if (num <= 720) return { resolution: '240', warning: `Unsupported timeframe '${rawVal}' mapped to '4h'` };
+    return { resolution: 'D', warning: `Unsupported timeframe '${rawVal}' mapped to '1D'` };
+  }
+
+  return { resolution: '5', warning: `Unrecognized timeframe '${rawVal}' mapped to default '5m'` };
+}
+
+/**
+ * Pure function resolving the 1-2 candlestick snapshot timeframes for a closed trade
+ * based on the user's Pattern Detection settings and instrument-specific overrides.
+ *
+ * Rules:
+ * 1. Normalize trade.underlying ?? trade.symbol with normalizeUnderlying, match case-insensitively with overrides.
+ * 2. If override matches: use its { htf, ltf }, source = 'INSTRUMENT_OVERRIDE'.
+ *    Else: use defaultHtf / defaultLtf, source = 'DEFAULT'.
+ *    If settings missing or invalid: adaptive fallback (trade <= 4h -> '1'/'5', else '5'/'15'), source = 'ADAPTIVE_FALLBACK'.
+ * 3. Always generate LTF first (execution view). Generate HTF second (context view) if it differs from LTF.
+ * 4. Max 2 resolutions per auto-snapshot.
+ */
+export function resolveSnapshotTimeframes(
+  trade: {
+    symbol?: string;
+    underlying?: string;
+    entryTime?: Date | string | number;
+    exitTime?: Date | string | number;
+    entryDate?: Date | string | number;
+    exitDate?: Date | string | number;
+    durationMinutes?: number;
+    holdingTimeMinutes?: number;
+    [key: string]: any;
+  },
+  patternDetectionSettings?: {
+    defaultHtf?: string;
+    defaultLtf?: string;
+    defaultHtfResolution?: string;
+    defaultLtfResolution?: string;
+    instrumentOverrides?: Array<{
+      symbol: string;
+      htf?: string;
+      ltf?: string;
+      htfResolution?: string;
+      ltfResolution?: string;
+      strategyId?: string;
+      preferredStrategyId?: string;
+      preferredStrategyName?: string;
+    }>;
+    [key: string]: any;
+  } | null
+): ISnapshotTimeframeResolution {
+  const warnings: string[] = [];
+
+  // Calculate trade duration for adaptive fallback
+  let durationMs = 0;
+  const entryVal = trade?.entryTime || trade?.entryDate;
+  const exitVal = trade?.exitTime || trade?.exitDate;
+
+  if (trade?.durationMinutes && typeof trade.durationMinutes === 'number') {
+    durationMs = trade.durationMinutes * 60 * 1000;
+  } else if (trade?.holdingTimeMinutes && typeof trade.holdingTimeMinutes === 'number') {
+    durationMs = trade.holdingTimeMinutes * 60 * 1000;
+  } else if (entryVal && exitVal) {
+    const entryEpoch = new Date(entryVal).getTime();
+    const exitEpoch = new Date(exitVal).getTime();
+    if (!isNaN(entryEpoch) && !isNaN(exitEpoch) && exitEpoch >= entryEpoch) {
+      durationMs = exitEpoch - entryEpoch;
+    }
+  }
+  const isShortDuration = durationMs <= 4 * 60 * 60 * 1000; // <= 4 hours
+
+  const rawTradeSymbol = (trade?.underlying || trade?.symbol || '').trim();
+  const normalizedTradeSym = normalizeUnderlying(rawTradeSymbol).toUpperCase();
+
+  const overrides = Array.isArray(patternDetectionSettings?.instrumentOverrides)
+    ? patternDetectionSettings!.instrumentOverrides
+    : [];
+
+  let matchedOverride: (typeof overrides)[0] | undefined;
+
+  if (normalizedTradeSym && overrides.length > 0) {
+    matchedOverride = overrides.find((o) => {
+      if (!o || !o.symbol) return false;
+      const oSym = o.symbol.trim().toUpperCase();
+      const normOSym = normalizeUnderlying(oSym).toUpperCase();
+
+      return (
+        normalizedTradeSym === normOSym ||
+        normalizedTradeSym === oSym ||
+        rawTradeSymbol.toUpperCase() === oSym
+      );
+    });
+  }
+
+  let source: SnapshotResolutionSource = 'DEFAULT';
+  let rawHtf: string | undefined;
+  let rawLtf: string | undefined;
+  let matchedSymbol: string | undefined;
+  let preferredStrategyId: string | undefined;
+  let preferredStrategyName: string | undefined;
+
+  if (matchedOverride) {
+    source = 'INSTRUMENT_OVERRIDE';
+    rawHtf = matchedOverride.htf ?? matchedOverride.htfResolution;
+    rawLtf = matchedOverride.ltf ?? matchedOverride.ltfResolution;
+    matchedSymbol = matchedOverride.symbol;
+    preferredStrategyId = matchedOverride.preferredStrategyId ?? matchedOverride.strategyId;
+    preferredStrategyName = matchedOverride.preferredStrategyName;
+  } else if (
+    patternDetectionSettings?.defaultHtf !== undefined ||
+    patternDetectionSettings?.defaultLtf !== undefined ||
+    patternDetectionSettings?.defaultHtfResolution !== undefined ||
+    patternDetectionSettings?.defaultLtfResolution !== undefined
+  ) {
+    source = 'DEFAULT';
+    rawHtf = patternDetectionSettings?.defaultHtf ?? patternDetectionSettings?.defaultHtfResolution;
+    rawLtf = patternDetectionSettings?.defaultLtf ?? patternDetectionSettings?.defaultLtfResolution;
+  } else {
+    source = 'ADAPTIVE_FALLBACK';
+  }
+
+  // Handle adaptive fallback when settings missing or invalid
+  if (source === 'ADAPTIVE_FALLBACK' || (!rawHtf && !rawLtf)) {
+    source = 'ADAPTIVE_FALLBACK';
+    const ltf: ChartResolution = isShortDuration ? '1' : '5';
+    const htf: ChartResolution = isShortDuration ? '5' : '15';
+    const ltfLabel = CHART_RESOLUTION_LABELS[ltf] || `${ltf}m`;
+    const htfLabel = CHART_RESOLUTION_LABELS[htf] || `${htf}m`;
+
+    return {
+      resolutions: ltf === htf ? [ltf] : [ltf, htf],
+      source,
+      warnings,
+      htf,
+      ltf,
+      settingsDescription: `Generated using adaptive fallback (${htfLabel}/${ltfLabel})`,
+    };
+  }
+
+  // Normalize LTF and HTF
+  const normLtfResult = normalizeChartResolution(rawLtf || '5');
+  if (normLtfResult.warning) warnings.push(normLtfResult.warning);
+
+  const normHtfResult = normalizeChartResolution(rawHtf || '240');
+  if (normHtfResult.warning) warnings.push(normHtfResult.warning);
+
+  const ltf = normLtfResult.resolution;
+  const htf = normHtfResult.resolution;
+
+  const ltfLabel = CHART_RESOLUTION_LABELS[ltf] || `${ltf}m`;
+  const htfLabel = CHART_RESOLUTION_LABELS[htf] || `${htf}m`;
+
+  let settingsDescription = '';
+  if (source === 'INSTRUMENT_OVERRIDE' && matchedSymbol) {
+    settingsDescription = `Generated using your ${matchedSymbol} override (${htfLabel}/${ltfLabel})`;
+  } else {
+    settingsDescription = `Generated using default settings (${htfLabel}/${ltfLabel})`;
+  }
+
+  // Always generate LTF (execution view) first. Also generate HTF (context view) if distinct. Max 2.
+  const resolutions: ChartResolution[] = ltf === htf ? [ltf] : [ltf, htf];
+
+  return {
+    resolutions,
+    source,
+    warnings,
+    htf,
+    ltf,
+    matchedSymbol,
+    preferredStrategyId,
+    preferredStrategyName,
+    settingsDescription,
+  };
+}
+
+export interface IRLadderLevel {
+  r: number;
+  price: number;
+  label: string;
+}
+
+/**
+ * Pure helper computing standard R-multiple price ladder levels (1R, 2R, 3R, ...)
+ * using Decimal.js with 30-digit precision.
+ * Distance R = |entryPrice - initialStopLoss|.
+ */
+export function calculateRLadderLevels(
+  direction: 'LONG' | 'SHORT',
+  entryPrice: number,
+  initialStopLoss: number,
+  rMultiples: number[] = [1, 2, 3]
+): IRLadderLevel[] {
+  if (
+    typeof entryPrice !== 'number' ||
+    typeof initialStopLoss !== 'number' ||
+    isNaN(entryPrice) ||
+    isNaN(initialStopLoss) ||
+    entryPrice <= 0 ||
+    initialStopLoss <= 0
+  ) {
+    return [];
+  }
+
+  const isLong = direction === 'LONG';
+  const entry = new Decimal(entryPrice);
+  const sl = new Decimal(initialStopLoss);
+
+  // For LONG trades, SL must be strictly below entry. For SHORT trades, SL must be strictly above entry.
+  if (isLong && sl.gte(entry)) {
+    return [];
+  }
+  if (!isLong && sl.lte(entry)) {
+    return [];
+  }
+
+  const riskDist = entry.minus(sl).abs();
+  if (riskDist.isZero()) {
+    return [];
+  }
+
+  return rMultiples.map((r) => {
+    const rDec = new Decimal(r);
+    const targetPrice = isLong
+      ? entry.plus(riskDist.times(rDec))
+      : entry.minus(riskDist.times(rDec));
+
+    return {
+      r,
+      price: targetPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+      label: `${r}R`,
+    };
+  });
+}
+

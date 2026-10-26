@@ -22,6 +22,7 @@ import { AccountTransactionSource, BrokerImportKind, TransactionType } from '@tr
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { ChartGeneratorService } from '../services/chart-generator.service.js';
 
 const TRADE_HEADER_KEYWORDS = [
   'symbol',
@@ -1234,6 +1235,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     const importBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     let importedCount = 0;
     let duplicateCount = 0;
+    const closedTradeIds: string[] = [];
     const errors: Array<{ row: number; symbol?: string; message: string }> = [];
 
     const instrumentCache = new Map<string, any>();
@@ -1358,7 +1360,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             };
           }
 
-          await Trade.create({
+          const createdTrade = await Trade.create({
             userId: req.user!.id,
             accountId: account._id,
             instrumentId: inst._id,
@@ -1428,6 +1430,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               },
             ],
           });
+
+          if (exitPrice > 0) {
+            closedTradeIds.push(createdTrade._id.toString());
+          }
 
           importedCount++;
         } catch (err: any) {
@@ -1598,7 +1604,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             const session = deriveSessionFromTime(group.entryTime, exchange, marketSegment);
             const inst = await getOrEnsureInstrument(symbol, { assetClass, exchange, marketSegment });
 
-            await Trade.create({
+            const createdTrade = await Trade.create({
               userId: req.user!.id,
               accountId: account._id,
               instrumentId: inst._id,
@@ -1671,6 +1677,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 },
               ],
             });
+
+            if (fifoSummary.isFullyClosed) {
+              closedTradeIds.push(createdTrade._id.toString());
+            }
 
             importedCount++;
           } catch (err: any) {
@@ -1778,6 +1788,21 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     // Reconcile target account if trades were imported
     if (importedCount > 0) {
       await AccountService.recalculateAccountBalances(account._id, req.user!.id);
+    }
+
+    // Fire-and-forget background auto-snapshot generation for closed trades (cap 25, 220ms pacing)
+    if (closedTradeIds.length > 0) {
+      (async () => {
+        const batchToProcess = closedTradeIds.slice(0, 25);
+        for (const tId of batchToProcess) {
+          try {
+            await ChartGeneratorService.ensureTradeSnapshot(tId, req.user!.id);
+          } catch (err: any) {
+            req.log.warn('CSV import auto-snapshot generation threw for trade %s: %s', tId, err.message);
+          }
+          await new Promise((r) => setTimeout(r, 220));
+        }
+      })().catch(() => {});
     }
 
     return reply.send({

@@ -425,17 +425,20 @@ export const drillDescriptorSchema = z.discriminatedUnion('kind', [
     kind: z.literal('TRADE'),
     tradeId: z.string().min(1, 'tradeId is required'),
     label: z.string().optional(),
+    targetTradeId: z.string().nullable().optional(),
   }),
   z.object({
     kind: z.literal('TRADES'),
     tradeIds: z.array(z.string()).min(1).max(200),
     label: z.string().optional(),
+    targetTradeId: z.string().nullable().optional(),
   }),
   z.object({
     kind: z.literal('FILTER'),
     filter: extendedTradeFilterSchema.partial(),
     label: z.string().min(1, 'label is required'),
     metadata: z.record(z.any()).optional(),
+    targetTradeId: z.string().nullable().optional(),
   }),
 ]);
 export type DrillDescriptor = z.infer<typeof drillDescriptorSchema>;
@@ -443,7 +446,7 @@ export type DrillDescriptor = z.infer<typeof drillDescriptorSchema>;
 export const drilldownRequestSchema = z.object({
   descriptor: drillDescriptorSchema,
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(50),
+  limit: z.coerce.number().int().positive().max(200).default(50),
   sortBy: z.string().default('tradeDate'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });

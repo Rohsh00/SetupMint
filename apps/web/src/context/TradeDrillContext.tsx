@@ -31,7 +31,13 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
     const drillParam = searchParams.get('drill');
     if (drillParam) {
       try {
-        const decoded = JSON.parse(decodeURIComponent(drillParam));
+        let raw = drillParam;
+        if (raw.startsWith('%')) {
+          try {
+            raw = decodeURIComponent(raw);
+          } catch {}
+        }
+        const decoded = JSON.parse(raw);
         if (decoded && decoded.kind) {
           setDescriptor(decoded);
           if (decoded.targetTradeId) {
@@ -65,7 +71,7 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
         (prev) => {
           const next = new URLSearchParams(prev);
           const payload = { ...desc, targetTradeId: initialActiveId };
-          next.set('drill', encodeURIComponent(JSON.stringify(payload)));
+          next.set('drill', JSON.stringify(payload));
           return next;
         },
         { replace: true }

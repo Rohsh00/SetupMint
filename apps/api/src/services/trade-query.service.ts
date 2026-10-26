@@ -113,16 +113,27 @@ export function buildTradeMongooseFilter(
   if (date) {
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
-    filter.tradeDate = { $gte: startOfDay, $lte: endOfDay };
+    andClauses.push({
+      $or: [
+        { tradeDate: { $gte: startOfDay, $lte: endOfDay } },
+        { entryTime: { $gte: startOfDay, $lte: endOfDay } },
+      ],
+    });
   } else if (startDate || endDate) {
-    filter.tradeDate = {};
-    if (startDate) filter.tradeDate.$gte = new Date(startDate);
-    if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    const range: any = {};
+    if (startDate) range.$gte = new Date(startDate);
+    if (endDate) range.$lte = new Date(endDate);
+    andClauses.push({
+      $or: [{ tradeDate: range }, { entryTime: range }],
+    });
   } else if (dateRange && dateRange.includes('..')) {
     const [start, end] = dateRange.split('..');
-    filter.tradeDate = {};
-    if (start) filter.tradeDate.$gte = new Date(start);
-    if (end) filter.tradeDate.$lte = new Date(end);
+    const range: any = {};
+    if (start) range.$gte = new Date(start);
+    if (end) range.$lte = new Date(end);
+    andClauses.push({
+      $or: [{ tradeDate: range }, { entryTime: range }],
+    });
   }
 
   if (tags) {
@@ -165,14 +176,6 @@ export function buildTradeMongooseFilter(
         { 'psychology.disciplineRating': disciplineScore },
       ],
     });
-  }
-
-  if (andClauses.length > 0) {
-    if (filter.$and) {
-      filter.$and.push(...andClauses);
-    } else {
-      filter.$and = andClauses;
-    }
   }
 
   // Numerical Range Filters
@@ -225,6 +228,14 @@ export function buildTradeMongooseFilter(
     const mongoDay = WEEKDAY_TO_MONGO_DAY[weekday.toLowerCase().trim()];
     if (mongoDay) {
       filter.$expr = { $eq: [{ $dayOfWeek: '$tradeDate' }, mongoDay] };
+    }
+  }
+
+  if (andClauses.length > 0) {
+    if (filter.$and) {
+      filter.$and.push(...andClauses);
+    } else {
+      filter.$and = andClauses;
     }
   }
 

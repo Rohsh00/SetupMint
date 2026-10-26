@@ -10,7 +10,7 @@ import {
   calculateSimpleExecutionPnL,
   normalizeUnderlying,
 } from '@tradevault/financial-engine';
-import { Instrument, IInstrumentDoc, Trade, ITradeDoc } from '../db/models/index.js';
+import { Instrument, IInstrumentDoc, Trade, ITradeDoc, CommodityMaster, AngelOneInstrument } from '../db/models/index.js';
 import { AccountService } from './account.service.js';
 
 export interface TradedSummaryItem {
@@ -109,23 +109,83 @@ export class InstrumentService {
         needsReview: false,
       };
     } else {
-      createPayload = {
-        userId: uId,
-        symbol: underlying,
-        displayName: tradeLike.instrumentName || underlying,
-        assetClass: tradeLike.assetClass || 'EQUITY',
-        exchange: tradeLike.exchange || 'NSE',
-        marketSegment: tradeLike.marketSegment || 'NSE_EQ',
-        quoteCurrency: tradeLike.currency || 'INR',
-        contractMultiplier: tradeLike.simpleExecution?.contractMultiplier || 1,
-        lotSize: 1,
-        tickSize: 0.05,
-        quantityIncrement: 1,
-        pricePrecision: 2,
-        isActive: true,
-        source: 'AUTO',
-        needsReview: true,
-      };
+      // 2b. Dynamic database lookup in CommodityMaster or AngelOneInstrument
+      let dynamicSpec: any = null;
+      try {
+        const com = await CommodityMaster.findOne({
+          $or: [{ symbol: underlying }, { aliases: underlying }],
+          isActive: true,
+        }).lean();
+
+        if (com) {
+          dynamicSpec = {
+            displayName: com.displayName || underlying,
+            assetClass: 'COMMODITY',
+            exchange: com.exchange || 'MCX',
+            marketSegment: com.marketSegment || 'MCX',
+            quoteCurrency: 'INR',
+            contractMultiplier: com.contractMultiplier,
+            lotSize: com.lotSize,
+            tickSize: com.tickSize,
+            quantityIncrement: com.lotSize,
+            pricePrecision: com.pricePrecision ?? 2,
+            needsReview: false,
+          };
+        } else {
+          const scrip = await AngelOneInstrument.findOne({
+            $or: [{ name: underlying }, { tradingsymbol: (tradeLike.symbol || '').toUpperCase().trim() }],
+          }).lean();
+
+          if (scrip) {
+            const isCom = scrip.exchange === 'MCX' || scrip.instrumenttype?.includes('COM');
+            const isOpt = scrip.instrumenttype?.includes('OPT');
+            const isFut = scrip.instrumenttype?.includes('FUT');
+            dynamicSpec = {
+              displayName: scrip.name || underlying,
+              assetClass: isCom ? 'COMMODITY' : isOpt ? 'OPTIONS' : isFut ? 'FUTURES' : 'EQUITY',
+              exchange: scrip.exchange || 'NSE',
+              marketSegment: isCom ? 'MCX' : scrip.exchange === 'BSE' ? (isOpt || isFut ? 'BSE_FNO' : 'BSE_EQ') : (isOpt || isFut ? 'NSE_FNO' : 'NSE_EQ'),
+              quoteCurrency: 'INR',
+              contractMultiplier: 1,
+              lotSize: scrip.lotsize || 1,
+              tickSize: scrip.tickSize || 0.05,
+              quantityIncrement: scrip.lotsize || 1,
+              pricePrecision: 2,
+              needsReview: false,
+            };
+          }
+        }
+      } catch {
+        // Fall through to tradeLike defaults
+      }
+
+      if (dynamicSpec) {
+        createPayload = {
+          userId: uId,
+          symbol: underlying,
+          ...dynamicSpec,
+          isActive: true,
+          source: 'AUTO',
+        };
+      } else {
+        createPayload = {
+          userId: uId,
+          symbol: underlying,
+          displayName: tradeLike.instrumentName || underlying,
+          assetClass: tradeLike.assetClass || 'EQUITY',
+          exchange: tradeLike.exchange || 'NSE',
+          marketSegment: tradeLike.marketSegment || 'NSE_EQ',
+          quoteCurrency: tradeLike.currency || 'INR',
+          contractMultiplier: tradeLike.simpleExecution?.contractMultiplier || 1,
+          lotSize: 1,
+          tickSize: 0.05,
+          quantityIncrement: 1,
+          pricePrecision: 2,
+          isActive: true,
+          source: 'AUTO',
+          needsReview: true,
+        };
+      }
     }
 
     // 3. Create document handling E11000 duplicate key race

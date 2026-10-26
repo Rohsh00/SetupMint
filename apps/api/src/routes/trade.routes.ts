@@ -35,6 +35,7 @@ import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { InstrumentClassifier } from '../services/instrument-classifier.service.js';
 import { FyersService } from '../services/fyers.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
@@ -462,17 +463,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     if (!tradeData.instrumentId) delete tradeData.instrumentId;
     if (!tradeData.templateId) delete tradeData.templateId;
 
-    // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
-    const sym = (tradeData.symbol || '').toUpperCase();
-    if (
-      tradeData.exchange === 'MCX' ||
-      sym.startsWith('MCX:') ||
-      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(sym.replace(/^MCX:/i, ''))
-    ) {
-      tradeData.exchange = 'MCX';
-      tradeData.marketSegment = 'MCX';
-      tradeData.assetClass = 'COMMODITY';
-    }
+    // Dynamically harmonize exchange, marketSegment, and assetClass
+    const harmonized = await InstrumentClassifier.harmonizeTradeMeta({
+      symbol: tradeData.symbol,
+      exchange: tradeData.exchange,
+      marketSegment: tradeData.marketSegment,
+      assetClass: tradeData.assetClass,
+      userId: req.user?.id,
+    });
+    tradeData.exchange = harmonized.exchange;
+    tradeData.marketSegment = harmonized.marketSegment;
+    tradeData.assetClass = harmonized.assetClass;
 
     // Auto-create/ensure instrument for trade's underlying
     const inst = await InstrumentService.ensureForTrade(req.user!.id, tradeData);
@@ -872,17 +873,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
     }
 
-    // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
-    const updateSym = (updatePayload.symbol || existingTrade.symbol || '').toUpperCase();
-    if (
-      updatePayload.exchange === 'MCX' ||
-      updateSym.startsWith('MCX:') ||
-      /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(updateSym.replace(/^MCX:/i, ''))
-    ) {
-      updatePayload.exchange = 'MCX';
-      updatePayload.marketSegment = 'MCX';
-      updatePayload.assetClass = 'COMMODITY';
-    }
+    // Dynamically harmonize exchange, marketSegment, and assetClass
+    const harmonized = await InstrumentClassifier.harmonizeTradeMeta({
+      symbol: updatePayload.symbol || existingTrade.symbol,
+      exchange: updatePayload.exchange || existingTrade.exchange,
+      marketSegment: updatePayload.marketSegment || existingTrade.marketSegment,
+      assetClass: updatePayload.assetClass || existingTrade.assetClass,
+      userId: req.user?.id,
+    });
+    updatePayload.exchange = harmonized.exchange;
+    updatePayload.marketSegment = harmonized.marketSegment;
+    updatePayload.assetClass = harmonized.assetClass;
 
     // Ensure instrument exists if symbol changed or instrumentId is missing
     if (parseResult.data.symbol || !existingTrade.instrumentId) {

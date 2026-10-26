@@ -1142,27 +1142,93 @@ export const CHART_TIMEFRAMES = [
 ] as const;
 
 /**
- * Official NSE Trading Holidays for calendar year 2026.
- * PROMINENT NOTICE: This list MUST be verified and updated annually when NSE publishes the official holiday circular for each calendar year.
- * Verified: Dussehra on 2026-10-20 (Tuesday) shifts Nifty weekly expiry to Monday 2026-10-19.
- * Verified: Guru Nanak Jayanti on 2026-11-24 (Tuesday) shifts NSE monthly expiry to Monday 2026-11-23.
+ * Official NSE Trading Holidays by calendar year.
+ * PROMINENT NOTICE: When NSE publishes official circulars for upcoming years,
+ * this dictionary is supplemented or dynamically updated via the HolidayCalendar database service.
  */
-export const NSE_HOLIDAYS_2026: readonly string[] = [
-  '2026-01-26', // Republic Day
-  '2026-02-16', // Mahashivratri
-  '2026-03-03', // Holi
-  '2026-03-20', // Id-ul-Fitr (Ramzan Id)
-  '2026-04-03', // Good Friday
-  '2026-04-14', // Dr. Baba Saheb Ambedkar Jayanti
-  '2026-05-01', // Maharashtra Day
-  '2026-05-27', // Bakri Id
-  '2026-06-26', // Muharram
-  '2026-10-02', // Mahatma Gandhi Jayanti
-  '2026-10-20', // Dussehra (Tuesday holiday -> shifts Nifty weekly expiry to Mon 2026-10-19)
-  '2026-11-10', // Diwali Balipratipada
-  '2026-11-24', // Guru Nanak Jayanti (Last Tuesday holiday -> shifts NSE monthly expiry to Mon 2026-11-23)
-  '2026-12-25', // Christmas
-];
+export const NSE_TRADING_HOLIDAYS_BY_YEAR: Record<number, readonly string[]> = {
+  2024: [
+    '2024-01-22', // Ram Mandir Pran Pratishtha (Special Holiday)
+    '2024-01-26', // Republic Day
+    '2024-03-08', // Mahashivratri
+    '2024-03-25', // Holi
+    '2024-03-29', // Good Friday
+    '2024-04-11', // Id-ul-Fitr (Ramzan Id)
+    '2024-04-17', // Shri Ram Navami
+    '2024-05-01', // Maharashtra Day
+    '2024-05-20', // General Parliamentary Elections (Mumbai)
+    '2024-06-17', // Bakri Id
+    '2024-07-17', // Muharram
+    '2024-08-15', // Independence Day
+    '2024-10-02', // Mahatma Gandhi Jayanti
+    '2024-11-01', // Diwali Laxmi Pujan (Diwali)
+    '2024-11-15', // Guru Nanak Jayanti
+    '2024-11-20', // Maharashtra Assembly General Election
+    '2024-12-25', // Christmas
+  ],
+  2025: [
+    '2025-02-26', // Mahashivratri
+    '2025-03-14', // Holi
+    '2025-03-31', // Id-ul-Fitr (Ramzan Id)
+    '2025-04-10', // Mahavir Jayanti
+    '2025-04-14', // Dr. Baba Saheb Ambedkar Jayanti
+    '2025-04-18', // Good Friday
+    '2025-05-01', // Maharashtra Day
+    '2025-06-07', // Bakri Id
+    '2025-08-15', // Independence Day
+    '2025-08-27', // Ganesh Chaturthi
+    '2025-10-02', // Mahatma Gandhi Jayanti / Dussehra
+    '2025-10-21', // Diwali Laxmi Pujan
+    '2025-10-22', // Diwali Balipratipada
+    '2025-11-05', // Guru Nanak Jayanti
+    '2025-12-25', // Christmas
+  ],
+  2026: [
+    '2026-01-26', // Republic Day
+    '2026-02-16', // Mahashivratri
+    '2026-03-03', // Holi
+    '2026-03-20', // Id-ul-Fitr (Ramzan Id)
+    '2026-04-03', // Good Friday
+    '2026-04-14', // Dr. Baba Saheb Ambedkar Jayanti
+    '2026-05-01', // Maharashtra Day
+    '2026-05-27', // Bakri Id
+    '2026-06-26', // Muharram
+    '2026-10-02', // Mahatma Gandhi Jayanti
+    '2026-10-20', // Dussehra (Tuesday holiday -> shifts Nifty weekly expiry to Mon 2026-10-19)
+    '2026-11-10', // Diwali Balipratipada
+    '2026-11-24', // Guru Nanak Jayanti (Last Tuesday holiday -> shifts NSE monthly expiry to Mon 2026-11-23)
+    '2026-12-25', // Christmas
+  ],
+  2027: [
+    '2027-01-26', // Republic Day
+    '2027-03-08', // Mahashivratri
+    '2027-03-23', // Holi
+    '2027-03-26', // Good Friday
+    '2027-04-14', // Dr. Baba Saheb Ambedkar Jayanti
+    '2027-05-01', // Maharashtra Day
+    '2027-05-17', // Bakri Id
+    '2027-06-16', // Muharram
+    '2027-08-15', // Independence Day
+    '2027-10-02', // Mahatma Gandhi Jayanti
+    '2027-10-11', // Dussehra
+    '2027-10-30', // Diwali
+    '2027-11-15', // Guru Nanak Jayanti
+    '2027-12-25', // Christmas
+  ],
+};
+
+/**
+ * Dynamically retrieves official NSE trading holidays for a specified year.
+ * If the requested year is not yet pre-seeded, returns an empty array (falling back to standard calendar logic).
+ */
+export function getNseHolidaysForYear(year: number): readonly string[] {
+  return NSE_TRADING_HOLIDAYS_BY_YEAR[year] || [];
+}
+
+/**
+ * Backward-compatible alias for 2026 NSE Trading Holidays.
+ */
+export const NSE_HOLIDAYS_2026: readonly string[] = NSE_TRADING_HOLIDAYS_BY_YEAR[2026];
 
 /**
  * Built-in Rule-Driven Market Templates for SetupMint.

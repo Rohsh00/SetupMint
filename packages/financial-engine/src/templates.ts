@@ -8,6 +8,7 @@ import {
   ProvenanceSource,
   TemplateContext,
   TemplatePatch,
+  getNseHolidaysForYear,
 } from '@tradevault/shared';
 import { calculateEmpiricalBayesShrinkage } from './edge.js';
 
@@ -90,7 +91,7 @@ export function getIstDateComponents(dateInput?: Date | string | null): {
  */
 export function isNseMonthlyExpiry(
   dateInput: Date | string,
-  holidays: readonly string[] = NSE_HOLIDAYS_2026
+  holidays?: readonly string[]
 ): boolean {
   const parsed = getIstDateComponents(dateInput);
   const { year, month } = parsed;
@@ -113,7 +114,8 @@ export function isNseMonthlyExpiry(
     const curStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = cur.getUTCDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const isHoliday = holidays.includes(curStr);
+    const yearHolidays = holidays ?? getNseHolidaysForYear(y);
+    const isHoliday = yearHolidays.includes(curStr);
 
     if (!isWeekend && !isHoliday) {
       return curStr === parsed.dateStr;
@@ -134,7 +136,7 @@ export function isNseMonthlyExpiry(
  */
 export function isNiftyWeeklyExpiry(
   dateInput: Date | string,
-  holidays: readonly string[] = NSE_HOLIDAYS_2026
+  holidays?: readonly string[]
 ): boolean {
   const parsed = getIstDateComponents(dateInput);
   const { year, month } = parsed;
@@ -154,7 +156,8 @@ export function isNiftyWeeklyExpiry(
         const curStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
         const dayOfWeek = cur.getUTCDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const isHoliday = holidays.includes(curStr);
+        const yearHolidays = holidays ?? getNseHolidaysForYear(y);
+        const isHoliday = yearHolidays.includes(curStr);
 
         if (!isWeekend && !isHoliday) {
           if (curStr === parsed.dateStr) {
@@ -179,7 +182,7 @@ export function isNiftyWeeklyExpiry(
 export function isExpiryDay(
   symbol: string | undefined,
   dateInput: Date | string,
-  holidays: readonly string[] = NSE_HOLIDAYS_2026
+  holidays?: readonly string[]
 ): boolean {
   if (!symbol) return false;
   const sym = symbol.toUpperCase().trim();
@@ -234,7 +237,7 @@ export function templatesForAssetClass(
 export function rankTemplates(
   templates: ITradeTemplate[],
   ctx: TemplateContext,
-  holidays: readonly string[] = NSE_HOLIDAYS_2026
+  holidays?: readonly string[]
 ): ITradeTemplate[] {
   const assetClass = ctx.assetClass;
   const ist = getIstDateComponents(ctx.entryTime);
@@ -337,7 +340,7 @@ export function rankTemplates(
 export function resolveTemplate(
   template: ITradeTemplate,
   ctx: TemplateContext,
-  holidays: readonly string[] = NSE_HOLIDAYS_2026
+  holidays?: readonly string[]
 ): TemplatePatch {
   const provenance: Record<string, ProvenanceSource> = {};
 

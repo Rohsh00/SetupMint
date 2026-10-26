@@ -27,6 +27,9 @@ import { integrationsRoutes } from './routes/integrations.routes.js';
 import { reviewRoutes } from './routes/review.routes.js';
 import { templateRoutes } from './routes/template.routes.js';
 import { marketDataRoutes } from './routes/market-data.routes.js';
+import { holidayRoutes } from './routes/holiday.routes.js';
+import { HolidayService } from './services/holiday.service.js';
+import { InstrumentClassifier } from './services/instrument-classifier.service.js';
 
 export async function buildApp() {
   // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
@@ -177,6 +180,7 @@ export async function buildApp() {
   app.register(marketDataRoutes, { prefix: '/api/v1/integrations/market-data' });
   app.register(reviewRoutes, { prefix: '/api/v1/review' });
   app.register(templateRoutes, { prefix: '/api/v1/templates' });
+  app.register(holidayRoutes, { prefix: '/api/v1/holidays' });
 
   // Centralized Error Handler
   app.setErrorHandler((error: any, request, reply) => {
@@ -210,6 +214,8 @@ if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.
   async function start() {
     try {
       await connectDatabase();
+      await HolidayService.initializeDefaults();
+      await InstrumentClassifier.loadCommodityRegistry();
 
       // Cloud storage health check (probes Cloudflare R2 bucket)
       const storage = getStorage();

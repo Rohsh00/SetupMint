@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import { IExcursionCandle } from './excursion.js';
 import {
   NSE_HOLIDAYS_2026,
+  getNseHolidaysForYear,
   getPresetSpec,
   ChartResolution,
   CHART_RESOLUTIONS,
@@ -331,7 +332,7 @@ export function estimateFetchRange(
   timeframeMinutes: number,
   paddingBefore: number,
   paddingAfter: number,
-  holidays: readonly string[] = NSE_HOLIDAYS_2026
+  holidays?: readonly string[]
 ): IEstimateFetchRangeResult {
   const entryMs = parseEpochMs(entryTs);
   const exitMs = parseEpochMs(exitTs);
@@ -361,16 +362,20 @@ export function estimateFetchRange(
     bufferDaysAfter = Math.ceil(pAfter * 0.45) + (pAfter > 0 ? 3 : 0);
   }
 
-  // Account for verified holidays in the span
-  const holidaySet = new Set(holidays);
+  // Account for verified holidays in the span dynamically
+  const explicitHolidaySet = holidays ? new Set(holidays) : null;
   const checkHolidaySpan = (startMs: number, endMs: number): number => {
     let count = 0;
     const cur = new Date(startMs);
     const end = new Date(endMs);
     while (cur <= end) {
       const dateStr = cur.toISOString().split('T')[0];
-      if (holidaySet.has(dateStr)) {
-        count++;
+      if (explicitHolidaySet) {
+        if (explicitHolidaySet.has(dateStr)) count++;
+      } else {
+        const y = cur.getUTCFullYear();
+        const yearHolidays = getNseHolidaysForYear(y);
+        if (yearHolidays.includes(dateStr)) count++;
       }
       cur.setUTCDate(cur.getUTCDate() + 1);
     }

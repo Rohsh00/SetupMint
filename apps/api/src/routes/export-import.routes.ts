@@ -22,6 +22,7 @@ import { AccountTransactionSource, BrokerImportKind, TransactionType } from '@tr
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { InstrumentClassifier } from '../services/instrument-classifier.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 
 const TRADE_HEADER_KEYWORDS = [
@@ -451,36 +452,11 @@ function parseFlexibleDate(dateStr: string | undefined): Date {
 }
 
 function deriveInstrumentMeta(symbol: string, segment?: string): { assetClass: any; marketSegment: any } {
-  const sym = symbol.toUpperCase().trim();
-  const seg = String(segment || '').toUpperCase().trim();
-
-  // 1. Commodity check first (covers MCX commodities which often have FUT suffix e.g. GOLDM26NOVFUT, CRUDEOILM26OCTFUT)
-  const isCommodity =
-    seg.includes('COMMODITY') ||
-    seg.includes('MCX') ||
-    ['CRUDEOIL', 'NATURALGAS', 'NATGAS', 'GOLD', 'SILVER', 'COPPER', 'ZINC', 'NICKEL', 'LEAD', 'ALUMINIUM'].some(
-      (c) => sym.startsWith(c)
-    );
-
-  if (isCommodity) {
-    return { assetClass: 'COMMODITY', marketSegment: 'MCX' };
-  }
-
-  // 2. Crypto
-  if (sym.includes('USDT') || sym.includes('BTC') || sym.includes('ETH')) {
-    return { assetClass: 'CRYPTO', marketSegment: 'CRYPTO' };
-  }
-
-  // 3. Derivatives (Options / Futures)
-  if (sym.includes('CE') || sym.includes('PE')) {
-    return { assetClass: 'OPTIONS', marketSegment: 'NSE_FNO' };
-  }
-
-  if (sym.includes('FUT')) {
-    return { assetClass: 'FUTURES', marketSegment: 'NSE_FNO' };
-  }
-
-  return { assetClass: 'EQUITY', marketSegment: 'NSE_EQ' };
+  const classified = InstrumentClassifier.classifySync(symbol, segment);
+  return {
+    assetClass: classified.assetClass,
+    marketSegment: classified.marketSegment,
+  };
 }
 
 type LedgerRowType = 'DEPOSIT' | 'WITHDRAWAL' | 'ADJUSTMENT' | 'IGNORE';

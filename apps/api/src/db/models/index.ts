@@ -15,4 +15,6 @@ export * from './TradeTemplate.js';
 export * from './TradeCandleSnapshot.js';
 export * from './MarketDataIntegration.js';
 export * from './AngelOneInstrument.js';
+export * from './HolidayCalendar.js';
+export * from './CommodityMaster.js';
 

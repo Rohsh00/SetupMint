@@ -837,6 +837,7 @@ export class FyersService {
     // Group executions by clean symbol
     const executionsBySymbol = new Map<string, Array<{
       raw: IFyersExecutionRaw;
+      index: number;
       timestamp: Date;
       direction: 'LONG' | 'SHORT';
       price: number;
@@ -844,13 +845,15 @@ export class FyersService {
       meta: ReturnType<typeof parseFyersSymbol>;
     }>>();
 
-    for (const raw of executions) {
+    for (let i = 0; i < executions.length; i++) {
+      const raw = executions[i];
       const meta = parseFyersSymbol(raw.symbol);
       const timestamp = parseFyersDateTime(raw.orderDateTime);
       const direction = raw.side === 1 ? 'LONG' : 'SHORT';
       const list = executionsBySymbol.get(meta.cleanSymbol) || [];
       list.push({
         raw,
+        index: i,
         timestamp,
         direction,
         price: Number(raw.tradePrice),
@@ -867,7 +870,7 @@ export class FyersService {
 
     // For each symbol, match fills chronologically via FIFO
     for (const [cleanSymbol, execList] of executionsBySymbol.entries()) {
-      execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime() || a.index - b.index);
       const sample = execList[0];
       const {
         exchange,
@@ -963,31 +966,24 @@ export class FyersService {
 
           // Robust Idempotency Check:
           // 1. Primary: Match on unique execution fill IDs (survives user updates, date changes, strategy tagging, account reassignments)
-          // 2. Secondary fallback: Match on symbol (clean, formatted, or raw), direction, entry price, and time window
+          // 2. Secondary fallback: Match on symbol (clean, formatted, or raw), direction, entry price, and tight time window (+/- 5 min)
+          const matchClauses: any[] = [];
+          if (fillIdsToMatch.length > 0) {
+            matchClauses.push({ 'fills.fillId': { $in: fillIdsToMatch } });
+          }
+          matchClauses.push({
+            symbol: { $in: [cleanSymbol, formattedSymbol, sample.raw.symbol] },
+            direction: grp.direction,
+            'simpleExecution.entryPrice': avgEntry,
+            entryTime: {
+              $gte: new Date(grp.entryTime.getTime() - 5 * 60 * 1000),
+              $lte: new Date(grp.entryTime.getTime() + 5 * 60 * 1000),
+            },
+          });
+
           const existing = await Trade.findOne({
             userId: uId,
-            $or: [
-              ...(fillIdsToMatch.length > 0 ? [{ 'fills.fillId': { $in: fillIdsToMatch } }] : []),
-              {
-                symbol: { $in: [cleanSymbol, formattedSymbol, sample.raw.symbol] },
-                direction: grp.direction,
-                'simpleExecution.entryPrice': avgEntry,
-                entryTime: {
-                  $gte: new Date(grp.entryTime.getTime() - 2 * 60 * 1000),
-                  $lte: new Date(grp.entryTime.getTime() + 2 * 60 * 1000),
-                },
-              },
-              {
-                symbol: { $in: [cleanSymbol, formattedSymbol, sample.raw.symbol] },
-                direction: grp.direction,
-                'simpleExecution.entryPrice': avgEntry,
-                'simpleExecution.quantity': totalTradeQty,
-                tradeDate: {
-                  $gte: new Date(grp.entryTime.getTime() - 24 * 60 * 60 * 1000),
-                  $lte: new Date(grp.entryTime.getTime() + 24 * 60 * 60 * 1000),
-                },
-              },
-            ],
+            $or: matchClauses,
           });
 
           if (existing) {
@@ -1198,18 +1194,50 @@ export class FyersService {
             currentGroup.openQuantity += exec.quantity;
           } else {
             // Exiting position
-            currentGroup.fills.push({
-              fillId: makeFillId(exec),
-              type: 'EXIT',
-              price: exec.price,
-              quantity: exec.quantity,
-              timestamp: exec.timestamp,
-            });
-            currentGroup.openQuantity = Math.max(0, currentGroup.openQuantity - exec.quantity);
+            if (exec.quantity <= currentGroup.openQuantity) {
+              currentGroup.fills.push({
+                fillId: makeFillId(exec),
+                type: 'EXIT',
+                price: exec.price,
+                quantity: exec.quantity,
+                timestamp: exec.timestamp,
+              });
+              currentGroup.openQuantity -= exec.quantity;
 
-            if (currentGroup.openQuantity === 0) {
+              if (currentGroup.openQuantity === 0) {
+                await commitTrade(currentGroup);
+                currentGroup = null;
+              }
+            } else {
+              // Position reversal: split into exit fill and new reversed entry fill
+              const closingQty: number = currentGroup.openQuantity;
+              const remainingQty: number = exec.quantity - closingQty;
+
+              currentGroup.fills.push({
+                fillId: makeFillId(exec),
+                type: 'EXIT',
+                price: exec.price,
+                quantity: closingQty,
+                timestamp: exec.timestamp,
+              });
+              currentGroup.openQuantity = 0;
               await commitTrade(currentGroup);
-              currentGroup = null;
+
+              // Open new group for reversed position
+              currentGroup = {
+                direction: exec.direction,
+                fills: [
+                  {
+                    fillId: `${makeFillId(exec)}-rev`,
+                    type: 'ENTRY',
+                    price: exec.price,
+                    quantity: remainingQty,
+                    timestamp: exec.timestamp,
+                  },
+                ],
+                openQuantity: remainingQty,
+                entryTime: exec.timestamp,
+              };
             }
           }
         }

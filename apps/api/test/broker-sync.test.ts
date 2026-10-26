@@ -535,100 +535,189 @@ describe('FYERS funds sync and reconciliation', () => {
     expect(crudeTrade?.calculated.grossPnL).toBe(500);
   });
 
-  it('correctly updates an OPEN trade to CLOSED when user fetches at entry and fetches again at exit', async () => {
-    // Phase 1: Entry only
+  it(
+    'correctly updates an OPEN trade to CLOSED when user fetches at entry and fetches again at exit',
+    async () => {
+      // Phase 1: Entry only
+      tradebookExecutions = [
+        {
+          clientId: 'CPCJNZWGA9',
+          orderDateTime: '26-Oct-2026 10:00:00',
+          orderNumber: 'ORD-PHASE-ENTRY',
+          tradeNumber: 'TRD-PHASE-ENTRY-1',
+          tradePrice: 100,
+          tradeValue: 5000,
+          tradedQty: 50,
+          orderType: 2,
+          side: 1, // BUY
+          productType: 'INTRADAY',
+          segment: 11,
+          exchange: 10,
+          fyToken: 'token-phase-1',
+          symbol: 'NSE:BANKNIFTY26OCT52000CE',
+        },
+      ];
+
+      const sync1Res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/integrations/fyers/sync',
+        headers: { cookie: authCookie },
+      });
+      expect(sync1Res.statusCode).toBe(200);
+
+      const openTrade = await Trade.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        'fills.fillId': 'TRD-PHASE-ENTRY-1',
+      });
+      expect(openTrade).toBeTruthy();
+      expect(openTrade?.status).toBe('OPEN');
+      expect(openTrade?.fills.length).toBe(1);
+      expect(openTrade?.calculated.openQuantity).toBe(50);
+      expect(openTrade?.calculated.closedQuantity).toBe(0);
+
+      // Phase 2: Exit execution is added to tradebook
+      tradebookExecutions = [
+        {
+          clientId: 'CPCJNZWGA9',
+          orderDateTime: '26-Oct-2026 10:00:00',
+          orderNumber: 'ORD-PHASE-ENTRY',
+          tradeNumber: 'TRD-PHASE-ENTRY-1',
+          tradePrice: 100,
+          tradeValue: 5000,
+          tradedQty: 50,
+          orderType: 2,
+          side: 1, // BUY
+          productType: 'INTRADAY',
+          segment: 11,
+          exchange: 10,
+          fyToken: 'token-phase-1',
+          symbol: 'NSE:BANKNIFTY26OCT52000CE',
+        },
+        {
+          clientId: 'CPCJNZWGA9',
+          orderDateTime: '26-Oct-2026 10:15:00',
+          orderNumber: 'ORD-PHASE-EXIT',
+          tradeNumber: 'TRD-PHASE-EXIT-1',
+          tradePrice: 130,
+          tradeValue: 6500,
+          tradedQty: 50,
+          orderType: 2,
+          side: -1, // SELL
+          productType: 'INTRADAY',
+          segment: 11,
+          exchange: 10,
+          fyToken: 'token-phase-1',
+          symbol: 'NSE:BANKNIFTY26OCT52000CE',
+        },
+      ];
+
+      const sync2Res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/integrations/fyers/sync',
+        headers: { cookie: authCookie },
+      });
+      expect(sync2Res.statusCode).toBe(200);
+
+      const closedTrade = await Trade.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        'fills.fillId': 'TRD-PHASE-ENTRY-1',
+      });
+      expect(closedTrade).toBeTruthy();
+      expect(closedTrade?.status).toBe('CLOSED');
+      expect(closedTrade?.fills.length).toBe(2);
+      expect(closedTrade?.exitTime).toBeDefined();
+      expect(closedTrade?.simpleExecution?.exitPrice).toBe(130);
+      expect(closedTrade?.calculated.closedQuantity).toBe(50);
+      expect(closedTrade?.calculated.openQuantity).toBe(0);
+      expect(closedTrade?.calculated.grossPnL).toBe(1500); // (130 - 100) * 50
+      expect(closedTrade?.calculated.outcome).toBe('WIN');
+    },
+    15000
+  );
+
+  it('correctly handles position reversal by splitting exit fill into closing and new entry', async () => {
+    // Short 10 contracts, then Buy 20 contracts (10 to close short, 10 to go long)
     tradebookExecutions = [
       {
         clientId: 'CPCJNZWGA9',
-        orderDateTime: '26-Oct-2026 10:00:00',
-        orderNumber: 'ORD-PHASE-ENTRY',
-        tradeNumber: 'TRD-PHASE-ENTRY-1',
-        tradePrice: 100,
-        tradeValue: 5000,
-        tradedQty: 50,
+        orderDateTime: '26-Oct-2026 11:00:00',
+        orderNumber: 'ORD-REV-1',
+        tradeNumber: 'TRD-REV-SHORT-1',
+        tradePrice: 1000,
+        tradeValue: 10000,
+        tradedQty: 10,
         orderType: 2,
-        side: 1, // BUY
+        side: -1, // SELL (SHORT)
         productType: 'INTRADAY',
         segment: 11,
         exchange: 10,
-        fyToken: 'token-phase-1',
-        symbol: 'NSE:BANKNIFTY26OCT52000CE',
+        fyToken: 'token-rev-1',
+        symbol: 'NSE:RELIANCE-EQ',
+      },
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '26-Oct-2026 11:30:00',
+        orderNumber: 'ORD-REV-2',
+        tradeNumber: 'TRD-REV-BUY-1',
+        tradePrice: 950,
+        tradeValue: 19000,
+        tradedQty: 20,
+        orderType: 2,
+        side: 1, // BUY 20 (covers 10 short, opens 10 long)
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-rev-1',
+        symbol: 'NSE:RELIANCE-EQ',
+      },
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '26-Oct-2026 12:00:00',
+        orderNumber: 'ORD-REV-3',
+        tradeNumber: 'TRD-REV-SELL-1',
+        tradePrice: 980,
+        tradeValue: 9800,
+        tradedQty: 10,
+        orderType: 2,
+        side: -1, // SELL 10 (closes long)
+        productType: 'INTRADAY',
+        segment: 11,
+        exchange: 10,
+        fyToken: 'token-rev-1',
+        symbol: 'NSE:RELIANCE-EQ',
       },
     ];
 
-    const sync1Res = await app.inject({
+    const syncRes = await app.inject({
       method: 'POST',
       url: '/api/v1/integrations/fyers/sync',
       headers: { cookie: authCookie },
     });
-    expect(sync1Res.statusCode).toBe(200);
+    expect(syncRes.statusCode).toBe(200);
 
-    const openTrade = await Trade.findOne({
+    // Trade 1: Short trade (10 lots, entry 1000, exit 950 -> +500 gross profit)
+    const shortTrade = await Trade.findOne({
       userId: new mongoose.Types.ObjectId(userId),
-      'fills.fillId': 'TRD-PHASE-ENTRY-1',
+      'fills.fillId': 'TRD-REV-SHORT-1',
     });
-    expect(openTrade).toBeTruthy();
-    expect(openTrade?.status).toBe('OPEN');
-    expect(openTrade?.fills.length).toBe(1);
-    expect(openTrade?.calculated.openQuantity).toBe(50);
-    expect(openTrade?.calculated.closedQuantity).toBe(0);
+    expect(shortTrade).toBeTruthy();
+    expect(shortTrade?.direction).toBe('SHORT');
+    expect(shortTrade?.status).toBe('CLOSED');
+    expect(shortTrade?.calculated.closedQuantity).toBe(10);
+    expect(shortTrade?.calculated.grossPnL).toBe(500); // (1000 - 950) * 10
+    expect(shortTrade?.calculated.outcome).toBe('WIN');
 
-    // Phase 2: Exit execution is added to tradebook
-    tradebookExecutions = [
-      {
-        clientId: 'CPCJNZWGA9',
-        orderDateTime: '26-Oct-2026 10:00:00',
-        orderNumber: 'ORD-PHASE-ENTRY',
-        tradeNumber: 'TRD-PHASE-ENTRY-1',
-        tradePrice: 100,
-        tradeValue: 5000,
-        tradedQty: 50,
-        orderType: 2,
-        side: 1, // BUY
-        productType: 'INTRADAY',
-        segment: 11,
-        exchange: 10,
-        fyToken: 'token-phase-1',
-        symbol: 'NSE:BANKNIFTY26OCT52000CE',
-      },
-      {
-        clientId: 'CPCJNZWGA9',
-        orderDateTime: '26-Oct-2026 10:15:00',
-        orderNumber: 'ORD-PHASE-EXIT',
-        tradeNumber: 'TRD-PHASE-EXIT-1',
-        tradePrice: 130,
-        tradeValue: 6500,
-        tradedQty: 50,
-        orderType: 2,
-        side: -1, // SELL
-        productType: 'INTRADAY',
-        segment: 11,
-        exchange: 10,
-        fyToken: 'token-phase-1',
-        symbol: 'NSE:BANKNIFTY26OCT52000CE',
-      },
-    ];
-
-    const sync2Res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/integrations/fyers/sync',
-      headers: { cookie: authCookie },
-    });
-    expect(sync2Res.statusCode).toBe(200);
-
-    const closedTrade = await Trade.findOne({
+    // Trade 2: Long reversed trade (10 lots, entry 950, exit 980 -> +300 gross profit)
+    const longTrade = await Trade.findOne({
       userId: new mongoose.Types.ObjectId(userId),
-      'fills.fillId': 'TRD-PHASE-ENTRY-1',
+      'fills.fillId': 'TRD-REV-BUY-1-rev',
     });
-    expect(closedTrade).toBeTruthy();
-    expect(closedTrade?.status).toBe('CLOSED');
-    expect(closedTrade?.fills.length).toBe(2);
-    expect(closedTrade?.exitTime).toBeDefined();
-    expect(closedTrade?.simpleExecution?.exitPrice).toBe(130);
-    expect(closedTrade?.calculated.closedQuantity).toBe(50);
-    expect(closedTrade?.calculated.openQuantity).toBe(0);
-    expect(closedTrade?.calculated.grossPnL).toBe(1500); // (130 - 100) * 50
-    expect(closedTrade?.calculated.outcome).toBe('WIN');
-  });
+    expect(longTrade).toBeTruthy();
+    expect(longTrade?.direction).toBe('LONG');
+    expect(longTrade?.status).toBe('CLOSED');
+    expect(longTrade?.calculated.closedQuantity).toBe(10);
+    expect(longTrade?.calculated.grossPnL).toBe(300); // (980 - 950) * 10
+    expect(longTrade?.calculated.outcome).toBe('WIN');
+  }, 15000);
 });
 

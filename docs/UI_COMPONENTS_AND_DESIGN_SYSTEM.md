@@ -125,3 +125,36 @@ Implemented in [`apps/web/src/context/ToastContext.tsx`](file:///Users/komal/pro
 - **Desktop ($\ge 1200\text{px}$):** Full 250px persistent sidebar drawer; dual-column dashboard layout.
 - **Tablet ($900\text{px} - 1199\text{px}$):** Collapsed 72px icon-only sidebar drawer.
 - **Mobile ($< 900\text{px}$):** Drawer converts to temporary off-canvas sliding drawer toggled via header hamburger button. Grid layouts collapse to single-column vertical stacks.
+
+---
+
+## 8. Multi-Panel Performance & Universal Drilldown Components
+
+### 1. `MultiPanelEquityCurve.tsx` ([`apps/web/src/components/dashboard/MultiPanelEquityCurve.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/dashboard/MultiPanelEquityCurve.tsx))
+- **Role:** High-density, multi-panel performance visualization with synchronized Recharts time axes.
+- **Features:**
+  - Synchronized dual-panel charts via `syncId="setupmint-equity-sync"`.
+  - **Upper Panel:** Money equity curve, cumulative-R curve, or synchronized dual-axis Both view. Includes up to 6 per-strategy overlays with `< 30 trades` sample-size warning badges. Overlays forward Monte Carlo expectancy cones (P5, P25, P50, P75, P95). Emits clickable event markers for Daily Loss Breaches (crimson) and High-Tilt Days (amber).
+  - **Lower Panel:** Synchronized Underwater / Drawdown area graph with continuous drawdown depth, peak-to-trough max drawdown, and recovery duration indicators in calendar days and trade count.
+  - **Interactive Drilldown:** Every curve point and event marker is clickable, invoking `openDrill()` with relevant trade IDs or filters.
+
+### 2. `TradeDrillDrawer.tsx` ([`apps/web/src/components/drilldown/TradeDrillDrawer.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/drilldown/TradeDrillDrawer.tsx))
+- **Role:** Universal right-hand drawer / bottom sheet for immediate trade inspection anywhere across the application.
+- **Layout & Responsiveness:**
+  - 620px width on desktop ($\ge 900\text{px}$); full-width bottom sheet on mobile ($< 900\text{px}$).
+  - Mounted once in [`AppLayout.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/AppLayout.tsx) to guarantee zero layout shifts and instant availability.
+- **Modes:**
+  - **Single Trade View:** Comprehensive trade header, P&L badge, R-multiple badge, execution fills, key confluences, discipline rating, mistake chips, screenshot previews, and direct navigation buttons (`"Open in Full Detail"`, `"Edit Trade"`).
+  - **Multi-Trade List View:** Summary aggregate ribbon (`Total Trades`, `Net P&L`, `Win Rate %`, `Sum R`), sortable columns, outcome chips, and row click selection with smooth drill into single trade mode.
+- **Keyboard Shortcuts:**
+  - `j`: Move to next trade in list.
+  - `k`: Move to previous trade in list.
+  - `Esc`: Close drawer.
+
+### 3. `TradeDrillContext.tsx` ([`apps/web/src/context/TradeDrillContext.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/context/TradeDrillContext.tsx))
+- **Role:** React context provider wrapping the application tree in [`App.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/App.tsx).
+- **Capabilities:**
+  - Exposes `openDrill(descriptor)` and `closeDrill()`.
+  - Automatically synchronizes active drill descriptor with the browser URL (`?drill=<base64-json>`), enabling browser history back/forward navigation and shareable deep links.
+  - 150ms debounced prefetching cache to ensure instant drawer opening upon click.
+

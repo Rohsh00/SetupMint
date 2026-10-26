@@ -17,4 +17,7 @@ export * from './stop-move.js';
 export * from './chart-helpers.js';
 export * from './pattern-recognition.js';
 export * from './analytics/what-if/index.js';
-
+export * from './drawdown.js';
+export * from './cumulative-r.js';
+export * from './events.js';
+export * from './reconciliation.js';

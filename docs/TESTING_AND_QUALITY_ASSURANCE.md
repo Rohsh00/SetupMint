@@ -13,15 +13,20 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (454 Passing Tests)
+## 2. Test Suite Inventory (519 Passing Tests)
 
-The repository contains **454 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **519 fully automated tests** spanning parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (191 Tests)
+### A. Financial Engine Unit Tests (246 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
+| `drawdown.test.ts` | 14 tests | Underwater series generation, high-water mark tracking, peak-to-trough max drawdown, current drawdown, longest recovery duration in calendar days and trade count, ongoing drawdown edge cases, and 30-digit Decimal.js precision. |
+| `cumulative-r.test.ts` | 11 tests | Sequential cumulative R series calculation, exclusion of trades with undefined/invalid initial risk budgets matching `edge.ts`, R-multiple sample coverage percentage, per-strategy cumulative-R overlays (up to 6), and sample size warning threshold (< 30 trades). |
+| `monte-carlo.test.ts` | 12 tests | Bootstrap resampling with replacement, deterministic Mulberry32 PRNG reproducibility, edge qualification gating ($N \ge 30$, verdict $\neq$ `NO_EDGE`/`INSUFFICIENT_DATA`), and per-step percentile envelope extraction (P5, P25, P50, P75, P95) across 50, 100, and 200 trade steps. |
+| `events.test.ts` | 10 tests | Detection of daily loss limit breaches, grouping trades by calendar day, calculation of net daily loss vs configured budget, and detection of high-tilt days ($\ge 61$) with trade clustering. |
+| `reconciliation.test.ts` | 8 tests | Authoritative trade aggregate calculation (`sumNetPnL`, `avgNetPnL`, `sumRealizedR`, `avgRealizedR`, win/loss/breakeven counts, `winRatePercent`) using 30-digit Decimal arithmetic, empty trade sets, all-win/all-loss distributions, and zero floating-point drift. |
 | `snapshot-resolver.test.ts` | 13 tests | Underlying symbol normalization (`normalizeUnderlying`) stripping broker prefixes, cash equity suffixes (`-EQ`, `.NS`, `.BO`), and derivatives (`CE`/`PE`/`FUT`); timeframe normalization (`normalizeChartResolution`) with unsupported warning mappings; multi-timeframe snapshot resolution (`resolveSnapshotTimeframes`) prioritizing LTF, matching instrument overrides case-insensitively, defaulting to user settings, deduplicating HTF==LTF, and adaptive duration fallback; R-multiple target ladders (`calculateRLadderLevels`) with pure Decimal.js precision and inverted risk validation. |
 | `chart-helpers.test.ts` | 15 tests | Pure candle aggregation (`aggregateCandles`) anchored to IST session opens (`09:15` NSE / `09:00` MCX), 1m->5m->15m equivalence, volume conservation, malformed row dropping, window selection (`selectChartWindow`) with candle-based padding, proportional scaling on > 1,500 candles, window truncation, and trading calendar fetch range estimation (`estimateFetchRange`). |
 | `pnl.test.ts` | 7 tests | Long gross P&L, Short gross P&L, fee deduction, open trade outcome, negative quantity error handling, contract multipliers. |
@@ -35,16 +40,17 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `mistakes.test.ts` | 15 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, rule-based discipline rating (1 to 5), excursion-evidence rules (`STOP_TOO_TIGHT`, `PREMATURE_EXIT`, `BREAKEVEN_TOO_EARLY`), and advisory liquidity/level checks. |
 | `templates.test.ts` | 34 tests | Pure Decimal.js rule resolution (PERCENT, POINTS, PREMIUM_PERCENT, MANUAL), target calculation from minRR, instrument tick size rounding, dynamic ranking by market/session/expiry, NSE 2026 Tuesday holiday shifts to Monday, universal asset class coverage, 25 built-in templates validation, and liquidity template resolution. |
 | `edge.test.ts` | 26 tests | Statistical edge validation: Bayesian win rate, bootstrap expectancy intervals, minimum sample size verdicts. |
-| `monte-carlo.test.ts` | 12 tests | Monte Carlo equity path simulation and drawdown distributions. |
+| `monte-carlo-risk.test.ts` | 12 tests | Monte Carlo equity path simulation and drawdown distributions. |
 | `tilt.test.ts` | 8 tests | Tilt / emotional state detection heuristics. |
 | `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets, UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring. |
 | `excursion.test.ts` | 18 tests | Pure Decimal.js 30-digit precision calculation of MAE/MFE points, amounts, R multiples, candle lifecycle overlap filtering, Exit Efficiency, stop hit & post-stop reversal detection, time-to-MFE/MAE, and diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`). |
 
-### B. Backend API & Integration Tests (263 Tests)
+### B. Backend API & Integration Tests (273 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
 | :--- | :--- | :--- |
+| `drilldown-and-equity-curves.test.ts` | 10 tests | Authentication enforcement, `kind: TRADE` single-lookup, `kind: TRADES` array lookup, `kind: FILTER` with numerical ranges (`netPnLMin`/`netPnLMax`, `mfeR`/`maeR`), `kind: FILTER` with temporal/categorical conditions (`weekday`, `session`, `emotion`, `mistakes`), strict multi-tenant isolation, limit clamping (capped at 200), and aggregate reconciliation consistency. |
 | `auto-chart-snapshot.test.ts` | 6 tests | Automated snapshot lifecycle: skipping OPEN trades, creating permanent AUTO_CHART snapshots on CLOSED trades using settings & overrides, deduplicating existing snapshots (`SKIPPED_EXISTS`), marking snapshots stale (`isStale: true`) on closed trade edits, 12-screenshot cap enforcement with net-zero slot accounting, and strict multi-tenant isolation. |
 | `trade-chart.test.ts` | 13 tests | Automated execution chart API: default 45/45 padding, custom asymmetric padding, validation rejections (negative, > 200, non-integer, duplicates, > 5 resolutions, unknown keys), legacy single-attachment backwards compatibility, multi-resolution results array (`200 OK`), `SKIPPED_EXISTS` without force, `REPLACED` with force, Cloudflare R2 cleanup, 12-screenshot cap enforcement with net-zero replacements, and excursion calculation invariance. |
 | `chart-generator.test.ts` | 5 tests | Server-side dark-mode SVG rendering, bullish/bearish color coding, execution markers, header labels, excursion HUD integration. |

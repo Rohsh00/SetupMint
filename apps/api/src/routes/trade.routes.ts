@@ -6,6 +6,7 @@ import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
+  calculateDrilldownAggregate,
   aggregateCandles,
   estimateFetchRange,
 } from '@tradevault/financial-engine';
@@ -13,6 +14,7 @@ import {
   createTradeSchema,
   updateTradeSchema,
   tradeFilterQuerySchema,
+  drilldownRequestSchema,
   bulkClassifySchema,
   stopMoveDetectionSchema,
   excursionComputeOptionsSchema,
@@ -20,6 +22,7 @@ import {
   generateChartSchema,
   TradeOutcome,
 } from '@tradevault/shared';
+
 import {
   TradingAccount,
   Trade,
@@ -41,8 +44,10 @@ import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
 import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
+import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+
   app.addHook('preHandler', requireAuth);
 
   // Helper function to calculate trade details using financial engine
@@ -243,92 +248,28 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   }
 
 
-  // List trades with pagination, global filtering, and sorting
-  app.get('/', async (req, reply) => {
-    const queryResult = tradeFilterQuerySchema.safeParse(req.query);
-    if (!queryResult.success) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'INVALID_QUERY', message: 'Invalid query parameters', details: queryResult.error.format() },
-      });
+  function formatTradeDocument(t: any) {
+    const exclusionReasons: string[] = [];
+    if (t.status !== 'CLOSED') {
+      exclusionReasons.push(`NOT_CLOSED (status: ${t.status})`);
+    }
+    if (!t.risk?.initialStopLoss) {
+      exclusionReasons.push('EXCLUDED_NO_STOP');
+    }
+    if (
+      (t.calculated?.realizedRMultiple === undefined || t.calculated?.realizedRMultiple === null) &&
+      (!t.risk?.plannedRiskAmount || t.risk.plannedRiskAmount <= 0)
+    ) {
+      exclusionReasons.push('NO_R_DATA');
+    }
+    if (t.calculated?.excursion?.reversedAfterStopHit) {
+      exclusionReasons.push('STOP_REVERSED');
+    }
+    if (t.calculated?.stopMoveSummary?.hasWidenedRisk) {
+      exclusionReasons.push('RISK_WIDENED');
     }
 
-    const {
-      page,
-      limit,
-      search,
-      accountId,
-      symbol,
-      assetClass,
-      direction,
-      status,
-      outcome,
-      strategyId,
-      templateId,
-      session,
-      startDate,
-      endDate,
-      tags,
-      variantKey,
-      variantStatus,
-      entryModel,
-      sortBy,
-      sortOrder,
-    } = queryResult.data;
-
-    const filter: any = { userId: req.user!.id };
-
-    if (accountId) filter.accountId = accountId;
-    if (symbol) filter.symbol = new RegExp(symbol.trim(), 'i');
-    if (assetClass) filter.assetClass = assetClass;
-    if (direction) filter.direction = direction;
-    if (status) filter.status = status;
-    if (outcome) filter['calculated.outcome'] = outcome;
-    if (strategyId) filter.strategyId = strategyId;
-    if (templateId) filter.templateId = templateId;
-    if (session) filter.session = session;
-    if (variantKey) filter['setup.variantKey'] = variantKey;
-    if (variantStatus) filter['setup.variantStatus'] = variantStatus;
-    if (entryModel) filter['setup.entryModel'] = entryModel;
-
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
-    }
-
-    if (tags) {
-      const tagList = tags.split(',').map((t) => t.trim());
-      filter.tags = { $in: tagList };
-    }
-
-    if (search) {
-      filter.$or = [
-        { symbol: new RegExp(search, 'i') },
-        { underlying: new RegExp(search, 'i') },
-        { instrumentName: new RegExp(search, 'i') },
-        { tradeTitle: new RegExp(search, 'i') },
-        { 'psychology.notes': new RegExp(search, 'i') },
-        { 'thesis.entryRationale': new RegExp(search, 'i') },
-      ];
-    }
-
-    const totalCount = await Trade.countDocuments(filter);
-    const totalPages = Math.ceil(totalCount / limit);
-    const skip = (page - 1) * limit;
-
-    const sortMap: Record<string, 1 | -1> = {
-      [sortBy]: sortOrder === 'asc' ? 1 : -1,
-    };
-
-    const trades = await Trade.find(filter)
-      .sort(sortMap)
-      .skip(skip)
-      .limit(limit)
-      .populate('accountId', 'name broker baseCurrency')
-      .populate('strategyId', 'name');
-
-    const formattedTrades = trades.map((t) => ({
+    return {
       id: t._id.toString(),
       userId: t.userId.toString(),
       accountId: t.accountId?._id ? (t.accountId as any)._id.toString() : t.accountId?.toString(),
@@ -348,10 +289,10 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       status: t.status,
       strategyId: t.strategyId?._id ? (t.strategyId as any)._id.toString() : t.strategyId?.toString(),
       strategyName: (t.strategyId as any)?.name || t.strategyName || 'Discretionary',
-      tags: t.tags,
-      tradeDate: t.tradeDate.toISOString().split('T')[0],
-      entryTime: t.entryTime.toISOString(),
-      exitTime: t.exitTime?.toISOString(),
+      tags: t.tags || [],
+      tradeDate: t.tradeDate ? t.tradeDate.toISOString().split('T')[0] : '',
+      entryTime: t.entryTime ? t.entryTime.toISOString() : '',
+      exitTime: t.exitTime ? t.exitTime.toISOString() : undefined,
       session: t.session,
       tradeTitle: t.tradeTitle,
       externalBrokerOrderRef: t.externalBrokerOrderRef,
@@ -365,14 +306,44 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       psychology: t.psychology,
       calculated: t.calculated,
       setup: t.setup,
-      screenshotIds: t.screenshotIds.map((id) => id.toString()),
-      createdAt: t.createdAt.toISOString(),
-      updatedAt: t.updatedAt.toISOString(),
-    }));
+      screenshotIds: (t.screenshotIds || []).map((id: any) => id.toString()),
+      createdAt: t.createdAt ? t.createdAt.toISOString() : '',
+      updatedAt: t.updatedAt ? t.updatedAt.toISOString() : '',
+      exclusionReasons: exclusionReasons.length > 0 ? exclusionReasons : undefined,
+    };
+  }
+
+  // List trades with pagination, global filtering, and sorting
+  app.get('/', async (req, reply) => {
+    const queryResult = tradeFilterQuerySchema.safeParse(req.query);
+    if (!queryResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_QUERY', message: 'Invalid query parameters', details: queryResult.error.format() },
+      });
+    }
+
+    const { page, limit, sortBy, sortOrder } = queryResult.data;
+    const filter = buildTradeMongooseFilter(queryResult.data, req.user!.id);
+
+    const totalCount = await Trade.countDocuments(filter);
+    const totalPages = Math.ceil(totalCount / limit);
+    const skip = (page - 1) * limit;
+
+    const sortMap: Record<string, 1 | -1> = {
+      [sortBy]: sortOrder === 'asc' ? 1 : -1,
+    };
+
+    const trades = await Trade.find(filter)
+      .sort(sortMap)
+      .skip(skip)
+      .limit(limit)
+      .populate('accountId', 'name broker baseCurrency')
+      .populate('strategyId', 'name');
 
     return reply.send({
       success: true,
-      data: formattedTrades,
+      data: trades.map(formatTradeDocument),
       pagination: {
         page,
         limit,
@@ -381,6 +352,98 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       },
     });
   });
+
+  // Universal trade drill-down resolver
+  app.post('/drilldown', async (req, reply) => {
+    const parseResult = drilldownRequestSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'INVALID_DRILLDOWN_REQUEST',
+          message: 'Invalid drilldown payload',
+          details: parseResult.error.format(),
+        },
+      });
+    }
+
+    const { descriptor, page, limit, sortBy, sortOrder } = parseResult.data;
+    const userId = req.user!.id;
+    const sortMap: Record<string, 1 | -1> = {
+      [sortBy]: sortOrder === 'asc' ? 1 : -1,
+    };
+    const skip = (page - 1) * limit;
+
+    let filter: mongoose.FilterQuery<any>;
+
+    if (descriptor.kind === 'TRADE') {
+      if (!mongoose.Types.ObjectId.isValid(descriptor.tradeId)) {
+        return reply.send({
+          success: true,
+          data: {
+            trades: [],
+            totalCount: 0,
+            page: 1,
+            limit,
+            totalPages: 0,
+            aggregate: calculateDrilldownAggregate([]),
+            descriptor,
+          },
+        });
+      }
+
+      filter = { _id: new mongoose.Types.ObjectId(descriptor.tradeId), userId };
+    } else if (descriptor.kind === 'TRADES') {
+      const validIds = (descriptor.tradeIds || [])
+        .filter((id: string) => mongoose.Types.ObjectId.isValid(id))
+        .slice(0, 200)
+        .map((id: string) => new mongoose.Types.ObjectId(id));
+
+      filter = { _id: { $in: validIds }, userId };
+    } else {
+      // FILTER
+      filter = buildTradeMongooseFilter(descriptor.filter, userId);
+    }
+
+    const totalCount = await Trade.countDocuments(filter);
+    const totalPages = Math.ceil(totalCount / limit);
+
+    const [trades, allTradesInFilter] = await Promise.all([
+      Trade.find(filter)
+        .sort(sortMap)
+        .skip(skip)
+        .limit(limit)
+        .populate('accountId', 'name broker baseCurrency')
+        .populate('strategyId', 'name'),
+      Trade.find(filter).select('calculated status risk'),
+    ]);
+
+    const aggregateTrades = allTradesInFilter.map((t) => ({
+      id: t._id.toString(),
+      status: t.status,
+      calculated: t.calculated,
+      netPnL: t.calculated?.netPnL,
+      grossPnL: t.calculated?.grossPnL,
+      totalCosts: t.calculated?.totalCosts,
+      realizedRMultiple: t.calculated?.realizedRMultiple,
+    }));
+
+    const aggregate = calculateDrilldownAggregate(aggregateTrades);
+
+    return reply.send({
+      success: true,
+      data: {
+        trades: trades.map(formatTradeDocument),
+        totalCount,
+        page,
+        limit,
+        totalPages,
+        aggregate,
+        descriptor,
+      },
+    });
+  });
+
 
   // Create trade
   app.post('/', async (req, reply) => {

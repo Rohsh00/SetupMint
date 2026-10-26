@@ -129,6 +129,8 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 - **Profit Factor Zero-Loss Edge Case:** Returns `999.99` if losses are zero and gains are positive.
 - **Currency Conversion:** Requires explicit rate; never assumes a silent 1:1 fallback.
 - **Variant Performance Analytics:** Calculates exact bucket metrics, win rates, expectancy, profit factor states (`NORMAL`, `NO_LOSSES`, `NO_TRADES`), sample size warnings, and mathematical invariant reconciliation across all parent and child variants.
+- **Multi-Panel Performance Curves:** Synchronized Recharts dual-panel engine calculating 30-digit Decimal high-water mark, underwater drawdown series, maximum drawdown, and recovery duration (in calendar days and trades) in `drawdown.ts`; cumulative R-multiples ($R_i = \text{realizedRMultiple}$) with sample coverage tracking in `cumulative-r.ts`; deterministic Mulberry32 Monte Carlo forward expectancy cones (P5, P25, P50, P75, P95) gated on edge verdicts in `monte-carlo.ts`; and event markers for daily loss limit breaches and high-tilt days in `events.ts`.
+- **Universal Trade Drill-Down & Reconciliation:** Resolves single trades, trade ID sets, or dynamic analytical filters via `POST /api/v1/trades/drilldown` with strict tenant isolation, 200-trade page limits, and Decimal.js aggregate reconciliation in `reconciliation.ts`.
 
 ---
 
@@ -148,16 +150,16 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites across the monorepo (410 verified tests)
+# Run all test suites across the monorepo (519 verified tests)
 npm run test
 
-# Run financial engine unit tests (163 tests)
+# Run financial engine unit tests (246 tests)
 npm run test:engine
 
 # Backfill and normalize instruments for existing trades
 npm run instruments:backfill
 
-# Run API integration and regression tests (218 tests)
+# Run API integration and regression tests (273 tests)
 npm run test:api
 
 # Typecheck all packages

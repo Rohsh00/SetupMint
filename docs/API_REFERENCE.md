@@ -522,6 +522,55 @@ Authentication is handled via stateful sessions:
   - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
   - `404 NO_CANDLE_DATA`: If neither provider nor cached snapshots contain candle data for this trade.
 
+### `POST /api/v1/trades/drilldown`
+- **Purpose:** Universal trade drill-down resolver endpoint. Accepts a `DrillDescriptor` (`kind: 'TRADE' | 'TRADES' | 'FILTER'`) and returns matching trade documents with strict tenant isolation, server-side pagination, and Decimal.js aggregate reconciliation.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:**
+  ```json
+  {
+    "descriptor": {
+      "kind": "FILTER",
+      "title": "Losses > ₹2,000",
+      "filter": {
+        "netPnLMax": -2000,
+        "startDate": "2026-01-01T00:00:00.000Z"
+      }
+    },
+    "page": 1,
+    "limit": 50,
+    "sortBy": "exitTime",
+    "sortDirection": "desc"
+  }
+  ```
+  *(Note: `limit` is clamped to a maximum of 200 per page).*
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "descriptor": { ... },
+        "trades": [ ... ],
+        "totalCount": 14,
+        "page": 1,
+        "limit": 50,
+        "totalPages": 1,
+        "aggregates": {
+          "totalCount": 14,
+          "sumNetPnL": -42150.5,
+          "avgNetPnL": -3010.75,
+          "sumRealizedR": -12.4,
+          "avgRealizedR": -0.88,
+          "winCount": 0,
+          "lossCount": 14,
+          "breakevenCount": 0,
+          "winRatePercent": 0
+        }
+      }
+    }
+    ```
+  - `400 BAD_REQUEST`: Invalid descriptor payload or Zod schema validation error.
+
 ---
 
 ## 6. Dashboard & Analytics (`/api/v1/dashboard`, `/api/v1/analytics`)
@@ -537,6 +586,25 @@ Authentication is handled via stateful sessions:
   - `currentStreak`, `maxConsecutiveWins`, `maxConsecutiveLosses`
   - `equityCurve`: Array of `{ date, tradeId, symbol, netPnL, cumulativeEquity, drawdown, drawdownPercent }`
   - `dailyPnL`, `monthlyPnL`, `performanceByInstrument`, `performanceByStrategy`, `performanceByWeekday`, `performanceBySession`, `pnlDistribution`.
+
+### `GET /api/v1/dashboard/equity-curves`
+- **Purpose:** Multi-panel performance equity view data powering synchronized Money curve, Drawdown/Underwater curve, Cumulative-R curve, Per-Strategy overlays, Monte Carlo expectancy cone, and event markers.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Query Parameters:**
+  - `accountId` (optional): Filter trades by trading account ID.
+  - `startDate` (optional): ISO 8601 start timestamp.
+  - `endDate` (optional): ISO 8601 end timestamp.
+  - `overlayStrategies` (optional): Comma-separated list of strategy IDs (up to 6) to compute individual cumulative-R performance curves for.
+  - `coneTrades` (optional): Projected trade count for Monte Carlo simulation (`50`, `100`, or `200`). Default: `100`.
+- **Responses:**
+  - `200 OK`: Returns `IEquityCurvesResponse`:
+    - `moneyCurve`: Array of `{ tradeId, symbol, date, netPnL, cumulativeEquity, drawdown, drawdownPercent, highWaterMark, tradeIndex }`
+    - `rCurve`: Array of `{ tradeId, symbol, date, realizedR, cumulativeR, tradeIndex }`
+    - `underwater`: `{ currentDrawdown, currentDrawdownPercent, maxDrawdown, maxDrawdownPercent, longestRecoveryDays, longestRecoveryTrades, isAtHighWaterMark }`
+    - `rCoverage`: `{ totalTrades, rMultipleTrades, coveragePercent }`
+    - `strategyOverlays`: Array of `{ strategyId, strategyName, curve, totalTrades, finalR, sampleSizeWarning }`
+    - `monteCarloCone`: `{ isEligible, sampleSize, edgeVerdict, avgR, winRate, simulationsCount, stepsCount, bands: { step, p5, p25, p50, p75, p95 }[] }`
+    - `eventMarkers`: `{ dailyLossBreaches: { date, netLoss, dailyLossLimit, tradeIds }[], highTiltDays: { date, tiltScore, tradeIds }[] }`
 
 ### `GET /api/v1/analytics/psychology`
 - **Purpose:** Correlate emotional states and discipline scores with profitability.

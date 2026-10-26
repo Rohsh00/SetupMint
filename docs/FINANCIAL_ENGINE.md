@@ -270,5 +270,42 @@ Default normalized weights:
 
 When score $\ge 61$, an advisory, non-blocking pre-trade warning is surfaced in `TradeFormModal`. It never blocks trade entry or auto-cancels orders.
 
+---
+
+## 12. Multi-Panel Performance & Reconciliation Modules
+
+### A. Underwater & Drawdown Engine (`drawdown.ts`)
+- **Functions:**
+  - `calculateUnderwaterSeries(trades, initialEquity)`: Computes high-water mark, current drawdown, max drawdown, and recovery metrics.
+  - `calculateDrawdownRecovery(trades, initialEquity)`: Returns `{ longestRecoveryDays, longestRecoveryTrades, isAtHighWaterMark, maxDrawdown, maxDrawdownPercent, currentDrawdown, currentDrawdownPercent }`.
+- **Properties:**
+  - Fully implements 30-digit precision with `decimal.js`.
+  - Accurately tracks recovery duration across both completed peak-to-recovery cycles and ongoing underwater periods.
+
+### B. Cumulative-R & Strategy Overlays (`cumulative-r.ts`)
+- **Functions:**
+  - `calculateCumulativeRSeries(trades)`: Computes sequential cumulative R series, filtering out trades without valid initial risk/stop loss in full accordance with `edge.ts`.
+  - `calculateStrategyOverlays(trades, strategyIds)`: Generates individual cumulative-R series for up to 6 user-selected strategies, tagging each with `sampleSizeWarning: true` if closed trades $< 30$.
+- **R-Coverage Metric:** Computes ratio of R-evaluable trades to total trades.
+
+### C. Monte Carlo Expectancy Cone (`monte-carlo.ts`)
+- **Function:** `calculateMonteCarloBands(trades, options)`
+- **Behavior:**
+  - Evaluates edge qualification ($N \ge 30$, verdict $\neq$ `NO_EDGE` / `INSUFFICIENT_DATA`).
+  - Simulates 1,000 resampled paths of 50, 100, or 200 future trades using `Mulberry32PRNG`.
+  - Yields deterministic per-step percentile envelopes (P5, P25, P50, P75, P95).
+
+### D. Psychological & Risk Event Markers (`events.ts`)
+- **Functions:**
+  - `detectDailyLossBreaches(trades, dailyLossLimit)`: Flags calendar days where net cumulative loss exceeded user risk tolerance, collecting all trade IDs on that day.
+  - `detectHighTiltDays(trades, threshold = 61)`: Flags days exhibiting high tilt ($\ge 61$), identifying trade clusters for psychological debriefing.
+
+### E. Universal Drilldown Aggregate Reconciliation (`reconciliation.ts`)
+- **Function:** `computeTradeAggregates(trades)`
+- **Guarantees:**
+  - Zero round-off drift between chart metrics and underlying trades.
+  - Returns `{ totalCount, sumNetPnL, avgNetPnL, sumRealizedR, avgRealizedR, winCount, lossCount, breakevenCount, winRatePercent }`.
+
+
 
 

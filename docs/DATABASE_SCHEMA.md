@@ -686,4 +686,46 @@ Stores the public SmartAPI instrument catalog downloaded from `OpenAPIScripMaste
 - `{ userId: 1, name: 1 }`
 - `{ userId: 1, refreshedAt: 1 }`
 
+---
+
+## 3. Universal Trade Drilldown Data Contracts & Query Mapping
+
+The Universal Trade Drilldown System (`POST /api/v1/trades/drilldown`) leverages the `DrillDescriptor` contract defined in `@tradevault/shared` to query the `trades` collection deterministically with strict tenant isolation.
+
+### 3.1 `DrillDescriptor` Schema
+- **`kind: 'TRADE'`**: Resolves an individual trade by ID.
+  ```typescript
+  { kind: 'TRADE', tradeId: string, title?: string }
+  ```
+- **`kind: 'TRADES'`**: Resolves an explicit array of trade IDs.
+  ```typescript
+  { kind: 'TRADES', tradeIds: string[], title?: string }
+  ```
+- **`kind: 'FILTER'`**: Resolves a dynamic slice of trades matching analytical filters.
+  ```typescript
+  { kind: 'FILTER', filter: ExtendedTradeFilter, title?: string }
+  ```
+
+### 3.2 MongoDB Query Mapping (`trade-query.service.ts`)
+All queries are enforced with strict tenant isolation (`userId: new Types.ObjectId(userId)`) combined via `$and`:
+
+| Filter Property | Mongoose / MongoDB Query Clause |
+| :--- | :--- |
+| `tradeIds` | `_id: { $in: tradeIds.map(id => new Types.ObjectId(id)) }` |
+| `symbol` | `symbol: filter.symbol` |
+| `strategyId` | `strategyId: new Types.ObjectId(filter.strategyId)` |
+| `templateId` | `templateId: filter.templateId` (slug string or ID) |
+| `direction` | `direction: filter.direction` (`LONG` / `SHORT`) |
+| `outcome` | `outcome: filter.outcome` (`WIN`, `LOSS`, `BREAKEVEN`) |
+| `startDate` / `endDate` | `entryTime: { $gte: new Date(startDate), $lte: new Date(endDate) }` |
+| `netPnLMin` / `netPnLMax`| `netPnL: { $gte: netPnLMin, $lte: netPnLMax }` |
+| `mfeRMin` / `mfeRMax` | `'excursion.mfeR': { $gte: mfeRMin, $lte: mfeRMax }` |
+| `maeRMin` / `maeRMax` | `'excursion.maeR': { $gte: maeRMin, $lte: maeRMax }` |
+| `weekday` (1=Sun, 7=Sat) | `$expr: { $eq: [{ $dayOfWeek: '$entryTime' }, weekday] }` |
+| `session` | `tradingSession: session` |
+| `mistakeTag` | `'psychology.mistakes': mistakeTag` |
+| `emotion` | `$or: [{ 'psychology.emotionBefore': emotion }, { 'psychology.emotionDuring': emotion }, { 'psychology.emotionAfter': emotion }]` |
+| `disciplineScore` | `'psychology.disciplineScore': disciplineScore` |
+
+
 

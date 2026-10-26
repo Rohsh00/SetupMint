@@ -429,3 +429,48 @@ This document provides a comprehensive, verified feature inventory of all module
   - Frontend: `TradeDetailPage.tsx`, `AnalyticsPage.tsx`, `StrategyVariantAnalyticsPage.tsx`, `SettingsPage.tsx`.
   - Backend: `excursion.ts` (`@tradevault/financial-engine`), `TradeCandleSnapshot` model, `/trades/:id/excursion/compute`, `/integrations/fyers/excursion-backfill`, `/analytics/excursion`.
 
+---
+
+## 16. Multi-Panel Performance Equity View
+
+- **Status:** **IMPLEMENTED**
+- **Purpose:** Synchronized multi-tier performance analysis integrating absolute currency curves, cumulative R-multiples, drawdown underwater profiles, strategy comparisons, forward Monte Carlo projections, and emotional/risk event markers.
+- **Problem Solved:** Sizing variation and account capital changes often distort currency equity curves. This view decouples edge evaluation (in R) from capital growth (in money), while exposing historical recovery durations and future statistical dispersion cones.
+- **Key Capabilities:**
+  - **Synchronized Dual-Panel Layout:** Uses Recharts `syncId="setupmint-equity-sync"` to synchronize crosshair coordinates between the main equity curve and the underwater drawdown panel.
+  - **Money vs R-Curve Toggle:** Switch seamlessly between Money Curve (₹/$), Cumulative-R Curve, or a synchronized dual-axis Both view.
+  - **R-Coverage Indicator:** Transparently displays the percentage of trades with valid initial risk budgets included in the R calculation.
+  - **Per-Strategy Overlays:** Select and overlay up to 6 distinct strategy curves simultaneously, with automated sample-size warnings (`< 30 trades`).
+  - **Monte Carlo Expectancy Cone:** Projects 1,000 deterministic bootstrap simulations over 50, 100, or 200 future trades using `Mulberry32PRNG`, displaying P5, P25, P50, P75, and P95 percentile bands (strictly gated on positive edge verification).
+  - **Psychological & Risk Event Markers:** Pinpoints daily loss limit breach days and high-tilt days ($\ge 61$) directly on the equity curve.
+  - **Direct Trade Drilldown:** Every curve point and event marker is clickable, launching the underlying trade(s) directly in the Universal `TradeDrillDrawer`.
+- **Frontend & Backend Components:**
+  - Frontend: [`MultiPanelEquityCurve.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/dashboard/MultiPanelEquityCurve.tsx), [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx).
+  - Backend: `GET /api/v1/dashboard/equity-curves`, `drawdown.ts`, `cumulative-r.ts`, `monte-carlo.ts`, `events.ts`.
+
+---
+
+## 17. Universal Trade Drill-Down System
+
+- **Status:** **IMPLEMENTED**
+- **Purpose:** Comprehensive, zero-discrepancy trade traceability across all visual surfaces in SetupMint.
+- **Problem Solved:** Eliminates disconnected numbers in dashboards and reports. The user never sees a metric, chart point, table row, or distribution bar that cannot be instantly traced back to its raw trade executions.
+- **Key Capabilities:**
+  - **Unified Drill Descriptor Contract:** Strongly typed contract (`DrillDescriptor`: `kind: 'TRADE' | 'TRADES' | 'FILTER'`) in `@tradevault/shared` powering single-trade lookups, explicit trade sets, and dynamic filtered trade groups.
+  - **Authoritative Resolver Endpoint:** `POST /api/v1/trades/drilldown` resolves any descriptor with strict user-tenant isolation, server-side pagination (capped at 200), and 30-digit Decimal aggregate reconciliation (`totalCount`, `sumNetPnL`, `avgNetPnL`, `sumRealizedR`, `avgRealizedR`, `winCount`, `lossCount`, `breakevenCount`, `winRatePercent`).
+  - **Universal Drawer Component (`TradeDrillDrawer`):** Mounted globally in `AppLayout.tsx`. Features responsive design (620px right-hand drawer on desktop, bottom sheet on mobile `< 900px`), full single-trade view with attachments and action buttons, sortable multi-trade table view, and keyboard navigation (`j` / `k` for next/previous trade, `Esc` to close).
+  - **URL Synchronization & Deep Linking:** Serializes active descriptors into `?drill=...` query parameters, supporting instant page reloads and shareable deep links.
+  - **Ubiquitous Surface Wiring:**
+    - *Dashboard:* Net P&L card, Win Rate card, Profit Factor/Expectancy card, Max Drawdown card, Daily Loss Breach alert, Performance by Instrument table, Performance by Strategy table, Daily Review Queue, and Recent Trades.
+    - *Multi-Panel Equity Curve:* Equity points, drawdown points, daily loss breach markers, and high-tilt markers.
+    - *Analytics:* Drawdown coordinates, P&L distribution histogram buckets, discipline score rows, emotion rows, mistake cards, weekday rows, session rows, excursion summary cards, and MAE/MFE scatter dots.
+    - *What-If Simulator:* Baseline evaluable trades, mean R, net P&L, distribution bars, and simulation cell inspector.
+    - *Strategy Playbooks & Analytics:* Playbook strategy cards, edge validation chips, "Trades" action button, and strategy variant closed trade counts / view trade actions.
+    - *Journal Calendar:* Monthly trade execution totals, calendar day trade count badges, Daily Review dialog drawer button, and individual trade rows.
+    - *Instruments:* Master instrument trade count cells and net P&L cells.
+- **Frontend & Backend Components:**
+  - Shared: `DrillDescriptor`, `IDrilldownAggregate`, `IDrilldownResponse` in `@tradevault/shared`.
+  - Backend: [`trade-query.service.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/services/trade-query.service.ts), `POST /api/v1/trades/drilldown`, `reconciliation.ts`.
+  - Frontend: [`TradeDrillContext.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/context/TradeDrillContext.tsx), [`TradeDrillDrawer.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/drilldown/TradeDrillDrawer.tsx).
+
+

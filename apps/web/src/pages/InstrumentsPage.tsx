@@ -43,6 +43,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatDate } from '../lib/utils.js';
+import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 
 interface InstrumentFormData {
   symbol: string;
@@ -73,6 +74,7 @@ const defaultFormData: InstrumentFormData = {
 };
 
 export function InstrumentsPage() {
+  const { openDrill } = useTradeDrilldown();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -454,15 +456,43 @@ export function InstrumentsPage() {
                         {inst.tickSize}
                       </TableCell>
 
-                      <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
+                      <TableCell
+                        align="right"
+                        onClick={() => {
+                          if (tradeCount > 0) {
+                            openDrill({
+                              kind: 'FILTER',
+                              filter: { symbol: inst.symbol },
+                              label: `${inst.symbol} Executions`,
+                            });
+                          }
+                        }}
+                        sx={{
+                          fontFamily: '"JetBrains Mono", monospace',
+                          fontWeight: 700,
+                          cursor: tradeCount > 0 ? 'pointer' : 'default',
+                          color: tradeCount > 0 ? 'primary.main' : 'inherit',
+                          '&:hover': tradeCount > 0 ? { textDecoration: 'underline' } : {},
+                        }}
+                      >
                         {tradeCount}
                       </TableCell>
 
                       <TableCell
                         align="right"
+                        onClick={() => {
+                          if (tradeCount > 0) {
+                            openDrill({
+                              kind: 'FILTER',
+                              filter: { symbol: inst.symbol },
+                              label: `${inst.symbol} Executions`,
+                            });
+                          }
+                        }}
                         sx={{
                           fontFamily: '"JetBrains Mono", monospace',
                           fontWeight: 700,
+                          cursor: tradeCount > 0 ? 'pointer' : 'default',
                           color: isProfit ? 'success.main' : isLoss ? 'error.main' : 'text.secondary',
                         }}
                       >

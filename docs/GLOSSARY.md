@@ -66,6 +66,13 @@
   - [Discipline Score & Penalties](#discipline-score-penalties)
 - [10. Dashboard & Review Queue](#10-dashboard-review-queue)
   - [Trade Review Queue Criteria](#trade-review-queue-criteria)
+- [11. Multi-Panel Equity & Universal Drilldown](#11-multi-panel-equity--universal-drilldown)
+  - [Universal Trade Drilldown](#universal-trade-drilldown)
+  - [Drawdown Recovery Duration](#drawdown-recovery-duration)
+  - [Cumulative-R Curve](#cumulative-r-curve)
+  - [Monte Carlo Expectancy Cone](#monte-carlo-expectancy-cone)
+  - [Daily Loss Breach Marker](#daily-loss-breach-marker)
+  - [High-Tilt Day Marker](#high-tilt-day-marker)
 
 ---
 
@@ -861,3 +868,72 @@ Formula: Score = 100 - Sum(Mistake Penalties)
 **Documentation Reference:** [docs/ROUTES_AND_PAGES.md#dashboard](docs/ROUTES_AND_PAGES.md#dashboard)
 
 ---
+
+## 11. Multi-Panel Equity & Universal Drilldown
+
+### Universal Trade Drilldown
+*Registry Key:* `system.universalDrilldown`
+
+**Summary:** System-wide capability enabling instant one-click inspection of underlying trade executions from any analytical number, chart coordinate, distribution bucket, or table row.
+
+**Detailed Explanation:** Governed by the `DrillDescriptor` contract (`TRADE`, `TRADES`, `FILTER`) and resolved by `POST /api/v1/trades/drilldown`. Enforces strict tenant isolation, server-side pagination (capped at 200), and Decimal.js aggregate reconciliation.
+
+**Documentation Reference:** [docs/PRODUCT_FEATURES.md#17-universal-trade-drill-down-system](docs/PRODUCT_FEATURES.md#17-universal-trade-drill-down-system)
+
+---
+
+### Drawdown Recovery Duration
+*Registry Key:* `metric.recoveryDuration`
+
+**Summary:** The elapsed time required for portfolio equity to recover from a peak-to-trough drawdown back to the previous high-water mark.
+
+**Detailed Explanation:** Measured in both calendar days ($t_{recovered} - t_{peak}$) and completed trade count ($i_{recovered} - i_{peak}$). Accurately tracks ongoing underwater periods when equity has not yet returned to all-time highs.
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#121-high-water-mark-drawdown-and-recovery-duration](docs/TRADING_CALCULATIONS.md#121-high-water-mark-drawdown-and-recovery-duration)
+
+---
+
+### Cumulative-R Curve
+*Registry Key:* `metric.cumulativeRCurve`
+
+**Summary:** Chronological performance curve tracking cumulative realized R-multiples ($CR_k = \sum R_i$) independent of position sizing or currency fluctuations.
+
+**Detailed Explanation:** Excludes trades lacking valid initial risk/stop loss in strict conformity with `edge.ts`. Displays an R-coverage indicator pill ($N_R / N_{total}$) and supports up to 6 per-strategy overlays with `< 30 trades` sample-size warning tags.
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#122-cumulative-r-curves--exclusions](docs/TRADING_CALCULATIONS.md#122-cumulative-r-curves--exclusions)
+
+---
+
+### Monte Carlo Expectancy Cone
+*Registry Key:* `analytics.monteCarloCone`
+
+**Summary:** Forward-looking statistical dispersion cone projecting probable trajectory percentiles over the next 50, 100, or 200 trades.
+
+**Detailed Explanation:** Evaluates 1,000 resampled bootstrap paths via `Mulberry32PRNG` seeded deterministically. Extracts per-step percentiles (P5, P25, P50, P75, P95). Strictly gated on positive edge verification ($N \ge 30$, verdict $\neq$ `NO_EDGE`/`INSUFFICIENT_DATA`).
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#123-monte-carlo-expectancy-cone](docs/TRADING_CALCULATIONS.md#123-monte-carlo-expectancy-cone)
+
+---
+
+### Daily Loss Breach Marker
+*Registry Key:* `dashboard.marker.dailyLossBreach`
+
+**Summary:** Equity curve visual marker indicating days where cumulative net loss exceeded the trader's configured maximum daily loss limit.
+
+**Detailed Explanation:** Emitted as crimson circular indicators on the equity curve. Clicking any marker immediately launches the Universal `TradeDrillDrawer` pre-filtered to all trades executed on that breach day.
+
+**Documentation Reference:** [docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts](docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts)
+
+---
+
+### High-Tilt Day Marker
+*Registry Key:* `dashboard.marker.highTiltDay`
+
+**Summary:** Visual marker indicating days where psychological friction or emotional tilt reached elevated risk levels ($\ge 61$).
+
+**Detailed Explanation:** Emitted as amber indicators on the equity curve. Clicking any marker opens the day's trades in `TradeDrillDrawer` for psychological debriefing and mistake pattern analysis.
+
+**Documentation Reference:** [docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts](docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts)
+
+---
+

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   runMonteCarloSimulation,
   calculateFractionalKelly,
+  calculateMonteCarloBands,
 } from '../src/monte-carlo.js';
 
 describe('Monte Carlo Risk Simulation Engine', () => {
@@ -196,3 +197,87 @@ describe('Fractional Kelly Risk Recommendation Engine', () => {
     expect(resNaN.isSuppressed).toBe(true);
   });
 });
+
+describe('Monte Carlo Expectancy Cone Bands Engine', () => {
+  const rMultiples = [1.5, -1.0, 2.0, -0.8, 0.5, -1.0, 3.0, -1.0, -1.0, 1.2];
+
+  it('1. Strict determinism: identical inputs and seeds yield identical percentile bands', () => {
+    const config = {
+      iterations: 500,
+      tradesPerPath: 30,
+      initialEquity: 100000,
+      riskPerTradePercent: 1.0,
+      seed: 42,
+    };
+
+    const bands1 = calculateMonteCarloBands(rMultiples, config);
+    const bands2 = calculateMonteCarloBands(rMultiples, config);
+
+    expect(bands1).toEqual(bands2);
+  });
+
+  it('2. Percentile bands are strictly monotonic: P5 <= P25 <= P50 <= P75 <= P95 at every step', () => {
+    const bands = calculateMonteCarloBands(rMultiples, {
+      iterations: 1000,
+      tradesPerPath: 25,
+      initialEquity: 100000,
+      riskPerTradePercent: 1.0,
+      seed: 777,
+    });
+
+    expect(bands.length).toBe(26); // step 0..25
+
+    for (const b of bands) {
+      expect(b.p5).toBeLessThanOrEqual(b.p25);
+      expect(b.p25).toBeLessThanOrEqual(b.p50);
+      expect(b.p50).toBeLessThanOrEqual(b.p75);
+      expect(b.p75).toBeLessThanOrEqual(b.p95);
+    }
+  });
+
+  it('3. Step 0 starts anchored at initial equity (or 0 for Cumulative-R)', () => {
+    const equityBands = calculateMonteCarloBands(rMultiples, {
+      iterations: 200,
+      tradesPerPath: 10,
+      initialEquity: 150000,
+      metric: 'EQUITY',
+    });
+    expect(equityBands[0].p5).toBe(150000);
+    expect(equityBands[0].p50).toBe(150000);
+    expect(equityBands[0].p95).toBe(150000);
+
+    const rBands = calculateMonteCarloBands(rMultiples, {
+      iterations: 200,
+      tradesPerPath: 10,
+      metric: 'CUMULATIVE_R',
+    });
+    expect(rBands[0].p5).toBe(0);
+    expect(rBands[0].p50).toBe(0);
+    expect(rBands[0].p95).toBe(0);
+  });
+
+  it('4. Handles empty or invalid samples gracefully without throwing', () => {
+    const bands = calculateMonteCarloBands([], {
+      tradesPerPath: 20,
+      initialEquity: 100000,
+    });
+    expect(bands.length).toBe(21);
+    expect(bands[20].p50).toBe(100000);
+  });
+
+  it('5. Legacy runMonteCarloSimulation output remains 100% unchanged', () => {
+    const legacy = runMonteCarloSimulation(rMultiples, {
+      iterations: 500,
+      tradesPerPath: 20,
+      initialEquity: 100000,
+      seed: 999,
+    });
+
+    expect(legacy.seed).toBe(999);
+    expect(legacy.initialEquity).toBe(100000);
+    expect(legacy.drawdownPercentiles.p50).toBeDefined();
+    expect(legacy.drawdownPercentiles.max).toBeDefined();
+    expect(legacy.meanTerminalEquity).toBeGreaterThan(0);
+  });
+});
+

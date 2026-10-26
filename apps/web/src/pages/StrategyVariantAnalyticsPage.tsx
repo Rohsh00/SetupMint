@@ -42,6 +42,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutlineRounded';
 
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
+import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 
 type SortColumn =
   | 'key'
@@ -54,6 +55,7 @@ type SortColumn =
   | 'adherenceRate';
 
 export function StrategyVariantAnalyticsPage() {
+  const { openDrill } = useTradeDrilldown();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -378,7 +380,26 @@ export function StrategyVariantAnalyticsPage() {
       {/* Parent Strategy Metrics Overview */}
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-          <Card sx={{ p: 2, height: '100%' }}>
+          <Card
+            onClick={() =>
+              openDrill({
+                kind: 'FILTER',
+                filter: { strategyId: id },
+                label: `${strategy?.name || 'Strategy'} Closed Trades`,
+              })
+            }
+            sx={{
+              p: 2,
+              height: '100%',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              '&:hover': {
+                borderColor: muiTheme.palette.primary.main,
+                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+              },
+            }}
+          >
             <Typography variant="caption" color="text.secondary">
               Closed Trades
             </Typography>
@@ -636,7 +657,22 @@ export function StrategyVariantAnalyticsPage() {
                     </TableCell>
 
                     {/* Trades count */}
-                    <TableCell align="right">
+                    <TableCell
+                      align="right"
+                      onClick={() => {
+                        if (!isZero) {
+                          openDrill({
+                            kind: 'FILTER',
+                            filter: {
+                              strategyId: id,
+                              variantKey: bucket.key === 'UNASSIGNED' ? undefined : bucket.key,
+                            },
+                            label: `Variant: ${bucket.name || bucket.key}`,
+                          });
+                        }
+                      }}
+                      sx={{ cursor: isZero ? 'default' : 'pointer' }}
+                    >
                       <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
                         {bucket.closedTrades}
                       </Typography>
@@ -816,7 +852,16 @@ export function StrategyVariantAnalyticsPage() {
                       <Button
                         size="small"
                         variant="outlined"
-                        onClick={() => setSelectedBucketKey(bucket.key)}
+                        onClick={() =>
+                          openDrill({
+                            kind: 'FILTER',
+                            filter: {
+                              strategyId: id,
+                              variantKey: bucket.key === 'UNASSIGNED' ? undefined : bucket.key,
+                            },
+                            label: `Variant: ${bucket.name || bucket.key}`,
+                          })
+                        }
                         disabled={isZero}
                         sx={{ textTransform: 'none', fontSize: '0.75rem', py: 0.25 }}
                       >

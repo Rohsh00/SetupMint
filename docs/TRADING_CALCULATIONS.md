@@ -511,4 +511,78 @@ Trades that exited at the original stop are replayed with $\text{stopR} = 1.0$ a
 $$\text{Agreement} = \frac{\text{Matching Stop Hits}}{\text{Tested Real Stop Outs}} \ge 0.90$$
 If below 90%, `calibrationWarning: true` is emitted, warning that candle timestamp alignment or data continuity requires review.
 
+---
+
+## 12. Multi-Panel Performance Equity Curves & Universal Drilldown Metrics
+
+### 12.1 High-Water Mark, Drawdown, and Recovery Duration
+**Code Location:** [`packages/financial-engine/src/drawdown.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/drawdown.ts)
+
+Equity curves maintain full 30-digit Decimal.js precision for drawdown tracking across chronological trade executions:
+
+#### 1. High-Water Mark and Drawdown Curves:
+$$H_0 = E_0, \quad H_i = \max(H_{i-1}, E_i)$$
+$$\text{DD}_i = H_i - E_i \quad (\text{Drawdown in base currency})$$
+$$\text{DD\%}_i = \begin{cases} \frac{\text{DD}_i}{H_i} \times 100 & \text{if } H_i > 0 \\ 0 & \text{otherwise} \end{cases}$$
+
+#### 2. Recovery Duration (Longest Underwater Period):
+A drawdown episode begins when equity drops below the peak $H_{peak}$ and ends when equity reaches or exceeds $H_{peak}$.
+- **Recovery Duration in Trades:**
+  $$T_{trades} = i_{recovered} - i_{peak}$$
+- **Recovery Duration in Calendar Days:**
+  $$T_{days} = \left\lfloor \frac{t_{recovered} - t_{peak}}{86,400,000} \right\rfloor$$
+- **Ongoing Drawdown Handling:** If the final trade remains underwater (current equity $< H_{max}$), the ongoing period from peak to the latest trade is measured and compared against completed episodes to ensure the true maximum recovery duration is reported.
+
+---
+
+### 12.2 Cumulative-R Curves & Exclusions
+**Code Location:** [`packages/financial-engine/src/cumulative-r.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/cumulative-r.ts)
+
+To evaluate strategy edge independent of varying position size or monetary sizing distortions:
+$$R_i = \text{realizedRMultiple}_i$$
+$$CR_k = \sum_{i=1}^k R_i$$
+
+#### Filtering and Exclusions:
+Trades lacking a valid initial stop loss or unit risk produce `realizedRMultiple = null`. These trades are excluded from the R-curve to prevent artificial skew, matching the exclusion standard of [`packages/financial-engine/src/edge.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/edge.ts).
+$$\text{R-Coverage \%} = \frac{N_{\text{valid } R}}{N_{\text{total}}} \times 100$$
+When coverage is below 100%, an informational indicator informs the trader of the exact sample coverage.
+
+---
+
+### 12.3 Monte Carlo Expectancy Cone
+**Code Location:** [`packages/financial-engine/src/monte-carlo.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/monte-carlo.ts)
+
+Projects statistical forward dispersion cones over $S \in \{50, 100, 200\}$ future trades based on historical realized R-multiples:
+
+#### 1. Eligibility Gate:
+- Historical sample size $N \ge 30$.
+- Edge verdict from `evaluateEdge()` must not be `'NO_EDGE'` or `'INSUFFICIENT_DATA'`. If ineligible, the cone is omitted with an informative status.
+
+#### 2. Resampling & Mulberry32 PRNG:
+Generates $M = 1,000$ simulation runs using a deterministic 32-bit PRNG (`Mulberry32`) seeded from historical sample attributes:
+$$Y_{m, s} = \sum_{j=1}^s R^*_{m, j} \quad \text{where } R^*_{m, j} \sim \text{Uniform}(\{R_1, \dots, R_N\})$$
+
+#### 3. Per-Step Percentile Bands:
+At each forward trade step $s \in [1, S]$, the 1,000 simulated values are sorted to extract exact percentiles:
+- **P95:** 95th percentile (optimistic trajectory)
+- **P75:** 75th percentile (upper quartile)
+- **P50:** 50th percentile (median expectancy path)
+- **P25:** 25th percentile (lower quartile)
+- **P5:** 5th percentile (pessimistic adverse variance boundary)
+
+---
+
+### 12.4 Aggregate Reconciliation Engine
+**Code Location:** [`packages/financial-engine/src/reconciliation.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/reconciliation.ts)
+
+Used by the Universal Drill-Down System (`POST /api/v1/trades/drilldown`) to guarantee zero floating-point discrepancies between chart aggregate figures and underlying trade rows:
+
+$$\text{sumNetPnL} = \sum_{i=1}^N \text{netPnL}_i$$
+$$\text{avgNetPnL} = \frac{\text{sumNetPnL}}{N}$$
+$$\text{sumRealizedR} = \sum_{j=1}^{N_R} R_j$$
+$$\text{avgRealizedR} = \frac{\text{sumRealizedR}}{N_R}$$
+$$\text{winRatePercent} = \frac{N_{win}}{N} \times 100$$
+All calculations use 30-digit Decimal arithmetic, ensuring complete mathematical consistency between drilldown summary cards and individual trade rows.
+
+
 

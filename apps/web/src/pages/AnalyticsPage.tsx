@@ -49,9 +49,11 @@ import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
+import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 
 export function AnalyticsPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
+  const { openDrill } = useTradeDrilldown();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
   const muiTheme = useMuiTheme();
@@ -114,6 +116,23 @@ export function AnalyticsPage() {
       toast.error(err.message || 'Failed to backfill excursion data');
     },
   });
+
+  function parsePnLRange(range: string): { netPnLMin?: number; netPnLMax?: number } {
+    if (!range) return {};
+    if (range.startsWith('<')) {
+      const num = Number(range.replace(/[^\d.-]/g, ''));
+      return { netPnLMax: -Math.abs(num) };
+    }
+    if (range.startsWith('>')) {
+      const num = Number(range.replace(/[^\d.-]/g, ''));
+      return { netPnLMin: Math.abs(num) };
+    }
+    const parts = range.split(' to ');
+    if (parts.length === 2) {
+      return { netPnLMin: Number(parts[0].trim()), netPnLMax: Number(parts[1].trim()) };
+    }
+    return {};
+  }
 
   if (isStatsLoading || isPsychLoading) {
     return (
@@ -236,7 +255,20 @@ export function AnalyticsPage() {
             <Box sx={{ height: 280, width: '100%' }}>
               {stats?.equityCurve && stats.equityCurve.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats.equityCurve}>
+                  <AreaChart
+                    data={stats.equityCurve}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e: any) => {
+                      const date = e?.activePayload?.[0]?.payload?.date;
+                      if (date) {
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { date },
+                          label: `Trades on ${date}`,
+                        });
+                      }
+                    }}
+                  >
                     <defs>
                       <linearGradient id="setupmintDrawdownGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.4} />
@@ -287,7 +319,7 @@ export function AnalyticsPage() {
                     Trade P&L Distribution
                   </Typography>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                    Frequency of trade profits and losses by range
+                    Frequency of trade profits and losses by range (click bar to drill down)
                   </Typography>
                 </Box>
 
@@ -303,7 +335,22 @@ export function AnalyticsPage() {
                           itemStyle={{ color: muiTheme.palette.text.primary }}
                           labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
                         />
-                        <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        <Bar
+                          dataKey="count"
+                          radius={[4, 4, 0, 0]}
+                          cursor="pointer"
+                          onClick={(entry: any) => {
+                            const rangeStr = entry?.range || entry?.payload?.range;
+                            if (rangeStr) {
+                              const { netPnLMin, netPnLMax } = parsePnLRange(rangeStr);
+                              openDrill({
+                                kind: 'FILTER',
+                                filter: { netPnLMin, netPnLMax },
+                                label: `Trades in P&L Range: ${rangeStr}`,
+                              });
+                            }
+                          }}
+                        >
                           {stats.pnlDistribution.map((entry: any, index: number) => (
                             <Cell
                               key={`pnl-cell-${index}`}
@@ -404,7 +451,7 @@ export function AnalyticsPage() {
                     Discipline Rating vs Performance
                   </Typography>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                    Correlation between execution discipline rating (1 to 5) and trading results
+                    Correlation between execution discipline rating (1 to 5) and trading results (click row to drill down)
                   </Typography>
                 </Box>
 
@@ -412,6 +459,13 @@ export function AnalyticsPage() {
                   {psychologyData?.performanceByDiscipline?.map((d: any) => (
                     <Box
                       key={d.score}
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { disciplineScore: d.score },
+                          label: `Discipline Rating ${d.score}/5`,
+                        })
+                      }
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -421,6 +475,12 @@ export function AnalyticsPage() {
                         borderRadius: 1.5,
                         border: `1px solid ${muiTheme.palette.divider}`,
                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.primary.main,
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                        },
                       }}
                     >
                       <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
@@ -457,7 +517,7 @@ export function AnalyticsPage() {
                     Emotional State at Entry vs P&L
                   </Typography>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                    How emotional mindset at entry impacts your bottom-line profitability
+                    How emotional mindset at entry impacts your bottom-line profitability (click row to drill down)
                   </Typography>
                 </Box>
 
@@ -465,6 +525,13 @@ export function AnalyticsPage() {
                   {psychologyData?.performanceByEmotion?.map((e: any) => (
                     <Box
                       key={e.emotion}
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { emotion: e.emotion },
+                          label: `Emotion: ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`,
+                        })
+                      }
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -474,6 +541,12 @@ export function AnalyticsPage() {
                         borderRadius: 1.5,
                         border: `1px solid ${muiTheme.palette.divider}`,
                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: '#8B5CF6',
+                          backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
+                        },
                       }}
                     >
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -509,7 +582,7 @@ export function AnalyticsPage() {
                 The Monetary Cost of Discipline Mistakes
               </Typography>
               <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                Direct monetary loss incurred from specific psychological violations
+                Direct monetary loss incurred from specific psychological violations (click card to drill down)
               </Typography>
             </Box>
 
@@ -517,11 +590,25 @@ export function AnalyticsPage() {
               {psychologyData?.mistakeAnalysis?.map((m: any) => (
                 <Grid key={m.mistake} size={{ xs: 12, sm: 6, md: 2.4 }}>
                   <Box
+                    onClick={() =>
+                      openDrill({
+                        kind: 'FILTER',
+                        filter: { mistakeTag: m.mistake },
+                        label: `Mistake: ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}`,
+                      })
+                    }
                     sx={{
                       p: 2,
                       borderRadius: 2,
                       border: `1px solid ${muiTheme.palette.divider}`,
                       backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(248, 250, 252, 0.8)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        borderColor: muiTheme.palette.loss.main,
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 4px 12px rgba(244, 63, 94, 0.15)',
+                      },
                     }}
                   >
                     <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: muiTheme.palette.text.primary }}>
@@ -560,7 +647,7 @@ export function AnalyticsPage() {
                   Performance by Day of Week
                 </Typography>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  Identify which trading weekdays provide maximum discretionary edge
+                  Identify which trading weekdays provide maximum discretionary edge (click row to drill down)
                 </Typography>
               </Box>
 
@@ -568,6 +655,13 @@ export function AnalyticsPage() {
                 {stats?.performanceByWeekday?.map((day: any) => (
                   <Box
                     key={day.day}
+                    onClick={() =>
+                      openDrill({
+                        kind: 'FILTER',
+                        filter: { weekday: day.day.toLowerCase() },
+                        label: `${day.day} Trades`,
+                      })
+                    }
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
@@ -577,6 +671,12 @@ export function AnalyticsPage() {
                       borderRadius: 1.5,
                       border: `1px solid ${muiTheme.palette.divider}`,
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        borderColor: muiTheme.palette.primary.main,
+                        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                      },
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -615,7 +715,7 @@ export function AnalyticsPage() {
                 ))}
               </Box>
               <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
-                Note: Subgroups with fewer than 30 trades exhibit high statistical variance. Empirical-Bayes shrinkage is recommended before drawing directional conclusions.
+                Note: Subgroups with fewer than 30 trades exhibit high statistical variance. Click any day to inspect underlying executions.
               </Typography>
             </Card>
           </Grid>
@@ -628,7 +728,7 @@ export function AnalyticsPage() {
                   Performance by Trading Session
                 </Typography>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  NSE Regular equity market vs MCX Commodity evening session
+                  NSE Regular equity market vs MCX Commodity evening session (click row to drill down)
                 </Typography>
               </Box>
 
@@ -637,6 +737,13 @@ export function AnalyticsPage() {
                   stats.performanceBySession.map((sess: any) => (
                     <Box
                       key={sess.session}
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { session: sess.session },
+                          label: `${sess.session} Session Trades`,
+                        })
+                      }
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -646,6 +753,12 @@ export function AnalyticsPage() {
                         borderRadius: 1.5,
                         border: `1px solid ${muiTheme.palette.divider}`,
                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.primary.main,
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                        },
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -689,7 +802,7 @@ export function AnalyticsPage() {
                 )}
               </Box>
               <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
-                Note: Low trade counts increase uncertainty in session-level expectancy.
+                Note: Low trade counts increase uncertainty in session-level expectancy. Click any session to inspect trades.
               </Typography>
             </Card>
           </Grid>
@@ -802,16 +915,35 @@ export function AnalyticsPage() {
                 {/* KPI Summary Cards */}
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-                    <Card sx={{ p: 2, height: '100%' }}>
+                    <Card
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { mfeRMin: 0.01 },
+                          label: 'Trades with Favorable Excursion',
+                        })
+                      }
+                      sx={{
+                        p: 2,
+                        height: '100%',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.profit.main,
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                        },
+                      }}
+                    >
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Maximum Favorable Excursion: The peak unrealized profit or maximum favorable price reach before exit.">
+                        <Tooltip title="Maximum Favorable Excursion: The peak unrealized profit or maximum favorable price reach before exit. Click to inspect trades.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Avg MFE (Favorable)
                           </Typography>
                         </Tooltip>
                         <HelpHint hintKey="metric.mfe" />
                       </Box>
-                      <Tooltip title="Average peak favorable potential reached across trades with stop losses">
+                      <Tooltip title="Average peak favorable potential reached across trades with stop losses (click to drill down)">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
                           +{summary.avgMfeR !== undefined ? `${summary.avgMfeR}R` : '—'}
                         </Typography>
@@ -823,16 +955,35 @@ export function AnalyticsPage() {
                   </Grid>
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-                    <Card sx={{ p: 2, height: '100%' }}>
+                    <Card
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { maeRMin: 0.01 },
+                          label: 'Trades with Adverse Excursion',
+                        })
+                      }
+                      sx={{
+                        p: 2,
+                        height: '100%',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.loss.main,
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(244, 63, 94, 0.15)',
+                        },
+                      }}
+                    >
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Maximum Adverse Excursion: The deepest unrealized loss or adverse price dip experienced while the trade was open.">
+                        <Tooltip title="Maximum Adverse Excursion: The deepest unrealized loss or adverse price dip experienced while the trade was open. Click to inspect trades.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Avg MAE (Adverse)
                           </Typography>
                         </Tooltip>
                         <HelpHint hintKey="metric.mae" />
                       </Box>
-                      <Tooltip title="Average maximum adverse drawdown experienced across trades with stop losses">
+                      <Tooltip title="Average maximum adverse drawdown experienced across trades with stop losses (click to drill down)">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
                           -{summary.avgMaeR !== undefined ? `${summary.avgMaeR}R` : '—'}
                         </Typography>
@@ -865,16 +1016,35 @@ export function AnalyticsPage() {
                   </Grid>
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-                    <Card sx={{ p: 2, height: '100%' }}>
+                    <Card
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { excursionFlag: 'GAVE_BACK_PROFIT' },
+                          label: 'Trades with Gave Back Profit',
+                        })
+                      }
+                      sx={{
+                        p: 2,
+                        height: '100%',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.warning.main,
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
+                        },
+                      }}
+                    >
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Gave Back Profit: Percentage of trades that achieved significant favorable excursion (>1R) but surrendered >50% of peak gains before closing.">
+                        <Tooltip title="Gave Back Profit: Percentage of trades that achieved significant favorable excursion (>1R) but surrendered >50% of peak gains before closing. Click to inspect trades.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Gave Back Profit
                           </Typography>
                         </Tooltip>
                         <HelpHint hintKey="metric.gaveBackProfit" />
                       </Box>
-                      <Tooltip title="Trades with strong initial run that gave back >50% peak potential">
+                      <Tooltip title="Trades with strong initial run that gave back >50% peak potential (click to drill down)">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
                           {summary.gaveBackProfitPercent}%
                         </Typography>
@@ -886,16 +1056,35 @@ export function AnalyticsPage() {
                   </Grid>
 
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-                    <Card sx={{ p: 2, height: '100%' }}>
+                    <Card
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { excursionFlag: 'REVERSED_AFTER_STOP' },
+                          label: 'Trades with Post-Stop Reversal',
+                        })
+                      }
+                      sx={{
+                        p: 2,
+                        height: '100%',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: '#8B5CF6',
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.15)',
+                        },
+                      }}
+                    >
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Post-Stop Reversals: Percentage of stopped-out trades where market price reversed and subsequently reached original profit targets.">
+                        <Tooltip title="Post-Stop Reversals: Percentage of stopped-out trades where market price reversed and subsequently reached original profit targets. Click to inspect trades.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Post-Stop Reversals
                           </Typography>
                         </Tooltip>
                         <HelpHint hintKey="metric.postStopReversals" />
                       </Box>
-                      <Tooltip title="Stopped trades reversing to original profit target (indicates stop too tight)">
+                      <Tooltip title="Stopped trades reversing to original profit target (indicates stop too tight; click to drill down)">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
                           {summary.reversalAfterStopPercent}%
                         </Typography>
@@ -1041,6 +1230,9 @@ export function AnalyticsPage() {
                                     <div style={{ color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
                                       <strong>Net P&L:</strong> {formatCurrency(d.netPnL)}
                                     </div>
+                                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, fontStyle: 'italic' }}>
+                                      Click dot to inspect trade details
+                                    </Typography>
                                   </Box>
                                 </Paper>
                               );
@@ -1048,8 +1240,38 @@ export function AnalyticsPage() {
                             return null;
                           }}
                         />
-                        <Scatter name="Winners" data={winPoints} fill={muiTheme.palette.profit.main} />
-                        <Scatter name="Losers" data={lossPoints} fill={muiTheme.palette.loss.main} />
+                        <Scatter
+                          name="Winners"
+                          data={winPoints}
+                          fill={muiTheme.palette.profit.main}
+                          cursor="pointer"
+                          onClick={(entry: any) => {
+                            const tradeId = entry?.tradeId || entry?.payload?.tradeId;
+                            if (tradeId) {
+                              openDrill({
+                                kind: 'TRADE',
+                                tradeId,
+                                label: `Trade ${entry?.symbol || entry?.payload?.symbol || ''}`,
+                              });
+                            }
+                          }}
+                        />
+                        <Scatter
+                          name="Losers"
+                          data={lossPoints}
+                          fill={muiTheme.palette.loss.main}
+                          cursor="pointer"
+                          onClick={(entry: any) => {
+                            const tradeId = entry?.tradeId || entry?.payload?.tradeId;
+                            if (tradeId) {
+                              openDrill({
+                                kind: 'TRADE',
+                                tradeId,
+                                label: `Trade ${entry?.symbol || entry?.payload?.symbol || ''}`,
+                              });
+                            }
+                          }}
+                        />
                       </ScatterChart>
                     </ResponsiveContainer>
                   </Box>

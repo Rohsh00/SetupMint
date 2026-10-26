@@ -47,11 +47,14 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../lib/api.js';
-import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
+import { formatCurrency, formatPercent, formatR, formatDate } from '../lib/utils.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
+import { MultiPanelEquityCurve } from '../components/dashboard/MultiPanelEquityCurve.js';
+import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 
 export function DashboardPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
+  const { openDrill } = useTradeDrilldown();
   const [dateRange, setDateRange] = useState<string>('ALL');
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -145,15 +148,25 @@ export function DashboardPage() {
           severity="error"
           variant="filled"
           icon={<WarningAmberIcon fontSize="inherit" />}
+          onClick={() =>
+            openDrill({
+              kind: 'FILTER',
+              filter: { date: reviewQueueData.dailyLossBreach.date || new Date().toISOString().slice(0, 10) },
+              label: 'Daily Loss Breach Session Trades',
+            })
+          }
           sx={{
             borderRadius: 2,
             fontWeight: 700,
             backgroundColor: '#DC2626',
             boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)',
+            cursor: 'pointer',
+            transition: 'transform 0.15s ease',
+            '&:hover': { transform: 'scale(1.005)' },
           }}
         >
           {reviewQueueData.dailyLossBreach.message ||
-            `Risk Rule Alert: Maximum daily loss limit of ₹${reviewQueueData.dailyLossBreach.maxDailyLoss?.toLocaleString()} breached! Stop trading for the session.`}
+            `Risk Rule Alert: Maximum daily loss limit of ₹${reviewQueueData.dailyLossBreach.maxDailyLoss?.toLocaleString()} breached! Click to inspect today's trades.`}
         </Alert>
       )}
 
@@ -252,7 +265,23 @@ export function DashboardPage() {
       <Grid container spacing={2.5}>
         {/* Card 1: Net Realized P&L */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
+          <Card
+            onClick={() =>
+              openDrill({
+                kind: 'FILTER',
+                filter: { status: 'CLOSED' },
+                label: 'All Closed Portfolio Trades',
+              })
+            }
+            sx={{
+              height: '100%',
+              position: 'relative',
+              overflow: 'hidden',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+            }}
+          >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -298,7 +327,21 @@ export function DashboardPage() {
 
         {/* Card 2: Win Rate & Outcome */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card
+            onClick={() =>
+              openDrill({
+                kind: 'FILTER',
+                filter: { outcome: 'WIN' },
+                label: 'Winning Trades',
+              })
+            }
+            sx={{
+              height: '100%',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+            }}
+          >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -335,10 +378,24 @@ export function DashboardPage() {
               <Divider sx={{ mb: 1.5 }} />
 
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                <Box component="span" sx={{ color: muiTheme.palette.profit.main, fontWeight: 600 }}>
+                <Box
+                  component="span"
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    openDrill({ kind: 'FILTER', filter: { outcome: 'WIN' }, label: 'Winning Trades' });
+                  }}
+                  sx={{ color: muiTheme.palette.profit.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                >
                   {stats?.winningTradesCount || 0} Wins
                 </Box>
-                <Box component="span" sx={{ color: muiTheme.palette.loss.main, fontWeight: 600 }}>
+                <Box
+                  component="span"
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    openDrill({ kind: 'FILTER', filter: { outcome: 'LOSS' }, label: 'Losing Trades' });
+                  }}
+                  sx={{ color: muiTheme.palette.loss.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                >
                   {stats?.losingTradesCount || 0} Losses
                 </Box>
                 <Box component="span" sx={{ color: muiTheme.palette.text.secondary }}>
@@ -351,7 +408,21 @@ export function DashboardPage() {
 
         {/* Card 3: Profit Factor & Expectancy */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card
+            onClick={() =>
+              openDrill({
+                kind: 'FILTER',
+                filter: { status: 'CLOSED' },
+                label: 'Closed Trades (Expectancy Subset)',
+              })
+            }
+            sx={{
+              height: '100%',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+            }}
+          >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -397,7 +468,21 @@ export function DashboardPage() {
 
         {/* Card 4: Drawdown & Discipline */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card
+            onClick={() =>
+              openDrill({
+                kind: 'FILTER',
+                filter: { outcome: 'LOSS' },
+                label: 'Drawdown / Losing Trades',
+              })
+            }
+            sx={{
+              height: '100%',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+            }}
+          >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -444,107 +529,58 @@ export function DashboardPage() {
         </Grid>
       </Grid>
 
-      {/* Main Charts Row */}
+      {/* Multi-Panel Performance Curves Row */}
+      <Box sx={{ width: '100%' }}>
+        <MultiPanelEquityCurve selectedAccountId={selectedAccountId} startDate={startDate} />
+      </Box>
+
+      {/* Daily Net P&L Row */}
       <Grid container spacing={3}>
-        {/* Cumulative Equity Curve (8 Cols) */}
-        <Grid size={{ xs: 12, lg: 8 }}>
-          <Card sx={{ p: 2.5, height: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Grid size={{ xs: 12 }}>
+          <Card sx={{ p: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                  Cumulative Equity Curve
+                  Daily Net P&L Sessions
                 </Typography>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  Portfolio equity progression over time
+                  Green winning / Red losing trading sessions • Click any day bar to drilldown
                 </Typography>
               </Box>
-              <Chip
-                label={`Peak: ${formatCurrency(
-                  Math.max(...(stats?.equityCurve?.map((p: any) => p.cumulativeEquity) || [0]))
-                )}`}
-                size="small"
-                sx={{
-                  fontFamily: `'JetBrains Mono', monospace`,
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  backgroundColor: muiTheme.palette.profit.bg,
-                  color: muiTheme.palette.profit.main,
-                  border: `1px solid ${isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.25)'}`,
-                }}
-              />
             </Box>
 
-            <Box sx={{ height: 300, width: '100%' }}>
-              {stats?.equityCurve && stats.equityCurve.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats.equityCurve}>
-                    <defs>
-                      <linearGradient id="setupmintEquityGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                    <XAxis dataKey="date" stroke={chartAxisColor} fontSize={11} tickLine={false} />
-                    <YAxis
-                      stroke={chartAxisColor}
-                      fontSize={11}
-                      tickLine={false}
-                      tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                    />
-                    <RechartsTooltip
-                      contentStyle={chartTooltipStyle}
-                      itemStyle={{ color: muiTheme.palette.text.primary }}
-                      labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
-                      formatter={(val: any) => [formatCurrency(val), 'Cumulative Equity']}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="cumulativeEquity"
-                      stroke="#10B981"
-                      strokeWidth={2.5}
-                      fillOpacity={1}
-                      fill="url(#setupmintEquityGradient)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <Box sx={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                    No closed trades recorded yet to plot equity curve.
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Card>
-        </Grid>
-
-        {/* Daily Net P&L (4 Cols) */}
-        <Grid size={{ xs: 12, lg: 4 }}>
-          <Card sx={{ p: 2.5, height: '100%' }}>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                Daily Net P&L
-              </Typography>
-              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                Green winning / Red losing trading sessions
-              </Typography>
-            </Box>
-
-            <Box sx={{ height: 300, width: '100%' }}>
+            <Box sx={{ height: 240, width: '100%' }}>
               {stats?.dailyPnL && stats.dailyPnL.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.dailyPnL}>
+                  <BarChart
+                    data={stats.dailyPnL}
+                    onClick={(data) => {
+                      if (data?.activePayload?.[0]?.payload?.date) {
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { date: data.activePayload[0].payload.date },
+                          label: `Session on ${formatDate(data.activePayload[0].payload.date)}`,
+                        });
+                      }
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                    <XAxis dataKey="date" stroke={chartAxisColor} fontSize={10} tickLine={false} />
+                    <XAxis
+                      dataKey="date"
+                      stroke={chartAxisColor}
+                      fontSize={10}
+                      tickLine={false}
+                      tickFormatter={(d: string) => formatDate(d)}
+                    />
                     <YAxis stroke={chartAxisColor} fontSize={10} tickLine={false} />
                     <RechartsTooltip
                       contentStyle={chartTooltipStyle}
                       itemStyle={{ color: muiTheme.palette.text.primary }}
                       labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
                       formatter={(val: any) => [formatCurrency(val), 'Net P&L']}
+                      labelFormatter={(label) => `${formatDate(label)} • Click to inspect session trades`}
                     />
-                    <Bar dataKey="netPnL" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="netPnL" radius={[4, 4, 0, 0]} cursor="pointer">
                       {stats.dailyPnL.map((entry: any, index: number) => (
                         <Cell
                           key={`cell-${index}`}
@@ -579,6 +615,13 @@ export function DashboardPage() {
                 stats.performanceByInstrument.map((inst: any) => (
                   <Box
                     key={inst.symbol}
+                    onClick={() =>
+                      openDrill({
+                        kind: 'FILTER',
+                        filter: { symbol: inst.symbol },
+                        label: `${inst.symbol} Executions`,
+                      })
+                    }
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
@@ -588,6 +631,12 @@ export function DashboardPage() {
                       borderRadius: 1.5,
                       border: `1px solid ${muiTheme.palette.divider}`,
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                        transform: 'translateX(2px)',
+                      },
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -630,6 +679,13 @@ export function DashboardPage() {
                 stats.performanceByStrategy.map((strat: any) => (
                   <Box
                     key={strat.strategyId}
+                    onClick={() =>
+                      openDrill({
+                        kind: 'FILTER',
+                        filter: { strategyId: strat.strategyId },
+                        label: `${strat.strategyName} Playbook Trades`,
+                      })
+                    }
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
@@ -639,6 +695,12 @@ export function DashboardPage() {
                       borderRadius: 1.5,
                       border: `1px solid ${muiTheme.palette.divider}`,
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                        transform: 'translateX(2px)',
+                      },
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -800,7 +862,15 @@ export function DashboardPage() {
               </TableHead>
               <TableBody>
                 {reviewQueueData.queue.slice(0, 5).map((t: any) => (
-                  <TableRow key={t.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                  <TableRow
+                    key={t.id}
+                    hover
+                    onClick={() => openDrill({ kind: 'TRADE', tradeId: t.id, label: `${t.symbol} Review` })}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:last-child td, &:last-child th': { border: 0 },
+                    }}
+                  >
                     <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem' }}>
                       {t.tradeDate}
                     </TableCell>
@@ -941,6 +1011,7 @@ export function DashboardPage() {
                   <TableRow
                     key={t.id}
                     hover
+                    onClick={() => openDrill({ kind: 'TRADE', tradeId: t.id, label: `${t.symbol} Executed Trade` })}
                     sx={{
                       cursor: 'pointer',
                       '&:last-child td, &:last-child th': { border: 0 },

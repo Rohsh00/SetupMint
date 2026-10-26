@@ -406,3 +406,137 @@ export function calculateFractionalKelly(
     explanation,
   };
 }
+
+// ============================================================================
+// MONTE CARLO EXPECTANCY CONE ENGINE
+// ============================================================================
+
+export interface MonteCarloBandsConfig {
+  iterations?: number;
+  tradesPerPath?: number;
+  initialEquity?: number;
+  riskPerTradePercent?: number;
+  fixedRiskAmount?: number;
+  riskMode?: MonteCarloRiskMode;
+  metric?: 'EQUITY' | 'CUMULATIVE_R';
+  seed?: number | string;
+}
+
+export interface MonteCarloBandStep {
+  step: number;
+  p5: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p95: number;
+}
+
+/**
+ * Computes per-step percentile bands (P5, P25, P50, P75, P95) of simulated equity or cumulative R
+ * across future trade steps (e.g. 50, 100, 200 trades).
+ *
+ * Guaranteed Properties:
+ * - Deterministic with Mulberry32 PRNG.
+ * - Monotonic across percentiles at each step: P5 <= P25 <= P50 <= P75 <= P95.
+ * - Does not modify legacy runMonteCarloSimulation outputs.
+ */
+export function calculateMonteCarloBands(
+  rMultiples: number[],
+  config: MonteCarloBandsConfig = {}
+): MonteCarloBandStep[] {
+  const iterations = config.iterations ?? 10000;
+  const tradesPerPath = config.tradesPerPath ?? 100;
+  const initialEquity = config.initialEquity ?? 100000;
+  const riskPerTradePercent = config.riskPerTradePercent ?? 1.0;
+  const fixedRiskAmount = config.fixedRiskAmount ?? (initialEquity * (riskPerTradePercent / 100));
+  const riskMode = config.riskMode ?? 'PERCENT_CURRENT';
+  const metric = config.metric ?? 'EQUITY';
+
+  const seedNum = typeof config.seed === 'string'
+    ? Mulberry32PRNG.stringToSeed(config.seed)
+    : (config.seed ?? 42);
+
+  const prng = new Mulberry32PRNG(seedNum);
+  const validR = rMultiples.filter((r) => Number.isFinite(r));
+  const initialVal = metric === 'CUMULATIVE_R' ? 0 : initialEquity;
+
+  if (validR.length === 0 || (metric === 'EQUITY' && initialEquity <= 0)) {
+    return Array.from({ length: tradesPerPath + 1 }, (_, step) => ({
+      step,
+      p5: initialVal,
+      p25: initialVal,
+      p50: initialVal,
+      p75: initialVal,
+      p95: initialVal,
+    }));
+  }
+
+  const sampleSize = validR.length;
+
+  // stepValues[step][iter]
+  // Pre-allocate step matrices for 10,000 paths
+  const stepValues: Float64Array[] = Array.from(
+    { length: tradesPerPath + 1 },
+    () => new Float64Array(iterations)
+  );
+
+  for (let iter = 0; iter < iterations; iter++) {
+    let currentVal = initialVal;
+    stepValues[0][iter] = currentVal;
+
+    for (let t = 0; t < tradesPerPath; t++) {
+      if (metric === 'CUMULATIVE_R') {
+        const sampleIdx = prng.nextInt(0, sampleSize - 1);
+        const r = validR[sampleIdx];
+        currentVal += r;
+      } else {
+        if (currentVal <= 0) {
+          currentVal = 0;
+        } else {
+          let riskAmount = 0;
+          if (riskMode === 'PERCENT_CURRENT') {
+            riskAmount = currentVal * (riskPerTradePercent / 100);
+          } else if (riskMode === 'PERCENT_INITIAL') {
+            riskAmount = initialEquity * (riskPerTradePercent / 100);
+          } else {
+            riskAmount = fixedRiskAmount;
+          }
+
+          if (riskAmount <= 0) riskAmount = 0;
+
+          const sampleIdx = prng.nextInt(0, sampleSize - 1);
+          const r = validR[sampleIdx];
+          const tradePnL = r * riskAmount;
+          currentVal = Math.max(0, currentVal + tradePnL);
+        }
+      }
+
+      stepValues[t + 1][iter] = currentVal;
+    }
+  }
+
+  const p5Idx = Math.floor(0.05 * (iterations - 1));
+  const p25Idx = Math.floor(0.25 * (iterations - 1));
+  const p50Idx = Math.floor(0.50 * (iterations - 1));
+  const p75Idx = Math.floor(0.75 * (iterations - 1));
+  const p95Idx = Math.floor(0.95 * (iterations - 1));
+
+  const bands: MonteCarloBandStep[] = new Array(tradesPerPath + 1);
+
+  for (let s = 0; s <= tradesPerPath; s++) {
+    const arr = stepValues[s];
+    arr.sort();
+
+    bands[s] = {
+      step: s,
+      p5: Number(arr[p5Idx].toFixed(2)),
+      p25: Number(arr[p25Idx].toFixed(2)),
+      p50: Number(arr[p50Idx].toFixed(2)),
+      p75: Number(arr[p75Idx].toFixed(2)),
+      p95: Number(arr[p95Idx].toFixed(2)),
+    };
+  }
+
+  return bands;
+}
+

@@ -52,6 +52,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMoreRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
+import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import {
   ITradeTemplate,
   TemplateGroup,
@@ -60,6 +61,7 @@ import {
 } from '@tradevault/shared';
 
 export function StrategyPlaybookPage() {
+  const { openDrill } = useTradeDrilldown();
   const queryClient = useQueryClient();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -740,7 +742,30 @@ export function StrategyPlaybookPage() {
                         </Typography>
 
                         {/* Performance strip */}
-                        <Grid container spacing={1.5} sx={{ mt: 2, p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', border: `1px solid ${muiTheme.palette.divider}` }}>
+                        <Grid
+                          container
+                          spacing={1.5}
+                          onClick={() =>
+                            openDrill({
+                              kind: 'FILTER',
+                              filter: { strategyId: strat.id || strat._id },
+                              label: `${strat.name} Executions`,
+                            })
+                          }
+                          sx={{
+                            mt: 2,
+                            p: 1.5,
+                            borderRadius: 2,
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                            border: `1px solid ${muiTheme.palette.divider}`,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            '&:hover': {
+                              borderColor: muiTheme.palette.primary.main,
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                            },
+                          }}
+                        >
                           <Grid size={{ xs: 4 }}>
                             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontSize: '0.6875rem' }}>
                               Trades
@@ -810,6 +835,14 @@ export function StrategyPlaybookPage() {
                             </Typography>
                             <Chip
                               size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDrill({
+                                  kind: 'FILTER',
+                                  filter: { strategyId: strat.id || strat._id },
+                                  label: `${strat.name} Trades (${strat.edge?.verdict || 'Edge Validation'})`,
+                                });
+                              }}
                               icon={
                                 strat.edge?.verdict === 'LIKELY_EDGE' ? (
                                   <CheckCircleOutlineIcon sx={{ fontSize: '13px !important' }} />
@@ -833,7 +866,7 @@ export function StrategyPlaybookPage() {
                                   ? 'error'
                                   : 'warning'
                               }
-                              sx={{ fontWeight: 700, fontSize: '0.625rem', height: 20 }}
+                              sx={{ fontWeight: 700, fontSize: '0.625rem', height: 20, cursor: 'pointer' }}
                             />
                           </Box>
 
@@ -967,6 +1000,21 @@ export function StrategyPlaybookPage() {
                             <Chip size="small" variant="outlined" color="warning" label={`${strat.invalidationCriteria?.length || 0} Invalidation`} sx={{ fontSize: '0.6875rem', fontWeight: 600 }} />
                           </Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="secondary"
+                              onClick={() =>
+                                openDrill({
+                                  kind: 'FILTER',
+                                  filter: { strategyId: strat.id || strat._id },
+                                  label: `${strat.name} Trades`,
+                                })
+                              }
+                              sx={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'none', py: 0.25 }}
+                            >
+                              Trades ({strat.totalTrades || 0})
+                            </Button>
                             <Button
                               size="small"
                               variant="outlined"

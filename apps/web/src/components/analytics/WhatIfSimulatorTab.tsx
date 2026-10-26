@@ -59,12 +59,14 @@ import {
 import { api } from '../../lib/api.js';
 import { formatCurrency, formatPercent } from '../../lib/utils.js';
 import { HelpHint, WithHelp, DisabledReason } from '../help/index.js';
+import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 
 interface WhatIfSimulatorTabProps {
   accountId?: string;
 }
 
 export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountId }) => {
+  const { openDrill } = useTradeDrilldown();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -384,7 +386,27 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
       {simData && (
         <Grid container spacing={2}>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  label: 'Evaluable Simulation Trades',
+                })
+              }
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: muiTheme.palette.primary.main,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                },
+              }}
+            >
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700 }}>
                   Evaluable Trades
@@ -395,12 +417,32 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
                 {simData.scope.nEligible} / {simData.scope.tradesInScope}
               </Typography>
               <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                Single-fill, non-managed with candles
+                Single-fill, non-managed (click to inspect)
               </Typography>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  label: 'What-If Evaluated Trades',
+                })
+              }
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: muiTheme.palette.primary.main,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                },
+              }}
+            >
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700 }}>
                   Actual Mean R
@@ -419,12 +461,32 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
                 {simData.baseline.meanR_actual.toFixed(2)}R
               </Typography>
               <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                Same evaluable subset
+                Same evaluable subset (click to inspect)
               </Typography>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  label: 'What-If Baseline Net P&L',
+                })
+              }
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: muiTheme.palette.primary.main,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                },
+              }}
+            >
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700 }}>
                   Actual Net P&L
@@ -697,7 +759,20 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
                         );
                       }}
                     />
-                    <Bar dataKey="count" fill="#38BDF8" radius={[4, 4, 0, 0]} />
+                    <Bar
+                      dataKey="count"
+                      fill="#38BDF8"
+                      radius={[4, 4, 0, 0]}
+                      cursor="pointer"
+                      onClick={(entry: any) => {
+                        const lbl = entry?.rangeLabel || entry?.payload?.rangeLabel || '';
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { outcome: 'WIN' },
+                          label: `Winners MAE: ${lbl}`,
+                        });
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -713,7 +788,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
                     All Trades' MFE Distribution (Reach Potential)
                   </Typography>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                    Peak favorable excursion reached across all evaluated trades.
+                    Peak favorable excursion reached across all evaluated trades. (Click bar to drill down)
                   </Typography>
                 </Box>
                 <HelpHint hintKey="metric.mfe" />
@@ -736,7 +811,20 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
                         );
                       }}
                     />
-                    <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} />
+                    <Bar
+                      dataKey="count"
+                      fill="#10B981"
+                      radius={[4, 4, 0, 0]}
+                      cursor="pointer"
+                      onClick={(entry: any) => {
+                        const lbl = entry?.rangeLabel || entry?.payload?.rangeLabel || '';
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { mfeRMin: 0.01 },
+                          label: `Trades MFE: ${lbl}`,
+                        });
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -951,6 +1039,31 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
                 Right-censored trades excluded: {selectedCell.all.nCensored} trades.
               </Typography>
             </Box>
+
+            {/* Drilldown Trigger Button */}
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              fullWidth
+              onClick={() => {
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  label: `What-If Simulation Trades (Stop ${selectedCell.stopR ?? 'None'}R, Target ${selectedCell.targetR ?? 'None'}R)`,
+                });
+              }}
+              sx={{
+                mt: 1,
+                py: 1,
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+              }}
+            >
+              Drill Down Evaluated Trades ({selectedCell.all.nEval})
+            </Button>
           </Box>
         )}
       </Drawer>

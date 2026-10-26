@@ -57,22 +57,37 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 3. `/` — Dashboard Overview Page
 - **Page Component:** [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx)
-- **Purpose:** Executive high-level performance metrics, equity curve chart, daily review queue, and quick access to recent trade activity.
+- **Purpose:** Executive high-level performance metrics, multi-panel synchronized performance view (equity, drawdown, cumulative-R, strategy overlays, Monte Carlo expectancy cone, risk event markers), daily review queue, and quick access to recent trade activity.
 - **Main Components:**
-  - KPI Stat Cards: Net Realized P&L, Win Rate, Profit Factor, Expectancy, Max Drawdown, Total Costs, Current Streak, Rule Adherence.
-  - Interactive Recharts Equity Curve Area Chart with cumulative equity and peak drawdown tracking.
+  - **KPI Stat Cards (with One-Click Trade Drilldown):** Net Realized P&L, Win Rate, Profit Factor & Expectancy, Max Drawdown. Clicking any KPI card immediately launches the Universal `TradeDrillDrawer` pre-filtered to the relevant trades.
+  - **Multi-Panel Performance Equity Curve ([`MultiPanelEquityCurve.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/dashboard/MultiPanelEquityCurve.tsx)):**
+    - Synchronized dual-panel Recharts system via `syncId="setupmint-equity-sync"`.
+    - **Panel 1: Equity / R Performance Curve:**
+      - View toggle: Money Curve (₹ / $), Cumulative-R Curve, or Both synchronized.
+      - R-Multiple Coverage indicator pill (`N_R / N_total`).
+      - Up to 6 Per-Strategy Cumulative-R Overlays with sample-size warning badges (`< 30 trades`).
+      - Forward Monte Carlo Expectancy Cone displaying P5, P25, P50, P75, and P95 percentile envelopes for 50, 100, or 200 projected trades (deterministic via Mulberry32 PRNG, edge-gated).
+      - Event Markers for Daily Loss Breaches (pulsing crimson) and High-Tilt Days ($\ge 61$, amber).
+      - Clicking any curve point or event marker immediately opens the underlying trade(s) in `TradeDrillDrawer`.
+    - **Panel 2: Synchronized Underwater / Drawdown Curve:**
+      - Real-time underwater area fill below high-water mark.
+      - Metrics strip: Current Drawdown, Max Peak-to-Trough Drawdown, and Longest Recovery Duration (both in calendar days and trade count).
+      - Clicking any drawdown coordinate drills into the drawdown trade.
   - **Daily Review Queue Card Widget:**
     - Active review status banner showing pending unreviewed trades and unreviewed trading days.
-    - Daily Loss Breach Banner (red alert if today's net loss exceeds user's configured `maxDailyLoss`).
+    - Daily Loss Breach Banner (red alert if today's net loss exceeds user's configured `maxDailyLoss`) with direct drilldown.
     - Review breakdown chips: Total Pending, Revenge Risk, Sizing Violations, High Volume.
     - Pending Trades Table: Symbol, Direction, Net P&L, Suggested Mistake tags with hover tooltips, and "Review" action button.
     - "Start Daily Review" primary action button: One-click jump to `/journal` with the unreviewed date preloaded.
+  - Performance by Instrument & Performance by Strategy breakdown tables with clickable drilldown rows.
   - Quick Actions Bar: "Log New Trade", "Risk Calculator", "Daily Review".
-  - Recent Trades Table with symbol, direction, P&L badge, and outcome.
+  - Recent Trades Table with clickable rows launching the drilldown drawer.
   - Date Range Quick Filters (7D, 30D, 90D, YTD, All Time).
-- **Available Actions:** Change date range filter, select global account filter, click "Log New Trade" (opens `TradeFormModal`), navigate to trade details, click "Start Daily Review" or individual trade review buttons.
+- **Available Actions:** Change date range filter, select global account filter, toggle Money/R/Both equity views, toggle strategy overlays, change Monte Carlo projection steps, click any chart point or table row to drill down into trades, click "Log New Trade", navigate to trade details.
 - **API Calls:**
   - `GET /api/v1/dashboard/stats?accountId=...&startDate=...`
+  - `GET /api/v1/dashboard/equity-curves?accountId=...&startDate=...&endDate=...&overlayStrategies=...&coneTrades=...`
+  - `POST /api/v1/trades/drilldown` (via `useTradeDrilldown`)
   - `GET /api/v1/trades?accountId=...&limit=5&sortBy=tradeDate&sortOrder=desc`
   - `GET /api/v1/review/queue`
 - **Database Models:** `Trade`, `TradingAccount`, `DailyJournal`, `User`.
@@ -142,12 +157,13 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 6. `/journal` — Visual Monthly Calendar Page
 - **Page Component:** [`JournalCalendarPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/JournalCalendarPage.tsx)
-- **Purpose:** Monthly calendar heatmap and daily session reflection review with automated prefill.
+- **Purpose:** Monthly calendar heatmap and daily session reflection review with automated prefill and complete trade drilldown.
 - **Main Components:**
-  - Monthly Calendar Grid: 7-day columns (Sun–Sat) with green/red P&L badges, trade counts, and journal status indicators.
+  - Monthly Calendar Grid: 7-day columns (Sun–Sat) with green/red P&L badges, trade counts, and journal status indicators. Clicking any trade count or badge opens the day's trades in `TradeDrillDrawer`.
   - Month Switcher: Previous month, next month, current month title.
-  - Month Summary Cards: Total Monthly P&L, Total Trades, Win Days vs Loss Days.
+  - Month Summary Cards: Total Monthly P&L, Total Trades (clickable drilldown into all month trades), Win Days vs Loss Days.
   - Daily Reflection Drawer/Dialog: Opens when clicking any calendar day or navigating via `?date=YYYY-MM-DD`:
+    - "Drill All in Drawer" button to inspect all day trades in `TradeDrillDrawer`.
     - Daily Loss Breach Alert Banner: Displays if daily loss exceeded user limit, with breach amount.
     - Trade Session Summary: Net P&L, Total Trades, Win Count, Loss Count.
     - Automated Session Prefill:
@@ -155,12 +171,13 @@ This document details all routes and pages discovered in the **SetupMint** front
       - Worst Trade selector (pre-selects trade with lowest Net P&L $< 0$).
       - Aggregated Mistake Tags: Automatically aggregates mistake tags from individual session trades into interactive chips with one-click removal.
       - Rule-Based Discipline Rating: Calculated 1–5 stars with indicator of rule infractions.
-    - Lists all trades taken on that day with individual P&Ls and suggested mistake chips.
+    - Lists all trades taken on that day with individual P&Ls, suggested mistake chips, and one-click drawer drilldown.
     - Reflection form: Market conditions, Market bias (Bullish/Bearish/Neutral), Emotional state, Discipline rating (1–5), Best trade, Worst trade, Mistake tags, Lessons learned, Next day plan.
-- **Available Actions:** Switch month, click day cell to inspect trades, prefill session reflection, select best/worst trade, add/remove mistake tags, submit daily reflection, delete daily reflection.
+- **Available Actions:** Switch month, click day cell to inspect trades, prefill session reflection, select best/worst trade, add/remove mistake tags, submit daily reflection, delete daily reflection, open trades in drilldown drawer.
 - **API Calls:**
   - `GET /api/v1/journal/calendar?yearMonth=YYYY-MM`
   - `GET /api/v1/journal/:date` (returns journal record and auto-calculated `prefill` session data)
+  - `POST /api/v1/trades/drilldown`
   - `POST /api/v1/journal/:date`
   - `DELETE /api/v1/journal/:date`
 - **Database Models:** `DailyJournal`, `Trade`, `User`.
@@ -170,18 +187,20 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 7. `/analytics` — Quantitative Analytics & Psychology Page
 - **Page Component:** [`AnalyticsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AnalyticsPage.tsx)
-- **Purpose:** Advanced statistical breakdown across trading psychology, timeframes, instruments, strategies, weekdays, and sessions.
+- **Purpose:** Advanced statistical breakdown across trading psychology, timeframes, instruments, strategies, weekdays, sessions, and candle-replay simulation — with universal trade drilldown across all metrics and charts.
 - **Main Components:**
-  - Sub-Navigation Tabs: Overview, Psychology & Discipline, Time & Sessions, Execution Quality (MAE/MFE).
-  - Charts & Visualizations:
-    - *Execution Quality Tab:* Recharts Scatter Plot (`maeR` on X-axis vs `mfeR` on Y-axis) separating winners (green) and losers (red); summary KPI cards for Avg MFE (R), Avg MAE (R), Exit Efficiency %, % Gave Back Profit, and % Reversal After Stop Hit.
-    - *Psychology Tab:* Bar chart comparing Discipline Rating (1 to 5) vs Net P&L; Mistake impact cards showing total monetary loss per mistake; Emotion before entry vs win rate.
-    - *Time Tab:* Weekday P&L and win rate bar charts; Session performance (NSE Regular vs MCX Evening vs London/NY); Holding time distribution.
-    - *Overview Tab:* P&L distribution histogram buckets (losses vs gains); Instrument performance table; Strategy ranking table.
+  - Sub-Navigation Tabs: Overview, Psychology & Discipline, Time & Sessions, Execution Quality (MAE/MFE), What-If Simulation.
+  - Universal Drilldown Integration:
+    - *Overview Tab:* P&L distribution histogram buckets (clicking any bar opens underlying trades within the exact ₹ range), drawdown curve coordinates, instrument rows, and strategy rows.
+    - *Psychology Tab:* Discipline rating bars (1 to 5), emotion before entry rows, and mistake impact cards with one-click drilldown into trades flagged with that mistake.
+    - *Time Tab:* Weekday performance rows and trading session rows (NSE Regular, MCX Evening, etc.).
+    - *Execution Quality Tab:* Recharts Scatter Plot (`maeR` vs `mfeR`) with clickable dots; summary KPI cards for Avg MFE, Avg MAE, Exit Efficiency %, % Gave Back Profit, and % Reversal After Stop Hit.
+    - *What-If Simulation Tab:* Baseline metric cards (Evaluable Trades, Actual Mean R, Actual Net P&L), distribution bars, and cell inspector drawer with "Drill Down Evaluated Trades" action.
 - **API Calls:**
   - `GET /api/v1/dashboard/stats?accountId=...`
   - `GET /api/v1/analytics/psychology?accountId=...`
   - `GET /api/v1/analytics/excursion?accountId=...`
+  - `POST /api/v1/trades/drilldown` (via `useTradeDrilldown`)
 - **Database Models:** `Trade`, `TradingAccount`, `TradeCandleSnapshot`.
 - **Status:** **IMPLEMENTED**.
 
@@ -189,19 +208,19 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 8. `/strategies` — Strategy Playbooks & Trade Templates Hub
 - **Page Component:** [`StrategyPlaybookPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/StrategyPlaybookPage.tsx)
-- **Purpose:** Discretionary execution playbook management and rule-driven trade setup template catalog with empirical edge tracking.
+- **Purpose:** Discretionary execution playbook management and rule-driven trade setup template catalog with empirical edge tracking and direct trade drilldown.
 - **Main Components:**
   - **Top Tab Switcher:**
     - Tab 1: **"Execution Playbooks"** (Strategic frameworks, entry/exit rules, invalidation, checklists).
     - Tab 2: **"Trade Setup Templates"** (Market-based entry patterns, SL rules, min R:R, prefill patterns, and live trade edge metrics).
   - **Execution Playbooks Tab:**
-    - Strategy Cards Grid: Name, Description, Asset Classes, Min R:R, Total Trades, Win Rate %, Net P&L, Profit Factor.
+    - Strategy Cards Grid: Name, Description, Asset Classes, Min R:R, Total Trades, Win Rate %, Net P&L, Profit Factor. Clicking "Trades ({count})" or the performance summary strip immediately opens the strategy's trades in `TradeDrillDrawer`.
     - Strategy Modal: Name, description, asset classes, timeframes, entry rules, stop-loss rules, target rules, invalidation criteria, pre-trade checklist items.
   - **Trade Setup Templates Tab:**
     - Market Category Pills: `All`, `F&O Intraday`, `Stocks & Cash`, `Forex & Gold`, `Crypto`, `Commodities (MCX)`, `Price Action / Any Market`, `Custom`.
     - Search Input & Favorite Quick Filter.
     - Template Cards Grid: Setup name, category badge, direction chip (`LONG` / `SHORT`), linked strategy playbook chip, mathematical stop-loss rule pill (`PERCENT`, `POINTS`, `PREMIUM_PERCENT`, `MANUAL`), minimum R:R target, active time window, dynamic title pattern, confluence tags, checklist items.
-    - Performance Edge Banner on each card: Real-time aggregated win rate %, profit factor, net P&L, and total trades linked to the template.
+    - Performance Edge Banner on each card: Real-time aggregated win rate %, profit factor, net P&L, and total trades linked to the template with one-click drilldown.
     - Action Buttons: Favorite toggle star, "Apply in Form", "Clone & Customize", "Edit", "Delete" (built-ins protected as read-only).
     - Custom Template Dialog: Name, description, market group, compatible asset classes, direction, target strategy name, stop loss rule mode & value/hint, min R:R, dynamic title pattern (`{symbol}`, `{side}`), tags, confluences, checklists, time window, expiry-day-only toggle, target trading session.
 - **Available Actions:**

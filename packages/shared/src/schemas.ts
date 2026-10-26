@@ -399,6 +399,55 @@ export const tradeFilterQuerySchema = z.object({
   sortBy: z.string().default('tradeDate'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
+export type TradeFilterQuery = z.infer<typeof tradeFilterQuerySchema>;
+
+export const extendedTradeFilterSchema = tradeFilterQuerySchema.extend({
+  date: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  dateRange: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  weekday: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  emotion: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  mistakeTag: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  disciplineScore: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  netPnLMin: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  netPnLMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  mfeRMin: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  mfeRMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  maeRMin: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  maeRMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  holdingTimeMin: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  holdingTimeMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  excursionFlag: z.preprocess(emptyStringToUndefined, z.string().optional()),
+});
+export type ExtendedTradeFilter = z.infer<typeof extendedTradeFilterSchema>;
+
+export const drillDescriptorSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('TRADE'),
+    tradeId: z.string().min(1, 'tradeId is required'),
+    label: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('TRADES'),
+    tradeIds: z.array(z.string()).min(1).max(200),
+    label: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('FILTER'),
+    filter: extendedTradeFilterSchema.partial(),
+    label: z.string().min(1, 'label is required'),
+    metadata: z.record(z.any()).optional(),
+  }),
+]);
+export type DrillDescriptor = z.infer<typeof drillDescriptorSchema>;
+
+export const drilldownRequestSchema = z.object({
+  descriptor: drillDescriptorSchema,
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+  sortBy: z.string().default('tradeDate'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+export type DrilldownRequestInput = z.infer<typeof drilldownRequestSchema>;
 
 export const bulkClassifySchema = z.object({
   tradeIds: z.array(z.string()).min(1, 'At least one trade ID is required'),

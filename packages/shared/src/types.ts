@@ -1485,4 +1485,127 @@ export interface IWhatIfResponse {
   allTradesMfeDistribution: IWhatIfExcursionDistributionBucket[];
 }
 
+// ============================================================================
+// UNIVERSAL TRADE DRILL-DOWN CONTRACTS
+// ============================================================================
+
+export interface IDrilldownAggregate {
+  count: number;
+  closedCount: number;
+  netPnL: number;
+  grossPnL: number;
+  totalCosts: number;
+  winRate: number;
+  avgR: number;
+  winsCount: number;
+  lossesCount: number;
+  breakevenCount: number;
+}
+
+export interface IDrilldownResponse {
+  trades: ITrade[];
+  totalCount: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  aggregate: IDrilldownAggregate;
+  descriptor: any;
+  exclusionReasons?: string[];
+  metadata?: {
+    breachAmount?: number;
+    tiltScore?: number;
+    tiltComponents?: any;
+    label?: string;
+  };
+}
+
+// ============================================================================
+// MULTI-PANEL PERFORMANCE EQUITY CURVES CONTRACTS
+// ============================================================================
+
+export interface IStrategyOverlayCurve {
+  strategyId: string;
+  strategyName: string;
+  tradesCount: number;
+  winRate: number;
+  curve: Array<{
+    date: string;
+    tradeId?: string;
+    symbol?: string;
+    rMultiple: number;
+    cumulativeR: number;
+  }>;
+}
+
+export interface IEquityCurvesResponse {
+  moneyCurve: Array<{
+    date: string;
+    tradeId?: string;
+    symbol?: string;
+    netPnL: number;
+    cumulativeEquity: number;
+    drawdown: number;
+    drawdownPercent: number;
+  }>;
+  cumulativeRCurve: {
+    curve: Array<{
+      date: string;
+      tradeId?: string;
+      symbol?: string;
+      rMultiple: number;
+      cumulativeR: number;
+    }>;
+    coveragePercent: number;
+    coverageText: string;
+    eligibleTrades: number;
+    totalTrades: number;
+    excludedTrades: number;
+  };
+  recoveryStats: {
+    currentDrawdown: number;
+    currentDrawdownPercent: number;
+    maxDrawdown: number;
+    maxDrawdownPercent: number;
+    longestRecoveryDays: number;
+    longestRecoveryPoints: number;
+  };
+  strategyOverlays: IStrategyOverlayCurve[];
+  monteCarloCone: Array<{
+    step: number;
+    p5: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    p95: number;
+  }>;
+  coneMeta: {
+    sampleSize: number;
+    edgeVerdict?: string;
+    isLowSample: boolean;
+    warning?: string;
+    tradesPerPath: number;
+  };
+  eventMarkers: {
+    breachDays: Array<{
+      date: string;
+      maxDailyLoss: number;
+      currentDailyLoss: number;
+      breachAmount: number;
+      tradesCount: number;
+    }>;
+    tiltDays: Array<{
+      date: string;
+      tradeId: string;
+      symbol: string;
+      score: number;
+      level: string;
+      components: any;
+      entryMoment: string;
+      explanation: string;
+    }>;
+  };
+  startingEquity: number;
+}
+
+
 

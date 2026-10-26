@@ -50,6 +50,7 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
+import { TradeDrillDrawer } from '../drilldown/TradeDrillDrawer.js';
 import { SetupMintLogo } from '../brand/SetupMintLogo.js';
 import { CommandPalette } from './CommandPalette.js';
 import { toast } from '../../context/ToastContext.js';
@@ -826,6 +827,9 @@ export function AppLayout() {
         onClose={() => setIsCommandPaletteOpen(false)}
         onOpenNewTrade={() => setIsTradeModalOpen(true)}
       />
+
+      {/* Universal Trade Drilldown Drawer */}
+      <TradeDrillDrawer />
     </Box>
   );
 }

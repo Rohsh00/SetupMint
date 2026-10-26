@@ -1,3 +1,5 @@
+import type { DrillDescriptor, IDrilldownResponse, IEquityCurvesResponse } from '@tradevault/shared';
+
 const BASE_URL = '/api/v1';
 
 export class ApiError extends Error {
@@ -296,6 +298,11 @@ export const api = {
         lastTime: number | null;
       }>(`/trades/${id}/interactive-candles?${query.toString()}`);
     },
+    drilldown: (payload: { descriptor: DrillDescriptor; limit?: number }) =>
+      request<IDrilldownResponse>('/trades/drilldown', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
   },
 
   // Dashboard
@@ -308,6 +315,15 @@ export const api = {
         }
       }
       return request<any>(`/dashboard/stats?${query.toString()}`);
+    },
+    equityCurves: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      return request<IEquityCurvesResponse>(`/dashboard/equity-curves?${query.toString()}`);
     },
   },
 

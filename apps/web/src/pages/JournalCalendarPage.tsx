@@ -36,8 +36,10 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
 import { MISTAKE_TAGS } from '@tradevault/shared';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
+import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 
 export function JournalCalendarPage() {
+  const { openDrill } = useTradeDrilldown();
   const queryClient = useQueryClient();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -262,9 +264,29 @@ export function JournalCalendarPage() {
             </Typography>
           </Grid>
 
-          <Grid size={{ xs: 6, sm: 3 }}>
+          <Grid
+            size={{ xs: 6, sm: 3 }}
+            onClick={() => {
+              const start = `${ymString}-01`;
+              const end = `${ymString}-31`;
+              openDrill({
+                kind: 'FILTER',
+                filter: { startDate: start, endDate: end },
+                label: `Trades for ${ymString}`,
+              });
+            }}
+            sx={{
+              cursor: 'pointer',
+              borderRadius: 1.5,
+              p: 0.5,
+              transition: 'all 0.15s ease',
+              '&:hover': {
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+              },
+            }}
+          >
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-              Total Executions
+              Total Executions (Click to inspect)
             </Typography>
             <Typography variant="h5" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
               {totalMonthlyTrades}
@@ -424,7 +446,27 @@ export function JournalCalendarPage() {
                     >
                       {formatCurrency(dayItem.netPnL)}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem', display: 'block', mt: 0.25 }}>
+                    <Typography
+                      variant="caption"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { date: dayItem.date },
+                          label: `Trades on ${dayItem.date}`,
+                        });
+                      }}
+                      sx={{
+                        color: muiTheme.palette.text.secondary,
+                        fontSize: '0.6875rem',
+                        display: 'block',
+                        mt: 0.25,
+                        '&:hover': {
+                          color: muiTheme.palette.primary.main,
+                          textDecoration: 'underline',
+                        },
+                      }}
+                    >
                       {dayItem.tradesCount} trades ({dayItem.winCount}W/{dayItem.lossCount}L)
                     </Typography>
                   </Box>
@@ -486,9 +528,27 @@ export function JournalCalendarPage() {
           <Grid container spacing={3}>
             {/* Left: Day Executions */}
             <Grid size={{ xs: 12, md: 5 }}>
-              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary, display: 'block', mb: 1.5 }}>
-                Trades Executed ({dayDetails?.trades?.length || 0})
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: muiTheme.palette.text.secondary }}>
+                  Trades Executed ({dayDetails?.trades?.length || 0})
+                </Typography>
+                {dayDetails?.trades && dayDetails.trades.length > 0 && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => {
+                      openDrill({
+                        kind: 'FILTER',
+                        filter: { date: selectedDate! },
+                        label: `Trades on ${selectedDate}`,
+                      });
+                    }}
+                    sx={{ fontSize: '0.6875rem', textTransform: 'none', py: 0 }}
+                  >
+                    Drill All in Drawer
+                  </Button>
+                )}
+              </Box>
 
               {isDayLoading ? (
                 <Box sx={{ py: 4, textAlign: 'center' }}>
@@ -505,20 +565,27 @@ export function JournalCalendarPage() {
                   {dayDetails?.trades?.map((t: any) => (
                     <Box
                       key={t._id}
-                      component={RouterLink}
-                      to={`/trades/${t._id}`}
+                      onClick={() =>
+                        openDrill({
+                          kind: 'TRADE',
+                          tradeId: t._id,
+                          label: `${t.symbol} Trade`,
+                        })
+                      }
                       sx={{
                         p: 1.5,
                         borderRadius: 2,
                         border: `1px solid ${muiTheme.palette.divider}`,
                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
-                        textDecoration: 'none',
+                        cursor: 'pointer',
                         color: 'inherit',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        transition: 'all 0.15s ease',
                         '&:hover': {
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.05)',
+                          borderColor: muiTheme.palette.primary.main,
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
                         },
                       }}
                     >

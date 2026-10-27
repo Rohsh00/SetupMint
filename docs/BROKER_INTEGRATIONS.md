@@ -161,20 +161,38 @@ Transactions with no `status` are treated as `CONFIRMED` for backwards compatibi
 
 ---
 
-## 5. Tradebook Sync
+## 5. Tradebook & Orderbook Sync
 
-`POST /api/v1/integrations/fyers/sync` fetches the current-day FYERS `/tradebook` and normalizes executions into `INormalizedExecution`.
+`POST /api/v1/integrations/fyers/sync` fetches the current-day FYERS `/tradebook` and `/orders` in parallel and normalizes executions into `INormalizedExecution`.
 
 The sync engine:
 
 1. Targets the account in `BrokerIntegration.linkedAccountId` when one is set, falling back to a FYERS account lookup or auto-created account.
 2. Deduplicates fills by broker trade identifiers.
 3. Groups raw executions into FIFO round-trip trades.
-4. Preserves manually entered journal context when merging.
-5. Calculates statutory charges through `@tradevault/financial-engine`.
-6. Recalculates affected account balances after importing trades.
+4. **Orderbook Initial Stop Loss Auto-Match:**
+   - Fetches the FYERS current-day orderbook (`GET /orders`) and normalizes rows into `INormalizedOrderbookRow`.
+   - Pure matching algorithm (`matchSLOrderFromOrderbook` in `@tradevault/financial-engine`):
+     - Order type filter: SL-M (`type: 3`) or SL-L (`type: 4`).
+     - Symbol match: canonical or clean symbol matches trade contract.
+     - Opposite side check: `LONG` entry requires `SELL` stop order (`side: -1`); `SHORT` entry requires `BUY` stop order (`side: 1`).
+     - Time window: Order timestamp falls within `[trade.entryTime - tolerance, trade.exitTime + tolerance]` (default tolerance: 60s).
+     - Directional validity: Evaluates initial order placement on correct side of entry (`LONG` stop < entry; `SHORT` stop > entry).
+     - Modifications & Trailing: Groups orders by `orderId` chronologically. Modifications of a valid initial order are retained even if trailed into profit (`TRAILED_FAVORABLY`), feeding stop-move detection.
+     - Single candidate match (`HIGH` confidence): Auto-populates `risk.initialStopLoss`, sets `risk.initialStopSource = 'BROKER_ORDERBOOK'`, recalculates planned risk and `realizedRMultiple`, records `SL_AUTO_FILLED` audit log entry, and populates `stopLossMoveEvents`.
+     - Ambiguous candidates (`AMBIGUOUS` confidence): Multiple candidate orders with conflicting stops are NOT auto-applied. The trade is flagged with `risk.slReviewReason = 'SL ambiguous - confirm'`, logged via `SL_MATCH_AMBIGUOUS` in audit log, and routed to the Review Queue (`SL_AMBIGUOUS`).
+     - Preserves manual stops: Any pre-existing `risk.initialStopLoss` (e.g. manual entry or template) is strictly protected and never overwritten.
+     - Fail-safe resilience: If the `/orders` call fails or the broker order service is unavailable, tradebook sync logs a warning and proceeds uninterrupted.
+5. Preserves manually entered journal context when merging.
+6. Calculates statutory charges through `@tradevault/financial-engine`.
+7. Recalculates affected account balances after importing trades.
 
 Live trade sync does not place, modify, or cancel orders.
+
+### Stop Loss Backfill Tooling
+
+- Endpoint: `POST /api/v1/integrations/fyers/sl-backfill` (supports `{ dryRun?: boolean, timeToleranceSeconds?: number }`).
+- CLI Script: `npm run sl:backfill` (runs in dry-run mode by default; add `--yes` to apply changes). Current-day constraint applies because FYERS orderbook is reset daily at 06:30 IST rollover.
 
 ---
 

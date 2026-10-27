@@ -849,11 +849,13 @@ export function DashboardPage() {
                                 ? 'Exit Missing'
                                 : m === 'MISSING_PSYCHOLOGY'
                                 ? 'No Reflection'
+                                : m === 'SL_AMBIGUOUS'
+                                ? 'SL Ambiguous'
                                 : 'No Screenshot'
                             }
                             size="small"
                             variant="outlined"
-                            color={m === 'MISSING_EXIT' ? 'warning' : 'default'}
+                            color={m === 'MISSING_EXIT' || m === 'SL_AMBIGUOUS' ? 'warning' : 'default'}
                             sx={{ height: 18, fontSize: '0.625rem' }}
                           />
                         ))}

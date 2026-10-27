@@ -198,6 +198,9 @@ SetupMint defines 17 core Mongoose models:
 ##### C. `risk` (Pre-Trade Risk Management)
 - `plannedEntryPrice` (`Number`)
 - `initialStopLoss` (`Number`)
+- `initialStopSource` (`String`, enum: `['MANUAL', 'TEMPLATE', 'BROKER_ORDERBOOK']`): Source of the initial stop loss price.
+- `slReviewReason` (`String`): Set when orderbook stop matching is ambiguous (e.g. `'SL ambiguous - confirm'`).
+- `slReviewCandidates` (`[Object]`): Candidate orders evaluated from orderbook when ambiguous.
 - `plannedTarget` (`Number`)
 - `riskBudgetAmount` (`Number`)
 - `riskPercentage` (`Number`)

@@ -13,6 +13,7 @@ For the full configuration, reconciliation, and security model, see [`BROKER_INT
 | `GET /generate-authcode` | Daily OAuth consent |
 | `POST /validate-authcode` | Exchange `auth_code` for access/refresh tokens |
 | `GET /tradebook` | Fetch current-day executions for FIFO import |
+| `GET /orders` | Fetch current-day orderbook for automatic initial Stop Loss matching |
 | `GET /funds` | Fetch fund limits for balance reconciliation |
 | `GET /data/history` | Fetch historical 1m & 5m candlestick data for excursion analytics |
 
@@ -34,9 +35,9 @@ FYERS access tokens expire daily at **06:30 IST**. SetupMint stores the next exp
 
 ---
 
-## 3. Tradebook Sync
+## 3. Tradebook & Orderbook Sync
 
-`POST /api/v1/integrations/fyers/sync` fetches `/tradebook` and maps executions into `INormalizedExecution`.
+`POST /api/v1/integrations/fyers/sync` fetches `/tradebook` and `/orders` in parallel and maps executions into `INormalizedExecution`.
 
 The pipeline:
 
@@ -44,9 +45,31 @@ The pipeline:
 2. Normalizes FYERS symbols, exchanges, segments, and execution timestamps.
 3. Deduplicates by broker trade/order identifiers.
 4. Groups fills into FIFO round-trip trades.
-5. Preserves existing journal notes, emotions, and attachments when merging.
-6. Calculates statutory charges.
-7. Recalculates account balances.
+5. **Initial Stop Loss Order Matching:**
+   - Fetches current-day orderbook rows from FYERS `/orders` (cleared daily at 06:30 IST rollover).
+   - Filters candidate orders: `type: 3` (SL-M) or `type: 4` (SL-L), matching symbol, opposite side (`LONG` -> `SELL`, `SHORT` -> `BUY`), order timestamp in execution window `[entry - tolerance, exit + tolerance]`.
+   - Validates initial directional placement (`LONG` stop < entry; `SHORT` stop > entry).
+   - Preserves subsequent modification rows of the matched order (even when trailed above entry into profit for a LONG trade) to feed `detectStopMoves`.
+   - When exactly one matching SL order group is resolved:
+     - Sets `risk.initialStopLoss` to the initial stop price.
+     - Sets `risk.initialStopSource = 'BROKER_ORDERBOOK'`.
+     - Recalculates planned monetary risk and `realizedRMultiple`.
+     - Records `SL_AUTO_FILLED` audit log entry.
+     - Detects and records any stop-loss trailing move events (`stopLossMoveEvents`).
+   - When multiple conflicting candidate SL orders exist (`AMBIGUOUS`):
+     - Does NOT auto-apply stop loss to avoid incorrect assumptions.
+     - Sets `risk.slReviewReason = 'SL ambiguous - confirm'` and records candidates in `risk.slReviewCandidates`.
+     - Records `SL_MATCH_AMBIGUOUS` audit log entry.
+     - Surfaces trade in Daily Review Queue under `SL_AMBIGUOUS`.
+   - Never overwrites manually defined initial stop losses (`initialStopSource === 'MANUAL'`).
+   - If `/orders` fails, logs warning and proceeds with tradebook sync uninterrupted.
+6. Preserves existing journal notes, emotions, and attachments when merging.
+7. Calculates statutory charges.
+8. Recalculates account balances.
+
+### Stop Loss Backfill Tooling
+- API Route: `POST /api/v1/integrations/fyers/sl-backfill` (supports `{ dryRun?: boolean, timeToleranceSeconds?: number }`).
+- CLI Script: `npm run sl:backfill` (runs in dry-run mode by default; add `--yes` to apply changes). Note: FYERS orderbook is current-day only.
 
 ---
 

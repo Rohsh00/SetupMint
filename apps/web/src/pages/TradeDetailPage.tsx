@@ -759,9 +759,32 @@ export function TradeDetailPage() {
               <Grid size={{ xs: 4 }}>
                 <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Initial Stop Loss</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
-                    {trade.risk?.initialStopLoss || '—'}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, mt: 0.5, flexWrap: 'wrap' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main }}>
+                      {trade.risk?.initialStopLoss || '—'}
+                    </Typography>
+                    {trade.risk?.initialStopSource === 'BROKER_ORDERBOOK' && (
+                      <Tooltip title="Auto-fetched from FYERS orderbook. Click to override manually.">
+                        <Chip
+                          label="from broker order"
+                          size="small"
+                          onClick={() => setIsEditModalOpen(true)}
+                          sx={{
+                            height: 18,
+                            fontSize: '0.625rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            backgroundColor: isDark ? 'rgba(56, 189, 248, 0.15)' : 'rgba(14, 165, 233, 0.15)',
+                            color: isDark ? '#38bdf8' : '#0284c7',
+                            border: '1px solid rgba(56, 189, 248, 0.3)',
+                            '&:hover': {
+                              backgroundColor: isDark ? 'rgba(56, 189, 248, 0.25)' : 'rgba(14, 165, 233, 0.25)',
+                            },
+                          }}
+                        />
+                      </Tooltip>
+                    )}
+                  </Box>
                 </Box>
               </Grid>
               <Grid size={{ xs: 4 }}>

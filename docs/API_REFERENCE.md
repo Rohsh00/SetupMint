@@ -924,6 +924,7 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 - `POST /api/v1/integrations/fyers/sync` — Fetch and FIFO-import current-day FYERS executions, then recalculate balances.
 - `POST /api/v1/integrations/fyers/disconnect` — Clear encrypted tokens/state while preserving app credentials.
 - `POST /api/v1/integrations/fyers/excursion-backfill` — Batch process excursion calculations for closed trades missing excursion metrics using rate-limited FYERS historical candles. Accepts `{ startDate, endDate, limit, provider }`. Returns `{ processed, computed, failed, remaining, fyersFilled, angelOneFilled }`.
+- `POST /api/v1/integrations/fyers/sl-backfill` — Backfill initial stop losses from the current-day FYERS orderbook for trades lacking stops. Accepts `{ dryRun?: boolean, timeToleranceSeconds?: number }`. Supports safe dry-run inspection, calculates realized R-multiples, and records audit log entries without overwriting manual stops.
 
 ### Market Data Fallback Integrations (`/api/v1/integrations/market-data`)
 Historical candle market-data-only fallback source for MAE/MFE excursion analytics and automatic chart screenshot generation. Strictly read-only market data; zero trading, order placement, or fund management endpoints.

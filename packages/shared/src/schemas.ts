@@ -310,6 +310,9 @@ export const createTradeSchema = z.object({
     .object({
       plannedEntryPrice: z.number().optional(),
       initialStopLoss: z.number().optional(),
+      initialStopSource: z.enum(['MANUAL', 'TEMPLATE', 'BROKER_ORDERBOOK']).optional(),
+      slReviewReason: z.string().optional(),
+      slReviewCandidates: z.array(z.any()).optional(),
       plannedTarget: z.number().optional(),
       riskBudgetAmount: z.number().optional(),
       riskPercentage: z.number().optional(),

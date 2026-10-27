@@ -70,6 +70,9 @@ export interface ITradeDoc extends Document {
   risk: {
     plannedEntryPrice?: number;
     initialStopLoss?: number;
+    initialStopSource?: 'MANUAL' | 'TEMPLATE' | 'BROKER_ORDERBOOK';
+    slReviewReason?: string;
+    slReviewCandidates?: any[];
     plannedTarget?: number;
     riskBudgetAmount?: number;
     riskPercentage?: number;
@@ -306,6 +309,9 @@ const TradeSchema = new Schema<ITradeDoc>(
     risk: {
       plannedEntryPrice: { type: Number },
       initialStopLoss: { type: Number },
+      initialStopSource: { type: String, enum: ['MANUAL', 'TEMPLATE', 'BROKER_ORDERBOOK'] },
+      slReviewReason: { type: String },
+      slReviewCandidates: [{ type: Schema.Types.Mixed }],
       plannedTarget: { type: Number },
       riskBudgetAmount: { type: Number },
       riskPercentage: { type: Number },

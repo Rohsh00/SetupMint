@@ -24,6 +24,7 @@
     "accounts:backfill": "npm run accounts:backfill -w apps/api --",
     "excursion:backfill": "npm run excursion:backfill -w apps/api --",
     "chart:backfill": "npm run chart:backfill -w apps/api --",
+    "sl:backfill": "npm run sl:backfill -w apps/api --",
     "db:clean": "npm run clean -w apps/api",
     "db:backup": "node scripts/backup.js",
     "db:restore": "node scripts/restore.js",

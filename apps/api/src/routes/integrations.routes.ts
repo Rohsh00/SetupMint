@@ -304,6 +304,31 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
     });
 
+    // Re-run matching for same-day trades that have no stop loss against current-day FYERS orderbook
+    protectedApp.post('/fyers/sl-backfill', async (req: any, reply) => {
+      try {
+        const isDryRun = req.body?.dryRun !== false;
+        const result = await FyersService.backfillSLFromOrderbook(req.user.id, {
+          dryRun: isDryRun,
+          tradeIds: req.body?.tradeIds,
+        });
+
+        return reply.send({
+          success: true,
+          message: `${isDryRun ? '[DRY RUN] ' : ''}Matched SL for ${result.matchedCount} trades (${result.ambiguousCount} ambiguous, ${result.skippedCount} skipped)`,
+          data: result,
+        });
+      } catch (err: any) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'SL_BACKFILL_ERROR',
+            message: err.message || 'Failed to backfill stop losses from FYERS orderbook.',
+          },
+        });
+      }
+    });
+
     // Batch process PENDING closed trades for excursion analytics
     protectedApp.post('/fyers/excursion-backfill', async (req: any, reply) => {
       const parsed = excursionBackfillSchema.safeParse(req.body || {});

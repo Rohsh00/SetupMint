@@ -290,6 +290,7 @@ A trade enters the user's **Daily Review Queue** (`GET /api/v1/review/queue`) if
 - **Missing Exit:** Status is `OPEN` or exit price/time is absent.
 - **Missing Psychology / Reflection:** Closed trade lacking emotional state (`emotionBefore`, `emotionAfter`), notes, or mistake tags.
 - **Missing Chart Screenshots:** Closed trade having zero linked attachments in Cloudflare R2 object storage.
+- **Ambiguous Stop Loss (`SL_AMBIGUOUS`):** Trade where broker orderbook sync identified multiple conflicting stop-loss candidate orders without a unique match. To prevent inaccurate risk assumptions, the stop loss is NOT auto-applied; the trade is flagged with `"SL ambiguous - confirm"` for the trader to verify or adjust.
 - **Unreviewed Trading Days:** Any date in the previous 30 calendar days that had executed trades but has no persisted `DailyJournal` reflection.
 
 ### 2. Rule-Based Mistake Suggestions (Never Auto-Applied)

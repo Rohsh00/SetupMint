@@ -837,7 +837,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       setup: parseResult.data.setup
         ? { ...((existingTrade.setup as any)?.toObject ? (existingTrade.setup as any).toObject() : existingTrade.setup || {}), ...parseResult.data.setup }
         : existingTrade.setup,
-      risk: { ...existingTrade.risk, ...parseResult.data.risk },
+      risk: {
+        ...existingTrade.risk,
+        ...parseResult.data.risk,
+        ...(parseResult.data.risk?.initialStopLoss !== undefined
+          ? {
+              initialStopSource: parseResult.data.risk.initialStopSource ?? 'MANUAL',
+              slReviewReason: undefined,
+              slReviewCandidates: undefined,
+            }
+          : {}),
+      },
       thesis: { ...existingTrade.thesis, ...parseResult.data.thesis },
       psychology: { ...existingTrade.psychology, ...parseResult.data.psychology },
       simpleExecution: mergedSimpleExecution,

@@ -365,9 +365,14 @@ export interface ISimpleExecution {
   adjustmentsReason?: string;
 }
 
+export type InitialStopSource = 'MANUAL' | 'TEMPLATE' | 'BROKER_ORDERBOOK';
+
 export interface IRiskDetails {
   plannedEntryPrice?: number;
   initialStopLoss?: number;
+  initialStopSource?: InitialStopSource;
+  slReviewReason?: string;
+  slReviewCandidates?: any[];
   plannedTarget?: number;
   riskBudgetAmount?: number;
   riskPercentage?: number;
@@ -958,7 +963,8 @@ export interface IReviewQueueItem {
   entryPrice: number;
   exitPrice?: number;
   netPnL?: number;
-  missing: Array<'MISSING_EXIT' | 'MISSING_PSYCHOLOGY' | 'MISSING_SCREENSHOTS'>;
+  missing: Array<'MISSING_EXIT' | 'MISSING_PSYCHOLOGY' | 'MISSING_SCREENSHOTS' | 'SL_AMBIGUOUS'>;
+  reviewReasons?: string[];
   suggestedMistakes: IMistakeSuggestion[];
 }
 

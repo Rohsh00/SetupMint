@@ -15,6 +15,9 @@ import {
   calculateIndianCharges,
   calculateExcursion,
   detectStopMoves,
+  matchSLOrderFromOrderbook,
+  INormalizedOrderbookRow,
+  calculateRealizedRMultiple,
 } from '@tradevault/financial-engine';
 import {
   IBrokerAuthTokens,
@@ -732,6 +735,175 @@ export class FyersService {
   }
 
   /**
+   * Normalizes raw FYERS orderbook entries into standardized INormalizedOrderbookRow items
+   */
+  static normalizeOrderbook(rawOrders: any[]): INormalizedOrderbookRow[] {
+    if (!Array.isArray(rawOrders)) return [];
+    return rawOrders.map((ord: any) => ({
+      orderId: String(ord.id || ord.orderNumber || ''),
+      symbol: String(ord.symbol || ''),
+      side: ord.side, // 1 for BUY, -1 for SELL
+      orderType: Number(ord.type),
+      stopPrice: Number(ord.stopPrice || 0),
+      price: ord.price ? Number(ord.price) : undefined,
+      quantity: Number(ord.qty ?? ord.quantity ?? ord.filledQty ?? 0),
+      status: ord.status,
+      orderDateTime: parseFyersDateTime(ord.orderDateTime),
+      productType: ord.productType,
+      message: ord.message,
+    }));
+  }
+
+  /**
+   * Matches Stop Loss orders from normalized orderbook and populates initialStopLoss,
+   * initialStopSource, realizedRMultiple, and auditLog on trade.
+   * If matched order has modifications, automatically updates stop-moves.
+   * If ambiguous, sets review reason.
+   */
+  static applySLOrderMatchingToTrade(
+    trade: any,
+    normalizedOrders: INormalizedOrderbookRow[],
+    meta: {
+      cleanSymbol?: string;
+      formattedSymbol?: string;
+      underlyingSymbol?: string;
+      multiplier?: number;
+      tickSize?: number;
+    }
+  ): { applied: boolean; confidence: string; initialStop?: number; reason?: string } {
+    // Never overwrite an existing stop (e.g. entered manually)
+    if (trade.risk?.initialStopLoss != null && Number(trade.risk.initialStopLoss) > 0) {
+      return { applied: false, confidence: 'ALREADY_SET', initialStop: trade.risk.initialStopLoss };
+    }
+
+    const avgEntry = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
+    const totalQty = trade.simpleExecution?.quantity ?? trade.calculated?.closedQuantity ?? trade.calculated?.openQuantity ?? 0;
+    const multiplier = meta.multiplier ?? trade.simpleExecution?.contractMultiplier ?? 1;
+
+    const matchResult = matchSLOrderFromOrderbook(
+      {
+        symbol: trade.symbol,
+        cleanSymbol: meta.cleanSymbol,
+        formattedSymbol: meta.formattedSymbol,
+        underlying: meta.underlyingSymbol || trade.underlying,
+        direction: trade.direction,
+        entryTime: trade.entryTime,
+        exitTime: trade.exitTime,
+        entryPrice: avgEntry,
+        entryQty: totalQty,
+        fills: trade.fills?.map((f: any) => ({
+          type: f.type,
+          price: f.price,
+          quantity: f.quantity,
+          timestamp: f.timestamp,
+        })),
+        tickSize: meta.tickSize || 0.05,
+      },
+      normalizedOrders
+    );
+
+    if (matchResult.confidence === 'HIGH' && matchResult.initialStop) {
+      trade.risk = trade.risk || {};
+      trade.risk.initialStopLoss = matchResult.initialStop;
+      trade.risk.initialStopSource = 'BROKER_ORDERBOOK';
+      trade.risk.slReviewReason = undefined;
+      trade.risk.slReviewCandidates = undefined;
+
+      // Recompute planned risk and realized R-multiple
+      if (avgEntry > 0) {
+        const dist = Math.abs(avgEntry - matchResult.initialStop);
+        const plannedRisk = dist * totalQty * multiplier;
+        trade.risk.estimatedRiskAmount = plannedRisk;
+        const netPnL = trade.calculated?.netPnL ?? 0;
+        const realizedR = calculateRealizedRMultiple(netPnL, plannedRisk);
+        trade.risk.realizedRMultiple = realizedR;
+        if (trade.calculated) {
+          trade.calculated.realizedRMultiple = realizedR;
+        }
+      }
+
+      trade.auditLog = trade.auditLog || [];
+      trade.auditLog.push({
+        action: 'SL_AUTO_FILLED',
+        timestamp: new Date(),
+        changedBy: 'system',
+        details: {
+          orderId: matchResult.matchedOrderId,
+          finalStatus: matchResult.finalStatus,
+          source: 'BROKER_ORDERBOOK',
+          initialStopLoss: matchResult.initialStop,
+        },
+      });
+
+      // Stop-move detection for matched order modifications
+      if (matchResult.orderModifications && matchResult.orderModifications.length > 0) {
+        const smResult = detectStopMoves({
+          direction: trade.direction,
+          entryPrice: avgEntry,
+          initialStopLoss: matchResult.initialStop,
+          modifications: matchResult.orderModifications,
+        });
+
+        trade.stopLossMoveEvents = smResult.moves.map((m: any) => ({
+          previousStop: m.previousStop,
+          newStop: m.newStop,
+          changePoints: m.changePoints,
+          changePercent: m.changePercent,
+          moveType: m.moveType,
+          movedAt: moment(m.movedAt).toDate(),
+          orderId: m.orderId,
+          orderType: m.orderType,
+          reason: m.reason,
+        }));
+
+        trade.calculated = trade.calculated || {};
+        trade.calculated.stopMoveSummary = {
+          totalMoves: smResult.summary.totalMoves,
+          widenedCount: smResult.summary.widenedCount,
+          trailedCount: smResult.summary.trailedCount,
+          initialStop: smResult.summary.initialStop,
+          finalStop: smResult.summary.finalStop,
+          netRiskChangePoints: smResult.summary.netRiskChangePoints,
+          hasWidenedRisk: smResult.summary.hasWidenedRisk,
+          detectedAt: new Date(),
+        };
+
+        if (smResult.summary.hasWidenedRisk) {
+          trade.psychology = trade.psychology || {};
+          trade.psychology.stopLossMoved = true;
+          trade.psychology.mistakes = trade.psychology.mistakes || [];
+          if (!trade.psychology.mistakes.includes('STOP_MOVED')) {
+            trade.psychology.mistakes.push('STOP_MOVED');
+          }
+        }
+      }
+
+      return { applied: true, confidence: 'HIGH', initialStop: matchResult.initialStop };
+    }
+
+    if (matchResult.confidence === 'AMBIGUOUS') {
+      trade.risk = trade.risk || {};
+      trade.risk.slReviewReason = 'SL ambiguous - confirm';
+      trade.risk.slReviewCandidates = matchResult.candidates;
+
+      trade.auditLog = trade.auditLog || [];
+      trade.auditLog.push({
+        action: 'SL_MATCH_AMBIGUOUS',
+        timestamp: new Date(),
+        changedBy: 'system',
+        details: {
+          reason: 'SL ambiguous - confirm',
+          candidates: matchResult.candidates,
+        },
+      });
+
+      return { applied: false, confidence: 'AMBIGUOUS', reason: matchResult.ambiguityReason };
+    }
+
+    return { applied: false, confidence: 'NONE' };
+  }
+
+  /**
    * Synchronizes trades from FYERS into SetupMint journal with automatic FIFO pairing, statutory fee calculation, and deduplication
    */
   static async syncTradesForUser(userId: string | mongoose.Types.ObjectId): Promise<IFyersSyncResult> {
@@ -768,6 +940,15 @@ export class FyersService {
       await integration.save();
       throw err;
     }
+
+    // Fetch FYERS current-day orderbook once per sync (fail-safe: orderbook errors never abort sync)
+    let rawOrderbook: any[] = [];
+    try {
+      rawOrderbook = await this.fetchOrderbook(appId, accessToken);
+    } catch (obErr: any) {
+      console.warn('[FYERS Sync] Orderbook fetch failed; proceeding without SL matching:', obErr?.message || obErr);
+    }
+    const normalizedOrders = this.normalizeOrderbook(rawOrderbook);
 
     // Prefer the account explicitly linked to this FYERS client.
     let account = integration.linkedAccountId
@@ -1074,6 +1255,21 @@ export class FyersService {
                 ? 'LOSS'
                 : 'BREAKEVEN';
 
+              // If existing trade has no initial stop loss, attempt to auto-fill from orderbook
+              if (!existing.risk?.initialStopLoss) {
+                this.applySLOrderMatchingToTrade(existing, normalizedOrders, {
+                  cleanSymbol,
+                  formattedSymbol,
+                  underlyingSymbol: inst.symbol,
+                  multiplier,
+                  tickSize: inst.tickSize,
+                });
+                existing.markModified('risk');
+                existing.markModified('stopLossMoveEvents');
+                existing.markModified('psychology');
+                existing.markModified('auditLog');
+              }
+
               existing.markModified('calculated');
               existing.markModified('fills');
               existing.markModified('simpleExecution');
@@ -1086,6 +1282,24 @@ export class FyersService {
               return;
             }
 
+            if (!existing.risk?.initialStopLoss) {
+              const matched = this.applySLOrderMatchingToTrade(existing, normalizedOrders, {
+                cleanSymbol,
+                formattedSymbol,
+                underlyingSymbol: inst.symbol,
+                multiplier,
+                tickSize: inst.tickSize,
+              });
+              if (matched.applied || matched.confidence === 'AMBIGUOUS') {
+                existing.markModified('risk');
+                existing.markModified('calculated');
+                existing.markModified('stopLossMoveEvents');
+                existing.markModified('psychology');
+                existing.markModified('auditLog');
+                updated = true;
+              }
+            }
+
             if (updated) {
               await existing.save();
             }
@@ -1093,7 +1307,7 @@ export class FyersService {
             return;
           }
 
-          const createdTrade = await Trade.create({
+          const tradePayload: any = {
             userId: uId,
             accountId: account._id,
             instrumentId: inst._id,
@@ -1136,6 +1350,9 @@ export class FyersService {
               quantity: f.quantity,
               fee: 0,
             })),
+            risk: {
+              riskRuleViolations: [],
+            },
             calculated: {
               averageEntryPrice: avgEntry,
               averageExitPrice: avgExit,
@@ -1152,7 +1369,17 @@ export class FyersService {
                 ? 'LOSS'
                 : 'BREAKEVEN',
             },
+          };
+
+          this.applySLOrderMatchingToTrade(tradePayload, normalizedOrders, {
+            cleanSymbol,
+            formattedSymbol,
+            underlyingSymbol: inst.symbol,
+            multiplier,
+            tickSize: inst.tickSize,
           });
+
+          const createdTrade = await Trade.create(tradePayload);
 
           if (fifoSummary.isFullyClosed) {
             closedTradeIds.push(createdTrade._id.toString());
@@ -1722,6 +1949,7 @@ export class FyersService {
         try {
           const accessToken = decryptSecret(integration.accessToken) as string;
           const orderBook = await this.fetchOrderbook(integration.appId, accessToken);
+          const normalized = this.normalizeOrderbook(orderBook);
 
           // Find orders matching this trade's symbol
           const symbol = formatFyersSymbol({
@@ -1735,23 +1963,32 @@ export class FyersService {
             expiryDate: trade.expiryDate,
           });
 
+          // If initialStopLoss was not pre-set, attempt to auto-fill from orderbook
+          if (!trade.risk?.initialStopLoss) {
+            this.applySLOrderMatchingToTrade(trade, normalized, {
+              formattedSymbol: symbol,
+              underlyingSymbol: trade.underlying,
+            });
+            await trade.save();
+          }
+
           const tradeStart = moment(trade.entryTime).subtract(5, 'minutes');
           const tradeEnd = trade.exitTime ? moment(trade.exitTime).add(5, 'minutes') : moment().add(5, 'minutes');
 
-          const stopOrders = orderBook.filter((ord: any) => {
+          const stopOrders = normalized.filter((ord) => {
             const matchesSymbol = ord.symbol === symbol || ord.symbol === trade.symbol;
             if (!matchesSymbol) return false;
-            const hasStop = Number(ord.stopPrice || 0) > 0 || ord.type === 3 || ord.type === 4;
+            const hasStop = Number(ord.stopPrice || 0) > 0 || ord.orderType === 3 || ord.orderType === 4;
             if (!hasStop) return false;
-            const ordTime = moment(ord.orderDateTime, ['DD-MMM-YYYY HH:mm:ss', moment.ISO_8601]);
+            const ordTime = moment(ord.orderDateTime);
             return ordTime.isValid() && ordTime.isBetween(tradeStart, tradeEnd, undefined, '[]');
           });
 
-          rawModifications = stopOrders.map((ord: any) => ({
+          rawModifications = stopOrders.map((ord) => ({
             stopPrice: Number(ord.stopPrice),
-            modifiedAt: moment(ord.orderDateTime, ['DD-MMM-YYYY HH:mm:ss', moment.ISO_8601]).toDate(),
-            orderId: ord.id || ord.orderNumber,
-            orderType: ord.type,
+            modifiedAt: moment(ord.orderDateTime).toDate(),
+            orderId: ord.orderId,
+            orderType: ord.orderType,
             reason: ord.message || 'FYERS Stop Order',
           }));
         } catch {
@@ -1821,6 +2058,146 @@ export class FyersService {
       stopMoveSummary: trade.calculated.stopMoveSummary,
       mistakeSuggestions: result.mistakeSuggestions,
       flags: result.flags,
+    };
+  }
+
+  /**
+   * Backfills initial stop loss from FYERS orderbook for current-day trades missing initialStopLoss.
+   * Dry-run mode by default; apply with dryRun: false.
+   */
+  static async backfillSLFromOrderbook(
+    userId: string | mongoose.Types.ObjectId,
+    options?: { dryRun?: boolean; tradeIds?: string[] }
+  ): Promise<{
+    dryRun: boolean;
+    totalEligibleTrades: number;
+    matchedCount: number;
+    ambiguousCount: number;
+    skippedCount: number;
+    trades: Array<{
+      tradeId: string;
+      symbol: string;
+      direction: string;
+      initialStop?: number;
+      confidence: string;
+      reason?: string;
+    }>;
+  }> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const isDryRun = options?.dryRun ?? true;
+
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      throw new Error('FYERS broker is not connected or session has expired.');
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decryptSecret(integration.accessToken) as string;
+    } catch {
+      throw new Error('FYERS session could not be decrypted.');
+    }
+
+    const rawOrderbook = await this.fetchOrderbook(integration.appId, accessToken);
+    const normalizedOrders = this.normalizeOrderbook(rawOrderbook);
+
+    // Current-day trades missing initialStopLoss
+    const todayStart = moment().startOf('day').toDate();
+    const todayEnd = moment().endOf('day').toDate();
+
+    const query: any = {
+      userId: uId,
+      tradeDate: { $gte: todayStart, $lte: todayEnd },
+      $or: [
+        { 'risk.initialStopLoss': { $exists: false } },
+        { 'risk.initialStopLoss': null },
+        { 'risk.initialStopLoss': 0 },
+      ],
+    };
+
+    if (options?.tradeIds && options.tradeIds.length > 0) {
+      query._id = { $in: options.tradeIds.map((id) => new mongoose.Types.ObjectId(id)) };
+    }
+
+    const trades = await Trade.find(query).sort({ entryTime: 1 });
+    const results: Array<{
+      tradeId: string;
+      symbol: string;
+      direction: string;
+      initialStop?: number;
+      confidence: string;
+      reason?: string;
+    }> = [];
+
+    let matchedCount = 0;
+    let ambiguousCount = 0;
+    let skippedCount = 0;
+    const affectedAccountIds = new Set<string>();
+
+    for (const trade of trades) {
+      const matchResult = this.applySLOrderMatchingToTrade(trade, normalizedOrders, {
+        underlyingSymbol: trade.underlying,
+      });
+
+      if (matchResult.applied) {
+        matchedCount++;
+        results.push({
+          tradeId: trade._id.toString(),
+          symbol: trade.symbol,
+          direction: trade.direction,
+          initialStop: matchResult.initialStop,
+          confidence: matchResult.confidence,
+        });
+        if (!isDryRun) {
+          trade.markModified('risk');
+          trade.markModified('calculated');
+          trade.markModified('auditLog');
+          trade.markModified('stopLossMoveEvents');
+          trade.markModified('psychology');
+          await trade.save();
+          if (trade.accountId) {
+            affectedAccountIds.add(trade.accountId.toString());
+          }
+        }
+      } else if (matchResult.confidence === 'AMBIGUOUS') {
+        ambiguousCount++;
+        results.push({
+          tradeId: trade._id.toString(),
+          symbol: trade.symbol,
+          direction: trade.direction,
+          confidence: 'AMBIGUOUS',
+          reason: matchResult.reason,
+        });
+        if (!isDryRun) {
+          trade.markModified('risk');
+          trade.markModified('auditLog');
+          await trade.save();
+        }
+      } else {
+        skippedCount++;
+        results.push({
+          tradeId: trade._id.toString(),
+          symbol: trade.symbol,
+          direction: trade.direction,
+          confidence: 'NONE',
+          reason: 'No matching SL order found in current-day orderbook',
+        });
+      }
+    }
+
+    if (!isDryRun && affectedAccountIds.size > 0) {
+      for (const accId of affectedAccountIds) {
+        await AccountService.recalculateAccountBalances(accId, uId);
+      }
+    }
+
+    return {
+      dryRun: isDryRun,
+      totalEligibleTrades: trades.length,
+      matchedCount,
+      ambiguousCount,
+      skippedCount,
+      trades: results,
     };
   }
 }

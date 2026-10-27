@@ -148,7 +148,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
 
     for (const t of trades) {
       const idStr = t._id.toString();
-      const missing: Array<'MISSING_EXIT' | 'MISSING_PSYCHOLOGY' | 'MISSING_SCREENSHOTS'> = [];
+      const missing: Array<'MISSING_EXIT' | 'MISSING_PSYCHOLOGY' | 'MISSING_SCREENSHOTS' | 'SL_AMBIGUOUS'> = [];
 
       const quantity =
         t.simpleExecution?.quantity ??
@@ -186,6 +186,15 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
         }
       }
 
+      // 4. Ambiguous SL check (do not auto-apply, require confirmation)
+      const isSlAmbiguous = Boolean(
+        t.risk?.slReviewReason ||
+          (t.auditLog && t.auditLog.some((a: any) => a.action === 'SL_MATCH_AMBIGUOUS'))
+      );
+      if (isSlAmbiguous && !t.risk?.initialStopLoss) {
+        missing.push('SL_AMBIGUOUS');
+      }
+
       const suggestedMistakes = suggestionsByTradeId.get(idStr) || [];
 
       // If missing anything OR has suggested mistakes, include in review queue
@@ -204,6 +213,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
           exitPrice,
           netPnL: t.calculated?.netPnL,
           missing,
+          reviewReasons: t.risk?.slReviewReason ? [t.risk.slReviewReason] : undefined,
           suggestedMistakes,
         });
       }

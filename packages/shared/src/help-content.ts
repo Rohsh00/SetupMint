@@ -309,7 +309,7 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     details: 'Measures how well you timed your exit relative to the best available price during the trade.',
     formula: 'Exit Efficiency = (Exit Price - Entry Price) / (Peak MFE Price - Entry Price) * 100',
     example: 'Capturing 30 points of profit on a trade whose peak favorable move reached 40 points gives 75% efficiency.',
-    caveats: 'Trades with zero or negative MFE default to 0% exit efficiency.',
+    caveats: 'Trades with zero MFE (no favorable move) return N/A (not applicable), avoiding artificial 100% inflation on flat trades. Trades with favorable runs ending in losses return 0%.',
     seeAlso: ['metric.mfe'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#exit-efficiency',
   },
@@ -317,15 +317,15 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
   'metric.excursionFlags': {
     title: 'Excursion Analytical Flags',
     summary: 'Automated behavioural tags identifying execution patterns from candle excursion data.',
-    details: 'Flags: GAVE_BACK_PROFIT (hit >2R MFE but exited for a loss or scratch), EXITED_EARLY (closed before 1R while price ran past target), STOP_TOO_TIGHT_EVIDENCE (stopped out before price ran to target).',
+    details: 'Flags: GAVE_BACK_PROFIT (hit >=1.0R MFE but surrendered >50% peak gain), EXITED_EARLY (closed before full move while price ran >2x realized), STOP_TOO_TIGHT_EVIDENCE (stopped out before price reversed to +1R target territory without deep breach).',
     seeAlso: ['metric.mae', 'metric.mfe'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#excursion-flags',
   },
 
   'metric.gaveBackProfit': {
     title: 'Gave Back Profit Rate',
-    summary: 'Percentage of evaluated trades that achieved significant favorable excursion (>1R or >50% run) but surrendered profits before exit.',
-    details: 'Highlights premature profit giveback and trailing stop inefficiencies. A high rate indicates greed, lack of partial profit-taking, or holding runners too long after momentum dissipates.',
+    summary: 'Percentage of evaluated trades that achieved significant favorable excursion (>=1.0R peak run) but surrendered >50% of profits before closing.',
+    details: 'Highlights premature profit giveback and trailing stop inefficiencies. Planned runners and trailing stops that exit according to rule are excluded from false penalties.',
     formula: 'Gave Back Profit % = (Count of Trades with GAVE_BACK_PROFIT Flag / Total Evaluated Trades) * 100',
     example: 'A trade reaching +2.5R peak unrealized gain that reverses and closes at +0.2R triggers the gave-back profit metric.',
     seeAlso: ['metric.mfe', 'metric.exitEfficiency'],
@@ -528,7 +528,7 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
   'strategy.edgeVerdict': {
     title: 'Statistical Edge Verdict',
     summary: 'Validates whether a strategy exhibits a statistically proven edge over random chance.',
-    details: 'Verdict: LIKELY_EDGE (95% bootstrap lower bound of win rate > 50% and positive expectancy), NO_EDGE_NEGATIVE (statistically unprofitable), or UNPROVEN (insufficient trades).',
+    details: 'Verdict: LIKELY_EDGE (90% bootstrap confidence interval / 5th percentile lower bound of win rate > 50% and positive expectancy), NO_EDGE_NEGATIVE (statistically unprofitable), or UNPROVEN (insufficient trades).',
     caveats: `Requires at least ${MIN_RELIABLE_SAMPLE} closed trades before a strategy can be confirmed as having an edge.`,
     seeAlso: ['metric.expectancy', 'metric.sampleReliability'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#statistical-edge-validation',

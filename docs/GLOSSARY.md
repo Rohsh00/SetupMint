@@ -33,6 +33,8 @@
   - [Maximum Favorable Excursion (MFE)](#maximum-favorable-excursion-mfe-)
   - [Exit Efficiency](#exit-efficiency)
   - [Excursion Analytical Flags](#excursion-analytical-flags)
+  - [Gave Back Profit Rate](#gave-back-profit-rate)
+  - [Post-Stop Reversals (Stop Too Tight)](#post-stop-reversals-stop-too-tight-)
   - [Sample Size Reliability](#sample-size-reliability)
 - [3. Trade Execution, Lifecycle & Fees](#3-trade-execution-lifecycle-fees)
   - [Statutory Charges (Auto vs. Manual)](#statutory-charges-auto-vs-manual-)
@@ -66,13 +68,8 @@
   - [Discipline Score & Penalties](#discipline-score-penalties)
 - [10. Dashboard & Review Queue](#10-dashboard-review-queue)
   - [Trade Review Queue Criteria](#trade-review-queue-criteria)
-- [11. Multi-Panel Equity & Universal Drilldown](#11-multi-panel-equity--universal-drilldown)
-  - [Universal Trade Drilldown](#universal-trade-drilldown)
-  - [Drawdown Recovery Duration](#drawdown-recovery-duration)
-  - [Cumulative-R Curve](#cumulative-r-curve)
-  - [Monte Carlo Expectancy Cone](#monte-carlo-expectancy-cone)
-  - [Daily Loss Breach Marker](#daily-loss-breach-marker)
-  - [High-Tilt Day Marker](#high-tilt-day-marker)
+- [Other Concepts](#other-concepts)
+  - [MAE vs. MFE Scatter Matrix](#mae-vs-mfe-scatter-matrix)
 
 ---
 
@@ -497,7 +494,7 @@ Formula: Exit Efficiency = (Exit Price - Entry Price) / (Peak MFE Price - Entry 
 > **Example:** Capturing 30 points of profit on a trade whose peak favorable move reached 40 points gives 75% efficiency.
 
 > [!WARNING]
-> **Caveat:** Trades with zero or negative MFE default to 0% exit efficiency.
+> **Caveat:** Trades with zero MFE (no favorable move) return N/A (not applicable), avoiding artificial 100% inflation on flat trades. Trades with favorable runs ending in losses return 0%.
 
 **See Also:** `metric.mfe`
 
@@ -510,11 +507,49 @@ Formula: Exit Efficiency = (Exit Price - Entry Price) / (Peak MFE Price - Entry 
 
 **Summary:** Automated behavioural tags identifying execution patterns from candle excursion data.
 
-**Detailed Explanation:** Flags: GAVE_BACK_PROFIT (hit >2R MFE but exited for a loss or scratch), EXITED_EARLY (closed before 1R while price ran past target), STOP_TOO_TIGHT_EVIDENCE (stopped out before price ran to target).
+**Detailed Explanation:** Flags: GAVE_BACK_PROFIT (hit >=1.0R MFE but surrendered >50% peak gain), EXITED_EARLY (closed before full move while price ran >2x realized), STOP_TOO_TIGHT_EVIDENCE (stopped out before price reversed to +1R target territory without deep breach).
 
 **See Also:** `metric.mae`, `metric.mfe`
 
 **Documentation Reference:** [docs/TRADING_CALCULATIONS.md#excursion-flags](docs/TRADING_CALCULATIONS.md#excursion-flags)
+
+---
+
+### Gave Back Profit Rate
+*Registry Key:* `metric.gaveBackProfit`
+
+**Summary:** Percentage of evaluated trades that achieved significant favorable excursion (>=1.0R peak run) but surrendered >50% of profits before closing.
+
+**Detailed Explanation:** Highlights premature profit giveback and trailing stop inefficiencies. Planned runners and trailing stops that exit according to rule are excluded from false penalties.
+
+```text
+Formula: Gave Back Profit % = (Count of Trades with GAVE_BACK_PROFIT Flag / Total Evaluated Trades) * 100
+```
+
+> **Example:** A trade reaching +2.5R peak unrealized gain that reverses and closes at +0.2R triggers the gave-back profit metric.
+
+**See Also:** `metric.mfe`, `metric.exitEfficiency`
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#mae-mfe](docs/TRADING_CALCULATIONS.md#mae-mfe)
+
+---
+
+### Post-Stop Reversals (Stop Too Tight)
+*Registry Key:* `metric.postStopReversals`
+
+**Summary:** Percentage of stopped-out trades where market price reversed and subsequently reached original profit targets.
+
+**Detailed Explanation:** Pinpoints stop-hunting or placing stop losses inside standard market noise / volatility bands. If high (>20%), consider widening stops to structural swing levels or ATR multiples.
+
+```text
+Formula: Reversal After Stop % = (Count of Stopped Trades Reversing to Target / Total Trades with Stops) * 100
+```
+
+> **Example:** Buying NIFTY at 22,000 with SL at 21,980. Price dips to 21,975, stops you out, then rallies to 22,100.
+
+**See Also:** `metric.mae`, `analytics.whatIf.calibration`
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#mae-mfe](docs/TRADING_CALCULATIONS.md#mae-mfe)
 
 ---
 
@@ -817,7 +852,7 @@ Formula: Current = Initial Balance + Sum(Closed Trade Net P&L) + Deposits - With
 
 **Summary:** Validates whether a strategy exhibits a statistically proven edge over random chance.
 
-**Detailed Explanation:** Verdict: LIKELY_EDGE (95% bootstrap lower bound of win rate > 50% and positive expectancy), NO_EDGE_NEGATIVE (statistically unprofitable), or UNPROVEN (insufficient trades).
+**Detailed Explanation:** Verdict: LIKELY_EDGE (90% bootstrap confidence interval / 5th percentile lower bound of win rate > 50% and positive expectancy), NO_EDGE_NEGATIVE (statistically unprofitable), or UNPROVEN (insufficient trades).
 
 > [!WARNING]
 > **Caveat:** Requires at least 30 closed trades before a strategy can be confirmed as having an edge.
@@ -869,71 +904,17 @@ Formula: Score = 100 - Sum(Mistake Penalties)
 
 ---
 
-## 11. Multi-Panel Equity & Universal Drilldown
+## Other Concepts
 
-### Universal Trade Drilldown
-*Registry Key:* `system.universalDrilldown`
+### MAE vs. MFE Scatter Matrix
+*Registry Key:* `analytics.excursion.scatter`
 
-**Summary:** System-wide capability enabling instant one-click inspection of underlying trade executions from any analytical number, chart coordinate, distribution bucket, or table row.
+**Summary:** 2D mapping of trade drawdown (X-axis) against trade peak profit potential (Y-axis).
 
-**Detailed Explanation:** Governed by the `DrillDescriptor` contract (`TRADE`, `TRADES`, `FILTER`) and resolved by `POST /api/v1/trades/drilldown`. Enforces strict tenant isolation, server-side pagination (capped at 200), and Decimal.js aggregate reconciliation.
+**Detailed Explanation:** Top-Left Quadrant: Clean winners with low drawdown (<0.5R) and large runs. Top-Right: Rollercoaster trades that took high heat before winning. Bottom-Right: Heavy losers with zero favorable traction.
 
-**Documentation Reference:** [docs/PRODUCT_FEATURES.md#17-universal-trade-drill-down-system](docs/PRODUCT_FEATURES.md#17-universal-trade-drill-down-system)
+**See Also:** `metric.mae`, `metric.mfe`, `metric.exitEfficiency`
 
----
-
-### Drawdown Recovery Duration
-*Registry Key:* `metric.recoveryDuration`
-
-**Summary:** The elapsed time required for portfolio equity to recover from a peak-to-trough drawdown back to the previous high-water mark.
-
-**Detailed Explanation:** Measured in both calendar days ($t_{recovered} - t_{peak}$) and completed trade count ($i_{recovered} - i_{peak}$). Accurately tracks ongoing underwater periods when equity has not yet returned to all-time highs.
-
-**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#121-high-water-mark-drawdown-and-recovery-duration](docs/TRADING_CALCULATIONS.md#121-high-water-mark-drawdown-and-recovery-duration)
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#mae-mfe](docs/TRADING_CALCULATIONS.md#mae-mfe)
 
 ---
-
-### Cumulative-R Curve
-*Registry Key:* `metric.cumulativeRCurve`
-
-**Summary:** Chronological performance curve tracking cumulative realized R-multiples ($CR_k = \sum R_i$) independent of position sizing or currency fluctuations.
-
-**Detailed Explanation:** Excludes trades lacking valid initial risk/stop loss in strict conformity with `edge.ts`. Displays an R-coverage indicator pill ($N_R / N_{total}$) and supports up to 6 per-strategy overlays with `< 30 trades` sample-size warning tags.
-
-**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#122-cumulative-r-curves--exclusions](docs/TRADING_CALCULATIONS.md#122-cumulative-r-curves--exclusions)
-
----
-
-### Monte Carlo Expectancy Cone
-*Registry Key:* `analytics.monteCarloCone`
-
-**Summary:** Forward-looking statistical dispersion cone projecting probable trajectory percentiles over the next 50, 100, or 200 trades.
-
-**Detailed Explanation:** Evaluates 1,000 resampled bootstrap paths via `Mulberry32PRNG` seeded deterministically. Extracts per-step percentiles (P5, P25, P50, P75, P95). Strictly gated on positive edge verification ($N \ge 30$, verdict $\neq$ `NO_EDGE`/`INSUFFICIENT_DATA`).
-
-**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#123-monte-carlo-expectancy-cone](docs/TRADING_CALCULATIONS.md#123-monte-carlo-expectancy-cone)
-
----
-
-### Daily Loss Breach Marker
-*Registry Key:* `dashboard.marker.dailyLossBreach`
-
-**Summary:** Equity curve visual marker indicating days where cumulative net loss exceeded the trader's configured maximum daily loss limit.
-
-**Detailed Explanation:** Emitted as crimson circular indicators on the equity curve. Clicking any marker immediately launches the Universal `TradeDrillDrawer` pre-filtered to all trades executed on that breach day.
-
-**Documentation Reference:** [docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts](docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts)
-
----
-
-### High-Tilt Day Marker
-*Registry Key:* `dashboard.marker.highTiltDay`
-
-**Summary:** Visual marker indicating days where psychological friction or emotional tilt reached elevated risk levels ($\ge 61$).
-
-**Detailed Explanation:** Emitted as amber indicators on the equity curve. Clicking any marker opens the day's trades in `TradeDrillDrawer` for psychological debriefing and mistake pattern analysis.
-
-**Documentation Reference:** [docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts](docs/FINANCIAL_ENGINE.md#d-psychological--risk-event-markers-eventsts)
-
----
-

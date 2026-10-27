@@ -135,21 +135,37 @@ export interface ITradeDoc extends Document {
       provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
       isUnderlyingFallback?: boolean;
       resolution?: string;
+      isLowResolution?: boolean;
       failureReason?: string;
+      excursionVersion?: number;
+      thresholdVersion?: string;
       maePoints?: number;
       mfePoints?: number;
       maeAmount?: number;
       mfeAmount?: number;
       maeR?: number;
       mfeR?: number;
-      exitEfficiency?: number;
+      feeAdjustedMaePoints?: number;
+      feeAdjustedMfePoints?: number;
+      feeAdjustedMaeAmount?: number;
+      feeAdjustedMfeAmount?: number;
+      feeAdjustedMaeR?: number;
+      feeAdjustedMfeR?: number;
+      rLeftOnTable?: number;
+      exitEfficiency?: number | null;
       stopEfficiency?: number;
+      entryQualityScore?: number;
+      earlyMfePoints?: number;
+      earlyMaePoints?: number;
+      maeBeforeMfe?: boolean;
+      timeOrdering?: 'HEAT_FIRST' | 'RUN_FIRST' | 'SIMULTANEOUS';
       stopHit?: boolean;
       reversedAfterStopHit?: boolean;
       timeToMfeMinutes?: number;
       timeToMaeMinutes?: number;
       candleCount?: number;
       excursionFlags?: string[];
+      warnings?: string[];
     };
     stopMoveSummary?: {
       totalMoves: number;
@@ -391,21 +407,37 @@ const TradeSchema = new Schema<ITradeDoc>(
         },
         isUnderlyingFallback: { type: Boolean, default: false },
         resolution: { type: String },
+        isLowResolution: { type: Boolean, default: false },
         failureReason: { type: String },
+        excursionVersion: { type: Number, default: 2 },
+        thresholdVersion: { type: String, default: 'v2' },
         maePoints: { type: Number },
         mfePoints: { type: Number },
         maeAmount: { type: Number },
         mfeAmount: { type: Number },
         maeR: { type: Number },
         mfeR: { type: Number },
+        feeAdjustedMaePoints: { type: Number },
+        feeAdjustedMfePoints: { type: Number },
+        feeAdjustedMaeAmount: { type: Number },
+        feeAdjustedMfeAmount: { type: Number },
+        feeAdjustedMaeR: { type: Number },
+        feeAdjustedMfeR: { type: Number },
+        rLeftOnTable: { type: Number },
         exitEfficiency: { type: Number },
         stopEfficiency: { type: Number },
+        entryQualityScore: { type: Number },
+        earlyMfePoints: { type: Number },
+        earlyMaePoints: { type: Number },
+        maeBeforeMfe: { type: Boolean },
+        timeOrdering: { type: String, enum: ['HEAT_FIRST', 'RUN_FIRST', 'SIMULTANEOUS'] },
         stopHit: { type: Boolean },
         reversedAfterStopHit: { type: Boolean },
         timeToMfeMinutes: { type: Number },
         timeToMaeMinutes: { type: Number },
         candleCount: { type: Number },
         excursionFlags: [{ type: String }],
+        warnings: [{ type: String }],
       },
       stopMoveSummary: {
         totalMoves: { type: Number, default: 0 },

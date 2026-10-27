@@ -27,12 +27,20 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
+import ScienceRoundedIcon from '@mui/icons-material/ScienceRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 
 import {
   Area,
   AreaChart,
   Bar,
   BarChart,
+  Line,
+  LineChart,
   CartesianGrid,
   Cell,
   ResponsiveContainer,
@@ -59,6 +67,7 @@ export function AnalyticsPage() {
   const { startDate, endDate } = useDateRange();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
+  const [whatIfPrefill, setWhatIfPrefill] = useState<{ stopR?: number; targetR?: number } | null>(null);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -859,8 +868,18 @@ export function AnalyticsPage() {
               <Skeleton variant="rounded" height={400} />
             </Box>
           ) : (() => {
-            const summary = (excursionData as any)?.summary ?? (excursionData as any)?.data?.summary;
-            const points = (excursionData as any)?.scatterPoints ?? (excursionData as any)?.data?.scatterPoints ?? [];
+            const rawData = (excursionData as any)?.data ?? excursionData;
+            const summary = rawData?.summary;
+            const points = rawData?.scatterPoints ?? [];
+            const coverage = rawData?.coverage;
+            const reliability = rawData?.reliability;
+            const confidenceIntervals = rawData?.confidenceIntervals;
+            const winnersMaeDistribution = rawData?.winnersMaeDistribution;
+            const cohorts = rawData?.cohorts ?? [];
+            const rollingTrend = rawData?.rollingTrend ?? [];
+            const segmentShrinkage = rawData?.segmentShrinkage;
+            const whatIfSuggestions = rawData?.whatIfSuggestions;
+
             const hasData = Boolean(summary && summary.totalEvaluated > 0);
 
             if (!hasData) {
@@ -926,8 +945,181 @@ export function AnalyticsPage() {
 
             return (
               <>
-                {/* KPI Summary Cards */}
+                {/* 1. COVERAGE & SAMPLE RELIABILITY BANNER */}
+                <Card
+                  sx={{
+                    p: 2,
+                    borderRadius: 2.5,
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.4)' : '#F8FAFC',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 2,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TimelineRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        Data Coverage:
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        <strong>{coverage?.computedCount ?? summary?.totalEvaluated}</strong> of{' '}
+                        <strong>{coverage?.totalClosedCount ?? summary?.totalEvaluated}</strong> closed trades evaluated ({coverage?.coveragePercent ?? 100}%)
+                      </Typography>
+                    </Box>
+
+                    {coverage && coverage.uncomputedCount > 0 && (
+                      <Tooltip
+                        title={
+                          <Box sx={{ p: 0.5 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                              Uncomputed Reasons ({coverage.uncomputedCount} trades):
+                            </Typography>
+                            {Object.entries(coverage.uncomputedReasons || {}).map(([reason, cnt]) => (
+                              <Typography key={reason} variant="caption" sx={{ display: 'block' }}>
+                                • {reason}: {cnt as number}
+                              </Typography>
+                            ))}
+                          </Box>
+                        }
+                      >
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          color="default"
+                          label={`${coverage.uncomputedCount} uncomputed`}
+                          sx={{ fontSize: '0.72rem', height: 22, cursor: 'help' }}
+                        />
+                      </Tooltip>
+                    )}
+
+                    {summary?.lowResolutionCount > 0 && (
+                      <Tooltip title="Trades whose holding duration exceeded 1-minute broker candle lookback and fell back to 5-minute resolution.">
+                        <Chip
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          label={`${summary.lowResolutionCount} on 5m fallback`}
+                          sx={{ fontSize: '0.72rem', height: 22 }}
+                        />
+                      </Tooltip>
+                    )}
+
+                    {summary?.excludedUnderlyingFallbackCount > 0 && (
+                      <Tooltip title="Option trades where historical premium candles were unavailable. Fallback to spot index was excluded from aggregate metrics to avoid skewing option point scales.">
+                        <Chip
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                          label={`${summary.excludedUnderlyingFallbackCount} spot-fallback options excluded`}
+                          sx={{ fontSize: '0.72rem', height: 22 }}
+                        />
+                      </Tooltip>
+                    )}
+                  </Box>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    {reliability && (
+                      <Tooltip title={reliability.message || 'Statistical sample size reliability'}>
+                        <Chip
+                          size="small"
+                          icon={
+                            reliability.status === 'RELIABLE' ? (
+                              <CheckCircleRoundedIcon fontSize="small" />
+                            ) : (
+                              <WarningAmberIcon fontSize="small" />
+                            )
+                          }
+                          color={
+                            reliability.status === 'RELIABLE'
+                              ? 'success'
+                              : reliability.status === 'LOW'
+                              ? 'warning'
+                              : 'error'
+                          }
+                          label={
+                            reliability.status === 'RELIABLE'
+                              ? `Reliable Sample (n=${reliability.sampleSize})`
+                              : `Low Sample Size (n=${reliability.sampleSize} < 30)`
+                          }
+                          sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+                        />
+                      </Tooltip>
+                    )}
+                    <HelpHint hintKey="metric.sampleReliability" />
+                  </Box>
+                </Card>
+
+                {/* 2. OPTIMAL STOP & TARGET DECISION BRIDGE */}
+                {whatIfSuggestions && (
+                  <Card
+                    sx={{
+                      p: 2.5,
+                      borderRadius: 2.5,
+                      border: '1px solid rgba(14, 165, 233, 0.3)',
+                      background: isDark
+                        ? 'linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%)'
+                        : 'linear-gradient(135deg, #F0F9FF 0%, #EEF2FF 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 2,
+                    }}
+                  >
+                    <Box sx={{ maxWidth: 720 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Chip
+                          size="small"
+                          color="primary"
+                          icon={<ScienceRoundedIcon fontSize="small" />}
+                          label="Decision Bridge"
+                          sx={{ fontWeight: 700, fontSize: '0.7rem', height: 22 }}
+                        />
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                          Empirical Stop & Target Recommendations
+                        </Typography>
+                      </Box>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                        {whatIfSuggestions.rationale}
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          Suggested Stop:{' '}
+                          <span style={{ color: muiTheme.palette.loss.main }}>{whatIfSuggestions.suggestedStopR}R</span>
+                        </Typography>
+                        <Divider orientation="vertical" flexItem sx={{ height: 16, my: 'auto' }} />
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          Suggested Target:{' '}
+                          <span style={{ color: muiTheme.palette.profit.main }}>{whatIfSuggestions.suggestedTargetR}R</span>
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      startIcon={<AutoAwesomeRoundedIcon />}
+                      onClick={() => {
+                        setWhatIfPrefill({
+                          stopR: whatIfSuggestions.suggestedStopR,
+                          targetR: whatIfSuggestions.suggestedTargetR,
+                        });
+                        setActiveTab('WHAT_IF');
+                      }}
+                      sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, px: 2.5 }}
+                    >
+                      Simulate in What-If Grid
+                    </Button>
+                  </Card>
+                )}
+
+                {/* 3. KPI SUMMARY CARDS (STATISTICAL HONESTY) */}
                 <Grid container spacing={2}>
+                  {/* Card 1: Avg MFE */}
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card
                       onClick={() =>
@@ -950,24 +1142,30 @@ export function AnalyticsPage() {
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Maximum Favorable Excursion: The peak unrealized profit or maximum favorable price reach before exit. Click to inspect trades.">
+                        <Tooltip title="Maximum Favorable Excursion: The peak unrealized profit reached before exit. Click to inspect trades.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Avg MFE (Favorable)
                           </Typography>
                         </Tooltip>
                         <HelpHint hintKey="metric.mfe" />
                       </Box>
-                      <Tooltip title="Average peak favorable potential reached across trades with stop losses (click to drill down)">
+                      <Tooltip title="Average peak potential across trades with stops. Median and 90% Bootstrap CI below.">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
                           +{summary.avgMfeR !== undefined ? `${summary.avgMfeR}R` : '—'}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Average peak potential per trade
+                        Median: <strong>+{summary.medianMfeR ?? '—'}R</strong> (IQR {summary.p25MfeR ?? '—'}R - {summary.p75MfeR ?? '—'}R)
                       </Typography>
+                      {confidenceIntervals?.avgMfeR && (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
+                          90% CI: [{confidenceIntervals.avgMfeR.lower}R, {confidenceIntervals.avgMfeR.upper}R]
+                        </Typography>
+                      )}
                     </Card>
                   </Grid>
 
+                  {/* Card 2: Avg MAE */}
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card
                       onClick={() =>
@@ -990,28 +1188,34 @@ export function AnalyticsPage() {
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Maximum Adverse Excursion: The deepest unrealized loss or adverse price dip experienced while the trade was open. Click to inspect trades.">
+                        <Tooltip title="Maximum Adverse Excursion: The deepest unrealized drawdown experienced while trade was open. Click to inspect trades.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Avg MAE (Adverse)
                           </Typography>
                         </Tooltip>
                         <HelpHint hintKey="metric.mae" />
                       </Box>
-                      <Tooltip title="Average maximum adverse drawdown experienced across trades with stop losses (click to drill down)">
+                      <Tooltip title="Average maximum adverse drawdown across trades with stops. Median and 90% Bootstrap CI below.">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
                           -{summary.avgMaeR !== undefined ? `${summary.avgMaeR}R` : '—'}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Average drawdown before exit
+                        Median: <strong>-{summary.medianMaeR ?? '—'}R</strong> (IQR -{summary.p75MaeR ?? '—'}R to -{summary.p25MaeR ?? '—'}R)
                       </Typography>
+                      {confidenceIntervals?.avgMaeR && (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
+                          90% CI: [-{confidenceIntervals.avgMaeR.upper}R, -{confidenceIntervals.avgMaeR.lower}R]
+                        </Typography>
+                      )}
                     </Card>
                   </Grid>
 
+                  {/* Card 3: Exit Efficiency */}
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
                     <Card sx={{ p: 2, height: '100%' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Exit Efficiency: Percentage of the maximum favorable price move (MFE) captured at actual exit.">
+                        <Tooltip title="Exit Efficiency: Percentage of the maximum favorable price move (MFE) captured at actual exit. Flat scratch trades with zero MFE return N/A.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
                             Exit Efficiency
                           </Typography>
@@ -1024,94 +1228,140 @@ export function AnalyticsPage() {
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Captured % of maximum run
+                        Median: <strong>{summary.medianExitEfficiency !== undefined ? `${(summary.medianExitEfficiency * 100).toFixed(1)}%` : '—'}</strong>
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
+                        Stop Efficiency: {summary.avgStopEfficiency !== undefined ? `${(summary.avgStopEfficiency * 100).toFixed(1)}%` : '—'}
                       </Typography>
                     </Card>
                   </Grid>
 
+                  {/* Card 4: R Left on Table */}
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-                    <Card
-                      onClick={() =>
-                        openDrill({
-                          kind: 'FILTER',
-                          filter: { excursionFlag: 'GAVE_BACK_PROFIT' },
-                          label: 'Trades with Gave Back Profit',
-                        })
-                      }
-                      sx={{
-                        p: 2,
-                        height: '100%',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          borderColor: muiTheme.palette.warning.main,
-                          transform: 'translateY(-2px)',
-                          boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
-                        },
-                      }}
-                    >
+                    <Card sx={{ p: 2, height: '100%' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Gave Back Profit: Percentage of trades that achieved significant favorable excursion (>1R) but surrendered >50% of peak gains before closing. Click to inspect trades.">
+                        <Tooltip title="R Left on the Table: Difference between peak favorable excursion reached (MFE_R) and actual realized return (realized_R). Quantifies money surrendered to the market.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
-                            Gave Back Profit
+                            R Left on Table
                           </Typography>
                         </Tooltip>
-                        <HelpHint hintKey="metric.gaveBackProfit" />
+                        <HelpHint hintKey="metric.exitEfficiency" />
                       </Box>
-                      <Tooltip title="Trades with strong initial run that gave back >50% peak potential (click to drill down)">
+                      <Tooltip title="Average unrealized R-multiple profit surrendered before exit">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
-                          {summary.gaveBackProfitPercent}%
+                          +{summary.avgRLeftOnTable !== undefined ? `${summary.avgRLeftOnTable}R` : '—'}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Trades surrendering &gt;50% MFE
+                        Median: <strong>+{summary.medianRLeftOnTable ?? '—'}R</strong> surrendered
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
+                        Formula: max(0, MFE_R - Realized_R)
                       </Typography>
                     </Card>
                   </Grid>
 
+                  {/* Card 5: Order Flow & Diagnostic Flags */}
                   <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-                    <Card
-                      onClick={() =>
-                        openDrill({
-                          kind: 'FILTER',
-                          filter: { excursionFlag: 'REVERSED_AFTER_STOP' },
-                          label: 'Trades with Post-Stop Reversal',
-                        })
-                      }
-                      sx={{
-                        p: 2,
-                        height: '100%',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          borderColor: '#8B5CF6',
-                          transform: 'translateY(-2px)',
-                          boxShadow: '0 4px 12px rgba(139, 92, 246, 0.15)',
-                        },
-                      }}
-                    >
+                    <Card sx={{ p: 2, height: '100%' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Tooltip title="Post-Stop Reversals: Percentage of stopped-out trades where market price reversed and subsequently reached original profit targets. Click to inspect trades.">
+                        <Tooltip title="Order Flow & Follow-Through: Measures how quickly market moved in your favor vs against you in the first 5 candles.">
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
-                            Post-Stop Reversals
+                            Follow-Through
                           </Typography>
                         </Tooltip>
-                        <HelpHint hintKey="metric.postStopReversals" />
+                        <HelpHint hintKey="metric.mae" />
                       </Box>
-                      <Tooltip title="Stopped trades reversing to original profit target (indicates stop too tight; click to drill down)">
-                        <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
-                          {summary.reversalAfterStopPercent}%
-                        </Typography>
-                      </Tooltip>
+                      <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
+                        {summary.avgEntryQualityScore !== undefined ? summary.avgEntryQualityScore : '—'}
+                        <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'text.secondary' }}> / 1.0</span>
+                      </Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Stopped trades reversing to target
+                        Heat-First: <strong>{summary.heatFirstPercent}%</strong> ({summary.heatFirstCount} trades)
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
+                        Run-First: <strong>{(100 - (summary.heatFirstPercent || 0)).toFixed(1)}%</strong> ({summary.runFirstCount ?? 0} trades)
                       </Typography>
                     </Card>
                   </Grid>
                 </Grid>
 
-                {/* MAE vs MFE Scatter Plot */}
-                <Card sx={{ p: 2.5 }}>
+                {/* 4. WINNER-ONLY MAE DISTRIBUTION (STOP LOSS OPTIMIZATION) */}
+                {winnersMaeDistribution && winnersMaeDistribution.distribution && (
+                  <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                      <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <SecurityIcon sx={{ color: muiTheme.palette.profit.main, fontSize: 20 }} />
+                          Winner-Only MAE Distribution (Stop Loss Optimization)
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          Did your winners actually need their full stop room? If 90% of winners never suffer &gt;0.4R adverse heat, a 1.0R stop absorbs unnecessary risk.
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Chip
+                          size="small"
+                          label={`P50 MAE: ${winnersMaeDistribution.p50MaeR}R`}
+                          sx={{ fontWeight: 700, fontSize: '0.72rem', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }}
+                        />
+                        <Chip
+                          size="small"
+                          label={`P75 MAE: ${winnersMaeDistribution.p75MaeR}R`}
+                          sx={{ fontWeight: 700, fontSize: '0.72rem', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#BBF7D0' }}
+                        />
+                        <Chip
+                          size="small"
+                          color="primary"
+                          label={`P90 MAE: ${winnersMaeDistribution.p90MaeR}R`}
+                          sx={{ fontWeight: 800, fontSize: '0.72rem' }}
+                        />
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ width: '100%', height: 220, mt: 2 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={winnersMaeDistribution.distribution} margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                          <XAxis dataKey="bucketLabel" stroke={chartAxisColor} fontSize={11} />
+                          <YAxis stroke={chartAxisColor} fontSize={11} />
+                          <RechartsTooltip
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const d = payload[0].payload;
+                                return (
+                                  <Paper sx={{ ...chartTooltipStyle, p: 1.5 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                      Adverse Drawdown: {d.bucketLabel}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                                      Winners in bucket: <strong>{d.count}</strong> ({d.percent}%)
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ display: 'block', color: 'primary.main', fontWeight: 700 }}>
+                                      Cumulative Winners: {d.cumulativePercent}%
+                                    </Typography>
+                                  </Paper>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Bar dataKey="count" fill={muiTheme.palette.profit.main} radius={[4, 4, 0, 0]}>
+                            {winnersMaeDistribution.distribution.map((entry: any, index: number) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={index >= 4 ? muiTheme.palette.warning.main : muiTheme.palette.profit.main}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Card>
+                )}
+
+                {/* 5. MAE vs MFE SCATTER PLOT */}
+                <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
                     <Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -1324,6 +1574,141 @@ export function AnalyticsPage() {
                     </Tooltip>
                   </Box>
                 </Card>
+
+                {/* 6. COHORT COMPARISONS (PSYCHOLOGY & DISCIPLINE EXECUTION BRIDGES) */}
+                {cohorts.length > 0 && (
+                  <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PsychologyIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                        Execution Quality Cohort Comparisons
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        Connect execution efficiency directly to discipline, psychology, and trading session conditions.
+                      </Typography>
+                    </Box>
+
+                    <Grid container spacing={2}>
+                      {cohorts.map((c: any) => (
+                        <Grid key={c.cohortName} size={{ xs: 12, md: 6 }}>
+                          <Paper
+                            sx={{
+                              p: 2,
+                              borderRadius: 2,
+                              border: `1px solid ${muiTheme.palette.divider}`,
+                              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                {c.cohortName}
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={`Δ ${(c.exitEfficiencyDelta * 100).toFixed(1)}%`}
+                                color={c.exitEfficiencyDelta >= 0 ? 'success' : 'error'}
+                                sx={{ fontWeight: 700, fontSize: '0.72rem', height: 22 }}
+                              />
+                            </Box>
+
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                              {/* Group A */}
+                              <Box sx={{ flex: 1, p: 1.25, borderRadius: 1.5, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF' }}>
+                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                                  {c.groupA.label} ({c.groupA.count} trades)
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 800, mt: 0.5 }}>
+                                  Exit Eff: {(c.groupA.avgExitEfficiency * 100).toFixed(1)}%
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
+                                  MAE: -{c.groupA.avgMaeR}R • MFE: +{c.groupA.avgMfeR}R
+                                </Typography>
+                              </Box>
+
+                              {/* Group B */}
+                              <Box sx={{ flex: 1, p: 1.25, borderRadius: 1.5, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF' }}>
+                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                                  {c.groupB.label} ({c.groupB.count} trades)
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 800, mt: 0.5 }}>
+                                  Exit Eff: {(c.groupB.avgExitEfficiency * 100).toFixed(1)}%
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
+                                  MAE: -{c.groupB.avgMaeR}R • MFE: +{c.groupB.avgMfeR}R
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </Paper>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </Card>
+                )}
+
+                {/* 7. ROLLING 20-TRADE EXECUTION TREND */}
+                {rollingTrend.length > 5 && (
+                  <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <TrendingUpRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                        Rolling 20-Trade Execution Quality Trend
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        Tracks whether your exit discipline and adverse drawdown management are improving or deteriorating over time.
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ width: '100%', height: 260 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={rollingTrend} margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                          <XAxis dataKey="index" stroke={chartAxisColor} fontSize={11} />
+                          <YAxis yAxisId="left" stroke={chartAxisColor} fontSize={11} unit="%" domain={[0, 100]} />
+                          <YAxis yAxisId="right" orientation="right" stroke={chartAxisColor} fontSize={11} unit="R" domain={[0, 'auto']} />
+                          <RechartsTooltip
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const d = payload[0].payload;
+                                return (
+                                  <Paper sx={{ ...chartTooltipStyle, p: 1.5 }}>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                      Trade #{d.index}: {d.symbol} ({d.tradeDate})
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ display: 'block', color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                                      Rolling Exit Efficiency: <strong>{(d.rollingExitEfficiency * 100).toFixed(1)}%</strong>
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ display: 'block', color: muiTheme.palette.loss.main }}>
+                                      Rolling Avg MAE: <strong>-{d.rollingAvgMaeR}R</strong>
+                                    </Typography>
+                                  </Paper>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Line
+                            yAxisId="left"
+                            type="monotone"
+                            dataKey={(d: any) => Number((d.rollingExitEfficiency * 100).toFixed(1))}
+                            name="Exit Efficiency (%)"
+                            stroke={muiTheme.palette.profit.main}
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="rollingAvgMaeR"
+                            name="Avg MAE (R)"
+                            stroke={muiTheme.palette.loss.main}
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Card>
+                )}
               </>
             );
           })()}
@@ -1336,6 +1721,8 @@ export function AnalyticsPage() {
           accountId={selectedAccountId}
           startDate={startDate}
           endDate={endDate}
+          initialSuggestedStopR={whatIfPrefill?.stopR}
+          initialSuggestedTargetR={whatIfPrefill?.targetR}
         />
       )}
     </Box>

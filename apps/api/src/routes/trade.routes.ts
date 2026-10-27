@@ -555,8 +555,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Recalculate account realized P&L and balance authoritatively
     await AccountService.recalculateAccountBalances(account._id, req.user!.id);
 
-    // Auto-generate snapshot if trade was created in CLOSED status
+    // Auto-compute excursion & generate snapshot if trade was created in CLOSED status
     if (trade.status === 'CLOSED') {
+      FyersService.computeExcursionForTrade(trade._id, req.user!.id).catch((err: any) => {
+        req.log.warn('Auto excursion computation threw for trade %s: %s', trade._id, err.message);
+      });
       ChartGeneratorService.ensureTradeSnapshot(trade._id, req.user!.id).catch((err: any) => {
         req.log.warn('Auto snapshot generation threw for trade %s: %s', trade._id, err.message);
       });
@@ -986,7 +989,10 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     if (updated?.status === 'CLOSED') {
       if (existingTrade.status !== 'CLOSED') {
-        // Transitioned to CLOSED (e.g. Quick Close): auto-generate snapshot
+        // Transitioned to CLOSED (e.g. Quick Close): compute excursion and auto-generate snapshot
+        FyersService.computeExcursionForTrade(updated._id, req.user!.id).catch((err: any) => {
+          req.log.warn('Auto excursion computation threw for trade %s: %s', updated._id, err.message);
+        });
         ChartGeneratorService.ensureTradeSnapshot(updated._id, req.user!.id).catch((err: any) => {
           req.log.warn('Auto snapshot generation threw for trade %s: %s', updated._id, err.message);
         });

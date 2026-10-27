@@ -239,7 +239,7 @@ export class SeedValidator {
         excursionReason = `Trade ${t._id} has negative maePoints: ${exc.maePoints}`;
         break;
       }
-      if (exc.exitEfficiency !== undefined && (exc.exitEfficiency < 0 || exc.exitEfficiency > 1.0001)) {
+      if (exc.exitEfficiency !== undefined && exc.exitEfficiency !== null && (exc.exitEfficiency < 0 || exc.exitEfficiency > 1.0001)) {
         excursionValid = false;
         excursionReason = `Trade ${t._id} has invalid exitEfficiency: ${exc.exitEfficiency}`;
         break;

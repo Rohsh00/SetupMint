@@ -6,6 +6,8 @@ import {
   BrokerIntegration,
   TradingAccount,
   Trade,
+  User,
+  Instrument,
   BrokerFundsSnapshot,
   AccountTransaction,
   TradeCandleSnapshot,
@@ -1678,18 +1680,13 @@ export class FyersService {
       return trade.calculated.excursion;
     }
 
-    // Adaptive resolution rule:
-    // Holds <= 240m (4 hours) -> 1m resolution ('1')
-    // Holds > 240m up to 30 days -> 5m resolution ('5')
-    // Longer holds -> Daily ('D')
-    const holdMinutes = Math.max(1, moment(trade.exitTime).diff(moment(trade.entryTime), 'minutes'));
-    const resolution = holdMinutes <= 240 ? '1' : holdMinutes <= 43200 ? '5' : 'D';
-    const barMinutes = resolution === '1' ? 1 : resolution === '5' ? 5 : 1440;
+    // 1m resolution prioritized; fallback to 5m / D if 1m is outside lookback window
+    let resolution = '1';
+    let barMinutes = 1;
+    let from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
+    let to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
 
-    const from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
-    const to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
-
-    const candleResult = await MarketDataService.getCandlesWithFallback({
+    let candleResult = await MarketDataService.getCandlesWithFallback({
       trade,
       resolution,
       from,
@@ -1699,6 +1696,42 @@ export class FyersService {
       provider: options?.provider || 'AUTO',
     });
 
+    // If 1m unavailable from provider, fallback to 5m, then D
+    if (!candleResult.ok || !candleResult.candles || candleResult.candles.length === 0) {
+      const fallbackRes = '5';
+      barMinutes = 5;
+      from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
+      to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
+      const res5 = await MarketDataService.getCandlesWithFallback({
+        trade,
+        resolution: fallbackRes,
+        from,
+        to,
+        userId: uId,
+        forceRefetch,
+        provider: options?.provider || 'AUTO',
+      });
+      if (res5.ok && res5.candles && res5.candles.length > 0) {
+        candleResult = res5;
+        resolution = fallbackRes;
+      } else {
+        // Try Daily for swing holds
+        const resD = await MarketDataService.getCandlesWithFallback({
+          trade,
+          resolution: 'D',
+          from: moment(trade.entryTime).subtract(1, 'day').toDate(),
+          to: moment(trade.exitTime).add(1, 'day').toDate(),
+          userId: uId,
+          forceRefetch,
+          provider: options?.provider || 'AUTO',
+        });
+        if (resD.ok && resD.candles && resD.candles.length > 0) {
+          candleResult = resD;
+          resolution = 'D';
+        }
+      }
+    }
+
     if (!candleResult.ok) {
       trade.calculated = trade.calculated || ({} as any);
       trade.calculated.excursion = {
@@ -1706,6 +1739,9 @@ export class FyersService {
         failureReason: candleResult.message || `No candles available (${candleResult.reason})`,
         source: options?.provider === 'ANGEL_ONE' ? 'ANGEL_ONE_HISTORY' : 'FYERS_HISTORY',
         resolution,
+        isLowResolution: resolution !== '1',
+        excursionVersion: 2,
+        thresholdVersion: 'v2',
         computedAt: new Date(),
       };
       await trade.save();
@@ -1731,11 +1767,26 @@ export class FyersService {
           'Option contract candles unavailable; cannot calculate MAE/MFE using spot underlying index without delta translation',
         source: 'UNDERLYING_FALLBACK',
         resolution,
+        isLowResolution: resolution !== '1',
+        isUnderlyingFallback: true,
+        excursionVersion: 2,
+        thresholdVersion: 'v2',
         computedAt: new Date(),
       };
       await trade.save();
       return trade.calculated.excursion;
     }
+
+    // Retrieve user settings & instrument specs for precision
+    const user = await User.findById(uId).select('patternDetectionSettings').lean();
+    const excursionSettings = (user as any)?.patternDetectionSettings?.excursionSettings;
+
+    const instrument = await Instrument.findOne({
+      userId: uId,
+      symbol: trade.underlying || trade.symbol,
+    })
+      .select('tickSize')
+      .lean();
 
     // Compute excursion metrics using financial-engine
     const entryPrice = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
@@ -1757,6 +1808,12 @@ export class FyersService {
       exitTime: trade.exitTime,
       plannedRiskAmount: plannedRisk > 0 ? plannedRisk : undefined,
       resolution,
+      totalCharges: trade.calculated?.totalCosts,
+      tickSize: instrument?.tickSize,
+      settings: excursionSettings,
+      tradeManagementPlan: (trade as any).tradeManagementPlan,
+      hasTrailedStop: (trade.calculated?.stopMoveSummary?.trailedCount || 0) > 0,
+      realizedR: trade.calculated?.realizedRMultiple,
     });
 
     const source =
@@ -1774,21 +1831,37 @@ export class FyersService {
       provider: providerUsed,
       isUnderlyingFallback,
       resolution,
+      isLowResolution: result.isLowResolution,
       failureReason: result.failureReason,
+      excursionVersion: result.excursionVersion,
+      thresholdVersion: result.thresholdVersion,
       maePoints: result.maePoints,
       mfePoints: result.mfePoints,
       maeAmount: result.maeAmount,
       mfeAmount: result.mfeAmount,
       maeR: result.maeR,
       mfeR: result.mfeR,
+      feeAdjustedMaePoints: result.feeAdjustedMaePoints,
+      feeAdjustedMfePoints: result.feeAdjustedMfePoints,
+      feeAdjustedMaeAmount: result.feeAdjustedMaeAmount,
+      feeAdjustedMfeAmount: result.feeAdjustedMfeAmount,
+      feeAdjustedMaeR: result.feeAdjustedMaeR,
+      feeAdjustedMfeR: result.feeAdjustedMfeR,
+      rLeftOnTable: result.rLeftOnTable,
       exitEfficiency: result.exitEfficiency,
       stopEfficiency: result.stopEfficiency,
+      entryQualityScore: result.entryQualityScore,
+      earlyMfePoints: result.earlyMfePoints,
+      earlyMaePoints: result.earlyMaePoints,
+      maeBeforeMfe: result.maeBeforeMfe,
+      timeOrdering: result.timeOrdering,
       stopHit: result.stopHit,
       reversedAfterStopHit: result.reversedAfterStopHit,
       timeToMfeMinutes: result.timeToMfeMinutes,
       timeToMaeMinutes: result.timeToMaeMinutes,
       candleCount: result.candleCount,
       excursionFlags: result.excursionFlags,
+      warnings: result.warnings,
     };
 
     await trade.save();

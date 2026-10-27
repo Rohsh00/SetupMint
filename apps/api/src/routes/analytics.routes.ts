@@ -11,6 +11,7 @@ import {
 import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { computeWhatIf, WhatIfScopeTooLargeError } from '../services/what-if.service.js';
+import { calculateExcursionAggregates, ITradeForExcursionAnalytics } from '@tradevault/financial-engine';
 
 export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -150,110 +151,69 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const { accountId, strategyId, variantKey, startDate, endDate, session } = parsed.data;
 
-    const filter: any = {
+    const baseFilter: any = {
       userId: req.user!.id,
       status: 'CLOSED',
-      'calculated.excursion.status': 'COMPUTED',
     };
 
-    if (accountId) filter.accountId = accountId;
-    if (strategyId) filter.strategyId = strategyId;
-    if (variantKey) filter['setup.variantKey'] = variantKey;
-    if (session) filter.session = session;
+    if (accountId) baseFilter.accountId = accountId;
+    if (strategyId) baseFilter.strategyId = strategyId;
+    if (variantKey) baseFilter['setup.variantKey'] = variantKey;
+    if (session) baseFilter.session = session;
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
-      filter.tradeDate = dateClause.tradeDate;
+      baseFilter.tradeDate = dateClause.tradeDate;
     }
 
-    const trades = await Trade.find(filter).sort({ tradeDate: -1 });
+    const allClosedTrades = await Trade.find(baseFilter).sort({ tradeDate: -1 });
 
-    let totalMaeR = new Decimal(0);
-    let countMaeR = 0;
-    let totalMfeR = new Decimal(0);
-    let countMfeR = 0;
-    let totalExitEff = new Decimal(0);
-    let countExitEff = 0;
-    let gaveBackProfitCount = 0;
-    let stopReversalCount = 0;
-    let totalWithStop = 0;
-
-    const scatterPoints: Array<{
-      tradeId: string;
-      symbol: string;
-      maeR?: number;
-      mfeR?: number;
-      maePoints?: number;
-      mfePoints?: number;
-      maeAmount?: number;
-      mfeAmount?: number;
-      netPnL: number;
-      outcome: any;
-      exitEfficiency?: number;
-      tradeDate: string;
-    }> = [];
-
-    for (const t of trades) {
-      const exc = t.calculated?.excursion;
-      if (!exc) continue;
-
-      if (exc.maeR !== undefined && exc.maeR !== null) {
-        totalMaeR = totalMaeR.plus(exc.maeR);
-        countMaeR++;
+    const uncomputedReasonCounts: Record<string, number> = {};
+    for (const t of allClosedTrades) {
+      const status = t.calculated?.excursion?.status;
+      if (status !== 'COMPUTED') {
+        const reason = t.calculated?.excursion?.failureReason || status || 'PENDING';
+        uncomputedReasonCounts[reason] = (uncomputedReasonCounts[reason] || 0) + 1;
       }
-      if (exc.mfeR !== undefined && exc.mfeR !== null) {
-        totalMfeR = totalMfeR.plus(exc.mfeR);
-        countMfeR++;
-      }
-      if (exc.exitEfficiency !== undefined && exc.exitEfficiency !== null) {
-        totalExitEff = totalExitEff.plus(exc.exitEfficiency);
-        countExitEff++;
-      }
-      if (exc.excursionFlags?.includes('GAVE_BACK_PROFIT')) {
-        gaveBackProfitCount++;
-      }
-      if (t.risk?.initialStopLoss) {
-        totalWithStop++;
-        if (exc.reversedAfterStopHit || exc.excursionFlags?.includes('STOP_TOO_TIGHT_EVIDENCE')) {
-          stopReversalCount++;
-        }
-      }
-
-      scatterPoints.push({
-        tradeId: t._id.toString(),
-        symbol: t.symbol,
-        maeR: exc.maeR,
-        mfeR: exc.mfeR,
-        maePoints: exc.maePoints,
-        mfePoints: exc.mfePoints,
-        maeAmount: exc.maeAmount,
-        mfeAmount: exc.mfeAmount,
-        netPnL: t.calculated?.netPnL || 0,
-        outcome: t.calculated?.outcome || 'BREAKEVEN',
-        exitEfficiency: exc.exitEfficiency,
-        tradeDate: t.tradeDate ? t.tradeDate.toISOString().split('T')[0] : '',
-      });
     }
 
-    const totalEvaluated = trades.length;
-    const avgMaeR = countMaeR > 0 ? Number(totalMaeR.dividedBy(countMaeR).toFixed(2)) : undefined;
-    const avgMfeR = countMfeR > 0 ? Number(totalMfeR.dividedBy(countMfeR).toFixed(2)) : undefined;
-    const avgExitEfficiency = countExitEff > 0 ? Number(totalExitEff.dividedBy(countExitEff).toFixed(4)) : undefined;
-    const gaveBackProfitPercent = totalEvaluated > 0 ? Number(((gaveBackProfitCount / totalEvaluated) * 100).toFixed(1)) : 0;
-    const reversalAfterStopPercent = totalWithStop > 0 ? Number(((stopReversalCount / totalWithStop) * 100).toFixed(1)) : 0;
+    const formattedTrades: ITradeForExcursionAnalytics[] = allClosedTrades.map((t) => ({
+      id: t._id.toString(),
+      symbol: t.symbol,
+      tradeDate: t.tradeDate,
+      netPnL: t.calculated?.netPnL || 0,
+      outcome: t.calculated?.outcome || 'BREAKEVEN',
+      session: t.session,
+      strategyId: t.strategyId?.toString(),
+      variantKey: t.setup?.variantKey,
+      mistakes: t.psychology?.mistakes,
+      stopLossMoved: t.psychology?.stopLossMoved,
+      assetClass: t.assetClass,
+      underlying: t.underlying,
+      optionType: t.optionType,
+      strikePrice: t.strikePrice,
+      tradeManagementPlan: (t as any).tradeManagementPlan,
+      risk: t.risk,
+      calculated: t.calculated as any,
+    }));
+
+    const result = calculateExcursionAggregates({
+      allClosedTrades: formattedTrades,
+      uncomputedReasonCounts,
+    });
+
+    // Provide legacy summary properties for seamless backward compatibility
+    const legacySummary = {
+      ...result.summary,
+      avgMaeR: result.summary.maeR.mean,
+      avgMfeR: result.summary.mfeR.mean,
+      avgExitEfficiency: result.summary.exitEfficiency.mean,
+    };
 
     return reply.send({
       success: true,
       data: {
-        summary: {
-          totalEvaluated,
-          countWithStop: countMaeR,
-          avgMaeR,
-          avgMfeR,
-          avgExitEfficiency,
-          gaveBackProfitPercent,
-          reversalAfterStopPercent,
-        },
-        scatterPoints,
+        ...result,
+        summary: legacySummary,
       },
     });
   });

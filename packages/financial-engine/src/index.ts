@@ -13,6 +13,7 @@ export * from './monte-carlo.js';
 export * from './tilt.js';
 export * from './variant-analytics.js';
 export * from './excursion.js';
+export * from './excursion-analytics.js';
 export * from './stop-move.js';
 export * from './chart-helpers.js';
 export * from './pattern-recognition.js';

@@ -195,12 +195,33 @@ export interface IInstrumentDetectionSetting {
   preferredStrategyName?: string;
 }
 
+export interface IExcursionSettings {
+  gaveBackMinMfeR?: number;
+  gaveBackEfficiencyThreshold?: number;
+  earlyExitEfficiencyThreshold?: number;
+  stopTooTightReversalR?: number;
+  stopTooTightCandleLookahead?: number;
+  stopTooTightMaxBreachBufferR?: number;
+  entryQualityCandleCount?: number;
+}
+
+export const DEFAULT_EXCURSION_SETTINGS: IExcursionSettings = {
+  gaveBackMinMfeR: 1.0,
+  gaveBackEfficiencyThreshold: 0.5,
+  earlyExitEfficiencyThreshold: 0.35,
+  stopTooTightReversalR: 1.0,
+  stopTooTightCandleLookahead: 20,
+  stopTooTightMaxBreachBufferR: 0.75,
+  entryQualityCandleCount: 3,
+};
+
 export interface IPatternDetectionSettings {
   defaultHtf: string;
   defaultLtf: string;
   autoDetectOnImport?: boolean;
   autoDetectMistakes?: boolean;
   instrumentOverrides: IInstrumentDetectionSetting[];
+  excursionSettings?: IExcursionSettings;
 }
 
 export const DEFAULT_PATTERN_DETECTION_SETTINGS: IPatternDetectionSettings = {
@@ -213,6 +234,7 @@ export const DEFAULT_PATTERN_DETECTION_SETTINGS: IPatternDetectionSettings = {
     { symbol: 'BANKNIFTY', htf: '60', ltf: '1' },
     { symbol: 'CRUDEOIL', htf: '240', ltf: '5' },
   ],
+  excursionSettings: DEFAULT_EXCURSION_SETTINGS,
 };
 
 export interface IUser {
@@ -423,7 +445,10 @@ export type ExcursionFlag =
   | 'GAVE_BACK_PROFIT'
   | 'EXITED_EARLY'
   | 'STOP_TOO_TIGHT_EVIDENCE'
-  | 'STOP_TOO_LOOSE_EVIDENCE';
+  | 'STOP_TOO_LOOSE_EVIDENCE'
+  | 'ENTRY_OUTSIDE_CANDLE'
+  | 'EXIT_OUTSIDE_CANDLE'
+  | 'LOW_RESOLUTION';
 
 export interface ITradeExcursion {
   status: ExcursionStatus;
@@ -432,21 +457,37 @@ export interface ITradeExcursion {
   provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
   isUnderlyingFallback?: boolean;
   resolution?: string;
+  isLowResolution?: boolean;
   failureReason?: string;
+  excursionVersion?: number;
+  thresholdVersion?: string;
   maePoints?: number;
   mfePoints?: number;
   maeAmount?: number;
   mfeAmount?: number;
   maeR?: number;
   mfeR?: number;
-  exitEfficiency?: number;
+  feeAdjustedMaePoints?: number;
+  feeAdjustedMfePoints?: number;
+  feeAdjustedMaeAmount?: number;
+  feeAdjustedMfeAmount?: number;
+  feeAdjustedMaeR?: number;
+  feeAdjustedMfeR?: number;
+  rLeftOnTable?: number;
+  exitEfficiency?: number | null;
   stopEfficiency?: number;
+  entryQualityScore?: number;
+  earlyMfePoints?: number;
+  earlyMaePoints?: number;
+  maeBeforeMfe?: boolean;
+  timeOrdering?: 'HEAT_FIRST' | 'RUN_FIRST' | 'SIMULTANEOUS';
   stopHit?: boolean;
   reversedAfterStopHit?: boolean;
   timeToMfeMinutes?: number;
   timeToMaeMinutes?: number;
   candleCount?: number;
   excursionFlags?: ExcursionFlag[];
+  warnings?: string[];
 }
 
 export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';

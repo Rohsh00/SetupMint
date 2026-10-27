@@ -582,11 +582,39 @@ export const riskSettingsSchema = z.object({
   revengeTradingMinutes: z.coerce.number().int().positive().optional(),
 });
 
+export const excursionSettingsSchema = z.object({
+  gaveBackMinMfeR: z.coerce.number().positive().optional(),
+  gaveBackEfficiencyThreshold: z.coerce.number().min(0).max(1).optional(),
+  earlyExitEfficiencyThreshold: z.coerce.number().min(0).max(1).optional(),
+  stopTooTightReversalR: z.coerce.number().positive().optional(),
+  stopTooTightCandleLookahead: z.coerce.number().int().positive().optional(),
+  stopTooTightMaxBreachBufferR: z.coerce.number().nonnegative().optional(),
+  entryQualityCandleCount: z.coerce.number().int().positive().optional(),
+});
+
+export const patternDetectionSettingsSchema = z.object({
+  defaultHtf: z.string().optional(),
+  defaultLtf: z.string().optional(),
+  autoDetectOnImport: z.boolean().optional(),
+  autoDetectMistakes: z.boolean().optional(),
+  instrumentOverrides: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        htf: z.string(),
+        ltf: z.string(),
+      })
+    )
+    .optional(),
+  excursionSettings: excursionSettingsSchema.optional(),
+});
+
 export const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
   baseCurrency: z.string().optional(),
   theme: z.enum(['dark', 'light', 'system']).optional(),
   riskSettings: riskSettingsSchema.optional(),
+  patternDetectionSettings: patternDetectionSettingsSchema.optional(),
 });
 
 export const excursionAnalyticsQuerySchema = z

@@ -306,6 +306,38 @@ When score $\ge 61$, an advisory, non-blocking pre-trade warning is surfaced in 
   - Zero round-off drift between chart metrics and underlying trades.
   - Returns `{ totalCount, sumNetPnL, avgNetPnL, sumRealizedR, avgRealizedR, winCount, lossCount, breakevenCount, winRatePercent }`.
 
+---
+
+## 13. Execution Quality & Excursion Engine (`excursion.ts` & `excursion-analytics.ts`)
+
+### A. Per-Trade Excursion Analysis (`calculateExcursion`)
+- **1-Minute Priority Resolution:** Attempts 1-minute historical candles from market data providers. Falls back to 5-minute only when holding duration exceeds provider lookback, flagging `isLowResolution: true` (`LOW_RESOLUTION`).
+- **Candle Bounds Sanity Checks:** Validates entry and exit fill prices against the corresponding candle high/low. Generates `ENTRY_OUTSIDE_CANDLE` or `EXIT_OUTSIDE_CANDLE` warnings on fill anomalies.
+- **Underlying Fallback Safety:** Safely identifies option trades where spot underlying index candles were substituted (`UNDERLYING_FALLBACK`), excluding them from option point aggregations to avoid corrupting premium metrics.
+- **Fee-Adjusted Excursions:** For scalping accuracy, computes net fee-adjusted excursions:
+  $$\text{Fee-Adjusted MFE} = \max(0, \text{Gross MFE Amount} - \text{Total Charges})$$
+  $$\text{Fee-Adjusted MAE} = \text{Gross MAE Amount} + \text{Total Charges}$$
+- **Exit Efficiency Edge Case:** Flat scratch trades with zero MFE ($P_{\text{exit}} = P_{\text{entry}}$) return `exitEfficiency: null` (N/A) rather than 1.0 (100%), preventing distortion from non-moving trades.
+- **R Left on Table:** $\max(0, \text{MFE\_R} - \text{Realized\_R})$.
+- **Entry Quality Score:** Measures early follow-through across the first $N$ candles (default 5 candles) as $\frac{\text{Early MFE}}{\text{Early MFE} + \text{Early MAE}}$.
+- **Excursion Time Ordering:** Accurately classifies whether drawdown came before the run (`HEAT_FIRST`), after initial expansion (`RUN_FIRST`), or simultaneously (`SIMULTANEOUS`).
+- **Refined Diagnostic Flags:**
+  - `GAVE_BACK_PROFIT`: R/percentage normalized ($\ge 1.0\text{R}$ or $\ge 1\%$ entry price), with immunity for planned runners or actively trailed stops.
+  - `STOP_TOO_TIGHT_EVIDENCE`: Stop penetrated followed by price reaching $+1.0\text{R}$ target territory within lookahead window without exceeding a $0.75\text{R}$ breach buffer.
+- **Versioning:** Stores `excursionVersion: 2` and `thresholdVersion: 'v2'`.
+
+### B. Statistical Aggregation & Decision Analytics (`calculateExcursionAggregates`)
+- **Coverage Breakdown:** Reports computed trades, total closed trades, coverage percentage, and an explicit breakdown of uncomputed reasons (`NO_SYMBOL_TOKEN`, `OUTSIDE_PROVIDER_LOOKBACK`, etc.).
+- **Statistical Honesty:**
+  - Accompanies means with Median (P50) and Interquartile Range (P25 - P75).
+  - Generates 90% bootstrap confidence intervals for Avg MFE, Avg MAE, and Exit Efficiency via `Mulberry32PRNG`.
+  - Attaches $n < 30$ sample reliability badges (`metric.sampleReliability`).
+- **Winner-Only MAE Distribution:** Aggregates adverse excursion exclusively for winning trades into 6 buckets with P50, P75, and P90 percentiles to identify if stop loss buffers can be safely tightened.
+- **Cohort Comparisons:** Cross-segments execution efficiency against psychology and trade discipline (Winners vs Losers, Morning vs Afternoon, Followed Rules vs Broke Rules, Moved Stops vs Fixed Stops).
+- **Rolling 20-Trade Trend:** Provides sequential rolling exit efficiency and MAE trajectory.
+- **Empirical Bayes Shrinkage:** Shrinks small-sample segment means (strategy variants, sessions, symbols) toward the grand mean to prevent sample-size deception.
+- **What-If Decision Bridge:** Generates empirical stop and target recommendations linked directly to the What-If simulation grid.
+
 
 
 

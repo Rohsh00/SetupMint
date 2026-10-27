@@ -351,29 +351,58 @@ $$\text{MFE (R)} = \frac{\text{MFE Points}}{\text{Stop Distance Points}} \quad \
 $$\text{MAE (R)} = \frac{\text{MAE Points}}{\text{Stop Distance Points}} \quad \text{or} \quad \frac{\text{MAE Amount}}{\text{Planned Risk Amount}}$$
 
 #### Exit Efficiency:
-Measures what portion of the trade's maximum unrealized profit was captured at exit:
+Measures what portion of the trade's maximum unrealized profit was captured at exit. Scratch trades with zero favorable movement return `null` (N/A) to prevent artificially flattering performance at 100%:
 
 $$\text{Exit Efficiency} = \begin{cases} 
-1.0 & \text{if } \text{MFE Points} = 0 \text{ and } P_{\text{exit}} = P_{\text{entry}} \\
-0.0 & \text{if } \text{MFE Points} = 0 \text{ or } \text{Realized Favorable Points} \le 0 \\
+\text{null (N/A)} & \text{if } \text{MFE Points} = 0 \text{ and } P_{\text{exit}} = P_{\text{entry}} \\
+0.0 & \text{if } \text{MFE Points} = 0 \text{ and } P_{\text{exit}} \ne P_{\text{entry}} \\
+0.0 & \text{if } \text{Realized Favorable Points} \le 0 \\
 \min\left(1.0, \max\left(0.0, \frac{\text{Realized Favorable Points}}{\text{MFE Points}}\right)\right) & \text{if } \text{MFE Points} > 0
 \end{cases}$$
 
 Where $\text{Realized Favorable Points} = (P_{\text{exit}} - P_{\text{entry}})$ for LONG, and $(P_{\text{entry}} - P_{\text{exit}})$ for SHORT.
 
-#### Stop Hit & Reversal Detection:
+#### Stop Efficiency:
+Quantifies how effectively the initial stop loss absorbed adverse excursion without excessive buffer:
+
+$$\text{Stop Efficiency} = \begin{cases}
+\max\left(0.0, 1.0 - \frac{\text{MAE Points}}{\text{Stop Distance Points}}\right) & \text{if } \text{Stop Distance} > 0 \\
+\text{null (N/A)} & \text{otherwise}
+\end{cases}$$
+
+#### R Left on the Table:
+Measures the uncaptured peak favorable potential surrendered to the market:
+
+$$\text{R Left on Table} = \max(0, \text{MFE (R)} - \text{Realized (R)})$$
+
+#### Entry Quality Score (Early Follow-Through):
+Measures early order flow alignment and immediate follow-through across the first $N$ candles (default 5 candles):
+
+$$\text{Entry Quality Score} = \begin{cases}
+\frac{\text{Early MFE Points}}{\text{Early MFE Points} + \text{Early MAE Points}} & \text{if } (\text{Early MFE} + \text{Early MAE}) > 0 \\
+0.5 & \text{otherwise (balanced/flat)}
+\end{cases}$$
+
+#### Excursion Ordering (`timeOrdering`):
+Determines whether adverse heat preceded favorable expansion:
+- `HEAT_FIRST`: Peak adverse excursion occurred prior to peak favorable excursion ($t_{\text{MAE}} < t_{\text{MFE}}$).
+- `RUN_FIRST`: Position ran in favor immediately before experiencing adverse pullback ($t_{\text{MFE}} < t_{\text{MAE}}$).
+- `SIMULTANEOUS`: Both occurred within the same candle window.
+
+#### Stop Hit & Precise Reversal Detection:
 - **Stop Hit:** Evaluates whether any candle's adverse extreme penetrated the initial stop loss level:
   - Long: $L_i \le P_{\text{stop}}$
   - Short: $H_i \ge P_{\text{stop}}$
-- **Reversed After Stop Hit (`reversedAfterStopHit`):** Detected if a subsequent candle ($j > \text{stopHitIndex}$) moved back in the trade's favorable direction past $P_{\text{entry}}$:
-  - Long: $H_j > P_{\text{entry}}$
-  - Short: $L_j < P_{\text{entry}}$
+- **Reversed After Stop Hit (`reversedAfterStopHit`):** Detected if after stop penetration, market price reversed back into profit target territory ($+1.0\text{R}$) without breaching beyond a structural buffer ($0.75\text{R}$ beyond stop) within a 30-candle lookahead window.
 
 #### Diagnostic Excursion Flags:
-- **`GAVE_BACK_PROFIT`:** Trade achieved substantial favorable run ($\text{MFE} \ge 1.0\text{R}$ or $\ge 15\text{ pts}$) but surrendered $> 50\%$ of peak profit before closing.
-- **`STOP_TOO_TIGHT_EVIDENCE`:** Initial stop was triggered, but subsequent market action reversed into target territory without further structural breakdown.
+- **`GAVE_BACK_PROFIT`:** Trade achieved substantial favorable run ($\text{MFE} \ge 1.0\text{R}$ or $\ge 1\%$ of entry price) but surrendered $> 50\%$ of peak profit before closing. (Exempts planned runners or trades with active trailing stops).
+- **`STOP_TOO_TIGHT_EVIDENCE`:** Initial stop was triggered, but subsequent market action reversed into target territory ($+1.0\text{R}$) without structural invalidation beyond the buffer.
 - **`EXITED_EARLY`:** Trade exited with $< 50\%$ exit efficiency despite achieving $> 1.5\text{R}$ MFE.
 - **`HELD_INTO_REVERSAL`:** Trade experienced deep adverse run ($\text{MAE} > 1.2\text{R}$) without disciplined stop execution.
+- **`ENTRY_OUTSIDE_CANDLE`:** Fill price fell outside the entry candle high/low range, signaling execution slippage or bad provider fills.
+- **`EXIT_OUTSIDE_CANDLE`:** Fill price fell outside the exit candle high/low range.
+- **`LOW_RESOLUTION`:** Historical lookback exceeded 1-minute window, falling back to 5-minute resolution candles.
 
 ---
 

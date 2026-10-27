@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -65,9 +65,17 @@ interface WhatIfSimulatorTabProps {
   accountId?: string;
   startDate?: string;
   endDate?: string;
+  initialSuggestedStopR?: number;
+  initialSuggestedTargetR?: number;
 }
 
-export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountId, startDate, endDate }) => {
+export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
+  accountId,
+  startDate,
+  endDate,
+  initialSuggestedStopR,
+  initialSuggestedTargetR,
+}) => {
   const { openDrill } = useTradeDrilldown();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -120,6 +128,20 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({ accountI
         holdoutFraction,
       }),
   });
+
+  // Auto-select cell when suggested values from Excursion tab are provided
+  useEffect(() => {
+    if (simData?.cells && initialSuggestedStopR !== undefined && initialSuggestedTargetR !== undefined) {
+      const match = simData.cells.find(
+        (c: IWhatIfCellResult) =>
+          c.stopR === initialSuggestedStopR &&
+          c.targetR === initialSuggestedTargetR
+      );
+      if (match) {
+        setSelectedCell(match);
+      }
+    }
+  }, [simData, initialSuggestedStopR, initialSuggestedTargetR]);
 
   const getCellColor = (meanR: number, nEval: number) => {
     if (nEval < 5) {

@@ -32,7 +32,7 @@ export interface ITradeSummaryForDetection {
   setup?: ITradeSetup | null;
   excursion?: {
     status?: string;
-    exitEfficiency?: number;
+    exitEfficiency?: number | null;
     reversedAfterStopHit?: boolean;
     stopHit?: boolean;
     mfeR?: number;
@@ -377,6 +377,7 @@ export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistak
       current.excursion &&
       current.excursion.status === 'COMPUTED' &&
       current.excursion.exitEfficiency !== undefined &&
+      current.excursion.exitEfficiency !== null &&
       current.excursion.exitEfficiency < 0.35 &&
       ((current.excursion.mfeR !== undefined && current.excursion.mfeR >= 1.5) ||
         current.excursion.excursionFlags?.includes('GAVE_BACK_PROFIT') ||

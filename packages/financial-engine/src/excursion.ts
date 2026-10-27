@@ -1,14 +1,16 @@
 import Decimal from 'decimal.js';
 import moment from 'moment';
-import {
+import type {
   ExcursionFlag,
   IExcursionSettings,
+} from '@tradevault/shared';
+import {
   DEFAULT_EXCURSION_SETTINGS,
 } from '@tradevault/shared';
 
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
-export { ExcursionFlag };
+export type { ExcursionFlag };
 
 export interface IExcursionCandle {
   t: number; // Unix timestamp in seconds or milliseconds

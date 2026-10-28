@@ -67,6 +67,7 @@ export function LiveOpenTradeWatcher({
   // Quick close modal state
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
   const [quickCloseLtp, setQuickCloseLtp] = useState<number | undefined>(undefined);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   const handleIntervalChange = (_: any, newInterval: number | null) => {
     if (newInterval !== null) {
@@ -84,8 +85,18 @@ export function LiveOpenTradeWatcher({
     queryKey: ['live-open-trades-watcher', accountId],
     queryFn: () => api.trades.getLiveWatcher(accountId),
     refetchInterval: refreshIntervalSec > 0 ? refreshIntervalSec * 1000 : false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+
+  const handleManualRefetch = async () => {
+    setIsManualRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsManualRefreshing(false);
+    }
+  };
 
   const openTradesCount = summary?.openTradesCount ?? 0;
 
@@ -237,13 +248,23 @@ export function LiveOpenTradeWatcher({
                 width: 10,
                 height: 10,
                 borderRadius: '50%',
-                bgcolor: '#10B981',
-                boxShadow: '0 0 10px #10B981',
-                animation: 'pulse 1.8s infinite',
+                bgcolor: refreshIntervalSec > 0 ? '#10B981' : '#94A3B8',
+                boxShadow: refreshIntervalSec > 0 ? '0 0 10px #10B981' : 'none',
+                animation:
+                  refreshIntervalSec > 0
+                    ? refreshIntervalSec <= 2
+                      ? 'pulseFast 1s infinite'
+                      : 'pulse 1.8s infinite'
+                    : 'none',
                 '@keyframes pulse': {
                   '0%': { transform: 'scale(0.95)', opacity: 0.8 },
                   '50%': { transform: 'scale(1.3)', opacity: 1 },
                   '100%': { transform: 'scale(0.95)', opacity: 0.8 },
+                },
+                '@keyframes pulseFast': {
+                  '0%': { transform: 'scale(0.95)', opacity: 0.85 },
+                  '50%': { transform: 'scale(1.4)', opacity: 1 },
+                  '100%': { transform: 'scale(0.95)', opacity: 0.85 },
                 },
               }}
             />
@@ -343,36 +364,40 @@ export function LiveOpenTradeWatcher({
 
             {/* Refresh Interval Selector */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <ToggleButtonGroup
-                value={refreshIntervalSec}
-                exclusive
-                onChange={handleIntervalChange}
-                size="small"
-                sx={{
-                  height: 28,
-                  '& .MuiToggleButton-root': {
-                    px: 1,
-                    py: 0,
-                    fontSize: '0.68rem',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
-                  },
-                }}
-              >
-                <ToggleButton value={0}>Off</ToggleButton>
-                <ToggleButton value={5}>5s</ToggleButton>
-                <ToggleButton value={10}>10s</ToggleButton>
-                <ToggleButton value={30}>30s</ToggleButton>
-              </ToggleButtonGroup>
+              <Tooltip title="Set live quotes auto-refresh interval" arrow>
+                <ToggleButtonGroup
+                  value={refreshIntervalSec}
+                  exclusive
+                  onChange={handleIntervalChange}
+                  size="small"
+                  sx={{
+                    height: 28,
+                    '& .MuiToggleButton-root': {
+                      px: { xs: 0.75, sm: 1 },
+                      py: 0,
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                    },
+                  }}
+                >
+                  <ToggleButton value={0}>Off</ToggleButton>
+                  <ToggleButton value={1} title="1-second ultra-fast refresh">1s</ToggleButton>
+                  <ToggleButton value={2} title="2-second fast refresh">2s</ToggleButton>
+                  <ToggleButton value={5}>5s</ToggleButton>
+                  <ToggleButton value={10}>10s</ToggleButton>
+                  <ToggleButton value={30}>30s</ToggleButton>
+                </ToggleButtonGroup>
+              </Tooltip>
 
               <Tooltip title="Refresh quotes now" arrow>
                 <IconButton
                   size="small"
-                  onClick={() => refetch()}
+                  onClick={handleManualRefetch}
                   sx={{
                     ml: 0.5,
-                    animation: isFetching ? 'spin 1s linear infinite' : 'none',
+                    animation: isManualRefreshing ? 'spin 0.8s linear infinite' : 'none',
                     '@keyframes spin': {
                       '0%': { transform: 'rotate(0deg)' },
                       '100%': { transform: 'rotate(360deg)' },

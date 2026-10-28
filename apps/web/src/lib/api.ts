@@ -337,6 +337,45 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    liveBrokerSl: (
+      id: string,
+      payload: { stopPrice: number; executeBroker?: boolean }
+    ) =>
+      request<{
+        trade: any;
+        brokerResult: {
+          executedOnBroker: boolean;
+          action?: string;
+          orderId?: string;
+          message?: string;
+          details?: any;
+        };
+      }>(`/trades/${id}/broker-sl`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    liveBrokerExit: (
+      id: string,
+      payload: {
+        quantity: number;
+        exitPrice?: number;
+        isFullClose?: boolean;
+        executeBroker?: boolean;
+      }
+    ) =>
+      request<{
+        trade: any;
+        brokerResult: {
+          executedOnBroker: boolean;
+          action?: string;
+          orderId?: string;
+          message?: string;
+          details?: any;
+        };
+      }>(`/trades/${id}/broker-exit`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
   },
 
   // Dashboard

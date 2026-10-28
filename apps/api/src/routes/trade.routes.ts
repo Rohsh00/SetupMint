@@ -1057,6 +1057,200 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
   });
 
+  // Adjust / Move Stop Loss on Broker (FYERS) and update SetupMint
+  app.post('/:id/broker-sl', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const { stopPrice, executeBroker = true } = req.body || {};
+    if (!stopPrice || isNaN(Number(stopPrice)) || Number(stopPrice) <= 0) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_STOP_PRICE', message: 'Valid positive stop price is required' },
+      });
+    }
+
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    let brokerResult: any = { executedOnBroker: false, action: 'JOURNAL_ONLY', message: 'Updated in SetupMint journal' };
+
+    if (executeBroker) {
+      try {
+        brokerResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(stopPrice));
+      } catch (err: any) {
+        req.log.error({ err, tradeId: trade._id }, 'FYERS broker Stop Loss execution failed');
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'BROKER_ORDER_ERROR',
+            message: err.message || 'Failed to place or modify Stop Loss on FYERS broker',
+          },
+        });
+      }
+    }
+
+    // Update trade in MongoDB
+    trade.risk = {
+      ...(trade.risk || {}),
+      initialStopLoss: Number(stopPrice),
+      initialStopSource: brokerResult.executedOnBroker ? 'BROKER_ORDERBOOK' : 'MANUAL',
+    };
+    trade.psychology = {
+      ...(trade.psychology || {}),
+      stopLossMoved: true,
+    };
+    trade.auditLog.push({
+      action: 'SL_MODIFIED',
+      timestamp: new Date(),
+      changedBy: req.user!.email || 'user',
+      details: {
+        newStopLoss: Number(stopPrice),
+        executedOnBroker: brokerResult.executedOnBroker,
+        brokerAction: brokerResult.action,
+        brokerOrderId: brokerResult.orderId,
+        brokerMessage: brokerResult.message,
+      },
+    });
+
+    await trade.save();
+    await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+
+    return reply.send({
+      success: true,
+      data: {
+        trade,
+        brokerResult,
+      },
+    });
+  });
+
+  // Exit trade (50% partial or 100% full close) on Broker (FYERS) and update SetupMint
+  app.post('/:id/broker-exit', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const { quantity, exitPrice, isFullClose = false, executeBroker = true } = req.body || {};
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    const currentOpenQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1;
+    const exitQty = Number(quantity) > 0 ? Number(quantity) : currentOpenQty;
+    const resolvedExitPrice = Number(exitPrice) || trade.simpleExecution?.entryPrice || 100;
+    const isReallyFullClose = isFullClose || exitQty >= currentOpenQty;
+
+    let brokerResult: any = { executedOnBroker: false, message: 'Updated in SetupMint journal' };
+
+    if (executeBroker) {
+      try {
+        brokerResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
+          exitQty,
+          isFullClose: isReallyFullClose,
+        });
+      } catch (err: any) {
+        req.log.error({ err, tradeId: trade._id }, 'FYERS broker exit order failed');
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'BROKER_ORDER_ERROR',
+            message: err.message || 'Failed to execute exit order on FYERS broker',
+          },
+        });
+      }
+    }
+
+    // Update trade record in MongoDB
+    if (isReallyFullClose) {
+      if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
+        trade.fills.push({
+          fillId: `exit_${Date.now()}`,
+          type: 'EXIT',
+          price: resolvedExitPrice,
+          quantity: exitQty,
+          timestamp: new Date(),
+          brokerage: 20,
+          exchangeFee: 0,
+          taxes: 0,
+        });
+      } else {
+        trade.simpleExecution = {
+          entryPrice: trade.simpleExecution?.entryPrice ?? 0,
+          quantity: trade.simpleExecution?.quantity ?? 1,
+          contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+          brokerage: trade.simpleExecution?.brokerage ?? 0,
+          exchangeFees: trade.simpleExecution?.exchangeFees ?? 0,
+          regulatoryFees: trade.simpleExecution?.regulatoryFees ?? 0,
+          taxes: trade.simpleExecution?.taxes ?? 0,
+          otherFees: trade.simpleExecution?.otherFees ?? 0,
+          explicitAdjustments: trade.simpleExecution?.explicitAdjustments ?? 0,
+          ...(trade.simpleExecution || {}),
+          exitPrice: resolvedExitPrice,
+        };
+        trade.exitTime = new Date();
+      }
+      trade.status = 'CLOSED';
+    } else {
+      // Partial close: ensure trade is ADVANCED
+      trade.executionMode = 'ADVANCED';
+      if (!Array.isArray(trade.fills) || trade.fills.length === 0) {
+        // Initial entry fill for original quantity
+        trade.fills = [
+          {
+            fillId: `entry_${Date.now()}`,
+            type: 'ENTRY',
+            price: trade.simpleExecution?.entryPrice || resolvedExitPrice,
+            quantity: currentOpenQty,
+            timestamp: trade.entryTime || new Date(),
+            brokerage: 20,
+            exchangeFee: 0,
+            taxes: 0,
+          },
+        ];
+      }
+      trade.fills.push({
+        fillId: `exit_${Date.now()}`,
+        type: 'EXIT',
+        price: resolvedExitPrice,
+        quantity: exitQty,
+        timestamp: new Date(),
+        brokerage: 20,
+        exchangeFee: 0,
+        taxes: 0,
+      });
+      trade.status = 'OPEN';
+    }
+
+    const recalculated = computeTradeCalculations(trade.toObject());
+    trade.calculated = recalculated;
+    trade.auditLog.push({
+      action: isReallyFullClose ? 'CLOSED' : 'PARTIALLY_CLOSED',
+      timestamp: new Date(),
+      changedBy: req.user!.email || 'user',
+      details: {
+        exitQuantity: exitQty,
+        exitPrice: resolvedExitPrice,
+        executedOnBroker: brokerResult.executedOnBroker,
+        brokerOrderId: brokerResult.orderId,
+        brokerMessage: brokerResult.message,
+      },
+    });
+
+    await trade.save();
+    await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+
+    return reply.send({
+      success: true,
+      data: {
+        trade,
+        brokerResult,
+      },
+    });
+  });
+
   // Delete trade
   app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });

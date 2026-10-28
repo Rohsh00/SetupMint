@@ -5,6 +5,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
+import Switch from '@mui/material/Switch';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -84,21 +85,29 @@ export function LiveOpenTradeWatcher({
   // Stop Loss adjust modal state
   const [editSlMetric, setEditSlMetric] = useState<ILiveOpenTradeMetric | null>(null);
   const [targetSlPrice, setTargetSlPrice] = useState<string>('');
+  const [executeSlOnBroker, setExecuteSlOnBroker] = useState<boolean>(true);
 
   const updateSlMutation = useMutation({
-    mutationFn: async ({ tradeId, newStopLoss }: { tradeId: string; newStopLoss: number }) => {
-      return api.trades.update(tradeId, {
-        risk: {
-          initialStopLoss: newStopLoss,
-          initialStopSource: 'MANUAL',
-        },
-        psychology: {
-          stopLossMoved: true,
-        },
+    mutationFn: async ({
+      tradeId,
+      newStopLoss,
+      executeBroker = true,
+    }: {
+      tradeId: string;
+      newStopLoss: number;
+      executeBroker?: boolean;
+    }) => {
+      return api.trades.liveBrokerSl(tradeId, {
+        stopPrice: newStopLoss,
+        executeBroker,
       });
     },
-    onSuccess: (_, variables) => {
-      toast.success(`Stop Loss moved to ₹${variables.newStopLoss} successfully!`);
+    onSuccess: (data: any, variables) => {
+      if (data?.brokerResult?.executedOnBroker) {
+        toast.success(`🟢 FYERS Live: ${data.brokerResult.message || `Stop Loss moved to ₹${variables.newStopLoss}`}`);
+      } else {
+        toast.success(`Stop Loss moved to ₹${variables.newStopLoss} successfully!`);
+      }
       queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
@@ -114,6 +123,7 @@ export function LiveOpenTradeWatcher({
     updateSlMutation.mutate({
       tradeId: metric.tradeId,
       newStopLoss: metric.entryPrice,
+      executeBroker: true,
     });
   };
 
@@ -1085,8 +1095,51 @@ export function LiveOpenTradeWatcher({
                 },
               }}
               helperText={`Current SL: ${editSlMetric.stopLoss !== null ? `₹${editSlMetric.stopLoss}` : 'Not set'}`}
-              sx={{ mb: 2 }}
+              sx={{ mb: 1.5 }}
             />
+
+            {/* Live Broker Execution Indicator & Toggle */}
+            <Box
+              sx={{
+                mb: 2,
+                p: 1.25,
+                borderRadius: '8px',
+                bgcolor: executeSlOnBroker ? alpha('#10B981', 0.1) : alpha('#64748B', 0.1),
+                border: '1px solid',
+                borderColor: executeSlOnBroker ? alpha('#10B981', 0.3) : alpha('#64748B', 0.2),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    bgcolor: executeSlOnBroker ? '#10B981' : '#64748B',
+                    boxShadow: executeSlOnBroker ? '0 0 8px #10B981' : 'none',
+                  }}
+                />
+                <Box>
+                  <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', color: executeSlOnBroker ? '#10B981' : 'text.secondary' }}>
+                    Live Broker Execution (FYERS API v3)
+                  </Typography>
+                  <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>
+                    {executeSlOnBroker
+                      ? 'Order will be placed/modified directly in FYERS orderbook'
+                      : 'Update SetupMint journal only'}
+                  </Typography>
+                </Box>
+              </Box>
+              <Switch
+                size="small"
+                checked={executeSlOnBroker}
+                onChange={(e) => setExecuteSlOnBroker(e.target.checked)}
+                color="success"
+              />
+            </Box>
 
             {/* Dynamic Analysis / Risk Impact Message */}
             {(() => {
@@ -1156,6 +1209,7 @@ export function LiveOpenTradeWatcher({
                   updateSlMutation.mutate({
                     tradeId: editSlMetric.tradeId,
                     newStopLoss: Number(targetSlPrice),
+                    executeBroker: executeSlOnBroker,
                   });
                 }
               }}
@@ -1163,11 +1217,15 @@ export function LiveOpenTradeWatcher({
                 textTransform: 'none',
                 fontWeight: 700,
                 borderRadius: '8px',
-                bgcolor: '#3B82F6',
-                '&:hover': { bgcolor: '#2563EB' },
+                bgcolor: executeSlOnBroker ? '#10B981' : '#3B82F6',
+                '&:hover': { bgcolor: executeSlOnBroker ? '#059669' : '#2563EB' },
               }}
             >
-              {updateSlMutation.isPending ? 'Saving...' : 'Update Stop Loss'}
+              {updateSlMutation.isPending
+                ? 'Transmitting Order...'
+                : executeSlOnBroker
+                ? '⚡ Execute Live Broker SL'
+                : 'Update Stop Loss'}
             </Button>
           </DialogActions>
         </Dialog>

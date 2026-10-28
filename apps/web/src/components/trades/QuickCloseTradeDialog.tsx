@@ -15,6 +15,7 @@ import {
   Alert,
   Tooltip,
   IconButton,
+  Switch,
 } from '@mui/material';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -74,6 +75,7 @@ export function QuickCloseTradeDialog({
   const [manualFeesOverride, setManualFeesOverride] = useState(false);
   const [customExitFees, setCustomExitFees] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [executeOnBroker, setExecuteOnBroker] = useState<boolean>(true);
 
   // Determine actual quantity being closed
   const selectedCloseQty = useMemo(() => {
@@ -172,6 +174,15 @@ export function QuickCloseTradeDialog({
         throw new Error(`Close quantity must be between 1 and ${totalOpenQuantity}.`);
       }
 
+      if (executeOnBroker) {
+        return api.trades.liveBrokerExit(trade.id || trade._id, {
+          quantity: selectedCloseQty,
+          exitPrice: numExitPrice,
+          isFullClose: !isPartial,
+          executeBroker: true,
+        });
+      }
+
       const exitIso = new Date(exitTime).toISOString();
 
       const feesToSave = manualFeesOverride && customExitFees !== ''
@@ -252,8 +263,10 @@ export function QuickCloseTradeDialog({
         });
       }
     },
-    onSuccess: () => {
-      if (isPartial) {
+    onSuccess: (data: any) => {
+      if (data?.brokerResult?.executedOnBroker) {
+        toast.success(`🟢 FYERS Live: ${data.brokerResult.message || `Exit executed for ${selectedCloseQty} qty`}`);
+      } else if (isPartial) {
         toast.success(`Partial exit of ${selectedCloseQty} qty @ ₹${numExitPrice} executed (+₹${netPnL} locked). Remaining: ${remainingQty} qty.`);
       } else {
         toast.success(`Trade ${trade.symbol} closed successfully.`);
@@ -488,6 +501,54 @@ export function QuickCloseTradeDialog({
           </Box>
         </Box>
 
+        {/* Live Broker Execution (FYERS) Toggle */}
+        <Box
+          sx={{
+            p: 1.5,
+            borderRadius: 2,
+            bgcolor: executeOnBroker
+              ? isDark
+                ? 'rgba(16, 185, 129, 0.12)'
+                : 'rgba(16, 185, 129, 0.08)'
+              : isDark
+              ? 'rgba(100, 116, 139, 0.1)'
+              : 'rgba(100, 116, 139, 0.05)',
+            border: '1px solid',
+            borderColor: executeOnBroker ? 'rgba(16, 185, 129, 0.3)' : 'rgba(100, 116, 139, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 9,
+                height: 9,
+                borderRadius: '50%',
+                bgcolor: executeOnBroker ? '#10B981' : '#64748B',
+                boxShadow: executeOnBroker ? '0 0 8px #10B981' : 'none',
+              }}
+            />
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 800, color: executeOnBroker ? '#10B981' : 'text.secondary' }}>
+                Live Broker Order (FYERS API v3)
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
+                {executeOnBroker
+                  ? `Places a real market exit order for ${selectedCloseQty} qty directly with FYERS exchange gateway`
+                  : 'Record in SetupMint journal only without placing exchange order'}
+              </Typography>
+            </Box>
+          </Box>
+          <Switch
+            checked={executeOnBroker}
+            onChange={(e) => setExecuteOnBroker(e.target.checked)}
+            color="success"
+            size="small"
+          />
+        </Box>
+
         {/* Exit Price Input */}
         <TextField
           label="Exit Price"
@@ -659,7 +720,11 @@ export function QuickCloseTradeDialog({
           sx={{ fontWeight: 700, borderRadius: 2 }}
         >
           {closeMutation.isPending
-            ? 'Executing...'
+            ? 'Transmitting Order...'
+            : executeOnBroker
+            ? isPartial
+              ? `⚡ Execute 50% Live Exit (${selectedCloseQty} Qty)`
+              : `⚡ Execute Live Close (${selectedCloseQty} Qty)`
             : isPartial
             ? `Book ${selectedCloseQty} Qty Partial Exit`
             : `Close Full Position (${selectedCloseQty} Qty)`}

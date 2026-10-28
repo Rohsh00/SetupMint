@@ -2351,4 +2351,361 @@ export class FyersService {
 
     return quotesMap;
   }
+
+  /**
+   * Places a new order synchronously via FYERS API v3 POST /orders/sync
+   */
+  static async placeOrder(appId: string, accessToken: string, orderPayload: any): Promise<any> {
+    const res = await fetch(`${this.FYERS_API_BASE}/orders/sync`, {
+      method: 'POST',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(orderPayload),
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok') {
+      throw new Error(data.message || `Failed to place FYERS order (code: ${data.code || res.status})`);
+    }
+    return data;
+  }
+
+  /**
+   * Modifies an existing pending order synchronously via FYERS API v3 PATCH /orders/sync
+   */
+  static async modifyOrder(
+    appId: string,
+    accessToken: string,
+    modifyPayload: {
+      id: string;
+      type: number;
+      stopPrice?: number;
+      limitPrice?: number;
+      qty?: number;
+    }
+  ): Promise<any> {
+    const res = await fetch(`${this.FYERS_API_BASE}/orders/sync`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(modifyPayload),
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok') {
+      throw new Error(data.message || `Failed to modify FYERS order (code: ${data.code || res.status})`);
+    }
+    return data;
+  }
+
+  /**
+   * Cancels a pending order synchronously via FYERS API v3 DELETE /orders/sync
+   */
+  static async cancelOrder(appId: string, accessToken: string, orderId: string): Promise<any> {
+    const res = await fetch(`${this.FYERS_API_BASE}/orders/sync`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id: orderId }),
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok') {
+      throw new Error(data.message || `Failed to cancel FYERS order (code: ${data.code || res.status})`);
+    }
+    return data;
+  }
+
+  /**
+   * Squares off positions via FYERS API v3 DELETE /positions
+   */
+  static async exitPositions(
+    appId: string,
+    accessToken: string,
+    payload: { id?: string; pending_orders_cancel?: number }
+  ): Promise<any> {
+    const res = await fetch(`${this.FYERS_API_BASE}/positions`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = (await res.json()) as any;
+    if (!res.ok || data.s !== 'ok') {
+      throw new Error(data.message || `Failed to exit FYERS positions (code: ${data.code || res.status})`);
+    }
+    return data;
+  }
+
+  /**
+   * Executes or modifies a live Stop Loss order on FYERS exchange for an active trade.
+   */
+  static async executeBrokerStopLoss(
+    userId: string | mongoose.Types.ObjectId,
+    tradeId: string,
+    newStopPrice: number
+  ): Promise<{
+    executedOnBroker: boolean;
+    action: 'MODIFIED' | 'PLACED' | 'JOURNAL_ONLY';
+    orderId?: string;
+    message: string;
+  }> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const trade = await Trade.findOne({ _id: tradeId, userId: uId });
+    if (!trade) {
+      throw new Error('Trade not found');
+    }
+
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS', status: 'CONNECTED' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      return {
+        executedOnBroker: false,
+        action: 'JOURNAL_ONLY',
+        message: 'No active FYERS connection. Updated in SetupMint journal only.',
+      };
+    }
+
+    const accessToken = decryptSecret(integration.accessToken) as string;
+    const appId = integration.appId;
+
+    // Fetch positions from FYERS to identify the real live open position
+    const positionsRes = await fetch(`${this.FYERS_API_BASE}/positions`, {
+      method: 'GET',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const positionsData = (await positionsRes.json()) as any;
+    const netPositions = positionsData?.netPositions || [];
+
+    const matchedPos = netPositions.find((p: any) => {
+      if (!p || p.netQty === 0) return false;
+      const parsed = InstrumentService.normalizeUnderlying(p.symbol);
+      return parsed === trade.underlying || p.symbol.includes(trade.underlying) || trade.symbol.includes(p.symbol);
+    });
+
+    if (!matchedPos) {
+      return {
+        executedOnBroker: false,
+        action: 'JOURNAL_ONLY',
+        message: 'No open position found in FYERS for this symbol. Updated in SetupMint journal only.',
+      };
+    }
+
+    // Fetch orderbook to check if there is an active pending stop-loss order
+    const orderBook = await this.fetchOrderbook(appId, accessToken);
+    const pendingOrders = orderBook.filter(
+      (o: any) =>
+        (o.status === 6 || o.status === 4) &&
+        o.symbol === matchedPos.symbol
+    );
+
+    // Stop order side is opposite of position:
+    // If netQty < 0 (SHORT), stop order is BUY (side 1)
+    // If netQty > 0 (LONG), stop order is SELL (side -1)
+    const expectedSide = matchedPos.netQty < 0 ? 1 : -1;
+    const pendingSlOrder = pendingOrders.find(
+      (o: any) => o.side === expectedSide && (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0)
+    );
+
+    const tickSize = 1;
+    const limitPrice = expectedSide === 1 ? newStopPrice + tickSize : newStopPrice - tickSize;
+
+    if (pendingSlOrder) {
+      // Modify existing pending order
+      await this.modifyOrder(appId, accessToken, {
+        id: pendingSlOrder.id,
+        type: pendingSlOrder.type || 4,
+        stopPrice: newStopPrice,
+        limitPrice: pendingSlOrder.type === 4 ? limitPrice : undefined,
+        qty: Math.abs(matchedPos.netQty),
+      });
+
+      return {
+        executedOnBroker: true,
+        action: 'MODIFIED',
+        orderId: pendingSlOrder.id,
+        message: `FYERS Stop Loss order #${pendingSlOrder.id} modified to ₹${newStopPrice} on exchange.`,
+      };
+    } else {
+      // Place a new SL-Limit order (type 4) on FYERS
+      const placePayload = {
+        symbol: matchedPos.symbol,
+        qty: Math.abs(matchedPos.netQty),
+        type: 4, // SL-L
+        side: expectedSide,
+        productType: matchedPos.productType || 'MARGIN',
+        limitPrice: limitPrice,
+        stopPrice: newStopPrice,
+        validity: 'DAY',
+        disclosedQty: 0,
+        offlineOrder: false,
+        stopLoss: 0,
+        takeProfit: 0,
+        orderTag: 'SetupMint_SL',
+      };
+
+      const placeRes = await this.placeOrder(appId, accessToken, placePayload);
+      return {
+        executedOnBroker: true,
+        action: 'PLACED',
+        orderId: placeRes.id,
+        message: `New FYERS Stop Loss order #${placeRes.id} placed at ₹${newStopPrice} on exchange.`,
+      };
+    }
+  }
+
+  /**
+   * Executes a market exit or position square-off on FYERS exchange for an active trade.
+   */
+  static async executeBrokerExit(
+    userId: string | mongoose.Types.ObjectId,
+    tradeId: string,
+    options: {
+      exitQty: number;
+      isFullClose?: boolean;
+    }
+  ): Promise<{
+    executedOnBroker: boolean;
+    orderId?: string;
+    message: string;
+  }> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const trade = await Trade.findOne({ _id: tradeId, userId: uId });
+    if (!trade) {
+      throw new Error('Trade not found');
+    }
+
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS', status: 'CONNECTED' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      return {
+        executedOnBroker: false,
+        message: 'No active FYERS connection. Updated in SetupMint journal only.',
+      };
+    }
+
+    const accessToken = decryptSecret(integration.accessToken) as string;
+    const appId = integration.appId;
+
+    // Fetch positions from FYERS
+    const positionsRes = await fetch(`${this.FYERS_API_BASE}/positions`, {
+      method: 'GET',
+      headers: {
+        Authorization: `${appId}:${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const positionsData = (await positionsRes.json()) as any;
+    const netPositions = positionsData?.netPositions || [];
+
+    const matchedPos = netPositions.find((p: any) => {
+      if (!p || p.netQty === 0) return false;
+      const parsed = InstrumentService.normalizeUnderlying(p.symbol);
+      return parsed === trade.underlying || p.symbol.includes(trade.underlying) || trade.symbol.includes(p.symbol);
+    });
+
+    if (!matchedPos) {
+      return {
+        executedOnBroker: false,
+        message: 'No open position found in FYERS for this symbol. Updated in SetupMint journal only.',
+      };
+    }
+
+    const openQty = Math.abs(matchedPos.netQty);
+    const exitQty = Math.min(options.exitQty, openQty);
+    const isFull = options.isFullClose || exitQty >= openQty;
+    const exitSide = matchedPos.netQty < 0 ? 1 : -1;
+
+    if (isFull) {
+      try {
+        await this.exitPositions(appId, accessToken, {
+          id: matchedPos.id,
+          pending_orders_cancel: 1,
+        });
+        return {
+          executedOnBroker: true,
+          message: `Full position on ${matchedPos.symbol} squared off in FYERS and pending orders cancelled.`,
+        };
+      } catch {
+        // Fallback: submit market exit order directly
+        const res = await this.placeOrder(appId, accessToken, {
+          symbol: matchedPos.symbol,
+          qty: exitQty,
+          type: 2, // MARKET
+          side: exitSide,
+          productType: matchedPos.productType || 'MARGIN',
+          limitPrice: 0,
+          stopPrice: 0,
+          validity: 'DAY',
+          disclosedQty: 0,
+          offlineOrder: false,
+          stopLoss: 0,
+          takeProfit: 0,
+          orderTag: 'SetupMint_Exit',
+        });
+        return {
+          executedOnBroker: true,
+          orderId: res.id,
+          message: `Market exit order #${res.id} executed on FYERS for ${exitQty} qty.`,
+        };
+      }
+    } else {
+      // Partial position exit
+      const res = await this.placeOrder(appId, accessToken, {
+        symbol: matchedPos.symbol,
+        qty: exitQty,
+        type: 2, // MARKET
+        side: exitSide,
+        productType: matchedPos.productType || 'MARGIN',
+        limitPrice: 0,
+        stopPrice: 0,
+        validity: 'DAY',
+        disclosedQty: 0,
+        offlineOrder: false,
+        stopLoss: 0,
+        takeProfit: 0,
+        orderTag: 'SetupMint_Part',
+      });
+
+      // Adjust pending Stop Loss quantity if one exists
+      try {
+        const orderBook = await this.fetchOrderbook(appId, accessToken);
+        const remainingQty = openQty - exitQty;
+        const pendingSlOrder = orderBook.find(
+          (o: any) =>
+            o.status === 6 &&
+            o.symbol === matchedPos.symbol &&
+            o.side === exitSide &&
+            (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0)
+        );
+        if (pendingSlOrder && remainingQty > 0) {
+          await this.modifyOrder(appId, accessToken, {
+            id: pendingSlOrder.id,
+            type: pendingSlOrder.type,
+            stopPrice: Number(pendingSlOrder.stopPrice),
+            limitPrice: pendingSlOrder.limitPrice ? Number(pendingSlOrder.limitPrice) : undefined,
+            qty: remainingQty,
+          });
+        }
+      } catch (slErr) {
+        console.warn('Failed to adjust pending SL qty after partial exit:', slErr);
+      }
+
+      return {
+        executedOnBroker: true,
+        orderId: res.id,
+        message: `Partial market exit order #${res.id} for ${exitQty} qty executed in FYERS.`,
+      };
+    }
+  }
 }

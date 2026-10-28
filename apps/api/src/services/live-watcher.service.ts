@@ -47,7 +47,9 @@ export class LiveWatcherService {
       0.05
     );
 
+    // Active stop loss for live tracking, buffer remaining, and threat level
     const stopLoss =
+      trade.risk?.currentStopLoss ??
       trade.risk?.initialStopLoss ??
       trade.risk?.stopLossPrice ??
       trade.stopLoss ??
@@ -59,10 +61,19 @@ export class LiveWatcherService {
       trade.target ??
       null;
 
+    // Original entry stop loss for true 1R multiple calculation
+    const originalInitialStop =
+      trade.calculated?.stopMoveSummary?.initialStop ??
+      trade.risk?.initialStopLoss ??
+      null;
+
     const plannedRiskAmount =
+      trade.risk?.estimatedRiskAmount ??
       trade.risk?.riskBudgetAmount ??
       trade.risk?.plannedRiskAmount ??
-      null;
+      (originalInitialStop && entryPrice > 0
+        ? Math.abs(entryPrice - originalInitialStop) * quantity * contractMultiplier
+        : null);
 
     return {
       entryPrice,

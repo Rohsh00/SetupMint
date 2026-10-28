@@ -1092,10 +1092,29 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
     }
 
+    // Preserve original initialStopLoss at entry for accurate 1R multiple calculation
+    const existingInitialStop = trade.risk?.initialStopLoss || trade.calculated?.stopMoveSummary?.initialStop;
+    const initialStop = existingInitialStop ?? Number(stopPrice);
+
+    // Compute original 1R risk amount if not already recorded
+    const entryPrice = trade.simpleExecution?.entryPrice || trade.calculated?.averageEntryPrice || 0;
+    const qty = trade.calculated?.openQuantity || trade.simpleExecution?.quantity || 1;
+    const mult = trade.simpleExecution?.contractMultiplier || 1;
+    const initialRisk = (trade.risk?.estimatedRiskAmount && trade.risk.estimatedRiskAmount > 0)
+      ? trade.risk.estimatedRiskAmount
+      : (trade.risk?.plannedRiskAmount && trade.risk.plannedRiskAmount > 0)
+      ? trade.risk.plannedRiskAmount
+      : (initialStop && entryPrice > 0)
+      ? Math.abs(entryPrice - initialStop) * qty * mult
+      : undefined;
+
     // Update trade in MongoDB
     trade.risk = {
       ...(trade.risk || {}),
-      initialStopLoss: Number(stopPrice),
+      initialStopLoss: initialStop,
+      currentStopLoss: Number(stopPrice),
+      estimatedRiskAmount: initialRisk,
+      plannedRiskAmount: initialRisk,
       initialStopSource: brokerResult.executedOnBroker ? 'BROKER_ORDERBOOK' : 'MANUAL',
     };
     trade.psychology = {

@@ -473,4 +473,42 @@ This document provides a comprehensive, verified feature inventory of all module
   - Backend: [`trade-query.service.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/services/trade-query.service.ts), `POST /api/v1/trades/drilldown`, `reconciliation.ts`.
   - Frontend: [`TradeDrillContext.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/context/TradeDrillContext.tsx), [`TradeDrillDrawer.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/drilldown/TradeDrillDrawer.tsx).
 
+---
+
+## 18. Live Open Trade Watcher & Execution Monitor
+
+- **Status:** **IMPLEMENTED**
+- **Purpose:** Real-time floating MTM, unrealized $R$-multiple, and dynamic Stop Loss / Target proximity monitoring for open discretionary trades.
+- **Problem Solved:** Open positions without live tracking induce execution anxiety, delay reaction when stops are threatened, and leave traders uncertain about exact live P&L and net charges until manual close.
+- **Key Capabilities:**
+  - **Live Floating MTM & Statutory Charges Calculation:**
+    - Real-time Gross P&L, estimated Indian statutory regulatory charges (STT, exchange turnover fees, SEBI charges, stamp duty, GST), and floating Net P&L computed using pure 30-digit `Decimal.js` math with `Decimal.ROUND_HALF_UP`.
+    - Handles both `SIMPLE` and `ADVANCED` trade execution modes, currency contracts, and tick sizes.
+  - **Real-Time Unrealized $R$ Multiple:**
+    - Evaluates floating Net P&L relative to the trade's initial planned risk budget (`plannedRiskAmount` or `plannedStopLoss`).
+  - **Stop Loss Proximity & Threat Warning System:**
+    - Real-time distance to initial Stop Loss measured in both points and ticks (`(LTP - SL) / tickSize`).
+    - Dynamic threat level evaluation based on remaining risk buffer:
+      - `SAFE`: $> 50\%$ buffer remaining.
+      - `ATTENTION`: $\le 50\%$ buffer remaining.
+      - `CRITICAL`: $\le 25\%$ buffer remaining.
+      - `BREACHED`: Stop loss reached or exceeded ($\le 0$ buffer remaining).
+      - `NO_STOP`: Handled gracefully when no stop loss was defined.
+  - **Target Proximity & Visual Journey Progress:**
+    - Real-time distance to profit target in points and ticks.
+    - Clamped percentage progress bar ($0\%$ to $100\%$) tracking the price journey from entry to target.
+  - **Live Broker Feeds & Simulated Tick Fallback:**
+    - Multi-provider architecture fetching batch quotes from FYERS Data API v3 (`/quotes?symbols=...`) using AES-256-GCM encrypted tokens.
+    - Seamless fallback to deterministic micro-fluctuation simulation (`SIMULATED` provider tag) when markets are closed or broker session is unauthenticated, ensuring smooth workflow testing.
+  - **Ubiquitous Visual Surfaces:**
+    - **Global Watcher Banner:** Integrated into [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx) (above KPI cards) and [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx) (above ledger filter bar) with pulsating live beacon, auto-refresh interval selector (`Off`, `5s`, `10s`, `30s`), aggregate open trade count, total floating Net MTM, portfolio unrealized R, and expandable position cards.
+    - **Single-Trade Live Execution Monitor:** Mounted directly in [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx) for open trades, featuring large monospace LTP and Net MTM readouts, dynamic color states, risk threat chips, target progress bar, and instant manual quote refresh.
+    - **One-Click Quick Close @ LTP:** Integrated dialog prefilling the live market price with instant round-trip fee calculation and trade closure.
+- **Frontend & Backend Components:**
+  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
+  - Engine: `live-watcher.ts` in [`packages/financial-engine/src/live-watcher.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/live-watcher.ts).
+  - Backend API: `live-watcher.service.ts` in [`apps/api/src/services/live-watcher.service.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/services/live-watcher.service.ts), `GET /api/v1/trades/live/watcher`, `GET /api/v1/trades/:id/live`.
+  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
+
+
 

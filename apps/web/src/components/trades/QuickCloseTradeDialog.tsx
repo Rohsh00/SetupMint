@@ -33,6 +33,7 @@ export interface QuickCloseTradeProps {
   trade: any;
   accountBroker?: string;
   onSuccess?: () => void;
+  defaultExitPrice?: number | string;
 }
 
 export function QuickCloseTradeDialog({
@@ -41,6 +42,7 @@ export function QuickCloseTradeDialog({
   trade,
   accountBroker = 'ZERODHA',
   onSuccess,
+  defaultExitPrice,
 }: QuickCloseTradeProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -66,12 +68,18 @@ export function QuickCloseTradeDialog({
       setErrorMessage(null);
       setManualFeesOverride(false);
       setCustomExitFees('');
-      setExitPrice(trade?.simpleExecution?.exitPrice ? String(trade.simpleExecution.exitPrice) : '');
+      const initialPrice =
+        defaultExitPrice !== undefined && defaultExitPrice !== null && defaultExitPrice !== ''
+          ? String(defaultExitPrice)
+          : trade?.simpleExecution?.exitPrice
+          ? String(trade.simpleExecution.exitPrice)
+          : '';
+      setExitPrice(initialPrice);
 
       // Default exit time to current local time in ISO format for datetime-local
       setExitTime(currentLocalIsoDateTime());
     }
-  }, [open, trade]);
+  }, [open, trade, defaultExitPrice]);
 
   const numExitPrice = parseFloat(exitPrice);
   const isPriceValid = !isNaN(numExitPrice) && numExitPrice > 0;

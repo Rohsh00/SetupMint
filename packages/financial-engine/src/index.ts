@@ -23,3 +23,4 @@ export * from './cumulative-r.js';
 export * from './events.js';
 export * from './reconciliation.js';
 export * from './sl-order-match.js';
+export * from './live-watcher.js';

@@ -56,6 +56,7 @@ import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialo
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
@@ -425,6 +426,11 @@ export function TradesPage() {
           </Button>
         </Box>
       </Box>
+
+      {/* Live Open Trade Watcher */}
+      <LiveOpenTradeWatcher
+        accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+      />
 
       {/* Filter and Search Bar */}
       <Card sx={{ p: 2 }}>

@@ -53,6 +53,7 @@ import { MultiPanelEquityCurve } from '../components/dashboard/MultiPanelEquityC
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 
 export function DashboardPage() {
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
@@ -206,6 +207,11 @@ export function DashboardPage() {
         {/* Date Range Selector */}
         <DateRangeFilter />
       </Box>
+
+      {/* Live Open Trade Watcher (MTM, Unrealized R, Distance to SL/Target) */}
+      <LiveOpenTradeWatcher
+        accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+      />
 
       {/* KPI Stats Grid */}
       <Grid container spacing={2.5}>

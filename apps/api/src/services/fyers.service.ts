@@ -2273,4 +2273,82 @@ export class FyersService {
       trades: results,
     };
   }
+
+  /**
+   * Fetches real-time market quotes (LTP, open, high, low, close, change) for a list of FYERS symbols.
+   */
+  static async getMarketQuotes(
+    userId: mongoose.Types.ObjectId | string,
+    fyersSymbols: string[]
+  ): Promise<Map<string, { ltp: number; change?: number; changePercent?: number; high?: number; low?: number; open?: number; prevClose?: number; timestamp?: number }>> {
+    const quotesMap = new Map<string, { ltp: number; change?: number; changePercent?: number; high?: number; low?: number; open?: number; prevClose?: number; timestamp?: number }>();
+    if (!fyersSymbols || fyersSymbols.length === 0) return quotesMap;
+
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      return quotesMap;
+    }
+
+    const tokenExpiry = integration.tokenExpiresAt || integration.authCodeExpiresAt;
+    if (tokenExpiry && new Date(tokenExpiry) <= new Date()) {
+      return quotesMap;
+    }
+
+    let accessToken = '';
+    try {
+      const decrypted = decryptSecret(integration.accessToken);
+      if (!decrypted) return quotesMap;
+      accessToken = decrypted;
+    } catch {
+      return quotesMap;
+    }
+
+    const dataApiBase = this.FYERS_API_BASE.replace(/\/api\/v3\/?$/, '') + '/data';
+    const uniqueSymbols = Array.from(new Set(fyersSymbols.filter(Boolean)));
+
+    // FYERS supports up to 50 symbols per batch
+    const batchSize = 50;
+    for (let i = 0; i < uniqueSymbols.length; i += batchSize) {
+      const batch = uniqueSymbols.slice(i, i + batchSize);
+      const url = `${dataApiBase}/quotes?symbols=${encodeURIComponent(batch.join(','))}`;
+
+      try {
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `${integration.appId}:${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!res.ok) continue;
+        const data = (await res.json()) as any;
+        if (data && data.s === 'ok' && Array.isArray(data.d)) {
+          for (const item of data.d) {
+            if (item && item.s === 'ok' && item.v && typeof item.v.lp === 'number') {
+              const symKey = item.n || item.v.symbol || item.v.original_name;
+              const quoteData = {
+                ltp: item.v.lp,
+                change: typeof item.v.ch === 'number' ? item.v.ch : undefined,
+                changePercent: typeof item.v.chp === 'number' ? item.v.chp : undefined,
+                high: typeof item.v.high_price === 'number' ? item.v.high_price : undefined,
+                low: typeof item.v.low_price === 'number' ? item.v.low_price : undefined,
+                open: typeof item.v.open_price === 'number' ? item.v.open_price : undefined,
+                prevClose: typeof item.v.prev_close_price === 'number' ? item.v.prev_close_price : undefined,
+                timestamp: typeof item.v.tt === 'number' ? item.v.tt * 1000 : Date.now(),
+              };
+              if (symKey) quotesMap.set(symKey, quoteData);
+              if (item.n) quotesMap.set(item.n, quoteData);
+              if (item.v?.symbol) quotesMap.set(item.v.symbol, quoteData);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[FyersService] Failed to fetch quotes for batch: ${err.message}`);
+      }
+    }
+
+    return quotesMap;
+  }
 }

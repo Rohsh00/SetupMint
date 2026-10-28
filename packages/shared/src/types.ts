@@ -1654,5 +1654,65 @@ export interface IEquityCurvesResponse {
   startingEquity: number;
 }
 
+// ==========================================
+// LIVE OPEN TRADE WATCHER TYPES
+// ==========================================
 
+export type StopThreatLevel = 'SAFE' | 'ATTENTION' | 'CRITICAL' | 'BREACHED' | 'NO_STOP';
 
+export type LiveQuoteProvider = 'FYERS' | 'ANGEL_ONE' | 'SIMULATED' | 'MIXED';
+
+export interface ILiveQuote {
+  symbol: string;
+  ltp: number;
+  change?: number;
+  changePercent?: number;
+  high?: number;
+  low?: number;
+  open?: number;
+  prevClose?: number;
+  timestamp?: number;
+  provider?: LiveQuoteProvider;
+}
+
+export interface ILiveOpenTradeMetric {
+  tradeId: string;
+  symbol: string;
+  direction: Direction;
+  entryPrice: number;
+  currentLtp: number;
+  priceDeltaPoints: number;
+  priceDeltaPercent: number;
+  floatingGrossPnL: number;
+  estimatedCharges: number;
+  floatingNetPnL: number;
+  initialRiskAmount: number | null;
+  unrealizedR: number | null;
+  stopLoss: number | null;
+  target: number | null;
+  distanceToStopPoints: number | null;
+  distanceToStopTicks: number | null;
+  distanceToStopPercent: number | null;
+  stopThreatLevel: StopThreatLevel;
+  distanceToTargetPoints: number | null;
+  distanceToTargetTicks: number | null;
+  targetProgressPercent: number | null;
+  tickSize: number;
+  provider: LiveQuoteProvider;
+  asOf: string | Date;
+}
+
+export interface ILiveWatcherSummary {
+  openTradesCount: number;
+  totalFloatingGrossPnL: number;
+  totalEstimatedCharges: number;
+  totalFloatingNetPnL: number;
+  totalRiskCapital: number;
+  portfolioUnrealizedR: number | null;
+  profitableCount: number;
+  losingCount: number;
+  breakevenCount: number;
+  positions: ILiveOpenTradeMetric[];
+  provider: LiveQuoteProvider;
+  asOf: string | Date;
+}

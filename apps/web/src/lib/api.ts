@@ -1,4 +1,10 @@
-import type { DrillDescriptor, IDrilldownResponse, IEquityCurvesResponse } from '@tradevault/shared';
+import type {
+  DrillDescriptor,
+  IDrilldownResponse,
+  IEquityCurvesResponse,
+  ILiveWatcherSummary,
+  ILiveOpenTradeMetric,
+} from '@tradevault/shared';
 
 const BASE_URL = '/api/v1';
 
@@ -234,6 +240,12 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
       }),
+    getLiveWatcher: (accountId?: string) => {
+      const query = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
+      return request<ILiveWatcherSummary>(`/trades/live/watcher${query}`);
+    },
+    getLiveMetric: (id: string) =>
+      request<ILiveOpenTradeMetric>(`/trades/${id}/live`),
     computeExcursion: (id: string, options?: { provider?: 'AUTO' | 'ANGEL_ONE'; forceRefetch?: boolean }) =>
       request<any>(`/trades/${id}/excursion/compute`, {
         method: 'POST',

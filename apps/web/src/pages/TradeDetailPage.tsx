@@ -25,7 +25,7 @@ import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
 import Alert from '@mui/material/Alert';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
+import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 
 // Icons
 import ArrowBackIcon from '@mui/icons-material/ArrowBackRounded';
@@ -46,6 +46,10 @@ import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import ElectricBoltRoundedIcon from '@mui/icons-material/ElectricBoltRounded';
 import WarningRoundedIcon from '@mui/icons-material/WarningRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
+import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 import moment from 'moment';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -80,6 +84,18 @@ export function TradeDetailPage() {
   });
 
   const trade = (rawTrade as any)?.data || rawTrade;
+  const isOpenTrade = trade?.status === 'OPEN';
+
+  const {
+    data: liveMetric,
+    refetch: refetchLiveMetric,
+    isFetching: isFetchingLive,
+  } = useQuery({
+    queryKey: ['trade-live-metric', id],
+    queryFn: () => api.trades.getLiveMetric(id!),
+    enabled: Boolean(id && isOpenTrade),
+    refetchInterval: isOpenTrade ? 5000 : false,
+  });
 
   const { data: strategyData } = useQuery({
     queryKey: ['strategy', trade?.strategyId],
@@ -318,7 +334,7 @@ export function TradeDetailPage() {
               startIcon={<CheckCircleRoundedIcon fontSize="small" />}
               sx={{ fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
             >
-              Close Trade
+              {liveMetric?.currentLtp ? `Close @ LTP (₹${liveMetric.currentLtp})` : 'Close Trade'}
             </Button>
           )}
           <Button
@@ -367,6 +383,210 @@ export function TradeDetailPage() {
           </Button>
         </Box>
       </Box>
+
+      {/* Live Open Position Monitor Card (When Trade is OPEN) */}
+      {isOpenTrade && liveMetric && (
+        <Card
+          sx={{
+            p: 2.5,
+            borderRadius: '16px',
+            border: '1px solid',
+            borderColor: isDark ? alpha('#3B82F6', 0.3) : alpha('#3B82F6', 0.35),
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)'
+              : 'linear-gradient(135deg, #FFFFFF 0%, #F0F9FF 100%)',
+            boxShadow: isDark
+              ? '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
+              : '0 4px 20px rgba(59, 130, 246, 0.1)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Top accent bar */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              background: liveMetric.floatingNetPnL >= 0
+                ? 'linear-gradient(90deg, #10B981, #06B6D4)'
+                : 'linear-gradient(90deg, #F43F5E, #FB923C)',
+            }}
+          />
+
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  bgcolor: '#10B981',
+                  boxShadow: '0 0 10px #10B981',
+                  animation: 'pulse 1.8s infinite',
+                  '@keyframes pulse': {
+                    '0%': { transform: 'scale(0.95)', opacity: 0.8 },
+                    '50%': { transform: 'scale(1.3)', opacity: 1 },
+                    '100%': { transform: 'scale(0.95)', opacity: 0.8 },
+                  },
+                }}
+              />
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, letterSpacing: -0.2 }}>
+                LIVE EXECUTION MONITOR
+              </Typography>
+              <Chip
+                label={liveMetric.provider === 'FYERS' ? 'FYERS LIVE' : liveMetric.provider === 'ANGEL_ONE' ? 'ANGEL ONE LIVE' : 'SIMULATED TICK'}
+                size="small"
+                sx={{
+                  height: 20,
+                  fontSize: '0.65rem',
+                  fontWeight: 800,
+                  color: liveMetric.provider === 'FYERS' ? '#10B981' : liveMetric.provider === 'ANGEL_ONE' ? '#0EA5E9' : '#F59E0B',
+                  bgcolor: alpha(liveMetric.provider === 'FYERS' ? '#10B981' : liveMetric.provider === 'ANGEL_ONE' ? '#0EA5E9' : '#F59E0B', 0.12),
+                  borderRadius: '4px',
+                }}
+              />
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title="Refresh live quote now" arrow>
+                <IconButton
+                  size="small"
+                  onClick={() => refetchLiveMetric()}
+                  sx={{
+                    animation: isFetchingLive ? 'spin 1s linear infinite' : 'none',
+                    '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } },
+                  }}
+                >
+                  <SyncRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+
+              <Button
+                variant="contained"
+                size="small"
+                color="primary"
+                startIcon={<CheckCircleRoundedIcon />}
+                onClick={() => setIsQuickCloseOpen(true)}
+                sx={{ fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
+              >
+                Close @ LTP (₹{liveMetric.currentLtp})
+              </Button>
+            </Box>
+          </Box>
+
+          <Grid container spacing={2.5}>
+            {/* Current LTP & Price Delta */}
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block' }}>
+                CURRENT LTP
+              </Typography>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 800,
+                  fontFamily: `'JetBrains Mono', monospace`,
+                  color: liveMetric.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
+                  mt: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                }}
+              >
+                ₹{liveMetric.currentLtp}
+                {liveMetric.priceDeltaPoints >= 0 ? (
+                  <TrendingUpRoundedIcon fontSize="small" />
+                ) : (
+                  <TrendingDownRoundedIcon fontSize="small" />
+                )}
+              </Typography>
+              <Typography variant="caption" sx={{ color: liveMetric.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700 }}>
+                {liveMetric.priceDeltaPoints >= 0 ? '+' : ''}{liveMetric.priceDeltaPoints} pts ({liveMetric.priceDeltaPercent >= 0 ? '+' : ''}{liveMetric.priceDeltaPercent}%)
+              </Typography>
+            </Grid>
+
+            {/* Floating Net MTM */}
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block' }}>
+                FLOATING NET MTM
+              </Typography>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 800,
+                  fontFamily: `'JetBrains Mono', monospace`,
+                  color: liveMetric.floatingNetPnL >= 0 ? '#10B981' : '#F43F5E',
+                  mt: 0.5,
+                }}
+              >
+                {liveMetric.floatingNetPnL >= 0 ? '+' : ''}{formatCurrency(liveMetric.floatingNetPnL, 'INR')}
+              </Typography>
+              {liveMetric.unrealizedR !== null && (
+                <Typography variant="caption" sx={{ color: liveMetric.floatingNetPnL >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700 }}>
+                  {liveMetric.unrealizedR >= 0 ? '+' : ''}{liveMetric.unrealizedR} R
+                </Typography>
+              )}
+            </Grid>
+
+            {/* Distance to Stop Loss */}
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  DISTANCE TO SL
+                </Typography>
+                <Chip
+                  label={liveMetric.stopThreatLevel}
+                  size="small"
+                  sx={{
+                    height: 18,
+                    fontSize: '0.62rem',
+                    fontWeight: 800,
+                    color: liveMetric.stopThreatLevel === 'SAFE' ? '#10B981' : liveMetric.stopThreatLevel === 'ATTENTION' ? '#F59E0B' : '#EF4444',
+                    bgcolor: alpha(liveMetric.stopThreatLevel === 'SAFE' ? '#10B981' : liveMetric.stopThreatLevel === 'ATTENTION' ? '#F59E0B' : '#EF4444', 0.12),
+                    borderRadius: '4px',
+                  }}
+                />
+              </Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                {liveMetric.distanceToStopPoints !== null
+                  ? `${liveMetric.distanceToStopPoints} pts`
+                  : 'No Stop Set'}
+              </Typography>
+              {liveMetric.distanceToStopTicks !== null && (
+                <Typography variant="caption" color="text.secondary">
+                  {liveMetric.distanceToStopTicks} ticks buffer (SL: ₹{liveMetric.stopLoss})
+                </Typography>
+              )}
+            </Grid>
+
+            {/* Distance to Target */}
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  DISTANCE TO TARGET
+                </Typography>
+                {liveMetric.targetProgressPercent !== null && (
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#3B82F6' }}>
+                    {liveMetric.targetProgressPercent}%
+                  </Typography>
+                )}
+              </Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                {liveMetric.distanceToTargetPoints !== null
+                  ? `${Math.abs(liveMetric.distanceToTargetPoints)} pts`
+                  : 'No Target Set'}
+              </Typography>
+              {liveMetric.distanceToTargetTicks !== null && (
+                <Typography variant="caption" color="text.secondary">
+                  {Math.abs(liveMetric.distanceToTargetTicks)} ticks remaining (Target: ₹{liveMetric.target})
+                </Typography>
+              )}
+            </Grid>
+          </Grid>
+        </Card>
+      )}
 
       {/* Summary KPI Banner */}
       <Card sx={{ p: 2.5 }}>
@@ -1625,7 +1845,15 @@ export function TradeDetailPage() {
         open={isQuickCloseOpen}
         onClose={() => setIsQuickCloseOpen(false)}
         trade={trade}
+        defaultExitPrice={liveMetric?.currentLtp}
         accountBroker={trade?.accountId?.broker || trade?.accountBroker || 'ZERODHA'}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['trade', id] });
+          queryClient.invalidateQueries({ queryKey: ['trade-live-metric', id] });
+          queryClient.invalidateQueries({ queryKey: ['trades'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+        }}
       />
     </Box>
   );

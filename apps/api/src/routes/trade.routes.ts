@@ -45,6 +45,7 @@ import { PatternRecognitionService } from '../services/pattern-recognition.servi
 import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
+import { LiveWatcherService } from '../services/live-watcher.service.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
@@ -713,6 +714,27 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
   });
 
+  // GET /live/watcher - Real-time open trades MTM, unrealized R, and SL/Target distance
+  app.get('/live/watcher', async (req: any, reply) => {
+    try {
+      const accountId = (req.query as any)?.accountId;
+      const summary = await LiveWatcherService.getLiveWatcherSummary(req.user!.id, accountId);
+      return reply.send({
+        success: true,
+        data: summary,
+      });
+    } catch (err: any) {
+      req.log.error('Failed to get live open trades watcher summary: %s', err.message);
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'LIVE_WATCHER_FAILED',
+          message: err.message || 'Failed to fetch live open trade watcher metrics',
+        },
+      });
+    }
+  });
+
   // Get trade details
   app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id })
@@ -804,6 +826,32 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         updatedAt: trade.updatedAt.toISOString(),
       },
     });
+  });
+
+  // GET /:id/live - Real-time metric for a single open trade
+  app.get('/:id/live', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    try {
+      const metric = await LiveWatcherService.getSingleTradeLiveMetric(req.user!.id, req.params.id);
+      if (!metric) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+        });
+      }
+      return reply.send({
+        success: true,
+        data: metric,
+      });
+    } catch (err: any) {
+      req.log.error('Failed to get single trade live metric: %s', err.message);
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'LIVE_METRIC_FAILED',
+          message: err.message || 'Failed to fetch live metric for trade',
+        },
+      });
+    }
   });
 
   // Update trade

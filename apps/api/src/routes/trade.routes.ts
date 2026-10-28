@@ -1603,6 +1603,24 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             };
           }
         }
+
+        // If range bounds were explicitly specified (e.g. paging older), ensure cached snapshot actually covers the window
+        if (rawCandles.length > 0) {
+          if (query.from) {
+            const fromSec = Math.floor(rangeFrom.getTime() / 1000);
+            rawCandles = rawCandles.filter((c: any) => {
+              const cSec = c.t < 1e11 ? c.t : Math.floor(c.t / 1000);
+              return cSec >= fromSec;
+            });
+          }
+          if (query.to) {
+            const toSec = Math.floor(rangeTo.getTime() / 1000);
+            rawCandles = rawCandles.filter((c: any) => {
+              const cSec = c.t < 1e11 ? c.t : Math.floor(c.t / 1000);
+              return cSec <= toSec;
+            });
+          }
+        }
       }
 
       // 2. If no cached candles found, or forceRefetch is true, query MarketDataService

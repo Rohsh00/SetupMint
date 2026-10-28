@@ -322,7 +322,7 @@ export function GenerateExecutionChartsPanel({
       });
     },
     onSuccess: (res: any) => {
-      const results: IChartGenerateResult[] = res?.data?.results || [];
+      const results: IChartGenerateResult[] = res?.results || res?.data?.results || [];
       if (results.length > 0) {
         setLastResults(results);
         const createdCount = results.filter((r) => r.status === 'CREATED').length;

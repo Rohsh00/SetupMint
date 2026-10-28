@@ -26,8 +26,8 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('trader@tradevault.local');
-  const [password, setPassword] = useState('TradeVault@123');
+  const [email, setEmail] = useState('komal@gmail.com');
+  const [password, setPassword] = useState('komal@1998');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 

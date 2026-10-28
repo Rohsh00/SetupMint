@@ -156,6 +156,9 @@ export function TradeInteractiveChart({
   const firstTimeRef = useRef<number | null>(null);
   const isLoadingOlderRef = useRef(false);
   const hasMoreHistoryRef = useRef(true);
+  const resolutionRef = useRef<string>(resolution);
+  resolutionRef.current = resolution;
+  const isInitialLoadRef = useRef(true);
 
   // Save overlays to localStorage
   const handleToggleOverlay = (key: keyof OverlayToggles) => {
@@ -554,6 +557,8 @@ export function TradeInteractiveChart({
         setLoading(true);
         setErrorMsg(null);
         setIsNoCandleData(false);
+        isInitialLoadRef.current = true;
+        hasMoreHistoryRef.current = true;
 
         const resp = await api.trades.getInteractiveCandles(tradeId, {
           resolution: targetResolution,
@@ -574,6 +579,11 @@ export function TradeInteractiveChart({
           if (chartRef.current) {
             chartRef.current.timeScale().fitContent();
           }
+
+          // Release initial load lock after viewport settles so fitContent does not trigger older history fetch
+          setTimeout(() => {
+            isInitialLoadRef.current = false;
+          }, 500);
         } else {
           setIsNoCandleData(true);
         }
@@ -728,6 +738,7 @@ export function TradeInteractiveChart({
       if (
         !logicalRange ||
         logicalRange.from > 5 ||
+        isInitialLoadRef.current ||
         isLoadingOlderRef.current ||
         !hasMoreHistoryRef.current ||
         !firstTimeRef.current ||
@@ -739,11 +750,15 @@ export function TradeInteractiveChart({
       try {
         isLoadingOlderRef.current = true;
         const tradeId = trade.id || trade._id;
+        const currentReqRes = resolutionRef.current;
         const resp = await api.trades.getInteractiveCandles(tradeId, {
-          resolution,
+          resolution: currentReqRes,
           to: firstTimeRef.current - 1,
           preloadBefore: 120,
         });
+
+        // Abort if resolution changed while request was in-flight
+        if (resolutionRef.current !== currentReqRes) return;
 
         if (resp && Array.isArray(resp.candles) && resp.candles.length > 0) {
           const existingSet = new Set(candlesRef.current.map((c) => c.time));
@@ -797,6 +812,7 @@ export function TradeInteractiveChart({
   const handleChangeResolution = (newRes: string) => {
     if (newRes === resolution) return;
     setResolution(newRes);
+    resolutionRef.current = newRes;
     fetchCandleStream(newRes);
   };
 

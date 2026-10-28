@@ -14,7 +14,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
+import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 import { toast } from '../context/ToastContext.js';
 
 // Icons
@@ -875,6 +875,7 @@ export function AnalyticsPage() {
             const reliability = rawData?.reliability;
             const confidenceIntervals = rawData?.confidenceIntervals;
             const winnersMaeDistribution = rawData?.winnersMaeDistribution;
+            const mfeReachFunnel = rawData?.mfeReachFunnel;
             const cohorts = rawData?.cohorts ?? [];
             const rollingTrend = rawData?.rollingTrend ?? [];
             const segmentShrinkage = rawData?.segmentShrinkage;
@@ -1357,6 +1358,222 @@ export function AnalyticsPage() {
                         </BarChart>
                       </ResponsiveContainer>
                     </Box>
+                  </Card>
+                )}
+
+                {/* 4.5 MFE REACH FUNNEL & ROUND-TRIP LOSS ANALYSIS */}
+                {mfeReachFunnel && mfeReachFunnel.steps && mfeReachFunnel.steps.length > 0 && (
+                  <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
+                      <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <TrendingUpRoundedIcon sx={{ color: '#06B6D4', fontSize: 22 }} />
+                          MFE Reach Funnel & Round-Trip Loss Prevention
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          Tracks trade progression through milestone R levels and pinpoints where profitable trades reverse into full losses.
+                        </Typography>
+                      </Box>
+
+                      {/* Top Badges */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                        <Tooltip title="Percentage of trades reaching ≥ +1.0R that closed as losses (surrendered profits)">
+                          <Chip
+                            size="small"
+                            label={`Round-Trip Loss Rate: ${mfeReachFunnel.roundTripLossRate}%`}
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: '0.75rem',
+                              color: mfeReachFunnel.roundTripLossRate > 25 ? '#EF4444' : '#10B981',
+                              backgroundColor: isDark
+                                ? (mfeReachFunnel.roundTripLossRate > 25 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)')
+                                : (mfeReachFunnel.roundTripLossRate > 25 ? '#FEE2E2' : '#DCFCE7'),
+                              border: '1px solid',
+                              borderColor: mfeReachFunnel.roundTripLossRate > 25 ? alpha('#EF4444', 0.3) : alpha('#10B981', 0.3),
+                            }}
+                          />
+                        </Tooltip>
+
+                        {mfeReachFunnel.totalSurrenderedAmount > 0 && (
+                          <Tooltip title="Total peak unrealized profit surrendered across round-tripped trades">
+                            <Chip
+                              size="small"
+                              label={`Surrendered: ${formatCurrency(mfeReachFunnel.totalSurrenderedAmount, 'INR')}`}
+                              sx={{
+                                fontWeight: 700,
+                                fontSize: '0.75rem',
+                                color: '#F59E0B',
+                                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7',
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+
+                        {mfeReachFunnel.roundTripLossCount > 0 && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() =>
+                              openDrill({
+                                kind: 'FILTER',
+                                filter: { mfeRMin: 1.0, outcome: 'LOSS' },
+                                label: `Round-Trip Loss Trades (Reached ≥ +1.0R Then Stopped Out)`,
+                              })
+                            }
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 700,
+                              fontSize: '0.72rem',
+                              py: 0.25,
+                              px: 1.25,
+                              borderRadius: 1.5,
+                              borderColor: alpha('#EF4444', 0.4),
+                              color: '#EF4444',
+                              '&:hover': {
+                                borderColor: '#EF4444',
+                                backgroundColor: alpha('#EF4444', 0.08),
+                              },
+                            }}
+                          >
+                            Drill Down ({mfeReachFunnel.roundTripLossCount} Trades)
+                          </Button>
+                        )}
+                      </Box>
+                    </Box>
+
+                    {/* Funnel Step Cards Grid */}
+                    <Grid container spacing={1.5} sx={{ mb: 2 }}>
+                      {mfeReachFunnel.steps.map((step: any) => {
+                        const isOneToOne = step.thresholdR === 1.0;
+                        return (
+                          <Grid size={{ xs: 6, sm: 4, md: 2 }} key={step.thresholdR}>
+                            <Card
+                              variant="outlined"
+                              sx={{
+                                p: 1.5,
+                                borderRadius: 2,
+                                backgroundColor: isOneToOne
+                                  ? (isDark ? 'rgba(6, 182, 212, 0.08)' : 'rgba(6, 182, 212, 0.04)')
+                                  : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)'),
+                                borderColor: isOneToOne
+                                  ? '#06B6D4'
+                                  : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'),
+                                position: 'relative',
+                              }}
+                            >
+                              {isOneToOne && (
+                                <Chip
+                                  label="1:1 TARGET"
+                                  size="small"
+                                  sx={{
+                                    position: 'absolute',
+                                    top: -8,
+                                    right: 8,
+                                    height: 16,
+                                    fontSize: '0.58rem',
+                                    fontWeight: 800,
+                                    bgcolor: '#06B6D4',
+                                    color: '#FFF',
+                                  }}
+                                />
+                              )}
+
+                              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
+                                {step.label}
+                              </Typography>
+
+                              <Typography variant="h6" sx={{ fontWeight: 800, my: 0.5, fontSize: '1rem', fontFamily: `'JetBrains Mono', monospace` }}>
+                                {step.reachedCount}{' '}
+                                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'text.secondary' }}>
+                                  ({step.reachedPercent}%)
+                                </span>
+                              </Typography>
+
+                              {/* Conversion breakdown */}
+                              <Box sx={{ mt: 1 }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
+                                  <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#10B981', fontWeight: 700 }}>
+                                    Won: {step.closedAsWinCount}
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#EF4444', fontWeight: 700 }}>
+                                    Lost: {step.closedAsLossCount}
+                                  </Typography>
+                                </Box>
+
+                                {/* Progress bar ratio */}
+                                <Box
+                                  sx={{
+                                    height: 6,
+                                    borderRadius: 3,
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                    overflow: 'hidden',
+                                    display: 'flex',
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      width: `${step.closedAsWinPercent}%`,
+                                      bgcolor: '#10B981',
+                                    }}
+                                  />
+                                  <Box
+                                    sx={{
+                                      width: `${step.closedAsLossPercent}%`,
+                                      bgcolor: '#EF4444',
+                                    }}
+                                  />
+                                </Box>
+
+                                {step.closedAsLossCount > 0 && (
+                                  <Typography
+                                    variant="caption"
+                                    onClick={() =>
+                                      openDrill({
+                                        kind: 'FILTER',
+                                        filter: { mfeRMin: step.thresholdR, outcome: 'LOSS' },
+                                        label: `Trades reaching ${step.label} that closed as loss`,
+                                      })
+                                    }
+                                    sx={{
+                                      display: 'block',
+                                      mt: 0.75,
+                                      fontSize: '0.62rem',
+                                      color: '#EF4444',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      '&:hover': { textDecoration: 'underline' },
+                                    }}
+                                  >
+                                    {step.closedAsLossCount} round-tripped ↗
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Card>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+
+                    {/* Educational / Recommendation Callout */}
+                    {mfeReachFunnel.roundTripLossCount > 0 && (
+                      <Box
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          backgroundColor: isDark ? 'rgba(16, 185, 129, 0.06)' : '#F0FDF4',
+                          border: '1px solid',
+                          borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#BBF7D0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                        }}
+                      >
+                        <LightbulbRoundedIcon sx={{ color: '#10B981', fontSize: 24, flexShrink: 0 }} />
+                        <Typography variant="caption" sx={{ color: 'text.primary', fontSize: '0.75rem', lineHeight: 1.5 }}>
+                          <strong>Optimizer Insight:</strong> {mfeReachFunnel.roundTripLossCount} trades reached +1.0R but reversed into losses, surrendering {formatCurrency(mfeReachFunnel.totalSurrenderedAmount, 'INR')}. Moving your Stop Loss to Breakeven or booking 50% partial profit on the Live Watcher would protect ~{formatCurrency(mfeReachFunnel.totalSurrenderedAmount * 0.5, 'INR')} in capital.
+                        </Typography>
+                      </Box>
+                    )}
                   </Card>
                 )}
 

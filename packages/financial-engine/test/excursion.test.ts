@@ -707,5 +707,114 @@ describe('calculateExcursion', () => {
     expect(res.mfeR).toBe(3.0); // (130 - 100) / 10 = 3.0R
     expect(res.rLeftOnTable).toBe(2.0); // 3.0R - 1.0R = 2.0R left on the table
   });
+
+  it('30. calculates MFE Reach Funnel and Round-Trip Loss Rate accurately', async () => {
+    const { calculateExcursionAggregates } = await import('../src/excursion-analytics.js');
+
+    const mockTrades: any[] = [
+      {
+        id: 'trade-1',
+        symbol: 'CRUDEOILMINI',
+        tradeDate: new Date().toISOString(),
+        netPnL: -3500,
+        outcome: 'LOSS',
+        calculated: {
+          netPnL: -3500,
+          outcome: 'LOSS',
+          realizedRMultiple: -0.06,
+          excursion: {
+            mfeR: 1.09,
+            maeR: 1.06,
+            mfeAmount: 3600,
+            rLeftOnTable: 1.15,
+            status: 'COMPUTED',
+          },
+        },
+      },
+      {
+        id: 'trade-2',
+        symbol: 'CRUDEOILMINI',
+        tradeDate: new Date().toISOString(),
+        netPnL: -3000,
+        outcome: 'LOSS',
+        calculated: {
+          netPnL: -3000,
+          outcome: 'LOSS',
+          realizedRMultiple: -0.12,
+          excursion: {
+            mfeR: 1.47,
+            maeR: 1.12,
+            mfeAmount: 2500,
+            rLeftOnTable: 1.59,
+            status: 'COMPUTED',
+          },
+        },
+      },
+      {
+        id: 'trade-3',
+        symbol: 'CRUDEOILMINI',
+        tradeDate: new Date().toISOString(),
+        netPnL: -3200,
+        outcome: 'LOSS',
+        calculated: {
+          netPnL: -3200,
+          outcome: 'LOSS',
+          realizedRMultiple: -1.07,
+          excursion: {
+            mfeR: 1.0,
+            maeR: 1.2,
+            mfeAmount: 1500,
+            rLeftOnTable: 2.07,
+            status: 'COMPUTED',
+          },
+        },
+      },
+      {
+        id: 'trade-4',
+        symbol: 'CRUDEOILMINI',
+        tradeDate: new Date().toISOString(),
+        netPnL: -2880,
+        outcome: 'LOSS',
+        calculated: {
+          netPnL: -2880,
+          outcome: 'LOSS',
+          realizedRMultiple: -1.11,
+          excursion: {
+            mfeR: 0.08,
+            maeR: 1.08,
+            mfeAmount: 100,
+            rLeftOnTable: 1.19,
+            status: 'COMPUTED',
+          },
+        },
+      },
+    ];
+
+    const result = calculateExcursionAggregates({
+      allClosedTrades: mockTrades,
+      totalClosedTradesCount: 4,
+    });
+
+    expect(result.mfeReachFunnel).toBeDefined();
+    // 3 of 4 trades reached >= 1.0R
+    expect(result.mfeReachFunnel.tradesReached1RCount).toBe(3);
+    // 3 of 3 closed as losses -> 100% round-trip rate
+    expect(result.mfeReachFunnel.roundTripLossCount).toBe(3);
+    expect(result.mfeReachFunnel.roundTripLossRate).toBe(100.0);
+    expect(result.mfeReachFunnel.roundTripTradeIds).toEqual(['trade-1', 'trade-2', 'trade-3']);
+
+    // Check funnel steps
+    const step05 = result.mfeReachFunnel.steps.find((s) => s.thresholdR === 0.5);
+    const step10 = result.mfeReachFunnel.steps.find((s) => s.thresholdR === 1.0);
+    const step15 = result.mfeReachFunnel.steps.find((s) => s.thresholdR === 1.5);
+    const step20 = result.mfeReachFunnel.steps.find((s) => s.thresholdR === 2.0);
+
+    expect(step05?.reachedCount).toBe(3);
+    expect(step10?.reachedCount).toBe(3);
+    expect(step15?.reachedCount).toBe(0);
+    expect(step20?.reachedCount).toBe(0);
+
+    expect(result.mfeReachFunnel.insight).toContain('Critical Giveback Alert');
+  });
 });
 

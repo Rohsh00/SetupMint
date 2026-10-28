@@ -49,6 +49,8 @@ export interface ILiveOpenTradeMetric {
   tradeId: string;
   symbol: string;
   direction: Direction;
+  quantity: number;
+  contractMultiplier?: number;
   entryPrice: number;
   currentLtp: number;
   priceDeltaPoints: number;
@@ -231,6 +233,8 @@ export function calculateLiveOpenTradeMetric(
     tradeId: params.tradeId,
     symbol: params.symbol,
     direction: params.direction,
+    quantity: Number(dQty.toNumber()),
+    contractMultiplier: Number(dMultiplier.toNumber()),
     entryPrice: Number(dEntry.toFixed(2)),
     currentLtp: Number(dLtp.toFixed(2)),
     priceDeltaPoints: Number(priceDeltaPoints.toFixed(2)),

@@ -34,6 +34,7 @@ export interface QuickCloseTradeProps {
   accountBroker?: string;
   onSuccess?: () => void;
   defaultExitPrice?: number | string;
+  defaultCloseRatio?: number; // e.g. 0.5 for 50% partial, 1.0 for full
 }
 
 export function QuickCloseTradeDialog({
@@ -43,24 +44,52 @@ export function QuickCloseTradeDialog({
   accountBroker = 'ZERODHA',
   onSuccess,
   defaultExitPrice,
+  defaultCloseRatio = 1.0,
 }: QuickCloseTradeProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const queryClient = useQueryClient();
 
-  const entryPrice = trade?.simpleExecution?.entryPrice || trade?.calculated?.averageEntryPrice || 0;
-  const quantity = trade?.simpleExecution?.quantity || trade?.calculated?.closedQuantity || trade?.calculated?.openQuantity || 0;
-  const contractMultiplier = trade?.simpleExecution?.contractMultiplier || 1;
+  const entryPrice = trade?.simpleExecution?.entryPrice || trade?.calculated?.averageEntryPrice || trade?.entryPrice || 0;
+  const totalOpenQuantity =
+    trade?.calculated?.openQuantity ??
+    trade?.openQuantity ??
+    trade?.simpleExecution?.quantity ??
+    trade?.quantity ??
+    1;
+  const contractMultiplier = trade?.simpleExecution?.contractMultiplier || trade?.contractMultiplier || 1;
   const direction = trade?.direction || 'LONG';
   const marketSegment = trade?.marketSegment || 'NSE_EQ';
   const assetClass = trade?.assetClass || 'EQUITY';
 
   // State
+  const [exitMode, setExitMode] = useState<'PARTIAL_50' | 'FULL' | 'CUSTOM'>(() => {
+    return defaultCloseRatio === 0.5 && totalOpenQuantity > 1 ? 'PARTIAL_50' : 'FULL';
+  });
+  const [customQty, setCustomQty] = useState<string>(() => {
+    return String(Math.max(1, Math.floor(totalOpenQuantity / 2)));
+  });
   const [exitPrice, setExitPrice] = useState<string>('');
   const [exitTime, setExitTime] = useState<string>('');
   const [manualFeesOverride, setManualFeesOverride] = useState(false);
   const [customExitFees, setCustomExitFees] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Determine actual quantity being closed
+  const selectedCloseQty = useMemo(() => {
+    if (exitMode === 'PARTIAL_50') {
+      return Math.max(1, Math.floor(totalOpenQuantity / 2));
+    }
+    if (exitMode === 'CUSTOM') {
+      const parsed = parseInt(customQty, 10);
+      if (isNaN(parsed) || parsed <= 0) return 1;
+      return Math.min(totalOpenQuantity, parsed);
+    }
+    return totalOpenQuantity;
+  }, [exitMode, customQty, totalOpenQuantity]);
+
+  const remainingQty = Math.max(0, totalOpenQuantity - selectedCloseQty);
+  const isPartial = selectedCloseQty < totalOpenQuantity;
 
   // Initialize defaults whenever trade opens
   useEffect(() => {
@@ -76,24 +105,27 @@ export function QuickCloseTradeDialog({
           : '';
       setExitPrice(initialPrice);
 
+      setExitMode(defaultCloseRatio === 0.5 && totalOpenQuantity > 1 ? 'PARTIAL_50' : 'FULL');
+      setCustomQty(String(Math.max(1, Math.floor(totalOpenQuantity / 2))));
+
       // Default exit time to current local time in ISO format for datetime-local
       setExitTime(currentLocalIsoDateTime());
     }
-  }, [open, trade, defaultExitPrice]);
+  }, [open, trade, defaultExitPrice, defaultCloseRatio, totalOpenQuantity]);
 
   const numExitPrice = parseFloat(exitPrice);
   const isPriceValid = !isNaN(numExitPrice) && numExitPrice > 0;
 
-  // Auto compute charges using @tradevault/financial-engine
+  // Auto compute charges using @tradevault/financial-engine for the selected close quantity
   const autoCharges: ChargesBreakdown | null = useMemo(() => {
-    if (!isPriceValid || entryPrice <= 0 || quantity <= 0) return null;
+    if (!isPriceValid || entryPrice <= 0 || selectedCloseQty <= 0) return null;
     try {
       return IndianChargesCalculator.calculate(
         assetClass as any,
         marketSegment as any,
         entryPrice,
         numExitPrice,
-        quantity,
+        selectedCloseQty,
         contractMultiplier,
         20,
         accountBroker
@@ -101,16 +133,16 @@ export function QuickCloseTradeDialog({
     } catch {
       return null;
     }
-  }, [isPriceValid, entryPrice, numExitPrice, quantity, contractMultiplier, accountBroker, marketSegment, assetClass]);
+  }, [isPriceValid, entryPrice, numExitPrice, selectedCloseQty, contractMultiplier, accountBroker, marketSegment, assetClass]);
 
-  // Live P&L computation
+  // Live P&L computation on closed quantity
   const { grossPnL, totalCosts, netPnL } = useMemo(() => {
-    if (!isPriceValid || entryPrice <= 0 || quantity <= 0) {
+    if (!isPriceValid || entryPrice <= 0 || selectedCloseQty <= 0) {
       return { grossPnL: 0, totalCosts: 0, netPnL: 0 };
     }
     const rawGross = direction === 'LONG'
-      ? (numExitPrice - entryPrice) * quantity * contractMultiplier
-      : (entryPrice - numExitPrice) * quantity * contractMultiplier;
+      ? (numExitPrice - entryPrice) * selectedCloseQty * contractMultiplier
+      : (entryPrice - numExitPrice) * selectedCloseQty * contractMultiplier;
 
     let costs = 0;
     if (manualFeesOverride) {
@@ -129,13 +161,16 @@ export function QuickCloseTradeDialog({
       totalCosts: Number(costs.toFixed(2)),
       netPnL: Number(net.toFixed(2)),
     };
-  }, [isPriceValid, entryPrice, numExitPrice, quantity, contractMultiplier, direction, manualFeesOverride, customExitFees, autoCharges, trade]);
+  }, [isPriceValid, entryPrice, numExitPrice, selectedCloseQty, contractMultiplier, direction, manualFeesOverride, customExitFees, autoCharges, trade]);
 
-  // Mutation to close the trade
+  // Mutation to close the trade (partial or full)
   const closeMutation = useMutation({
     mutationFn: async () => {
       if (!isPriceValid) throw new Error('Please enter a valid positive exit price.');
       if (!exitTime) throw new Error('Please specify an exit timestamp.');
+      if (selectedCloseQty <= 0 || selectedCloseQty > totalOpenQuantity) {
+        throw new Error(`Close quantity must be between 1 and ${totalOpenQuantity}.`);
+      }
 
       const exitIso = new Date(exitTime).toISOString();
 
@@ -153,21 +188,81 @@ export function QuickCloseTradeDialog({
           }
         : {};
 
-      return api.trades.update(trade.id || trade._id, {
-        status: 'CLOSED',
-        exitTime: exitIso,
-        simpleExecution: {
-          exitPrice: numExitPrice,
-          ...feesToSave,
-        },
-      });
+      if (isPartial) {
+        // Advanced multi-fill execution for partial exit
+        let updatedFills: any[] = [];
+        if (trade.fills && Array.isArray(trade.fills) && trade.fills.length > 0) {
+          updatedFills = [
+            ...trade.fills,
+            {
+              fillId: `fill-exit-${Date.now()}`,
+              type: 'EXIT',
+              price: numExitPrice,
+              quantity: selectedCloseQty,
+              timestamp: exitIso,
+              brokerage: autoCharges?.brokerage ?? 20,
+              exchangeFee: autoCharges?.exchangeFees ?? 0,
+              taxes: autoCharges?.taxes ?? 0,
+              notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
+            },
+          ];
+        } else {
+          // Transition SIMPLE mode trade to ADVANCED mode with original entry and new partial exit
+          const entryTimeStr = trade.entryTime ? new Date(trade.entryTime).toISOString() : exitIso;
+          updatedFills = [
+            {
+              fillId: `fill-entry-${trade.id || trade._id}`,
+              type: 'ENTRY',
+              price: entryPrice,
+              quantity: totalOpenQuantity,
+              timestamp: entryTimeStr,
+              brokerage: 20,
+              exchangeFee: 0,
+              taxes: 0,
+              notes: 'Initial position entry',
+            },
+            {
+              fillId: `fill-exit-${Date.now()}`,
+              type: 'EXIT',
+              price: numExitPrice,
+              quantity: selectedCloseQty,
+              timestamp: exitIso,
+              brokerage: autoCharges?.brokerage ?? 20,
+              exchangeFee: autoCharges?.exchangeFees ?? 0,
+              taxes: autoCharges?.taxes ?? 0,
+              notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
+            },
+          ];
+        }
+
+        return api.trades.update(trade.id || trade._id, {
+          executionMode: 'ADVANCED',
+          status: 'OPEN',
+          fills: updatedFills,
+        });
+      } else {
+        // 100% Full close
+        return api.trades.update(trade.id || trade._id, {
+          status: 'CLOSED',
+          exitTime: exitIso,
+          simpleExecution: {
+            exitPrice: numExitPrice,
+            ...feesToSave,
+          },
+        });
+      }
     },
     onSuccess: () => {
-      toast.success(`Trade ${trade.symbol} closed successfully.`);
+      if (isPartial) {
+        toast.success(`Partial exit of ${selectedCloseQty} qty @ ₹${numExitPrice} executed (+₹${netPnL} locked). Remaining: ${remainingQty} qty.`);
+      } else {
+        toast.success(`Trade ${trade.symbol} closed successfully.`);
+      }
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['trade', trade.id || trade._id] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
       if (onSuccess) onSuccess();
       onClose();
     },
@@ -208,9 +303,9 @@ export function QuickCloseTradeDialog({
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CheckCircleRoundedIcon color="primary" sx={{ fontSize: 22 }} />
+          <CheckCircleRoundedIcon color={isPartial ? 'success' : 'primary'} sx={{ fontSize: 22 }} />
           <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1.0625rem' }}>
-            Quick Close Trade
+            {isPartial ? 'Book Partial Profit' : 'Close Trade Position'}
           </Typography>
         </Box>
         <IconButton size="small" onClick={onClose} sx={{ color: muiTheme.palette.text.secondary }}>
@@ -268,11 +363,130 @@ export function QuickCloseTradeDialog({
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-            <span>Entry: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{entryPrice}</strong></span>
-            <span>Qty: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{quantity}</strong></span>
+            <span>Entry: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>₹{entryPrice}</strong></span>
+            <span>Total Position: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{totalOpenQuantity} Qty</strong></span>
             <span>Account: <strong>{trade.accountName || 'Trading Account'}</strong></span>
           </Box>
         </Card>
+
+        {/* Position Exit Ratio Selector */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'text.secondary' }}>
+              Execution Scope
+            </Typography>
+            {isPartial && (
+              <Chip
+                label="PARTIAL EXIT"
+                size="small"
+                color="success"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 800 }}
+              />
+            )}
+          </Box>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1 }}>
+            <Button
+              size="small"
+              variant={exitMode === 'PARTIAL_50' ? 'contained' : 'outlined'}
+              color="primary"
+              onClick={() => setExitMode('PARTIAL_50')}
+              sx={{
+                flexDirection: 'column',
+                py: 0.75,
+                textTransform: 'none',
+                borderRadius: 2,
+                fontWeight: 700,
+                fontSize: '0.75rem',
+              }}
+            >
+              <span>50% Partial</span>
+              <Typography variant="caption" sx={{ fontSize: '0.625rem', opacity: 0.85 }}>
+                {Math.max(1, Math.floor(totalOpenQuantity / 2))} Qty
+              </Typography>
+            </Button>
+
+            <Button
+              size="small"
+              variant={exitMode === 'FULL' ? 'contained' : 'outlined'}
+              color="inherit"
+              onClick={() => setExitMode('FULL')}
+              sx={{
+                flexDirection: 'column',
+                py: 0.75,
+                textTransform: 'none',
+                borderRadius: 2,
+                fontWeight: 700,
+                fontSize: '0.75rem',
+              }}
+            >
+              <span>100% Full</span>
+              <Typography variant="caption" sx={{ fontSize: '0.625rem', opacity: 0.85 }}>
+                All {totalOpenQuantity} Qty
+              </Typography>
+            </Button>
+
+            <Button
+              size="small"
+              variant={exitMode === 'CUSTOM' ? 'contained' : 'outlined'}
+              color="inherit"
+              onClick={() => setExitMode('CUSTOM')}
+              sx={{
+                flexDirection: 'column',
+                py: 0.75,
+                textTransform: 'none',
+                borderRadius: 2,
+                fontWeight: 700,
+                fontSize: '0.75rem',
+              }}
+            >
+              <span>Custom Qty</span>
+              <Typography variant="caption" sx={{ fontSize: '0.625rem', opacity: 0.85 }}>
+                {selectedCloseQty} Qty
+              </Typography>
+            </Button>
+          </Box>
+
+          {exitMode === 'CUSTOM' && (
+            <TextField
+              size="small"
+              type="number"
+              label="Quantity to Exit"
+              value={customQty}
+              onChange={(e) => setCustomQty(e.target.value)}
+              slotProps={{
+                input: {
+                  inputProps: { min: 1, max: totalOpenQuantity },
+                  sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
+                },
+              }}
+              helperText={`Enter between 1 and ${totalOpenQuantity} quantity to exit`}
+            />
+          )}
+
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              px: 1.5,
+              py: 0.8,
+              borderRadius: 1.5,
+              backgroundColor: isPartial ? (isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)') : (isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'),
+              border: `1px solid ${isPartial ? 'rgba(16, 185, 129, 0.3)' : muiTheme.palette.divider}`,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 700 }}>
+              Closing: <span style={{ color: muiTheme.palette.primary.main }}>{selectedCloseQty} Qty</span>
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              Runner Remaining:{' '}
+              <strong style={{ color: remainingQty > 0 ? (isDark ? '#34D399' : '#059669') : 'inherit' }}>
+                {remainingQty} Qty
+              </strong>
+            </Typography>
+          </Box>
+        </Box>
 
         {/* Exit Price Input */}
         <TextField
@@ -438,13 +652,17 @@ export function QuickCloseTradeDialog({
         </Button>
         <Button
           variant="contained"
-          color="primary"
+          color={isPartial ? 'success' : 'primary'}
           onClick={() => closeMutation.mutate()}
           disabled={!isPriceValid || closeMutation.isPending}
           startIcon={closeMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <CheckCircleRoundedIcon />}
           sx={{ fontWeight: 700, borderRadius: 2 }}
         >
-          {closeMutation.isPending ? 'Closing...' : 'Close Position'}
+          {closeMutation.isPending
+            ? 'Executing...'
+            : isPartial
+            ? `Book ${selectedCloseQty} Qty Partial Exit`
+            : `Close Full Position (${selectedCloseQty} Qty)`}
         </Button>
       </DialogActions>
     </Dialog>

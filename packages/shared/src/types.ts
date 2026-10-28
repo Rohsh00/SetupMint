@@ -1679,6 +1679,8 @@ export interface ILiveOpenTradeMetric {
   tradeId: string;
   symbol: string;
   direction: Direction;
+  quantity: number;
+  contractMultiplier?: number;
   entryPrice: number;
   currentLtp: number;
   priceDeltaPoints: number;

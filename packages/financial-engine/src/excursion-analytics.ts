@@ -45,6 +45,28 @@ export interface IExcursionSegment {
   shrunkExitEfficiency?: number;
 }
 
+export interface IMfeReachStep {
+  thresholdR: number;
+  label: string;
+  reachedCount: number;
+  reachPct: number;
+  closedAsWinCount: number;
+  closedAsLossCount: number;
+  winConversionPct: number;
+  tradeIds: string[];
+}
+
+export interface IMfeReachFunnel {
+  steps: IMfeReachStep[];
+  roundTripLossCount: number;
+  roundTripLossRate: number;
+  tradesReached1RCount: number;
+  totalSurrenderedR: number;
+  totalSurrenderedAmount: number;
+  roundTripTradeIds: string[];
+  insight: string;
+}
+
 export interface IWhatIfPrefillSuggestion {
   suggestedStopR: number;
   suggestedTargetR: number;
@@ -168,6 +190,7 @@ export interface IExcursionAnalyticsResult {
     p90?: number;
     insight: string;
   };
+  mfeReachFunnel: IMfeReachFunnel;
   cohorts: {
     winnersVsLosers: [IExcursionCohort, IExcursionCohort];
     morningVsAfternoon: [IExcursionCohort, IExcursionCohort];
@@ -604,6 +627,90 @@ export function calculateExcursionAggregates(params: {
     insight: winnerInsight,
   };
 
+  // MFE Reach Funnel & Round-Trip Loss Prevention
+  const mfeStepDefs = [
+    { thresholdR: 0.5, label: 'Reached ≥ +0.5R' },
+    { thresholdR: 1.0, label: 'Reached ≥ +1.0R' },
+    { thresholdR: 1.5, label: 'Reached ≥ +1.5R' },
+    { thresholdR: 2.0, label: 'Reached ≥ +2.0R' },
+    { thresholdR: 2.5, label: 'Reached ≥ +2.5R' },
+    { thresholdR: 3.0, label: 'Reached ≥ +3.0R' },
+  ];
+
+  const totalEvaluatedCount = validEvaluatedTrades.length;
+  const mfeSteps: IMfeReachStep[] = mfeStepDefs.map((def) => {
+    const reachedTrades = validEvaluatedTrades.filter((t) => {
+      const mfeR = t.calculated?.excursion?.mfeR;
+      return typeof mfeR === 'number' && mfeR >= def.thresholdR;
+    });
+
+    const reachedCount = reachedTrades.length;
+    const reachPct = totalEvaluatedCount > 0 ? Number(((reachedCount / totalEvaluatedCount) * 100).toFixed(1)) : 0;
+
+    const closedAsWin = reachedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) > 0);
+    const closedAsLoss = reachedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) < 0);
+
+    const winConversionPct = reachedCount > 0 ? Number(((closedAsWin.length / reachedCount) * 100).toFixed(1)) : 0;
+
+    return {
+      thresholdR: def.thresholdR,
+      label: def.label,
+      reachedCount,
+      reachPct,
+      closedAsWinCount: closedAsWin.length,
+      closedAsLossCount: closedAsLoss.length,
+      winConversionPct,
+      tradeIds: reachedTrades.map((t) => t.id),
+    };
+  });
+
+  // Trades reaching 1.0R and round-trip loss calculation
+  const tradesReached1R = validEvaluatedTrades.filter((t) => {
+    const mfeR = t.calculated?.excursion?.mfeR;
+    return typeof mfeR === 'number' && mfeR >= 1.0;
+  });
+
+  const roundTripLossTrades = tradesReached1R.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) < 0);
+  const tradesReached1RCount = tradesReached1R.length;
+  const roundTripLossCount = roundTripLossTrades.length;
+  const roundTripLossRate = tradesReached1RCount > 0
+    ? Number(((roundTripLossCount / tradesReached1RCount) * 100).toFixed(1))
+    : 0;
+
+  let totalSurrenderedR = 0;
+  let totalSurrenderedAmount = 0;
+  for (const rt of roundTripLossTrades) {
+    const exc = rt.calculated?.excursion;
+    const rLeft = exc?.rLeftOnTable ?? (exc?.mfeR ? exc.mfeR - (rt.calculated?.realizedRMultiple ?? -1) : 0);
+    totalSurrenderedR += Math.max(0, rLeft);
+    if (exc?.mfeAmount) {
+      const net = rt.calculated?.netPnL ?? rt.netPnL ?? 0;
+      totalSurrenderedAmount += Math.max(0, exc.mfeAmount - net);
+    }
+  }
+
+  let mfeInsight = 'No trades with MFE metrics available to evaluate reach funnel.';
+  if (tradesReached1RCount > 0) {
+    if (roundTripLossRate >= 50) {
+      mfeInsight = `Critical Giveback Alert: ${roundTripLossCount} of ${tradesReached1RCount} trades (${roundTripLossRate}%) reached +1.0R but closed as losses. Moving SL to Breakeven at +1.0R would have saved capital.`;
+    } else if (roundTripLossRate > 0) {
+      mfeInsight = `${roundTripLossCount} of ${tradesReached1RCount} trades reached +1.0R before turning into losses (${roundTripLossRate}% round-trip rate).`;
+    } else {
+      mfeInsight = `100% of trades that reached +1.0R closed profitably or at scratch. Strong trade management execution.`;
+    }
+  }
+
+  const mfeReachFunnel: IMfeReachFunnel = {
+    steps: mfeSteps,
+    roundTripLossCount,
+    roundTripLossRate,
+    tradesReached1RCount,
+    totalSurrenderedR: Number(totalSurrenderedR.toFixed(2)),
+    totalSurrenderedAmount: Number(totalSurrenderedAmount.toFixed(2)),
+    roundTripTradeIds: roundTripLossTrades.map((t) => t.id),
+    insight: mfeInsight,
+  };
+
   // Cohort Comparisons
   const winners = validEvaluatedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) > 0);
   const losers = validEvaluatedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) < 0);
@@ -798,6 +905,7 @@ export function calculateExcursionAggregates(params: {
     sampleReliability,
     summary,
     winnersMaeDistribution,
+    mfeReachFunnel,
     cohorts,
     rollingTrend,
     segments,

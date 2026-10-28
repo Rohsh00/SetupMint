@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import TextField from '@mui/material/TextField';
+import InputAdornment from '@mui/material/InputAdornment';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -30,6 +38,8 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
+import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
 
 import {
   ILiveWatcherSummary,
@@ -38,6 +48,7 @@ import {
 } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
 import { formatCurrency } from '../../../lib/utils.js';
+import { toast } from '../../../context/ToastContext.js';
 import { QuickCloseTradeDialog } from '../QuickCloseTradeDialog.js';
 
 export interface LiveOpenTradeWatcherProps {
@@ -67,7 +78,49 @@ export function LiveOpenTradeWatcher({
   // Quick close modal state
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
   const [quickCloseLtp, setQuickCloseLtp] = useState<number | undefined>(undefined);
+  const [quickCloseRatio, setQuickCloseRatio] = useState<number>(1.0);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
+  // Stop Loss adjust modal state
+  const [editSlMetric, setEditSlMetric] = useState<ILiveOpenTradeMetric | null>(null);
+  const [targetSlPrice, setTargetSlPrice] = useState<string>('');
+
+  const updateSlMutation = useMutation({
+    mutationFn: async ({ tradeId, newStopLoss }: { tradeId: string; newStopLoss: number }) => {
+      return api.trades.update(tradeId, {
+        risk: {
+          initialStopLoss: newStopLoss,
+          initialStopSource: 'MANUAL',
+        },
+        psychology: {
+          stopLossMoved: true,
+        },
+      });
+    },
+    onSuccess: (_, variables) => {
+      toast.success(`Stop Loss moved to ₹${variables.newStopLoss} successfully!`);
+      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      setEditSlMetric(null);
+      setTargetSlPrice('');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to update Stop Loss');
+    },
+  });
+
+  const handleQuickMoveToBe = (metric: ILiveOpenTradeMetric) => {
+    updateSlMutation.mutate({
+      tradeId: metric.tradeId,
+      newStopLoss: metric.entryPrice,
+    });
+  };
+
+  const handleOpenEditSl = (metric: ILiveOpenTradeMetric) => {
+    setEditSlMetric(metric);
+    setTargetSlPrice(metric.stopLoss !== null ? String(metric.stopLoss) : String(metric.entryPrice));
+  };
 
   const handleIntervalChange = (_: any, newInterval: number | null) => {
     if (newInterval !== null) {
@@ -183,7 +236,8 @@ export function LiveOpenTradeWatcher({
 
   const providerBadge = getProviderBadge(summary?.provider);
 
-  const handleOpenQuickClose = async (metric: ILiveOpenTradeMetric) => {
+  const handleOpenQuickClose = async (metric: ILiveOpenTradeMetric, ratio: number = 1.0) => {
+    setQuickCloseRatio(ratio);
     try {
       const fullTrade = await api.trades.get(metric.tradeId);
       setQuickCloseTrade(fullTrade);
@@ -194,7 +248,12 @@ export function LiveOpenTradeWatcher({
         _id: metric.tradeId,
         symbol: metric.symbol,
         direction: metric.direction,
-        simpleExecution: { entryPrice: metric.entryPrice },
+        simpleExecution: {
+          entryPrice: metric.entryPrice,
+          quantity: metric.quantity,
+          contractMultiplier: metric.contractMultiplier,
+        },
+        quantity: metric.quantity,
       });
       setQuickCloseLtp(metric.currentLtp);
     }
@@ -453,6 +512,10 @@ export function LiveOpenTradeWatcher({
                   const threat = getThreatBadge(pos.stopThreatLevel);
                   const isPosProfitable = pos.floatingNetPnL >= 0;
                   const posPnLColor = isPosProfitable ? '#10B981' : '#F43F5E';
+                  const isOneToOne = pos.unrealizedR !== null && pos.unrealizedR >= 1.0;
+                  const isAtOrBeyondBe =
+                    pos.stopLoss !== null &&
+                    (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
 
                   return (
                     <Grid size={{ xs: 12, md: 6, lg: 4 }} key={pos.tradeId}>
@@ -462,17 +525,30 @@ export function LiveOpenTradeWatcher({
                           p: 2,
                           borderRadius: '12px',
                           bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : '#FFFFFF',
-                          borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                          borderColor: isOneToOne
+                            ? alpha('#10B981', 0.5)
+                            : isDark
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.08)',
+                          boxShadow: isOneToOne
+                            ? isDark
+                              ? '0 0 20px rgba(16, 185, 129, 0.15)'
+                              : '0 4px 20px rgba(16, 185, 129, 0.12)'
+                            : 'none',
                           transition: 'border-color 0.2s, box-shadow 0.2s',
                           '&:hover': {
-                            borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : 'rgba(59, 130, 246, 0.3)',
+                            borderColor: isOneToOne
+                              ? '#10B981'
+                              : isDark
+                              ? 'rgba(59, 130, 246, 0.4)'
+                              : 'rgba(59, 130, 246, 0.3)',
                             boxShadow: isDark
                               ? '0 4px 20px rgba(0, 0, 0, 0.3)'
                               : '0 4px 16px rgba(0, 0, 0, 0.05)',
                           },
                         }}
                       >
-                        {/* Card Top: Symbol, Direction, & Actions */}
+                        {/* Card Top: Symbol, Direction, Qty & Details Link */}
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="subtitle2" sx={{ fontWeight: 800, letterSpacing: -0.2 }}>
@@ -490,6 +566,19 @@ export function LiveOpenTradeWatcher({
                                 borderRadius: '4px',
                               }}
                             />
+                            {pos.quantity !== undefined && pos.quantity > 0 && (
+                              <Chip
+                                label={`${pos.quantity} Qty`}
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
+                                  borderRadius: '4px',
+                                }}
+                              />
+                            )}
                           </Box>
 
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -504,6 +593,96 @@ export function LiveOpenTradeWatcher({
                             </Tooltip>
                           </Box>
                         </Box>
+
+                        {/* 1:1 Target Met Alert & 1-Click Action Banner */}
+                        {isOneToOne && (
+                          <Box
+                            sx={{
+                              mb: 1.5,
+                              p: 1.25,
+                              borderRadius: '8px',
+                              background: isDark
+                                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(6, 182, 212, 0.1) 100%)'
+                                : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 182, 212, 0.08) 100%)',
+                              border: '1px solid',
+                              borderColor: alpha('#10B981', 0.4),
+                              boxShadow: '0 0 12px rgba(16, 185, 129, 0.12)',
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 800,
+                                  color: '#10B981',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 0.5,
+                                  fontSize: '0.72rem',
+                                }}
+                              >
+                                🎯 1:1 Reached (+{pos.unrealizedR} R)
+                              </Typography>
+                              <Chip
+                                label="Target 1 Met"
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  bgcolor: '#10B981',
+                                  color: '#FFFFFF',
+                                  borderRadius: '4px',
+                                }}
+                              />
+                            </Box>
+
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<PieChartRoundedIcon sx={{ fontSize: '13px !important' }} />}
+                                onClick={() => handleOpenQuickClose(pos, 0.5)}
+                                sx={{
+                                  flex: 1,
+                                  height: 28,
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                  textTransform: 'none',
+                                  bgcolor: '#10B981',
+                                  '&:hover': { bgcolor: '#059669' },
+                                  borderRadius: '6px',
+                                  boxShadow: 'none',
+                                }}
+                              >
+                                Book 50% @ LTP
+                              </Button>
+
+                              {!isAtOrBeyondBe && (
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<LockRoundedIcon sx={{ fontSize: '12px !important' }} />}
+                                  onClick={() => handleQuickMoveToBe(pos)}
+                                  disabled={updateSlMutation.isPending}
+                                  sx={{
+                                    flex: 1,
+                                    height: 28,
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    borderColor: '#10B981',
+                                    color: '#10B981',
+                                    '&:hover': { bgcolor: alpha('#10B981', 0.1), borderColor: '#059669' },
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  Lock BE Stop
+                                </Button>
+                              )}
+                            </Box>
+                          </Box>
+                        )}
 
                         {/* Price Execution Row: Entry vs Current LTP */}
                         <Box
@@ -565,13 +744,56 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
-                        {/* Stop Loss Gauge */}
+                        {/* Stop Loss Row with 1-Click Move SL & BE Lock */}
                         <Box sx={{ mb: 1.25 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <ShieldRoundedIcon sx={{ fontSize: 13, color: '#94A3B8' }} />
-                              Stop Loss: {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'Not Set'}
-                            </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                Stop Loss:
+                              </Typography>
+                              <Typography variant="caption" sx={{ fontSize: '0.72rem', fontWeight: 700 }}>
+                                {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'Not Set'}
+                              </Typography>
+
+                              {/* Edit / Move SL Button */}
+                              <Tooltip title={pos.stopLoss !== null ? 'Move / Adjust Stop Loss' : 'Set Stop Loss'} arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenEditSl(pos)}
+                                  sx={{
+                                    p: 0.25,
+                                    color: pos.stopLoss !== null ? 'text.secondary' : '#F59E0B',
+                                    '&:hover': { color: '#3B82F6' },
+                                  }}
+                                >
+                                  <EditRoundedIcon sx={{ fontSize: 13 }} />
+                                </IconButton>
+                              </Tooltip>
+
+                              {/* Quick Move to BE Chip if SL is set and not at BE */}
+                              {pos.stopLoss !== null && !isAtOrBeyondBe && (
+                                <Tooltip title={`Quick move SL to Breakeven (₹${pos.entryPrice})`} arrow>
+                                  <Chip
+                                    icon={<LockRoundedIcon sx={{ fontSize: '11px !important' }} />}
+                                    label="Set BE"
+                                    size="small"
+                                    onClick={() => handleQuickMoveToBe(pos)}
+                                    clickable
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.62rem',
+                                      fontWeight: 700,
+                                      bgcolor: alpha('#3B82F6', 0.1),
+                                      color: '#3B82F6',
+                                      border: `1px solid ${alpha('#3B82F6', 0.25)}`,
+                                      borderRadius: '4px',
+                                      '&:hover': { bgcolor: alpha('#3B82F6', 0.2) },
+                                    }}
+                                  />
+                                </Tooltip>
+                              )}
+                            </Box>
 
                             <Chip
                               icon={threat.icon || undefined}
@@ -636,17 +858,51 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         )}
 
-                        {/* Card Bottom: Quick Close Button */}
-                        <Box sx={{ mt: 1.5, pt: 1.25, borderTop: '1px solid', borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)' }}>
+                        {/* Card Bottom: Book 50%, Close 100%, and Move SL */}
+                        <Box
+                          sx={{
+                            mt: 1.5,
+                            pt: 1.25,
+                            borderTop: '1px solid',
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                          }}
+                        >
                           <Button
-                            fullWidth
                             size="small"
                             variant="outlined"
-                            startIcon={<FlashOnRoundedIcon />}
-                            onClick={() => handleOpenQuickClose(pos)}
+                            startIcon={<PieChartRoundedIcon sx={{ fontSize: 14 }} />}
+                            onClick={() => handleOpenQuickClose(pos, 0.5)}
                             sx={{
+                              flex: 1,
                               height: 30,
-                              fontSize: '0.75rem',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              textTransform: 'none',
+                              borderRadius: '8px',
+                              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                              color: isDark ? '#E2E8F0' : '#1E293B',
+                              '&:hover': {
+                                borderColor: '#10B981',
+                                bgcolor: alpha('#10B981', 0.08),
+                                color: '#10B981',
+                              },
+                            }}
+                          >
+                            Book 50%
+                          </Button>
+
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<FlashOnRoundedIcon sx={{ fontSize: 14 }} />}
+                            onClick={() => handleOpenQuickClose(pos, 1.0)}
+                            sx={{
+                              flex: 1,
+                              height: 30,
+                              fontSize: '0.72rem',
                               fontWeight: 700,
                               textTransform: 'none',
                               borderRadius: '8px',
@@ -655,11 +911,33 @@ export function LiveOpenTradeWatcher({
                               '&:hover': {
                                 borderColor: '#3B82F6',
                                 bgcolor: alpha('#3B82F6', 0.08),
+                                color: '#3B82F6',
                               },
                             }}
                           >
-                            Quick Close @ LTP (₹{pos.currentLtp})
+                            Close 100%
                           </Button>
+
+                          <Tooltip title="Move / Adjust Stop Loss" arrow>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleOpenEditSl(pos)}
+                              sx={{
+                                height: 30,
+                                width: 30,
+                                borderRadius: '8px',
+                                border: '1px solid',
+                                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                                color: pos.stopLoss !== null ? '#3B82F6' : '#F59E0B',
+                                '&:hover': {
+                                  borderColor: '#3B82F6',
+                                  bgcolor: alpha('#3B82F6', 0.08),
+                                },
+                              }}
+                            >
+                              <ShieldRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Tooltip>
                         </Box>
                       </Card>
                     </Grid>
@@ -671,7 +949,231 @@ export function LiveOpenTradeWatcher({
         </Collapse>
       </Card>
 
-      {/* Quick Close Trade Modal with Pre-filled LTP */}
+      {/* Move / Adjust Stop Loss Dialog */}
+      {editSlMetric && (
+        <Dialog
+          open={Boolean(editSlMetric)}
+          onClose={() => setEditSlMetric(null)}
+          maxWidth="xs"
+          fullWidth
+          slotProps={{
+            paper: {
+              sx: {
+                borderRadius: '16px',
+                bgcolor: isDark ? '#0F172A' : '#FFFFFF',
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+              },
+            },
+          }}
+        >
+          <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ShieldRoundedIcon sx={{ color: '#3B82F6', fontSize: 22 }} />
+              <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1.05rem' }}>
+                Adjust Stop Loss
+              </Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setEditSlMetric(null)}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ pt: 1 }}>
+            {/* Symbol & Direction context */}
+            <Box
+              sx={{
+                p: 1.5,
+                mb: 2,
+                borderRadius: '10px',
+                bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>
+                  Instrument
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                  {editSlMetric.symbol}
+                </Typography>
+              </Box>
+
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>
+                  Entry Price
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  ₹{editSlMetric.entryPrice}
+                </Typography>
+              </Box>
+
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>
+                  Current LTP
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800, color: '#3B82F6' }}>
+                  ₹{editSlMetric.currentLtp}
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Quick Presets */}
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75, fontWeight: 700, fontSize: '0.7rem' }}>
+              Quick Presets
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2 }}>
+              <Chip
+                label={`Breakeven (₹${editSlMetric.entryPrice})`}
+                size="small"
+                onClick={() => setTargetSlPrice(String(editSlMetric.entryPrice))}
+                clickable
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  bgcolor: targetSlPrice === String(editSlMetric.entryPrice) ? alpha('#3B82F6', 0.25) : alpha('#3B82F6', 0.08),
+                  color: '#3B82F6',
+                  borderColor: '#3B82F6',
+                }}
+              />
+              {editSlMetric.direction === 'LONG' && editSlMetric.currentLtp > editSlMetric.entryPrice && (
+                <Chip
+                  label={`Trail 5 pts below LTP (₹${Number((editSlMetric.currentLtp - 5).toFixed(2))})`}
+                  size="small"
+                  onClick={() => setTargetSlPrice(String(Number((editSlMetric.currentLtp - 5).toFixed(2))))}
+                  clickable
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: '0.7rem',
+                    bgcolor: alpha('#10B981', 0.08),
+                    color: '#10B981',
+                  }}
+                />
+              )}
+              {editSlMetric.direction === 'SHORT' && editSlMetric.currentLtp < editSlMetric.entryPrice && (
+                <Chip
+                  label={`Trail 5 pts above LTP (₹${Number((editSlMetric.currentLtp + 5).toFixed(2))})`}
+                  size="small"
+                  onClick={() => setTargetSlPrice(String(Number((editSlMetric.currentLtp + 5).toFixed(2))))}
+                  clickable
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: '0.7rem',
+                    bgcolor: alpha('#10B981', 0.08),
+                    color: '#10B981',
+                  }}
+                />
+              )}
+            </Box>
+
+            {/* Price Input */}
+            <TextField
+              label="Stop Loss Price"
+              type="number"
+              fullWidth
+              autoFocus
+              value={targetSlPrice}
+              onChange={(e) => setTargetSlPrice(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+                  inputProps: { step: 'any' },
+                },
+              }}
+              helperText={`Current SL: ${editSlMetric.stopLoss !== null ? `₹${editSlMetric.stopLoss}` : 'Not set'}`}
+              sx={{ mb: 2 }}
+            />
+
+            {/* Dynamic Analysis / Risk Impact Message */}
+            {(() => {
+              const numSl = Number(targetSlPrice);
+              if (!targetSlPrice || isNaN(numSl) || numSl <= 0) return null;
+              const isLong = editSlMetric.direction === 'LONG';
+              const isImmediateTrigger = isLong ? numSl >= editSlMetric.currentLtp : numSl <= editSlMetric.currentLtp;
+              const isBe = numSl === editSlMetric.entryPrice;
+              const isProfitLock = isLong ? numSl > editSlMetric.entryPrice : numSl < editSlMetric.entryPrice;
+              const riskPerUnit = Math.abs(editSlMetric.entryPrice - numSl);
+              const totalRiskAmount = riskPerUnit * (editSlMetric.quantity || 1) * (editSlMetric.contractMultiplier || 1);
+
+              if (isImmediateTrigger) {
+                return (
+                  <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#EF4444', 0.12), border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                    <Typography variant="caption" sx={{ color: '#EF4444', fontWeight: 700, display: 'block' }}>
+                      ⚠️ Warning: SL is {isLong ? 'at or above' : 'at or below'} current LTP (₹{editSlMetric.currentLtp}). Order will trigger instantly!
+                    </Typography>
+                  </Box>
+                );
+              }
+
+              if (isProfitLock) {
+                return (
+                  <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#10B981', 0.12), border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700, display: 'block' }}>
+                      🔒 Profit Protected: Locks in +₹{riskPerUnit.toFixed(2)} / unit (~{formatCurrency(totalRiskAmount, 'INR')})
+                    </Typography>
+                  </Box>
+                );
+              }
+
+              if (isBe) {
+                return (
+                  <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#3B82F6', 0.12), border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                    <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 700, display: 'block' }}>
+                      🛡️ Breakeven: Capital Protected (₹0 loss if stopped out)
+                    </Typography>
+                  </Box>
+                );
+              }
+
+              return (
+                <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#F59E0B', 0.12), border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                  <Typography variant="caption" sx={{ color: '#F59E0B', fontWeight: 700, display: 'block' }}>
+                    🔻 Downside Risk: -₹{riskPerUnit.toFixed(2)} / unit (~{formatCurrency(totalRiskAmount, 'INR')})
+                  </Typography>
+                </Box>
+              );
+            })()}
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setEditSlMetric(null)} sx={{ textTransform: 'none' }}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              disabled={
+                !targetSlPrice ||
+                isNaN(Number(targetSlPrice)) ||
+                Number(targetSlPrice) <= 0 ||
+                updateSlMutation.isPending
+              }
+              onClick={() => {
+                if (editSlMetric && targetSlPrice) {
+                  updateSlMutation.mutate({
+                    tradeId: editSlMetric.tradeId,
+                    newStopLoss: Number(targetSlPrice),
+                  });
+                }
+              }}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                borderRadius: '8px',
+                bgcolor: '#3B82F6',
+                '&:hover': { bgcolor: '#2563EB' },
+              }}
+            >
+              {updateSlMutation.isPending ? 'Saving...' : 'Update Stop Loss'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Quick Close Trade Modal with Pre-filled LTP and Ratio */}
       {quickCloseTrade && (
         <QuickCloseTradeDialog
           open={Boolean(quickCloseTrade)}
@@ -681,6 +1183,7 @@ export function LiveOpenTradeWatcher({
           }}
           trade={quickCloseTrade}
           defaultExitPrice={quickCloseLtp}
+          defaultCloseRatio={quickCloseRatio}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
             queryClient.invalidateQueries({ queryKey: ['trades'] });

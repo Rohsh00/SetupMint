@@ -24,8 +24,10 @@ export class LiveWatcherService {
       100
     );
 
+    const rawOpenQty = trade.calculated?.openQuantity;
     const quantity = Number(
-      trade.openQuantity ??
+      (rawOpenQty !== undefined && rawOpenQty !== null && rawOpenQty > 0 ? rawOpenQty : null) ??
+      (trade.openQuantity && trade.openQuantity > 0 ? trade.openQuantity : null) ??
       trade.simpleExecution?.quantity ??
       trade.fills?.find((f: any) => f.type === 'ENTRY')?.quantity ??
       trade.quantity ??

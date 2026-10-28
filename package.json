@@ -29,6 +29,11 @@
     "db:backup": "node scripts/backup.js",
     "db:restore": "node scripts/restore.js",
     "db:reconcile": "node scripts/reconcile.js",
+    "backup:scheduled": "node scripts/backup-scheduled.js",
+    "backup:verify": "node scripts/backup-verify.js",
+    "backup:restore-test": "node scripts/backup-restore-test.js",
+    "backup:schedule:install": "node scripts/schedule/install-launchd.js",
+    "backup:schedule:uninstall": "node scripts/schedule/uninstall-launchd.js",
     "docs:glossary": "tsx scripts/generate-glossary.ts"
   },
   "devDependencies": {

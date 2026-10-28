@@ -1,18 +1,19 @@
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
-import dotenv from 'dotenv';
 import readline from 'readline';
+import os from 'os';
+import { fileURLToPath } from 'url';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { extractMongoHost, validateAndFormatAtlasUri } from '../apps/api/src/db/connection.js';
-import { AccountService } from '../apps/api/src/services/account.service.js';
+import { extractMongoHost, validateAndFormatAtlasUri } from '../apps/api/dist/db/connection.js';
+import { AccountService } from '../apps/api/dist/services/account.service.js';
+import { getBackupConfig } from './lib/backup-config.js';
+import { decryptFile } from './lib/crypto-backup.js';
+import { unpackTarGzToDirectory } from './lib/tar-gz.js';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-dotenv.config();
+const { EJSON } = mongoose.mongo.BSON;
 
-const BACKUP_DIR = path.resolve(process.cwd(), './backups');
-
-function promptConfirmation(question: string): Promise<boolean> {
+function promptConfirmation(question) {
   if (!process.stdin.isTTY) {
     return Promise.resolve(true);
   }
@@ -29,7 +30,159 @@ function promptConfirmation(question: string): Promise<boolean> {
   });
 }
 
-async function restore() {
+function parseCliOption(args, flag) {
+  const match = args.find((a) => a === flag || a.startsWith(`${flag}=`));
+  if (!match) return null;
+  if (match.includes('=')) return match.split('=')[1];
+  const idx = args.indexOf(flag);
+  return idx !== -1 && idx < args.length - 1 ? args[idx + 1] : true;
+}
+
+export async function executeRestore(options) {
+  const {
+    sourcePath,
+    mongoUri,
+    s3Config,
+    encryptionKey,
+    targetPrefix,
+    forceDb = false,
+  } = options;
+
+  const { uri: atlasUri, host: atlasHost } = validateAndFormatAtlasUri(mongoUri);
+
+  // Extract database name from connection URI
+  const dbNameMatch = atlasUri.match(/\/([^/?#]+)(\?|$)/);
+  const currentDbName = dbNameMatch ? dbNameMatch[1] : '';
+
+  if (targetPrefix && currentDbName !== targetPrefix && !forceDb) {
+    throw new Error(
+      `[Target DB Safety Refusal] Database name in connection string ("${currentDbName}") does not match --target-prefix ("${targetPrefix}"). ` +
+        `To override this safety protection, pass --force-db.`
+    );
+  }
+
+  let restoreDir = sourcePath;
+  let tempDirToClean = null;
+
+  try {
+    // If encrypted archive, decrypt and unpack into ephemeral temp directory
+    if (sourcePath.endsWith('.enc')) {
+      if (!encryptionKey) {
+        throw new Error(
+          'BACKUP_ENCRYPTION_KEY is required to restore from an encrypted .enc archive. Set it in .env or via config.'
+        );
+      }
+      tempDirToClean = fs.mkdtempSync(path.join(os.tmpdir(), 'setupmint-restore-'));
+      const tempTarGz = path.join(tempDirToClean, 'backup.tar.gz');
+      const tempExtractedDir = path.join(tempDirToClean, 'extracted');
+
+      console.log(`[Restore] Decrypting AES-256-GCM archive: ${path.basename(sourcePath)}...`);
+      await decryptFile(sourcePath, tempTarGz, encryptionKey);
+
+      console.log(`[Restore] Unpacking tar.gz archive...`);
+      await unpackTarGzToDirectory(tempTarGz, tempExtractedDir);
+      restoreDir = tempExtractedDir;
+    }
+
+    console.log(`[Restore] Connecting to MongoDB (${atlasHost}, db: "${currentDbName}")...`);
+    let shouldDisconnect = false;
+    if (mongoose.connection.readyState !== 1) {
+      await mongoose.connect(atlasUri, { serverSelectionTimeoutMS: 10000 });
+      shouldDisconnect = true;
+    }
+    const db = mongoose.connection.db;
+
+    const files = fs.readdirSync(restoreDir);
+    let totalRestored = 0;
+
+    for (const file of files) {
+      if (file.endsWith('.json') && file !== 'manifest.json' && file !== 'state.json') {
+        const colName = path.basename(file, '.json');
+        const content = fs.readFileSync(path.join(restoreDir, file), 'utf-8');
+        // Parse with Extended JSON (EJSON) to restore exact ObjectId, Date, and Decimal128 BSON types
+        const records = EJSON.parse(content, { relaxed: false });
+
+        if (Array.isArray(records) && records.length > 0) {
+          await db.collection(colName).deleteMany({});
+          await db.collection(colName).insertMany(records);
+          totalRestored += records.length;
+          console.log(`[Restore] ✓ Restored ${records.length} records into "${colName}"`);
+        } else {
+          console.log(`[Restore] - Collection "${colName}" is empty in backup (0 records).`);
+        }
+      }
+    }
+
+    // Restore and re-upload screenshot attachments into S3/R2 if uploads/ directory is present
+    const backupUploads = path.join(restoreDir, 'uploads');
+    let filesUploadedToS3 = 0;
+
+    if (fs.existsSync(backupUploads) && s3Config && s3Config.bucket && s3Config.endpoint) {
+      const s3Client = new S3Client({
+        region: s3Config.region || 'auto',
+        endpoint: s3Config.endpoint,
+        credentials: {
+          accessKeyId: s3Config.accessKeyId,
+          secretAccessKey: s3Config.secretAccessKey,
+        },
+        forcePathStyle: true,
+      });
+
+      const uploadFiles = fs.readdirSync(backupUploads);
+      console.log(`[Restore] Re-uploading ${uploadFiles.length} attachments to storage bucket "${s3Config.bucket}"...`);
+
+      for (const f of uploadFiles) {
+        const filePath = path.join(backupUploads, f);
+        const ext = path.extname(f).toLowerCase();
+        let mime = 'image/png';
+        if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+        else if (ext === '.webp') mime = 'image/webp';
+        else if (ext === '.svg') mime = 'image/svg+xml';
+
+        const fileBuffer = fs.readFileSync(filePath);
+        const s3Key = s3Config.prefix ? `${s3Config.prefix}/${f}` : f;
+
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket: s3Config.bucket,
+            Key: s3Key,
+            Body: fileBuffer,
+            ContentType: mime,
+          })
+        );
+        filesUploadedToS3++;
+      }
+    }
+
+    // Reconcile authoritative account balances after restore
+    console.log('[Restore] Reconciling authoritative balances across all trading accounts...');
+    const accounts = await db.collection('tradingaccounts').find({}).toArray();
+    for (const acc of accounts) {
+      await AccountService.recalculateAccountBalances(acc._id.toString(), acc.userId.toString());
+    }
+
+    if (shouldDisconnect) {
+      await mongoose.disconnect();
+    }
+
+    return {
+      totalRestored,
+      filesUploadedToS3,
+      accountsReconciled: accounts.length,
+    };
+  } finally {
+    // Securely wipe ephemeral plaintext temporary directory
+    if (tempDirToClean && fs.existsSync(tempDirToClean)) {
+      try {
+        fs.rmSync(tempDirToClean, { recursive: true, force: true });
+      } catch {
+        // Ignored
+      }
+    }
+  }
+}
+
+async function main() {
   console.log('\n======================================================');
   console.log('🔄 SetupMint Cloud Restore Tool (Atlas + Cloudflare R2)');
   console.log('======================================================\n');
@@ -39,16 +192,16 @@ async function restore() {
 
   if (!hasConfirmationFlag) {
     console.error(
-      '❌ [Restore Aborted] Restoring replaces records in your Atlas database.\n' +
+      '❌ [Restore Aborted] Restoring replaces existing records in your database.\n' +
         'To proceed, you must explicitly pass the confirmation flag:\n\n' +
         '  npm run db:restore -- --yes-i-am-sure\n' +
-        '  node scripts/restore.js <path-to-backup> --yes-i-am-sure\n'
+        '  node scripts/restore.js <path-to-backup-dir-or-enc-file> --yes-i-am-sure\n'
     );
     process.exit(1);
   }
 
   const confirmed = await promptConfirmation(
-    '⚠️  WARNING: This will overwrite existing trading records on your Atlas cluster. Are you sure?'
+    '⚠️  WARNING: This will overwrite existing trading records on your cluster. Are you sure?'
   );
 
   if (!confirmed) {
@@ -56,126 +209,58 @@ async function restore() {
     process.exit(0);
   }
 
-  // Find latest backup folder or specified argument
+  const config = getBackupConfig({ requireBackupBucket: false, requireEncryptionKey: false });
+  const backupDir = path.resolve(config.repoRoot, './backups');
+
   let targetBackup = args.find((a) => !a.startsWith('--'));
   if (!targetBackup) {
-    if (!fs.existsSync(BACKUP_DIR)) {
+    if (!fs.existsSync(backupDir)) {
       console.error('[Restore Error] No backups directory found at ./backups');
       process.exit(1);
     }
 
-    const backupFolders = fs
-      .readdirSync(BACKUP_DIR)
-      .filter((f) => f.startsWith('tradevault-backup-'))
+    const backupEntries = fs
+      .readdirSync(backupDir)
+      .filter((f) => f.startsWith('setupmint-backup-') || f.startsWith('tradevault-backup-'))
       .sort()
       .reverse();
 
-    if (backupFolders.length === 0) {
+    if (backupEntries.length === 0) {
       console.error('[Restore Error] No backup archives found in ./backups');
       process.exit(1);
     }
-    targetBackup = path.join(BACKUP_DIR, backupFolders[0]);
+    targetBackup = path.join(backupDir, backupEntries[0]);
   } else {
     targetBackup = path.resolve(targetBackup);
   }
 
-  console.log(`[Restore] Restoring from backup folder: ${targetBackup}`);
+  const targetPrefixOption = parseCliOption(args, '--target-prefix');
+  const targetPrefix = typeof targetPrefixOption === 'string' ? targetPrefixOption : undefined;
+  const forceDb = args.includes('--force-db');
 
-  const rawUri = process.env.MONGODB_URI;
-  const { uri: atlasUri, host: atlasHost } = validateAndFormatAtlasUri(rawUri);
+  console.log(`[Restore] Target source: ${targetBackup}`);
 
-  const s3Endpoint = process.env.S3_ENDPOINT;
-  const s3Bucket = process.env.S3_BUCKET;
-  const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID;
-  const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-  const s3Region = process.env.S3_REGION || 'auto';
-  const s3Prefix = process.env.S3_PREFIX ? process.env.S3_PREFIX.replace(/^\/+|\/+$/g, '') : '';
-
-  if (!s3Endpoint || !s3Bucket || !s3AccessKeyId || !s3SecretAccessKey) {
-    throw new Error('Cloudflare R2 configuration missing. Ensure S3_* variables are set in .env.');
-  }
-
-  const s3Client = new S3Client({
-    region: s3Region,
-    endpoint: s3Endpoint,
-    credentials: {
-      accessKeyId: s3AccessKeyId,
-      secretAccessKey: s3SecretAccessKey,
-    },
-    forcePathStyle: true,
+  const result = await executeRestore({
+    sourcePath: targetBackup,
+    mongoUri: config.mongoUri,
+    s3Config: config.liveS3,
+    encryptionKey: config.encryptionKey,
+    targetPrefix,
+    forceDb,
   });
-
-  console.log(`[Restore] Connecting to Atlas MongoDB (${atlasHost})...`);
-  await mongoose.connect(atlasUri, { serverSelectionTimeoutMS: 10000 });
-  const db = mongoose.connection.db;
-
-  const files = fs.readdirSync(targetBackup);
-  let totalRestored = 0;
-
-  for (const file of files) {
-    if (file.endsWith('.json') && file !== 'manifest.json') {
-      const colName = path.basename(file, '.json');
-      const content = fs.readFileSync(path.join(targetBackup, file), 'utf-8');
-      const records = JSON.parse(content);
-
-      if (records.length > 0) {
-        // Clear collection before restoring
-        await db.collection(colName).deleteMany({});
-        await db.collection(colName).insertMany(records);
-        totalRestored += records.length;
-        console.log(`[Restore] Restored ${records.length} records into ${colName}`);
-      }
-    }
-  }
-
-  // Restore and re-upload attachments into Cloudflare R2
-  const backupUploads = path.join(targetBackup, 'uploads');
-  let filesUploadedToR2 = 0;
-
-  if (fs.existsSync(backupUploads)) {
-    const uploadFiles = fs.readdirSync(backupUploads);
-    console.log(`[Restore] Re-uploading ${uploadFiles.length} attachments to Cloudflare R2 (${s3Bucket})...`);
-
-    for (const f of uploadFiles) {
-      const filePath = path.join(backupUploads, f);
-      const ext = path.extname(f).toLowerCase();
-      let mime = 'image/png';
-      if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
-      else if (ext === '.webp') mime = 'image/webp';
-      else if (ext === '.svg') mime = 'image/svg+xml';
-
-      const fileBuffer = fs.readFileSync(filePath);
-      const s3Key = s3Prefix ? `${s3Prefix}/${f}` : f;
-
-      await s3Client.send(
-        new PutObjectCommand({
-          Bucket: s3Bucket,
-          Key: s3Key,
-          Body: fileBuffer,
-          ContentType: mime,
-        })
-      );
-      filesUploadedToR2++;
-    }
-  }
-
-  // Reconcile account balances after restore
-  console.log('[Restore] Reconciling authoritative balances across all trading accounts...');
-  const accounts = await db.collection('tradingaccounts').find({}).toArray();
-  for (const acc of accounts) {
-    await AccountService.recalculateAccountBalances(acc._id.toString(), acc.userId.toString());
-  }
 
   console.log(`\n======================================================`);
   console.log(`✅ TradeVault restored successfully!`);
-  console.log(`Database records restored to Atlas: ${totalRestored}`);
-  console.log(`Chart attachments uploaded to R2: ${filesUploadedToR2}`);
+  console.log(`Database records restored to Atlas: ${result.totalRestored}`);
+  console.log(`Trading accounts reconciled: ${result.accountsReconciled}`);
+  console.log(`Chart attachments uploaded to R2: ${result.filesUploadedToS3}`);
   console.log(`======================================================\n`);
-
-  await mongoose.disconnect();
 }
 
-restore().catch((err) => {
-  console.error('[Restore Error]', err.message);
-  process.exit(1);
-});
+// Only run CLI entry point when executed directly
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main().catch((err) => {
+    console.error('[Restore Error]', err.message);
+    process.exit(1);
+  });
+}

@@ -59,6 +59,24 @@ FYERS_FUNDS_SYNC_ENABLED=true
 ANGEL_ONE_API_BASE=https://apiconnect.angelone.in
 ANGEL_ONE_DAILY_BUDGET=500
 ANGEL_ONE_INSTRUMENT_MASTER_URL=https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json
+
+# ==========================================
+# Scheduled Off-Site Backup Pipeline
+# ==========================================
+BACKUP_ENCRYPTION_KEY=<your-32-character-backup-encryption-key>
+BACKUP_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+BACKUP_S3_REGION=auto
+BACKUP_S3_BUCKET=setupmint-backups
+BACKUP_S3_ACCESS_KEY_ID=<YOUR_BACKUP_R2_ACCESS_KEY_ID>
+BACKUP_S3_SECRET_ACCESS_KEY=<YOUR_BACKUP_R2_SECRET_ACCESS_KEY>
+BACKUP_S3_PREFIX=setupmint-backups
+BACKUP_RETAIN_DAILY=30
+BACKUP_RETAIN_MONTHLY=12
+BACKUP_MAX_DROP_PERCENT=10
+
+# Optional Failure Alerts (disabled when unset)
+BACKUP_ALERT_TELEGRAM_BOT_TOKEN=
+BACKUP_ALERT_TELEGRAM_CHAT_ID=
 ```
 
 ---
@@ -94,6 +112,18 @@ ANGEL_ONE_INSTRUMENT_MASTER_URL=https://margincalculator.angelbroking.com/OpenAP
 | `SESSION_RENEW_THRESHOLD` | No | `0.5` | Fractional remaining idle lifetime threshold that triggers sliding renewal. | Prevents DB write overhead on every request; renews when < 50% idle time remains. |
 | `CORS_ORIGIN` | No | `'http://localhost:5173'` | Allowed origin for Cross-Origin Resource Sharing. | Restrict strictly to the frontend web origin. |
 | `DEFAULT_BASE_CURRENCY` | No | `'INR'` | Baseline currency used for new registrations. | Standard currency code (e.g. `INR`, `USD`). |
+| `BACKUP_ENCRYPTION_KEY` | For Backups | None (>= 32 chars required) | AES-256-GCM encryption key material for scheduled off-site backups. | Store in password manager. If lost, encrypted backups cannot be recovered. |
+| `BACKUP_S3_ENDPOINT` | For Backups | None (Throws if missing) | Secondary off-site Cloudflare R2 / S3 endpoint. | Must point to secondary backup account/endpoint. |
+| `BACKUP_S3_BUCKET` | For Backups | None (Throws if missing) | Secondary off-site backup bucket (`setupmint-backups`). | **Strict isolation:** Must be different from primary live `S3_BUCKET`. |
+| `BACKUP_S3_ACCESS_KEY_ID` | For Backups | None (Throws if missing) | API token access key ID for secondary backup bucket. | Dedicated token scoped to backup bucket. |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | For Backups | None (Throws if missing) | API token secret access key for secondary backup bucket. | Never logged or printed. |
+| `BACKUP_S3_REGION` | No | `'auto'` | Region for secondary off-site backup S3 bucket. | Default is `auto`. |
+| `BACKUP_S3_PREFIX` | No | `'setupmint-backups'` | Key prefix in off-site bucket. | Default is `setupmint-backups`. |
+| `BACKUP_RETAIN_DAILY` | No | `30` | Number of daily backup archives preserved before rotation. | Minimum of 3 always kept. |
+| `BACKUP_RETAIN_MONTHLY` | No | `12` | Number of 1st-of-month backup archives preserved. | Preserves yearly historical checkpoints. |
+| `BACKUP_MAX_DROP_PERCENT` | No | `10` | Percentage drop in records triggering `SUSPICIOUS` status. | Prevents corrupted/emptied runs from rotating good backups. |
+| `BACKUP_ALERT_TELEGRAM_BOT_TOKEN` | No | None (Disabled) | Optional Telegram bot token for failure alerts. | Only sends status on `FAILED` or `SUSPICIOUS`. |
+| `BACKUP_ALERT_TELEGRAM_CHAT_ID` | No | None (Disabled) | Optional Telegram chat ID receiving failure alerts. | Never transmits raw trading data. |
 
 ---
 
@@ -109,3 +139,6 @@ ANGEL_ONE_INSTRUMENT_MASTER_URL=https://margincalculator.angelbroking.com/OpenAP
    `apps/api/src/storage/index.ts` verifies that `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are all present. If any is missing, it throws immediately. At server startup, `S3Storage.healthCheck()` tests read/write access to Cloudflare R2.
 5. **No Local Disk Fallbacks:**
    `UPLOAD_DIR` and disk directory creation have been permanently removed. All uploads stream directly to and from Cloudflare R2 through authenticated proxy endpoints.
+6. **Secondary Off-Site Backup Bucket Isolation:**
+   When backup configuration is present, `validateConfig()` asserts that `BACKUP_S3_BUCKET !== S3_BUCKET` on the same endpoint, preventing accidental overwrite of live screenshots. `BACKUP_ENCRYPTION_KEY` is validated to contain at least 32 characters.
+

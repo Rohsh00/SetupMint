@@ -80,15 +80,20 @@ All commands are executed from the repository root:
 | :--- | :--- |
 | `npm run dev` | Runs Fastify backend and Vite frontend concurrently with live reloading. |
 | `npm run build` | Compiles `@tradevault/shared`, `@tradevault/financial-engine`, backend API, and frontend bundle. |
-| `npm run test` | Executes all Vitest test suites (319 tests: 135 financial engine + 184 API). |
-| `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (135 tests). |
-| `npm run test:api` | Runs Fastify API integration, regression, storage, strategy-variant, and attachment test suites (184 tests). |
+| `npm run test` | Executes all Vitest test suites (668 tests: 319 financial engine + 349 API). |
+| `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (319 tests). |
+| `npm run test:api` | Runs Fastify API integration, regression, storage, backup pipeline, and attachment test suites (349 tests). |
 | `npm run typecheck` | Validates TypeScript types across all 4 packages (`shared`, `financial-engine`, `api`, `web`). |
 | `npm run migrate:cloud` | Runs one-time migration of local data to Atlas and R2 (`--dry-run` default). |
 | `npm run db:seed` | Populates Atlas and R2 with default active-trader demo profile. |
 | `npm run seed:reset` | Wipes demo user records (`trader@tradevault.local`) from Atlas and removes demo R2 objects. |
 | `npm run seed:validate`| Executes automated assertion checks validating demo data integrity. |
-| `npm run db:backup` | Dumps Atlas collections to JSON and downloads R2 screenshots to `./backups/`. |
+| `npm run backup:scheduled` | Unattended nightly backup pipeline (dump, R2 sync, anomaly check, AES-256-GCM, S3 upload, retention, status). |
+| `npm run backup:verify` | Offline archive validation (auth tag, SHA-256 hashes, EJSON syntax) without touching database. |
+| `npm run backup:restore-test` | Restores latest backup into disposable in-memory MongoDB replica set and validates zero balance drift. |
+| `npm run backup:schedule:install` | Installs macOS `launchd` user LaunchAgent for nightly automated backups at 02:30 AM local time. |
+| `npm run backup:schedule:uninstall` | Unloads and removes macOS `launchd` user LaunchAgent. |
+| `npm run db:backup` | Dumps Atlas collections to JSON and downloads R2 screenshots to `./backups/` (supports `--dry-run`). |
 | `npm run db:restore` | Restores Atlas collections and uploads screenshots to R2 (requires `--yes-i-am-sure`). |
 | `npm run db:reconcile` | Authoritatively recalculates and persists ledger balances on Atlas. |
 | `npm run accounts:backfill` | Dry-runs the account/broker migration; add `-- --yes` to drop the legacy mapping index, backfill fields, encrypt plaintext broker secrets, and recalculate balances. |

@@ -28,12 +28,30 @@ Trading Vault/
 ## 2. Directory Breakdown by Layer
 
 ### A. Root Configuration & Scripts
-- [`package.json`](file:///Users/komal/projects/Trading%20Vault/package.json): Monorepo workspace configuration defining npm workspaces (`apps/*`, `packages/*`), development scripts (`dev`, `build`, `test`, `db:seed`, `db:backup`, `db:restore`, `db:reconcile`), and shared dev dependencies (`concurrently`, `typescript`).
+- [`package.json`](file:///Users/komal/projects/Trading%20Vault/package.json): Monorepo workspace configuration defining npm workspaces (`apps/*`, `packages/*`), development scripts (`dev`, `build`, `test`, `db:seed`, `backup:scheduled`, `backup:verify`, `backup:restore-test`, `backup:schedule:install`, `backup:schedule:uninstall`, `db:backup`, `db:restore`, `db:reconcile`), and shared dev dependencies (`concurrently`, `typescript`).
 - [`docker-compose.yml`](file:///Users/komal/projects/Trading%20Vault/docker-compose.yml): Runs local MongoDB 7.0 container bound strictly to `127.0.0.1:27017` with volume mapped to `./data/mongo-docker`.
-- [`.env.example`](file:///Users/komal/projects/Trading%20Vault/.env.example): Template for local environment variables (`PORT`, `HOST`, `MONGODB_URI`, `SESSION_SECRET`, `UPLOAD_DIR`, etc.).
-- [`scripts/backup.js`](file:///Users/komal/projects/Trading%20Vault/scripts/backup.js): CLI backup script dumping all database collections to JSON and copying private chart uploads to `./backups/tradevault-backup-<timestamp>`.
-- [`scripts/restore.js`](file:///Users/komal/projects/Trading%20Vault/scripts/restore.js): CLI restoration script restoring database collections and private chart attachments from the latest or specified local backup archive.
+- [`.env.example`](file:///Users/komal/projects/Trading%20Vault/.env.example): Template for local environment variables (`PORT`, `HOST`, `MONGODB_URI`, `SESSION_SECRET`, `S3_*`, `BACKUP_*`, etc.).
+- [`scripts/backup-scheduled.js`](file:///Users/komal/projects/Trading%20Vault/scripts/backup-scheduled.js): Unattended nightly scheduled backup pipeline (lockfile, dump, anomaly check, AES-256-GCM encryption, off-site S3 upload, retention pruning, status mirroring).
+- [`scripts/backup-verify.js`](file:///Users/komal/projects/Trading%20Vault/scripts/backup-verify.js): Offline backup archive verification tool (auth tag verification, SHA-256 hash checking, EJSON syntax validation without DB writes).
+- [`scripts/backup-restore-test.js`](file:///Users/komal/projects/Trading%20Vault/scripts/backup-restore-test.js): Automated disaster recovery validation restoring off-site backups into an in-memory MongoDB replica set with account balance reconciliation.
+- [`scripts/backup.js`](file:///Users/komal/projects/Trading%20Vault/scripts/backup.js): Hardened CLI backup script dumping all 19 canonical collections to BSON Extended JSON and incrementally syncing Cloudflare R2 screenshots.
+- [`scripts/restore.js`](file:///Users/komal/projects/Trading%20Vault/scripts/restore.js): CLI restoration script supporting encrypted `.enc` archives and uncompressed folders with `--yes-i-am-sure` and `--target-prefix` safety checks.
 - [`scripts/reconcile.js`](file:///Users/komal/projects/Trading%20Vault/scripts/reconcile.js): CLI reconciliation script recalculating realized P&L, transaction totals, and current balances across all accounts.
+- `scripts/lib/`: Modular backup utilities:
+  - [`scripts/lib/constants.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/constants.js): Canonical collection definitions and exclusion lists.
+  - [`scripts/lib/backup-config.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/backup-config.js): Environment loader and fail-fast validation.
+  - [`scripts/lib/crypto-backup.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/crypto-backup.js): AES-256-GCM authenticated encryption and scrypt key derivation.
+  - [`scripts/lib/tar-gz.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/tar-gz.js): Dependency-light POSIX ustar `.tar.gz` archive streaming.
+  - [`scripts/lib/retention.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/retention.js): Pure retention rotation function (30 daily, 12 monthly, min 3).
+  - [`scripts/lib/anomaly.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/anomaly.js): Manifest record count drop anomaly detector.
+  - [`scripts/lib/lockfile.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/lockfile.js): Process concurrency lockfile with 3-hour stale lock reclamation.
+  - [`scripts/lib/r2-sync.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/r2-sync.js): Incremental Cloudflare R2 screenshot synchronizer.
+  - [`scripts/lib/dump-core.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/dump-core.js): EJSON BSON serializer and SHA-256 checksum calculator.
+  - [`scripts/lib/notify.js`](file:///Users/komal/projects/Trading%20Vault/scripts/lib/notify.js): Structured logger and Telegram failure notifier.
+- `scripts/schedule/`: Scheduling templates and installers:
+  - [`scripts/schedule/com.setupmint.backup.plist`](file:///Users/komal/projects/Trading%20Vault/scripts/schedule/com.setupmint.backup.plist): macOS `launchd` LaunchAgent configuration.
+  - [`scripts/schedule/install-launchd.js`](file:///Users/komal/projects/Trading%20Vault/scripts/schedule/install-launchd.js): User LaunchAgent installer.
+  - [`scripts/schedule/uninstall-launchd.js`](file:///Users/komal/projects/Trading%20Vault/scripts/schedule/uninstall-launchd.js): User LaunchAgent uninstaller.
 
 ---
 

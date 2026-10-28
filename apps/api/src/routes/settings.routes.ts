@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { DEFAULT_PATTERN_DETECTION_SETTINGS } from '@tradevault/shared';
 import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { BackupStatusService } from '../services/backup-status.service.js';
 
 export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -123,6 +124,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const tradeCount = await Trade.countDocuments({ userId: req.user!.id });
     const accountCount = await TradingAccount.countDocuments({ userId: req.user!.id });
     const attachmentCount = await Attachment.countDocuments({ userId: req.user!.id });
+    const backup = await BackupStatusService.getStatus();
 
     return reply.send({
       success: true,
@@ -130,9 +132,10 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         tradeCount,
         accountCount,
         attachmentCount,
-        database: 'MongoDB Local (Community / Embedded)',
-        privacyMode: 'Local-first private trading journal',
+        database: 'MongoDB Atlas Dedicated Cloud Cluster',
+        privacyMode: '100% Private Cloud (Dedicated Atlas + Cloudflare R2)',
         appVersion: '1.0.0',
+        backup,
       },
     });
   });

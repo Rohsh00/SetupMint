@@ -135,3 +135,25 @@ Chart screenshot uploads are guarded against malicious file execution in [`apps/
 3. **Fixed Allowlisted Base URLs:** Only the official SmartAPI endpoints are called (`https://apiconnect.angelone.in`), completely eliminating Server-Side Request Forgery (SSRF) risks.
 4. **Tenant Isolation:** Every operation, credential query, and instrument scrip master record is strictly isolated to the authenticated user ID (`req.user.id`).
 
+---
+
+## 9. Scheduled Backup Security & Cryptographic Protection
+
+1. **AES-256-GCM Authenticated Encryption:**
+   All off-site backup archives (`setupmint-backup-<timestamp>.tar.gz.enc`) are encrypted using authenticated AES-256-GCM:
+   - Key derivation via Node.js built-in `scryptSync` from `BACKUP_ENCRYPTION_KEY` (minimum 32 characters enforced).
+   - Fresh 32-byte cryptographically random salt and 12-byte IV per backup archive.
+   - 16-byte authentication tag guarding against data tampering or bit-flip corruption.
+   - Authenticated Additional Data (AAD) header encoding format version and metadata.
+2. **Double Encryption of Broker Secrets:**
+   Broker credentials and tokens (FYERS, Angel One) are already encrypted at rest in MongoDB Atlas with AES-256-GCM using `TOKEN_ENCRYPTION_KEY`. During backup, they are exported as stored (never decrypted) and then encrypted *again* inside the backup archive. `TOKEN_ENCRYPTION_KEY` is **never included** in any archive.
+3. **Session Secret Exclusion:**
+   The `sessions` collection is explicitly excluded from off-site backup archives, ensuring transient session cookies and hashed tokens are not leaked across external buckets.
+4. **Ephemeral Directory Sanitization:**
+   Plaintext dumps and unpack extractions reside exclusively in ephemeral temporary directories created with mode `0700` and purged in `finally` blocks, leaving zero unencrypted files on host disk.
+5. **Off-Site Secondary Token Isolation:**
+   The backup pipeline uploads to a distinct bucket (`setupmint-backups`) with separate API token credentials (`BACKUP_S3_*`). `validateConfig()` asserts that `BACKUP_S3_BUCKET !== S3_BUCKET` on the same endpoint, preventing accidental overwrite of live attachments.
+6. **Critical Key Loss Warning:**
+   Because AES-256-GCM is mathematically unbreakable without the key, **loss of `BACKUP_ENCRYPTION_KEY` means all off-site backups are permanently unrecoverable.** Users must store the key in a password manager.
+
+

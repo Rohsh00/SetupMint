@@ -34,8 +34,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await mongoose.disconnect();
   if (mongod) {
-    await mongod.stop();
+    await mongod.stop({ doCleanup: true, force: true });
     mongod = null;
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   setStorageForTests(null);
 });

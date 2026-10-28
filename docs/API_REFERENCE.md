@@ -913,7 +913,7 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 - `GET /api/v1/settings/profile` — Return user profile including base currency, theme, `riskSettings`, and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides`).
 - `PUT /api/v1/settings/profile` — Update name, base currency, theme, `riskSettings` (`maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`), and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides: [{ symbol, htf, ltf, preferredStrategyId?, preferredStrategyName? }]`).
 - `POST /api/v1/settings/change-password` — Change password (`currentPassword`, `newPassword`).
-- `GET /api/v1/settings/system-status` — Return total trade count, account count, attachment count, database type, and version.
+- `GET /api/v1/settings/system-status` — Return total trade count, account count, attachment count, database type, version, and automated backup status (`backup: { configured: boolean, lastRunAt?: string, lastSuccessAt?: string, result?: 'OK' | 'FAILED' | 'SUSPICIOUS', uploadedKey?: string, sizeBytes?: number, error?: string }`). Backup status is read from the secondary off-site bucket's `status/latest.json` through a cached (5-minute TTL) read-only service without exposing credentials or keys.
 
 ### Broker Integrations (`/api/v1/integrations`)
 - `GET /api/v1/integrations/fyers/status` — Return connection status (`DISABLED`/`IDLE`), App ID, client ID, token expiry, funds sync status/error, callback `redirectUri`, and architecture capabilities. Secrets/tokens are never returned.

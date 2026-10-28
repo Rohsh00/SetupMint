@@ -139,6 +139,23 @@ export function DashboardPage() {
 
   const showWeeklyReviewPrompt = isSunday || !isLastWeekFinalized;
 
+  const { data: systemStatusResp } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: () => api.settings.systemStatus(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const backupInfo = (systemStatusResp as any)?.data?.backup || (systemStatusResp as any)?.backup;
+
+  const showBackupWarning = Boolean(
+    backupInfo?.configured &&
+      (backupInfo.result === 'FAILED' ||
+        backupInfo.result === 'SUSPICIOUS' ||
+        (backupInfo.lastSuccessAt &&
+          Date.now() - new Date(backupInfo.lastSuccessAt).getTime() > 48 * 3600 * 1000) ||
+        (!backupInfo.lastSuccessAt && backupInfo.lastRunAt))
+  );
+
   const recentTrades = Array.isArray(recentTradesData)
     ? recentTradesData
     : recentTradesData?.data || [];
@@ -244,6 +261,34 @@ export function DashboardPage() {
             Open Weekly Review
           </Button>
         </Card>
+      )}
+
+      {/* Off-Site Backup Health Warning Banner */}
+      {showBackupWarning && (
+        <Alert
+          severity={backupInfo?.result === 'FAILED' ? 'error' : 'warning'}
+          icon={<WarningAmberIcon />}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => navigate('/settings')}
+              sx={{ fontWeight: 700, textTransform: 'none' }}
+            >
+              Inspect Settings
+            </Button>
+          }
+          sx={{
+            borderRadius: 2,
+            fontWeight: 600,
+          }}
+        >
+          {backupInfo?.result === 'FAILED'
+            ? `Automated Off-Site Backup Failed: ${backupInfo.error || 'Check logs for details.'} Run backup to protect your records.`
+            : backupInfo?.result === 'SUSPICIOUS'
+            ? `Automated Off-Site Backup Alert: Suspicious data drop detected during last run (${backupInfo.error || 'check logs'}).`
+            : `Automated Off-Site Backup Notice: Last successful backup was over 48 hours ago (${backupInfo?.lastSuccessAt ? new Date(backupInfo.lastSuccessAt).toLocaleString() : 'Never'}).`}
+        </Alert>
       )}
 
       {/* Top Header & Range Filters */}

@@ -96,27 +96,43 @@ server {
 ## 4. Backup & Disaster Recovery Runbook
 
 > [!IMPORTANT]
-> Because MongoDB Atlas M0 (Free Tier) does not provide continuous automated backups, running `npm run db:backup` regularly is critical.
+> Because MongoDB Atlas M0 (Free Tier) does not provide continuous automated cloud snapshots, SetupMint features an automated, unattended nightly backup pipeline (`npm run backup:scheduled`) encrypting data with AES-256-GCM and uploading to a dedicated secondary off-site bucket.
 
-### A. Performing an Immediate Backup
+### A. Nightly Scheduled Backup Pipeline
 ```bash
-npm run db:backup
-```
-- Creates `./backups/tradevault-backup-<timestamp>/`.
-- Dumps JSON records for all database collections from MongoDB Atlas.
-- Downloads all private screenshot attachments from Cloudflare R2.
-- Writes `manifest.json` validating collection record counts and file counts.
+# Automated entry point run via macOS launchd (02:30 AM local) or cron:
+npm run backup:scheduled
 
-### B. Restoring from Backup
+# Simulate execution without uploading or modifying off-site bucket:
+npm run backup:scheduled -- --dry-run
+```
+- Dumps all 19 canonical MongoDB collections using Extended JSON (EJSON) to prevent Decimal128 drift.
+- Incrementally syncs private Cloudflare R2 screenshots via server-side S3 CopyObject.
+- Detects data drop anomalies (>10% drop flags `SUSPICIOUS`, uploads under `suspicious/`, and halts retention).
+- Packages archive with pure Node POSIX ustar `.tar.gz` and encrypts with AES-256-GCM (`BACKUP_ENCRYPTION_KEY`).
+- Uploads to secondary off-site bucket (`setupmint-backups/daily/` and 1st of month `monthly/`).
+- Verifies upload checksums and applies retention (keeps 30 daily + 12 monthly, minimum 3 preserved).
+- Writes local `backups/status.json` and mirrors to off-site bucket `status/latest.json`.
+
+### B. Verification & Disposable In-Memory Restore Test
 ```bash
-# Restore latest backup (requires explicit confirmation flag)
-npm run db:restore -- --yes-i-am-sure
+# Verify AES-256-GCM auth tag and manifest SHA-256 hashes without touching any DB:
+npm run backup:verify -- latest
 
-# Or restore specific archive folder
-node scripts/restore.js ./backups/tradevault-backup-2026-10-18T17-04-17-360Z --yes-i-am-sure
+# Disposable in-memory disaster recovery drill:
+npm run backup:restore-test
 ```
 
-### C. Post-Restore Integrity Audit
+### C. Restoring from Backup
+```bash
+# Restore latest or specific encrypted archive (requires confirmation flag):
+npm run db:restore -- ./backups/setupmint-backup-<timestamp>.tar.gz.enc --yes-i-am-sure
+
+# Optional database name safety check:
+npm run db:restore -- ./backups/setupmint-backup-<timestamp>.tar.gz.enc --yes-i-am-sure --target-prefix tradevault
+```
+
+### D. Post-Restore Integrity Audit
 After any restoration, run reconciliation to ensure all account balances are mathematically aligned:
 ```bash
 npm run db:reconcile

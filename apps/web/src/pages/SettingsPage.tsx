@@ -1220,64 +1220,148 @@ export function SettingsPage() {
             </Typography>
           </Box>
 
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1.5,
-                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                  border: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Database Engine
-                </Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
-                  MongoDB Community (Local)
-                </Typography>
-              </Box>
-            </Grid>
+          {(() => {
+            const sysData = (systemStatus as any)?.data || systemStatus;
+            const backup = sysData?.backup;
+            return (
+              <>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 1.5,
+                        bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                        border: 1,
+                        borderColor: 'divider',
+                        height: '100%',
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Database Engine
+                      </Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                        {sysData?.database || 'MongoDB Atlas Dedicated Cloud'}
+                      </Typography>
+                    </Box>
+                  </Grid>
 
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1.5,
-                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                  border: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Private Data Privacy
-                </Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main', fontFamily: '"JetBrains Mono", monospace' }}>
-                  100% Local / MacBook Only
-                </Typography>
-              </Box>
-            </Grid>
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 1.5,
+                        bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                        border: 1,
+                        borderColor: 'divider',
+                        height: '100%',
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Private Data Privacy
+                      </Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main', fontFamily: '"JetBrains Mono", monospace' }}>
+                        {sysData?.privacyMode || '100% Private Cloud Storage'}
+                      </Typography>
+                    </Box>
+                  </Grid>
 
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 1.5,
-                  bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                  border: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Total Stored Records
-                </Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
-                  {systemStatus?.tradeCount || 0} Trades • {systemStatus?.attachmentCount || 0} Screenshots
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 1.5,
+                        bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                        border: 1,
+                        borderColor: 'divider',
+                        height: '100%',
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Total Stored Records
+                      </Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                        {sysData?.tradeCount || 0} Trades • {sysData?.attachmentCount || 0} Screenshots
+                      </Typography>
+                    </Box>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Box
+                      sx={{
+                        p: 2,
+                        borderRadius: 1.5,
+                        bgcolor: muiTheme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                        border: 1,
+                        borderColor: backup?.isStale || backup?.result === 'FAILED' ? 'error.main' : 'divider',
+                        height: '100%',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Off-Site Backup
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={
+                            !backup?.configured
+                              ? 'NOT CONFIGURED'
+                              : backup.result || 'PENDING'
+                          }
+                          color={
+                            !backup?.configured
+                              ? 'default'
+                              : backup.result === 'OK'
+                              ? 'success'
+                              : backup.result === 'SUSPICIOUS'
+                              ? 'warning'
+                              : 'error'
+                          }
+                          sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }}
+                        />
+                      </Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8125rem' }}>
+                        Last: {backup?.lastSuccessAt
+                          ? new Date(backup.lastSuccessAt).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Never'}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+
+                {backup?.configured && (backup.isStale || backup.result === 'FAILED' || backup.result === 'SUSPICIOUS') && (
+                  <Alert
+                    severity={backup.result === 'FAILED' ? 'error' : 'warning'}
+                    sx={{ mt: 2, borderRadius: 1.5 }}
+                    action={
+                      <Button
+                        color="inherit"
+                        size="small"
+                        component="a"
+                        href="https://github.com/Rohsh00/SetupMint/blob/main/docs/BACKUP_AND_RESTORE.md"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ fontWeight: 700, textTransform: 'none' }}
+                      >
+                        View Runbook
+                      </Button>
+                    }
+                  >
+                    {backup.result === 'FAILED'
+                      ? `Automated backup failed during last execution (${backup.error || 'check logs'}). Run npm run backup:scheduled manually.`
+                      : backup.result === 'SUSPICIOUS'
+                      ? `Backup flagged as SUSPICIOUS: data drop detected (${backup.error || 'check logs'}). Pruning paused.`
+                      : 'Warning: Last successful backup is older than 36 hours. Ensure scheduled job is active or run npm run backup:scheduled.'}
+                  </Alert>
+                )}
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 

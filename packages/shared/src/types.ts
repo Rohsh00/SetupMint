@@ -1901,3 +1901,25 @@ export interface IWeeklyReview {
   updatedAt?: string;
 }
 
+export interface ISystemBackupStatus {
+  configured: boolean;
+  lastRunAt?: string | null;
+  lastSuccessAt?: string | null;
+  result?: 'OK' | 'FAILED' | 'SUSPICIOUS' | null;
+  durationMs?: number;
+  sizeBytes?: number;
+  uploadedKey?: string;
+  error?: string;
+  isStale?: boolean;
+}
+
+export interface ISystemStatusResponse {
+  tradeCount: number;
+  accountCount: number;
+  attachmentCount: number;
+  database: string;
+  privacyMode: string;
+  appVersion: string;
+  backup: ISystemBackupStatus;
+}
+

@@ -55,6 +55,18 @@ export const config = {
 
   // Defaults
   defaultBaseCurrency: process.env.DEFAULT_BASE_CURRENCY || 'INR',
+
+  // Off-Site Backup Configuration
+  backupS3Endpoint: process.env.BACKUP_S3_ENDPOINT || process.env.S3_ENDPOINT || '',
+  backupS3Bucket: process.env.BACKUP_S3_BUCKET || '',
+  backupS3AccessKeyId: process.env.BACKUP_S3_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID || '',
+  backupS3SecretAccessKey: process.env.BACKUP_S3_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY || '',
+  backupS3Region: process.env.BACKUP_S3_REGION || 'auto',
+  backupS3Prefix: (process.env.BACKUP_S3_PREFIX || 'setupmint-backups').replace(/^\/+|\/+$/g, ''),
+  backupEncryptionKey: process.env.BACKUP_ENCRYPTION_KEY || '',
+  backupRetainDaily: Number(process.env.BACKUP_RETAIN_DAILY || 30),
+  backupRetainMonthly: Number(process.env.BACKUP_RETAIN_MONTHLY || 12),
+  backupMaxDropPercent: Number(process.env.BACKUP_MAX_DROP_PERCENT || 10),
 };
 
 /**
@@ -68,6 +80,26 @@ export function validateConfig(): void {
     config.angelOneDailyBudget > 5000
   ) {
     throw new Error('FATAL: ANGEL_ONE_DAILY_BUDGET must be a positive number up to 5000.');
+  }
+
+  // Validate off-site backup bucket separation
+  if (config.backupS3Bucket) {
+    const liveBucket = process.env.S3_BUCKET || '';
+    const liveEndpoint = (process.env.S3_ENDPOINT || '').replace(/\/+$/, '');
+    const backupEndpoint = config.backupS3Endpoint.replace(/\/+$/, '');
+
+    if (config.backupS3Bucket === liveBucket && backupEndpoint === liveEndpoint) {
+      throw new Error(
+        `FATAL: BACKUP_S3_BUCKET ("${config.backupS3Bucket}") cannot be identical to S3_BUCKET on the same endpoint. ` +
+          `SetupMint requires an isolated off-site bucket for automated disaster recovery backups.`
+      );
+    }
+  }
+
+  if (config.backupEncryptionKey && config.backupEncryptionKey.length < 32) {
+    throw new Error(
+      `FATAL: BACKUP_ENCRYPTION_KEY must be at least 32 characters long. Provided key has ${config.backupEncryptionKey.length} characters.`
+    );
   }
 
   if (config.nodeEnv === 'production') {

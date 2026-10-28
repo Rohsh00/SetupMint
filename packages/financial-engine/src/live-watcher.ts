@@ -3,6 +3,11 @@ import {
   AssetClass,
   Direction,
   MarketSegment,
+  GivebackThreatLevel,
+  ILiveGivebackMetric,
+  TargetLadderStepStatus,
+  ILiveTargetLadderStep,
+  ILiveTargetLadder,
 } from '@tradevault/shared';
 import { calculateLinearPnL } from './pnl.js';
 import { calculateIndianCharges } from './charges.js';
@@ -43,6 +48,11 @@ export interface ILiveOpenTradeCalculationParams {
   marketSegment?: MarketSegment;
   provider?: LiveQuoteProvider;
   asOf?: Date | number;
+  previousPeakMfe?: {
+    peakLtp?: number;
+    peakFloatingNetPnL?: number;
+    peakUnrealizedR?: number;
+  };
 }
 
 export interface ILiveOpenTradeMetric {
@@ -72,6 +82,8 @@ export interface ILiveOpenTradeMetric {
   tickSize: number;
   provider: LiveQuoteProvider;
   asOf: Date;
+  giveback?: ILiveGivebackMetric;
+  targetLadder?: ILiveTargetLadder;
 }
 
 export interface ILiveWatcherSummary {
@@ -87,6 +99,196 @@ export interface ILiveWatcherSummary {
   positions: ILiveOpenTradeMetric[];
   provider: LiveQuoteProvider;
   asOf: Date;
+}
+
+export function calculateLiveGiveback(params: {
+  direction: Direction;
+  currentLtp: Decimal;
+  floatingNetPnL: Decimal;
+  unrealizedR: number | null;
+  previousPeakMfe?: {
+    peakLtp?: number;
+    peakFloatingNetPnL?: number;
+    peakUnrealizedR?: number;
+  };
+}): ILiveGivebackMetric {
+  const isLong = params.direction === 'LONG';
+  const curNet = Number(params.floatingNetPnL.toFixed(2));
+  const curR = params.unrealizedR !== null ? Number(params.unrealizedR.toFixed(2)) : 0;
+  const curLtp = Number(params.currentLtp.toFixed(2));
+
+  // Determine Peak
+  const prevNet = params.previousPeakMfe?.peakFloatingNetPnL ?? curNet;
+  const prevR = params.previousPeakMfe?.peakUnrealizedR ?? curR;
+  const prevLtp = params.previousPeakMfe?.peakLtp ?? curLtp;
+
+  const peakFloatingNetPnL = Math.max(curNet, prevNet);
+  const peakUnrealizedR = Math.max(curR, prevR);
+  const peakLtp = isLong
+    ? Math.max(curLtp, prevLtp)
+    : Math.min(curLtp, prevLtp);
+
+  const rawGiveback = Math.max(0, peakFloatingNetPnL - curNet);
+  const givebackAmount = Number(rawGiveback.toFixed(2));
+
+  let givebackPercent = 0;
+  if (peakFloatingNetPnL > 0) {
+    givebackPercent = Math.min(100, Math.max(0, Number(((givebackAmount / peakFloatingNetPnL) * 100).toFixed(1))));
+  }
+  const retentionPercent = Number((100 - givebackPercent).toFixed(1));
+
+  let threatLevel: GivebackThreatLevel = 'SAFE';
+  let alertMessage: string | undefined;
+
+  if (peakUnrealizedR >= 1.0 && curR <= 0.2) {
+    threatLevel = 'CRITICAL_REVERSAL';
+    alertMessage = `🚨 Reversal Threat: Reached +${peakUnrealizedR.toFixed(2)}R (+₹${peakFloatingNetPnL.toLocaleString('en-IN')}), now dropped to +${curR.toFixed(2)}R. Protect capital!`;
+  } else if (peakUnrealizedR >= 1.0 && givebackPercent >= 35) {
+    threatLevel = 'LEAKING';
+    alertMessage = `⚠️ Profit Leaking: Gave back ${givebackPercent}% (-₹${givebackAmount.toLocaleString('en-IN')}) from +${peakUnrealizedR.toFixed(2)}R peak. Consider booking profit!`;
+  } else if (peakUnrealizedR >= 0.8 && givebackPercent >= 20) {
+    threatLevel = 'WATCH';
+    alertMessage = `👀 Pullback Watch: ${givebackPercent}% off peak (+${peakUnrealizedR.toFixed(2)}R).`;
+  }
+
+  return {
+    peakFloatingNetPnL,
+    peakUnrealizedR,
+    peakLtp,
+    givebackAmount,
+    givebackPercent,
+    retentionPercent,
+    threatLevel,
+    alertMessage,
+  };
+}
+
+export function calculateTargetLadder(params: {
+  direction: Direction;
+  entryPrice: Decimal;
+  currentLtp: Decimal;
+  quantity: Decimal;
+  contractMultiplier: Decimal;
+  initialRiskAmount: Decimal | null;
+  stopLoss: Decimal | null;
+  plannedTarget: Decimal | null;
+  tickSize: Decimal;
+}): ILiveTargetLadder | undefined {
+  const isLong = params.direction === 'LONG';
+  const dEntry = params.entryPrice;
+  const dLtp = params.currentLtp;
+  const totalQty = params.quantity.toNumber();
+  const dMult = params.contractMultiplier;
+
+  // Determine initial risk in price points
+  let riskPoints = new Decimal(0);
+  if (params.stopLoss) {
+    riskPoints = dEntry.minus(params.stopLoss).abs();
+  } else if (params.initialRiskAmount && totalQty > 0 && dMult.greaterThan(0)) {
+    riskPoints = params.initialRiskAmount.dividedBy(params.quantity.times(dMult));
+  }
+
+  if (riskPoints.isZero() || totalQty <= 0) {
+    return undefined;
+  }
+
+  const initialRiskPoints = Number(riskPoints.toFixed(2));
+  const initialRiskAmountVal = params.initialRiskAmount
+    ? Number(params.initialRiskAmount.toFixed(2))
+    : Number(riskPoints.times(params.quantity).times(dMult).toFixed(2));
+
+  // T1: +1.0 R
+  const t1Price = isLong ? dEntry.plus(riskPoints) : dEntry.minus(riskPoints);
+  const isT1Met = isLong ? dLtp.greaterThanOrEqualTo(t1Price) : dLtp.lessThanOrEqualTo(t1Price);
+  const t1ExitRatio = totalQty > 2 ? 0.33 : 0.5;
+  const t1ExitQty = Math.max(1, Math.round(totalQty * t1ExitRatio));
+
+  const t1Dist = isLong ? t1Price.minus(dLtp) : dLtp.minus(t1Price);
+  const t1Run = isLong ? dLtp.minus(dEntry) : dEntry.minus(dLtp);
+  const t1Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(riskPoints).times(100).toFixed(1))));
+
+  // T2: +2.0 R
+  const t2RiskPoints = riskPoints.times(2);
+  const t2Price = isLong ? dEntry.plus(t2RiskPoints) : dEntry.minus(t2RiskPoints);
+  const isT2Met = isLong ? dLtp.greaterThanOrEqualTo(t2Price) : dLtp.lessThanOrEqualTo(t2Price);
+  const remAfterT1 = Math.max(1, totalQty - t1ExitQty);
+  const t2ExitQty = Math.max(1, Math.round(remAfterT1 * 0.5));
+
+  const t2Dist = isLong ? t2Price.minus(dLtp) : dLtp.minus(t2Price);
+  const t2Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(t2RiskPoints).times(100).toFixed(1))));
+
+  // T3 / Runner: +3.0 R or planned target
+  const t3RiskPoints = riskPoints.times(3);
+  const t3Price = params.plannedTarget && !params.plannedTarget.isZero()
+    ? params.plannedTarget
+    : isLong ? dEntry.plus(t3RiskPoints) : dEntry.minus(t3RiskPoints);
+  const isT3Met = isLong ? dLtp.greaterThanOrEqualTo(t3Price) : dLtp.lessThanOrEqualTo(t3Price);
+  const runnerQty = Math.max(1, totalQty - t1ExitQty - (isT2Met ? t2ExitQty : 0));
+
+  const t3Dist = isLong ? t3Price.minus(dLtp) : dLtp.minus(t3Price);
+  const t3PlannedRun = isLong ? t3Price.minus(dEntry).abs() : dEntry.minus(t3Price).abs();
+  const t3Progress = t3PlannedRun.isZero()
+    ? 0
+    : Math.min(100, Math.max(0, Number(t1Run.dividedBy(t3PlannedRun).times(100).toFixed(1))));
+
+  let activeStepIndex = 1;
+  if (isT2Met) activeStepIndex = 3;
+  else if (isT1Met) activeStepIndex = 2;
+
+  const steps: ILiveTargetLadderStep[] = [
+    {
+      targetIndex: 1,
+      name: 'T1 (+1.0R)',
+      targetR: 1.0,
+      targetPrice: Number(t1Price.toFixed(2)),
+      plannedExitRatio: t1ExitRatio,
+      plannedExitQty: t1ExitQty,
+      suggestedStopLoss: Number(dEntry.toFixed(2)),
+      suggestedStopLabel: `Lock BE (₹${Number(dEntry.toFixed(2))})`,
+      distancePoints: Number(t1Dist.toFixed(2)),
+      distancePercent: Number(t1Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
+      progressPercent: t1Progress,
+      status: isT1Met ? 'MET' : t1Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+      isActionable: isT1Met,
+    },
+    {
+      targetIndex: 2,
+      name: 'T2 (+2.0R)',
+      targetR: 2.0,
+      targetPrice: Number(t2Price.toFixed(2)),
+      plannedExitRatio: 0.33,
+      plannedExitQty: t2ExitQty,
+      suggestedStopLoss: Number(t1Price.toFixed(2)),
+      suggestedStopLabel: `Trail Stop to +1R (₹${Number(t1Price.toFixed(2))})`,
+      distancePoints: Number(t2Dist.toFixed(2)),
+      distancePercent: Number(t2Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
+      progressPercent: t2Progress,
+      status: isT2Met ? 'MET' : t2Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+      isActionable: isT2Met,
+    },
+    {
+      targetIndex: 3,
+      name: 'Runner (+3.0R)',
+      targetR: 3.0,
+      targetPrice: Number(t3Price.toFixed(2)),
+      plannedExitRatio: 1.0,
+      plannedExitQty: runnerQty,
+      suggestedStopLoss: Number(t2Price.toFixed(2)),
+      suggestedStopLabel: `Trail Behind Swing (₹${Number(t2Price.toFixed(2))})`,
+      distancePoints: Number(t3Dist.toFixed(2)),
+      distancePercent: Number(t3Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
+      progressPercent: t3Progress,
+      status: isT3Met ? 'MET' : t3Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+      isActionable: isT3Met,
+    },
+  ];
+
+  return {
+    initialRiskPoints,
+    initialRiskAmount: initialRiskAmountVal,
+    steps,
+    activeStepIndex,
+  };
 }
 
 /**
@@ -256,6 +458,24 @@ export function calculateLiveOpenTradeMetric(
     tickSize: Number(dTick.toFixed(4)),
     provider,
     asOf: asOfDate,
+    giveback: calculateLiveGiveback({
+      direction: params.direction,
+      currentLtp: dLtp,
+      floatingNetPnL,
+      unrealizedR,
+      previousPeakMfe: params.previousPeakMfe,
+    }),
+    targetLadder: calculateTargetLadder({
+      direction: params.direction,
+      entryPrice: dEntry,
+      currentLtp: dLtp,
+      quantity: dQty,
+      contractMultiplier: dMultiplier,
+      initialRiskAmount,
+      stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? new Decimal(params.stopLoss) : null,
+      plannedTarget: params.target !== undefined && params.target !== null ? new Decimal(params.target) : null,
+      tickSize: dTick,
+    }),
   };
 }
 

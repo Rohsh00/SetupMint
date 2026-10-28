@@ -179,6 +179,12 @@ export interface ITradeDoc extends Document {
       hasWidenedRisk: boolean;
       detectedAt?: Date;
     };
+    liveMfeSummary?: {
+      peakLtp?: number;
+      peakFloatingNetPnL?: number;
+      peakUnrealizedR?: number;
+      peakTimestamp?: Date;
+    };
   };
 
   setup?: ITradeSetup;
@@ -452,6 +458,12 @@ const TradeSchema = new Schema<ITradeDoc>(
         netRiskChangePoints: { type: Number, default: 0 },
         hasWidenedRisk: { type: Boolean, default: false },
         detectedAt: { type: Date },
+      },
+      liveMfeSummary: {
+        peakLtp: { type: Number },
+        peakFloatingNetPnL: { type: Number },
+        peakUnrealizedR: { type: Number },
+        peakTimestamp: { type: Date },
       },
     },
 

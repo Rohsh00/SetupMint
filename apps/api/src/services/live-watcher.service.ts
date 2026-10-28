@@ -225,7 +225,26 @@ export class LiveWatcherService {
         assetClass: trade.assetClass,
         marketSegment: trade.marketSegment,
         provider,
+        previousPeakMfe: trade.calculated?.liveMfeSummary,
       });
+
+      // Asynchronously persist new peak MFE to DB if new high reached
+      const prevPeak = trade.calculated?.liveMfeSummary?.peakFloatingNetPnL ?? -Infinity;
+      if (metric.giveback && metric.giveback.peakFloatingNetPnL > prevPeak) {
+        Trade.updateOne(
+          { _id: trade._id },
+          {
+            $set: {
+              'calculated.liveMfeSummary': {
+                peakLtp: metric.giveback.peakLtp,
+                peakFloatingNetPnL: metric.giveback.peakFloatingNetPnL,
+                peakUnrealizedR: metric.giveback.peakUnrealizedR,
+                peakTimestamp: new Date(),
+              },
+            },
+          }
+        ).catch(() => {});
+      }
 
       positions.push(metric);
     }
@@ -290,7 +309,7 @@ export class LiveWatcherService {
       provider = 'SIMULATED';
     }
 
-    return calculateLiveOpenTradeMetric({
+    const metric = calculateLiveOpenTradeMetric({
       tradeId: trade._id.toString(),
       symbol: trade.symbol,
       direction: trade.direction,
@@ -305,6 +324,26 @@ export class LiveWatcherService {
       assetClass: trade.assetClass,
       marketSegment: trade.marketSegment,
       provider,
+      previousPeakMfe: trade.calculated?.liveMfeSummary,
     });
+
+    const prevPeak = trade.calculated?.liveMfeSummary?.peakFloatingNetPnL ?? -Infinity;
+    if (metric.giveback && metric.giveback.peakFloatingNetPnL > prevPeak) {
+      Trade.updateOne(
+        { _id: trade._id },
+        {
+          $set: {
+            'calculated.liveMfeSummary': {
+              peakLtp: metric.giveback.peakLtp,
+              peakFloatingNetPnL: metric.giveback.peakFloatingNetPnL,
+              peakUnrealizedR: metric.giveback.peakUnrealizedR,
+              peakTimestamp: new Date(),
+            },
+          },
+        }
+      ).catch(() => {});
+    }
+
+    return metric;
   }
 }

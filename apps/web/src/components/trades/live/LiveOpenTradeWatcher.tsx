@@ -42,9 +42,13 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
 
+import { LiveGivebackMeter } from './LiveGivebackMeter.js';
+import { LiveScalingLadder } from './LiveScalingLadder.js';
+import { ExecuteLadderStepDialog } from './ExecuteLadderStepDialog.js';
 import {
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
+  ILiveTargetLadderStep,
   StopThreatLevel,
 } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
@@ -126,6 +130,60 @@ export function LiveOpenTradeWatcher({
       executeBroker: true,
     });
   };
+
+  // Scaling Ladder modal state & mutation
+  const [selectedLadderStep, setSelectedLadderStep] = useState<{
+    step: ILiveTargetLadderStep;
+    metric: ILiveOpenTradeMetric;
+  } | null>(null);
+
+  const executeLadderMutation = useMutation({
+    mutationFn: async ({
+      tradeId,
+      targetIndex,
+      label,
+      exitQty,
+      exitPrice,
+      newStopLoss,
+      executeBroker = true,
+    }: {
+      tradeId: string;
+      targetIndex: number;
+      label: string;
+      exitQty: number;
+      exitPrice?: number;
+      newStopLoss?: number;
+      executeBroker?: boolean;
+    }) => {
+      return api.trades.liveBrokerLadderStep(tradeId, {
+        targetIndex,
+        label,
+        exitQty,
+        exitPrice,
+        newStopLoss,
+        executeBroker,
+      });
+    },
+    onSuccess: (data: any, variables) => {
+      const exitMsg = data?.brokerExitResult?.executedOnBroker
+        ? `🟢 FYERS Live: Exited ${variables.exitQty} lots.`
+        : `Exited ${variables.exitQty} lots recorded.`;
+      const slMsg = data?.brokerSlResult?.executedOnBroker
+        ? ` Trailed SL to ₹${variables.newStopLoss} on FYERS.`
+        : variables.newStopLoss
+        ? ` Trailed SL to ₹${variables.newStopLoss}.`
+        : '';
+      toast.success(`${exitMsg}${slMsg}`);
+
+      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      setSelectedLadderStep(null);
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to execute ladder step');
+    },
+  });
 
   const handleOpenEditSl = (metric: ILiveOpenTradeMetric) => {
     setEditSlMetric(metric);
@@ -868,6 +926,24 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         )}
 
+                        {/* Live Profit Giveback Meter & Peak MFE Tracker */}
+                        {pos.giveback && (
+                          <LiveGivebackMeter
+                            giveback={pos.giveback}
+                            metric={pos}
+                            onLockProfit={() => handleOpenQuickClose(pos, 0.5)}
+                          />
+                        )}
+
+                        {/* Multi-Target Scaling Ladder */}
+                        {pos.targetLadder && (
+                          <LiveScalingLadder
+                            ladder={pos.targetLadder}
+                            metric={pos}
+                            onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
+                          />
+                        )}
+
                         {/* Card Bottom: Book 50%, Close 100%, and Move SL */}
                         <Box
                           sx={{
@@ -1247,6 +1323,28 @@ export function LiveOpenTradeWatcher({
             queryClient.invalidateQueries({ queryKey: ['trades'] });
             queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
             if (onTradeCloseSuccess) onTradeCloseSuccess();
+          }}
+        />
+      )}
+
+      {/* Execute Multi-Target Ladder Step Dialog */}
+      {selectedLadderStep && (
+        <ExecuteLadderStepDialog
+          open={Boolean(selectedLadderStep)}
+          onClose={() => setSelectedLadderStep(null)}
+          isLoading={executeLadderMutation.isPending}
+          step={selectedLadderStep.step}
+          metric={selectedLadderStep.metric}
+          onConfirm={(payload) => {
+            executeLadderMutation.mutate({
+              tradeId: selectedLadderStep.metric.tradeId,
+              targetIndex: payload.targetIndex,
+              label: payload.label,
+              exitQty: payload.exitQty,
+              exitPrice: selectedLadderStep.metric.currentLtp,
+              newStopLoss: payload.newStopLoss,
+              executeBroker: payload.executeBroker,
+            });
           }}
         />
       )}

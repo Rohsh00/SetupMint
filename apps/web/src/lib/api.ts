@@ -376,6 +376,37 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    liveBrokerLadderStep: (
+      id: string,
+      payload: {
+        targetIndex: number;
+        label: string;
+        exitQty: number;
+        exitPrice?: number;
+        newStopLoss?: number;
+        executeBroker?: boolean;
+        reason?: string;
+      }
+    ) =>
+      request<{
+        trade: any;
+        brokerExitResult: {
+          executedOnBroker: boolean;
+          action?: string;
+          orderId?: string;
+          message?: string;
+        };
+        brokerSlResult: {
+          executedOnBroker: boolean;
+          action?: string;
+          orderId?: string;
+          message?: string;
+          warning?: boolean;
+        };
+      }>(`/trades/${id}/broker-ladder-step`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
   },
 
   // Dashboard

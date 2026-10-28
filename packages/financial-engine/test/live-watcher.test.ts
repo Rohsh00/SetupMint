@@ -209,4 +209,95 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(summary.provider).toBe('SIMULATED');
     });
   });
+
+  describe('calculateLiveGiveback', () => {
+    it('accurately tracks peak MFE and calculates giveback percentage and threat level', () => {
+      // Trade was at +1.75R (+5400), now pulled back to +1.07R (+3300)
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'crude-1',
+        symbol: 'CRUDEOILMINI',
+        direction: 'SHORT',
+        entryPrice: 9859.1,
+        currentLtp: 9824,
+        quantity: 10,
+        contractMultiplier: 10,
+        stopLoss: 9855,
+        plannedRiskAmount: 3090,
+        previousPeakMfe: {
+          peakLtp: 9803,
+          peakFloatingNetPnL: 5400,
+          peakUnrealizedR: 1.75,
+        },
+      });
+
+      expect(metric.giveback).toBeDefined();
+      expect(metric.giveback?.peakFloatingNetPnL).toBe(5400);
+      expect(metric.giveback?.peakUnrealizedR).toBe(1.75);
+      expect(metric.giveback?.peakLtp).toBe(9803);
+      expect(metric.giveback?.givebackAmount).toBeGreaterThan(1500);
+      expect(metric.giveback?.threatLevel).toBe('LEAKING');
+      expect(metric.giveback?.alertMessage).toContain('Profit Leaking');
+    });
+
+    it('triggers CRITICAL_REVERSAL when trade reached +1R and drops near Breakeven', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 't-rev',
+        symbol: 'NIFTY',
+        direction: 'LONG',
+        entryPrice: 24000,
+        currentLtp: 24010, // Barely above BE (+0.1R)
+        quantity: 50,
+        stopLoss: 23900,
+        plannedRiskAmount: 5000,
+        previousPeakMfe: {
+          peakLtp: 24150,
+          peakFloatingNetPnL: 7000,
+          peakUnrealizedR: 1.4,
+        },
+      });
+
+      expect(metric.giveback?.threatLevel).toBe('CRITICAL_REVERSAL');
+      expect(metric.giveback?.alertMessage).toContain('Reversal Threat');
+    });
+  });
+
+  describe('calculateTargetLadder', () => {
+    it('generates a 3-stage scaling ladder with T1, T2, and Runner targets', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'crude-ladder',
+        symbol: 'CRUDEOILMINI',
+        direction: 'SHORT',
+        entryPrice: 9859.1,
+        currentLtp: 9824, // 35.1 pts favorable
+        quantity: 10,
+        contractMultiplier: 10,
+        stopLoss: 9890, // Initial 30.9 pts risk
+        plannedRiskAmount: 3090,
+      });
+
+      expect(metric.targetLadder).toBeDefined();
+      const ladder = metric.targetLadder!;
+      expect(ladder.initialRiskPoints).toBe(30.9);
+      expect(ladder.steps).toHaveLength(3);
+
+      // T1 (+1.0R): 9859.1 - 30.9 = 9828.2
+      const t1 = ladder.steps[0];
+      expect(t1.name).toBe('T1 (+1.0R)');
+      expect(t1.targetPrice).toBe(9828.2);
+      expect(t1.status).toBe('MET'); // Because LTP 9824 is below 9828.2
+      expect(t1.isActionable).toBe(true);
+      expect(t1.suggestedStopLoss).toBe(9859.1); // Breakeven
+
+      // T2 (+2.0R): 9859.1 - 61.8 = 9797.3
+      const t2 = ladder.steps[1];
+      expect(t2.name).toBe('T2 (+2.0R)');
+      expect(t2.targetPrice).toBe(9797.3);
+      expect(t2.status).toBe('IN_PROGRESS');
+
+      // T3 (Runner): +3.0R
+      const t3 = ladder.steps[2];
+      expect(t3.name).toBe('Runner (+3.0R)');
+      expect(t3.targetPrice).toBe(9766.4);
+    });
+  });
 });

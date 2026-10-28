@@ -1270,6 +1270,196 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
   });
 
+  // Execute Multi-Target Ladder Step: Book Partial Exit + Trail Stop Loss atomically
+  app.post('/:id/broker-ladder-step', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const {
+      targetIndex = 1,
+      label = 'Ladder Step',
+      exitQty = 0,
+      exitPrice,
+      newStopLoss,
+      executeBroker = true,
+      reason,
+    } = req.body || {};
+
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    const currentOpenQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1;
+    const requestedExitQty = Math.min(Number(exitQty) > 0 ? Number(exitQty) : 0, currentOpenQty);
+    const resolvedExitPrice = Number(exitPrice) || trade.simpleExecution?.entryPrice || 0;
+    const isFullClose = requestedExitQty >= currentOpenQty;
+
+    let brokerExitResult: any = { executedOnBroker: false, message: 'No broker exit executed' };
+    let brokerSlResult: any = { executedOnBroker: false, message: 'No broker SL move executed' };
+
+    // 1. If executing on broker, perform exit and SL adjustments
+    if (executeBroker) {
+      // a. Partial or full exit order
+      if (requestedExitQty > 0) {
+        try {
+          brokerExitResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
+            exitQty: requestedExitQty,
+            isFullClose,
+          });
+        } catch (err: any) {
+          req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step exit order failed');
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'BROKER_EXIT_ERROR',
+              message: `Failed to exit ${requestedExitQty} lots on FYERS: ${err.message || 'Broker error'}`,
+            },
+          });
+        }
+      }
+
+      // b. Trail Stop Loss order
+      if (newStopLoss && Number(newStopLoss) > 0 && !isFullClose) {
+        try {
+          brokerSlResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(newStopLoss));
+        } catch (err: any) {
+          req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step SL modification failed');
+          // Note: Exit already succeeded, so we inform user about SL warning
+          brokerSlResult = {
+            executedOnBroker: false,
+            warning: true,
+            message: `Exit executed, but trailing SL to ${newStopLoss} failed: ${err.message || 'Broker SL error'}`,
+          };
+        }
+      }
+    }
+
+    // 2. Record partial exit fills in MongoDB
+    if (requestedExitQty > 0) {
+      if (isFullClose) {
+        if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
+          trade.fills.push({
+            fillId: `ladder_exit_${Date.now()}`,
+            type: 'EXIT',
+            price: resolvedExitPrice,
+            quantity: requestedExitQty,
+            timestamp: new Date(),
+            brokerage: 20,
+            exchangeFee: 0,
+            taxes: 0,
+            notes: `${label}: Full exit booked`,
+          });
+        } else {
+          trade.simpleExecution = {
+            entryPrice: trade.simpleExecution?.entryPrice ?? 0,
+            quantity: trade.simpleExecution?.quantity ?? 1,
+            contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+            brokerage: trade.simpleExecution?.brokerage ?? 0,
+            exchangeFees: trade.simpleExecution?.exchangeFees ?? 0,
+            regulatoryFees: trade.simpleExecution?.regulatoryFees ?? 0,
+            taxes: trade.simpleExecution?.taxes ?? 0,
+            otherFees: trade.simpleExecution?.otherFees ?? 0,
+            explicitAdjustments: trade.simpleExecution?.explicitAdjustments ?? 0,
+            ...(trade.simpleExecution || {}),
+            exitPrice: resolvedExitPrice,
+          };
+          trade.exitTime = new Date();
+        }
+        trade.status = 'CLOSED';
+      } else {
+        trade.executionMode = 'ADVANCED';
+        if (!Array.isArray(trade.fills) || trade.fills.length === 0) {
+          trade.fills = [
+            {
+              fillId: `entry_${Date.now()}`,
+              type: 'ENTRY',
+              price: trade.simpleExecution?.entryPrice || resolvedExitPrice,
+              quantity: currentOpenQty,
+              timestamp: trade.entryTime || new Date(),
+              brokerage: 20,
+              exchangeFee: 0,
+              taxes: 0,
+            },
+          ];
+        }
+        trade.fills.push({
+          fillId: `ladder_step_${targetIndex}_${Date.now()}`,
+          type: 'EXIT',
+          price: resolvedExitPrice,
+          quantity: requestedExitQty,
+          timestamp: new Date(),
+          brokerage: 20,
+          exchangeFee: 0,
+          taxes: 0,
+          notes: `${label}: Partial profit booked`,
+        });
+        trade.status = 'OPEN';
+      }
+    }
+
+    // 3. Update Stop Loss in MongoDB
+    if (newStopLoss && Number(newStopLoss) > 0 && !isFullClose) {
+      const existingInitialStop = trade.risk?.initialStopLoss || trade.calculated?.stopMoveSummary?.initialStop;
+      const initialStop = existingInitialStop ?? trade.risk?.currentStopLoss ?? Number(newStopLoss);
+      const prevStop = trade.risk?.currentStopLoss ?? initialStop;
+
+      trade.risk = {
+        ...(trade.risk || {}),
+        initialStopLoss: initialStop,
+        currentStopLoss: Number(newStopLoss),
+        initialStopSource: trade.risk?.initialStopSource || (executeBroker ? 'BROKER_ORDERBOOK' : 'MANUAL'),
+      };
+      trade.psychology = {
+        ...(trade.psychology || {}),
+        stopLossMoved: true,
+      };
+
+      if (!trade.stopLossMoveEvents) trade.stopLossMoveEvents = [];
+      trade.stopLossMoveEvents.push({
+        previousStop: prevStop,
+        newStop: Number(newStopLoss),
+        changePoints: Math.abs(Number(newStopLoss) - prevStop),
+        changePercent: prevStop > 0 ? (Math.abs(Number(newStopLoss) - prevStop) / prevStop) * 100 : 0,
+        moveType: 'TRAILED_FAVORABLY',
+        movedAt: new Date(),
+        reason: reason || `${label}: Trailed stop to protect profit`,
+      });
+    }
+
+    // 4. Recalculate trade analytics
+    const recalculated = computeTradeCalculations(trade.toObject());
+    trade.calculated = recalculated;
+
+    trade.auditLog.push({
+      action: `LADDER_STEP_${targetIndex}`,
+      timestamp: new Date(),
+      changedBy: req.user!.email || 'user',
+      details: {
+        label,
+        targetIndex,
+        exitQty: requestedExitQty,
+        exitPrice: resolvedExitPrice,
+        newStopLoss: Number(newStopLoss) || undefined,
+        executedOnBroker: executeBroker,
+        brokerExitResult,
+        brokerSlResult,
+      },
+    });
+
+    await trade.save();
+    await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+
+    return reply.send({
+      success: true,
+      data: {
+        trade,
+        brokerExitResult,
+        brokerSlResult,
+      },
+    });
+  });
+
   // Delete trade
   app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });

@@ -1675,6 +1675,44 @@ export interface ILiveQuote {
   provider?: LiveQuoteProvider;
 }
 
+export type GivebackThreatLevel = 'SAFE' | 'WATCH' | 'LEAKING' | 'CRITICAL_REVERSAL';
+
+export interface ILiveGivebackMetric {
+  peakFloatingNetPnL: number;
+  peakUnrealizedR: number;
+  peakLtp: number;
+  givebackAmount: number;
+  givebackPercent: number; // 0 to 100%
+  retentionPercent: number; // 0 to 100%
+  threatLevel: GivebackThreatLevel;
+  alertMessage?: string;
+}
+
+export type TargetLadderStepStatus = 'PENDING' | 'IN_PROGRESS' | 'MET' | 'EXECUTED';
+
+export interface ILiveTargetLadderStep {
+  targetIndex: number; // 1, 2, 3
+  name: string; // 'T1 (+1.0R)', 'T2 (+2.0R)', 'Runner (+3.0R)'
+  targetR: number; // 1.0, 2.0, 3.0
+  targetPrice: number;
+  plannedExitRatio: number; // e.g. 0.50, 0.33
+  plannedExitQty: number; // e.g. 5, 3
+  suggestedStopLoss: number; // e.g. entryPrice (BE) for T1, +1R for T2
+  suggestedStopLabel: string; // 'Move Stop to Breakeven (₹9859.10)'
+  distancePoints: number;
+  distancePercent: number;
+  progressPercent: number; // 0 to 100%
+  status: TargetLadderStepStatus;
+  isActionable: boolean; // true if reached or currently met
+}
+
+export interface ILiveTargetLadder {
+  initialRiskPoints: number;
+  initialRiskAmount: number;
+  steps: ILiveTargetLadderStep[];
+  activeStepIndex: number; // 1, 2, 3
+}
+
 export interface ILiveOpenTradeMetric {
   tradeId: string;
   symbol: string;
@@ -1702,6 +1740,8 @@ export interface ILiveOpenTradeMetric {
   tickSize: number;
   provider: LiveQuoteProvider;
   asOf: string | Date;
+  giveback?: ILiveGivebackMetric;
+  targetLadder?: ILiveTargetLadder;
 }
 
 export interface ILiveWatcherSummary {

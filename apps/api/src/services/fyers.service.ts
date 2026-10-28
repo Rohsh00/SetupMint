@@ -2552,7 +2552,7 @@ export class FyersService {
         offlineOrder: false,
         stopLoss: 0,
         takeProfit: 0,
-        orderTag: 'SetupMint_SL',
+        orderTag: 'SMSL',
       };
 
       const placeRes = await this.placeOrder(appId, accessToken, placePayload);
@@ -2651,7 +2651,7 @@ export class FyersService {
           offlineOrder: false,
           stopLoss: 0,
           takeProfit: 0,
-          orderTag: 'SetupMint_Exit',
+          orderTag: 'SMExit',
         });
         return {
           executedOnBroker: true,
@@ -2674,7 +2674,7 @@ export class FyersService {
         offlineOrder: false,
         stopLoss: 0,
         takeProfit: 0,
-        orderTag: 'SetupMint_Part',
+        orderTag: 'SMPart',
       });
 
       // Adjust pending Stop Loss quantity if one exists

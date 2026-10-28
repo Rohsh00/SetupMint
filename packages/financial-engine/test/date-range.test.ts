@@ -7,6 +7,9 @@ import {
   isValidCalendarDate,
   formatDateInTz,
   IDateRange,
+  isoWeekToRange,
+  dateToIsoWeek,
+  getAdjacentIsoWeek,
 } from '@tradevault/shared';
 
 describe('Shared Date-Range Model & Pure Helpers', () => {
@@ -324,4 +327,64 @@ describe('Shared Date-Range Model & Pure Helpers', () => {
       expect(res.success).toBe(false);
     });
   });
+
+  describe('ISO Week Helpers (isoWeekToRange & dateToIsoWeek)', () => {
+    it('converts typical ISO week 2026-W43 to IST date boundaries', () => {
+      const range = isoWeekToRange('2026-W43');
+      expect(range.startDate).toBe('2026-10-19'); // Monday
+      expect(range.endDate).toBe('2026-10-25'); // Sunday
+      expect(range.startUtc?.toISOString()).toBe('2026-10-18T18:30:00.000Z');
+      expect(range.endUtc?.toISOString()).toBe('2026-10-25T18:29:59.999Z');
+    });
+
+    it('converts calendar dates in 2026-W43 back to ISO week', () => {
+      expect(dateToIsoWeek('2026-10-19')).toBe('2026-W43'); // Monday
+      expect(dateToIsoWeek('2026-10-21')).toBe('2026-W43'); // Wednesday
+      expect(dateToIsoWeek('2026-10-25')).toBe('2026-W43'); // Sunday
+    });
+
+    it('handles year boundary and 53-week year: 2026-W53 to 2027-W01', () => {
+      // 2026 starts on Thursday, so it contains 53 ISO weeks
+      const w53 = isoWeekToRange('2026-W53');
+      expect(w53.startDate).toBe('2026-12-28'); // Monday
+      expect(w53.endDate).toBe('2027-01-03'); // Sunday
+
+      expect(dateToIsoWeek('2026-12-28')).toBe('2026-W53');
+      expect(dateToIsoWeek('2026-12-31')).toBe('2026-W53');
+      expect(dateToIsoWeek('2027-01-01')).toBe('2026-W53'); // Friday in W53
+      expect(dateToIsoWeek('2027-01-03')).toBe('2026-W53'); // Sunday in W53
+
+      // 2027-W01 begins on Monday 2027-01-04
+      const w01 = isoWeekToRange('2027-W01');
+      expect(w01.startDate).toBe('2027-01-04'); // Monday
+      expect(w01.endDate).toBe('2027-01-10'); // Sunday
+
+      expect(dateToIsoWeek('2027-01-04')).toBe('2027-W01');
+      expect(dateToIsoWeek('2027-01-10')).toBe('2027-W01');
+
+      // Adjacent week transitions across year boundary
+      expect(getAdjacentIsoWeek('2026-W53', 1)).toBe('2027-W01');
+      expect(getAdjacentIsoWeek('2027-W01', -1)).toBe('2026-W53');
+    });
+
+    it('handles leap year week conversion (2024-W09)', () => {
+      // 2024 is a leap year with Feb 29 on Thursday
+      const w09 = isoWeekToRange('2024-W09');
+      expect(w09.startDate).toBe('2024-02-26'); // Monday
+      expect(w09.endDate).toBe('2024-03-03'); // Sunday
+
+      expect(dateToIsoWeek('2024-02-26')).toBe('2024-W09');
+      expect(dateToIsoWeek('2024-02-29')).toBe('2024-W09'); // Leap day
+      expect(dateToIsoWeek('2024-03-01')).toBe('2024-W09');
+      expect(dateToIsoWeek('2024-03-03')).toBe('2024-W09');
+    });
+
+    it('rejects malformed ISO week strings', () => {
+      expect(() => isoWeekToRange('2026-W00')).toThrow(/Invalid ISO week/);
+      expect(() => isoWeekToRange('2026-W54')).toThrow(/Invalid ISO week/);
+      expect(() => isoWeekToRange('2026-43')).toThrow(/Invalid ISO week/);
+      expect(() => isoWeekToRange('invalid')).toThrow(/Invalid ISO week/);
+    });
+  });
 });
+

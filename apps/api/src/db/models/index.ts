@@ -17,4 +17,6 @@ export * from './MarketDataIntegration.js';
 export * from './AngelOneInstrument.js';
 export * from './HolidayCalendar.js';
 export * from './CommodityMaster.js';
+export * from './WeeklyReview.js';
+
 

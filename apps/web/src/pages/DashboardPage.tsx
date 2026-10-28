@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useOutletContext, Link as RouterLink } from 'react-router-dom';
+import { useOutletContext, Link as RouterLink, useNavigate } from 'react-router-dom';
+import { dateToIsoWeek, getAdjacentIsoWeek } from '@tradevault/shared';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
@@ -56,6 +57,7 @@ import { useDateRange } from '../context/DateRangeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate, preset } = useDateRange();
@@ -101,6 +103,41 @@ export function DashboardPage() {
     queryKey: ['review-queue'],
     queryFn: () => api.review.queue(),
   });
+
+  const { data: weeklyReviews } = useQuery({
+    queryKey: ['weekly-reviews', selectedAccountId],
+    queryFn: () =>
+      api.review.listWeekly(selectedAccountId !== 'ALL' ? selectedAccountId : undefined),
+  });
+
+  const lastCompletedIsoWeek = useMemo(() => {
+    try {
+      return getAdjacentIsoWeek(dateToIsoWeek(new Date()), -1);
+    } catch {
+      return '2026-W43';
+    }
+  }, []);
+
+  const isSunday = useMemo(() => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kolkata',
+        weekday: 'short',
+      }).format(new Date());
+      return parts === 'Sun';
+    } catch {
+      return new Date().getDay() === 0;
+    }
+  }, []);
+
+  const isLastWeekFinalized = useMemo(() => {
+    if (!weeklyReviews || !Array.isArray(weeklyReviews)) return false;
+    return weeklyReviews.some(
+      (r: any) => r.week === lastCompletedIsoWeek && r.status === 'FINALIZED'
+    );
+  }, [weeklyReviews, lastCompletedIsoWeek]);
+
+  const showWeeklyReviewPrompt = isSunday || !isLastWeekFinalized;
 
   const recentTrades = Array.isArray(recentTradesData)
     ? recentTradesData
@@ -159,6 +196,54 @@ export function DashboardPage() {
           {reviewQueueData.dailyLossBreach.message ||
             `Risk Rule Alert: Maximum daily loss limit of ₹${reviewQueueData.dailyLossBreach.maxDailyLoss?.toLocaleString()} breached! Click to inspect today's trades.`}
         </Alert>
+      )}
+
+      {/* Weekly Review Ready Prompt Banner */}
+      {showWeeklyReviewPrompt && (
+        <Card
+          variant="outlined"
+          sx={{
+            p: 2,
+            borderRadius: 2.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 2,
+            background: isDark
+              ? 'linear-gradient(90deg, rgba(14, 165, 233, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)'
+              : 'linear-gradient(90deg, #F0F9FF 0%, #EEF2FF 100%)',
+            borderColor: isDark ? 'rgba(14, 165, 233, 0.3)' : 'rgba(14, 165, 233, 0.25)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <RateReviewIcon sx={{ color: '#0EA5E9', fontSize: 28 }} />
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Weekly Review Ready — Week {lastCompletedIsoWeek}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                {isLastWeekFinalized
+                  ? 'Sunday review cycle: inspect performance and evaluate focus rule adherence.'
+                  : `Week ${lastCompletedIsoWeek} review is awaiting completion. Finalize your metrics and set your focus rule.`}
+              </Typography>
+            </Box>
+          </Box>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => navigate(`/review/weekly?week=${lastCompletedIsoWeek}`)}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 700,
+              backgroundColor: '#0EA5E9',
+              '&:hover': { backgroundColor: '#0284C7' },
+            }}
+          >
+            Open Weekly Review
+          </Button>
+        </Card>
       )}
 
       {/* Top Header & Range Filters */}

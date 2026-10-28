@@ -4,6 +4,10 @@ import type {
   IEquityCurvesResponse,
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
+  IWeeklyReview,
+  IWeeklyReviewSnapshot,
+  IFocusRule,
+  IFocusRuleEvaluation,
 } from '@tradevault/shared';
 
 const BASE_URL = '/api/v1';
@@ -510,6 +514,38 @@ export const api = {
     queue: () => request<any>('/review/queue'),
     prefill: (date: string) => request<any>(`/review/prefill/${date}`),
     suggestMistakes: (tradeId: string) => request<any>(`/review/suggest-mistakes/${tradeId}`),
+    getWeekly: (week?: string, accountId?: string) => {
+      const params = new URLSearchParams();
+      if (week) params.set('week', week);
+      if (accountId) params.set('accountId', accountId);
+      const qs = params.toString();
+      return request<{
+        review: IWeeklyReview | null;
+        snapshot: IWeeklyReviewSnapshot;
+        previousFocusRule: IFocusRule | null;
+        previousFocusEvaluation: IFocusRuleEvaluation | null;
+      }>(`/review/weekly${qs ? `?${qs}` : ''}`);
+    },
+    saveWeekly: (
+      week: string,
+      payload: {
+        focusRule?: IFocusRule;
+        notes?: string;
+        status?: 'DRAFT' | 'FINALIZED';
+        followedLastRule?: boolean | null;
+      },
+      accountId?: string
+    ) => {
+      const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
+      return request<IWeeklyReview>(`/review/weekly/${week}${qs}`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    listWeekly: (accountId?: string) => {
+      const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
+      return request<IWeeklyReview[]>(`/review/weekly${qs}`);
+    },
   },
 
   // Integrations

@@ -6,7 +6,7 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 17 core Mongoose models:
+SetupMint defines 18 core Mongoose models:
 1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
 2. `Session` — Stateful authentication tokens with SHA-256 token hashing, sliding renewal, absolute cap, and exact MongoDB TTL expiration (`expireAfterSeconds: 0`).
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
@@ -24,6 +24,7 @@ SetupMint defines 17 core Mongoose models:
 15. `TradeCandleSnapshot` — Cached 1m/5m FYERS or Angel One historical candlestick snapshots during trade lifecycles for excursion calculation.
 16. `MarketDataIntegration` — Encrypted credentials, active session tokens, and atomic daily call budget counters for market data fallback providers.
 17. `AngelOneInstrument` — Scrip master catalog for SmartAPI token resolution and fast O(1) indexed lookups.
+18. `WeeklyReview` — Synthesized trading week performance report, focus rule commitments, previous focus evaluations, and immutable frozen snapshots.
 
 ---
 
@@ -688,6 +689,42 @@ Stores the public SmartAPI instrument catalog downloaded from `OpenAPIScripMaste
 - `{ name: 1, exchange: 1, instrumenttype: 1 }`
 - `{ userId: 1, name: 1 }`
 - `{ userId: 1, refreshedAt: 1 }`
+
+---
+
+### 2.18 WeeklyReview Model (`WeeklyReview.ts`)
+- **Collection Name:** `weeklyreviews`
+- **File:** [`apps/api/src/db/models/WeeklyReview.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/WeeklyReview.ts)
+
+Stores weekly synthesized trading reports, focus rule commitments for the upcoming week, evaluation of the previous focus rule, reflection notes, and the deterministic mathematical calculation snapshot. When `status` is `'FINALIZED'`, the snapshot is permanently frozen.
+
+| Field Name | Type | Required | Default | Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `_id` | `ObjectId` | Auto | Generated | Primary Key | Weekly review identifier |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Multi-tenant user isolation |
+| `week` | `String` | **Yes** | — | Match: `/^\d{4}-W(0[1-9]\|[1-4]\d\|5[0-3])$/` | ISO-8601 week string (e.g. `2026-W43`) |
+| `startDate` | `String` | **Yes** | — | Format: `YYYY-MM-DD` | IST Monday start date string |
+| `endDate` | `String` | **Yes** | — | Format: `YYYY-MM-DD` | IST Sunday end date string |
+| `accountId` | `ObjectId` | No | `null` | Ref: `'TradingAccount'`, Indexed | Specific account ledger or null for all |
+| `snapshot` | `Mixed` | **Yes** | — | Object | Full `IWeeklyReviewSnapshot` output |
+| `generatedAt` | `Date` | **Yes** | `Date.now` | — | Timestamp snapshot was computed |
+| `focusRule` | `Object` | No | Embedded | Subdocument | Next week's single focus rule |
+| `focusRule.code` | `String` | **Yes** | — | String | Rule identifier code |
+| `focusRule.text` | `String` | **Yes** | — | String | Actionable rule commitment string |
+| `focusRule.metric` | `Mixed` | No | — | Object | Machine-checkable metric descriptor |
+| `focusRule.source` | `String` | No | `'SUGGESTED'` | Enum: `['SUGGESTED', 'CUSTOM']` | Origin of the focus rule |
+| `previousFocusEvaluation` | `Object` | No | Embedded | Subdocument | Evaluation of last week's focus rule |
+| `previousFocusEvaluation.followed` | `Boolean` | No | `null` | Boolean or null | Adherence status |
+| `previousFocusEvaluation.actual` | `Number` | No | — | Number | Measured actual metric value |
+| `previousFocusEvaluation.target` | `Number` | No | — | Number | Desired target threshold |
+| `previousFocusEvaluation.note` | `String` | No | — | String | Explanatory adherence summary |
+| `notes` | `String` | No | `''` | Max: 5000 chars | User weekly reflection markdown notes |
+| `status` | `String` | **Yes** | `'DRAFT'` | Enum: `['DRAFT', 'FINALIZED']` | Review lifecycle state |
+| `createdAt` | `Date` | Auto | Timestamp | — | Document creation timestamp |
+| `updatedAt` | `Date` | Auto | Timestamp | — | Document update timestamp |
+
+**Compound Indexes:**
+- `{ userId: 1, week: 1, accountId: 1 }` (Unique constraint)
 
 ---
 

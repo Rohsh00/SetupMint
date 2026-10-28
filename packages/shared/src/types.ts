@@ -1716,3 +1716,188 @@ export interface ILiveWatcherSummary {
   provider: LiveQuoteProvider;
   asOf: string | Date;
 }
+
+// ==========================================
+// WEEKLY REVIEW CONTRACTS
+// ==========================================
+
+export type FocusRuleSource = 'SUGGESTED' | 'CUSTOM';
+
+export interface IFocusRuleMetric {
+  type:
+    | 'MAX_DAILY_LOSS_BREACH'
+    | 'MISTAKE_COUNT'
+    | 'TEMPLATE_PAUSE'
+    | 'REPEAT_TEMPLATE'
+    | 'MAINTAIN_DISCIPLINE'
+    | 'CUSTOM';
+  tag?: MistakeTag | string;
+  templateId?: string;
+  templateName?: string;
+  target?: number;
+  [key: string]: any;
+}
+
+export interface IFocusRule {
+  code: string;
+  text: string;
+  metric?: IFocusRuleMetric;
+  source?: FocusRuleSource;
+}
+
+export interface IFocusRuleEvaluation {
+  followed: boolean | null;
+  actual: any;
+  target: any;
+  note: string;
+}
+
+export interface IWeeklyMistakeItem {
+  tag: MistakeTag | string;
+  count: number;
+  totalLoss: number;
+  tradeIds: string[];
+}
+
+export interface IWeeklyTemplateItem {
+  templateId?: string;
+  name: string;
+  n: number;
+  shrunkExpectancy: number;
+  sampleSizeWarning: boolean;
+  winRate: number;
+  netPnL: number;
+  tradeIds: string[];
+}
+
+export interface IWeeklyDisciplineDay {
+  date: string;
+  dayOfWeek: string;
+  rating: number | null;
+  tradesCount: number;
+  hasJournal: boolean;
+  journalId?: string;
+}
+
+export interface IWeeklyDailyLossBreach {
+  date: string;
+  maxDailyLoss: number;
+  currentDailyLoss: number;
+  breachAmount: number;
+  tradesCount: number;
+  tradeIds: string[];
+}
+
+export interface IWeeklyTiltDay {
+  date: string;
+  tradeId: string;
+  symbol: string;
+  score: number;
+  level: string;
+  explanation: string;
+}
+
+export interface IWeeklyOvertradingDay {
+  date: string;
+  tradesCount: number;
+  maxDailyTrades: number;
+  tradeIds: string[];
+}
+
+export interface IWeeklyRiskEvents {
+  dailyLossBreaches: IWeeklyDailyLossBreach[];
+  highTiltDays: IWeeklyTiltDay[];
+  overtradingDays: IWeeklyOvertradingDay[];
+  unjournaledDaysCount: number;
+  unjournaledDates: string[];
+}
+
+export interface IWeeklyWeekdayItem {
+  day: string;
+  netPnL: number;
+  tradesCount: number;
+  winRate: number;
+  tradeIds: string[];
+}
+
+export interface IWeeklySessionItem {
+  session: string;
+  netPnL: number;
+  tradesCount: number;
+  winRate: number;
+  tradeIds: string[];
+}
+
+export interface IWeeklyReviewSnapshot {
+  weekSummary: {
+    tradeCount: number;
+    closedCount: number;
+    netPnL: number;
+    grossPnL: number;
+    totalCosts: number;
+    winRate: number;
+    profitFactor: number;
+    expectancy: number;
+    sumRealizedR: number;
+    avgRealizedR: number;
+    maxDrawdown: number;
+    rCoveragePercent: number;
+    winsCount: number;
+    lossesCount: number;
+    breakevenCount: number;
+    rCount: number;
+    tradeIds: string[];
+  };
+  vsPreviousWeek: {
+    deltaNetPnL: number;
+    deltaWinRate: number;
+    deltaAvgRealizedR: number;
+    deltaAvgDiscipline: number;
+  };
+  mistakes: {
+    items: IWeeklyMistakeItem[];
+    topMistake: IWeeklyMistakeItem | null;
+    topMistakes: IWeeklyMistakeItem[];
+  };
+  templates: {
+    items: IWeeklyTemplateItem[];
+    bestTemplate: IWeeklyTemplateItem | null;
+    worstTemplate: IWeeklyTemplateItem | null;
+  };
+  discipline: {
+    averageRating: number;
+    dailyRatings: IWeeklyDisciplineDay[];
+    trendDirection: 'IMPROVED' | 'DECLINED' | 'STABLE';
+  };
+  riskEvents: IWeeklyRiskEvents;
+  sessionsAndWeekdays: {
+    byWeekday: IWeeklyWeekdayItem[];
+    bySession: IWeeklySessionItem[];
+    bestWeekday: { day: string; netPnL: number } | null;
+    worstWeekday: { day: string; netPnL: number } | null;
+    bestSession: { session: string; netPnL: number } | null;
+    worstSession: { session: string; netPnL: number } | null;
+  };
+  focusRuleSuggestion: IFocusRule;
+  isEmpty: boolean;
+}
+
+export type WeeklyReviewStatus = 'DRAFT' | 'FINALIZED';
+
+export interface IWeeklyReview {
+  id?: string;
+  userId: string;
+  week: string; // YYYY-Www
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  accountId?: string | null;
+  snapshot: IWeeklyReviewSnapshot;
+  generatedAt: string;
+  focusRule?: IFocusRule;
+  previousFocusEvaluation?: IFocusRuleEvaluation;
+  notes?: string;
+  status: WeeklyReviewStatus;
+  createdAt?: string;
+  updatedAt?: string;
+}
+

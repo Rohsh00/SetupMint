@@ -20,10 +20,12 @@ erDiagram
     USER ||--o{ BROKER_FUNDS_SNAPSHOT : "receives"
     USER ||--o{ AUDIT_LOG : "triggers"
     USER ||--o{ TRADE_TEMPLATE : "defines (custom)"
+    USER ||--o{ WEEKLY_REVIEW : "reviews & finalizes"
 
     TRADING_ACCOUNT ||--o{ ACCOUNT_TRANSACTION : "contains"
     TRADING_ACCOUNT ||--o{ TRADE : "executes within"
     TRADING_ACCOUNT ||--o{ BROKER_FUNDS_SNAPSHOT : "tracks broker balance of"
+    TRADING_ACCOUNT ||--o{ WEEKLY_REVIEW : "scopes (optional)"
 
     STRATEGY ||--o{ TRADE : "applies to"
     STRATEGY ||--o{ TRADE_TEMPLATE : "referenced by"
@@ -168,6 +170,20 @@ erDiagram
         Decimal128 totalBalance
         Decimal128 availableBalance
     }
+
+    WEEKLY_REVIEW {
+        ObjectId _id PK
+        ObjectId userId FK
+        string week "YYYY-Www UK"
+        ObjectId accountId FK "optional"
+        string startDate "YYYY-MM-DD"
+        string endDate "YYYY-MM-DD"
+        object snapshot
+        object focusRule
+        object previousFocusEvaluation
+        string notes
+        string status "DRAFT | FINALIZED"
+    }
 ```
 
 ---
@@ -227,6 +243,7 @@ SetupMint enforces business rules via MongoDB unique compound indexes:
 | `TradeTemplate` | `{ userId: 1, isFavorite: 1 }` | — | Rapid filtering of user's pinned/favorite setup templates. |
 | `TradeTemplate` | `{ userId: 1, group: 1 }` | — | High-performance grouping by market setup category. |
 | `Trade` | `{ userId: 1, templateId: 1 }` | — | Efficient aggregation of trade edge, win rates, and net P&L by setup template. |
+| `WeeklyReview` | `{ userId: 1, week: 1, accountId: 1 }` | `unique: true` | Guarantees idempotent upsert and strictly one weekly review record per week and account ledger. |
 
 ---
 

@@ -39,6 +39,7 @@ export interface DrilldownAggregateResult {
 export function calculateDrilldownAggregate(
   trades: DrilldownTradeItem[]
 ): DrilldownAggregateResult {
+
   if (!trades || trades.length === 0) {
     return {
       count: 0,
@@ -112,3 +113,6 @@ export function calculateDrilldownAggregate(
     rCount,
   };
 }
+
+export const computeTradeAggregates = calculateDrilldownAggregate;
+

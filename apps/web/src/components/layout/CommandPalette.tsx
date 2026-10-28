@@ -35,6 +35,7 @@ import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import KeyboardReturnRoundedIcon from '@mui/icons-material/KeyboardReturnRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import RateReviewRoundedIcon from '@mui/icons-material/RateReviewRounded';
 
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
@@ -198,6 +199,19 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
       action: () => {
         onClose();
         navigate('/trades');
+      },
+    },
+    {
+      id: 'nav-weekly-review',
+      category: 'NAVIGATION',
+      title: 'Weekly Review',
+      subtitle: 'Synthesize trading week, evaluate focus rule & set next goals',
+      icon: RateReviewRoundedIcon,
+      shortcut: 'W',
+      keywords: ['weekly', 'review', 'focus', 'rule', 'report', 'discipline', 'synthesis', 'expectancy'],
+      action: () => {
+        onClose();
+        navigate('/review/weekly');
       },
     },
     {

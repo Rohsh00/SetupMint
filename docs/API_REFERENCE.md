@@ -955,3 +955,43 @@ Historical candle market-data-only fallback source for MAE/MFE excursion analyti
 - **Auth:** **Required**.
 - **Responses:** `200 OK` with array of `{ tradeId, rule, mistakeTag, severity, message }`.
 
+### `GET /api/v1/review/weekly`
+- **Purpose:** Retrieve live computed weekly review report for a specified ISO week (or list recent 12 finalized/draft weekly reviews when `week` parameter is omitted). If a `FINALIZED` review document exists, returns the immutable stored snapshot merged with user notes. Includes previous week's focus rule and automated adherence evaluation.
+- **Auth:** **Required**.
+- **Query Parameters:**
+  - `week` (optional, string): ISO week format `/^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/` (e.g. `2026-W43`). If omitted, returns recent reviews array.
+  - `accountId` (optional, ObjectId): Filter trades to a specific trading account. If omitted, computes across all user accounts.
+- **Responses:**
+  - `200 OK` (single week): `{ success: true, data: { review, snapshot, previousFocusRule, previousFocusEvaluation } }`.
+  - `200 OK` (list): `{ success: true, data: IWeeklyReview[] }`.
+  - `400 Bad Request`: `VALIDATION_ERROR` for malformed week string.
+
+### `GET /api/v1/review/weekly/:week`
+- **Purpose:** Direct URL accessor for a specific ISO week review.
+- **Auth:** **Required**.
+- **Path Parameters:** `week` (`YYYY-Www`).
+- **Query Parameters:** `accountId` (optional).
+- **Responses:** `200 OK` with `{ review, snapshot, previousFocusRule, previousFocusEvaluation }`.
+
+### `POST /api/v1/review/weekly/:week`
+- **Purpose:** Create or update (upsert) the weekly review document. Allows updating focus rule, reflection notes, manual adherence override, and status (`DRAFT` or `FINALIZED`). Setting `status: 'FINALIZED'` regenerates and permanently freezes the mathematical snapshot at that moment.
+- **Auth:** **Required**.
+- **Path Parameters:** `week` (`YYYY-Www`).
+- **Query Parameters:** `accountId` (optional).
+- **Request Body:**
+  ```json
+  {
+    "focusRule": {
+      "code": "MISTAKE_REVENGE_TRADING",
+      "text": "Wait at least 30 minutes and step away from charts after a losing trade",
+      "metric": { "type": "MISTAKE_COUNT", "tag": "REVENGE_TRADING", "target": 0 },
+      "source": "SUGGESTED"
+    },
+    "notes": "Focused on quality setups and reduced sizing during volatile open.",
+    "status": "FINALIZED",
+    "followedLastRule": true
+  }
+  ```
+- **Responses:** `200 OK` with updated `IWeeklyReview` document.
+
+

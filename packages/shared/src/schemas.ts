@@ -789,4 +789,36 @@ export const whatIfRequestSchema = z
 
 export type WhatIfRequestInput = z.infer<typeof whatIfRequestSchema>;
 
+// ==========================================
+// WEEKLY REVIEW SCHEMAS
+// ==========================================
+
+export const weeklyReviewWeekRegex = /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/;
+
+export const weeklyReviewParamsSchema = z.object({
+  week: z
+    .string()
+    .regex(weeklyReviewWeekRegex, 'Invalid week format (expected YYYY-Www, e.g. 2026-W43)')
+    .optional(),
+  accountId: z.string().optional(),
+});
+export type WeeklyReviewParams = z.infer<typeof weeklyReviewParamsSchema>;
+
+export const saveWeeklyReviewSchema = z.object({
+  focusRule: z
+    .object({
+      code: z.string().min(1, 'Rule code is required'),
+      text: z.string().min(1, 'Rule text is required'),
+      metric: z.record(z.any()).optional(),
+      source: z.enum(['SUGGESTED', 'CUSTOM']).optional(),
+    })
+    .optional(),
+  notes: z.string().max(5000, 'Notes cannot exceed 5000 characters').optional(),
+  status: z.enum(['DRAFT', 'FINALIZED']).optional(),
+  accountId: z.string().nullable().optional(),
+  followedLastRule: z.boolean().nullable().optional(),
+});
+export type SaveWeeklyReviewInput = z.infer<typeof saveWeeklyReviewSchema>;
+
+
 

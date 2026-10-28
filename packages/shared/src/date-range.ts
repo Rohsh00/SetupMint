@@ -319,3 +319,94 @@ export function buildDateRangeClause(range?: IDateRange): {
   if (Object.keys(tradeDateClause).length === 0) return {};
   return { tradeDate: tradeDateClause };
 }
+
+/**
+ * Converts an ISO 8601 week string (e.g. '2026-W43') into IST-inclusive startDate and endDate (ISO Monday to Sunday).
+ * Returns { startDate, endDate, startUtc, endUtc, start, end }.
+ */
+export function isoWeekToRange(
+  weekStr: string
+): INormalizedDateRange & { startDate: string; endDate: string } {
+  const match = weekStr?.match(/^(\d{4})-W(0[1-9]|[1-4]\d|5[0-3])$/);
+  if (!match) {
+    throw new Error(`Invalid ISO week string format: ${weekStr}. Expected YYYY-Www (e.g. 2026-W43)`);
+  }
+
+  const year = parseInt(match[1], 10);
+  const week = parseInt(match[2], 10);
+
+  // In ISO 8601, January 4 is always in week 1.
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4DayOfWeek = jan4.getUTCDay() || 7; // 1 = Mon, ..., 7 = Sun
+
+  // Thursday of week 1
+  const thursWeek1Ms = jan4.getTime() + (4 - jan4DayOfWeek) * 86400000;
+  // Monday of week 1 is 3 days before Thursday
+  const monWeek1Ms = thursWeek1Ms - 3 * 86400000;
+
+  // Monday of requested week
+  const monTarget = new Date(monWeek1Ms + (week - 1) * 7 * 86400000);
+  const sunTarget = new Date(monTarget.getTime() + 6 * 86400000);
+
+  const startDate = toYmd(monTarget.getUTCFullYear(), monTarget.getUTCMonth() + 1, monTarget.getUTCDate());
+  const endDate = toYmd(sunTarget.getUTCFullYear(), sunTarget.getUTCMonth() + 1, sunTarget.getUTCDate());
+
+  const normalized = normalizeRange({ startDate, endDate });
+
+  return {
+    ...normalized,
+    startDate,
+    endDate,
+  };
+}
+
+/**
+ * Converts a Date or date string to an ISO week string 'YYYY-Www' evaluated in IST (default).
+ */
+export function dateToIsoWeek(dateInput: Date | string, tz = 'Asia/Kolkata'): string {
+  let y: number;
+  let m: number;
+  let d: number;
+
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    const parts = dateInput.split('-').map(Number);
+    y = parts[0];
+    m = parts[1];
+    d = parts[2];
+  } else {
+    const dateObj = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    if (isNaN(dateObj.getTime())) {
+      throw new Error(`Invalid date passed to dateToIsoWeek: ${dateInput}`);
+    }
+    const istStr = formatDateInTz(dateObj, tz);
+    const parts = istStr.split('-').map(Number);
+    y = parts[0];
+    m = parts[1];
+    d = parts[2];
+  }
+
+  // Find the Thursday of the target week in UTC representation
+  const target = new Date(Date.UTC(y, m - 1, d));
+  const dayNr = target.getUTCDay() || 7; // 1=Mon, ..., 7=Sun
+  target.setUTCDate(target.getUTCDate() + 4 - dayNr);
+
+  const isoYear = target.getUTCFullYear();
+  const jan1 = new Date(Date.UTC(isoYear, 0, 1));
+  const dayOfYear = Math.floor((target.getTime() - jan1.getTime()) / 86400000) + 1;
+  const weekNo = Math.ceil(dayOfYear / 7);
+
+  return `${isoYear}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+/**
+ * Returns an adjacent ISO week string by offsetting by deltaWeeks (e.g. -1 for prev week, +1 for next week).
+ */
+export function getAdjacentIsoWeek(weekStr: string, deltaWeeks: number): string {
+  const range = isoWeekToRange(weekStr);
+  const [y, m, d] = range.startDate.split('-').map(Number);
+  // Monday + 3 days = Thursday (the anchor of the ISO week)
+  const anchorThu = new Date(Date.UTC(y, m - 1, d + 3));
+  anchorThu.setUTCDate(anchorThu.getUTCDate() + deltaWeeks * 7);
+  return dateToIsoWeek(anchorThu);
+}
+

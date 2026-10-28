@@ -57,7 +57,8 @@ Pure, deterministic mathematical calculation library:
 - [`packages/financial-engine/src/session.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/session.ts): Automatic trading session derivation (`deriveSessionFromTime`) from execution timestamp and exchange.
 - [`packages/financial-engine/src/mistakes.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/mistakes.ts): Rule-based mistake detection (`detectMistakeSuggestions`, `checkDailyLossBreach`, `calculateDailySessionSummary`) evaluating revenge trading, overtrading, sizing violations, daily loss limits, and discipline rating scoring.
 - [`packages/financial-engine/src/templates.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/templates.ts): Dynamic template resolution (`resolveTemplate`), context-aware ranking (`rankTemplates`), tick rounding (`roundToTick`), and NSE 2026 expiry date calculation (`isNiftyWeeklyExpiry`, `isNseMonthlyExpiry`, `isExpiryDay`).
-- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (70 unit tests across `pnl.test.ts`, `fifo.test.ts`, `risk.test.ts`, `metrics.test.ts`, `currency.test.ts`, `charges.test.ts`, `session.test.ts`, `mistakes.test.ts`, and `templates.test.ts` (30 tests)).
+- [`packages/financial-engine/src/weekly-review.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/weekly-review.ts): Pure deterministic weekly review synthesis (`buildWeeklyReview`) with reconciled metrics, mistake rankings, Empirical-Bayes shrunk expectancy setup rankings ($k=10$), objective focus rule suggestions, and focus rule evaluation (`evaluateFocusRule`).
+- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (319 tests across 28 test suites, including `weekly-review.test.ts` (17 tests) and `date-range.test.ts` (28 tests)).
 
 ---
 
@@ -86,6 +87,7 @@ apps/api/
 │   │       ├── BrokerFundsSnapshot.ts # Immutable FYERS fund-limit balance snapshots
 │   │       ├── AuditLog.ts        # Immutable system audit trail entries
 │   │       ├── TradeTemplate.ts   # Rule-driven trade setup templates with dynamic SL/target
+│   │       ├── WeeklyReview.ts    # Weekly synthesized performance review snapshots and focus rules
 │   │       └── index.ts           # Models barrel export
 │   ├── middleware/
 │   │   ├── auth.ts                # Session cookie validation (requireAuth, createSession, clearSession)
@@ -141,6 +143,7 @@ apps/api/
     ├── storage.test.ts            # Cloudflare R2 object storage provider tests
     ├── strategy-variants.test.ts  # Strategy setup variant CRUD and analytics tests
     ├── template.test.ts           # Template CRUD, tenant isolation, and edge stat tests
+    ├── weekly-review.test.ts      # Weekly review live snapshots, immutability, focus rule evaluation, and IST boundary tests
     └── setup.ts                   # Vitest setup with in-memory replica set and index bootstrap
 ```
 
@@ -201,6 +204,7 @@ apps/web/
 │       ├── TradesPage.tsx         # /trades (Trade ledger table, filters, bulk actions)
 │       ├── TradeDetailPage.tsx    # /trades/:id (Deep-dive trade inspection & charts)
 │       ├── JournalCalendarPage.tsx# /journal (Monthly green/red calendar & reflections)
+│       ├── WeeklyReviewPage.tsx   # /review/weekly (Synthesized weekly review & focus rule adherence)
 │       ├── AnalyticsPage.tsx      # /analytics (Psychology, weekday, session analytics)
 │       ├── StrategyPlaybookPage.tsx # /strategies (Dual tabs: Execution Playbooks & Trade Templates)
 │       ├── StrategyVariantAnalyticsPage.tsx # /strategies/:id/analytics (Setup variant buckets & performance)

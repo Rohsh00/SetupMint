@@ -45,6 +45,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import LogoutIcon from '@mui/icons-material/LogoutRounded';
 import SyncIcon from '@mui/icons-material/SyncRounded';
+import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
@@ -101,6 +102,9 @@ export function AppLayout() {
         if (e.key.toLowerCase() === 'n') {
           e.preventDefault();
           setIsTradeModalOpen(true);
+        } else if (e.key.toLowerCase() === 'w') {
+          e.preventDefault();
+          navigate('/review/weekly');
         }
       }
     };
@@ -168,6 +172,7 @@ export function AppLayout() {
     { to: '/', label: 'Overview', icon: LayoutDashboardIcon },
     { to: '/trades', label: 'Trades', icon: TableViewIcon },
     { to: '/journal', label: 'Journal Calendar', icon: CalendarMonthIcon },
+    { to: '/review/weekly', label: 'Weekly Review', icon: RateReviewIcon },
     { to: '/analytics', label: 'Analytics', icon: ShowChartIcon },
     { to: '/strategies', label: 'Strategy Playbook', icon: MenuBookIcon },
     { to: '/risk-calculator', label: 'Risk Calculator', icon: CalculateIcon },

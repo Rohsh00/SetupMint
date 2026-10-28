@@ -1,13 +1,36 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import mongoose from 'mongoose';
+
 import {
   detectMistakeSuggestions,
   checkDailyLossBreach,
   calculateDailySessionSummary,
+  buildWeeklyReview,
+  evaluateFocusRule,
+  WeeklyReviewTradeInput,
   ITradeSummaryForDetection,
 } from '@tradevault/financial-engine';
-import { User, Trade, DailyJournal, Attachment, ITradeDoc } from '../db/models/index.js';
+import {
+  isoWeekToRange,
+  dateToIsoWeek,
+  getAdjacentIsoWeek,
+  buildDateRangeClause,
+  weeklyReviewWeekRegex,
+  saveWeeklyReviewSchema,
+} from '@tradevault/shared';
+import {
+  User,
+  Trade,
+  DailyJournal,
+  Attachment,
+  WeeklyReview,
+  TradeTemplate,
+  Strategy,
+  ITradeDoc,
+} from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
+
 
 function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
   const quantity =
@@ -52,7 +75,133 @@ function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
   };
 }
 
+function toWeeklyReviewTrade(t: any): WeeklyReviewTradeInput {
+  const quantity =
+    t.simpleExecution?.quantity ??
+    t.calculated?.closedQuantity ??
+    t.calculated?.openQuantity ??
+    0;
+  const entryPrice =
+    t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? 0;
+  const exitPrice =
+    t.simpleExecution?.exitPrice ?? t.calculated?.averageExitPrice;
+  const plannedRiskAmount =
+    t.risk?.estimatedRiskAmount ?? t.risk?.riskBudgetAmount;
+  const mistakes = t.psychology?.mistakes || [];
+
+  return {
+    id: t._id ? t._id.toString() : t.id,
+    symbol: t.symbol,
+    tradeDate: t.tradeDate,
+    entryTime: t.entryTime,
+    exitTime: t.exitTime,
+    status: t.status,
+    direction: t.direction,
+    session: t.session,
+    templateId: t.templateId,
+    strategyId: t.strategyId?._id ? t.strategyId._id.toString() : t.strategyId?.toString(),
+    strategyName: t.strategyId?.name || t.strategyName,
+    quantity,
+    entryPrice,
+    exitPrice,
+    netPnL: t.calculated?.netPnL,
+    grossPnL: t.calculated?.grossPnL,
+    totalCosts: t.calculated?.totalCosts,
+    realizedRMultiple: t.calculated?.realizedRMultiple,
+    plannedRiskAmount,
+    psychology: {
+      disciplineScore: t.psychology?.disciplineScore,
+      disciplineRating: t.psychology?.disciplineRating,
+      mistakes,
+      rulesFollowed: t.psychology?.rulesFollowed,
+    },
+    mistakes,
+    setup: t.setup,
+  };
+}
+
+async function computeWeeklySnapshot(
+  userId: mongoose.Types.ObjectId | string,
+  week: string,
+  targetAccountId: mongoose.Types.ObjectId | null
+) {
+  const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+  const { startDate, endDate } = isoWeekToRange(week);
+  const dateClause = buildDateRangeClause({ startDate, endDate });
+
+  const tradeFilter: any = { userId: uId, ...dateClause };
+  if (targetAccountId) {
+    tradeFilter.accountId = targetAccountId;
+  }
+
+  const prevWeek = getAdjacentIsoWeek(week, -1);
+  const prevRange = isoWeekToRange(prevWeek);
+  const prevDateClause = buildDateRangeClause({
+    startDate: prevRange.startDate,
+    endDate: prevRange.endDate,
+  });
+
+  const prevTradeFilter: any = { userId: uId, ...prevDateClause };
+  if (targetAccountId) {
+    prevTradeFilter.accountId = targetAccountId;
+  }
+
+  const [trades, prevTrades, user, templates, strategies, dailyJournals, prevReviewDoc] =
+    await Promise.all([
+      Trade.find(tradeFilter).populate('strategyId', 'name').sort({ tradeDate: 1 }),
+      Trade.find(prevTradeFilter).populate('strategyId', 'name').sort({ tradeDate: 1 }),
+      User.findById(uId),
+      TradeTemplate.find({ userId: { $in: [uId, null] }, isActive: true }).select(
+        'name tags group'
+      ),
+      Strategy.find({ userId: uId, isActive: true }).select('name'),
+      DailyJournal.find({ userId: uId, date: { $gte: startDate, $lte: endDate } }),
+      WeeklyReview.findOne({ userId: uId, week: prevWeek, accountId: targetAccountId }),
+    ]);
+
+  const mappedTrades = trades.map(toWeeklyReviewTrade);
+  const mappedPrevTrades = prevTrades.map(toWeeklyReviewTrade);
+  const riskSettings = user?.riskSettings;
+
+  const previousFocusRule = prevReviewDoc?.focusRule || null;
+
+  const snapshot = buildWeeklyReview({
+    week,
+    startDate,
+    endDate,
+    trades: mappedTrades,
+    previousWeekTrades: mappedPrevTrades,
+    riskSettings,
+    accountEquity: 0,
+    templates: templates.map((t) => ({ id: t._id.toString(), name: t.name })),
+    strategies: strategies.map((s) => ({ id: s._id.toString(), name: s.name })),
+    dailyJournals: dailyJournals.map((j) => ({
+      id: j._id.toString(),
+      date: j.date,
+      disciplineRating: j.disciplineRating,
+      notes: j.notes,
+      mistakes: j.mistakes,
+    })),
+    previousFocusRule,
+  });
+
+  const previousFocusEvaluation = evaluateFocusRule(previousFocusRule, mappedTrades, riskSettings);
+
+  return {
+    week,
+    startDate,
+    endDate,
+    targetAccountId,
+    snapshot,
+    previousFocusRule,
+    previousFocusEvaluation,
+    riskSettings,
+    mappedTrades,
+  };
+}
+
 export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+
   app.addHook('preHandler', requireAuth);
 
   // GET /api/v1/review/queue - Returns unreviewed trades and days
@@ -317,4 +466,279 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       data: detection.suggestions,
     });
   });
+
+  // GET /api/v1/review/weekly - Single review if ?week=YYYY-Www, or list of last 12 reviews
+  app.get('/weekly', async (req: any, reply) => {
+    const userId = req.user!.id;
+    const { week, accountId } = req.query;
+
+    if (week) {
+      if (!weeklyReviewWeekRegex.test(week)) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: `Invalid week format: ${week}. Expected YYYY-Www (e.g. 2026-W43)`,
+          },
+        });
+      }
+
+      const targetAccountId =
+        accountId && mongoose.Types.ObjectId.isValid(accountId)
+          ? new mongoose.Types.ObjectId(accountId)
+          : null;
+
+      const existingReview = await WeeklyReview.findOne({
+        userId,
+        week,
+        accountId: targetAccountId,
+      });
+
+      if (existingReview && existingReview.status === 'FINALIZED') {
+        const prevWeek = getAdjacentIsoWeek(week, -1);
+        const prevDoc = await WeeklyReview.findOne({
+          userId,
+          week: prevWeek,
+          accountId: targetAccountId,
+        });
+        const prevFocusRule = prevDoc?.focusRule || null;
+
+        return reply.send({
+          success: true,
+          data: {
+            id: existingReview._id.toString(),
+            week: existingReview.week,
+            startDate: existingReview.startDate,
+            endDate: existingReview.endDate,
+            accountId: existingReview.accountId?.toString() || null,
+            snapshot: existingReview.snapshot,
+            focusRule: existingReview.focusRule,
+            previousFocusRule: prevFocusRule,
+            previousFocusEvaluation: existingReview.previousFocusEvaluation,
+            notes: existingReview.notes || '',
+            status: existingReview.status,
+            generatedAt: existingReview.generatedAt,
+          },
+        });
+      }
+
+      const computed = await computeWeeklySnapshot(userId, week, targetAccountId);
+
+      return reply.send({
+        success: true,
+        data: {
+          id: existingReview?._id ? existingReview._id.toString() : undefined,
+          week: computed.week,
+          startDate: computed.startDate,
+          endDate: computed.endDate,
+          accountId: targetAccountId?.toString() || null,
+          snapshot: computed.snapshot,
+          focusRule: existingReview?.focusRule || computed.snapshot.focusRuleSuggestion,
+          previousFocusRule: computed.previousFocusRule,
+          previousFocusEvaluation: computed.previousFocusEvaluation,
+          notes: existingReview?.notes || '',
+          status: existingReview?.status || 'DRAFT',
+          generatedAt: existingReview?.generatedAt || new Date().toISOString(),
+        },
+      });
+    }
+
+    // List recent reviews (last 12)
+    const targetAccountId =
+      accountId && mongoose.Types.ObjectId.isValid(accountId)
+        ? new mongoose.Types.ObjectId(accountId)
+        : null;
+
+    const filter: any = { userId };
+    if (targetAccountId) {
+      filter.accountId = targetAccountId;
+    }
+
+    const reviews = await WeeklyReview.find(filter).sort({ week: -1 }).limit(12);
+
+    const reviewList = reviews.map((doc) => ({
+      id: doc._id.toString(),
+      week: doc.week,
+      startDate: doc.startDate,
+      endDate: doc.endDate,
+      accountId: doc.accountId?.toString() || null,
+      status: doc.status,
+      netPnL: doc.snapshot?.weekSummary?.netPnL ?? 0,
+      winRate: doc.snapshot?.weekSummary?.winRate ?? 0,
+      tradeCount: doc.snapshot?.weekSummary?.tradeCount ?? 0,
+      avgR: doc.snapshot?.weekSummary?.avgRealizedR ?? 0,
+      discipline: doc.snapshot?.discipline?.averageRating ?? 0,
+      focusRule: doc.focusRule,
+      previousFocusEvaluation: doc.previousFocusEvaluation,
+      generatedAt: doc.generatedAt,
+    }));
+
+    return reply.send({
+      success: true,
+      data: reviewList,
+    });
+  });
+
+  // GET /api/v1/review/weekly/:week - Direct route for week review
+  app.get('/weekly/:week', async (req: any, reply) => {
+    const { week } = req.params;
+    const userId = req.user!.id;
+    const { accountId } = req.query;
+
+    if (!weeklyReviewWeekRegex.test(week)) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Invalid week format: ${week}. Expected YYYY-Www (e.g. 2026-W43)`,
+        },
+      });
+    }
+
+    const targetAccountId =
+      accountId && mongoose.Types.ObjectId.isValid(accountId)
+        ? new mongoose.Types.ObjectId(accountId)
+        : null;
+
+    const existingReview = await WeeklyReview.findOne({
+      userId,
+      week,
+      accountId: targetAccountId,
+    });
+
+    if (existingReview && existingReview.status === 'FINALIZED') {
+      const prevWeek = getAdjacentIsoWeek(week, -1);
+      const prevDoc = await WeeklyReview.findOne({
+        userId,
+        week: prevWeek,
+        accountId: targetAccountId,
+      });
+      const prevFocusRule = prevDoc?.focusRule || null;
+
+      return reply.send({
+        success: true,
+        data: {
+          id: existingReview._id.toString(),
+          week: existingReview.week,
+          startDate: existingReview.startDate,
+          endDate: existingReview.endDate,
+          accountId: existingReview.accountId?.toString() || null,
+          snapshot: existingReview.snapshot,
+          focusRule: existingReview.focusRule,
+          previousFocusRule: prevFocusRule,
+          previousFocusEvaluation: existingReview.previousFocusEvaluation,
+          notes: existingReview.notes || '',
+          status: existingReview.status,
+          generatedAt: existingReview.generatedAt,
+        },
+      });
+    }
+
+    const computed = await computeWeeklySnapshot(userId, week, targetAccountId);
+
+    return reply.send({
+      success: true,
+      data: {
+        id: existingReview?._id ? existingReview._id.toString() : undefined,
+        week: computed.week,
+        startDate: computed.startDate,
+        endDate: computed.endDate,
+        accountId: targetAccountId?.toString() || null,
+        snapshot: computed.snapshot,
+        focusRule: existingReview?.focusRule || computed.snapshot.focusRuleSuggestion,
+        previousFocusRule: computed.previousFocusRule,
+        previousFocusEvaluation: computed.previousFocusEvaluation,
+        notes: existingReview?.notes || '',
+        status: existingReview?.status || 'DRAFT',
+        generatedAt: existingReview?.generatedAt || new Date().toISOString(),
+      },
+    });
+  });
+
+  // POST /api/v1/review/weekly/:week - Upsert review, save focusRule, notes, status
+  app.post('/weekly/:week', async (req: any, reply) => {
+    const { week } = req.params;
+    const userId = req.user!.id;
+
+    if (!weeklyReviewWeekRegex.test(week)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: `Invalid week format: ${week}` },
+      });
+    }
+
+    const bodyParsed = saveWeeklyReviewSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: bodyParsed.error.issues.map((i) => i.message).join(', '),
+        },
+      });
+    }
+
+    const { focusRule, notes, status = 'DRAFT', accountId, followedLastRule } = bodyParsed.data;
+    const targetAccountId =
+      accountId && mongoose.Types.ObjectId.isValid(accountId)
+        ? new mongoose.Types.ObjectId(accountId)
+        : null;
+
+    const existing = await WeeklyReview.findOne({ userId, week, accountId: targetAccountId });
+
+    let snapshotToSave: any;
+    let previousFocusEvaluation: any;
+
+    if (existing && existing.status === 'FINALIZED') {
+      // FINALIZED snapshot stays immutable after new trades are added
+      snapshotToSave = existing.snapshot;
+      previousFocusEvaluation = existing.previousFocusEvaluation;
+    } else {
+      // Generate live snapshot
+      const computed = await computeWeeklySnapshot(userId, week, targetAccountId);
+      snapshotToSave = computed.snapshot;
+      previousFocusEvaluation = computed.previousFocusEvaluation;
+    }
+
+    if (followedLastRule !== undefined && followedLastRule !== null) {
+      previousFocusEvaluation = {
+        ...(previousFocusEvaluation || {}),
+        followed: followedLastRule,
+        note: previousFocusEvaluation?.note || 'Manually reviewed by trader',
+      };
+    }
+
+    const range = isoWeekToRange(week);
+
+    const updateFields: any = {
+      userId,
+      week,
+      startDate: existing?.startDate || range.startDate,
+      endDate: existing?.endDate || range.endDate,
+      accountId: targetAccountId,
+      snapshot: snapshotToSave,
+      status,
+      notes: notes !== undefined ? notes : existing?.notes,
+      focusRule: focusRule || existing?.focusRule || snapshotToSave.focusRuleSuggestion,
+      previousFocusEvaluation,
+    };
+
+    if (status === 'FINALIZED' && (!existing || existing.status !== 'FINALIZED')) {
+      updateFields.generatedAt = new Date();
+    } else if (!existing) {
+      updateFields.generatedAt = new Date();
+    }
+
+    const doc = await WeeklyReview.findOneAndUpdate(
+      { userId, week, accountId: targetAccountId },
+      { $set: updateFields },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    return reply.send({
+      success: true,
+      data: doc,
+    });
+  });
 };
+

@@ -681,6 +681,73 @@ $$\text{FY End Year} = \text{FY Start Year} + 1$$
 - **`THIS_MONTH`:** 1st calendar day of current month to today.
 - **`LAST_MONTH`:** 1st to last calendar day of preceding month (accounting for leap years).
 
+---
+
+## 14. Weekly Review Aggregation & Focus Rule Engine
+
+### Code Location:
+[`packages/financial-engine/src/weekly-review.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/weekly-review.ts)
+
+### 14.1 ISO-8601 Week Boundaries in Indian Standard Time (IST)
+Weeks are defined per ISO-8601 (Monday start, Sunday end) anchored to IST ($\text{UTC}+05:30$):
+$$\text{isoWeekToRange}(YYYY\text{-W}ww) \implies \{\text{startDate: } YYYY\text{-}MM\text{-}DD \text{ (Monday)}, \text{endDate: } YYYY\text{-}MM\text{-}DD \text{ (Sunday)}\}$$
+- Supports year boundary transitions (e.g. `2026-W53` ends on Sunday 2027-01-03, while `2027-W01` begins on Monday 2027-01-04).
+- Fully supports leap years (e.g. `2024-W09` containing 2024-02-29).
+- Database queries use `buildDateRangeClause(startDate, endDate)` returning inclusive IST timestamps $[\text{startUtc}, \text{endUtc}]$.
+
+### 14.2 Summary Metrics & Authoritative Reconciliation
+The week's trade summary is computed by passing all closed trades in the week through `computeTradeAggregates`:
+$$\text{Net P&L} = \sum_{t \in \text{Trades}} t.\text{netPnL}$$
+$$\text{Gross P&L} = \sum_{t \in \text{Trades}} t.\text{grossPnL}$$
+$$\text{Total Costs} = \sum_{t \in \text{Trades}} t.\text{totalCosts}$$
+$$\text{Win Rate} = \frac{n_{\text{win}}}{n_{\text{closed}}} \times 100$$
+$$\text{Profit Factor} = \begin{cases} 999.99 & \text{if } |\sum \text{Losses}| = 0 \text{ and } \sum \text{Wins} > 0 \\ 0.00 & \text{if } \sum \text{Wins} = 0 \\ \frac{\sum \text{Gross Wins}}{|\sum \text{Gross Losses}|} & \text{otherwise} \end{cases}$$
+$$\text{Expectancy} = \frac{\text{Net P&L}}{n_{\text{closed}}}$$
+$$\text{Avg Realized R} = \begin{cases} \frac{\sum R}{n_{R}} & \text{if } n_{R} > 0 \\ 0.00 & \text{otherwise} \end{cases}$$
+$$\text{R Coverage \%} = \frac{n_{R}}{n_{\text{closed}}} \times 100$$
+Using `computeTradeAggregates` guarantees that every paisa and percentage matches `/dashboard/stats` and `/trades/drilldown` for the same date range down to 30 digits of Decimal.js precision.
+
+### 14.3 Setup Ranking via Empirical-Bayes Shrunk Expectancy
+To prevent ranking setups with tiny sample sizes (e.g., 1 trade with ₹10,000 profit) ahead of consistently proven setups with 50 trades, SetupMint applies an Empirical-Bayes shrinkage estimator ($k = 10$):
+$$E_{\text{shrunk}} = \frac{n}{n + k} \bar{X} + \frac{k}{n + k} \mu_{\text{prior}}$$
+Where:
+- $n$: Number of closed trades executed with the template/strategy.
+- $\bar{X}$: Sample mean Net P&L per trade ($\frac{\text{Net P&L}}{n}$).
+- $\mu_{\text{prior}}$: Baseline population mean expectancy across all closed trades for the week ($\frac{\text{Week Net P&L}}{n_{\text{week}}}$).
+- $k = 10$: Shrinkage strength parameter.
+- When $n < 30$, a `sampleSizeWarning: true` flag is attached to remind the trader that the sample size is preliminary.
+
+### 14.4 Quantified Behavioural Mistake Costs
+For each tagged mistake (e.g., `REVENGE_TRADING`, `STOP_MOVED`, `OVERTRADING`), the engine calculates:
+$$\text{Total Loss}(\text{tag}) = \sum_{t \in \text{Trades with tag, } t.\text{netPnL} < 0} |t.\text{netPnL}|$$
+Mistakes are ranked in descending order of total ₹ loss. The engine surfaces `topMistake` (highest eroded capital) and the top 3 mistakes, each with an array of trade IDs for universal drilldown inspection.
+
+### 14.5 Objective Focus Rule Suggestion Priority
+Focus rule generation is **strictly rule-based and deterministic (zero AI/LLM hallucinations)**. The engine evaluates conditions in strict priority order:
+1. **Daily Loss Breach:** If `riskEvents.dailyLossBreaches.length > 0`:
+   - Code: `'MAX_DAILY_LOSS'`
+   - Text: `"Stop trading for the day after hitting max daily loss"`
+   - Metric: `{"type": "DAILY_LOSS_BREACH", "target": 0}`
+2. **Quantified Mistake Leak:** If `mistakes.topMistake && mistakes.topMistake.totalLoss > 0`:
+   - Mapped from static table keyed by mistake tag (e.g. `REVENGE_TRADING` $\implies$ `"Wait at least 30 minutes and step away from charts after a losing trade"`).
+   - Code: `'MISTAKE_' + tag`
+   - Metric: `{"type": "MISTAKE_COUNT", "tag": tag, "target": 0}`
+3. **Bleeding Setup:** If `worstTemplate` has $n \ge 10$ and $E_{\text{shrunk}} < 0$:
+   - Code: `'PAUSE_TEMPLATE'`
+   - Text: `"Pause <template.name> until reviewed"`
+   - Metric: `{"type": "PAUSE_SETUP", "name": template.name, "target": 0}`
+4. **Repeat Success:** Otherwise:
+   - Code: `'REPEAT_SUCCESS'`
+   - Text: `"Repeat what worked: <bestTemplate.name>"`
+   - Metric: `{"type": "SETUP_DISCIPLINE", "name": bestTemplate.name}`
+
+### 14.6 Automated Focus Rule Adherence Evaluation
+In the subsequent week, `evaluateFocusRule(prevFocusRule, thisWeekTrades)` checks adherence:
+- **`MISTAKE_COUNT`:** Counts occurrences of the target mistake tag in the new week's trades. If `actual === 0`, `followed: true`; else `followed: false`.
+- **`DAILY_LOSS_BREACH`:** Measures if any calendar day's loss exceeded `maxDailyLoss`.
+- **`CUSTOM` / Unmeasurable:** Returns `followed: null` and allows the user to manually toggle adherence override via the UI.
+
+
 
 
 

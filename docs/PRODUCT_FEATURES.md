@@ -219,6 +219,49 @@ This document provides a comprehensive, verified feature inventory of all module
 
 ---
 
+## 6b. Synthesized Weekly Review & Focus Rule Engine
+
+- **Status:** **IMPLEMENTED**
+- **Purpose:** Automatically synthesize an entire trading week into a consolidated, immutable report with KPI deltas, quantified behavioural mistake costs, setup reliability rankings, risk guardrail events, and automated evaluation of ONE weekly focus rule.
+- **Problem Solved:** Eliminates manual weekend journaling fatigue, holds traders strictly accountable to a single behavioural focus commitment, and identifies bleeding setups and leaks through empirical-Bayes shrunk expectancy.
+- **Main User Interactions:**
+  - Navigate ISO weeks using previous/next week controls or direct `?week=YYYY-Www` URL query param.
+  - Inspect KPI strip with deltas vs the previous week (Net P&L, Win Rate %, Avg Realized R, Profit Factor, Expectancy, Max Drawdown, and R-multiple coverage %).
+  - Check whether last week's focus rule was followed, review machine-evaluated target vs actual metrics, and toggle manual adherence overrides if needed.
+  - Review top mistakes ranked by exact ₹ loss (sum of $|netPnL|$ where $netPnL < 0$) with one-click drilldown into the flagged trades.
+  - Identify best and worst setups (setup templates and strategy playbooks) scored by empirical-Bayes shrunk expectancy ($k=10$), with warning badges when sample size $n < 30$.
+  - Monitor discipline ratings across calendar weekdays, daily loss limit breaches, high-tilt sessions ($\ge 61$), overtrading sessions, and count of days without a reflection journal.
+  - Analyze performance breakdown by weekday and market session.
+  - Accept the deterministic, rule-based focus rule suggestion for the upcoming week (prioritized: loss breach > top mistake cost > setup pause > repeat winner) or select/customize a rule.
+  - Record freeform weekly reflection markdown notes (up to 5,000 characters).
+  - Save as `DRAFT` or click **"Finalize Week"** (with `ConfirmDialog`) to permanently freeze the mathematical snapshot.
+  - Universal drilldown: click any KPI card, mistake row, setup card, risk event chip, or weekday/session row to open `TradeDrillDrawer` with underlying trades.
+  - Dashboard integration: on Sundays or when the last ISO week is unfinalized, an alert prompt card guides the trader to finalize their review.
+- **Inputs & Outputs:**
+  - *Inputs:* ISO week string (`YYYY-Www`), optional `accountId`, focus rule commitment, reflection notes, manual adherence override, draft/finalized status.
+  - *Outputs:* `IWeeklyReviewSnapshot` and `IWeeklyReview` with live or frozen metrics and previous focus rule evaluation.
+- **Frontend Components:**
+  - [`WeeklyReviewPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/WeeklyReviewPage.tsx)
+  - [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx) (Weekly Review Ready prompt card)
+  - Navigation in [`AppLayout.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/AppLayout.tsx) (RateReview icon & `W` hotkey)
+  - Command in [`CommandPalette.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/CommandPalette.tsx)
+- **Backend APIs & Services:**
+  - `GET /api/v1/review/weekly?week=YYYY-Www&accountId=...`
+  - `GET /api/v1/review/weekly/:week`
+  - `POST /api/v1/review/weekly/:week`
+  - `GET /api/v1/review/weekly` (list recent 12 reviews)
+  - Standalone pure financial engine: [`buildWeeklyReview`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/weekly-review.ts) & [`evaluateFocusRule`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/weekly-review.ts)
+- **Database Entities:** `WeeklyReview`, `Trade`, `DailyJournal`, `TradeTemplate`, `Strategy`.
+- **Business Rules & Calculations:**
+  - Week boundaries computed using ISO-8601 Monday-start in Indian Standard Time (IST, UTC+05:30), fully supporting 53-week years and leap years.
+  - Calculations are pure, deterministic, and implemented in `@tradevault/financial-engine` using `Decimal.js` (30 digits, `ROUND_HALF_UP`) with zero floating-point error.
+  - Summary metrics use `computeTradeAggregates` so totals reconcile to the exact paisa with `/dashboard/stats` and universal drilldowns.
+  - Shrunk expectancy uses Empirical-Bayes shrinkage $E_{shrunk} = \frac{n}{n + k} \bar{X} + \frac{k}{n + k} \mu_{prior}$ with $k=10$ and sample-size warnings for $n < 30$.
+  - Focus rule suggestions are 100% deterministic and rule-based (no external AI/telemetry).
+  - Snapshot is mutable while in `DRAFT`; setting `FINALIZED` freezes the calculation permanently.
+
+---
+
 ## 7. Interactive Risk & Position Sizing Calculator
 
 - **Status:** **IMPLEMENTED**

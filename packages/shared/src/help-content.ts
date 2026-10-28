@@ -69,7 +69,9 @@ export type HelpKey =
   | 'strategy.edgeVerdict'
   | 'strategy.invariantCheck'
   | 'journal.disciplineScore'
-  | 'dashboard.reviewQueue';
+  | 'dashboard.reviewQueue'
+  | 'review.weekly'
+  | 'review.focusRule';
 
 export interface IHelpEntry {
   title: string;
@@ -554,5 +556,21 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     summary: 'Highlights closed trades requiring post-trade journaling, mistake tagging, or chart attachment.',
     details: 'Trades appear here if they are unreviewed, lack mistake reflection tags on losses, or have missing execution chart screenshots.',
     docsAnchor: 'docs/ROUTES_AND_PAGES.md#dashboard',
+  },
+
+  'review.weekly': {
+    title: 'Weekly Review Report',
+    summary: 'Synthesizes an entire trading week into one structured review with KPI deltas, mistakes, and discipline trends.',
+    details: 'Calculates reconciled net P&L, expectancy, R-multiples, setup reliability via empirical-Bayes shrunk expectancy, and session distributions without floating-point error.',
+    seeAlso: ['review.focusRule', 'metric.expectancy', 'journal.disciplineScore'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#weekly-review-aggregation',
+  },
+
+  'review.focusRule': {
+    title: 'Weekly Focus Rule',
+    summary: 'A single rule chosen for the upcoming week based on objective priority: daily loss breaches, mistake costs, or setup edge.',
+    details: 'Evaluated deterministically the following week against closed trades to verify adherence and build consistency.',
+    seeAlso: ['review.weekly', 'settings.riskGuardrails'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#focus-rule-suggestions',
   },
 };

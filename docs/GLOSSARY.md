@@ -918,3 +918,70 @@ Formula: Score = 100 - Sum(Mistake Penalties)
 **Documentation Reference:** [docs/TRADING_CALCULATIONS.md#mae-mfe](docs/TRADING_CALCULATIONS.md#mae-mfe)
 
 ---
+
+## 11. Live Trade Management & Execution
+
+### Multi-Target Scaling Ladder
+*Registry Key:* `live.targetLadder`
+
+**Summary:** 3-tier profit-taking structure that systematically scales out of a position at pre-calculated R-multiple targets while progressively trailing the stop loss.
+
+**Detailed Explanation:** Target 1 (+1.0R): Exit 50% of position and lock stop to breakeven. Target 2 (+2.0R): Exit 33% of remaining and trail stop to +1.0R. Target 3 / Runner (+3.0R or planned target): Exit 100% of remaining runner position. Each step displays real-time distance, progress percentage, and an actionable execution badge that triggers FYERS broker orders when clicked.
+
+**See Also:** `metric.unrealizedR`, `risk.currentStopLoss`, `risk.initialStopLoss`
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#15-multi-target-scaling-ladder-engine](docs/TRADING_CALCULATIONS.md#15-multi-target-scaling-ladder-engine)
+
+---
+
+### Profit Giveback Meter & Threat Radar
+*Registry Key:* `live.giveback`
+
+**Summary:** Real-time gauge comparing current floating MTM against the trade's peak MFE to detect profit surrendering and trigger retention alerts.
+
+**Detailed Explanation:** Tracks peak floating net P&L, peak unrealized R, and peak LTP throughout the trade's lifecycle. Calculates the giveback amount (₹), giveback percentage (%), and retention percentage (%). Classifies threat state as `SAFE`, `WATCH` (≥0.8R peak, ≥20% giveback), `LEAKING` (≥1.0R peak, ≥35% giveback), or `CRITICAL_REVERSAL` (≥1.0R peak, current R ≤0.2). Alert messages are surfaced directly in the Live Watcher banner.
+
+**See Also:** `live.targetLadder`, `metric.mfe`
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#16-live-profit-giveback-meter--threat-radar](docs/TRADING_CALCULATIONS.md#16-live-profit-giveback-meter--threat-radar)
+
+---
+
+### MFE Reach Funnel
+*Registry Key:* `analytics.excursion.mfeReachFunnel`
+
+**Summary:** Funnel analysis evaluating what proportion of trades reached specific R-multiple milestones and whether they converted into profits or surrendered into losses.
+
+**Detailed Explanation:** Evaluates progression across 6 thresholds (+0.5R, +1.0R, +1.5R, +2.0R, +2.5R, +3.0R). For each threshold, calculates the reach count, reach percentage, win conversion rate, and loss count. Identifies "round-trip losses" — trades that reached ≥+1.0R MFE but closed at a loss — quantifying the total surrendered R and ₹ that disciplined profit protection would have saved.
+
+**See Also:** `metric.mfe`, `metric.exitEfficiency`, `live.giveback`
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#17-mfe-reach-funnel--round-trip-loss-quantifier](docs/TRADING_CALCULATIONS.md#17-mfe-reach-funnel--round-trip-loss-quantifier)
+
+---
+
+### Initial Stop Loss Anchoring
+*Registry Key:* `risk.initialStopLossAnchoring`
+
+**Summary:** Invariant ensuring that the original stop loss at entry is permanently preserved for accurate 1R risk budget calculations, even after trailing or moving the stop.
+
+**Detailed Explanation:** When a trader adjusts their stop loss (via 1-click breakeven lock, scaling ladder step, or manual broker SL modification), `risk.currentStopLoss` updates to the new price while `risk.initialStopLoss` remains anchored at the entry-time stop. The risk budget denominator for all R-multiple calculations always uses the initial risk amount (|Entry − InitialSL| × Qty × Multiplier), preventing artificially inflated R-multiples when trailing to breakeven or profit.
+
+**See Also:** `risk.plannedRiskAmount`, `metric.realizedRMultiple`, `live.targetLadder`
+
+**Documentation Reference:** [docs/TRADING_CALCULATIONS.md#18-stop-loss-modification--initial-risk-budget-anchoring](docs/TRADING_CALCULATIONS.md#18-stop-loss-modification--initial-risk-budget-anchoring)
+
+---
+
+### Live Broker Order Execution (FYERS)
+*Registry Key:* `broker.liveExecution`
+
+**Summary:** Real-time order placement, modification, and cancellation on the FYERS trading platform directly from SetupMint's Live Watcher interface.
+
+**Detailed Explanation:** Three execution endpoints: (1) `POST /trades/:id/broker-sl` — modifies or places SL orders on FYERS with automatic pending order detection. (2) `POST /trades/:id/broker-exit` — submits partial or full market exits with automatic orphaned SL cancellation on full close. (3) `POST /trades/:id/broker-ladder-step` — atomic scaling ladder step combining partial exit + stop trail in a single action. All order tags are sanitized to alphanumeric characters for FYERS API v3 compliance, and IPv4 DNS resolution is enforced.
+
+**See Also:** `live.targetLadder`, `live.giveback`, `risk.currentStopLoss`
+
+**Documentation Reference:** [docs/FYERS_INTEGRATION.md#8-live-broker-order-execution](docs/FYERS_INTEGRATION.md#8-live-broker-order-execution)
+
+---

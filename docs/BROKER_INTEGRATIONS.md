@@ -342,3 +342,21 @@ When a trade's excursion badge displays `UNAVAILABLE`, hover or inspect `failure
 - **`CIRCUIT_OPEN`:** Angel One encountered 3 consecutive upstream failures; circuit breaker is resting for 60 seconds.
 - **`EMPTY_RESULT`:** SmartAPI returned no candle bars for the requested symbol and time window (e.g. illiquid strike or holiday).
 
+---
+
+## 11. FYERS Live Order Execution & Safety Protocols
+
+SetupMint supports discretionary live trade management through authenticated FYERS broker sessions:
+1. **Live Trailing Stop Loss Placement & Modification (`executeBrokerStopLoss`):**
+   - Automatically inspects the broker orderbook (`GET /orders`) for pending SL orders.
+   - Modifies existing SL orders or places new SL-M / SL-L orders with sanitized alphanumeric order tags.
+   - Preserves entry risk baseline `initialStopLoss` while updating `currentStopLoss`.
+2. **Partial (50%) & Full Market Exits (`executeBrokerExit`):**
+   - Emits market orders (`type: 2`) with inverse direction side.
+   - Automatically scans and cancels pending open SL orders on full closure to prevent orphaned resting orders.
+3. **Multi-Target Scaling Ladder Execution:**
+   - Atomically executes partial scale-outs while trailing stops along pre-calculated R-multiples (+1.0R BE lock, +2.0R trail, etc.).
+4. **Network & Schema Protections:**
+   - Forces IPv4 DNS lookups (`family: 4`) to eliminate dual-stack IPv6 latency.
+   - Cleans all order tags to alphanumeric-only (`[a-zA-Z0-9]`) complying with FYERS API v3 schema rules.
+

@@ -747,6 +747,102 @@ In the subsequent week, `evaluateFocusRule(prevFocusRule, thisWeekTrades)` check
 - **`DAILY_LOSS_BREACH`:** Measures if any calendar day's loss exceeded `maxDailyLoss`.
 - **`CUSTOM` / Unmeasurable:** Returns `followed: null` and allows the user to manually toggle adherence override via the UI.
 
+---
+
+## 15. Multi-Target Scaling Ladder Engine
+
+### Code Location:
+[`packages/financial-engine/src/live-watcher.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/live-watcher.ts) (`calculateTargetLadder`)
+
+### 15.1 Initial Risk Points Determination
+The unit of initial risk in points ($\Delta P_{\text{risk}}$) is derived using pure Decimal.js:
+$$\Delta P_{\text{risk}} = \begin{cases} |P_{\text{entry}} - P_{\text{stopLoss}}| & \text{if stopLoss is defined} \\ \frac{\text{initialRiskAmount}}{Q \times M} & \text{if initialRiskAmount is defined} \\ 0 & \text{otherwise} \end{cases}$$
+
+If $\Delta P_{\text{risk}} = 0$ or $Q \le 0$, the scaling ladder is safely omitted (`undefined`).
+
+### 15.2 Ladder Step Matrix & Quantity Splitting
+The engine configures a 3-tier scaling ladder:
+1. **Target 1 (T1: +1.0R):**
+   $$P_{T1} = \begin{cases} P_{\text{entry}} + \Delta P_{\text{risk}} & \text{if LONG} \\ P_{\text{entry}} - \Delta P_{\text{risk}} & \text{if SHORT} \end{cases}$$
+   - **Planned Exit Ratio:** $50\%$ ($\text{exitQty} = \lfloor Q \times 0.5 \rfloor$ or at least 1 lot).
+   - **Suggested Trailing Stop:** Breakeven lock ($P_{\text{entry}}$).
+2. **Target 2 (T2: +2.0R):**
+   $$P_{T2} = \begin{cases} P_{\text{entry}} + 2 \times \Delta P_{\text{risk}} & \text{if LONG} \\ P_{\text{entry}} - 2 \times \Delta P_{\text{risk}} & \text{if SHORT} \end{cases}$$
+   - **Planned Exit Ratio:** $33\%$ of remaining position ($\text{exitQty} = \max(1, \lfloor (Q - Q_{T1}) \times 0.5 \rfloor)$).
+   - **Suggested Trailing Stop:** Trail to $+1.0R$ price level ($P_{T1}$).
+3. **Target 3 / Runner (T3: +3.0R or Planned Target):**
+   $$P_{T3} = \begin{cases} P_{\text{plannedTarget}} & \text{if plannedTarget is defined} \\ P_{\text{entry}} \pm 3 \times \Delta P_{\text{risk}} & \text{otherwise} \end{cases}$$
+   - **Planned Exit Ratio:** $100\%$ of runner position ($Q_{\text{runner}} = Q - Q_{T1} - Q_{T2}$).
+   - **Suggested Trailing Stop:** Trail behind recent swing structure or $+2.0R$ price ($P_{T2}$).
+
+### 15.3 Step Status & Progress Percentage
+For each step $i \in \{1, 2, 3\}$, real-time distance and progress are calculated:
+$$\text{Distance Points} = \begin{cases} P_{Ti} - \text{LTP} & \text{if LONG} \\ \text{LTP} - P_{Ti} & \text{if SHORT} \end{cases}$$
+$$\text{Progress \%} = \min\left(100, \max\left(0, \frac{\text{Favorable Run Points}}{\text{Step Target Points}} \times 100\right)\right)$$
+$$\text{Status} = \begin{cases} \text{'MET'} & \text{if favorable price reached or exceeded } P_{Ti} \\ \text{'IN\_PROGRESS'} & \text{if Progress \%} > 0 \\ \text{'PENDING'} & \text{otherwise} \end{cases}$$
+Actionable flag `isActionable = true` is raised when the step is `MET`, enabling 1-click execution.
+
+---
+
+## 16. Live Profit Giveback Meter & Threat Radar
+
+### Code Location:
+[`packages/financial-engine/src/live-watcher.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/live-watcher.ts) (`calculateLiveGiveback`)
+
+### 16.1 Peak Floating MTM Tracking
+Monitors the peak favorable profit observed while the trade has been open:
+$$\text{Peak Floating Net P&L} = \max(\text{Current Net MTM}, \text{Previous Peak MFE Net MTM})$$
+$$\text{Peak Unrealized R} = \max(\text{Current Unrealized R}, \text{Previous Peak Unrealized R})$$
+$$\text{Peak LTP} = \begin{cases} \max(\text{Current LTP}, \text{Previous Peak LTP}) & \text{if LONG} \\ \min(\text{Current LTP}, \text{Previous Peak LTP}) & \text{if SHORT} \end{cases}$$
+
+### 16.2 Giveback & Retention Math
+$$\text{Giveback Amount (₹)} = \max(0, \text{Peak Floating Net P&L} - \text{Current Net MTM})$$
+$$\text{Giveback \%} = \begin{cases} \min\left(100, \max\left(0, \frac{\text{Giveback Amount}}{\text{Peak Floating Net P&L}} \times 100\right)\right) & \text{if Peak Floating Net P&L} > 0 \\ 0 & \text{otherwise} \end{cases}$$
+$$\text{Retention \%} = 100\% - \text{Giveback \%}$$
+
+### 16.3 Threat Level State Machine
+The engine classifies the live threat state to warn traders before open profits evaporate:
+- **`CRITICAL_REVERSAL`:** Reached $\text{Peak } R \ge 1.0$ but current unrealized $R \le 0.2$. Immediate capital protection alert.
+- **`LEAKING`:** Reached $\text{Peak } R \ge 1.0$ and $\text{Giveback \%} \ge 35\%$. Actionable profit booking warning.
+- **`WATCH`:** Reached $\text{Peak } R \ge 0.8$ and $\text{Giveback \%} \ge 20\%$. Normal pullback monitoring.
+- **`SAFE`:** All other conditions.
+
+---
+
+## 17. MFE Reach Funnel & Round-Trip Loss Quantifier
+
+### Code Location:
+[`packages/financial-engine/src/excursion-analytics.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/excursion-analytics.ts) (`calculateExcursionAggregates`)
+
+### 17.1 Milestone Reach & Conversion Rates
+For each threshold $R_{\text{thresh}} \in \{0.5, 1.0, 1.5, 2.0, 2.5, 3.0\}$:
+$$\text{Reached Trades} = \{t \in \text{Trades} \mid \text{MFE } R_t \ge R_{\text{thresh}}\}$$
+$$\text{Reach \%} = \frac{|\text{Reached Trades}|}{N_{\text{total evaluated}}} \times 100$$
+$$\text{Win Conversion \%} = \begin{cases} \frac{|\{t \in \text{Reached Trades} \mid t.\text{netPnL} > 0\}|}{|\text{Reached Trades}|} \times 100 & \text{if } |\text{Reached Trades}| > 0 \\ 0 & \text{otherwise} \end{cases}$$
+
+### 17.2 Round-Trip Loss Prevention Metrics
+Evaluates trades that achieved $\text{MFE } R \ge 1.0$ but ultimately closed as losses ($t.\text{netPnL} < 0$):
+$$\text{Round-Trip Loss Rate \%} = \frac{|\text{Round-Trip Losses}|}{|\text{Trades Reaching } \ge +1.0R|} \times 100$$
+$$\text{Total Surrendered } R = \sum_{t \in \text{Round-Trip Losses}} \max(0, \text{MFE } R_t - \text{Realized } R_t)$$
+$$\text{Total Surrendered Amount (₹)} = \sum_{t \in \text{Round-Trip Losses}} \max(0, \text{MFE Amount}_t - t.\text{netPnL})$$
+
+---
+
+## 18. Stop-Loss Modification & Initial Risk Budget Anchoring
+
+### Code Location:
+[`apps/api/src/routes/trade.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/trade.routes.ts), [`apps/api/src/services/live-watcher.service.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/services/live-watcher.service.ts)
+
+### 18.1 Invariant: Initial Stop Loss Anchoring
+When a trader trails their stop loss (via 1-click breakeven lock, scaling ladder execution, or broker SL adjustment):
+1. `risk.initialStopLoss` is **strictly preserved** as the original stop loss established at entry.
+2. `risk.currentStopLoss` is updated to the newly adjusted stop price.
+3. `risk.plannedRiskAmount` remains fixed at $|P_{\text{entry}} - P_{\text{initialStopLoss}}| \times Q \times M$.
+4. **Denominator Invariance:** Realized and unrealized R-multiples are always divided by the initial risk budget:
+   $$R = \frac{\text{Net Realized or Floating P&L}}{\text{Initial Risk Budget (₹)}}$$
+   *Trailing a stop loss to breakeven or into profit does NOT shrink the risk denominator to zero or artificially inflate R-multiples to infinity.*
+5. A favorable trail event is appended to `trade.stopLossMoveEvents` with `moveType: 'TRAILED_FAVORABLY'` and recorded in `trade.auditLog`.
+
 
 
 

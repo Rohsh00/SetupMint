@@ -394,3 +394,49 @@ sequenceDiagram
     JourAPI-->>Cal: 200 OK { success: true, data: journal }
     Cal->>Trader: Updates calendar day cell status to "Reviewed" (green badge)
 ```
+
+---
+
+## 11. Live Open Trade Watcher, Scaling Ladder & FYERS Execution Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Trader as Trader
+    participant Watcher as LiveOpenTradeWatcher / LiveScalingLadder
+    participant API as Fastify Trade API (/api/v1/trades)
+    participant LiveSvc as LiveWatcherService
+    participant Fyers as FyersService (FYERS API v3)
+    participant Engine as @tradevault/financial-engine
+    participant DB as MongoDB (Trade / TradingAccount)
+
+    Trader->>Watcher: Views Open Position (1s / 2s / 5s auto-refresh)
+    Watcher->>API: GET /api/v1/trades/live/watcher?accountId=...
+    API->>LiveSvc: getLiveWatcherSummary(userId, accountId)
+    LiveSvc->>Fyers: Fetch batch quotes (/quotes?symbols=...)
+    LiveSvc->>Engine: calculateLiveOpenTradeMetric() -> calculateLiveGiveback() & calculateTargetLadder()
+    LiveSvc->>DB: Update trade.calculated.liveMfeSummary if new peak MFE reached
+    API-->>Watcher: 200 OK { trades, totalFloatingNetPnL, giveback, targetLadder }
+    Watcher->>Trader: Renders floating MTM, Giveback Meter badge, and T1/T2/T3 Scaling Ladder
+    alt Action: Execute Scaling Ladder Step (e.g. T1 +1.0R Met)
+        Trader->>Watcher: Clicks "Execute T1 (+1.0R)" -> Confirms in ExecuteLadderStepDialog
+        Watcher->>API: POST /api/v1/trades/:id/broker-ladder-step { targetIndex: 1, exitQty, exitPrice, newStopLoss, executeBroker: true }
+        API->>Fyers: executeBrokerExit(partialQty) (Market Order)
+        API->>Fyers: executeBrokerStopLoss(newStopLoss) (Amend/Place SL Order)
+        API->>DB: Append EXIT fill, set risk.currentStopLoss (preserving risk.initialStopLoss), push LADDER_STEP_1 auditLog
+        API->>DB: AccountService.recalculateAccountBalances()
+        API-->>Watcher: 200 OK { trade, brokerExitResult, brokerSlResult }
+    else Action: 1-Click Breakeven Lock / Trailing Stop
+        Trader->>Watcher: Clicks "Lock BE" or adjusts SL price
+        Watcher->>API: POST /api/v1/trades/:id/broker-sl { stopPrice, executeBroker: true }
+        API->>Fyers: executeBrokerStopLoss(stopPrice)
+        API->>DB: Update risk.currentStopLoss (anchoring risk.initialStopLoss), push SL_MODIFIED auditLog
+        API-->>Watcher: 200 OK { trade, brokerResult }
+    else Action: 50% Partial Exit or 100% Full Market Exit
+        Trader->>Watcher: Clicks "50% Exit" or "Close @ Market"
+        Watcher->>API: POST /api/v1/trades/:id/broker-exit { quantity, exitPrice, isFullClose, executeBroker: true }
+        API->>Fyers: executeBrokerExit() + cancel pending SL orders on full close
+        API->>DB: Record fill / close trade, recalculateAccountBalances()
+        API-->>Watcher: 200 OK { trade, brokerResult }
+    end
+```

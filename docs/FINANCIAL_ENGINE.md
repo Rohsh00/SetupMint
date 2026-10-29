@@ -338,6 +338,32 @@ When score $\ge 61$, an advisory, non-blocking pre-trade warning is surfaced in 
 - **Empirical Bayes Shrinkage:** Shrinks small-sample segment means (strategy variants, sessions, symbols) toward the grand mean to prevent sample-size deception.
 - **What-If Decision Bridge:** Generates empirical stop and target recommendations linked directly to the What-If simulation grid.
 
+### C. MFE Reach Funnel & Round-Trip Loss Prevention (`calculateMfeReachFunnel`)
+- **Progression Thresholds:** Evaluates proportion of trades reaching $\ge +0.5R, +1.0R, +1.5R, +2.0R, +2.5R, +3.0R$ maximum favorable excursion.
+- **Conversion Efficiency:** Computes win conversion rate ($\%$) at each milestone step.
+- **Round-Trip Loss Prevention:** Quantifies trades that hit $\ge +1.0R$ MFE but closed at a loss ($P&L < 0$), calculating the round-trip loss rate ($\%$), total surrendered R, and total surrendered rupees ($₹$).
+- **Capital Protection Insights:** Generates actionable guidance advising traders when locking breakeven at $+1.0R$ would have saved meaningful capital.
+
+---
+
+## 14. Live Open Trade Watcher & Scaling Ladder Engine (`live-watcher.ts`)
+
+### A. Live Floating MTM & Statutory Charges (`calculateLiveOpenTradeMetric`)
+- Computes real-time gross P&L, estimated Indian statutory regulatory charges (STT, exchange turnover fees, SEBI turnover fees, stamp duty, 18% GST), and floating net P&L with 30-digit `Decimal.js` precision.
+- Calculates price distance to stop loss in points and ticks:
+  $$\text{Ticks to SL} = \frac{|P_{\text{ltp}} - P_{\text{stopLoss}}|}{\text{tickSize}}$$
+- Evaluates stop loss threat levels: `SAFE` ($> 50\%$ buffer), `ATTENTION` ($\le 50\%$), `CRITICAL` ($\le 25\%$), and `BREACHED` ($\le 0$).
+
+### B. Live Profit Giveback Meter & Leak Alerts (`calculateLiveGiveback`)
+- Monitors highest floating MTM achieved vs current LTP.
+- Computes surrendered profit in ₹ and $\%$, and current profit retention percentage.
+- Triggers 4 threat level states: `CRITICAL_REVERSAL`, `LEAKING`, `WATCH`, and `SAFE`.
+
+### C. Multi-Target Scaling Ladder (`calculateTargetLadder`)
+- Configures 3-tier scaling ladder (T1: +1.0R, 50% exit, breakeven lock; T2: +2.0R, 33% exit, trail +1R; T3: +3.0R/planned target, 100% exit, trail swing).
+- Calculates distance in points, distance percentage, and progress percentage for each target.
+- Marks step status as `PENDING`, `IN_PROGRESS`, or `MET`, providing actionable execution flags for 1-click broker order submission.
+
 
 
 

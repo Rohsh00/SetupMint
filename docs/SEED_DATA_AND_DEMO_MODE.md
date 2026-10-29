@@ -126,11 +126,21 @@ npm run seed:validate
 
 # 5. Safely reset/wipe all demo data (zero data loss for real users)
 npm run seed:reset
+
+# 6. Seed 4 core institutional strategies (Intraday Trend, ORB, Mean Reversion, Expiry Scalping)
+npx tsx apps/api/src/scripts/seed-komal-strategies.ts
 ```
 
-### Demo User Credentials:
-- **Email:** `trader@tradevault.local`
-- **Password:** `TradeVault@123`
+### Demo & Default User Credentials:
+- **Demo Account:** `trader@tradevault.local` (Password: `TradeVault@123`)
+- **Default Login Pre-fill (`LoginPage.tsx`):** `komal@gmail.com` (Password: `komal@1998`)
+
+### Core Institutional Strategy Seeder (`seed-komal-strategies.ts`):
+In addition to the demo seed engine, [`apps/api/src/scripts/seed-komal-strategies.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/scripts/seed-komal-strategies.ts) idempotently seeds **4 core institutional strategies** with child setup variants, rules, and checklists:
+1. **Intraday Index Trend Following** (EMA alignment, BOS pullback, VWAP confluence)
+2. **Opening Range Breakout (ORB)** (First 15m range breakout with volume spike confirmation)
+3. **Mean Reversion Fade** (Liquidity sweep & exhaustion at key HTF levels)
+4. **High-Probability Expiry Scalping** (0DTE gamma scalps at Open Interest walls)
 
 ---
 

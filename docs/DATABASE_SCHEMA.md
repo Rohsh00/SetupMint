@@ -198,12 +198,14 @@ SetupMint defines 18 core Mongoose models:
 
 ##### C. `risk` (Pre-Trade Risk Management)
 - `plannedEntryPrice` (`Number`)
-- `initialStopLoss` (`Number`)
+- `initialStopLoss` (`Number`): Anchored initial stop loss at entry, preserved for authoritative 1R calculations.
+- `currentStopLoss` (`Number`): Active/current stop loss price, updated on broker modifications or trailing.
 - `initialStopSource` (`String`, enum: `['MANUAL', 'TEMPLATE', 'BROKER_ORDERBOOK']`): Source of the initial stop loss price.
 - `slReviewReason` (`String`): Set when orderbook stop matching is ambiguous (e.g. `'SL ambiguous - confirm'`).
 - `slReviewCandidates` (`[Object]`): Candidate orders evaluated from orderbook when ambiguous.
 - `plannedTarget` (`Number`)
 - `riskBudgetAmount` (`Number`)
+- `plannedRiskAmount` (`Number`): Initial monetary risk amount in ₹ ($|P_{\text{entry}} - P_{\text{initialStopLoss}}| \times Q \times M$).
 - `riskPercentage` (`Number`)
 - `suggestedQuantity` (`Number`)
 - `actualQuantity` (`Number`)
@@ -307,6 +309,11 @@ SetupMint defines 18 core Mongoose models:
   - `netRiskChangePoints` (`Number`, default `0`)
   - `hasWidenedRisk` (`Boolean`, default `false`)
   - `detectedAt` (`Date`)
+- `liveMfeSummary` (`Object`, optional):
+  - `peakLtp` (`Number`): Peak favorable price observed while trade was live.
+  - `peakFloatingNetPnL` (`Number`): Highest floating net MTM reached in rupees.
+  - `peakUnrealizedR` (`Number`): Highest unrealized R-multiple achieved.
+  - `peakTimestamp` (`Date`): Timestamp when peak MFE was reached.
 
 ##### H. `stopLossMoveEvents`
 Array of historical stop-loss order modifications detected from FYERS orderbook or manual timeline:
@@ -322,7 +329,7 @@ Array of historical stop-loss order modifications detected from FYERS orderbook 
 
 ##### I. `screenshotIds` & `auditLog`
 - `screenshotIds` (`[ObjectId]`, ref: `'Attachment'`): Associated chart screenshots (including automated SVG execution charts).
-- `auditLog`: Array of `{ action: String, timestamp: Date, changedBy: String, details: Mixed }`.
+- `auditLog`: Array of `{ action: String, timestamp: Date, changedBy: String, details: Mixed }` (Actions: `CREATED`, `UPDATED`, `DELETED`, `CLASSIFIED`, `SL_MODIFIED`, `PARTIALLY_CLOSED`, `CLOSED`, `LADDER_STEP_<n>`).
 
 **Compound Indexes:**
 - `{ userId: 1, tradeDate: -1 }`

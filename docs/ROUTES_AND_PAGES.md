@@ -100,51 +100,61 @@ This document details all routes and pages discovered in the **SetupMint** front
 
 ### 4. `/trades` — Master Trades Ledger Page
 - **Page Component:** [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
-- **Purpose:** Searchable, filterable ledger of all trades with pagination, bulk operations, quick close, and full audit logs.
+- **Purpose:** Searchable, filterable ledger of all trades with live open trade monitoring, pagination, bulk operations, quick close, and full audit logs.
 - **Main Components:**
+  - **Live Open Trade Watcher Banner ([`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx)):** Mounted above the filter bar when open positions exist; provides `Off`, `1s`, `2s`, `5s`, `10s`, `30s` auto-refresh intervals, aggregate floating Net MTM, portfolio unrealized R, expandable position cards with [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), 1-click Breakeven lock, 50% partial exit, live Stop Loss adjustment, and [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx).
   - Filter Toolbar: Search input (symbol/title/notes), Direction filter (Long/Short), Outcome filter (Win/Loss/Breakeven/Open), Asset Class filter, Status filter.
   - Master Table: Date, Symbol, Direction, Asset Class, Quantity, Entry Price, Exit Price, Net P&L, Realized R, Discipline Score, Attachments Count, Action buttons (Quick Close, View Details, Duplicate, Delete).
   - Bulk Actions Toolbar: Select all checkbox, Bulk Tagging button, Bulk Delete button.
   - Pagination Controls: Page size selector (25, 50, 100), previous/next page navigation.
-  - Modals: `TradeFormModal`, `QuickCloseTradeDialog` (compact exit dialog for OPEN/PLANNED trades), `ConfirmDialog` for single delete and bulk delete, Bulk Tag dialog.
-- **Available Actions:** Search, filter, paginate, sort by column, quick close position, open trade detail, open edit modal, duplicate trade, delete trade, bulk tag, bulk delete.
+  - Modals: `TradeFormModal`, `QuickCloseTradeDialog` (compact exit dialog for OPEN/PLANNED trades supporting 50% partial or 100% full close with optional live FYERS broker execution), `ExecuteLadderStepDialog`, `ConfirmDialog` for single delete and bulk delete, Bulk Tag dialog.
+- **Available Actions:** Search, filter, paginate, sort by column, monitor live MTM & giveback, execute scaling ladder steps, adjust stop loss on FYERS, quick close position (partial or full), open trade detail, open edit modal, duplicate trade, delete trade, bulk tag, bulk delete.
 - **API Calls:**
   - `GET /api/v1/trades?page=...&limit=...&search=...&direction=...&outcome=...`
+  - `GET /api/v1/trades/live/watcher?accountId=...`
+  - `POST /api/v1/trades/:id/broker-sl`
+  - `POST /api/v1/trades/:id/broker-exit`
+  - `POST /api/v1/trades/:id/broker-ladder-step`
   - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/trades/:id/duplicate`
   - `DELETE /api/v1/trades/:id`
   - `POST /api/v1/trades/bulk-tag`
   - `POST /api/v1/trades/bulk-delete`
-- **Database Models:** `Trade`, `TradingAccount`, `Attachment`.
+- **Database Models:** `Trade`, `TradingAccount`, `Attachment`, `BrokerIntegration`.
 - **Status:** **IMPLEMENTED**.
 
 ---
 
 ### 5. `/trades/:id` — Trade Detail & Audit Page
 - **Page Component:** [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx)
-- **Purpose:** In-depth post-trade analysis, execution fills inspection, technical thesis, psychological notes, chart gallery, quick close, and immutable audit trail.
+- **Purpose:** In-depth post-trade and live-trade analysis, execution fills inspection, technical thesis, psychological notes, chart gallery, live broker execution, and immutable audit trail.
 - **Main Components:**
   - Trade Header: Symbol, asset class, direction, status, trade title, net P&L badge, R-multiple badge, Quick Close button (for OPEN/PLANNED positions).
+  - **Single-Trade Live Execution Monitor:** Displayed for `OPEN` trades with real-time LTP, floating Net MTM, stop loss distance in points/ticks, stop threat level badge, [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), and 1-click broker SL/exit controls.
   - Metrics Cards: Gross P&L, Total Costs Breakdown (brokerage, exchange, regulatory, taxes), ROI %, holding time.
   - Primary Interactive Candlestick Chart ([`TradeInteractiveChart.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/TradeInteractiveChart.tsx)):
     - TradingView Lightweight Charts v5 candlestick series, volume histogram, execution window shaded band (`AreaSeries`), stop loss trail steps (`LineSeries` with `LineType.WithSteps`).
-    - Dynamic timeframe switching (`1m`, `5m`, `15m`, `30m`, `1h`, `1D`) with adaptive default (`5m` for duration <= 4h, `15m` for > 4h).
+    - Dynamic timeframe switching (`1m`, `5m`, `15m`, `30m`, `1h`, `1D`) with adaptive default (`5m` for duration <= 4h, `15m` for > 4h) and race-condition guards on scroll backfill.
     - Horizontal price levels: SL (red), TP (green), Planned Entry (grey dashed), Weighted Average Entry, +1R/+2R/+3R target ladders, liquidity sweeps.
     - Interactive overlay controls persisted to `localStorage`, fullscreen toggle, reset zoom, dark/light theme synchronization.
     - Underlying index proxy fallback badge (`isUnderlyingFallback`) and permanent SVG fallback when broker lookback expires.
   - Tabbed Sections:
     - *Execution Tab:* Simple execution details or FIFO fills breakdown with lot match pairs.
-    - *Risk & Planning Tab:* Initial stop loss, planned target, planned R:R, actual quantity vs suggested quantity.
+    - *Risk & Planning Tab:* Anchored `initialStopLoss`, active `currentStopLoss`, planned target, planned R:R, actual quantity vs suggested quantity.
     - *Thesis & Confluences Tab:* Pre-market bias, market structure, entry confirmation, SMC technical confluences.
     - *Psychology & Discipline Tab:* Emotions before/during/after, discipline rating (1–5), mistake tags, rules followed, lessons learned.
     - *Excursion Analytics & Execution Quality Card:* Maximum Favorable Excursion (MFE), Maximum Adverse Excursion (MAE), Exit Efficiency progress bar gauge, diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`), post-stop reversal alerts, and interactive recompute action.
     - *Automated Execution Charts Generator Panel:* Multi-timeframe execution chart generator with multi-select timeframes ('Auto', '1m', '5m', '15m', '30m', '1h', '1D'; max 5), customizable pre-entry and post-exit candle padding controls, slot limit usage counter (12 cap), "Replace existing charts" toggle, and inline per-timeframe results breakdown.
     - *Saved Snapshots & Visual Review Gallery ([`TradeScreenshotGallery.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeScreenshotGallery.tsx)):* Permanent historical SVG snapshots and user uploads with lightbox inspection, clipboard paste (Ctrl+V / Cmd+V), staleness indicators with one-click regeneration, `settingsSource` attribution, and timeframe badges (`1m` through `1D`).
-    - *Audit Trail:* Immutable log of creation, updates, quick closures, and balance adjustments.
-- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, generate multi-timeframe execution charts, regenerate stale snapshots, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
+    - *Audit Trail:* Immutable log of creation, updates, live SL modifications (`SL_MODIFIED`), partial closures (`PARTIALLY_CLOSED`), scaling ladder steps (`LADDER_STEP_<n>`), full closures, and balance adjustments.
+- **Available Actions:** Quick close trade (via `QuickCloseTradeDialog`), execute scaling ladder step (via `ExecuteLadderStepDialog`), adjust stop loss on FYERS, edit trade (opens `TradeFormModal`), duplicate trade, delete trade, compute excursion metrics, generate multi-timeframe execution charts, regenerate stale snapshots, upload additional screenshots (drag & drop / clipboard paste), view full-resolution charts.
 - **API Calls:**
   - `GET /api/v1/trades/:id`
+  - `GET /api/v1/trades/:id/live`
   - `GET /api/v1/trades/:id/interactive-candles`
+  - `POST /api/v1/trades/:id/broker-sl`
+  - `POST /api/v1/trades/:id/broker-exit`
+  - `POST /api/v1/trades/:id/broker-ladder-step`
   - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/trades/:id/excursion/compute`
   - `POST /api/v1/trades/:id/chart/generate`
@@ -219,7 +229,7 @@ This document details all routes and pages discovered in the **SetupMint** front
     - *Overview Tab:* P&L distribution histogram buckets (clicking any bar opens underlying trades within the exact ₹ range), drawdown curve coordinates, instrument rows, and strategy rows.
     - *Psychology Tab:* Discipline rating bars (1 to 5), emotion before entry rows, and mistake impact cards with one-click drilldown into trades flagged with that mistake.
     - *Time Tab:* Weekday performance rows and trading session rows (NSE Regular, MCX Evening, etc.).
-    - *Execution Quality Tab:* Recharts Scatter Plot (`maeR` vs `mfeR`) with clickable dots; summary KPI cards for Avg MFE, Avg MAE, Exit Efficiency %, % Gave Back Profit, and % Reversal After Stop Hit.
+    - *Execution Quality Tab:* Recharts Scatter Plot (`maeR` vs `mfeR`, Points, or ₹ Amount) with clickable dots; summary KPI cards for Avg MFE, Avg MAE, Exit Efficiency %, % Gave Back Profit, and % Reversal After Stop Hit; **MFE Reach Funnel & Round-Trip Loss Prevention Card** evaluating reach percentages and win conversion across +0.5R to +3.0R milestones, round-trip loss rates, and total surrendered R/₹ with one-click drilldown into round-trip losses.
     - *What-If Simulation Tab:* Baseline metric cards (Evaluable Trades, Actual Mean R, Actual Net P&L), distribution bars, and cell inspector drawer with "Drill Down Evaluated Trades" action.
 - **API Calls:**
   - `GET /api/v1/dashboard/stats?accountId=...`

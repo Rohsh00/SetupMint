@@ -544,14 +544,44 @@ This document provides a comprehensive, verified feature inventory of all module
     - Multi-provider architecture fetching batch quotes from FYERS Data API v3 (`/quotes?symbols=...`) using AES-256-GCM encrypted tokens.
     - Seamless fallback to deterministic micro-fluctuation simulation (`SIMULATED` provider tag) when markets are closed or broker session is unauthenticated, ensuring smooth workflow testing.
   - **Ubiquitous Visual Surfaces:**
-    - **Global Watcher Banner:** Integrated into [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx) (above KPI cards) and [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx) (above ledger filter bar) with pulsating live beacon, auto-refresh interval selector (`Off`, `5s`, `10s`, `30s`), aggregate open trade count, total floating Net MTM, portfolio unrealized R, and expandable position cards.
+    - **Global Watcher Banner:** Integrated into [`DashboardPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/DashboardPage.tsx) (above KPI cards) and [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx) (above ledger filter bar) with pulsating live beacon, auto-refresh interval selector (`Off`, `1s`, `2s`, `5s`, `10s`, `30s`), aggregate open trade count, total floating Net MTM, portfolio unrealized R, and expandable position cards.
     - **Single-Trade Live Execution Monitor:** Mounted directly in [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx) for open trades, featuring large monospace LTP and Net MTM readouts, dynamic color states, risk threat chips, target progress bar, and instant manual quote refresh.
-    - **One-Click Quick Close @ LTP:** Integrated dialog prefilling the live market price with instant round-trip fee calculation and trade closure.
+    - **Multi-Target Scaling Ladder (`LiveScalingLadder.tsx`):** Structured 3-step scaling matrix calculating Target 1 (+1.0R, 50% exit, lock BE), Target 2 (+2.0R, 33% exit, trail +1R), and Target 3 Runner (+3.0R or planned target, 100% exit, trail swing) with visual progress meters and actionable execution badges.
+    - **Live Profit Giveback Meter & Leak Alerts (`LiveGivebackMeter.tsx`):** Real-time gauge monitoring peak floating MTM vs current MTM, displaying ₹/R giveback, retention percentage, and threat alert levels (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`).
+    - **Active FYERS Live Order Execution:** 1-click Breakeven lock, 50% partial exit, live trailing stop modification, and full market close with automatic pending SL orderbook cancellation.
 - **Frontend & Backend Components:**
-  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
+  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider`, `GivebackThreatLevel`, `ILiveGivebackMetric`, `TargetLadderStepStatus`, `ILiveTargetLadderStep`, `ILiveTargetLadder` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
   - Engine: `live-watcher.ts` in [`packages/financial-engine/src/live-watcher.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/live-watcher.ts).
-  - Backend API: `live-watcher.service.ts` in [`apps/api/src/services/live-watcher.service.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/services/live-watcher.service.ts), `GET /api/v1/trades/live/watcher`, `GET /api/v1/trades/:id/live`.
-  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
+  - Backend API: `live-watcher.service.ts`, `fyers.service.ts`, `POST /trades/:id/broker-sl`, `POST /trades/:id/broker-exit`, `POST /trades/:id/broker-ladder-step`, `GET /trades/live/watcher`, `GET /trades/:id/live`.
+  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx), [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
+
+---
+
+### Module 17: MFE Reach Funnel & Round-Trip Loss Prevention
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** Traders frequently hold winning trades that reach significant profit (e.g. +1.5R to +3.0R) only to let them reverse into losses because of lack of trailing discipline or objective giveback rules.
+- **Key Capabilities:**
+  - **Excursion Reach Funnel:** Evaluates what proportion of trades reach $\ge +0.5R, +1.0R, +1.5R, +2.0R, +2.5R, +3.0R$ maximum favorable excursion during their lifecycle.
+  - **Win Conversion Efficiency:** Calculates the percentage of trades that, having reached a given R milestone, actually close as profitable trades versus decaying into scratch or negative trades.
+  - **Round-Trip Loss Quantifier:** Identifies trades that reached $\ge +1.0R$ MFE but closed at a loss ($P&L < 0$), quantifying exact total surrendered R-multiples and monetary losses in ₹.
+  - **Dynamic Actionable Insights:** Surfaces specific operational recommendations (e.g. "Critical Giveback Alert: 38% of trades reaching +1.0R closed negative. Locking breakeven at +1.0R would have saved ₹42,500").
+- **Frontend & Backend Components:**
+  - Engine: `calculateMfeReachFunnel` in [`packages/financial-engine/src/excursion-analytics.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/excursion-analytics.ts).
+  - Shared: `IMfeReachStep`, `IMfeReachFunnel` in [`packages/financial-engine/src/excursion-analytics.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/excursion-analytics.ts).
+  - Frontend: Funnel breakdown and round-trip loss card mounted in [`AnalyticsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AnalyticsPage.tsx) under the Execution Quality tab.
+
+---
+
+### Module 18: Core Institutional Strategy Playbooks & Seeder
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** Traders starting on SetupMint lack structured, institutional playbooks with pre-defined rules, variant setups, and checklists.
+- **Key Capabilities:**
+  - **4 Institutional Playbooks:**
+    1. **Intraday Index Trend Following:** EMA alignment, BOS pullback entry, trailing stop along 15m structure.
+    2. **Opening Range Breakout (ORB):** First 15m session boundary break, high volume filter, tight risk budget.
+    3. **Mean Reversion Fade:** Extreme standard deviation exhaustion at liquidity sweep levels (equal highs/lows).
+    4. **High-Probability Expiry Scalping:** 0DTE gamma scalp targeting Open Interest walls with strict time stops.
+  - **Automated Seeding CLI:** Standalone script `npx tsx apps/api/src/scripts/seed-komal-strategies.ts` creating strategies, variants, confluences, entry/exit criteria, and psychological checklists idempotently.
 
 
 

@@ -129,7 +129,8 @@ apps/api/
 │   ├── services/
 │   │   ├── account.service.ts     # Authoritative account balance reconciliation service
 │   │   ├── crypto.service.ts      # AES-256-GCM encryption for broker secrets and tokens
-│   │   └── fyers.service.ts       # FYERS API v3 OAuth, tradebook sync, and funds sync service
+│   │   ├── fyers.service.ts       # FYERS API v3 OAuth, tradebook sync, funds sync, and live order execution service
+│   │   └── live-watcher.service.ts # Real-time open trade watcher service (batch FYERS quotes, simulated fallback)
 │   ├── seed/                      # SetupMint Heavy Seed Data Engine
 │   │   ├── charges-calculator.ts  # Indian statutory charges calculator (re-exports from @tradevault/financial-engine)
 │   │   ├── chart-generator.ts     # Generates synthetic TradingView-style SVG candlestick charts
@@ -146,8 +147,9 @@ apps/api/
 │       ├── reset-demo.ts          # Safe reset script for demo user data (npm run seed:reset)
 │       ├── validate-seed.ts       # CLI validator script (npm run seed:validate)
 │       ├── backfill-account-transactions.ts # Account and broker data backfill script
+│       ├── seed-komal-strategies.ts # Seeds 4 core institutional strategy playbooks with variants
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (184 tests across 14 suites)
+└── test/                          # Vitest API and Seed Engine integration test suites (349 tests across 32 suites)
     ├── account-backfill.test.ts   # Account and broker data backfill migration tests
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests
@@ -161,6 +163,8 @@ apps/api/
     ├── storage.test.ts            # Cloudflare R2 object storage provider tests
     ├── strategy-variants.test.ts  # Strategy setup variant CRUD and analytics tests
     ├── template.test.ts           # Template CRUD, tenant isolation, and edge stat tests
+    ├── excursion.test.ts          # Excursion analytics API tests (MFE reach funnel, round-trip loss prevention)
+    ├── live-watcher.test.ts       # Live open trade watcher API tests (giveback meter, scaling ladder)
     ├── weekly-review.test.ts      # Weekly review live snapshots, immutability, focus rule evaluation, and IST boundary tests
     └── setup.ts                   # Vitest setup with in-memory replica set and index bootstrap
 ```
@@ -197,7 +201,7 @@ apps/web/
 │   │   │   └── Modal.tsx          # Accessible modal dialog container
 │   │   └── trades/                # Trade form and execution components
 │   │       ├── TradeFormModal.tsx # Master modal (Quick vs Comprehensive, Simple vs Advanced)
-│   │       ├── QuickCloseTradeDialog.tsx # Fast exit modal with live P&L and auto-charges
+│   │       ├── QuickCloseTradeDialog.tsx # Fast exit modal with live P&L, auto-charges, and broker execution
 │   │       ├── tradeTemplates.ts  # Predefined trade setup templates
 │   │       ├── form/
 │   │       │   ├── MarketTemplateBar.tsx      # Ranked quick setup chips bar (1-6 shortcuts, preview)
@@ -211,6 +215,11 @@ apps/web/
 │   │       │   ├── TradeRiskTab.tsx           # Initial stop, target, risk budget
 │   │       │   ├── TradeThesisTab.tsx         # Bias, structure, confluences
 │   │       │   └── TradePsychologyTab.tsx     # Emotions, discipline score, mistake flags
+│   │       ├── live/              # Live open trade management & broker execution
+│   │       │   ├── LiveOpenTradeWatcher.tsx   # Global watcher banner (1s-30s refresh, stop threats, expandable cards)
+│   │       │   ├── LiveScalingLadder.tsx      # Multi-target scaling matrix (T1/T2/T3 progress & execution)
+│   │       │   ├── LiveGivebackMeter.tsx      # Profit giveback gauge (peak MFE vs current MTM, threat levels)
+│   │       │   └── ExecuteLadderStepDialog.tsx # Confirmation dialog for executing ladder step on FYERS broker
 │   │       └── attachments/       # Chart attachments
 │   │           ├── TradeAttachmentUploader.tsx# File staging & multipart upload uploader
 │   │           ├── TradeScreenshotGallery.tsx # Lightbox thumbnail gallery

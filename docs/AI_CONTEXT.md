@@ -51,9 +51,9 @@ Trading Vault/
 │   │   ├── db/connection.ts       # Multi-stage MongoDB connection manager
 │   │   ├── db/models/             # Mongoose models (User, Trade, TradingAccount, etc.)
 │   │   ├── routes/                # 15 REST API routes (/auth, /trades, /templates, /review, etc.)
-│   │   ├── services/              # account.service.ts (authoritative balance reconciliation)
+│   │   ├── services/              # account.service.ts, fyers.service.ts, live-watcher.service.ts
 │   │   ├── seed/                  # SetupMint Seed Engine (8 profiles, PRNG, validator)
-│   │   └── scripts/               # seed.ts, reset-demo.ts, validate-seed.ts
+│   │   └── scripts/               # seed.ts, reset-demo.ts, validate-seed.ts, seed-komal-strategies.ts
 │   └── web/src/
 │       ├── App.tsx                # React Router routing tree (13 routes)
 │       ├── context/               # AuthContext, ThemeContext, ToastContext
@@ -61,6 +61,7 @@ Trading Vault/
 │       ├── components/brand/      # SetupMintLogo.tsx, StratumLogo.tsx
 │       ├── components/layout/     # AppLayout.tsx (navigation drawer & account switcher)
 │       ├── components/trades/     # TradeFormModal.tsx, TradeAdvancedFills.tsx, etc.
+│       │   └── live/              # LiveOpenTradeWatcher.tsx, LiveScalingLadder.tsx, LiveGivebackMeter.tsx, ExecuteLadderStepDialog.tsx
 │       └── pages/                 # 13 routed page components
 ├── packages/
 │   ├── financial-engine/src/      # pnl.ts, fifo.ts, risk.ts, metrics.ts, currency.ts, charges.ts, session.ts, templates.ts, excursion.ts, analytics/what-if/
@@ -92,7 +93,7 @@ Trading Vault/
 ## 6. Database Entities & Consistency Invariants
 
 ### Entities:
-- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata, `calculated.excursion`, and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `TradeCandleSnapshot`, `MarketDataIntegration` (Angel One SmartAPI fallback), `AngelOneInstrument` (Scrip master token resolution), `AuditLog`.
+- `User`, `Session` (TTL 30d), `TradingAccount` (Decimal128), `AccountTransaction`, `Trade` (with `setup` variant metadata, `risk.initialStopLoss` entry anchor, `risk.currentStopLoss`, `risk.plannedRiskAmount`, `calculated.excursion`, `calculated.liveMfeSummary`, and `auditLog`), `Instrument`, `Strategy` (with `variants` array), `TradeTemplate`, `DailyJournal`, `Attachment`, `BrokerIntegration`, `BrokerImportMapping`, `BrokerFundsSnapshot`, `TradeCandleSnapshot`, `MarketDataIntegration` (Angel One SmartAPI fallback), `AngelOneInstrument` (Scrip master token resolution), `AuditLog`.
 
 ### Invariants:
 1. **Tenant Isolation:** Every document includes `userId: ObjectId`. All queries must filter by `{ userId: req.user.id }`.
@@ -131,13 +132,18 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 - **Variant Performance Analytics:** Calculates exact bucket metrics, win rates, expectancy, profit factor states (`NORMAL`, `NO_LOSSES`, `NO_TRADES`), sample size warnings, and mathematical invariant reconciliation across all parent and child variants.
 - **Multi-Panel Performance Curves:** Synchronized Recharts dual-panel engine calculating 30-digit Decimal high-water mark, underwater drawdown series, maximum drawdown, and recovery duration (in calendar days and trades) in `drawdown.ts`; cumulative R-multiples ($R_i = \text{realizedRMultiple}$) with sample coverage tracking in `cumulative-r.ts`; deterministic Mulberry32 Monte Carlo forward expectancy cones (P5, P25, P50, P75, P95) gated on edge verdicts in `monte-carlo.ts`; and event markers for daily loss limit breaches and high-tilt days in `events.ts`.
 - **Universal Trade Drill-Down & Reconciliation:** Resolves single trades, trade ID sets, or dynamic analytical filters via `POST /api/v1/trades/drilldown` with strict tenant isolation, 200-trade page limits, and Decimal.js aggregate reconciliation in `reconciliation.ts`.
+- **Multi-Target Scaling Ladder Engine:** 3-tier scaling ladder in `live-watcher.ts` calculating Target 1 (+1.0R, 50% partial exit, breakeven stop loss lock), Target 2 (+2.0R, 33% partial exit, trail stop to +1.0R), and Target 3 Runner (+3.0R or planned target, 100% exit, trail stop behind swing) with real-time distance and progress percentages.
+- **Live Profit Giveback Meter & Threat Radar:** Evaluates real-time profit retention and giveback from peak MFE in `live-watcher.ts`, detecting threat states (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`) to prevent round-trip surrendered profits.
+- **MFE Reach Funnel & Round-Trip Loss Quantifier:** Excursion analytics funnel in `excursion-analytics.ts` evaluating progression across 0.5R, 1.0R, 1.5R, 2.0R, 2.5R, 3.0R milestones, win conversion percentages, and quantifying round-trip loss rates and surrendered R/₹ for trades reaching $\ge +1.0R$ that closed at a loss.
+- **Initial Stop Loss Entry Anchoring:** When trailing a stop loss (`POST /trades/:id/broker-sl` or ladder step), `risk.currentStopLoss` updates, but `risk.initialStopLoss` remains anchored at entry to preserve the true 1R risk budget denominator ($|P_{\text{entry}} - P_{\text{initialStopLoss}}| \times Q \times M$) across all realized and unrealized R calculations.
 
 ---
 
 ## 8. Demo Mode & Seed Engine
 
-- **Demo Identity:** Demo user is `trader@tradevault.local` (Password: `TradeVault@123`).
+- **Demo Identity:** Demo user is `trader@tradevault.local` (Password: `TradeVault@123`). Active developer/user login is `komal@gmail.com`.
 - **8 Profiles:** `beginner`, `active-trader` (default), `options-specialist`, `commodity-trader`, `multi-broker`, `psychology`, `analytics`, `edge-cases`.
+- **4 Core Institutional Strategies:** Seeded via `seed-komal-strategies.ts` populating complete rulebooks for Intraday Index Trend Following, Opening Range Breakout (ORB), Mean Reversion Fade, and Expiry Scalping.
 - **Determinism:** Seeded via Mulberry32 PRNG. Supplying the same `--seed=<n>` produces identical data.
 - **On-Demand Instruments:** Instruments are created on-the-fly via `InstrumentService.ensureForTrade` only for traded underlyings (0 unused instruments).
 - **Safe Reset:** `npm run seed:reset` wipes only records matching `trader@tradevault.local`. Real registered users are never touched.
@@ -150,16 +156,16 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites across the monorepo (519 verified tests)
+# Run all test suites across the monorepo (672 verified tests across 60 test suites)
 npm run test
 
-# Run financial engine unit tests (246 tests)
+# Run financial engine unit tests (323 tests)
 npm run test:engine
 
 # Backfill and normalize instruments for existing trades
 npm run instruments:backfill
 
-# Run API integration and regression tests (273 tests)
+# Run API integration and regression tests (349 tests)
 npm run test:api
 
 # Typecheck all packages
@@ -167,6 +173,9 @@ npm run typecheck
 
 # Seed default active-trader demo data
 npm run db:seed
+
+# Seed 4 core institutional strategies
+npx tsx apps/api/src/scripts/seed-komal-strategies.ts
 
 # Safely reset demo data
 npm run seed:reset
@@ -203,6 +212,7 @@ npm run db:reconcile
 5. **Protect Secrets & Broker Credentials:**
    - Never commit API keys, FYERS app secrets, or session secrets.
    - Never place real broker orders in tests or seed scripts.
+   - Live broker execution routes (`/broker-sl`, `/broker-exit`, `/broker-ladder-step`) require explicit `executeBroker: true` flag and enforce IPv4 DNS resolution and alphanumeric order tags.
 6. **Maintain Documentation Consistency:**
    - Whenever you add a new route, database model, or calculation parameter, update the relevant file in `docs/` and summarize the change.
 7. **Verify Before Reporting Completion:**

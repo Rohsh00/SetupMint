@@ -391,4 +391,32 @@ SetupMint enforces strict user-intent preservation:
 - Applying or switching templates will **never overwrite** any field that the trader has manually edited or typed.
 - If the trader updates the entry price later, dependent stop-loss and target prices recompute dynamically according to template rules, *unless* the trader has manually modified the stop-loss or target fields.
 
+---
+
+## 13. Live Trade Management, Scaling Ladder & Stop Anchoring Invariants
+
+### 1. Initial Stop Loss Entry Anchoring
+When a trader modifies or trails a stop loss on an open position (via 1-click breakeven lock, scaling ladder step, or manual broker SL adjustment):
+- `risk.initialStopLoss` is permanently preserved as the entry-time stop loss price.
+- `risk.currentStopLoss` is updated to the active stop price.
+- `risk.plannedRiskAmount` remains locked to the initial risk budget ($|P_{\text{entry}} - P_{\text{initialStopLoss}}| \times Q \times M$).
+- **Why this invariant exists:** If trailing a stop loss to breakeven replaced `initialStopLoss`, the 1R denominator would become zero, causing realized and unrealized R-multiples to divide by zero or inflate to infinity.
+
+### 2. Multi-Target Scaling Ladder & Atomic Execution
+For open positions with a valid initial risk distance, SetupMint computes a 3-tier scaling ladder:
+- **Step 1 (T1 at +1.0R):** Exits 50% of open quantity and locks stop loss to Breakeven ($P_{\text{entry}}$).
+- **Step 2 (T2 at +2.0R):** Exits 33% of remaining quantity and trails stop loss to $+1.0R$ ($P_{T1}$).
+- **Step 3 (Runner at +3.0R or Planned Target):** Exits 100% of remaining quantity and trails stop behind swing structure ($P_{T2}$).
+- Executing a ladder step (`POST /api/v1/trades/:id/broker-ladder-step`) atomically transitions the trade to `ADVANCED` FIFO execution mode (if partial), records the exit fill, updates `currentStopLoss`, appends a `TRAILED_FAVORABLY` event to `stopLossMoveEvents`, logs `LADDER_STEP_<n>` in `auditLog`, and reconciles the trading account balance.
+
+### 3. Live Profit Giveback Threat Radar
+During live polling, SetupMint persists the high-water mark of floating profit in `calculated.liveMfeSummary` (`peakLtp`, `peakFloatingNetPnL`, `peakUnrealizedR`, `peakTimestamp`) and evaluates real-time giveback:
+- **`CRITICAL_REVERSAL`:** Trade reached $\ge +1.0R$ peak MFE but current unrealized R dropped to $\le +0.2R$.
+- **`LEAKING`:** Trade reached $\ge +1.0R$ peak MFE and surrendered $\ge 35\%$ of peak floating net P&L.
+- **`WATCH`:** Trade reached $\ge +0.8R$ peak MFE and surrendered $\ge 20\%$ of peak floating net P&L.
+- **`SAFE`:** Normal floating fluctuation.
+
+### 4. Orphaned Broker Stop Order Prevention
+When executing a full market exit (`POST /api/v1/trades/:id/broker-exit` with `isFullClose: true`), `FyersService.executeBrokerExit` automatically queries the live FYERS orderbook and cancels any resting pending Stop-Loss orders (`status: 6`) for that symbol before or immediately after the market exit, preventing orphaned stop orders from triggering unintended reverse positions.
+
 

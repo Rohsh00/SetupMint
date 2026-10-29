@@ -13,11 +13,11 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (668 Passing Tests)
+## 2. Test Suite Inventory (672 Passing Tests across 60 Suites)
 
-The repository contains **668 fully automated tests** spanning scheduled encrypted off-site backups, retention rotation, anomaly detection, BSON EJSON round-tripping, custom date range filters & Indian FY presets, weekly reviews and focus rule synthesis, parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **672 fully automated tests** spanning scheduled encrypted off-site backups, retention rotation, anomaly detection, BSON EJSON round-tripping, custom date range filters & Indian FY presets, weekly reviews and focus rule synthesis, parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), MFE reach funnels and round-trip loss prevention, live open trade watcher floating MTM & stop threat detection, live profit giveback meters, multi-target scaling ladders, live FYERS broker execution, multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (319 Tests)
+### A. Financial Engine Unit Tests (323 Tests)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -45,7 +45,9 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `monte-carlo-risk.test.ts` | 12 tests | Monte Carlo equity path simulation and drawdown distributions. |
 | `tilt.test.ts` | 8 tests | Tilt / emotional state detection heuristics. |
 | `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets, UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring. |
-| `excursion.test.ts` | 18 tests | Pure Decimal.js 30-digit precision calculation of MAE/MFE points, amounts, R multiples, candle lifecycle overlap filtering, Exit Efficiency, stop hit & post-stop reversal detection, time-to-MFE/MAE, and diagnostic flags (`GAVE_BACK_PROFIT`, `STOP_TOO_TIGHT_EVIDENCE`, `EXITED_EARLY`). |
+| `excursion.test.ts` | 30 tests | Pure Decimal.js 30-digit precision calculation of MAE/MFE points, amounts, R multiples, candle lifecycle overlap filtering, Exit Efficiency, stop hit & post-stop reversal detection, time-to-MFE/MAE, diagnostic flags, and MFE Reach Funnel (0.5R, 1.0R, 1.5R, 2.0R, 2.5R, 3.0R reach percentages, win conversion rates, round-trip loss rates, and surrendered R/₹ quantification). |
+| `live-watcher.test.ts` | 9 tests | Live floating gross/net P&L calculation, tick distance to stop loss, stop threat levels (`SAFE`, `ATTENTION`, `CRITICAL`, `BREACHED`), Live Profit Giveback meter calculations (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`), and Multi-Target Scaling Ladder steps (T1 +1.0R, T2 +2.0R, T3 Runner). |
+| `what-if.test.ts` | 17 tests | Candle-replay stop and target simulation grid, empirical stop/target prefill suggestions, and trade outcome counterfactuals. |
 
 ### B. Backend API & Integration Tests (349 Tests)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):

@@ -134,3 +134,23 @@ SetupMint queries FYERS historical market data to calculate Maximum Favorable Ex
 - `FYERS_FUNDS_DRIFT_TOLERANCE` defaults to ₹1.
 - `FYERS_FUNDS_SYNC_ENABLED=false` disables funds sync without removing credentials.
 - Never place broker secrets in frontend code, CSV files, screenshots, or committed `.env` files.
+
+---
+
+## 8. Live Broker Order Execution (`fyers.service.ts`)
+
+SetupMint provides optional real-time live order execution against the FYERS API v3 to manage open positions directly from the UI:
+
+### A. Live Stop Loss Adjustment (`executeBrokerStopLoss`)
+- Inspects the live FYERS orderbook (`GET /orders`) for pending Stop-Loss orders matching the open position's trading symbol.
+- If an existing pending SL order is found (`status: 6`), amends the order (`PUT /orders`) with the new trigger price (`stopPrice`).
+- If no resting SL order exists on the broker, submits a new Stop-Loss order (`POST /orders`, type 3/4) with opposite side (`1` for Buy, `-1` for Sell).
+- **Journal Invariance:** Updates `risk.currentStopLoss` and appends an `SL_MODIFIED` audit log in SetupMint, while strictly keeping `risk.initialStopLoss` anchored at entry.
+
+### B. Live Market & Partial Exits (`executeBrokerExit`)
+- Places a Market order (`POST /orders`, `type: 2`) for the requested quantity (e.g. 50% partial exit or 100% full exit).
+- **Automatic SL Cancellation on Full Close:** When `isFullClose: true` (or exit quantity covers full open quantity), automatically locates any resting stop loss orders in the FYERS orderbook and executes `DELETE /orders` to cancel them, eliminating the danger of orphaned stop orders triggering after the trader has exited.
+
+### C. Alphanumeric Order Tagging & IPv4 Network Hygiene
+- **Strict Alphanumeric Tags:** FYERS rejects order tags containing hyphens, underscores, or special characters. All outgoing `orderTag` values are normalized using `replace(/[^a-zA-Z0-9]/g, '')`.
+- **IPv4 DNS Resolution:** Forces Node.js `family: 4` resolution on all outgoing broker order placement HTTP requests to bypass dual-stack IPv6 DNS hangs on certain ISP networks.

@@ -522,6 +522,153 @@ Authentication is handled via stateful sessions:
   - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
   - `404 NO_CANDLE_DATA`: If neither provider nor cached snapshots contain candle data for this trade.
 
+### `GET /api/v1/trades/live/watcher`
+- **Purpose:** Portfolio-wide real-time open trade watcher summary. Returns live quotes, aggregate open trade count, total floating Net MTM, portfolio unrealized R, giveback metrics, and active target ladder progression across all currently open positions.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Query Parameters:**
+  - `accountId` (optional): Filter open positions to a specific trading account.
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "openTradesCount": 2,
+        "totalFloatingNetPnL": 5420.50,
+        "totalUnrealizedR": 2.45,
+        "trades": [
+          {
+            "tradeId": "653b1f8e1234567890abcdef",
+            "symbol": "NSE:NIFTY24OCT24500CE",
+            "direction": "LONG",
+            "quantity": 150,
+            "entryPrice": 120.50,
+            "currentLtp": 145.20,
+            "floatingNetPnL": 3660.00,
+            "unrealizedR": 1.65,
+            "stopLoss": 105.50,
+            "stopThreatLevel": "SAFE",
+            "giveback": {
+              "peakFloatingNetPnL": 4200.00,
+              "peakUnrealizedR": 1.90,
+              "givebackAmount": 540.00,
+              "givebackPercent": 12.8,
+              "retentionPercent": 87.2,
+              "threatLevel": "SAFE"
+            },
+            "targetLadder": {
+              "activeStepIndex": 2,
+              "steps": [
+                {
+                  "targetIndex": 1,
+                  "name": "T1 (+1.0R)",
+                  "targetR": 1.0,
+                  "targetPrice": 135.50,
+                  "plannedExitQty": 75,
+                  "status": "MET",
+                  "isActionable": true
+                }
+              ]
+            }
+          }
+        ],
+        "asOf": "2026-10-28T09:45:00.000Z"
+      }
+    }
+    ```
+
+### `GET /api/v1/trades/:id/live`
+- **Purpose:** Retrieve real-time execution metrics, floating MTM, stop threat level, giveback meter, and target scaling ladder for a single open trade.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Responses:**
+  - `200 OK`: Returns single `ILiveOpenTradeMetric` object.
+  - `404 TRADE_NOT_FOUND`: If trade does not exist or belongs to another user.
+
+### `POST /api/v1/trades/:id/broker-sl`
+- **Purpose:** Adjust or move Stop Loss order on the connected broker (FYERS) and journal the modification in SetupMint. Automatically preserves the original entry `initialStopLoss` to maintain true 1R risk budget calculations, updates `risk.currentStopLoss`, and appends an `SL_MODIFIED` audit log.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:**
+  ```json
+  {
+    "stopPrice": 122.50,
+    "executeBroker": true
+  }
+  ```
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "trade": { ... },
+        "brokerResult": {
+          "executedOnBroker": true,
+          "action": "ORDER_MODIFIED",
+          "orderId": "24102800123456",
+          "message": "Stop Loss modified to ₹122.50 on FYERS"
+        }
+      }
+    }
+    ```
+  - `400 BROKER_ORDER_ERROR`: If broker rejects the order modification (e.g. invalid tick size, insufficient margin).
+
+### `POST /api/v1/trades/:id/broker-exit`
+- **Purpose:** Execute a market exit (50% partial or 100% full close) on the connected broker (FYERS) and record the exit fill in SetupMint. When closing fully, automatically cancels any pending open SL orders on the broker orderbook.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:**
+  ```json
+  {
+    "quantity": 75,
+    "exitPrice": 145.20,
+    "isFullClose": false,
+    "executeBroker": true
+  }
+  ```
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "trade": { ... },
+        "brokerResult": {
+          "executedOnBroker": true,
+          "action": "MARKET_EXIT_EXECUTED",
+          "orderId": "24102800123499",
+          "message": "Executed partial exit for 75 qty on FYERS"
+        }
+      }
+    }
+    ```
+
+### `POST /api/v1/trades/:id/broker-ladder-step`
+- **Purpose:** Execute an atomic Multi-Target Scaling Ladder step. Submits a partial market exit on FYERS, amends or places a trailing Stop Loss order on FYERS, appends an EXIT fill in SetupMint, records `LADDER_STEP_<n>` in audit log, and reconciles account balances.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:**
+  ```json
+  {
+    "targetIndex": 1,
+    "label": "T1 (+1.0R)",
+    "exitQty": 75,
+    "exitPrice": 135.50,
+    "newStopLoss": 120.50,
+    "executeBroker": true,
+    "reason": "T1 reached: booked 50% profit and locked breakeven"
+  }
+  ```
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "trade": { ... },
+        "brokerExitResult": { "executedOnBroker": true, "orderId": "..." },
+        "brokerSlResult": { "executedOnBroker": true, "orderId": "..." }
+      }
+    }
+    ```
+
 ### `POST /api/v1/trades/drilldown`
 - **Purpose:** Universal trade drill-down resolver endpoint. Accepts a `DrillDescriptor` (`kind: 'TRADE' | 'TRADES' | 'FILTER'`) and returns matching trade documents with strict tenant isolation, server-side pagination, and Decimal.js aggregate reconciliation.
 - **Auth:** **Required** (enforces tenant isolation).

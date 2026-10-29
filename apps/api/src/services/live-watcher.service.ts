@@ -109,13 +109,18 @@ export class LiveWatcherService {
       trade.risk?.initialStopLoss ??
       null;
 
+    const stopRef = originalInitialStop ?? stopLoss;
+    const stopDistanceRisk =
+      stopRef && entryPrice > 0
+        ? Math.abs(entryPrice - stopRef) * quantity * contractMultiplier
+        : null;
+
     const plannedRiskAmount =
-      trade.risk?.estimatedRiskAmount ??
-      trade.risk?.riskBudgetAmount ??
+      (stopDistanceRisk && stopDistanceRisk > 0 ? stopDistanceRisk : null) ??
       trade.risk?.plannedRiskAmount ??
-      (originalInitialStop && entryPrice > 0
-        ? Math.abs(entryPrice - originalInitialStop) * quantity * contractMultiplier
-        : null);
+      trade.risk?.riskBudgetAmount ??
+      trade.risk?.estimatedRiskAmount ??
+      null;
 
     return {
       entryPrice,
@@ -124,6 +129,7 @@ export class LiveWatcherService {
       lotSize,
       tickSize,
       stopLoss,
+      initialStopLoss: originalInitialStop,
       target,
       plannedRiskAmount,
     };
@@ -263,6 +269,7 @@ export class LiveWatcherService {
         contractMultiplier: fields.contractMultiplier,
         lotSize: fields.lotSize,
         stopLoss: fields.stopLoss,
+        initialStopLoss: fields.initialStopLoss,
         target: fields.target,
         plannedRiskAmount: fields.plannedRiskAmount,
         tickSize: fields.tickSize,
@@ -502,6 +509,7 @@ export class LiveWatcherService {
       contractMultiplier: fields.contractMultiplier,
       lotSize: fields.lotSize,
       stopLoss: fields.stopLoss,
+      initialStopLoss: fields.initialStopLoss,
       target: fields.target,
       plannedRiskAmount: fields.plannedRiskAmount,
       tickSize: fields.tickSize,

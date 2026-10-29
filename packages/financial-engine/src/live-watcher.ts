@@ -547,9 +547,17 @@ export function calculateLiveOpenTradeMetric(
     : params.plannedTarget;
 
   let initialRiskAmount: Decimal | null = null;
-  if (params.plannedRiskAmount !== undefined && params.plannedRiskAmount !== null && Number(params.plannedRiskAmount) > 0) {
+  if (params.initialStopLoss !== undefined && params.initialStopLoss !== null) {
+    const dStop = new Decimal(params.initialStopLoss);
+    const stopDistance = dEntry.minus(dStop).abs();
+    if (!stopDistance.isZero()) {
+      initialRiskAmount = stopDistance.times(dQty).times(dMultiplier);
+    }
+  }
+
+  if (!initialRiskAmount && params.plannedRiskAmount !== undefined && params.plannedRiskAmount !== null && Number(params.plannedRiskAmount) > 0) {
     initialRiskAmount = new Decimal(params.plannedRiskAmount);
-  } else if (effectiveStopLoss !== undefined && effectiveStopLoss !== null) {
+  } else if (!initialRiskAmount && effectiveStopLoss !== undefined && effectiveStopLoss !== null) {
     const dStop = new Decimal(effectiveStopLoss);
     const stopDistance = dEntry.minus(dStop).abs();
     if (!stopDistance.isZero()) {

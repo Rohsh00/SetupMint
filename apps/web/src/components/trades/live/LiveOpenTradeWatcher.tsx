@@ -1877,11 +1877,12 @@ export function LiveOpenTradeWatcher({
 
                   const activeTacticalTab = getActiveTacticalTab(pos);
 
-                  const notionalExposure = (pos.quantity || 1) * pos.currentLtp;
+                  const multiplier = pos.contractMultiplier && pos.contractMultiplier > 0 ? pos.contractMultiplier : 1;
+                  const notionalExposure = (pos.quantity || 1) * multiplier * pos.currentLtp;
                   const initialRiskAmount =
                     pos.initialRiskAmount ??
                     (pos.stopLoss !== null
-                      ? Math.abs(pos.entryPrice - pos.stopLoss) * (pos.quantity || 1)
+                      ? Math.abs(pos.entryPrice - pos.stopLoss) * (pos.quantity || 1) * multiplier
                       : null);
 
                   const initialRiskPts =
@@ -2604,7 +2605,9 @@ export function LiveOpenTradeWatcher({
                                       {formatCurrency(notionalExposure, 'INR')}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                      {pos.quantity ?? 1} units @ LTP
+                                      {multiplier > 1
+                                        ? `${pos.quantity ?? 1} lots (${((pos.quantity ?? 1) * multiplier).toLocaleString()} units) @ LTP`
+                                        : `${pos.quantity ?? 1} units @ LTP`}
                                     </Typography>
                                   </Box>
                                 </Grid>

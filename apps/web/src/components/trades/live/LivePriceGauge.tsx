@@ -35,23 +35,32 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
   const t2Price = ladderSteps[1]?.targetPrice;
   const peakPrice = giveback?.peakLtp ?? currentLtp;
 
-  // Compute gauge min/max bounds so all critical levels fit nicely
-  const allPrices = [entryPrice, currentLtp, effectiveStop];
-  if (t1Price && t1Price > 0) allPrices.push(t1Price);
-  if (t2Price && t2Price > 0) allPrices.push(t2Price);
-  if (peakPrice && peakPrice > 0) allPrices.push(peakPrice);
+  // Directional point displacement from Entry:
+  // Positive = Profit movement (towards Target / Right)
+  // Negative = Adverse movement (towards Stop Loss / Left)
+  const toPts = (p: number) => (isLong ? (p - entryPrice) : (entryPrice - p));
 
-  const minPrice = Math.min(...allPrices);
-  const maxPrice = Math.max(...allPrices);
-  const range = maxPrice - minPrice;
+  const slPts = -Math.abs(entryPrice - effectiveStop);
+  const currentPts = toPts(currentLtp);
+  const peakPts = toPts(peakPrice);
+  const t1Pts = t1Price && t1Price > 0 ? toPts(t1Price) : Math.abs(slPts) * 1.5;
+  const t2Pts = t2Price && t2Price > 0 ? toPts(t2Price) : null;
 
-  // Prevent divide-by-zero
-  const safeRange = range <= 0 ? 1 : range;
+  // We ensure the gauge spans from Stop Loss on the left to Target on the right
+  const allPts = [slPts, 0, currentPts, t1Pts];
+  if (t2Pts !== null) allPts.push(t2Pts);
+  if (peakPts !== currentPts) allPts.push(peakPts);
+
+  const minPts = Math.min(...allPts);
+  const maxPts = Math.max(...allPts);
+  const ptsRange = maxPts - minPts <= 0 ? 1 : maxPts - minPts;
 
   // Convert price to 0-100% position on the horizontal bar
+  // 0% (Left) = Stop Loss / Risk, Middle = Entry, 100% (Right) = Target / Profit
   const getPct = (p: number) => {
-    const raw = ((p - minPrice) / safeRange) * 100;
-    return Math.max(3, Math.min(97, raw));
+    const pts = toPts(p);
+    const raw = ((pts - minPts) / ptsRange) * 100;
+    return Math.max(4, Math.min(96, raw));
   };
 
   const stopPct = getPct(effectiveStop);
@@ -265,8 +274,8 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
         </Tooltip>
       </Box>
 
-      {/* Bottom Labels (SL, Entry, LTP, Target) */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+      {/* Bottom Labels (SL, Entry, Target) */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
         <Typography variant="caption" sx={{ fontSize: '0.68rem', color: themeRed, fontWeight: 700 }}>
           SL ₹{effectiveStop.toFixed(2)}
         </Typography>
@@ -275,20 +284,13 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
           Entry ₹{entryPrice.toFixed(2)}
         </Typography>
 
-        <Typography
-          variant="caption"
-          sx={{
-            fontSize: '0.68rem',
-            color: isProfitable ? themeGreen : themeRed,
-            fontWeight: 800,
-          }}
-        >
-          LTP ₹{currentLtp.toFixed(2)}
-        </Typography>
-
-        {t1Price && t1Price > 0 && (
+        {t1Price && t1Price > 0 ? (
           <Typography variant="caption" sx={{ fontSize: '0.68rem', color: themeGreen, fontWeight: 700 }}>
             T1 ₹{t1Price.toFixed(2)}
+          </Typography>
+        ) : (
+          <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'text.secondary', fontWeight: 600 }}>
+            Open Target
           </Typography>
         )}
       </Box>

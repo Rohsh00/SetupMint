@@ -33,3 +33,4 @@ services:
         sync: false
       - key: S3_REGION
         value: auto
+

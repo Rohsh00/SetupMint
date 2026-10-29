@@ -43,3 +43,4 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 EXPOSE 4000
 
 CMD ["node", "apps/api/dist/server.js"]
+

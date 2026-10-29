@@ -10,3 +10,4 @@ docs
 apps/web
 *.log
 .DS_Store
+

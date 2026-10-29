@@ -36,12 +36,13 @@ export function setSessionCookie(
   expiresAt: Date
 ): void {
   const maxAgeSeconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+  const isProd = config.nodeEnv === 'production';
 
   reply.setCookie(SESSION_COOKIE_NAME, rawToken, {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
-    secure: config.nodeEnv === 'production',
+    sameSite: isProd ? 'none' : 'lax',
+    secure: isProd,
     maxAge: maxAgeSeconds,
     expires: expiresAt,
     ...(config.cookieDomain ? { domain: config.cookieDomain } : {}),
@@ -52,11 +53,13 @@ export function setSessionCookie(
  * Clears the session cookie using identical Path, SameSite, Secure, and Domain options.
  */
 export function clearSessionCookie(reply: FastifyReply): void {
+  const isProd = config.nodeEnv === 'production';
+
   reply.clearCookie(SESSION_COOKIE_NAME, {
     path: '/',
     httpOnly: true,
-    sameSite: 'lax',
-    secure: config.nodeEnv === 'production',
+    sameSite: isProd ? 'none' : 'lax',
+    secure: isProd,
     ...(config.cookieDomain ? { domain: config.cookieDomain } : {}),
   });
 }

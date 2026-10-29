@@ -34,6 +34,12 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     headers.set('Content-Type', 'application/json');
   }
 
+  // Dual auth token support: send Bearer token for cross-origin hosting resilience
+  const token = typeof window !== 'undefined' ? localStorage.getItem('tv_token') : null;
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}${endpoint}`, {

@@ -77,12 +77,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login(credentials: any) {
     const data = await api.auth.login(credentials);
+    if (data.token) {
+      localStorage.setItem('tv_token', data.token);
+    }
     setUser(data.user);
     setIsOffline(false);
   }
 
   async function register(details: any) {
     const data = await api.auth.register(details);
+    if (data.token) {
+      localStorage.setItem('tv_token', data.token);
+    }
     setUser(data.user);
     setIsOffline(false);
   }
@@ -93,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn('Backend logout request error, clearing local authenticated state:', err);
     } finally {
+      localStorage.removeItem('tv_token');
       setUser(null);
     }
   }

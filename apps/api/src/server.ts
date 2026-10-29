@@ -108,7 +108,14 @@ export async function buildApp() {
     origin: (origin, cb) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes('*') ||
+        origin.endsWith('.onrender.com') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1');
+
+      if (isAllowed) {
         return cb(null, true);
       }
       return cb(new Error(`CORS origin not allowed: ${origin}`), false);

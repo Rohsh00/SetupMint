@@ -136,14 +136,17 @@ export class LiveWatcherService {
   }
 
   /**
-   * Generates a realistic simulated market tick for demo or offline testing.
-   * Subtle oscillation around entry price that respects tick size.
+   * Generates a safe simulated tick for offline demo mode.
+   * Subtle micro-oscillation around entry price respecting tick size.
+   * Guaranteed never to breach a defined Stop Loss level.
    */
   private static generateSimulatedLtp(
     trade: any,
-    tickSize: number = 0.05
+    tickSize: number = 0.05,
+    stopLoss?: number | null
   ): number {
     const { entryPrice } = this.extractTradeFields(trade);
+    const direction = trade.direction;
     const entry = entryPrice > 0 ? entryPrice : 100;
     const hash = (trade._id?.toString() || 'trade')
       .split('')
@@ -154,8 +157,8 @@ export class LiveWatcherService {
     const phase = (hash % 100) / 10;
     const wave = Math.sin((nowSec / 12) + phase); // oscillates between -1 and +1
 
-    // Default oscillation is +/- 0.6% of entry price
-    const driftRatio = 0.006 * wave;
+    // Micro oscillation: +/- 0.08% of entry price
+    const driftRatio = 0.0008 * wave;
     let simulatedLtp = entry * (1 + driftRatio);
 
     // Round to nearest tick size
@@ -165,7 +168,19 @@ export class LiveWatcherService {
       .round()
       .times(dTick);
 
-    return Number(rounded.toFixed(4));
+    let result = Number(rounded.toFixed(4));
+
+    // Clamping Invariant: Simulated demo prices MUST NEVER cross a trader's real stop loss!
+    if (stopLoss != null && !isNaN(stopLoss)) {
+      const pad = 2 * (tickSize > 0 ? tickSize : 0.05);
+      if (direction === 'LONG' && result <= stopLoss) {
+        result = stopLoss + pad;
+      } else if (direction === 'SHORT' && result >= stopLoss) {
+        result = stopLoss - pad;
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -237,6 +252,18 @@ export class LiveWatcherService {
       console.warn(`[LiveWatcherService] Could not fetch FYERS quotes: ${err.message}`);
     }
 
+    // Verify whether the trader has a connected FYERS integration
+    const brokerIntegration = await BrokerIntegration.findOne({
+      userId: uId,
+      broker: 'FYERS',
+      status: 'CONNECTED',
+    }).lean();
+    const hasActiveBroker = Boolean(
+      brokerIntegration &&
+      brokerIntegration.accessToken &&
+      (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
+    );
+
     // 4. Calculate metrics for each open trade
     const positions: ILiveOpenTradeMetric[] = [];
 
@@ -247,15 +274,25 @@ export class LiveWatcherService {
 
       const fyersSym = tradeFyersSymbolMap.get(tradeId);
       let quote = fyersSym ? fyersQuotes.get(fyersSym) : undefined;
+      if (!quote) {
+        quote =
+          fyersQuotes.get(trade.symbol) ||
+          (fyersSym && fyersSym.includes(':') ? fyersQuotes.get(fyersSym.split(':')[1]) : undefined);
+      }
       let provider: LiveQuoteProvider = 'FYERS';
 
       let currentLtp: number;
       if (quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
         currentLtp = quote.ltp;
         provider = 'FYERS';
+      } else if (hasActiveBroker) {
+        // Connected broker invariant: Never oscillate simulated prices on real trades.
+        // Fall back to recorded peak LTP or entry price to preserve financial integrity.
+        currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
+        provider = 'FYERS';
       } else {
-        // Fallback to simulated tick with clear SIMULATED provider marking
-        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize);
+        // Pure offline sandbox mode only
+        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
         provider = 'SIMULATED';
       }
 
@@ -479,24 +516,41 @@ export class LiveWatcherService {
     let currentLtp: number;
     let provider: LiveQuoteProvider = 'FYERS';
 
+    let quote: any;
     if (fyersSym) {
       try {
         const quotes = await FyersService.getMarketQuotes(uId, [fyersSym]);
-        const quote = quotes.get(fyersSym);
-        if (quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
-          currentLtp = quote.ltp;
-          provider = 'FYERS';
-        } else {
-          currentLtp = this.generateSimulatedLtp(trade, fields.tickSize);
-          provider = 'SIMULATED';
-        }
-      } catch {
-        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize);
+        quote =
+          quotes.get(fyersSym) ||
+          quotes.get(trade.symbol) ||
+          (fyersSym.includes(':') ? quotes.get(fyersSym.split(':')[1]) : undefined);
+      } catch (err: any) {
+        console.warn(`[LiveWatcherService] Could not fetch single trade quote: ${err.message}`);
+      }
+    }
+
+    if (quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
+      currentLtp = quote.ltp;
+      provider = 'FYERS';
+    } else {
+      const brokerIntegration = await BrokerIntegration.findOne({
+        userId: uId,
+        broker: 'FYERS',
+        status: 'CONNECTED',
+      }).lean();
+      const hasActiveBroker = Boolean(
+        brokerIntegration &&
+        brokerIntegration.accessToken &&
+        (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
+      );
+
+      if (hasActiveBroker) {
+        currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
+        provider = 'FYERS';
+      } else {
+        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
         provider = 'SIMULATED';
       }
-    } else {
-      currentLtp = this.generateSimulatedLtp(trade, fields.tickSize);
-      provider = 'SIMULATED';
     }
 
     const metric = calculateLiveOpenTradeMetric({

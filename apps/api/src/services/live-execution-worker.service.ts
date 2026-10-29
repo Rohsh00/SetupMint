@@ -173,6 +173,9 @@ export class LiveExecutionWorker {
     const metric = await LiveWatcherService.getSingleTradeLiveMetric(user._id.toString(), tradeId);
     if (!metric) return;
 
+    // Safety Guard: Under no circumstances should simulated demo ticks trigger broker exits, broker SL updates, or Telegram risk alerts!
+    if (metric.provider === 'SIMULATED') return;
+
     const watcherSettings = user.liveWatcherSettings;
     const rules = createLadderRulesFromSettings(watcherSettings, tradeId, metric.lotSize);
 

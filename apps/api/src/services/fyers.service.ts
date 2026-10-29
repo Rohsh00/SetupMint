@@ -332,6 +332,23 @@ export class FyersService {
     return config.fyersApiBase.replace(/\/$/, '');
   }
 
+  private static quotesCache = new Map<
+    string,
+    {
+      data: {
+        ltp: number;
+        change?: number;
+        changePercent?: number;
+        high?: number;
+        low?: number;
+        open?: number;
+        prevClose?: number;
+        timestamp?: number;
+      };
+      cachedAt: number;
+    }
+  >();
+
   /**
    * Generates the FYERS OAuth login URL
    */
@@ -817,11 +834,20 @@ export class FyersService {
         const dist = Math.abs(avgEntry - matchResult.initialStop);
         const plannedRisk = dist * totalQty * multiplier;
         trade.risk.estimatedRiskAmount = plannedRisk;
-        const netPnL = trade.calculated?.netPnL ?? 0;
-        const realizedR = calculateRealizedRMultiple(netPnL, plannedRisk);
-        trade.risk.realizedRMultiple = realizedR;
-        if (trade.calculated) {
-          trade.calculated.realizedRMultiple = realizedR;
+        const isClosed = trade.status === 'CLOSED' || (trade as any).isFullyClosed;
+        if (isClosed) {
+          const netPnL = trade.calculated?.netPnL ?? 0;
+          const realizedR = calculateRealizedRMultiple(netPnL, plannedRisk);
+          trade.risk.realizedRMultiple = realizedR;
+          if (trade.calculated) {
+            trade.calculated.realizedRMultiple = realizedR;
+          }
+        } else {
+          // Open trades do not have a realized R-multiple yet (unrealized R is calculated live)
+          trade.risk.realizedRMultiple = undefined;
+          if (trade.calculated) {
+            trade.calculated.realizedRMultiple = undefined;
+          }
         }
       }
 
@@ -1271,6 +1297,15 @@ export class FyersService {
                 existing.markModified('stopLossMoveEvents');
                 existing.markModified('psychology');
                 existing.markModified('auditLog');
+              } else if (fifoSummary.isFullyClosed) {
+                // If trade is now closed and has a resting SL/planned risk, calculate final realized R
+                const riskAmt = existing.risk.estimatedRiskAmount || existing.risk.plannedRiskAmount;
+                if (riskAmt && riskAmt > 0) {
+                  const realizedR = calculateRealizedRMultiple(netPnL, riskAmt);
+                  existing.risk.realizedRMultiple = realizedR;
+                  existing.calculated.realizedRMultiple = realizedR;
+                  existing.markModified('risk');
+                }
               }
 
               existing.markModified('calculated');
@@ -2383,6 +2418,8 @@ export class FyersService {
 
   /**
    * Fetches real-time market quotes (LTP, open, high, low, close, change) for a list of FYERS symbols.
+   * Employs an in-memory cache (3s TTL) to prevent exhausting FYERS daily 5,000 requests limit (HTTP 429).
+   * Automatically falls back to /positions to extract live LTP if /data/quotes is rate-limited.
    */
   static async getMarketQuotes(
     userId: mongoose.Types.ObjectId | string,
@@ -2390,6 +2427,25 @@ export class FyersService {
   ): Promise<Map<string, { ltp: number; change?: number; changePercent?: number; high?: number; low?: number; open?: number; prevClose?: number; timestamp?: number }>> {
     const quotesMap = new Map<string, { ltp: number; change?: number; changePercent?: number; high?: number; low?: number; open?: number; prevClose?: number; timestamp?: number }>();
     if (!fyersSymbols || fyersSymbols.length === 0) return quotesMap;
+
+    const uniqueSymbols = Array.from(new Set(fyersSymbols.filter(Boolean)));
+    const now = Date.now();
+    const CACHE_TTL_MS = 3000;
+
+    // Check cache first
+    const missingSymbols: string[] = [];
+    for (const sym of uniqueSymbols) {
+      const cached = this.quotesCache.get(sym);
+      if (cached && (now - cached.cachedAt) < CACHE_TTL_MS) {
+        quotesMap.set(sym, cached.data);
+      } else {
+        missingSymbols.push(sym);
+      }
+    }
+
+    if (missingSymbols.length === 0) {
+      return quotesMap;
+    }
 
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
     const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
@@ -2412,12 +2468,12 @@ export class FyersService {
     }
 
     const dataApiBase = this.FYERS_API_BASE.replace(/\/api\/v3\/?$/, '') + '/data';
-    const uniqueSymbols = Array.from(new Set(fyersSymbols.filter(Boolean)));
+    let quotesApiRateLimited = false;
 
     // FYERS supports up to 50 symbols per batch
     const batchSize = 50;
-    for (let i = 0; i < uniqueSymbols.length; i += batchSize) {
-      const batch = uniqueSymbols.slice(i, i + batchSize);
+    for (let i = 0; i < missingSymbols.length; i += batchSize) {
+      const batch = missingSymbols.slice(i, i + batchSize);
       const url = `${dataApiBase}/quotes?symbols=${encodeURIComponent(batch.join(','))}`;
 
       try {
@@ -2428,6 +2484,11 @@ export class FyersService {
             'Content-Type': 'application/json',
           },
         });
+
+        if (res.status === 429) {
+          quotesApiRateLimited = true;
+          break;
+        }
 
         if (!res.ok) continue;
         const data = (await res.json()) as any;
@@ -2445,14 +2506,67 @@ export class FyersService {
                 prevClose: typeof item.v.prev_close_price === 'number' ? item.v.prev_close_price : undefined,
                 timestamp: typeof item.v.tt === 'number' ? item.v.tt * 1000 : Date.now(),
               };
-              if (symKey) quotesMap.set(symKey, quoteData);
-              if (item.n) quotesMap.set(item.n, quoteData);
-              if (item.v?.symbol) quotesMap.set(item.v.symbol, quoteData);
+              if (symKey) {
+                quotesMap.set(symKey, quoteData);
+                this.quotesCache.set(symKey, { data: quoteData, cachedAt: now });
+              }
+              if (item.n) {
+                quotesMap.set(item.n, quoteData);
+                this.quotesCache.set(item.n, { data: quoteData, cachedAt: now });
+              }
+              if (item.v?.symbol) {
+                quotesMap.set(item.v.symbol, quoteData);
+                this.quotesCache.set(item.v.symbol, { data: quoteData, cachedAt: now });
+              }
             }
           }
         }
       } catch (err: any) {
         console.warn(`[FyersService] Failed to fetch quotes for batch: ${err.message}`);
+      }
+    }
+
+    // Fallback: If quotes API is rate-limited (429) or symbols are still missing, query live /positions
+    const stillMissing = missingSymbols.filter((s) => !quotesMap.has(s));
+    if (stillMissing.length > 0 || quotesApiRateLimited) {
+      try {
+        const positionsRes = await fetch(`${this.FYERS_API_BASE}/positions`, {
+          method: 'GET',
+          headers: {
+            Authorization: `${integration.appId}:${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (positionsRes.ok) {
+          const posJson = (await positionsRes.json()) as any;
+          if (posJson && Array.isArray(posJson.netPositions)) {
+            for (const p of posJson.netPositions) {
+              if (p && typeof p.ltp === 'number' && p.ltp > 0 && p.symbol) {
+                const quoteData = {
+                  ltp: p.ltp,
+                  change: typeof p.ch === 'number' ? p.ch : undefined,
+                  changePercent: typeof p.chp === 'number' ? p.chp : undefined,
+                  timestamp: Date.now(),
+                };
+                quotesMap.set(p.symbol, quoteData);
+                this.quotesCache.set(p.symbol, { data: quoteData, cachedAt: now });
+
+                const rawSym = p.symbol.includes(':') ? p.symbol.split(':')[1] : p.symbol;
+                quotesMap.set(rawSym, quoteData);
+                this.quotesCache.set(rawSym, { data: quoteData, cachedAt: now });
+
+                const underlying = InstrumentService.normalizeUnderlying(p.symbol);
+                if (underlying) {
+                  quotesMap.set(underlying, quoteData);
+                  this.quotesCache.set(underlying, { data: quoteData, cachedAt: now });
+                }
+              }
+            }
+          }
+        }
+      } catch (posErr: any) {
+        console.warn(`[FyersService] Failed to fetch fallback quotes from /positions: ${posErr.message}`);
       }
     }
 

@@ -88,7 +88,7 @@ import {
 } from '@tradevault/shared';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
-import { api } from '../lib/api.js';
+import { api, BASE_URL } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 
 function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
@@ -399,9 +399,9 @@ export function SettingsPage() {
       toast.error('Telegram Bot Token is required to configure webhook.');
       return;
     }
-    const defaultUrl = `${window.location.origin}/api/v1/integrations/telegram/webhook`;
+    const defaultUrl = `${BASE_URL}/integrations/telegram/webhook`;
     const webhookUrl = prompt(
-      'Enter your public HTTPS URL for Telegram Webhook (e.g. ngrok / cloudflare tunnel / domain):',
+      'Telegram Webhook endpoint URL (receives 1-tap Flatten & Panic button clicks):',
       defaultUrl
     );
     if (!webhookUrl) return;

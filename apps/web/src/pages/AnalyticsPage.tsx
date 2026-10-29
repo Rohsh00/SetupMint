@@ -1533,29 +1533,29 @@ export function AnalyticsPage() {
                                 borderColor: isTarget
                                   ? '#06B6D4'
                                   : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'),
-                                position: 'relative',
                               }}
                             >
-                              {isTarget && (
-                                <Chip
-                                  label={step.thresholdR === 1.0 ? '1:1 TARGET' : 'PT TARGET'}
-                                  size="small"
-                                  sx={{
-                                    position: 'absolute',
-                                    top: -8,
-                                    right: 8,
-                                    height: 16,
-                                    fontSize: '0.58rem',
-                                    fontWeight: 800,
-                                    bgcolor: step.thresholdR === 1.0 ? '#06B6D4' : '#8B5CF6',
-                                    color: '#FFF',
-                                  }}
-                                />
-                              )}
-
-                              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
-                                {step.label}
-                              </Typography>
+                              {/* Header with label and full visible target badge */}
+                              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 0.5, mb: 0.5, minHeight: 22 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', fontSize: '0.72rem', lineHeight: 1.2 }}>
+                                  {step.label}
+                                </Typography>
+                                {isTarget && (
+                                  <Chip
+                                    label={step.thresholdR === 1.0 ? '1:1 TARGET' : 'PT TARGET'}
+                                    size="small"
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.6rem',
+                                      fontWeight: 800,
+                                      px: 0.5,
+                                      flexShrink: 0,
+                                      bgcolor: step.thresholdR === 1.0 ? '#06B6D4' : '#8B5CF6',
+                                      color: '#FFF',
+                                    }}
+                                  />
+                                )}
+                              </Box>
 
                               <Typography variant="h6" sx={{ fontWeight: 800, my: 0.5, fontSize: '1rem', fontFamily: `'JetBrains Mono', monospace` }}>
                                 {step.reachedCount}{' '}

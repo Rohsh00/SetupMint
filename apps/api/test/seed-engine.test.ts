@@ -33,7 +33,7 @@ describe('SetupMint Heavy Seed Data Engine & Integrity Tests', () => {
     expect(res.counts.accounts).toBe(1);
     expect(res.counts.instruments).toBeGreaterThan(0);
     expect(res.counts.strategies).toBeGreaterThanOrEqual(5);
-    expect(res.counts.attachments).toBeGreaterThan(0);
+    expect(res.counts.attachments).toBe(0);
     expect(res.counts.dailyJournals).toBeGreaterThan(0);
 
     const validation = await SeedValidator.validate('trader@tradevault.local');
@@ -198,6 +198,29 @@ describe('SetupMint Heavy Seed Data Engine & Integrity Tests', () => {
         const found = await Trade.findById(j.bestTradeId);
         expect(found).not.toBeNull();
       }
+    }
+  });
+
+  it('9. Seeds 2+ running live open trades with complete metrics fulfilled and zero image clutter', async () => {
+    const res = await SetupMintSeedEngine.run({
+      profile: 'active-trader',
+      density: 'minimal',
+      randomSeed: 777,
+    });
+    expect(res.counts.attachments).toBe(0);
+    const demoUser = await User.findOne({ email: 'trader@tradevault.local' });
+    expect(demoUser).not.toBeNull();
+    const openTrades = await Trade.find({ userId: demoUser!._id, status: 'OPEN' });
+    expect(openTrades.length).toBeGreaterThanOrEqual(2);
+    for (const t of openTrades) {
+      expect(t.status).toBe('OPEN');
+      expect(t.calculated.outcome).toBe('OPEN');
+      expect(t.calculated.openQuantity).toBeGreaterThan(0);
+      expect(t.calculated.closedQuantity).toBe(0);
+      expect(t.risk.initialStopLoss).toBeGreaterThan(0);
+      expect(t.risk.plannedTarget).toBeGreaterThan(0);
+      expect(t.calculated.liveMfeSummary).toBeDefined();
+      expect(t.screenshotIds).toHaveLength(0);
     }
   });
 });

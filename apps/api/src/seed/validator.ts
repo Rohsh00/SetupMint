@@ -100,16 +100,18 @@ export class SeedValidator {
     });
     if (strategies.length < 5) errors.push('Strategy playbooks incomplete');
 
-    // Check 5: Trades count & status distribution
+    // Check 5: Trades count & status distribution (includes 2+ running live open trades)
     const trades = await Trade.find({ userId });
     const closedTrades = trades.filter((t) => t.status === 'CLOSED');
     const openTrades = trades.filter((t) => t.status === 'OPEN');
+    const statusValid = trades.length > 0 && closedTrades.length > 0 && openTrades.length >= 2;
     checks.push({
-      name: 'Trades Volume & Status Distribution',
-      passed: trades.length > 0 && closedTrades.length > 0,
-      details: `Total: ${trades.length} (Closed: ${closedTrades.length}, Open: ${openTrades.length})`,
+      name: 'Trades Volume & Live Status Distribution',
+      passed: statusValid,
+      details: `Total: ${trades.length} (Closed: ${closedTrades.length}, Live Open: ${openTrades.length})`,
     });
     if (trades.length === 0) errors.push('No trades found for user');
+    if (openTrades.length < 2) errors.push(`Expected at least 2 running live open trades, found ${openTrades.length}`);
 
     // Check 6: Mathematical P&L reconciliation
     let mathReconciled = true;
@@ -185,13 +187,15 @@ export class SeedValidator {
     });
     if (!journalsValid) errors.push(journalReason);
 
-    // Check 9: Attachments / Screenshots
+    // Check 9: Attachments / Screenshots (Zero Photos Directive)
     const attachments = await Attachment.find({ userId });
+    const zeroPhotosValid = attachments.length === 0;
     checks.push({
-      name: 'Chart Screenshots & Attachments',
-      passed: attachments.length > 0,
-      details: `Found ${attachments.length} SVG chart attachments linked to demo trades`,
+      name: 'Chart Screenshots & Attachments (Zero Photos Directive)',
+      passed: zeroPhotosValid,
+      details: `Found ${attachments.length} attachments (Strict zero photos/images policy satisfied)`,
     });
+    if (!zeroPhotosValid) errors.push(`Expected 0 attachments/photos for demo account, found ${attachments.length}`);
 
     // Check 10: Parent Strategy & Child Setup Variants
     const strategiesWithVariants = await Strategy.find({ userId, 'variants.0': { $exists: true } });

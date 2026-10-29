@@ -399,7 +399,7 @@ export class SetupMintSeedEngine {
       const isRecent = prng.chance(0.55);
       const dayPool = isRecent && recentTradingDays.length > 0 ? recentTradingDays : olderTradingDays.length > 0 ? olderTradingDays : tradingDays;
       const day = prng.pick(dayPool);
-      const dateStr = day.dateStr;
+      let dateStr = day.dateStr;
 
       // Pick account (primary gets 70% weight)
       let account = accounts[0];
@@ -452,7 +452,7 @@ export class SetupMintSeedEngine {
       const entryMinute = session === 'NSE_REGULAR' && entryHour === 9 ? prng.nextInt(16, 55) : prng.nextInt(0, 55);
       const holdingMinutes = spec.assetClass === 'OPTIONS' ? prng.nextInt(12, 120) : prng.nextInt(25, 280);
 
-      const { entryTime, exitTime } = IndianMarketCalendar.createExecutionTimestamps(
+      let { entryTime, exitTime } = IndianMarketCalendar.createExecutionTimestamps(
         dateStr,
         session as any,
         { hour: entryHour, minute: entryMinute },
@@ -461,29 +461,30 @@ export class SetupMintSeedEngine {
 
       // Status
       let status = 'CLOSED';
-      if (i === targetCount - 1 && profileDef.allowOpenTrades) {
+      const openTargetCount = profileDef.allowOpenTrades ? 3 : 0;
+      if (i >= targetCount - openTargetCount && profileDef.allowOpenTrades) {
         status = 'OPEN';
-      } else if (i === targetCount - 2 && profileDef.allowPlannedTrades) {
+      } else if (i === targetCount - openTargetCount - 1 && profileDef.allowPlannedTrades) {
         status = 'PLANNED';
-      } else if (i === targetCount - 3 && profileDef.allowCancelledTrades) {
+      } else if (i === targetCount - openTargetCount - 2 && profileDef.allowCancelledTrades) {
         status = 'CANCELLED';
       }
 
       // Direction
-      const direction = prng.chance(0.65) ? 'LONG' : 'SHORT';
+      let direction = prng.chance(0.65) ? 'LONG' : 'SHORT';
 
       // Base Price
       const minP = spec.typicalPriceMin ?? 1000;
       const maxP = spec.typicalPriceMax ?? 1500;
-      const entryPrice = prng.nextNumber(minP, maxP, inst.pricePrecision);
+      let entryPrice = prng.nextNumber(minP, maxP, inst.pricePrecision);
 
       // Stop Loss & Target Distance
       const stopDistancePercent = spec.assetClass === 'OPTIONS' ? prng.nextNumber(0.1, 0.25) : prng.nextNumber(0.005, 0.015);
-      const stopDist = Number((entryPrice * stopDistancePercent).toFixed(inst.pricePrecision));
+      let stopDist = Number((entryPrice * stopDistancePercent).toFixed(inst.pricePrecision));
 
-      const stopLoss = direction === 'LONG' ? entryPrice - stopDist : entryPrice + stopDist;
-      const targetMultiple = prng.nextNumber(1.6, 2.8);
-      const target = direction === 'LONG' ? entryPrice + stopDist * targetMultiple : entryPrice - stopDist * targetMultiple;
+      let stopLoss = direction === 'LONG' ? entryPrice - stopDist : entryPrice + stopDist;
+      let targetMultiple = prng.nextNumber(1.6, 2.8);
+      let target = direction === 'LONG' ? entryPrice + stopDist * targetMultiple : entryPrice - stopDist * targetMultiple;
 
       // Quantity calculation based on ~1% account risk
       const plannedRiskPerTrade = 4000; // ~₹4,000 risk budget
@@ -492,6 +493,69 @@ export class SetupMintSeedEngine {
       // Round to lot size
       let quantity = Math.max(inst.lotSize, Math.floor(rawQty / inst.lotSize) * inst.lotSize);
       if (quantity === 0) quantity = inst.lotSize;
+
+      if (status === 'OPEN') {
+        const openIdx = targetCount - 1 - i; // 0, 1, or 2
+        const now = new Date();
+        const minsAgo = openIdx === 0 ? 35 : openIdx === 1 ? 75 : 120;
+        entryTime = new Date(now.getTime() - minsAgo * 60 * 1000);
+        dateStr = now.toISOString().slice(0, 10);
+
+        if (openIdx === 0) {
+          // Trade 1: NIFTY F&O Options - LONG
+          const niftySpec = specPool.find((s) => s.symbol.startsWith('NIFTY')) || spec;
+          spec = niftySpec;
+          direction = 'LONG';
+          account = accounts[0];
+          entryPrice = 154.65;
+          stopDist = 16.4;
+          stopLoss = Number((entryPrice - stopDist).toFixed(2));
+          target = Number((entryPrice + stopDist * 2.0).toFixed(2));
+          quantity = 130; // 2 lots of 65
+        } else if (openIdx === 1) {
+          // Trade 2: BANKNIFTY F&O Options - SHORT
+          const bnfSpec = specPool.find((s) => s.symbol.startsWith('BANKNIFTY')) || spec;
+          spec = bnfSpec;
+          direction = 'SHORT';
+          account = accounts[0];
+          entryPrice = 340.50;
+          stopDist = 24.5;
+          stopLoss = Number((entryPrice + stopDist).toFixed(2));
+          target = Number((entryPrice - stopDist * 2.0).toFixed(2));
+          quantity = 30; // 2 lots of 15
+        } else {
+          // Trade 3: RELIANCE Cash Equity - LONG
+          const eqSpec = specPool.find((s) => s.assetClass === 'EQUITY') || spec;
+          spec = eqSpec;
+          direction = 'LONG';
+          account = accounts.length > 1 ? accounts[1] : accounts[0];
+          entryPrice = 2480.00;
+          stopDist = 30.0;
+          stopLoss = Number((entryPrice - stopDist).toFixed(2));
+          target = Number((entryPrice + stopDist * 3.0).toFixed(2));
+          quantity = 50;
+        }
+
+        // Re-ensure instrument for the open trade spec
+        const underlying = InstrumentService.normalizeUnderlying(spec.symbol);
+        inst = instrumentCache.get(underlying);
+        if (!inst) {
+          inst = await InstrumentService.ensureForTrade(userId, {
+            symbol: spec.symbol,
+            assetClass: spec.assetClass,
+            exchange: spec.exchange,
+            marketSegment: spec.marketSegment,
+            currency: spec.quoteCurrency,
+            instrumentName: spec.displayName,
+            contractMultiplier: spec.contractMultiplier,
+            lotSize: spec.lotSize,
+            tickSize: spec.tickSize,
+            quantityIncrement: spec.quantityIncrement,
+            pricePrecision: spec.pricePrecision,
+          });
+          instrumentCache.set(underlying, inst);
+        }
+      }
 
       // Outcome & Exit Price
       const isWin = prng.chance(profileDef.winRateTarget);
@@ -809,10 +873,14 @@ export class SetupMintSeedEngine {
         risk: {
           plannedEntryPrice: entryPrice,
           initialStopLoss: stopLoss,
+          currentStopLoss: stopLoss,
+          stopLossPrice: stopLoss,
           plannedTarget: target,
-          riskBudgetAmount: plannedRiskAmount,
-          estimatedRiskAmount: plannedRiskAmount,
-          realizedRMultiple,
+          targetPrice: target,
+          plannedRiskAmount: Number((Math.abs(entryPrice - stopLoss) * quantity * inst.contractMultiplier).toFixed(2)),
+          riskBudgetAmount: Number((Math.abs(entryPrice - stopLoss) * quantity * inst.contractMultiplier).toFixed(2)),
+          estimatedRiskAmount: Number((Math.abs(entryPrice - stopLoss) * quantity * inst.contractMultiplier).toFixed(2)),
+          realizedRMultiple: status === 'CLOSED' ? realizedRMultiple : undefined,
           riskRuleViolations: mistakes.includes('SIZE_VIOLATION') ? ['Risk budget exceeded by 20%'] : [],
         },
         thesis: {
@@ -896,19 +964,32 @@ export class SetupMintSeedEngine {
             };
           }
 
+          const liveMfeSummary = status === 'OPEN' ? {
+            peakLtp: direction === 'LONG'
+              ? Number((entryPrice + stopDist * 1.35).toFixed(inst.pricePrecision))
+              : Number((entryPrice - stopDist * 1.35).toFixed(inst.pricePrecision)),
+            peakFloatingNetPnL: Number((stopDist * 1.35 * quantity * inst.contractMultiplier - 85).toFixed(2)),
+            peakUnrealizedR: 1.35,
+            peakTimestamp: new Date(Date.now() - 15 * 60 * 1000),
+            retentionPercent: 88,
+            givebackPercent: 12,
+            threatLevel: 'SAFE' as const,
+          } : undefined;
+
           return {
-            grossPnL: pnlRes.grossPnLNumber,
-            totalCosts: pnlRes.totalCostsNumber,
-            netPnL: pnlRes.netPnLNumber,
-            realizedRMultiple,
-            holdingTimeMinutes: holdingMinutes,
-            outcome: pnlRes.outcome,
+            grossPnL: status === 'OPEN' ? 0 : pnlRes.grossPnLNumber,
+            totalCosts: status === 'OPEN' ? 0 : pnlRes.totalCostsNumber,
+            netPnL: status === 'OPEN' ? 0 : pnlRes.netPnLNumber,
+            realizedRMultiple: status === 'OPEN' ? undefined : realizedRMultiple,
+            holdingTimeMinutes: status === 'OPEN' ? undefined : holdingMinutes,
+            outcome: status === 'OPEN' ? 'OPEN' : pnlRes.outcome,
             closedQuantity: status === 'CLOSED' ? quantity : 0,
             openQuantity: status === 'OPEN' ? quantity : 0,
             averageEntryPrice: entryPrice,
             averageExitPrice: status === 'CLOSED' ? exitPrice : undefined,
-            excursion: excursionData,
-            stopMoveSummary,
+            excursion: status === 'OPEN' ? undefined : excursionData,
+            stopMoveSummary: status === 'OPEN' ? undefined : stopMoveSummary,
+            liveMfeSummary,
           };
         })(),
         stopLossMoveEvents,
@@ -944,31 +1025,9 @@ export class SetupMintSeedEngine {
       }
     }
 
-    // Generate Synthetic Charts & Attachments for select prominent trades
-    console.log(`[SeedEngine] Generating SVG candlestick chart attachments...`);
-    let attachmentCount = 0;
-    const attachmentTrades = tradesToInsert.filter((t) => t.status === 'CLOSED').slice(0, 10);
-
-    for (let idx = 0; idx < attachmentTrades.length; idx++) {
-      const tr = attachmentTrades[idx];
-      try {
-        const chartDoc = await ChartGenerator.createSyntheticChart(userId, tr._id, {
-          tradeSymbol: tr.symbol,
-          category: idx % 4 === 0 ? 'AUTO_CHART' : idx % 4 === 1 ? 'SETUP' : idx % 4 === 2 ? 'ENTRY' : 'EXIT',
-          timeframe: '15m',
-          description: `${tr.tradeTitle} — Chart analysis with technical execution levels`,
-          themeColor: tr.calculated.outcome === 'WIN' ? 'emerald' : 'rose',
-          entryPrice: tr.simpleExecution.entryPrice,
-          stopPrice: tr.risk.initialStopLoss,
-          targetPrice: tr.risk.plannedTarget,
-        });
-
-        tr.screenshotIds = [chartDoc._id];
-        attachmentCount++;
-      } catch (err: any) {
-        console.warn(`[SeedEngine] Could not generate chart: ${err.message}`);
-      }
-    }
+    // Zero-Photos Directive: No images, photos, or chart screenshots generated for demo accounts
+    console.log(`[SeedEngine] Zero-Photos Directive: Skipping chart attachments (0 images created).`);
+    const attachmentCount = 0;
 
     // Bulk insert all trades
     await Trade.insertMany(tradesToInsert);

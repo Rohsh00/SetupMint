@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { loginSchema, registerSchema } from '@tradevault/shared';
-import { Session, User } from '../db/models/index.js';
+import { Session, Trade, User } from '../db/models/index.js';
 import {
   clearSession,
   clearSessionCookie,
@@ -98,7 +98,32 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
 
     const { email, password } = parseResult.data;
-    const user = await User.findOne({ email });
+    let user = await User.findOne({ email });
+
+    // Auto-seed and provision demo account if requested via the Login Seed Demo Account button
+    if (email === 'trader@tradevault.local' && password === 'TradeVault@123') {
+      let needsSeed = false;
+      if (!user) {
+        needsSeed = true;
+      } else {
+        const tradeCount = await Trade.countDocuments({ userId: user._id });
+        const openTradeCount = await Trade.countDocuments({ userId: user._id, status: 'OPEN' });
+        if (tradeCount === 0 || openTradeCount < 2) {
+          needsSeed = true;
+        }
+      }
+
+      if (needsSeed) {
+        req.log.info('[Auth] Demo account missing or out of date. Seeding demo dataset with live trades...');
+        const { SetupMintSeedEngine } = await import('../seed/seed-engine.js');
+        await SetupMintSeedEngine.run({
+          profile: 'active-trader',
+          density: 'minimal',
+          randomSeed: 42,
+        });
+        user = await User.findOne({ email });
+      }
+    }
 
     if (!user) {
       return reply.status(401).send({
@@ -143,6 +168,68 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       },
     });
   });
+
+  // Dedicated one-click demo login route
+  app.post(
+    '/demo-login',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req, reply) => {
+      const email = 'trader@tradevault.local';
+      let user = await User.findOne({ email });
+      let needsSeed = false;
+
+      if (!user) {
+        needsSeed = true;
+      } else {
+        const tradeCount = await Trade.countDocuments({ userId: user._id });
+        const openTradeCount = await Trade.countDocuments({ userId: user._id, status: 'OPEN' });
+        if (tradeCount === 0 || openTradeCount < 2) {
+          needsSeed = true;
+        }
+      }
+
+      if (needsSeed) {
+        req.log.info('[Auth] Demo account missing or out of date. Seeding demo dataset with live trades...');
+        const { SetupMintSeedEngine } = await import('../seed/seed-engine.js');
+        await SetupMintSeedEngine.run({
+          profile: 'active-trader',
+          density: 'minimal',
+          randomSeed: 42,
+        });
+        user = await User.findOne({ email });
+      }
+
+      if (!user) {
+        return reply.status(500).send({
+          success: false,
+          error: { code: 'DEMO_SEED_FAILED', message: 'Failed to provision demo account' },
+        });
+      }
+
+      const token = await createSession(user._id.toString(), req, reply);
+
+      return reply.send({
+        success: true,
+        data: {
+          user: {
+            id: user._id.toString(),
+            email: user.email,
+            name: user.name,
+            baseCurrency: user.baseCurrency,
+            theme: user.theme,
+          },
+          token,
+        },
+      });
+    }
+  );
 
   // Logout
   app.post('/logout', async (req, reply) => {

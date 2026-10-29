@@ -34,6 +34,7 @@ import {
   ILiveOpenTradeMetric,
   ICustomLadderRules,
   ICustomLadderRuleStep,
+  ILiveWatcherSettings,
 } from '@tradevault/shared';
 import { formatCurrency } from '../../../lib/utils.js';
 
@@ -44,6 +45,7 @@ export interface LiveCustomRulesDialogProps {
   onClose: () => void;
   metric: ILiveOpenTradeMetric | null;
   onSave: (rules: ICustomLadderRules) => void;
+  defaultSettings?: ILiveWatcherSettings;
 }
 
 export function LiveCustomRulesDialog({
@@ -51,6 +53,7 @@ export function LiveCustomRulesDialog({
   onClose,
   metric,
   onSave,
+  defaultSettings,
 }: LiveCustomRulesDialogProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -147,6 +150,33 @@ export function LiveCustomRulesDialog({
         } catch {
           // fallback to defaults
         }
+      }
+
+      if (defaultSettings) {
+        setLotSize(defaultLotSize);
+        setAutoExecute(Boolean(defaultSettings.defaultAutoExecute));
+        setTargetMode((defaultSettings.defaultTargetMode as TargetPlanningPreset) || 'TWO_TARGETS_RUNNER');
+        setT1R(defaultSettings.t1MultipleR ?? 1.0);
+        setT1Ratio(defaultSettings.t1ExitRatio ?? 0.5);
+        setT1TrailAction((defaultSettings.t1TrailingAction as any) ?? 'TRUE_BE_WITH_FEES');
+        if (defaultSettings.t1TrailPoints) setT1TrailPoints(defaultSettings.t1TrailPoints);
+        setT2Enabled(Boolean(defaultSettings.t2Enabled));
+        setT2R(defaultSettings.t2MultipleR ?? 2.0);
+        setT2Ratio(defaultSettings.t2ExitRatio ?? 0.25);
+        setT2TrailAction((defaultSettings.t2TrailingAction as any) ?? 'TRAIL_T1');
+        if (defaultSettings.t2TrailPoints) setT2TrailPoints(defaultSettings.t2TrailPoints);
+        setIsFreeRunner(Boolean(defaultSettings.isFreeRunner));
+        setT3R(defaultSettings.t3MultipleR ?? 3.0);
+        setDynamicTrailingEnabled(Boolean(defaultSettings.dynamicTrailingEnabled));
+        setDynamicTriggerR(defaultSettings.dynamicTriggerR ?? 1.5);
+        setDynamicTrailType(defaultSettings.dynamicTrailType ?? 'STEP_R');
+        if (defaultSettings.dynamicStepR) setDynamicStepR(defaultSettings.dynamicStepR);
+        if (defaultSettings.dynamicTrailPoints) setDynamicTrailPoints(defaultSettings.dynamicTrailPoints);
+        setGivebackAutoExitEnabled(Boolean(defaultSettings.givebackAutoExitEnabled));
+        setGivebackMinPeakR(defaultSettings.givebackMinPeakR ?? 1.5);
+        setGivebackMaxPercent(defaultSettings.givebackMaxPercent ?? 35);
+        setMisSquareOffEnabled(Boolean(defaultSettings.misSquareOffEnabled));
+        return;
       }
 
       // Default preset: Target 1 + Free Move Runner (T2 disabled, Free Runner enabled)

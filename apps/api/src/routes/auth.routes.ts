@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
-import { loginSchema, registerSchema } from '@tradevault/shared';
+import { loginSchema, registerSchema, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
 import { Session, Trade, User } from '../db/models/index.js';
 import {
   clearSession,
@@ -264,6 +264,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           theme: user.theme,
           riskSettings: user.riskSettings,
           patternDetectionSettings: user.patternDetectionSettings,
+          liveWatcherSettings: user.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
           createdAt: user.createdAt,
         },
       },

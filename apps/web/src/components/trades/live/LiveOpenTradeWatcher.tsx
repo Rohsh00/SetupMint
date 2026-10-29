@@ -71,12 +71,14 @@ import { LivePortfolioRiskBanner } from './LivePortfolioRiskBanner.js';
 import { PanicKillSwitchDialog } from './PanicKillSwitchDialog.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
+import { useAuth } from '../../../context/AuthContext.js';
 import {
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
   ILiveTargetLadderStep,
   ICustomLadderRules,
   StopThreatLevel,
+  createLadderRulesFromSettings,
 } from '@tradevault/shared';
 import {
   calculateTargetLadder,
@@ -145,6 +147,7 @@ export function LiveOpenTradeWatcher({
   const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [viewMode, setViewMode] = useState<'cockpit' | 'table'>(() => {
@@ -155,11 +158,16 @@ export function LiveOpenTradeWatcher({
 
   const [refreshIntervalSec, setRefreshIntervalSec] = useState<number>(() => {
     const saved = localStorage.getItem('tv_live_watcher_interval');
-    return saved !== null ? Number(saved) : 5;
+    return saved !== null ? Number(saved) : (user?.liveWatcherSettings?.defaultRefreshIntervalSec ?? 5);
   });
 
   // Sound & notification state
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundEngine.isEnabled());
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (user?.liveWatcherSettings?.soundAlertsEnabled !== undefined) {
+      return user.liveWatcherSettings.soundAlertsEnabled;
+    }
+    return soundEngine.isEnabled();
+  });
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => notificationService.getPermission() === 'granted');
   const [killSwitchOpen, setKillSwitchOpen] = useState<boolean>(false);
   const [maxDailyLoss] = useState<number>(() => {
@@ -290,12 +298,24 @@ export function LiveOpenTradeWatcher({
     );
   };
 
+  const getEffectiveRules = React.useCallback(
+    (tradeId: string, lotSize?: number): ICustomLadderRules => {
+      if (tradeRulesMap[tradeId]) {
+        return tradeRulesMap[tradeId];
+      }
+      return createLadderRulesFromSettings(user?.liveWatcherSettings, tradeId, lotSize);
+    },
+    [tradeRulesMap, user?.liveWatcherSettings]
+  );
+
   // Scalper Hotkeys State [B: Lock BE+Fees | Space: 50% Exit | K: Kill Switch]
   const [scalperHotkeysEnabled, setScalperHotkeysEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('tv_scalper_hotkeys') === 'true';
+      const saved = localStorage.getItem('tv_scalper_hotkeys');
+      if (saved !== null) return saved === 'true';
+      return user?.liveWatcherSettings?.scalperHotkeysEnabled ?? false;
     } catch {
-      return false;
+      return user?.liveWatcherSettings?.scalperHotkeysEnabled ?? false;
     }
   });
 
@@ -428,7 +448,7 @@ export function LiveOpenTradeWatcher({
     if (!summary?.positions || summary.positions.length === 0) return;
 
     for (const pos of summary.positions) {
-      const rules = tradeRulesMap[pos.tradeId];
+      const rules = getEffectiveRules(pos.tradeId, pos.lotSize);
       if (!rules || !rules.autoExecuteEnabled) continue;
 
       const lotSize =
@@ -660,7 +680,7 @@ export function LiveOpenTradeWatcher({
         }
       }
     }
-  }, [summary?.positions, tradeRulesMap, queryClient, istInfo]);
+  }, [summary?.positions, tradeRulesMap, getEffectiveRules, queryClient, istInfo]);
 
   const handleManualRefetch = async () => {
     setIsManualRefreshing(true);
@@ -1262,7 +1282,7 @@ export function LiveOpenTradeWatcher({
                         pos.stopLoss !== null &&
                         (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
 
-                      const customRules = tradeRulesMap[pos.tradeId];
+                      const customRules = getEffectiveRules(pos.tradeId, pos.lotSize);
                       const effectiveLotSize =
                         customRules?.lotSize ||
                         pos.lotSize ||
@@ -1714,7 +1734,7 @@ export function LiveOpenTradeWatcher({
                     pos.stopLoss !== null &&
                     (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
 
-                  const customRules = tradeRulesMap[pos.tradeId];
+                  const customRules = getEffectiveRules(pos.tradeId, pos.lotSize);
                   const effectiveLotSize =
                     customRules?.lotSize ||
                     pos.lotSize ||
@@ -2972,6 +2992,7 @@ export function LiveOpenTradeWatcher({
           open={Boolean(customRulesMetric)}
           onClose={() => setCustomRulesMetric(null)}
           metric={customRulesMetric}
+          defaultSettings={user?.liveWatcherSettings}
           onSave={(rules) => {
             handleSaveTradeRules(customRulesMetric.tradeId, rules);
             setCustomRulesMetric(null);

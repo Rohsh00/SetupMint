@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { IRiskSettings, IPatternDetectionSettings } from '@tradevault/shared';
+import { IRiskSettings, IPatternDetectionSettings, ILiveWatcherSettings } from '@tradevault/shared';
 import { api, ApiError } from '../lib/api.js';
 
 export interface User {
@@ -10,6 +10,7 @@ export interface User {
   theme?: string;
   riskSettings?: IRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
+  liveWatcherSettings?: ILiveWatcherSettings;
 }
 
 interface AuthContextType {

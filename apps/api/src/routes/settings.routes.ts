@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_PATTERN_DETECTION_SETTINGS } from '@tradevault/shared';
+import { DEFAULT_PATTERN_DETECTION_SETTINGS, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
 import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { BackupStatusService } from '../services/backup-status.service.js';
@@ -25,13 +25,14 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         theme: user.theme,
         riskSettings: user.riskSettings,
         patternDetectionSettings: user.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
+        liveWatcherSettings: user.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
       },
     });
   });
 
-  // Update profile / base currency / theme / riskSettings / patternDetectionSettings
+  // Update profile / base currency / theme / riskSettings / patternDetectionSettings / liveWatcherSettings
   app.put('/profile', async (req: any, reply) => {
-    const { name, baseCurrency, theme, riskSettings, patternDetectionSettings } = req.body;
+    const { name, baseCurrency, theme, riskSettings, patternDetectionSettings, liveWatcherSettings } = req.body;
 
     const update: any = {};
     if (name) update.name = name;
@@ -65,6 +66,36 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           : [],
       };
     }
+    if (liveWatcherSettings) {
+      update.liveWatcherSettings = {
+        defaultAutoExecute: liveWatcherSettings.defaultAutoExecute !== undefined ? Boolean(liveWatcherSettings.defaultAutoExecute) : DEFAULT_LIVE_WATCHER_SETTINGS.defaultAutoExecute,
+        defaultTargetMode: liveWatcherSettings.defaultTargetMode || DEFAULT_LIVE_WATCHER_SETTINGS.defaultTargetMode,
+        t1MultipleR: liveWatcherSettings.t1MultipleR !== undefined ? Number(liveWatcherSettings.t1MultipleR) : DEFAULT_LIVE_WATCHER_SETTINGS.t1MultipleR,
+        t1ExitRatio: liveWatcherSettings.t1ExitRatio !== undefined ? Number(liveWatcherSettings.t1ExitRatio) : DEFAULT_LIVE_WATCHER_SETTINGS.t1ExitRatio,
+        t1TrailingAction: liveWatcherSettings.t1TrailingAction || DEFAULT_LIVE_WATCHER_SETTINGS.t1TrailingAction,
+        t1TrailPoints: liveWatcherSettings.t1TrailPoints !== undefined ? Number(liveWatcherSettings.t1TrailPoints) : DEFAULT_LIVE_WATCHER_SETTINGS.t1TrailPoints,
+        t2Enabled: liveWatcherSettings.t2Enabled !== undefined ? Boolean(liveWatcherSettings.t2Enabled) : DEFAULT_LIVE_WATCHER_SETTINGS.t2Enabled,
+        t2MultipleR: liveWatcherSettings.t2MultipleR !== undefined ? Number(liveWatcherSettings.t2MultipleR) : DEFAULT_LIVE_WATCHER_SETTINGS.t2MultipleR,
+        t2ExitRatio: liveWatcherSettings.t2ExitRatio !== undefined ? Number(liveWatcherSettings.t2ExitRatio) : DEFAULT_LIVE_WATCHER_SETTINGS.t2ExitRatio,
+        t2TrailingAction: liveWatcherSettings.t2TrailingAction || DEFAULT_LIVE_WATCHER_SETTINGS.t2TrailingAction,
+        t2TrailPoints: liveWatcherSettings.t2TrailPoints !== undefined ? Number(liveWatcherSettings.t2TrailPoints) : DEFAULT_LIVE_WATCHER_SETTINGS.t2TrailPoints,
+        isFreeRunner: liveWatcherSettings.isFreeRunner !== undefined ? Boolean(liveWatcherSettings.isFreeRunner) : DEFAULT_LIVE_WATCHER_SETTINGS.isFreeRunner,
+        t3MultipleR: liveWatcherSettings.t3MultipleR !== undefined ? Number(liveWatcherSettings.t3MultipleR) : DEFAULT_LIVE_WATCHER_SETTINGS.t3MultipleR,
+        dynamicTrailingEnabled: liveWatcherSettings.dynamicTrailingEnabled !== undefined ? Boolean(liveWatcherSettings.dynamicTrailingEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailingEnabled,
+        dynamicTriggerR: liveWatcherSettings.dynamicTriggerR !== undefined ? Number(liveWatcherSettings.dynamicTriggerR) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTriggerR,
+        dynamicTrailType: liveWatcherSettings.dynamicTrailType || DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailType,
+        dynamicStepR: liveWatcherSettings.dynamicStepR !== undefined ? Number(liveWatcherSettings.dynamicStepR) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicStepR,
+        dynamicTrailPoints: liveWatcherSettings.dynamicTrailPoints !== undefined ? Number(liveWatcherSettings.dynamicTrailPoints) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailPoints,
+        givebackAutoExitEnabled: liveWatcherSettings.givebackAutoExitEnabled !== undefined ? Boolean(liveWatcherSettings.givebackAutoExitEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.givebackAutoExitEnabled,
+        givebackMinPeakR: liveWatcherSettings.givebackMinPeakR !== undefined ? Number(liveWatcherSettings.givebackMinPeakR) : DEFAULT_LIVE_WATCHER_SETTINGS.givebackMinPeakR,
+        givebackMaxPercent: liveWatcherSettings.givebackMaxPercent !== undefined ? Number(liveWatcherSettings.givebackMaxPercent) : DEFAULT_LIVE_WATCHER_SETTINGS.givebackMaxPercent,
+        misSquareOffEnabled: liveWatcherSettings.misSquareOffEnabled !== undefined ? Boolean(liveWatcherSettings.misSquareOffEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.misSquareOffEnabled,
+        misSquareOffTime: liveWatcherSettings.misSquareOffTime || DEFAULT_LIVE_WATCHER_SETTINGS.misSquareOffTime,
+        scalperHotkeysEnabled: liveWatcherSettings.scalperHotkeysEnabled !== undefined ? Boolean(liveWatcherSettings.scalperHotkeysEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.scalperHotkeysEnabled,
+        soundAlertsEnabled: liveWatcherSettings.soundAlertsEnabled !== undefined ? Boolean(liveWatcherSettings.soundAlertsEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.soundAlertsEnabled,
+        defaultRefreshIntervalSec: liveWatcherSettings.defaultRefreshIntervalSec !== undefined ? Number(liveWatcherSettings.defaultRefreshIntervalSec) : DEFAULT_LIVE_WATCHER_SETTINGS.defaultRefreshIntervalSec,
+      };
+    }
 
     const user = await User.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
 
@@ -78,6 +109,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         theme: user!.theme,
         riskSettings: user!.riskSettings,
         patternDetectionSettings: user!.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
+        liveWatcherSettings: user!.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
       },
     });
   });

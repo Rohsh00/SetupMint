@@ -609,12 +609,42 @@ export const patternDetectionSettingsSchema = z.object({
   excursionSettings: excursionSettingsSchema.optional(),
 });
 
+export const liveWatcherSettingsSchema = z.object({
+  defaultAutoExecute: z.boolean().optional(),
+  defaultTargetMode: z.enum(['T1_ONLY', 'T1_FREE_RUNNER', 'TWO_TARGETS_RUNNER', 'CLASSIC_THREE']).optional(),
+  t1MultipleR: z.coerce.number().positive().optional(),
+  t1ExitRatio: z.coerce.number().min(0.01).max(1.0).optional(),
+  t1TrailingAction: z.enum(['TRUE_BE_WITH_FEES', 'NOMINAL_BE', 'CUSTOM_POINTS', 'NONE']).optional(),
+  t1TrailPoints: z.coerce.number().positive().optional(),
+  t2Enabled: z.boolean().optional(),
+  t2MultipleR: z.coerce.number().positive().optional(),
+  t2ExitRatio: z.coerce.number().min(0.01).max(1.0).optional(),
+  t2TrailingAction: z.enum(['TRAIL_T1', 'CUSTOM_POINTS', 'NONE']).optional(),
+  t2TrailPoints: z.coerce.number().positive().optional(),
+  isFreeRunner: z.boolean().optional(),
+  t3MultipleR: z.coerce.number().positive().optional(),
+  dynamicTrailingEnabled: z.boolean().optional(),
+  dynamicTriggerR: z.coerce.number().positive().optional(),
+  dynamicTrailType: z.enum(['STEP_R', 'HIGH_WATER_POINTS']).optional(),
+  dynamicStepR: z.coerce.number().positive().optional(),
+  dynamicTrailPoints: z.coerce.number().positive().optional(),
+  givebackAutoExitEnabled: z.boolean().optional(),
+  givebackMinPeakR: z.coerce.number().positive().optional(),
+  givebackMaxPercent: z.coerce.number().min(1).max(100).optional(),
+  misSquareOffEnabled: z.boolean().optional(),
+  misSquareOffTime: z.string().optional(),
+  scalperHotkeysEnabled: z.boolean().optional(),
+  soundAlertsEnabled: z.boolean().optional(),
+  defaultRefreshIntervalSec: z.coerce.number().int().min(1).max(60).optional(),
+});
+
 export const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
   baseCurrency: z.string().optional(),
   theme: z.enum(['dark', 'light', 'system']).optional(),
   riskSettings: riskSettingsSchema.optional(),
   patternDetectionSettings: patternDetectionSettingsSchema.optional(),
+  liveWatcherSettings: liveWatcherSettingsSchema.optional(),
 });
 
 export const excursionAnalyticsQuerySchema = z

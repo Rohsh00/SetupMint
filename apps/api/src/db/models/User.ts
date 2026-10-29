@@ -2,6 +2,8 @@ import mongoose, { Document, Schema } from 'mongoose';
 import {
   IPatternDetectionSettings,
   DEFAULT_PATTERN_DETECTION_SETTINGS,
+  ILiveWatcherSettings,
+  DEFAULT_LIVE_WATCHER_SETTINGS,
 } from '@tradevault/shared';
 
 export interface IUserRiskSettings {
@@ -20,6 +22,7 @@ export interface IUserDoc extends Document {
   theme: 'dark' | 'light' | 'system';
   riskSettings?: IUserRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
+  liveWatcherSettings?: ILiveWatcherSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,6 +80,34 @@ const UserSchema = new Schema<IUserDoc>(
         ],
         default: DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides,
       },
+    },
+    liveWatcherSettings: {
+      defaultAutoExecute: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.defaultAutoExecute },
+      defaultTargetMode: { type: String, default: DEFAULT_LIVE_WATCHER_SETTINGS.defaultTargetMode },
+      t1MultipleR: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t1MultipleR },
+      t1ExitRatio: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t1ExitRatio },
+      t1TrailingAction: { type: String, default: DEFAULT_LIVE_WATCHER_SETTINGS.t1TrailingAction },
+      t1TrailPoints: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t1TrailPoints },
+      t2Enabled: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.t2Enabled },
+      t2MultipleR: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t2MultipleR },
+      t2ExitRatio: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t2ExitRatio },
+      t2TrailingAction: { type: String, default: DEFAULT_LIVE_WATCHER_SETTINGS.t2TrailingAction },
+      t2TrailPoints: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t2TrailPoints },
+      isFreeRunner: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.isFreeRunner },
+      t3MultipleR: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.t3MultipleR },
+      dynamicTrailingEnabled: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailingEnabled },
+      dynamicTriggerR: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTriggerR },
+      dynamicTrailType: { type: String, default: DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailType },
+      dynamicStepR: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.dynamicStepR },
+      dynamicTrailPoints: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailPoints },
+      givebackAutoExitEnabled: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.givebackAutoExitEnabled },
+      givebackMinPeakR: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.givebackMinPeakR },
+      givebackMaxPercent: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.givebackMaxPercent },
+      misSquareOffEnabled: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.misSquareOffEnabled },
+      misSquareOffTime: { type: String, default: DEFAULT_LIVE_WATCHER_SETTINGS.misSquareOffTime },
+      scalperHotkeysEnabled: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.scalperHotkeysEnabled },
+      soundAlertsEnabled: { type: Boolean, default: DEFAULT_LIVE_WATCHER_SETTINGS.soundAlertsEnabled },
+      defaultRefreshIntervalSec: { type: Number, default: DEFAULT_LIVE_WATCHER_SETTINGS.defaultRefreshIntervalSec },
     },
   },
   { timestamps: true }

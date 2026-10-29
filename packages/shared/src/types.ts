@@ -245,6 +245,7 @@ export interface IUser {
   theme: 'dark' | 'light' | 'system';
   riskSettings?: IRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
+  liveWatcherSettings?: ILiveWatcherSettings;
   createdAt: string;
   updatedAt: string;
 }
@@ -1731,6 +1732,114 @@ export interface ICustomLadderRules {
   givebackAutoExit?: IGivebackAutoExitRule;
   misSquareOff?: IMisSquareOffRule;
   updatedAt?: string;
+}
+
+export interface ILiveWatcherSettings {
+  defaultAutoExecute: boolean;
+  defaultTargetMode: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE';
+  t1MultipleR: number; // e.g. 1.0
+  t1ExitRatio: number; // e.g. 0.5 (50%)
+  t1TrailingAction: 'TRUE_BE_WITH_FEES' | 'NOMINAL_BE' | 'CUSTOM_POINTS' | 'NONE';
+  t1TrailPoints?: number;
+  t2Enabled: boolean;
+  t2MultipleR: number; // e.g. 2.0
+  t2ExitRatio: number; // e.g. 0.25 (25%)
+  t2TrailingAction: 'TRAIL_T1' | 'CUSTOM_POINTS' | 'NONE';
+  t2TrailPoints?: number;
+  isFreeRunner: boolean;
+  t3MultipleR: number; // e.g. 3.0
+  dynamicTrailingEnabled: boolean;
+  dynamicTriggerR: number; // e.g. 1.5
+  dynamicTrailType: 'STEP_R' | 'HIGH_WATER_POINTS';
+  dynamicStepR?: number; // e.g. 0.5
+  dynamicTrailPoints?: number; // e.g. 15
+  givebackAutoExitEnabled: boolean;
+  givebackMinPeakR: number; // e.g. 1.5
+  givebackMaxPercent: number; // e.g. 35
+  misSquareOffEnabled: boolean;
+  misSquareOffTime: string; // e.g. "15:14"
+  scalperHotkeysEnabled: boolean;
+  soundAlertsEnabled: boolean;
+  defaultRefreshIntervalSec: number; // e.g. 5
+}
+
+export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
+  defaultAutoExecute: false,
+  defaultTargetMode: 'TWO_TARGETS_RUNNER',
+  t1MultipleR: 1.0,
+  t1ExitRatio: 0.5,
+  t1TrailingAction: 'TRUE_BE_WITH_FEES',
+  t1TrailPoints: 15,
+  t2Enabled: true,
+  t2MultipleR: 2.0,
+  t2ExitRatio: 0.25,
+  t2TrailingAction: 'TRAIL_T1',
+  t2TrailPoints: 30,
+  isFreeRunner: true,
+  t3MultipleR: 3.0,
+  dynamicTrailingEnabled: false,
+  dynamicTriggerR: 1.5,
+  dynamicTrailType: 'STEP_R',
+  dynamicStepR: 0.5,
+  dynamicTrailPoints: 15,
+  givebackAutoExitEnabled: true,
+  givebackMinPeakR: 1.5,
+  givebackMaxPercent: 35,
+  misSquareOffEnabled: false,
+  misSquareOffTime: '15:14',
+  scalperHotkeysEnabled: true,
+  soundAlertsEnabled: true,
+  defaultRefreshIntervalSec: 5,
+};
+
+export function createLadderRulesFromSettings(
+  settings?: Partial<ILiveWatcherSettings>,
+  tradeId?: string,
+  lotSize?: number
+): ICustomLadderRules {
+  const s = { ...DEFAULT_LIVE_WATCHER_SETTINGS, ...settings };
+  return {
+    tradeId,
+    lotSize,
+    autoExecuteEnabled: s.defaultAutoExecute,
+    targetMode: s.defaultTargetMode,
+    t1: {
+      targetR: s.t1MultipleR,
+      exitRatio: s.t1ExitRatio,
+      trailAction: s.t1TrailingAction,
+      trailPoints: s.t1TrailPoints,
+    },
+    t2: {
+      enabled: s.t2Enabled,
+      targetR: s.t2MultipleR,
+      exitRatio: s.t2ExitRatio,
+      trailAction: s.t2TrailingAction,
+      trailPoints: s.t2TrailPoints,
+    },
+    t3: {
+      enabled: s.isFreeRunner || s.t3MultipleR > 0,
+      targetR: s.isFreeRunner ? 0 : s.t3MultipleR,
+      exitRatio: 1.0,
+      trailAction: 'NONE',
+      isFreeRunner: s.isFreeRunner,
+    },
+    dynamicTrailing: {
+      enabled: s.dynamicTrailingEnabled,
+      triggerR: s.dynamicTriggerR,
+      trailType: s.dynamicTrailType,
+      trailStepR: s.dynamicStepR,
+      trailPoints: s.dynamicTrailPoints,
+    },
+    givebackAutoExit: {
+      enabled: s.givebackAutoExitEnabled,
+      minPeakR: s.givebackMinPeakR,
+      maxGivebackPercent: s.givebackMaxPercent,
+    },
+    misSquareOff: {
+      enabled: s.misSquareOffEnabled,
+      squareOffTime: s.misSquareOffTime,
+    },
+  };
 }
 
 export interface ILiveTargetLadderStep {

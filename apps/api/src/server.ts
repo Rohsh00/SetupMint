@@ -96,9 +96,23 @@ export async function buildApp() {
     contentSecurityPolicy: false, // Allows flexible dashboard assets
   });
 
-  // CORS
+  // CORS (supports comma-separated origins, production domains, and local dev)
+  const configuredOrigins = config.corsOrigin
+    ? config.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const allowedOrigins = Array.from(
+    new Set([...configuredOrigins, 'http://localhost:5173', 'http://127.0.0.1:5173'])
+  );
+
   await app.register(cors, {
-    origin: [config.corsOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: (origin, cb) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return cb(null, true);
+      }
+      return cb(new Error(`CORS origin not allowed: ${origin}`), false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key', 'x-idempotency-key'],

@@ -103,6 +103,19 @@ export interface ILiveOpenTradeMetric {
   stagnation?: ITradeStagnationMetric;
   underlying?: string;
   sparkline?: Array<{ timestamp: number; pnl: number; r: number; price: number; isLowestMae?: boolean; isPeakMfe?: boolean }>;
+  hasRestingBrokerSl?: boolean;
+  isNakedPosition?: boolean;
+  restingSlOrderId?: string;
+  restingSlPrice?: number;
+  setupEdgeStats?: {
+    winRate: number;
+    sampleSize: number;
+    avgMfeR: number;
+    avgMaeR: number;
+    expectancyR: number;
+    confidenceLevel: 'HIGH' | 'MODERATE' | 'LOW';
+  };
+  serverAutoExecutionArmed?: boolean;
 }
 
 export interface ILiveWatcherSummary {

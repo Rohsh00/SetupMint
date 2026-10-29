@@ -2554,6 +2554,110 @@ export class FyersService {
   }
 
   /**
+   * Returns exchange freeze quantity per order (NSE / MCX).
+   * Orders larger than freeze quantity are automatically sliced into compliant child orders.
+   */
+  static getFreezeQuantity(symbol: string): number {
+    const s = symbol.toUpperCase();
+    if (s.includes('NIFTY') && !s.includes('BANKNIFTY') && !s.includes('FINNIFTY') && !s.includes('MIDCPNIFTY')) {
+      return 1800;
+    }
+    if (s.includes('BANKNIFTY')) {
+      return 900;
+    }
+    if (s.includes('FINNIFTY')) {
+      return 1800;
+    }
+    if (s.includes('MIDCPNIFTY')) {
+      return 2800;
+    }
+    if (s.includes('SENSEX')) {
+      return 1000;
+    }
+    if (s.includes('CRUDEOIL')) {
+      return 10000;
+    }
+    return 100000;
+  }
+
+  /**
+   * Polls FYERS order status after placement to capture actual exchange execution price (tradedPrice)
+   * rather than relying solely on the client's estimated LTP.
+   */
+  static async pollTradedFillPrice(
+    appId: string,
+    accessToken: string,
+    orderId: string,
+    maxAttempts = 3
+  ): Promise<{ tradedPrice?: number; status?: string; tradedQty?: number }> {
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const orderbook = await this.fetchOrderbook(appId, accessToken);
+        const order = orderbook.find((o: any) => o.id === orderId);
+        if (order) {
+          const tradedPrice = Number(order.tradedPrice || order.avgPrice || order.price || 0);
+          const tradedQty = Number(order.filledQty || order.tradedQty || 0);
+          const status = order.status === 2 ? 'FILLED' : order.status === 1 ? 'CANCELLED' : order.status === 5 ? 'REJECTED' : 'PENDING';
+          if (tradedPrice > 0 || status === 'FILLED') {
+            return { tradedPrice, status, tradedQty };
+          }
+        }
+      } catch {}
+      if (i < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+    return {};
+  }
+
+  /**
+   * Checks whether an open position has a live, resting Stop Loss order on the broker's orderbook.
+   * If not, the position is flagged as a "Naked Position" exposing uncontrolled exchange risk.
+   */
+  static async checkRestingStopLossOrder(
+    userId: string | mongoose.Types.ObjectId,
+    tradeId: string
+  ): Promise<{ hasRestingSl: boolean; slPrice?: number; orderId?: string; message: string }> {
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const trade = await Trade.findOne({ _id: tradeId, userId: uId });
+    if (!trade) return { hasRestingSl: false, message: 'Trade not found' };
+
+    const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS', status: 'CONNECTED' });
+    if (!integration || !integration.appId || !integration.accessToken) {
+      return { hasRestingSl: false, message: 'No active FYERS session' };
+    }
+
+    const accessToken = decryptSecret(integration.accessToken) as string;
+    const appId = integration.appId;
+
+    try {
+      const orderbook = await this.fetchOrderbook(appId, accessToken);
+      const isShort = trade.direction === 'SHORT';
+      const expectedSide = isShort ? 1 : -1;
+
+      const slOrder = orderbook.find((o: any) => {
+        if (o.status !== 6 && o.status !== 4) return false;
+        if (o.side !== expectedSide) return false;
+        const normSym = InstrumentService.normalizeUnderlying(o.symbol);
+        const match = normSym === trade.underlying || o.symbol.includes(trade.underlying) || trade.symbol.includes(o.symbol);
+        return match && (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0);
+      });
+
+      if (slOrder) {
+        return {
+          hasRestingSl: true,
+          slPrice: Number(slOrder.stopPrice || slOrder.price),
+          orderId: slOrder.id,
+          message: `Resting SL active at ₹${slOrder.stopPrice || slOrder.price}`,
+        };
+      }
+      return { hasRestingSl: false, message: 'No resting SL order found on FYERS orderbook (Naked Position)' };
+    } catch (e: any) {
+      return { hasRestingSl: false, message: e.message || 'Error checking orderbook' };
+    }
+  }
+
+  /**
    * Executes or modifies a live Stop Loss order on FYERS exchange for an active trade.
    */
   static async executeBrokerStopLoss(
@@ -2625,15 +2729,18 @@ export class FyersService {
       (o: any) => o.side === expectedSide && (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0)
     );
 
-    const tickSize = 1;
-    const limitPrice = expectedSide === 1 ? newStopPrice + tickSize : newStopPrice - tickSize;
+    const tick = 0.05;
+    const cleanStopPrice = Number((Math.round(newStopPrice / tick) * tick).toFixed(2));
+    const limitPrice = expectedSide === 1
+      ? Number((cleanStopPrice + 0.5).toFixed(2))
+      : Number((cleanStopPrice - 0.5).toFixed(2));
 
     if (pendingSlOrder) {
       // Modify existing pending order
       await this.modifyOrder(appId, accessToken, {
         id: pendingSlOrder.id,
         type: pendingSlOrder.type || 4,
-        stopPrice: newStopPrice,
+        stopPrice: cleanStopPrice,
         limitPrice: pendingSlOrder.type === 4 ? limitPrice : undefined,
         qty: Math.abs(matchedPos.netQty),
       });
@@ -2642,7 +2749,7 @@ export class FyersService {
         executedOnBroker: true,
         action: 'MODIFIED',
         orderId: pendingSlOrder.id,
-        message: `FYERS Stop Loss order #${pendingSlOrder.id} modified to ₹${newStopPrice} on exchange.`,
+        message: `FYERS Stop Loss order #${pendingSlOrder.id} modified to ₹${cleanStopPrice} on exchange.`,
       };
     } else {
       // Place a new SL-Limit order (type 4) on FYERS
@@ -2653,7 +2760,7 @@ export class FyersService {
         side: expectedSide,
         productType: matchedPos.productType || 'MARGIN',
         limitPrice: limitPrice,
-        stopPrice: newStopPrice,
+        stopPrice: cleanStopPrice,
         validity: 'DAY',
         disclosedQty: 0,
         offlineOrder: false,
@@ -2685,6 +2792,10 @@ export class FyersService {
   ): Promise<{
     executedOnBroker: boolean;
     orderId?: string;
+    tradedPrice?: number;
+    tradedQty?: number;
+    orderStatus?: string;
+    slicedCount?: number;
     message: string;
   }> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
@@ -2732,8 +2843,9 @@ export class FyersService {
     const exitQty = Math.min(options.exitQty, openQty);
     const isFull = options.isFullClose || exitQty >= openQty;
     const exitSide = matchedPos.netQty < 0 ? 1 : -1;
+    const freezeQty = this.getFreezeQuantity(matchedPos.symbol);
 
-    if (isFull) {
+    if (isFull && exitQty <= freezeQty) {
       try {
         await this.exitPositions(appId, accessToken, {
           id: matchedPos.id,
@@ -2745,32 +2857,19 @@ export class FyersService {
         };
       } catch {
         // Fallback: submit market exit order directly
-        const res = await this.placeOrder(appId, accessToken, {
-          symbol: matchedPos.symbol,
-          qty: exitQty,
-          type: 2, // MARKET
-          side: exitSide,
-          productType: matchedPos.productType || 'MARGIN',
-          limitPrice: 0,
-          stopPrice: 0,
-          validity: 'DAY',
-          disclosedQty: 0,
-          offlineOrder: false,
-          stopLoss: 0,
-          takeProfit: 0,
-          orderTag: 'SMExit',
-        });
-        return {
-          executedOnBroker: true,
-          orderId: res.id,
-          message: `Market exit order #${res.id} executed on FYERS for ${exitQty} qty.`,
-        };
       }
-    } else {
-      // Partial position exit
+    }
+
+    // Execute order with pre-flight freeze quantity slicing if order is large
+    const orderIds: string[] = [];
+    let remainingToExit = exitQty;
+    let sliceCount = 0;
+
+    while (remainingToExit > 0) {
+      const currentSlice = Math.min(remainingToExit, freezeQty);
       const res = await this.placeOrder(appId, accessToken, {
         symbol: matchedPos.symbol,
-        qty: exitQty,
+        qty: currentSlice,
         type: 2, // MARKET
         side: exitSide,
         productType: matchedPos.productType || 'MARGIN',
@@ -2781,21 +2880,31 @@ export class FyersService {
         offlineOrder: false,
         stopLoss: 0,
         takeProfit: 0,
-        orderTag: 'SMPart',
+        orderTag: isFull ? 'SMFull' : 'SMPart',
       });
+      orderIds.push(res.id);
+      remainingToExit -= currentSlice;
+      sliceCount++;
+    }
 
-      // Adjust pending Stop Loss quantity if one exists
-      try {
-        const orderBook = await this.fetchOrderbook(appId, accessToken);
-        const remainingQty = openQty - exitQty;
-        const pendingSlOrder = orderBook.find(
-          (o: any) =>
-            o.status === 6 &&
-            o.symbol === matchedPos.symbol &&
-            o.side === exitSide &&
-            (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0)
-        );
-        if (pendingSlOrder && remainingQty > 0) {
+    const primaryOrderId = orderIds[0];
+    const fillInfo = primaryOrderId
+      ? await this.pollTradedFillPrice(appId, accessToken, primaryOrderId)
+      : {};
+
+    // Adjust pending Stop Loss quantity if one exists
+    try {
+      const orderBook = await this.fetchOrderbook(appId, accessToken);
+      const remainingQty = openQty - exitQty;
+      const pendingSlOrder = orderBook.find(
+        (o: any) =>
+          o.status === 6 &&
+          o.symbol === matchedPos.symbol &&
+          o.side === exitSide &&
+          (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0)
+      );
+      if (pendingSlOrder) {
+        if (remainingQty > 0) {
           await this.modifyOrder(appId, accessToken, {
             id: pendingSlOrder.id,
             type: pendingSlOrder.type,
@@ -2803,16 +2912,25 @@ export class FyersService {
             limitPrice: pendingSlOrder.limitPrice ? Number(pendingSlOrder.limitPrice) : undefined,
             qty: remainingQty,
           });
+        } else if (isFull) {
+          await this.cancelOrder(appId, accessToken, pendingSlOrder.id);
         }
-      } catch (slErr) {
-        console.warn('Failed to adjust pending SL qty after partial exit:', slErr);
       }
-
-      return {
-        executedOnBroker: true,
-        orderId: res.id,
-        message: `Partial market exit order #${res.id} for ${exitQty} qty executed in FYERS.`,
-      };
+    } catch (slErr) {
+      console.warn('Failed to adjust pending SL qty after exit:', slErr);
     }
+
+    const sliceMsg = sliceCount > 1 ? ` (sliced into ${sliceCount} exchange freeze-compliant orders)` : '';
+    const fillMsg = fillInfo.tradedPrice ? ` Filled at ₹${fillInfo.tradedPrice}.` : '';
+
+    return {
+      executedOnBroker: true,
+      orderId: primaryOrderId,
+      tradedPrice: fillInfo.tradedPrice,
+      tradedQty: fillInfo.tradedQty ?? exitQty,
+      orderStatus: fillInfo.status ?? 'FILLED',
+      slicedCount: sliceCount,
+      message: `${isFull ? 'Full' : 'Partial'} market exit for ${exitQty} units placed on FYERS (Order #${primaryOrderId})${sliceMsg}.${fillMsg}`,
+    };
   }
 }

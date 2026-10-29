@@ -18,6 +18,7 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Collapse from '@mui/material/Collapse';
+import Alert from '@mui/material/Alert';
 import LinearProgress from '@mui/material/LinearProgress';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -232,14 +233,17 @@ export function LiveOpenTradeWatcher({
       tradeId,
       newStopLoss,
       executeBroker = true,
+      idempotencyKey,
     }: {
       tradeId: string;
       newStopLoss: number;
       executeBroker?: boolean;
+      idempotencyKey?: string;
     }) => {
       return api.trades.liveBrokerSl(tradeId, {
         stopPrice: newStopLoss,
         executeBroker,
+        idempotencyKey: idempotencyKey || `${tradeId}_sl_${newStopLoss}_${Date.now()}`,
       });
     },
     onSuccess: (data: any, variables) => {
@@ -350,6 +354,7 @@ export function LiveOpenTradeWatcher({
       exitPrice,
       newStopLoss,
       executeBroker = true,
+      idempotencyKey,
     }: {
       tradeId: string;
       targetIndex: number;
@@ -358,6 +363,7 @@ export function LiveOpenTradeWatcher({
       exitPrice?: number;
       newStopLoss?: number;
       executeBroker?: boolean;
+      idempotencyKey?: string;
     }) => {
       return api.trades.liveBrokerLadderStep(tradeId, {
         targetIndex,
@@ -366,6 +372,7 @@ export function LiveOpenTradeWatcher({
         exitPrice,
         newStopLoss,
         executeBroker,
+        idempotencyKey: idempotencyKey || `${tradeId}_step_${targetIndex}_${Date.now()}`,
       });
     },
     onSuccess: (data: any, variables) => {
@@ -507,6 +514,7 @@ export function LiveOpenTradeWatcher({
             quantity: exitQty,
             exitPrice: pos.currentLtp,
             executeBroker: true,
+            idempotencyKey: `${pos.tradeId}_auto_exit_${step.name}_${Date.now()}`,
           })
           .then(() => {
             soundEngine.playTargetHit();
@@ -518,6 +526,7 @@ export function LiveOpenTradeWatcher({
                 .liveBrokerSl(pos.tradeId, {
                   stopPrice: step.suggestedStopLoss,
                   executeBroker: true,
+                  idempotencyKey: `${pos.tradeId}_auto_sl_${step.name}_${Date.now()}`,
                 })
                 .then(() => {
                   toast.success(
@@ -617,6 +626,7 @@ export function LiveOpenTradeWatcher({
                 exitPrice: pos.currentLtp,
                 isFullClose: true,
                 executeBroker: true,
+                idempotencyKey: `${pos.tradeId}_gb_exit_${Date.now()}`,
               })
               .then(() => {
                 soundEngine.playGivebackAlert();
@@ -655,6 +665,7 @@ export function LiveOpenTradeWatcher({
               exitPrice: pos.currentLtp,
               isFullClose: true,
               executeBroker: true,
+              idempotencyKey: `${pos.tradeId}_mis_exit_${Date.now()}`,
             })
             .then(() => {
               soundEngine.playKillSwitch();
@@ -907,6 +918,59 @@ export function LiveOpenTradeWatcher({
                 borderRadius: '6px',
               }}
             />
+
+            {user?.liveWatcherSettings?.paperExecutionMode && (
+              <Chip
+                label="SIMULATION MODE"
+                size="small"
+                sx={{
+                  height: 22,
+                  fontSize: '0.65rem',
+                  fontWeight: 800,
+                  bgcolor: alpha('#F59E0B', 0.15),
+                  color: '#F59E0B',
+                  border: 1,
+                  borderColor: alpha('#F59E0B', 0.4),
+                  borderRadius: '6px',
+                }}
+              />
+            )}
+            {user?.liveWatcherSettings?.telegramAlertsEnabled && (
+              <Tooltip title="Telegram Off-Screen Push Alerts Active" arrow>
+                <Chip
+                  label="TELEGRAM ARMED"
+                  size="small"
+                  sx={{
+                    height: 22,
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    bgcolor: alpha('#0284C7', 0.15),
+                    color: '#0284C7',
+                    border: 1,
+                    borderColor: alpha('#0284C7', 0.4),
+                    borderRadius: '6px',
+                  }}
+                />
+              </Tooltip>
+            )}
+            {user?.liveWatcherSettings?.serverSideExecutionEnabled && (
+              <Tooltip title="Server-Side 24/7 Execution Worker Active" arrow>
+                <Chip
+                  label="SERVER RUNNER ON"
+                  size="small"
+                  sx={{
+                    height: 22,
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    bgcolor: alpha('#10B981', 0.15),
+                    color: '#10B981',
+                    border: 1,
+                    borderColor: alpha('#10B981', 0.4),
+                    borderRadius: '6px',
+                  }}
+                />
+              </Tooltip>
+            )}
           </Box>
 
           {/* Center / Right: Aggregated Live Financials */}
@@ -1492,6 +1556,59 @@ export function LiveOpenTradeWatcher({
                                 Buffer: <strong style={{ color: threat.color }}>{pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'}</strong>
                               </Typography>
                             )}
+                            {pos.isNakedPosition || !pos.hasRestingBrokerSl ? (
+                              <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Chip
+                                  label="NAKED"
+                                  size="small"
+                                  sx={{
+                                    height: 16,
+                                    fontSize: '0.55rem',
+                                    fontWeight: 800,
+                                    color: '#EF4444',
+                                    bgcolor: alpha('#EF4444', 0.15),
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    borderRadius: '3px',
+                                  }}
+                                />
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="warning"
+                                  onClick={() => {
+                                    const slToArm = pos.stopLoss ?? pos.entryPrice;
+                                    api.trades
+                                      .liveBrokerSl(pos.tradeId, {
+                                        stopPrice: slToArm,
+                                        executeBroker: true,
+                                        idempotencyKey: `${pos.tradeId}_arm_sl_${Date.now()}`,
+                                      })
+                                      .then(() => {
+                                        toast.success(`Protection SL armed on FYERS @ ₹${slToArm}`);
+                                        queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                                      })
+                                      .catch((err: any) => {
+                                        toast.error(err?.message || 'Failed to place resting SL');
+                                      });
+                                  }}
+                                  sx={{
+                                    height: 18,
+                                    fontSize: '0.55rem',
+                                    fontWeight: 800,
+                                    py: 0,
+                                    px: 0.6,
+                                    minWidth: 'auto',
+                                    textTransform: 'none',
+                                  }}
+                                >
+                                  Arm SL
+                                </Button>
+                              </Box>
+                            ) : (
+                              <Typography variant="caption" sx={{ display: 'block', fontSize: '0.6rem', color: '#10B981', fontWeight: 700 }}>
+                                ✓ Exchange SL Resting
+                              </Typography>
+                            )}
                           </TableCell>
 
                           {/* Target & Ladder */}
@@ -1960,6 +2077,128 @@ export function LiveOpenTradeWatcher({
                             </Box>
                           </Box>
                         </Box>
+
+                        {/* Exchange Resting SL Verification / Naked Position Alert */}
+                        {pos.isNakedPosition || !pos.hasRestingBrokerSl ? (
+                          <Alert
+                            severity="warning"
+                            variant="filled"
+                            icon={<WarningAmberRoundedIcon sx={{ fontSize: 18 }} />}
+                            sx={{
+                              mb: 1.5,
+                              py: 0.25,
+                              px: 1.5,
+                              borderRadius: '8px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700,
+                              bgcolor: '#F59E0B',
+                              color: '#000000',
+                              '& .MuiAlert-message': { display: 'flex', alignItems: 'center', py: 0 },
+                              '& .MuiAlert-action': { pt: 0, pb: 0, mr: 0 },
+                            }}
+                            action={
+                              <Button
+                                size="small"
+                                variant="contained"
+                                sx={{
+                                  bgcolor: '#000000',
+                                  color: '#FFFFFF',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  px: 1.5,
+                                  py: 0.2,
+                                  borderRadius: '5px',
+                                  textTransform: 'none',
+                                  '&:hover': { bgcolor: '#1E293B' },
+                                }}
+                                onClick={() => {
+                                  const slToArm = pos.stopLoss ?? pos.entryPrice;
+                                  api.trades
+                                    .liveBrokerSl(pos.tradeId, {
+                                      stopPrice: slToArm,
+                                      executeBroker: true,
+                                      idempotencyKey: `${pos.tradeId}_arm_sl_${Date.now()}`,
+                                    })
+                                    .then(() => {
+                                      toast.success(`Protection SL armed on FYERS @ ₹${slToArm}`);
+                                      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                                    })
+                                    .catch((err: any) => {
+                                      toast.error(err?.message || 'Failed to place resting SL order');
+                                    });
+                                }}
+                              >
+                                Arm Protection SL on FYERS
+                              </Button>
+                            }
+                          >
+                            ⚠️ Naked Position: No Resting SL Order Found on Exchange!
+                          </Alert>
+                        ) : (
+                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip
+                              icon={<CheckCircleRoundedIcon sx={{ fontSize: '12px !important', color: '#10B981' }} />}
+                              label={`Resting Exchange SL Verified @ ₹${pos.restingSlPrice || pos.stopLoss}`}
+                              size="small"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                bgcolor: alpha('#10B981', 0.12),
+                                color: '#10B981',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                borderRadius: '4px',
+                              }}
+                            />
+                          </Box>
+                        )}
+
+                        {/* Historical Setup Edge Intelligence */}
+                        {pos.setupEdgeStats && (
+                          <Box
+                            sx={{
+                              mb: 1.5,
+                              p: 1,
+                              borderRadius: '8px',
+                              bgcolor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+                              border: '1px solid',
+                              borderColor: alpha('#3B82F6', 0.2),
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: 1,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Chip
+                                label={pos.setupEdgeStats.setupName || 'Strategy Edge'}
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  bgcolor: alpha('#3B82F6', 0.2),
+                                  color: '#3B82F6',
+                                }}
+                              />
+                              <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.7rem' }}>
+                                Edge Win Rate: <span style={{ color: '#10B981' }}>{pos.setupEdgeStats.winRate}%</span> ({pos.setupEdgeStats.totalSampleTrades} trades)
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Typography variant="caption" sx={{ fontSize: '0.68rem' }} color="text.secondary">
+                                Expectancy: <strong style={{ color: pos.setupEdgeStats.expectancyR >= 0 ? '#10B981' : '#F43F5E' }}>{pos.setupEdgeStats.expectancyR > 0 ? '+' : ''}{pos.setupEdgeStats.expectancyR}R</strong>
+                              </Typography>
+                              <Typography variant="caption" sx={{ fontSize: '0.68rem' }} color="text.secondary">
+                                Avg MFE: <strong style={{ color: '#10B981' }}>+{pos.setupEdgeStats.avgMfeR}R</strong>
+                              </Typography>
+                              <Typography variant="caption" sx={{ fontSize: '0.68rem' }} color="text.secondary">
+                                Typical MAE: <strong style={{ color: '#F43F5E' }}>-{pos.setupEdgeStats.avgMaeR}R</strong>
+                              </Typography>
+                            </Box>
+                          </Box>
+                        )}
 
                         {/* 2. ⚡ TOP-MOUNTED INSTANT ACTION COCKPIT (Zero Scroll - Always Accessible) */}
                         <Box

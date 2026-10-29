@@ -225,6 +225,7 @@ export function QuickCloseTradeDialog({
           exitPrice: numExitPrice,
           isFullClose: !isPartial,
           executeBroker: true,
+          idempotencyKey: `${trade.id || trade._id}_exit_${Date.now()}`,
         });
       }
 

@@ -1761,6 +1761,21 @@ export interface ILiveWatcherSettings {
   scalperHotkeysEnabled: boolean;
   soundAlertsEnabled: boolean;
   defaultRefreshIntervalSec: number; // e.g. 5
+  paperExecutionMode: boolean; // Paper / simulated broker execution mode
+  serverSideExecutionEnabled: boolean; // Server worker executes ladder even when laptop/tab is closed
+  telegramAlertsEnabled: boolean;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramAlertEvents?: {
+    stopThreatCritical?: boolean;
+    givebackLeaking?: boolean;
+    dailyLossBreached?: boolean;
+    nakedPositionWarning?: boolean;
+    tokenExpiryWarning?: boolean;
+    ladderMilestoneReached?: boolean;
+  };
+  hardDisciplineLockoutEnabled: boolean;
+  hardDisciplineLockoutDurationMins: number;
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
@@ -1790,6 +1805,19 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   scalperHotkeysEnabled: true,
   soundAlertsEnabled: true,
   defaultRefreshIntervalSec: 5,
+  paperExecutionMode: false,
+  serverSideExecutionEnabled: true,
+  telegramAlertsEnabled: false,
+  telegramAlertEvents: {
+    stopThreatCritical: true,
+    givebackLeaking: true,
+    dailyLossBreached: true,
+    nakedPositionWarning: true,
+    tokenExpiryWarning: true,
+    ladderMilestoneReached: true,
+  },
+  hardDisciplineLockoutEnabled: false,
+  hardDisciplineLockoutDurationMins: 60,
 };
 
 export function createLadderRulesFromSettings(
@@ -1977,6 +2005,20 @@ export interface ILiveOpenTradeMetric {
   stagnation?: ITradeStagnationMetric;
   underlying?: string;
   sparkline?: Array<{ timestamp: number; pnl: number; r: number; price: number; isLowestMae?: boolean; isPeakMfe?: boolean }>;
+  hasRestingBrokerSl?: boolean;
+  isNakedPosition?: boolean;
+  restingSlOrderId?: string;
+  restingSlPrice?: number;
+  setupEdgeStats?: {
+    setupName?: string;
+    totalSampleTrades: number;
+    winRate: number;
+    avgMfeR: number;
+    avgMaeR: number;
+    expectancyR: number;
+    confidenceLevel: 'HIGH' | 'MODERATE' | 'LOW';
+  };
+  serverAutoExecutionArmed?: boolean;
 }
 
 export interface ILiveWatcherSummary {

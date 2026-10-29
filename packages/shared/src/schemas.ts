@@ -636,6 +636,21 @@ export const liveWatcherSettingsSchema = z.object({
   scalperHotkeysEnabled: z.boolean().optional(),
   soundAlertsEnabled: z.boolean().optional(),
   defaultRefreshIntervalSec: z.coerce.number().int().min(1).max(60).optional(),
+  paperExecutionMode: z.boolean().optional(),
+  serverSideExecutionEnabled: z.boolean().optional(),
+  telegramAlertsEnabled: z.boolean().optional(),
+  telegramBotToken: z.string().optional(),
+  telegramChatId: z.string().optional(),
+  telegramAlertEvents: z.object({
+    stopThreatCritical: z.boolean().optional(),
+    givebackLeaking: z.boolean().optional(),
+    dailyLossBreached: z.boolean().optional(),
+    nakedPositionWarning: z.boolean().optional(),
+    tokenExpiryWarning: z.boolean().optional(),
+    ladderMilestoneReached: z.boolean().optional(),
+  }).optional(),
+  hardDisciplineLockoutEnabled: z.boolean().optional(),
+  hardDisciplineLockoutDurationMins: z.coerce.number().int().positive().optional(),
 });
 
 export const updateProfileSchema = z.object({

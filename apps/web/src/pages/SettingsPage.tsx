@@ -72,6 +72,11 @@ import {
   ExpandMoreRounded,
   ExpandLessRounded,
   CheckRounded,
+  NotificationsActiveRounded,
+  SendRounded,
+  ScienceRounded,
+  CloudSyncRounded,
+  LockClockRounded,
 } from '@mui/icons-material';
 import {
   IInstrumentDetectionSetting,
@@ -182,6 +187,16 @@ export function SettingsPage() {
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(initialWatcher.soundAlertsEnabled);
   const [defaultRefreshIntervalSec, setDefaultRefreshIntervalSec] = useState(initialWatcher.defaultRefreshIntervalSec);
 
+  // Institutional Execution, Telegram Alerts & Lockout State
+  const [paperExecutionMode, setPaperExecutionMode] = useState(initialWatcher.paperExecutionMode ?? false);
+  const [serverSideExecutionEnabled, setServerSideExecutionEnabled] = useState(initialWatcher.serverSideExecutionEnabled ?? false);
+  const [telegramAlertsEnabled, setTelegramAlertsEnabled] = useState(initialWatcher.telegramAlertsEnabled ?? false);
+  const [telegramBotToken, setTelegramBotToken] = useState(initialWatcher.telegramBotToken ?? '');
+  const [telegramChatId, setTelegramChatId] = useState(initialWatcher.telegramChatId ?? '');
+  const [hardDisciplineLockoutEnabled, setHardDisciplineLockoutEnabled] = useState(initialWatcher.hardDisciplineLockoutEnabled ?? false);
+  const [hardDisciplineLockoutDurationMins, setHardDisciplineLockoutDurationMins] = useState(initialWatcher.hardDisciplineLockoutDurationMins ?? 60);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
 
@@ -214,6 +229,13 @@ export function SettingsPage() {
       setScalperHotkeysEnabled(s.scalperHotkeysEnabled ?? true);
       setSoundAlertsEnabled(s.soundAlertsEnabled ?? true);
       setDefaultRefreshIntervalSec(s.defaultRefreshIntervalSec ?? 5);
+      setPaperExecutionMode(s.paperExecutionMode ?? false);
+      setServerSideExecutionEnabled(s.serverSideExecutionEnabled ?? false);
+      setTelegramAlertsEnabled(s.telegramAlertsEnabled ?? false);
+      setTelegramBotToken(s.telegramBotToken ?? '');
+      setTelegramChatId(s.telegramChatId ?? '');
+      setHardDisciplineLockoutEnabled(s.hardDisciplineLockoutEnabled ?? false);
+      setHardDisciplineLockoutDurationMins(s.hardDisciplineLockoutDurationMins ?? 60);
     }
   }, [user?.liveWatcherSettings]);
 
@@ -301,7 +323,34 @@ export function SettingsPage() {
     setScalperHotkeysEnabled(d.scalperHotkeysEnabled);
     setSoundAlertsEnabled(d.soundAlertsEnabled);
     setDefaultRefreshIntervalSec(d.defaultRefreshIntervalSec);
+    setPaperExecutionMode(d.paperExecutionMode ?? false);
+    setServerSideExecutionEnabled(d.serverSideExecutionEnabled ?? false);
+    setTelegramAlertsEnabled(d.telegramAlertsEnabled ?? false);
+    setTelegramBotToken(d.telegramBotToken ?? '');
+    setTelegramChatId(d.telegramChatId ?? '');
+    setHardDisciplineLockoutEnabled(d.hardDisciplineLockoutEnabled ?? false);
+    setHardDisciplineLockoutDurationMins(d.hardDisciplineLockoutDurationMins ?? 60);
     toast.info('Reset live watcher settings to institutional defaults. Click "Save Execution Settings" to persist.');
+  };
+
+  const handleTestTelegram = async () => {
+    if (!telegramBotToken || !telegramChatId) {
+      toast.error('Please enter both Telegram Bot Token and Chat ID to send a test message.');
+      return;
+    }
+    setTestingTelegram(true);
+    try {
+      const res = await api.settings.testTelegram({ botToken: telegramBotToken, chatId: telegramChatId });
+      if (res.success) {
+        toast.success(res.message || 'Telegram test message delivered successfully!');
+      } else {
+        toast.error(res.error?.message || 'Failed to send test message to Telegram.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error connecting to Telegram Bot API');
+    } finally {
+      setTestingTelegram(false);
+    }
   };
 
   const handleWatcherSubmit = (e: React.FormEvent) => {
@@ -333,6 +382,13 @@ export function SettingsPage() {
       scalperHotkeysEnabled,
       soundAlertsEnabled,
       defaultRefreshIntervalSec: Number(defaultRefreshIntervalSec),
+      paperExecutionMode,
+      serverSideExecutionEnabled,
+      telegramAlertsEnabled,
+      telegramBotToken,
+      telegramChatId,
+      hardDisciplineLockoutEnabled,
+      hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
     };
     liveWatcherMutation.mutate(payload);
   };
@@ -1352,6 +1408,159 @@ export function SettingsPage() {
                       </Typography>
                     </Box>
                   </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Card 4: Institutional Server Automation, Off-Screen Alerts & Discipline Lockout */}
+            <Grid size={{ xs: 12 }}>
+              <Card variant="outlined" sx={{ p: 1 }}>
+                <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <NotificationsActiveRounded sx={{ color: 'primary.main' }} />
+                        Off-Screen Execution Daemon, Telegram Alerts & Hard Guardrails
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Institutional-grade safeguards: server-side automation even when your browser tab closes, Telegram push notifications, and opt-in capital preservation lockout.
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Grid container spacing={2.5}>
+                    {/* Paper Execution Mode Toggle */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: paperExecutionMode ? 'warning.main' : 'divider', bgcolor: paperExecutionMode ? alpha('#F59E0B', 0.08) : 'transparent' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <ScienceRounded sx={{ color: paperExecutionMode ? 'warning.main' : 'text.secondary', fontSize: 20 }} />
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                              Paper Execution Mode (Simulation)
+                            </Typography>
+                          </Box>
+                          <Switch
+                            checked={paperExecutionMode}
+                            onChange={(e) => setPaperExecutionMode(e.target.checked)}
+                            color="warning"
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          When enabled, ladder steps and auto-exits will simulate in SetupMint journal without transmitting live financial orders to FYERS exchange. Great for strategy dry-runs.
+                        </Typography>
+                      </Box>
+                    </Grid>
+
+                    {/* Server-Side Execution Daemon Toggle */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: serverSideExecutionEnabled ? 'primary.main' : 'divider', bgcolor: serverSideExecutionEnabled ? alpha('#3B82F6', 0.08) : 'transparent' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CloudSyncRounded sx={{ color: serverSideExecutionEnabled ? 'primary.main' : 'text.secondary', fontSize: 20 }} />
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                              Server-Side Execution Daemon
+                            </Typography>
+                          </Box>
+                          <Switch
+                            checked={serverSideExecutionEnabled}
+                            onChange={(e) => setServerSideExecutionEnabled(e.target.checked)}
+                            color="primary"
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          Monitors positions directly on the backend server every 2 seconds. Ladder exits, trailing stops, and giveback safety triggers execute even if your laptop sleeps or your connection drops.
+                        </Typography>
+                      </Box>
+                    </Grid>
+
+                    {/* Hard Discipline Lockout */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: hardDisciplineLockoutEnabled ? 'error.main' : 'divider', bgcolor: hardDisciplineLockoutEnabled ? alpha('#EF4444', 0.08) : 'transparent' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <LockClockRounded sx={{ color: hardDisciplineLockoutEnabled ? 'error.main' : 'text.secondary', fontSize: 20 }} />
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                              Hard Discipline Lockout Mode
+                            </Typography>
+                          </Box>
+                          <Switch
+                            checked={hardDisciplineLockoutEnabled}
+                            onChange={(e) => setHardDisciplineLockoutEnabled(e.target.checked)}
+                            color="error"
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                          Opt-in hard guardrail: If daily loss limit is breached or 3 consecutive losses occur, new trade logging and entry actions are hard-locked for the cooldown window to eliminate revenge trading.
+                        </Typography>
+                        {hardDisciplineLockoutEnabled && (
+                          <TextField
+                            size="small"
+                            type="number"
+                            label="Lockout Cooldown (Minutes)"
+                            value={hardDisciplineLockoutDurationMins}
+                            onChange={(e) => setHardDisciplineLockoutDurationMins(Math.max(15, Number(e.target.value)))}
+                            sx={{ width: 220 }}
+                            helperText="Recommended: 45–60 mins"
+                          />
+                        )}
+                      </Box>
+                    </Grid>
+
+                    {/* Telegram Push Alerts */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: telegramAlertsEnabled ? 'info.main' : 'divider', bgcolor: telegramAlertsEnabled ? alpha('#0284C7', 0.08) : 'transparent' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SendRounded sx={{ color: telegramAlertsEnabled ? 'info.main' : 'text.secondary', fontSize: 20 }} />
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                              Telegram Off-Screen Push Alerts
+                            </Typography>
+                          </Box>
+                          <Switch
+                            checked={telegramAlertsEnabled}
+                            onChange={(e) => setTelegramAlertsEnabled(e.target.checked)}
+                            color="info"
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                          Receive high-priority phone notifications for Critical Stop Threats, Naked Position warnings, Profit Giveback reversals, and Daily Loss Limit breaches.
+                        </Typography>
+                        {telegramAlertsEnabled && (
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
+                            <TextField
+                              size="small"
+                              type="password"
+                              label="Telegram Bot Token"
+                              placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                              value={telegramBotToken}
+                              onChange={(e) => setTelegramBotToken(e.target.value)}
+                              fullWidth
+                            />
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <TextField
+                                size="small"
+                                label="Telegram Chat ID"
+                                placeholder="e.g. 987654321"
+                                value={telegramChatId}
+                                onChange={(e) => setTelegramChatId(e.target.value)}
+                                sx={{ flex: 1 }}
+                              />
+                              <Button
+                                variant="outlined"
+                                color="info"
+                                size="small"
+                                onClick={handleTestTelegram}
+                                disabled={testingTelegram || !telegramBotToken || !telegramChatId}
+                                sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                              >
+                                {testingTelegram ? 'Testing...' : 'Test Connection'}
+                              </Button>
+                            </Box>
+                          </Box>
+                        )}
+                      </Box>
+                    </Grid>
+                  </Grid>
                 </CardContent>
               </Card>
             </Grid>

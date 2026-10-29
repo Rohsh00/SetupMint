@@ -33,6 +33,7 @@ import { marketDataRoutes } from './routes/market-data.routes.js';
 import { holidayRoutes } from './routes/holiday.routes.js';
 import { HolidayService } from './services/holiday.service.js';
 import { InstrumentClassifier } from './services/instrument-classifier.service.js';
+import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
 
 export async function buildApp() {
   // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
@@ -100,7 +101,7 @@ export async function buildApp() {
     origin: [config.corsOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Idempotency-Key', 'x-idempotency-key'],
   });
 
   // Cookie Support
@@ -233,6 +234,9 @@ if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.
 
       const app = await buildApp();
 
+      // Start server-side execution worker daemon
+      LiveExecutionWorker.start();
+
       await app.listen({ port: config.port, host: config.host });
       console.log(`\n======================================================`);
       console.log(`🚀 SetupMint API Server listening on http://${config.host}:${config.port}`);
@@ -241,6 +245,7 @@ if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.
 
       const shutdown = async () => {
         console.log('\nShutting down SetupMint gracefully...');
+        LiveExecutionWorker.stop();
         await app.close();
         await disconnectDatabase();
         process.exit(0);

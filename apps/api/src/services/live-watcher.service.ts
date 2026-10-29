@@ -290,7 +290,7 @@ export class LiveWatcherService {
         ).catch(() => {});
       }
 
-      this.enrichLiveMetric(metric, trade, fields);
+      await this.enrichLiveMetric(metric, trade, fields, uId);
 
       positions.push(metric);
     }
@@ -298,10 +298,13 @@ export class LiveWatcherService {
     return calculateLiveWatcherSummary(positions);
   }
 
+  private static setupStatsCache = new Map<string, any>();
+
   /**
-   * Enriches raw metric with options greeks, stagnation radar, and intra-trade sparkline points.
+   * Enriches raw metric with options greeks, stagnation radar, intra-trade sparkline points,
+   * historical setup statistics, and resting SL / naked position verification.
    */
-  private static enrichLiveMetric(metric: ILiveOpenTradeMetric, trade: any, fields: any) {
+  private static async enrichLiveMetric(metric: ILiveOpenTradeMetric, trade: any, fields: any, userId: any) {
     metric.underlying = trade.underlying || trade.symbol;
 
     // 1. Quantitative Options Greeks & IV sensitivity
@@ -354,6 +357,68 @@ export class LiveWatcherService {
       { timestamp: trade.calculated?.liveMfeSummary?.peakTimestamp ? new Date(trade.calculated.liveMfeSummary.peakTimestamp).getTime() : entryTimeMs + Math.round((Date.now() - entryTimeMs) * 0.66), pnl: peakPnl, r: metric.giveback?.peakUnrealizedR ?? 0, price: metric.giveback?.peakLtp ?? metric.currentLtp, isPeakMfe: true },
       { timestamp: Date.now(), pnl: currPnl, r: metric.unrealizedR ?? 0, price: metric.currentLtp },
     ];
+
+    // 4. Historical Setup Edge & Baseline Statistics
+    const setupName = trade.setup || trade.strategyId?.name;
+    if (setupName) {
+      const cacheKey = `${userId.toString()}:${setupName}`;
+      let stats = this.setupStatsCache.get(cacheKey);
+      if (!stats) {
+        try {
+          const historical = await Trade.find({
+            userId,
+            status: 'CLOSED',
+            $or: [{ setup: setupName }, { strategyId: trade.strategyId }],
+          })
+            .select('calculated.netPnL calculated.realizedR calculated.excursion')
+            .limit(100)
+            .lean();
+
+          if (historical.length > 0) {
+            const wins = historical.filter((t: any) => (t.calculated?.netPnL ?? 0) > 0).length;
+            const winRate = Number(((wins / historical.length) * 100).toFixed(1));
+            const mfeRs = historical.map((t: any) => t.calculated?.excursion?.mfeR).filter((r: any) => typeof r === 'number');
+            const maeRs = historical.map((t: any) => t.calculated?.excursion?.maeR).filter((r: any) => typeof r === 'number');
+            const realizedRs = historical.map((t: any) => t.calculated?.realizedR).filter((r: any) => typeof r === 'number');
+
+            const avgMfeR = mfeRs.length > 0 ? Number((mfeRs.reduce((a: number, b: number) => a + b, 0) / mfeRs.length).toFixed(2)) : 1.5;
+            const avgMaeR = maeRs.length > 0 ? Number((maeRs.reduce((a: number, b: number) => a + b, 0) / maeRs.length).toFixed(2)) : 0.5;
+            const expectancyR = realizedRs.length > 0 ? Number((realizedRs.reduce((a: number, b: number) => a + b, 0) / realizedRs.length).toFixed(2)) : 0.5;
+
+            stats = {
+              setupName,
+              totalSampleTrades: historical.length,
+              winRate,
+              avgMfeR,
+              avgMaeR,
+              expectancyR,
+              confidenceLevel: historical.length >= 20 ? 'HIGH' : historical.length >= 8 ? 'MODERATE' : 'LOW',
+            };
+            this.setupStatsCache.set(cacheKey, stats);
+          }
+        } catch {}
+      }
+      if (stats) {
+        metric.setupEdgeStats = stats;
+      }
+    }
+
+    // 5. Resting Stop Loss Verification (Naked Position Flagging)
+    if (metric.provider === 'FYERS') {
+      try {
+        const slCheck = await FyersService.checkRestingStopLossOrder(userId, trade._id.toString());
+        metric.hasRestingBrokerSl = slCheck.hasRestingSl;
+        metric.isNakedPosition = !slCheck.hasRestingSl;
+        metric.restingSlPrice = slCheck.slPrice;
+        metric.restingSlOrderId = slCheck.orderId;
+      } catch {
+        metric.hasRestingBrokerSl = false;
+        metric.isNakedPosition = true;
+      }
+    } else {
+      metric.hasRestingBrokerSl = Boolean(metric.stopLoss && metric.stopLoss > 0);
+      metric.isNakedPosition = !metric.hasRestingBrokerSl;
+    }
   }
 
   /**
@@ -449,7 +514,7 @@ export class LiveWatcherService {
       ).catch(() => {});
     }
 
-    this.enrichLiveMetric(metric, trade, fields);
+    await this.enrichLiveMetric(metric, trade, fields, uId);
 
     return metric;
   }

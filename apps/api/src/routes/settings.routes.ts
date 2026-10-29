@@ -4,6 +4,7 @@ import { DEFAULT_PATTERN_DETECTION_SETTINGS, DEFAULT_LIVE_WATCHER_SETTINGS } fro
 import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { BackupStatusService } from '../services/backup-status.service.js';
+import { TelegramAlertService } from '../services/telegram-alert.service.js';
 
 export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -94,6 +95,14 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         scalperHotkeysEnabled: liveWatcherSettings.scalperHotkeysEnabled !== undefined ? Boolean(liveWatcherSettings.scalperHotkeysEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.scalperHotkeysEnabled,
         soundAlertsEnabled: liveWatcherSettings.soundAlertsEnabled !== undefined ? Boolean(liveWatcherSettings.soundAlertsEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.soundAlertsEnabled,
         defaultRefreshIntervalSec: liveWatcherSettings.defaultRefreshIntervalSec !== undefined ? Number(liveWatcherSettings.defaultRefreshIntervalSec) : DEFAULT_LIVE_WATCHER_SETTINGS.defaultRefreshIntervalSec,
+        paperExecutionMode: liveWatcherSettings.paperExecutionMode !== undefined ? Boolean(liveWatcherSettings.paperExecutionMode) : DEFAULT_LIVE_WATCHER_SETTINGS.paperExecutionMode,
+        serverSideExecutionEnabled: liveWatcherSettings.serverSideExecutionEnabled !== undefined ? Boolean(liveWatcherSettings.serverSideExecutionEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.serverSideExecutionEnabled,
+        telegramAlertsEnabled: liveWatcherSettings.telegramAlertsEnabled !== undefined ? Boolean(liveWatcherSettings.telegramAlertsEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertsEnabled,
+        telegramBotToken: liveWatcherSettings.telegramBotToken !== undefined ? String(liveWatcherSettings.telegramBotToken).trim() : undefined,
+        telegramChatId: liveWatcherSettings.telegramChatId !== undefined ? String(liveWatcherSettings.telegramChatId).trim() : undefined,
+        telegramAlertEvents: liveWatcherSettings.telegramAlertEvents || DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents,
+        hardDisciplineLockoutEnabled: liveWatcherSettings.hardDisciplineLockoutEnabled !== undefined ? Boolean(liveWatcherSettings.hardDisciplineLockoutEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutEnabled,
+        hardDisciplineLockoutDurationMins: liveWatcherSettings.hardDisciplineLockoutDurationMins !== undefined ? Number(liveWatcherSettings.hardDisciplineLockoutDurationMins) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutDurationMins,
       };
     }
 
@@ -149,6 +158,27 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     return reply.send({ success: true, message: 'Password updated successfully' });
+  });
+
+  // Test Telegram Push Alert Connection
+  app.post('/test-telegram', async (req: any, reply) => {
+    const { botToken, chatId } = req.body || {};
+    if (!botToken || !chatId) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_CREDENTIALS', message: 'botToken and chatId are required' },
+      });
+    }
+
+    const res = await TelegramAlertService.testConnection(botToken, chatId);
+    if (!res.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'TELEGRAM_FAILED', message: res.message },
+      });
+    }
+
+    return reply.send({ success: true, message: res.message });
   });
 
   // Get system statistics for settings overview

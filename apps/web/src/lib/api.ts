@@ -344,7 +344,7 @@ export const api = {
       }),
     liveBrokerSl: (
       id: string,
-      payload: { stopPrice: number; executeBroker?: boolean }
+      payload: { stopPrice: number; executeBroker?: boolean; idempotencyKey?: string }
     ) =>
       request<{
         trade: any;
@@ -357,6 +357,7 @@ export const api = {
         };
       }>(`/trades/${id}/broker-sl`, {
         method: 'POST',
+        headers: payload.idempotencyKey ? { 'X-Idempotency-Key': payload.idempotencyKey } : undefined,
         body: JSON.stringify(payload),
       }),
     liveBrokerExit: (
@@ -366,6 +367,7 @@ export const api = {
         exitPrice?: number;
         isFullClose?: boolean;
         executeBroker?: boolean;
+        idempotencyKey?: string;
       }
     ) =>
       request<{
@@ -377,8 +379,10 @@ export const api = {
           message?: string;
           details?: any;
         };
+        slippagePoints?: number;
       }>(`/trades/${id}/broker-exit`, {
         method: 'POST',
+        headers: payload.idempotencyKey ? { 'X-Idempotency-Key': payload.idempotencyKey } : undefined,
         body: JSON.stringify(payload),
       }),
     liveBrokerLadderStep: (
@@ -391,6 +395,7 @@ export const api = {
         newStopLoss?: number;
         executeBroker?: boolean;
         reason?: string;
+        idempotencyKey?: string;
       }
     ) =>
       request<{
@@ -408,8 +413,10 @@ export const api = {
           message?: string;
           warning?: boolean;
         };
+        slippagePoints?: number;
       }>(`/trades/${id}/broker-ladder-step`, {
         method: 'POST',
+        headers: payload.idempotencyKey ? { 'X-Idempotency-Key': payload.idempotencyKey } : undefined,
         body: JSON.stringify(payload),
       }),
   },
@@ -582,6 +589,8 @@ export const api = {
     changePassword: (data: any) =>
       request('/settings/change-password', { method: 'POST', body: JSON.stringify(data) }),
     systemStatus: () => request<any>('/settings/system-status'),
+    testTelegram: (data: { botToken?: string; chatId?: string }) =>
+      request<any>('/settings/test-telegram', { method: 'POST', body: JSON.stringify(data) }),
   },
 
   // Review Queue & Mistake Detection

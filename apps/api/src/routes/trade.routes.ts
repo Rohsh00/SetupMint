@@ -46,6 +46,8 @@ import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
 import { LiveWatcherService } from '../services/live-watcher.service.js';
+import { IdempotencyService } from '../services/idempotency.service.js';
+import { User } from '../db/models/index.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
@@ -452,6 +454,48 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   // Create trade
   app.post('/', async (req, reply) => {
+    // Check opt-in Hard Discipline Lockout Mode
+    const user = await User.findById(req.user!.id);
+    if (user?.liveWatcherSettings?.hardDisciplineLockoutEnabled) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todayClosedTrades = await Trade.find({
+        userId: req.user!.id,
+        status: 'CLOSED',
+        exitTime: { $gte: new Date(todayStr + 'T00:00:00.000Z') },
+      }).sort({ exitTime: -1 });
+
+      const maxDailyLoss = user.riskSettings?.maxDailyLoss ?? 5000;
+      const todayPnl = todayClosedTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
+      const isDailyBreached = todayPnl <= -Math.abs(maxDailyLoss);
+
+      // Check consecutive losses (3 or more consecutive closed trades with negative netPnL)
+      let consecutiveLosses = 0;
+      for (const t of todayClosedTrades) {
+        if ((t.calculated?.netPnL || 0) < 0) {
+          consecutiveLosses++;
+        } else {
+          break;
+        }
+      }
+
+      if (isDailyBreached || consecutiveLosses >= 3) {
+        const lastLossTime = todayClosedTrades[0]?.exitTime || new Date();
+        const durationMins = user.liveWatcherSettings?.hardDisciplineLockoutDurationMins || 60;
+        const elapsedMins = (Date.now() - new Date(lastLossTime).getTime()) / (1000 * 60);
+
+        if (elapsedMins < durationMins) {
+          const remainingMins = Math.ceil(durationMins - elapsedMins);
+          return reply.status(403).send({
+            success: false,
+            error: {
+              code: 'DISCIPLINE_LOCKOUT_ACTIVE',
+              message: `Discipline Lockout active: ${isDailyBreached ? `Daily loss limit (₹${maxDailyLoss.toLocaleString()}) breached (Current: ₹${todayPnl.toFixed(2)})` : `${consecutiveLosses} consecutive losses recorded`}. New entries locked for ${remainingMins} more minutes.`,
+            },
+          });
+        }
+      }
+    }
+
     const parseResult = createTradeSchema.safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -1149,7 +1193,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   // Adjust / Move Stop Loss on Broker (FYERS) and update SetupMint
   app.post('/:id/broker-sl', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
-    const { stopPrice, executeBroker = true } = req.body || {};
+    const { stopPrice, executeBroker = true, idempotencyKey } = req.body || {};
     if (!stopPrice || isNaN(Number(stopPrice)) || Number(stopPrice) <= 0) {
       return reply.status(400).send({
         success: false,
@@ -1165,12 +1209,30 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
+    // Idempotency lock
+    const key = idempotencyKey || req.headers['x-idempotency-key'];
+    const compositeKey = IdempotencyService.makeKey(req.user!.id, 'broker-sl', `${trade._id}:${key || stopPrice}`);
+    let isLocked = false;
+    try {
+      const lock = IdempotencyService.acquireLock(compositeKey);
+      if (lock.cachedResult) {
+        return reply.send(lock.cachedResult);
+      }
+      isLocked = lock.isLocked;
+    } catch (lockErr: any) {
+      return reply.status(409).send({
+        success: false,
+        error: { code: 'CONCURRENT_EXECUTION', message: lockErr.message },
+      });
+    }
+
     let brokerResult: any = { executedOnBroker: false, action: 'JOURNAL_ONLY', message: 'Updated in SetupMint journal' };
 
     if (executeBroker) {
       try {
         brokerResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(stopPrice));
       } catch (err: any) {
+        if (isLocked) IdempotencyService.reject(compositeKey, err);
         req.log.error({ err, tradeId: trade._id }, 'FYERS broker Stop Loss execution failed');
         return reply.status(400).send({
           success: false,
@@ -1227,18 +1289,21 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
 
-    return reply.send({
+    const responsePayload = {
       success: true,
       data: {
         trade,
         brokerResult,
       },
-    });
+    };
+
+    if (isLocked) IdempotencyService.resolve(compositeKey, responsePayload);
+    return reply.send(responsePayload);
   });
 
   // Exit trade (50% partial or 100% full close) on Broker (FYERS) and update SetupMint
   app.post('/:id/broker-exit', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
-    const { quantity, exitPrice, isFullClose = false, executeBroker = true } = req.body || {};
+    const { quantity, exitPrice, isFullClose = false, executeBroker = true, idempotencyKey } = req.body || {};
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
     if (!trade) {
       return reply.status(404).send({
@@ -1252,6 +1317,23 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const resolvedExitPrice = Number(exitPrice) || trade.simpleExecution?.entryPrice || 100;
     const isReallyFullClose = isFullClose || exitQty >= currentOpenQty;
 
+    // Idempotency lock
+    const key = idempotencyKey || req.headers['x-idempotency-key'];
+    const compositeKey = IdempotencyService.makeKey(req.user!.id, 'broker-exit', `${trade._id}:${key || exitQty}`);
+    let isLocked = false;
+    try {
+      const lock = IdempotencyService.acquireLock(compositeKey);
+      if (lock.cachedResult) {
+        return reply.send(lock.cachedResult);
+      }
+      isLocked = lock.isLocked;
+    } catch (lockErr: any) {
+      return reply.status(409).send({
+        success: false,
+        error: { code: 'CONCURRENT_EXECUTION', message: lockErr.message },
+      });
+    }
+
     let brokerResult: any = { executedOnBroker: false, message: 'Updated in SetupMint journal' };
 
     if (executeBroker) {
@@ -1261,6 +1343,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           isFullClose: isReallyFullClose,
         });
       } catch (err: any) {
+        if (isLocked) IdempotencyService.reject(compositeKey, err);
         req.log.error({ err, tradeId: trade._id }, 'FYERS broker exit order failed');
         return reply.status(400).send({
           success: false,
@@ -1272,18 +1355,25 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
     }
 
+    // Determine actual effective exit price and execution slippage
+    const effectiveExitPrice = (brokerResult.executedOnBroker && brokerResult.tradedPrice && brokerResult.tradedPrice > 0)
+      ? brokerResult.tradedPrice
+      : resolvedExitPrice;
+    const slippagePoints = brokerResult.executedOnBroker ? (effectiveExitPrice - resolvedExitPrice) : 0;
+
     // Update trade record in MongoDB
     if (isReallyFullClose) {
       if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
         trade.fills.push({
           fillId: `exit_${Date.now()}`,
           type: 'EXIT',
-          price: resolvedExitPrice,
+          price: effectiveExitPrice,
           quantity: exitQty,
           timestamp: new Date(),
           brokerage: 20,
           exchangeFee: 0,
           taxes: 0,
+          notes: brokerResult.executedOnBroker ? `FYERS execution (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
         });
       } else {
         trade.simpleExecution = {
@@ -1297,7 +1387,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           otherFees: trade.simpleExecution?.otherFees ?? 0,
           explicitAdjustments: trade.simpleExecution?.explicitAdjustments ?? 0,
           ...(trade.simpleExecution || {}),
-          exitPrice: resolvedExitPrice,
+          exitPrice: effectiveExitPrice,
         };
         trade.exitTime = new Date();
       }
@@ -1311,7 +1401,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           {
             fillId: `entry_${Date.now()}`,
             type: 'ENTRY',
-            price: trade.simpleExecution?.entryPrice || resolvedExitPrice,
+            price: trade.simpleExecution?.entryPrice || effectiveExitPrice,
             quantity: currentOpenQty,
             timestamp: trade.entryTime || new Date(),
             brokerage: 20,
@@ -1323,12 +1413,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       trade.fills.push({
         fillId: `exit_${Date.now()}`,
         type: 'EXIT',
-        price: resolvedExitPrice,
+        price: effectiveExitPrice,
         quantity: exitQty,
         timestamp: new Date(),
         brokerage: 20,
         exchangeFee: 0,
         taxes: 0,
+        notes: brokerResult.executedOnBroker ? `FYERS partial exit (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
       });
       trade.status = 'OPEN';
     }
@@ -1341,7 +1432,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       changedBy: req.user!.email || 'user',
       details: {
         exitQuantity: exitQty,
-        exitPrice: resolvedExitPrice,
+        requestedPrice: resolvedExitPrice,
+        effectiveExitPrice,
+        slippagePoints,
         executedOnBroker: brokerResult.executedOnBroker,
         brokerOrderId: brokerResult.orderId,
         brokerMessage: brokerResult.message,
@@ -1351,13 +1444,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
 
-    return reply.send({
+    const responsePayload = {
       success: true,
       data: {
         trade,
         brokerResult,
+        slippagePoints,
       },
-    });
+    };
+
+    if (isLocked) IdempotencyService.resolve(compositeKey, responsePayload);
+    return reply.send(responsePayload);
   });
 
   // Execute Multi-Target Ladder Step: Book Partial Exit + Trail Stop Loss atomically
@@ -1370,6 +1467,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       newStopLoss,
       executeBroker = true,
       reason,
+      idempotencyKey,
     } = req.body || {};
 
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
@@ -1385,6 +1483,23 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const resolvedExitPrice = Number(exitPrice) || trade.simpleExecution?.entryPrice || 0;
     const isFullClose = requestedExitQty >= currentOpenQty;
 
+    // Idempotency lock
+    const key = idempotencyKey || req.headers['x-idempotency-key'];
+    const compositeKey = IdempotencyService.makeKey(req.user!.id, 'broker-ladder-step', `${trade._id}:${targetIndex}:${key || requestedExitQty}`);
+    let isLocked = false;
+    try {
+      const lock = IdempotencyService.acquireLock(compositeKey);
+      if (lock.cachedResult) {
+        return reply.send(lock.cachedResult);
+      }
+      isLocked = lock.isLocked;
+    } catch (lockErr: any) {
+      return reply.status(409).send({
+        success: false,
+        error: { code: 'CONCURRENT_EXECUTION', message: lockErr.message },
+      });
+    }
+
     let brokerExitResult: any = { executedOnBroker: false, message: 'No broker exit executed' };
     let brokerSlResult: any = { executedOnBroker: false, message: 'No broker SL move executed' };
 
@@ -1398,6 +1513,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             isFullClose,
           });
         } catch (err: any) {
+          if (isLocked) IdempotencyService.reject(compositeKey, err);
           req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step exit order failed');
           return reply.status(400).send({
             success: false,
@@ -1425,6 +1541,12 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
     }
 
+    // Determine actual effective exit price and execution slippage
+    const effectiveExitPrice = (brokerExitResult.executedOnBroker && brokerExitResult.tradedPrice && brokerExitResult.tradedPrice > 0)
+      ? brokerExitResult.tradedPrice
+      : resolvedExitPrice;
+    const slippagePoints = brokerExitResult.executedOnBroker ? (effectiveExitPrice - resolvedExitPrice) : 0;
+
     // 2. Record partial exit fills in MongoDB
     if (requestedExitQty > 0) {
       if (isFullClose) {
@@ -1432,13 +1554,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           trade.fills.push({
             fillId: `ladder_exit_${Date.now()}`,
             type: 'EXIT',
-            price: resolvedExitPrice,
+            price: effectiveExitPrice,
             quantity: requestedExitQty,
             timestamp: new Date(),
             brokerage: 20,
             exchangeFee: 0,
             taxes: 0,
-            notes: `${label}: Full exit booked`,
+            notes: `${label}: Full exit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
           });
         } else {
           trade.simpleExecution = {
@@ -1452,7 +1574,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             otherFees: trade.simpleExecution?.otherFees ?? 0,
             explicitAdjustments: trade.simpleExecution?.explicitAdjustments ?? 0,
             ...(trade.simpleExecution || {}),
-            exitPrice: resolvedExitPrice,
+            exitPrice: effectiveExitPrice,
           };
           trade.exitTime = new Date();
         }
@@ -1464,7 +1586,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             {
               fillId: `entry_${Date.now()}`,
               type: 'ENTRY',
-              price: trade.simpleExecution?.entryPrice || resolvedExitPrice,
+              price: trade.simpleExecution?.entryPrice || effectiveExitPrice,
               quantity: currentOpenQty,
               timestamp: trade.entryTime || new Date(),
               brokerage: 20,
@@ -1476,13 +1598,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         trade.fills.push({
           fillId: `ladder_step_${targetIndex}_${Date.now()}`,
           type: 'EXIT',
-          price: resolvedExitPrice,
+          price: effectiveExitPrice,
           quantity: requestedExitQty,
           timestamp: new Date(),
           brokerage: 20,
           exchangeFee: 0,
           taxes: 0,
-          notes: `${label}: Partial profit booked`,
+          notes: `${label}: Partial profit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
         });
         trade.status = 'OPEN';
       }
@@ -1529,7 +1651,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         label,
         targetIndex,
         exitQty: requestedExitQty,
-        exitPrice: resolvedExitPrice,
+        requestedPrice: resolvedExitPrice,
+        effectiveExitPrice,
+        slippagePoints,
         newStopLoss: Number(newStopLoss) || undefined,
         executedOnBroker: executeBroker,
         brokerExitResult,
@@ -1540,14 +1664,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
 
-    return reply.send({
+    const responsePayload = {
       success: true,
       data: {
         trade,
         brokerExitResult,
         brokerSlResult,
+        slippagePoints,
       },
-    });
+    };
+
+    if (isLocked) IdempotencyService.resolve(compositeKey, responsePayload);
+    return reply.send(responsePayload);
   });
 
   // Delete trade

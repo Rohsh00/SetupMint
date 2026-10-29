@@ -41,6 +41,46 @@ export class LiveWatcherService {
       1
     );
 
+    let lotSize = Number(
+      trade.lotSize ??
+      inst?.lotSize ??
+      (contractMultiplier > 1 ? contractMultiplier : 1)
+    );
+
+    // Dynamic Indian index lot size resolution based on symbol & quantity divisibility
+    const upperSym = (trade.symbol || '').toUpperCase();
+    if (lotSize <= 1) {
+      if (upperSym.includes('NIFTY') && !upperSym.includes('BANKNIFTY') && !upperSym.includes('FINNIFTY') && !upperSym.includes('MIDCPNIFTY')) {
+        if (quantity % 65 === 0) lotSize = 65;
+        else if (quantity % 25 === 0) lotSize = 25;
+        else if (quantity % 50 === 0) lotSize = 50;
+        else if (quantity % 75 === 0) lotSize = 75;
+        else lotSize = 65;
+      } else if (upperSym.includes('BANKNIFTY')) {
+        if (quantity % 15 === 0) lotSize = 15;
+        else if (quantity % 30 === 0) lotSize = 30;
+        else lotSize = 15;
+      } else if (upperSym.includes('FINNIFTY')) {
+        if (quantity % 25 === 0) lotSize = 25;
+        else if (quantity % 40 === 0) lotSize = 40;
+        else lotSize = 25;
+      } else if (upperSym.includes('MIDCPNIFTY')) {
+        if (quantity % 50 === 0) lotSize = 50;
+        else if (quantity % 75 === 0) lotSize = 75;
+        else lotSize = 50;
+      } else if (upperSym.includes('SENSEX')) {
+        if (quantity % 10 === 0) lotSize = 10;
+        else if (quantity % 20 === 0) lotSize = 20;
+        else lotSize = 10;
+      } else if (upperSym.includes('BANKEX')) {
+        lotSize = 15;
+      } else if (upperSym.includes('CRUDEOIL')) {
+        lotSize = (quantity % 100 === 0) ? 100 : 10;
+      } else if (upperSym.includes('NATURALGAS')) {
+        lotSize = (quantity % 1250 === 0) ? 1250 : 250;
+      }
+    }
+
     const tickSize = Number(
       inst?.tickSize ??
       trade.tickSize ??
@@ -79,6 +119,7 @@ export class LiveWatcherService {
       entryPrice,
       quantity,
       contractMultiplier,
+      lotSize,
       tickSize,
       stopLoss,
       target,
@@ -218,6 +259,7 @@ export class LiveWatcherService {
         currentLtp,
         quantity: fields.quantity,
         contractMultiplier: fields.contractMultiplier,
+        lotSize: fields.lotSize,
         stopLoss: fields.stopLoss,
         target: fields.target,
         plannedRiskAmount: fields.plannedRiskAmount,
@@ -317,6 +359,7 @@ export class LiveWatcherService {
       currentLtp,
       quantity: fields.quantity,
       contractMultiplier: fields.contractMultiplier,
+      lotSize: fields.lotSize,
       stopLoss: fields.stopLoss,
       target: fields.target,
       plannedRiskAmount: fields.plannedRiskAmount,

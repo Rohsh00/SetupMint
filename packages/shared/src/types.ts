@@ -1690,13 +1690,33 @@ export interface ILiveGivebackMetric {
 
 export type TargetLadderStepStatus = 'PENDING' | 'IN_PROGRESS' | 'MET' | 'EXECUTED';
 
+export interface ICustomLadderRuleStep {
+  targetR: number; // e.g. 1.0, 2.0, 3.0
+  exitRatio: number; // e.g. 0.30, 0.50, 0.70, 1.0
+  customLots?: number;
+  trailAction: 'TRUE_BE_WITH_FEES' | 'NOMINAL_BE' | 'TRAIL_T1' | 'CUSTOM_POINTS' | 'NONE';
+  trailPoints?: number;
+}
+
+export interface ICustomLadderRules {
+  tradeId?: string;
+  lotSize?: number;
+  autoExecuteEnabled?: boolean;
+  t1: ICustomLadderRuleStep;
+  t2: ICustomLadderRuleStep;
+  t3: ICustomLadderRuleStep;
+  updatedAt?: string;
+}
+
 export interface ILiveTargetLadderStep {
   targetIndex: number; // 1, 2, 3
   name: string; // 'T1 (+1.0R)', 'T2 (+2.0R)', 'Runner (+3.0R)'
   targetR: number; // 1.0, 2.0, 3.0
   targetPrice: number;
   plannedExitRatio: number; // e.g. 0.50, 0.33
-  plannedExitQty: number; // e.g. 5, 3
+  plannedExitQty: number; // units e.g. 65
+  plannedExitLots?: number; // whole lots e.g. 1
+  lotSize?: number;
   suggestedStopLoss: number; // e.g. entryPrice (BE) for T1, +1R for T2
   suggestedStopLabel: string; // 'Move Stop to Breakeven (₹9859.10)'
   distancePoints: number;
@@ -1709,6 +1729,11 @@ export interface ILiveTargetLadderStep {
 export interface ILiveTargetLadder {
   initialRiskPoints: number;
   initialRiskAmount: number;
+  lotSize?: number;
+  totalLots?: number;
+  trueBreakevenPrice?: number;
+  nominalBreakevenPrice?: number;
+  feeBufferPoints?: number;
   steps: ILiveTargetLadderStep[];
   activeStepIndex: number; // 1, 2, 3
 }
@@ -1719,6 +1744,11 @@ export interface ILiveOpenTradeMetric {
   direction: Direction;
   quantity: number;
   contractMultiplier?: number;
+  lotSize?: number;
+  totalLots?: number;
+  trueBreakevenPrice?: number;
+  nominalBreakevenPrice?: number;
+  feeBufferPoints?: number;
   entryPrice: number;
   currentLtp: number;
   priceDeltaPoints: number;

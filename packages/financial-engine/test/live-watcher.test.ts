@@ -299,5 +299,85 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(t3.name).toBe('Runner (+3.0R)');
       expect(t3.targetPrice).toBe(9766.4);
     });
+
+    it('accurately respects NIFTY lot sizes (130 units = 2 lots of 65) without fractional lots', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'nifty-short-1',
+        symbol: 'NIFTY',
+        direction: 'SHORT',
+        entryPrice: 154.65,
+        currentLtp: 148.05,
+        quantity: 130, // 2 lots of 65
+        contractMultiplier: 1,
+        lotSize: 65,
+        stopLoss: 171,
+        plannedRiskAmount: 2125.5,
+      });
+
+      expect(metric.lotSize).toBe(65);
+      expect(metric.totalLots).toBe(2);
+      expect(metric.trueBreakevenPrice).toBeDefined();
+      expect(metric.trueBreakevenPrice).toBeLessThan(154.65); // Short trade true BE is lower than entry to cover fees
+
+      const ladder = metric.targetLadder!;
+      expect(ladder.lotSize).toBe(65);
+      expect(ladder.totalLots).toBe(2);
+
+      // Step 1: 1 lot (65 units), NOT fractional 43 units
+      const t1 = ladder.steps[0];
+      expect(t1.plannedExitLots).toBe(1);
+      expect(t1.plannedExitQty).toBe(65);
+
+      // Runner: 1 lot (65 units)
+      const t3 = ladder.steps[2];
+      expect(t3.plannedExitLots).toBe(1);
+      expect(t3.plannedExitQty).toBe(65);
+    });
+
+    it('supports custom R1, R2, R3 and True Breakeven fee-adjusted trailing', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'custom-rules-1',
+        symbol: 'BANKNIFTY',
+        direction: 'LONG',
+        entryPrice: 50000,
+        currentLtp: 50350,
+        quantity: 30, // 2 lots of 15
+        contractMultiplier: 1,
+        lotSize: 15,
+        stopLoss: 49800, // 200 pts risk
+        plannedRiskAmount: 6000,
+        customRules: {
+          t1: {
+            targetR: 1.5, // Custom 1.5R
+            exitRatio: 0.5,
+            trailAction: 'TRUE_BE_WITH_FEES',
+          },
+          t2: {
+            targetR: 2.5, // Custom 2.5R
+            exitRatio: 0.5,
+            trailAction: 'CUSTOM_POINTS',
+            trailPoints: 100,
+          },
+          t3: {
+            targetR: 4.0, // Custom 4.0R
+            exitRatio: 1.0,
+            trailAction: 'NONE',
+          },
+        },
+      });
+
+      const ladder = metric.targetLadder!;
+      expect(ladder.steps[0].name).toBe('T1 (+1.5R)');
+      expect(ladder.steps[0].targetPrice).toBe(50300); // 50000 + 1.5 * 200 = 50300
+      expect(ladder.steps[0].suggestedStopLoss).toBeGreaterThan(50000); // True BE includes fees
+      expect(ladder.steps[0].suggestedStopLabel).toContain('Lock True BE + Fees');
+
+      expect(ladder.steps[1].name).toBe('T2 (+2.5R)');
+      expect(ladder.steps[1].targetPrice).toBe(50500); // 50000 + 2.5 * 200 = 50500
+      expect(ladder.steps[1].suggestedStopLoss).toBe(50100); // 50000 + 100 custom points
+
+      expect(ladder.steps[2].name).toBe('Runner (+4.0R)');
+      expect(ladder.steps[2].targetPrice).toBe(50800); // 50000 + 4 * 200 = 50800
+    });
   });
 });

@@ -178,3 +178,54 @@ export class IndianChargesCalculator {
     });
   }
 }
+
+/**
+ * Calculates the exact stop price needed for a position to achieve True Breakeven (Net P&L = 0)
+ * after accounting for all brokerage, exchange fees, SEBI charges, STT/CTT, and GST.
+ */
+export function calculateTrueBreakevenPrice(params: {
+  direction: 'LONG' | 'SHORT' | string;
+  entryPrice: number | string | Decimal;
+  quantity: number | string | Decimal;
+  contractMultiplier?: number | string | Decimal;
+  estimatedCharges: number | string | Decimal;
+  tickSize?: number | string | Decimal;
+}): {
+  trueBreakevenPrice: number;
+  nominalBreakevenPrice: number;
+  feeBufferPoints: number;
+} {
+  const dEntry = new Decimal(params.entryPrice || 0);
+  const dQty = new Decimal(params.quantity || 1);
+  const dMult = params.contractMultiplier ? new Decimal(params.contractMultiplier) : new Decimal(1);
+  const dFees = new Decimal(params.estimatedCharges || 0);
+  const dTick = params.tickSize ? new Decimal(params.tickSize) : new Decimal('0.05');
+
+  const totalEffectiveUnits = dQty.times(dMult);
+  if (totalEffectiveUnits.isZero() || dEntry.isZero()) {
+    return {
+      trueBreakevenPrice: Number(dEntry.toFixed(2)),
+      nominalBreakevenPrice: Number(dEntry.toFixed(2)),
+      feeBufferPoints: 0,
+    };
+  }
+
+  // Points required to offset the charges
+  const feePoints = dFees.dividedBy(totalEffectiveUnits);
+
+  // For LONG: price must be higher than entry to cover fees: entryPrice + feePoints
+  // For SHORT: price must be lower than entry to cover fees: entryPrice - feePoints
+  const isLong = params.direction === 'LONG';
+  const rawTrueBe = isLong ? dEntry.plus(feePoints) : dEntry.minus(feePoints);
+
+  // Round to tick size: For LONG round up to guarantee fees covered; for SHORT round down
+  const tickDiv = rawTrueBe.dividedBy(dTick);
+  const roundedTicks = isLong ? tickDiv.ceil() : tickDiv.floor();
+  const trueBePrice = roundedTicks.times(dTick);
+
+  return {
+    trueBreakevenPrice: Number(trueBePrice.toFixed(2)),
+    nominalBreakevenPrice: Number(dEntry.toFixed(2)),
+    feeBufferPoints: Number(feePoints.toFixed(2)),
+  };
+}

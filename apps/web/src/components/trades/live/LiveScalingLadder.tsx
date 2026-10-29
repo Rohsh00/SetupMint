@@ -10,6 +10,7 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { ILiveTargetLadder, ILiveTargetLadderStep, ILiveOpenTradeMetric } from '@tradevault/shared';
 import { formatCurrency } from '../../../lib/utils.js';
 
@@ -17,6 +18,7 @@ interface LiveScalingLadderProps {
   ladder: ILiveTargetLadder;
   metric: ILiveOpenTradeMetric;
   onExecuteStep: (step: ILiveTargetLadderStep) => void;
+  onOpenCustomRules?: () => void;
   compact?: boolean;
 }
 
@@ -24,12 +26,14 @@ export function LiveScalingLadder({
   ladder,
   metric,
   onExecuteStep,
+  onOpenCustomRules,
   compact = false,
 }: LiveScalingLadderProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
   const { steps, initialRiskPoints, initialRiskAmount } = ladder;
+  const resolvedLotSize = ladder.lotSize ?? metric.lotSize ?? 1;
 
   if (!steps || steps.length === 0) return null;
 
@@ -46,7 +50,7 @@ export function LiveScalingLadder({
       }}
     >
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25, flexWrap: 'wrap', gap: 0.75 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
           <TrackChangesRoundedIcon sx={{ fontSize: 16, color: '#3B82F6' }} />
           <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.72rem', letterSpacing: 0.1 }}>
@@ -54,9 +58,35 @@ export function LiveScalingLadder({
           </Typography>
         </Box>
 
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-          1R = {initialRiskPoints.toFixed(1)} pts ({formatCurrency(initialRiskAmount, 'INR')})
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+            1R = {initialRiskPoints.toFixed(1)} pts ({formatCurrency(initialRiskAmount, 'INR')})
+          </Typography>
+
+          {onOpenCustomRules && (
+            <Tooltip title="Configure custom R1-R3 targets, exit ratios & auto-execution rules" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SettingsRoundedIcon sx={{ fontSize: '12px !important' }} />}
+                onClick={onOpenCustomRules}
+                sx={{
+                  height: 20,
+                  px: 0.75,
+                  fontSize: '0.6rem',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                  color: isDark ? '#94A3B8' : '#64748B',
+                  borderRadius: '4px',
+                  '&:hover': { borderColor: '#3B82F6', color: '#3B82F6', bgcolor: alpha('#3B82F6', 0.08) },
+                }}
+              >
+                Custom R1-R3
+              </Button>
+            </Tooltip>
+          )}
+        </Box>
       </Box>
 
       {/* Ladder Step Cards */}
@@ -145,16 +175,25 @@ export function LiveScalingLadder({
                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
                     {step.distancePoints > 0 ? `${step.distancePoints} pts remaining` : 'Target reached!'}
                   </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      fontSize: '0.62rem',
-                      fontWeight: 600,
-                      color: isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)',
-                    }}
-                  >
-                    Action: Book {step.plannedExitQty} lots & Trail SL to ₹{step.suggestedStopLoss}
-                  </Typography>
+                  {(() => {
+                    const isLotBased = resolvedLotSize > 1;
+                    const lotCount = step.plannedExitLots ?? (isLotBased ? Math.max(1, Math.round(step.plannedExitQty / resolvedLotSize)) : 1);
+                    const bookText = isLotBased
+                      ? `${lotCount} ${lotCount === 1 ? 'lot' : 'lots'} (${step.plannedExitQty} units)`
+                      : `${step.plannedExitQty} units`;
+                    return (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          fontSize: '0.62rem',
+                          fontWeight: 600,
+                          color: isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)',
+                        }}
+                      >
+                        Action: Book {bookText} & {step.suggestedStopLabel || `Trail SL to ₹${step.suggestedStopLoss}`}
+                      </Typography>
+                    );
+                  })()}
                 </Box>
 
                 <Button

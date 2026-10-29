@@ -8,9 +8,10 @@ import {
   TargetLadderStepStatus,
   ILiveTargetLadderStep,
   ILiveTargetLadder,
+  ICustomLadderRules,
 } from '@tradevault/shared';
 import { calculateLinearPnL } from './pnl.js';
-import { calculateIndianCharges } from './charges.js';
+import { calculateIndianCharges, calculateTrueBreakevenPrice } from './charges.js';
 import { calculateRealizedRMultiple } from './risk.js';
 
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
@@ -40,6 +41,7 @@ export interface ILiveOpenTradeCalculationParams {
   currentLtp: number | string | Decimal;
   quantity: number | string | Decimal;
   contractMultiplier?: number | string | Decimal;
+  lotSize?: number | string | Decimal;
   stopLoss?: number | string | Decimal | null;
   target?: number | string | Decimal | null;
   plannedRiskAmount?: number | string | Decimal | null;
@@ -48,6 +50,7 @@ export interface ILiveOpenTradeCalculationParams {
   marketSegment?: MarketSegment;
   provider?: LiveQuoteProvider;
   asOf?: Date | number;
+  customRules?: ICustomLadderRules;
   previousPeakMfe?: {
     peakLtp?: number;
     peakFloatingNetPnL?: number;
@@ -61,6 +64,11 @@ export interface ILiveOpenTradeMetric {
   direction: Direction;
   quantity: number;
   contractMultiplier?: number;
+  lotSize?: number;
+  totalLots?: number;
+  trueBreakevenPrice?: number;
+  nominalBreakevenPrice?: number;
+  feeBufferPoints?: number;
   entryPrice: number;
   currentLtp: number;
   priceDeltaPoints: number;
@@ -165,27 +173,54 @@ export function calculateLiveGiveback(params: {
 
 export function calculateTargetLadder(params: {
   direction: Direction;
-  entryPrice: Decimal;
-  currentLtp: Decimal;
-  quantity: Decimal;
-  contractMultiplier: Decimal;
-  initialRiskAmount: Decimal | null;
-  stopLoss: Decimal | null;
-  plannedTarget: Decimal | null;
-  tickSize: Decimal;
+  entryPrice: Decimal | number;
+  currentLtp: Decimal | number;
+  quantity?: Decimal | number;
+  contractMultiplier?: Decimal | number;
+  lotSize?: Decimal | number;
+  initialRiskAmount?: Decimal | number | null;
+  stopLoss: Decimal | number | null;
+  plannedTarget?: Decimal | number | null;
+  tickSize?: Decimal | number;
+  customRules?: ICustomLadderRules;
+  estimatedCharges?: Decimal | number;
 }): ILiveTargetLadder | undefined {
   const isLong = params.direction === 'LONG';
-  const dEntry = params.entryPrice;
-  const dLtp = params.currentLtp;
-  const totalQty = params.quantity.toNumber();
-  const dMult = params.contractMultiplier;
+  const dEntry = params.entryPrice instanceof Decimal ? params.entryPrice : new Decimal(params.entryPrice);
+  const dLtp = params.currentLtp instanceof Decimal ? params.currentLtp : new Decimal(params.currentLtp);
+  const dQty = params.quantity !== undefined
+    ? (params.quantity instanceof Decimal ? params.quantity : new Decimal(params.quantity))
+    : new Decimal(1);
+  const totalQty = dQty.toNumber();
+  const dMult = params.contractMultiplier !== undefined
+    ? (params.contractMultiplier instanceof Decimal ? params.contractMultiplier : new Decimal(params.contractMultiplier))
+    : new Decimal(1);
+
+  const dLotSize = params.lotSize
+    ? (params.lotSize instanceof Decimal ? params.lotSize : new Decimal(params.lotSize))
+    : new Decimal(1);
+  const lotSizeNum = Math.max(1, dLotSize.toNumber());
+  const totalLots = Math.max(1, Math.floor(totalQty / lotSizeNum));
+  const dTick = params.tickSize
+    ? (params.tickSize instanceof Decimal ? params.tickSize : new Decimal(params.tickSize))
+    : new Decimal(0.05);
+
+  const dStopLoss = params.stopLoss !== null && params.stopLoss !== undefined
+    ? (params.stopLoss instanceof Decimal ? params.stopLoss : new Decimal(params.stopLoss))
+    : null;
+  const dPlannedTarget = params.plannedTarget !== null && params.plannedTarget !== undefined
+    ? (params.plannedTarget instanceof Decimal ? params.plannedTarget : new Decimal(params.plannedTarget))
+    : null;
+  const dInitialRiskAmount = params.initialRiskAmount !== null && params.initialRiskAmount !== undefined
+    ? (params.initialRiskAmount instanceof Decimal ? params.initialRiskAmount : new Decimal(params.initialRiskAmount))
+    : null;
 
   // Determine initial risk in price points
   let riskPoints = new Decimal(0);
-  if (params.stopLoss) {
-    riskPoints = dEntry.minus(params.stopLoss).abs();
-  } else if (params.initialRiskAmount && totalQty > 0 && dMult.greaterThan(0)) {
-    riskPoints = params.initialRiskAmount.dividedBy(params.quantity.times(dMult));
+  if (dStopLoss) {
+    riskPoints = dEntry.minus(dStopLoss).abs();
+  } else if (dInitialRiskAmount && totalQty > 0 && dMult.greaterThan(0)) {
+    riskPoints = dInitialRiskAmount.dividedBy(dQty.times(dMult));
   }
 
   if (riskPoints.isZero() || totalQty <= 0) {
@@ -193,37 +228,110 @@ export function calculateTargetLadder(params: {
   }
 
   const initialRiskPoints = Number(riskPoints.toFixed(2));
-  const initialRiskAmountVal = params.initialRiskAmount
-    ? Number(params.initialRiskAmount.toFixed(2))
-    : Number(riskPoints.times(params.quantity).times(dMult).toFixed(2));
+  const initialRiskAmountVal = dInitialRiskAmount
+    ? Number(dInitialRiskAmount.toFixed(2))
+    : Number(riskPoints.times(dQty).times(dMult).toFixed(2));
 
-  // T1: +1.0 R
-  const t1Price = isLong ? dEntry.plus(riskPoints) : dEntry.minus(riskPoints);
+  // Calculate True Breakeven (with estimated fees/taxes protected)
+  let trueBePrice: number | undefined;
+  let feeBufferPts: number | undefined;
+  if (params.estimatedCharges) {
+    const beRes = calculateTrueBreakevenPrice({
+      direction: params.direction,
+      entryPrice: dEntry,
+      quantity: dQty,
+      contractMultiplier: dMult,
+      estimatedCharges: params.estimatedCharges,
+      tickSize: dTick,
+    });
+    trueBePrice = beRes.trueBreakevenPrice;
+    feeBufferPts = beRes.feeBufferPoints;
+  }
+
+  const rules = params.customRules;
+  const t1TargetR = rules?.t1?.targetR ?? 1.0;
+  const t2TargetR = rules?.t2?.targetR ?? 2.0;
+  const t3TargetR = rules?.t3?.targetR ?? 3.0;
+
+  // T1: Target 1
+  const t1RiskPoints = riskPoints.times(t1TargetR);
+  const t1Price = isLong ? dEntry.plus(t1RiskPoints) : dEntry.minus(t1RiskPoints);
   const isT1Met = isLong ? dLtp.greaterThanOrEqualTo(t1Price) : dLtp.lessThanOrEqualTo(t1Price);
-  const t1ExitRatio = totalQty > 2 ? 0.33 : 0.5;
-  const t1ExitQty = Math.max(1, Math.round(totalQty * t1ExitRatio));
+
+  let t1ExitLots = 1;
+  let t1ExitRatio = totalLots > 2 ? 0.33 : 0.5;
+  if (totalLots > 1) {
+    if (rules?.t1?.customLots && rules.t1.customLots > 0) {
+      t1ExitLots = Math.min(totalLots - 1, rules.t1.customLots);
+      t1ExitRatio = Number((t1ExitLots / totalLots).toFixed(2));
+    } else {
+      t1ExitRatio = rules?.t1?.exitRatio ?? (totalLots >= 3 ? 0.33 : 0.5);
+      t1ExitLots = Math.max(1, Math.min(totalLots - 1, Math.round(totalLots * t1ExitRatio)));
+    }
+  }
+  const t1ExitQty = totalLots > 1 ? t1ExitLots * lotSizeNum : totalQty;
 
   const t1Dist = isLong ? t1Price.minus(dLtp) : dLtp.minus(t1Price);
   const t1Run = isLong ? dLtp.minus(dEntry) : dEntry.minus(dLtp);
-  const t1Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(riskPoints).times(100).toFixed(1))));
+  const t1Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(t1RiskPoints).times(100).toFixed(1))));
 
-  // T2: +2.0 R
-  const t2RiskPoints = riskPoints.times(2);
+  let t1StopLoss = Number(dEntry.toFixed(2));
+  let t1StopLabel = `Lock BE (₹${t1StopLoss})`;
+  if (rules?.t1?.trailAction === 'TRUE_BE_WITH_FEES' && trueBePrice) {
+    t1StopLoss = trueBePrice;
+    t1StopLabel = `Lock True BE + Fees (₹${trueBePrice})`;
+  } else if (rules?.t1?.trailAction === 'CUSTOM_POINTS' && rules.t1.trailPoints) {
+    const pts = new Decimal(rules.t1.trailPoints);
+    const sl = isLong ? dEntry.plus(pts) : dEntry.minus(pts);
+    t1StopLoss = Number(sl.toFixed(2));
+    t1StopLabel = `Trail +${rules.t1.trailPoints} pts (₹${t1StopLoss})`;
+  } else if (rules?.t1?.trailAction === 'NOMINAL_BE') {
+    t1StopLoss = Number(dEntry.toFixed(2));
+    t1StopLabel = `Lock BE (₹${t1StopLoss})`;
+  }
+
+  // T2: Target 2
+  const t2RiskPoints = riskPoints.times(t2TargetR);
   const t2Price = isLong ? dEntry.plus(t2RiskPoints) : dEntry.minus(t2RiskPoints);
   const isT2Met = isLong ? dLtp.greaterThanOrEqualTo(t2Price) : dLtp.lessThanOrEqualTo(t2Price);
-  const remAfterT1 = Math.max(1, totalQty - t1ExitQty);
-  const t2ExitQty = Math.max(1, Math.round(remAfterT1 * 0.5));
+
+  const remLotsAfterT1 = Math.max(0, totalLots - t1ExitLots);
+  let t2ExitLots = 0;
+  let t2ExitRatio = 0.5;
+  if (remLotsAfterT1 > 1) {
+    if (rules?.t2?.customLots && rules.t2.customLots > 0) {
+      t2ExitLots = Math.min(remLotsAfterT1 - 1, rules.t2.customLots);
+      t2ExitRatio = Number((t2ExitLots / remLotsAfterT1).toFixed(2));
+    } else {
+      t2ExitRatio = rules?.t2?.exitRatio ?? 0.5;
+      t2ExitLots = Math.max(1, Math.min(remLotsAfterT1 - 1, Math.round(remLotsAfterT1 * t2ExitRatio)));
+    }
+  } else if (remLotsAfterT1 === 1) {
+    t2ExitLots = 1;
+    t2ExitRatio = 1.0;
+  }
+  const t2ExitQty = totalLots > 1 ? Math.max(1, t2ExitLots * lotSizeNum) : totalQty;
 
   const t2Dist = isLong ? t2Price.minus(dLtp) : dLtp.minus(t2Price);
   const t2Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(t2RiskPoints).times(100).toFixed(1))));
 
-  // T3 / Runner: +3.0 R or planned target
-  const t3RiskPoints = riskPoints.times(3);
-  const t3Price = params.plannedTarget && !params.plannedTarget.isZero()
-    ? params.plannedTarget
+  let t2StopLoss = Number(t1Price.toFixed(2));
+  let t2StopLabel = `Trail Stop to +${t1TargetR}R (₹${t2StopLoss})`;
+  if (rules?.t2?.trailAction === 'CUSTOM_POINTS' && rules.t2.trailPoints) {
+    const pts = new Decimal(rules.t2.trailPoints);
+    const sl = isLong ? dEntry.plus(pts) : dEntry.minus(pts);
+    t2StopLoss = Number(sl.toFixed(2));
+    t2StopLabel = `Trail +${rules.t2.trailPoints} pts (₹${t2StopLoss})`;
+  }
+
+  // T3: Runner
+  const t3RiskPoints = riskPoints.times(t3TargetR);
+  const t3Price = dPlannedTarget && !dPlannedTarget.isZero()
+    ? dPlannedTarget
     : isLong ? dEntry.plus(t3RiskPoints) : dEntry.minus(t3RiskPoints);
   const isT3Met = isLong ? dLtp.greaterThanOrEqualTo(t3Price) : dLtp.lessThanOrEqualTo(t3Price);
-  const runnerQty = Math.max(1, totalQty - t1ExitQty - (isT2Met ? t2ExitQty : 0));
+  const runnerLots = Math.max(1, totalLots - t1ExitLots - (isT2Met ? t2ExitLots : 0));
+  const runnerQty = totalLots > 1 ? runnerLots * lotSizeNum : totalQty;
 
   const t3Dist = isLong ? t3Price.minus(dLtp) : dLtp.minus(t3Price);
   const t3PlannedRun = isLong ? t3Price.minus(dEntry).abs() : dEntry.minus(t3Price).abs();
@@ -238,13 +346,15 @@ export function calculateTargetLadder(params: {
   const steps: ILiveTargetLadderStep[] = [
     {
       targetIndex: 1,
-      name: 'T1 (+1.0R)',
-      targetR: 1.0,
+      name: `T1 (+${t1TargetR.toFixed(1)}R)`,
+      targetR: t1TargetR,
       targetPrice: Number(t1Price.toFixed(2)),
       plannedExitRatio: t1ExitRatio,
       plannedExitQty: t1ExitQty,
-      suggestedStopLoss: Number(dEntry.toFixed(2)),
-      suggestedStopLabel: `Lock BE (₹${Number(dEntry.toFixed(2))})`,
+      plannedExitLots: totalLots > 1 ? t1ExitLots : 1,
+      lotSize: lotSizeNum,
+      suggestedStopLoss: t1StopLoss,
+      suggestedStopLabel: t1StopLabel,
       distancePoints: Number(t1Dist.toFixed(2)),
       distancePercent: Number(t1Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
       progressPercent: t1Progress,
@@ -253,13 +363,15 @@ export function calculateTargetLadder(params: {
     },
     {
       targetIndex: 2,
-      name: 'T2 (+2.0R)',
-      targetR: 2.0,
+      name: `T2 (+${t2TargetR.toFixed(1)}R)`,
+      targetR: t2TargetR,
       targetPrice: Number(t2Price.toFixed(2)),
-      plannedExitRatio: 0.33,
+      plannedExitRatio: t2ExitRatio,
       plannedExitQty: t2ExitQty,
-      suggestedStopLoss: Number(t1Price.toFixed(2)),
-      suggestedStopLabel: `Trail Stop to +1R (₹${Number(t1Price.toFixed(2))})`,
+      plannedExitLots: totalLots > 1 ? t2ExitLots : 1,
+      lotSize: lotSizeNum,
+      suggestedStopLoss: t2StopLoss,
+      suggestedStopLabel: t2StopLabel,
       distancePoints: Number(t2Dist.toFixed(2)),
       distancePercent: Number(t2Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
       progressPercent: t2Progress,
@@ -268,11 +380,13 @@ export function calculateTargetLadder(params: {
     },
     {
       targetIndex: 3,
-      name: 'Runner (+3.0R)',
-      targetR: 3.0,
+      name: `Runner (+${t3TargetR.toFixed(1)}R)`,
+      targetR: t3TargetR,
       targetPrice: Number(t3Price.toFixed(2)),
       plannedExitRatio: 1.0,
       plannedExitQty: runnerQty,
+      plannedExitLots: totalLots > 1 ? runnerLots : 1,
+      lotSize: lotSizeNum,
       suggestedStopLoss: Number(t2Price.toFixed(2)),
       suggestedStopLabel: `Trail Behind Swing (₹${Number(t2Price.toFixed(2))})`,
       distancePoints: Number(t3Dist.toFixed(2)),
@@ -286,6 +400,11 @@ export function calculateTargetLadder(params: {
   return {
     initialRiskPoints,
     initialRiskAmount: initialRiskAmountVal,
+    lotSize: lotSizeNum,
+    totalLots,
+    trueBreakevenPrice: trueBePrice,
+    nominalBreakevenPrice: Number(dEntry.toFixed(2)),
+    feeBufferPoints: feeBufferPts,
     steps,
     activeStepIndex,
   };
@@ -431,52 +550,76 @@ export function calculateLiveOpenTradeMetric(
     }
   }
 
-  return {
-    tradeId: params.tradeId,
-    symbol: params.symbol,
-    direction: params.direction,
-    quantity: Number(dQty.toNumber()),
-    contractMultiplier: Number(dMultiplier.toNumber()),
-    entryPrice: Number(dEntry.toFixed(2)),
-    currentLtp: Number(dLtp.toFixed(2)),
-    priceDeltaPoints: Number(priceDeltaPoints.toFixed(2)),
-    priceDeltaPercent: Number(priceDeltaPercent.toFixed(2)),
-    floatingGrossPnL: Number(floatingGrossPnL.toFixed(2)),
-    estimatedCharges: Number(estimatedCharges.toFixed(2)),
-    floatingNetPnL: Number(floatingNetPnL.toFixed(2)),
-    initialRiskAmount: initialRiskAmount ? Number(initialRiskAmount.toFixed(2)) : null,
-    unrealizedR,
-    stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? Number(new Decimal(params.stopLoss).toFixed(2)) : null,
-    target: params.target !== undefined && params.target !== null ? Number(new Decimal(params.target).toFixed(2)) : null,
-    distanceToStopPoints: distanceToStopPoints !== null ? Number(distanceToStopPoints.toFixed(2)) : null,
-    distanceToStopTicks,
-    distanceToStopPercent: distanceToStopPercent !== null ? Number(distanceToStopPercent.toFixed(2)) : null,
-    stopThreatLevel,
-    distanceToTargetPoints: distanceToTargetPoints !== null ? Number(distanceToTargetPoints.toFixed(2)) : null,
-    distanceToTargetTicks,
-    targetProgressPercent,
-    tickSize: Number(dTick.toFixed(4)),
-    provider,
-    asOf: asOfDate,
-    giveback: calculateLiveGiveback({
+    // 6. Compute True Breakeven (with charges & fees covered)
+    const dLotSize = params.lotSize ? new Decimal(params.lotSize) : new Decimal(1);
+    const lotSizeNum = Math.max(1, dLotSize.toNumber());
+    const totalLots = Math.max(1, Math.floor(dQty.toNumber() / lotSizeNum));
+
+    const beRes = calculateTrueBreakevenPrice({
       direction: params.direction,
-      currentLtp: dLtp,
-      floatingNetPnL,
-      unrealizedR,
-      previousPeakMfe: params.previousPeakMfe,
-    }),
-    targetLadder: calculateTargetLadder({
+      entryPrice: dEntry,
+      quantity: dQty,
+      contractMultiplier: dMultiplier,
+      estimatedCharges,
+      tickSize: dTick,
+    });
+
+    const targetLadder = calculateTargetLadder({
       direction: params.direction,
       entryPrice: dEntry,
       currentLtp: dLtp,
       quantity: dQty,
       contractMultiplier: dMultiplier,
+      lotSize: dLotSize,
       initialRiskAmount,
       stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? new Decimal(params.stopLoss) : null,
       plannedTarget: params.target !== undefined && params.target !== null ? new Decimal(params.target) : null,
       tickSize: dTick,
-    }),
-  };
+      customRules: params.customRules,
+      estimatedCharges,
+    });
+
+    return {
+      tradeId: params.tradeId,
+      symbol: params.symbol,
+      direction: params.direction,
+      quantity: Number(dQty.toNumber()),
+      contractMultiplier: Number(dMultiplier.toNumber()),
+      lotSize: lotSizeNum,
+      totalLots,
+      trueBreakevenPrice: beRes.trueBreakevenPrice,
+      nominalBreakevenPrice: beRes.nominalBreakevenPrice,
+      feeBufferPoints: beRes.feeBufferPoints,
+      entryPrice: Number(dEntry.toFixed(2)),
+      currentLtp: Number(dLtp.toFixed(2)),
+      priceDeltaPoints: Number(priceDeltaPoints.toFixed(2)),
+      priceDeltaPercent: Number(priceDeltaPercent.toFixed(2)),
+      floatingGrossPnL: Number(floatingGrossPnL.toFixed(2)),
+      estimatedCharges: Number(estimatedCharges.toFixed(2)),
+      floatingNetPnL: Number(floatingNetPnL.toFixed(2)),
+      initialRiskAmount: initialRiskAmount ? Number(initialRiskAmount.toFixed(2)) : null,
+      unrealizedR,
+      stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? Number(new Decimal(params.stopLoss).toFixed(2)) : null,
+      target: params.target !== undefined && params.target !== null ? Number(new Decimal(params.target).toFixed(2)) : null,
+      distanceToStopPoints: distanceToStopPoints !== null ? Number(distanceToStopPoints.toFixed(2)) : null,
+      distanceToStopTicks,
+      distanceToStopPercent: distanceToStopPercent !== null ? Number(distanceToStopPercent.toFixed(2)) : null,
+      stopThreatLevel,
+      distanceToTargetPoints: distanceToTargetPoints !== null ? Number(distanceToTargetPoints.toFixed(2)) : null,
+      distanceToTargetTicks,
+      targetProgressPercent,
+      tickSize: Number(dTick.toFixed(4)),
+      provider,
+      asOf: asOfDate,
+      giveback: calculateLiveGiveback({
+        direction: params.direction,
+        currentLtp: dLtp,
+        floatingNetPnL,
+        unrealizedR,
+        previousPeakMfe: params.previousPeakMfe,
+      }),
+      targetLadder,
+    };
 }
 
 /**

@@ -63,11 +63,49 @@ export function QuickCloseTradeDialog({
   const marketSegment = trade?.marketSegment || 'NSE_EQ';
   const assetClass = trade?.assetClass || 'EQUITY';
 
+  // Dynamic instrument lot size resolution
+  const lotSize = useMemo(() => {
+    if (trade?.lotSize && trade.lotSize > 0) return trade.lotSize;
+    const sym = (trade?.symbol || '').toUpperCase();
+    if (sym.includes('NIFTY') && !sym.includes('BANKNIFTY') && !sym.includes('FINNIFTY') && !sym.includes('MIDCPNIFTY')) {
+      if (totalOpenQuantity % 65 === 0) return 65;
+      if (totalOpenQuantity % 25 === 0) return 25;
+      if (totalOpenQuantity % 50 === 0) return 50;
+      if (totalOpenQuantity % 75 === 0) return 75;
+      return 65;
+    }
+    if (sym.includes('BANKNIFTY')) {
+      if (totalOpenQuantity % 15 === 0) return 15;
+      if (totalOpenQuantity % 30 === 0) return 30;
+      return 15;
+    }
+    if (sym.includes('FINNIFTY')) {
+      if (totalOpenQuantity % 25 === 0) return 25;
+      if (totalOpenQuantity % 40 === 0) return 40;
+      return 25;
+    }
+    if (sym.includes('MIDCPNIFTY')) return 50;
+    if (sym.includes('SENSEX')) return 10;
+    if (contractMultiplier > 1) return contractMultiplier;
+    return 1;
+  }, [trade, totalOpenQuantity, contractMultiplier]);
+
+  const isLotBased = lotSize > 1;
+  const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQuantity / lotSize)) : totalOpenQuantity;
+
   // State
   const [exitMode, setExitMode] = useState<'PARTIAL_50' | 'FULL' | 'CUSTOM'>(() => {
-    return defaultCloseRatio === 0.5 && totalOpenQuantity > 1 ? 'PARTIAL_50' : 'FULL';
+    if (defaultCloseRatio === 0.5) {
+      if (isLotBased && totalLots <= 1) return 'FULL';
+      if (totalOpenQuantity > 1) return 'PARTIAL_50';
+    }
+    return 'FULL';
   });
   const [customQty, setCustomQty] = useState<string>(() => {
+    if (isLotBased) {
+      const halfLots = Math.max(1, Math.round(totalLots * 0.5));
+      return String(halfLots * lotSize);
+    }
     return String(Math.max(1, Math.floor(totalOpenQuantity / 2)));
   });
   const [exitPrice, setExitPrice] = useState<string>('');
@@ -80,15 +118,22 @@ export function QuickCloseTradeDialog({
   // Determine actual quantity being closed
   const selectedCloseQty = useMemo(() => {
     if (exitMode === 'PARTIAL_50') {
+      if (isLotBased) {
+        if (totalLots > 1) {
+          const lotsToClose = Math.max(1, Math.round(totalLots * 0.5));
+          return lotsToClose * lotSize;
+        }
+        return totalOpenQuantity;
+      }
       return Math.max(1, Math.floor(totalOpenQuantity / 2));
     }
     if (exitMode === 'CUSTOM') {
       const parsed = parseInt(customQty, 10);
-      if (isNaN(parsed) || parsed <= 0) return 1;
+      if (isNaN(parsed) || parsed <= 0) return isLotBased ? lotSize : 1;
       return Math.min(totalOpenQuantity, parsed);
     }
     return totalOpenQuantity;
-  }, [exitMode, customQty, totalOpenQuantity]);
+  }, [exitMode, customQty, totalOpenQuantity, isLotBased, totalLots, lotSize]);
 
   const remainingQty = Math.max(0, totalOpenQuantity - selectedCloseQty);
   const isPartial = selectedCloseQty < totalOpenQuantity;
@@ -398,11 +443,18 @@ export function QuickCloseTradeDialog({
             )}
           </Box>
 
+          {isLotBased && totalLots <= 1 && (
+            <Alert severity="info" sx={{ py: 0.5, fontSize: '0.75rem', borderRadius: 2 }}>
+              Single lot position (1 lot = {lotSize} units). Orders on exchange must be in multiples of {lotSize} units.
+            </Alert>
+          )}
+
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1 }}>
             <Button
               size="small"
               variant={exitMode === 'PARTIAL_50' ? 'contained' : 'outlined'}
               color="primary"
+              disabled={isLotBased && totalLots <= 1}
               onClick={() => setExitMode('PARTIAL_50')}
               sx={{
                 flexDirection: 'column',
@@ -415,7 +467,11 @@ export function QuickCloseTradeDialog({
             >
               <span>50% Partial</span>
               <Typography variant="caption" sx={{ fontSize: '0.625rem', opacity: 0.85 }}>
-                {Math.max(1, Math.floor(totalOpenQuantity / 2))} Qty
+                {isLotBased
+                  ? totalLots > 1
+                    ? `${Math.round(totalLots * 0.5)} Lot (${Math.round(totalLots * 0.5) * lotSize} Qty)`
+                    : `${totalOpenQuantity} Qty (1 Lot)`
+                  : `${Math.max(1, Math.floor(totalOpenQuantity / 2))} Qty`}
               </Typography>
             </Button>
 
@@ -435,7 +491,7 @@ export function QuickCloseTradeDialog({
             >
               <span>100% Full</span>
               <Typography variant="caption" sx={{ fontSize: '0.625rem', opacity: 0.85 }}>
-                All {totalOpenQuantity} Qty
+                {isLotBased ? `${totalLots} Lots (${totalOpenQuantity} Qty)` : `All ${totalOpenQuantity} Qty`}
               </Typography>
             </Button>
 
@@ -461,20 +517,43 @@ export function QuickCloseTradeDialog({
           </Box>
 
           {exitMode === 'CUSTOM' && (
-            <TextField
-              size="small"
-              type="number"
-              label="Quantity to Exit"
-              value={customQty}
-              onChange={(e) => setCustomQty(e.target.value)}
-              slotProps={{
-                input: {
-                  inputProps: { min: 1, max: totalOpenQuantity },
-                  sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
-                },
-              }}
-              helperText={`Enter between 1 and ${totalOpenQuantity} quantity to exit`}
-            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <TextField
+                size="small"
+                type="number"
+                label={isLotBased ? `Quantity to Exit (Lot Size: ${lotSize})` : 'Quantity to Exit'}
+                value={customQty}
+                onChange={(e) => setCustomQty(e.target.value)}
+                slotProps={{
+                  input: {
+                    inputProps: { min: isLotBased ? lotSize : 1, max: totalOpenQuantity, step: isLotBased ? lotSize : 1 },
+                    sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
+                  },
+                }}
+                helperText={isLotBased ? `Enter multiples of ${lotSize} up to ${totalOpenQuantity}` : `Enter between 1 and ${totalOpenQuantity} quantity to exit`}
+              />
+
+              {isLotBased && totalLots > 1 && (
+                <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                  {Array.from({ length: Math.min(totalLots, 4) }, (_, i) => i + 1).map((lot) => (
+                    <Chip
+                      key={lot}
+                      label={`${lot} Lot${lot === 1 ? '' : 's'} (${lot * lotSize})`}
+                      size="small"
+                      clickable
+                      onClick={() => setCustomQty(String(lot * lotSize))}
+                      sx={{
+                        fontSize: '0.68rem',
+                        fontWeight: Number(customQty) === lot * lotSize ? 800 : 500,
+                        color: Number(customQty) === lot * lotSize ? '#3B82F6' : 'text.secondary',
+                        border: '1px solid',
+                        borderColor: Number(customQty) === lot * lotSize ? '#3B82F6' : 'divider',
+                      }}
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
           )}
 
           <Box

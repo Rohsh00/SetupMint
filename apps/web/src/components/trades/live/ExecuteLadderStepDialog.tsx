@@ -58,6 +58,10 @@ export function ExecuteLadderStepDialog({
 
   const totalOpenQty = metric.quantity || 1;
   const isLong = metric.direction === 'LONG';
+  const lotSize = step.lotSize ?? metric.lotSize ?? 1;
+  const isLotBased = lotSize > 1;
+  const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQty / lotSize)) : totalOpenQty;
+  const selectedLots = isLotBased ? Math.max(1, Math.round(exitQty / lotSize)) : exitQty;
 
   const handleExecute = () => {
     onConfirm({
@@ -151,15 +155,45 @@ export function ExecuteLadderStepDialog({
             fullWidth
             size="small"
             type="number"
-            label="Quantity to Close (Lots/Shares)"
+            label={isLotBased ? `Quantity to Close (Lot Size: ${lotSize} units)` : 'Quantity to Close (Units)'}
             value={exitQty}
-            onChange={(e) => setExitQty(Math.min(totalOpenQty, Math.max(1, Number(e.target.value))))}
-            helperText={`Exiting ${exitQty} of ${totalOpenQty} open lots (${Math.round((exitQty / totalOpenQty) * 100)}%) @ current LTP`}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              setExitQty(Math.min(totalOpenQty, Math.max(1, isNaN(val) ? 1 : val)));
+            }}
+            helperText={
+              isLotBased
+                ? `Exiting ${selectedLots} lot${selectedLots === 1 ? '' : 's'} (${exitQty} units) of ${totalLots} total lots (${totalOpenQty} units)`
+                : `Exiting ${exitQty} of ${totalOpenQty} open units (${Math.round((exitQty / totalOpenQty) * 100)}%) @ current LTP`
+            }
             slotProps={{
-              htmlInput: { min: 1, max: totalOpenQty },
+              htmlInput: { min: isLotBased ? lotSize : 1, max: totalOpenQty, step: isLotBased ? lotSize : 1 },
             }}
             sx={{ mb: 0.5 }}
           />
+
+          {isLotBased && totalLots > 1 && (
+            <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5 }}>
+              {Array.from({ length: Math.min(totalLots, 4) }, (_, i) => i + 1).map((lots) => (
+                <Chip
+                  key={lots}
+                  label={`${lots} Lot${lots === 1 ? '' : 's'} (${lots * lotSize})`}
+                  size="small"
+                  clickable
+                  onClick={() => setExitQty(lots * lotSize)}
+                  sx={{
+                    height: 22,
+                    fontSize: '0.62rem',
+                    fontWeight: exitQty === lots * lotSize ? 800 : 600,
+                    bgcolor: exitQty === lots * lotSize ? alpha('#3B82F6', 0.2) : 'transparent',
+                    color: exitQty === lots * lotSize ? '#3B82F6' : 'text.secondary',
+                    border: '1px solid',
+                    borderColor: exitQty === lots * lotSize ? '#3B82F6' : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'),
+                  }}
+                />
+              ))}
+            </Box>
+          )}
         </Box>
 
         {/* Action 2: Trail Stop Loss to protect gains */}

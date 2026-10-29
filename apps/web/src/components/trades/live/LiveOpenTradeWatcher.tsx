@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -49,16 +49,20 @@ import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
 import { ExecuteLadderStepDialog } from './ExecuteLadderStepDialog.js';
+import { LiveCustomRulesDialog } from './LiveCustomRulesDialog.js';
 import {
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
   ILiveTargetLadderStep,
+  ICustomLadderRules,
   StopThreatLevel,
 } from '@tradevault/shared';
+import { calculateTargetLadder } from '@tradevault/financial-engine';
 import { api } from '../../../lib/api.js';
 import { formatCurrency } from '../../../lib/utils.js';
 import { toast } from '../../../context/ToastContext.js';
@@ -138,9 +142,11 @@ export function LiveOpenTradeWatcher({
   });
 
   const handleQuickMoveToBe = (metric: ILiveOpenTradeMetric) => {
+    // True Breakeven covers estimated broker & statutory fees so Net P&L = 0
+    const bePrice = metric.trueBreakevenPrice ?? metric.entryPrice;
     updateSlMutation.mutate({
       tradeId: metric.tradeId,
-      newStopLoss: metric.entryPrice,
+      newStopLoss: bePrice,
       executeBroker: true,
     });
   };
@@ -150,6 +156,40 @@ export function LiveOpenTradeWatcher({
     step: ILiveTargetLadderStep;
     metric: ILiveOpenTradeMetric;
   } | null>(null);
+
+  // Trade-specific custom rules map (persisted in localStorage)
+  const [tradeRulesMap, setTradeRulesMap] = useState<Record<string, ICustomLadderRules>>(() => {
+    try {
+      const saved = localStorage.getItem('tv_trade_custom_rules_map');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [customRulesMetric, setCustomRulesMetric] = useState<ILiveOpenTradeMetric | null>(null);
+
+  const handleSaveTradeRules = (tradeId: string, rules: ICustomLadderRules) => {
+    setTradeRulesMap((prev) => {
+      const next = { ...prev, [tradeId]: rules };
+      localStorage.setItem('tv_trade_custom_rules_map', JSON.stringify(next));
+      return next;
+    });
+    toast.success(
+      `Saved custom ladder rules${rules.autoExecuteEnabled ? ' (⚡ Auto-Execution to FYERS Armed)' : ''}!`
+    );
+  };
+
+  const executedAutoTriggersRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('tv_auto_executed_triggers');
+      if (saved) {
+        executedAutoTriggersRef.current = new Set(JSON.parse(saved));
+      }
+    } catch {}
+  }, []);
 
   const executeLadderMutation = useMutation({
     mutationFn: async ({
@@ -223,6 +263,104 @@ export function LiveOpenTradeWatcher({
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+
+  // Auto-Execution Engine: triggers partial exit & SL trail when targets met on armed trades
+  useEffect(() => {
+    if (!summary?.positions || summary.positions.length === 0) return;
+
+    for (const pos of summary.positions) {
+      const rules = tradeRulesMap[pos.tradeId];
+      if (!rules || !rules.autoExecuteEnabled) continue;
+
+      const lotSize =
+        rules.lotSize ||
+        pos.lotSize ||
+        (pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1);
+      const estCharges = (pos.feeBufferPoints || 0) * (pos.quantity || 1) * (pos.contractMultiplier || 1);
+
+      const ladder = calculateTargetLadder({
+        entryPrice: pos.entryPrice,
+        currentLtp: pos.currentLtp,
+        direction: pos.direction,
+        stopLoss: pos.stopLoss,
+        plannedTarget: pos.target,
+        tickSize: pos.tickSize,
+        lotSize,
+        customRules: rules,
+        estimatedCharges: estCharges,
+      });
+
+      if (!ladder || !ladder.steps) continue;
+
+      for (let i = 0; i < ladder.steps.length; i++) {
+        const step = ladder.steps[i];
+        const isLong = pos.direction === 'LONG';
+        const isTargetMet =
+          step.status === 'MET' ||
+          (isLong ? pos.currentLtp >= step.targetPrice : pos.currentLtp <= step.targetPrice);
+
+        if (!isTargetMet) continue;
+
+        const triggerKey = `${pos.tradeId}_${step.name}`;
+        if (executedAutoTriggersRef.current.has(triggerKey)) continue;
+
+        // Mark as fired immediately
+        executedAutoTriggersRef.current.add(triggerKey);
+        try {
+          sessionStorage.setItem(
+            'tv_auto_executed_triggers',
+            JSON.stringify(Array.from(executedAutoTriggersRef.current))
+          );
+        } catch {}
+
+        // Determine exit qty in exact lot size multiples
+        const exitQty =
+          step.plannedExitLots && step.plannedExitLots > 0
+            ? step.plannedExitLots * lotSize
+            : Math.max(lotSize, Math.round((pos.quantity || lotSize) * 0.5));
+
+        // Fire live broker partial exit
+        api.trades
+          .liveBrokerExit(pos.tradeId, {
+            quantity: exitQty,
+            exitPrice: pos.currentLtp,
+            executeBroker: true,
+          })
+          .then(() => {
+            if (step.suggestedStopLoss) {
+              api.trades
+                .liveBrokerSl(pos.tradeId, {
+                  stopPrice: step.suggestedStopLoss,
+                  executeBroker: true,
+                })
+                .then(() => {
+                  toast.success(
+                    `⚡ FYERS Auto-Executed: Hit ${step.name} @ ₹${pos.currentLtp}! Exited ${exitQty} units & trailed SL to ₹${step.suggestedStopLoss} (fees protected).`
+                  );
+                  queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                  queryClient.invalidateQueries({ queryKey: ['trades'] });
+                })
+                .catch((slErr: any) => {
+                  toast.warning(
+                    `⚡ Partial exit executed (${exitQty} units), but SL trailing failed: ${slErr?.message || slErr}`
+                  );
+                  queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                });
+            } else {
+              toast.success(
+                `⚡ FYERS Auto-Executed: Hit ${step.name} @ ₹${pos.currentLtp}! Exited ${exitQty} units.`
+              );
+              queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+              queryClient.invalidateQueries({ queryKey: ['trades'] });
+            }
+          })
+          .catch((exitErr: any) => {
+            toast.error(`❌ Auto-execution failed for ${step.name}: ${exitErr?.message || exitErr}`);
+            executedAutoTriggersRef.current.delete(triggerKey);
+          });
+      }
+    }
+  }, [summary?.positions, tradeRulesMap, queryClient]);
 
   const handleManualRefetch = async () => {
     setIsManualRefreshing(true);
@@ -654,7 +792,7 @@ export function LiveOpenTradeWatcher({
                       <TableCell>Stop Loss & Buffer</TableCell>
                       <TableCell>Target & Ladder</TableCell>
                       <TableCell>Giveback Radar</TableCell>
-                      <TableCell align="right">Quick Cockpit Actions</TableCell>
+                      <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>Quick Cockpit Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -668,10 +806,32 @@ export function LiveOpenTradeWatcher({
                         pos.stopLoss !== null &&
                         (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
 
+                      const customRules = tradeRulesMap[pos.tradeId];
+                      const effectiveLotSize =
+                        customRules?.lotSize ||
+                        pos.lotSize ||
+                        (pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1);
+                      const estCharges =
+                        (pos.feeBufferPoints || 0) * (pos.quantity || 1) * (pos.contractMultiplier || 1);
+                      const effectiveLadder =
+                        customRules && pos.targetLadder
+                          ? calculateTargetLadder({
+                              entryPrice: pos.entryPrice,
+                              currentLtp: pos.currentLtp,
+                              direction: pos.direction,
+                              stopLoss: pos.stopLoss,
+                              plannedTarget: pos.target,
+                              tickSize: pos.tickSize,
+                              lotSize: effectiveLotSize,
+                              customRules,
+                              estimatedCharges: estCharges,
+                            })
+                          : pos.targetLadder;
+
                       const activeLadderStep =
-                        pos.targetLadder?.steps.find((s) => s.status === 'MET') ||
-                        pos.targetLadder?.steps.find((s) => s.status === 'IN_PROGRESS') ||
-                        pos.targetLadder?.steps[0];
+                        effectiveLadder?.steps.find((s) => s.status === 'MET') ||
+                        effectiveLadder?.steps.find((s) => s.status === 'IN_PROGRESS') ||
+                        effectiveLadder?.steps[0];
 
                       return (
                         <TableRow
@@ -690,12 +850,13 @@ export function LiveOpenTradeWatcher({
                         >
                           {/* Instrument & Side */}
                           <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'nowrap' }}>
                               <Typography
                                 variant="body2"
                                 sx={{
                                   fontWeight: 800,
                                   cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
                                   '&:hover': { color: '#3B82F6', textDecoration: 'underline' },
                                 }}
                                 onClick={() => navigate(`/trades/${pos.tradeId}`)}
@@ -726,6 +887,23 @@ export function LiveOpenTradeWatcher({
                                     borderRadius: '4px',
                                   }}
                                 />
+                              )}
+                              {customRules?.autoExecuteEnabled && (
+                                <Tooltip title="Auto-Execution to FYERS Active" arrow>
+                                  <Chip
+                                    label="⚡ AUTO"
+                                    size="small"
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.58rem',
+                                      fontWeight: 800,
+                                      color: '#10B981',
+                                      bgcolor: alpha('#10B981', 0.15),
+                                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                                      borderRadius: '4px',
+                                    }}
+                                  />
+                                </Tooltip>
                               )}
                             </Box>
                           </TableCell>
@@ -788,7 +966,14 @@ export function LiveOpenTradeWatcher({
                                 }}
                               />
                               {!isAtOrBeyondBe && pos.stopLoss !== null && (
-                                <Tooltip title="Quick Lock Breakeven Stop" arrow>
+                                <Tooltip
+                                  title={
+                                    pos.trueBreakevenPrice
+                                      ? `Lock True Breakeven @ ₹${pos.trueBreakevenPrice} (covers all fees)`
+                                      : 'Quick Lock Breakeven Stop'
+                                  }
+                                  arrow
+                                >
                                   <IconButton
                                     size="small"
                                     onClick={() => handleQuickMoveToBe(pos)}
@@ -904,18 +1089,21 @@ export function LiveOpenTradeWatcher({
                           </TableCell>
 
                           {/* Quick Cockpit Actions */}
-                          <TableCell align="right">
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.75 }}>
+                          <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.75, flexWrap: 'nowrap' }}>
                               <Button
                                 size="small"
                                 variant="outlined"
                                 onClick={() => handleOpenQuickClose(pos, 0.5)}
                                 sx={{
-                                  height: 24,
-                                  px: 1,
-                                  fontSize: '0.65rem',
+                                  height: 26,
+                                  px: 1.25,
+                                  fontSize: '0.68rem',
                                   fontWeight: 700,
                                   textTransform: 'none',
+                                  whiteSpace: 'nowrap',
+                                  minWidth: 'max-content',
+                                  lineHeight: 1,
                                   borderRadius: '5px',
                                   borderColor: '#10B981',
                                   color: '#10B981',
@@ -929,11 +1117,14 @@ export function LiveOpenTradeWatcher({
                                 variant="contained"
                                 onClick={() => handleOpenQuickClose(pos, 1.0)}
                                 sx={{
-                                  height: 24,
-                                  px: 1,
-                                  fontSize: '0.65rem',
+                                  height: 26,
+                                  px: 1.25,
+                                  fontSize: '0.68rem',
                                   fontWeight: 700,
                                   textTransform: 'none',
+                                  whiteSpace: 'nowrap',
+                                  minWidth: 'max-content',
+                                  lineHeight: 1,
                                   borderRadius: '5px',
                                   bgcolor: '#EF4444',
                                   color: '#FFFFFF',
@@ -942,7 +1133,71 @@ export function LiveOpenTradeWatcher({
                               >
                                 Close 100%
                               </Button>
-                              <Tooltip title="Adjust Stop Loss" arrow>
+                              <Tooltip
+                                title={
+                                  pos.trueBreakevenPrice
+                                    ? `Lock True Breakeven @ ₹${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
+                                    : `Lock Breakeven @ ₹${pos.entryPrice}`
+                                }
+                                arrow
+                              >
+                                <span>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<LockRoundedIcon sx={{ fontSize: 11 }} />}
+                                    onClick={() => handleQuickMoveToBe(pos)}
+                                    disabled={isAtOrBeyondBe || updateSlMutation.isPending}
+                                    sx={{
+                                      height: 26,
+                                      px: 1,
+                                      fontSize: '0.65rem',
+                                      fontWeight: 700,
+                                      textTransform: 'none',
+                                      whiteSpace: 'nowrap',
+                                      minWidth: 'max-content',
+                                      lineHeight: 1,
+                                      borderColor: isAtOrBeyondBe ? 'rgba(16, 185, 129, 0.4)' : '#3B82F6',
+                                      color: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
+                                      bgcolor: isAtOrBeyondBe ? alpha('#10B981', 0.08) : 'transparent',
+                                      '&:hover': {
+                                        bgcolor: alpha('#3B82F6', 0.1),
+                                        borderColor: '#2563EB',
+                                      },
+                                      borderRadius: '5px',
+                                    }}
+                                  >
+                                    {isAtOrBeyondBe ? 'BE Locked' : 'Lock BE'}
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                              <Tooltip title="Configure Custom R1-R3, Lots & Auto-Execution" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => setCustomRulesMetric(pos)}
+                                  sx={{
+                                    p: 0.5,
+                                    border: '1px solid',
+                                    borderColor: customRules?.autoExecuteEnabled
+                                      ? '#10B981'
+                                      : isDark
+                                      ? 'rgba(255, 255, 255, 0.12)'
+                                      : 'rgba(0, 0, 0, 0.12)',
+                                    bgcolor: customRules?.autoExecuteEnabled
+                                      ? alpha('#10B981', 0.12)
+                                      : 'transparent',
+                                    borderRadius: '5px',
+                                    color: customRules?.autoExecuteEnabled ? '#10B981' : 'text.secondary',
+                                    '&:hover': {
+                                      borderColor: '#3B82F6',
+                                      color: '#3B82F6',
+                                    },
+                                  }}
+                                >
+                                  <TuneRoundedIcon sx={{ fontSize: 13 }} />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Adjust Stop Loss Price" arrow>
                                 <IconButton
                                   size="small"
                                   onClick={() => handleOpenEditSl(pos)}
@@ -977,6 +1232,28 @@ export function LiveOpenTradeWatcher({
                     pos.stopLoss !== null &&
                     (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
 
+                  const customRules = tradeRulesMap[pos.tradeId];
+                  const effectiveLotSize =
+                    customRules?.lotSize ||
+                    pos.lotSize ||
+                    (pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1);
+                  const estCharges =
+                    (pos.feeBufferPoints || 0) * (pos.quantity || 1) * (pos.contractMultiplier || 1);
+                  const effectiveLadder =
+                    customRules && pos.targetLadder
+                      ? calculateTargetLadder({
+                          entryPrice: pos.entryPrice,
+                          currentLtp: pos.currentLtp,
+                          direction: pos.direction,
+                          stopLoss: pos.stopLoss,
+                          plannedTarget: pos.target,
+                          tickSize: pos.tickSize,
+                          lotSize: effectiveLotSize,
+                          customRules,
+                          estimatedCharges: estCharges,
+                        })
+                      : pos.targetLadder;
+
                   const activeTacticalTab = getActiveTacticalTab(pos);
 
                   const notionalExposure = (pos.quantity || 1) * pos.currentLtp;
@@ -987,6 +1264,7 @@ export function LiveOpenTradeWatcher({
                       : null);
 
                   const initialRiskPts =
+                    effectiveLadder?.initialRiskPoints ??
                     pos.targetLadder?.initialRiskPoints ??
                     (pos.stopLoss !== null ? Math.abs(pos.entryPrice - pos.stopLoss) : null);
 
@@ -996,9 +1274,9 @@ export function LiveOpenTradeWatcher({
                       : null;
 
                   const nextLadderMilestone =
-                    pos.targetLadder?.steps.find((s) => s.status === 'IN_PROGRESS' || s.isActionable) ||
-                    pos.targetLadder?.steps.find((s) => s.status === 'PENDING') ||
-                    pos.targetLadder?.steps[0];
+                    effectiveLadder?.steps.find((s) => s.status === 'IN_PROGRESS' || s.isActionable) ||
+                    effectiveLadder?.steps.find((s) => s.status === 'PENDING') ||
+                    effectiveLadder?.steps[0];
 
                   return (
                     <Grid size={{ xs: 12, lg: openTradesCount === 1 ? 12 : 6 }} key={pos.tradeId}>
@@ -1070,6 +1348,24 @@ export function LiveOpenTradeWatcher({
                                   borderRadius: '4px',
                                 }}
                               />
+                            )}
+                            {customRules?.autoExecuteEnabled && (
+                              <Tooltip title="Auto-Execution to FYERS Active" arrow>
+                                <Chip
+                                  icon={<FlashOnRoundedIcon sx={{ fontSize: '12px !important', color: '#10B981' }} />}
+                                  label="AUTO FYERS"
+                                  size="small"
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.62rem',
+                                    fontWeight: 800,
+                                    color: '#10B981',
+                                    bgcolor: alpha('#10B981', 0.15),
+                                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              </Tooltip>
                             )}
                             <Tooltip title="Open full trade review" arrow>
                               <IconButton
@@ -1187,6 +1483,9 @@ export function LiveOpenTradeWatcher({
                                 fontSize: '0.72rem',
                                 fontWeight: 700,
                                 textTransform: 'none',
+                                whiteSpace: 'nowrap',
+                                minWidth: 'max-content',
+                                lineHeight: 1,
                                 bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
                                 color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
                                 '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
@@ -1208,6 +1507,9 @@ export function LiveOpenTradeWatcher({
                                 fontSize: '0.72rem',
                                 fontWeight: 700,
                                 textTransform: 'none',
+                                whiteSpace: 'nowrap',
+                                minWidth: 'max-content',
+                                lineHeight: 1,
                                 bgcolor: '#EF4444',
                                 color: '#FFFFFF',
                                 '&:hover': { bgcolor: '#DC2626' },
@@ -1218,28 +1520,76 @@ export function LiveOpenTradeWatcher({
                               Close 100% @ LTP
                             </Button>
 
-                            {!isAtOrBeyondBe && pos.stopLoss !== null && (
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                startIcon={<LockRoundedIcon sx={{ fontSize: 12 }} />}
-                                onClick={() => handleQuickMoveToBe(pos)}
-                                disabled={updateSlMutation.isPending}
-                                sx={{
-                                  height: 28,
-                                  px: 1.25,
-                                  fontSize: '0.7rem',
-                                  fontWeight: 700,
-                                  textTransform: 'none',
+                            <Tooltip
+                              title={
+                                pos.trueBreakevenPrice
+                                  ? `Lock True Breakeven @ ₹${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
+                                  : `Lock Breakeven @ ₹${pos.entryPrice}`
+                              }
+                              arrow
+                            >
+                              <span>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<LockRoundedIcon sx={{ fontSize: 12 }} />}
+                                  onClick={() => handleQuickMoveToBe(pos)}
+                                  disabled={isAtOrBeyondBe || updateSlMutation.isPending}
+                                  sx={{
+                                    height: 28,
+                                    px: 1.25,
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    whiteSpace: 'nowrap',
+                                    minWidth: 'max-content',
+                                    lineHeight: 1,
+                                    borderColor: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
+                                    color: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
+                                    bgcolor: isAtOrBeyondBe ? alpha('#10B981', 0.08) : 'transparent',
+                                    '&:hover': { bgcolor: alpha('#3B82F6', 0.1), borderColor: '#2563EB' },
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  {isAtOrBeyondBe ? 'BE Protected' : 'Lock BE'}
+                                </Button>
+                              </span>
+                            </Tooltip>
+
+                            <Button
+                              size="small"
+                              variant={customRules?.autoExecuteEnabled ? 'contained' : 'outlined'}
+                              startIcon={<TuneRoundedIcon sx={{ fontSize: 13 }} />}
+                              onClick={() => setCustomRulesMetric(pos)}
+                              sx={{
+                                height: 28,
+                                px: 1.25,
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                textTransform: 'none',
+                                whiteSpace: 'nowrap',
+                                minWidth: 'max-content',
+                                lineHeight: 1,
+                                bgcolor: customRules?.autoExecuteEnabled ? '#10B981' : 'transparent',
+                                color: customRules?.autoExecuteEnabled
+                                  ? '#FFFFFF'
+                                  : isDark
+                                  ? '#E2E8F0'
+                                  : '#1E293B',
+                                borderColor: customRules?.autoExecuteEnabled
+                                  ? '#10B981'
+                                  : isDark
+                                  ? 'rgba(255, 255, 255, 0.15)'
+                                  : 'rgba(0, 0, 0, 0.15)',
+                                borderRadius: '6px',
+                                '&:hover': {
+                                  bgcolor: customRules?.autoExecuteEnabled ? '#059669' : alpha('#3B82F6', 0.1),
                                   borderColor: '#3B82F6',
-                                  color: '#3B82F6',
-                                  '&:hover': { bgcolor: alpha('#3B82F6', 0.1), borderColor: '#2563EB' },
-                                  borderRadius: '6px',
-                                }}
-                              >
-                                Lock BE
-                              </Button>
-                            )}
+                                },
+                              }}
+                            >
+                              {customRules?.autoExecuteEnabled ? '⚡ Auto Armed' : '⚙️ Rules'}
+                            </Button>
                           </Box>
 
                           {/* Right SL Controls */}
@@ -1650,20 +2000,21 @@ export function LiveOpenTradeWatcher({
                                   )}
                                 </Box>
 
-                                {activeTacticalTab === 'ladder' && pos.targetLadder && (
+                                {activeTacticalTab === 'ladder' && (effectiveLadder || pos.targetLadder) && (
                                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                    1R = {pos.targetLadder.initialRiskPoints.toFixed(1)} pts
+                                    1R = {(effectiveLadder || pos.targetLadder)!.initialRiskPoints.toFixed(1)} pts
                                   </Typography>
                                 )}
                               </Box>
 
                               {/* Tab Content */}
-                              {activeTacticalTab === 'ladder' && pos.targetLadder ? (
+                              {activeTacticalTab === 'ladder' && (effectiveLadder || pos.targetLadder) ? (
                                 <LiveScalingLadder
-                                  ladder={pos.targetLadder}
-                                  metric={pos}
+                                  ladder={effectiveLadder || pos.targetLadder!}
+                                  metric={{ ...pos, lotSize: effectiveLotSize }}
                                   compact
                                   onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
+                                  onOpenCustomRules={() => setCustomRulesMetric(pos)}
                                 />
                               ) : pos.giveback ? (
                                 <LiveGivebackMeter
@@ -1770,8 +2121,23 @@ export function LiveOpenTradeWatcher({
               Quick Presets
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2 }}>
+              {editSlMetric.trueBreakevenPrice && (
+                <Chip
+                  label={`True BE (₹${editSlMetric.trueBreakevenPrice}) [Fees Protected]`}
+                  size="small"
+                  onClick={() => setTargetSlPrice(String(editSlMetric.trueBreakevenPrice))}
+                  clickable
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: '0.7rem',
+                    bgcolor: targetSlPrice === String(editSlMetric.trueBreakevenPrice) ? alpha('#10B981', 0.25) : alpha('#10B981', 0.08),
+                    color: '#10B981',
+                    borderColor: '#10B981',
+                  }}
+                />
+              )}
               <Chip
-                label={`Breakeven (₹${editSlMetric.entryPrice})`}
+                label={`Nominal BE (₹${editSlMetric.entryPrice})`}
                 size="small"
                 onClick={() => setTargetSlPrice(String(editSlMetric.entryPrice))}
                 clickable
@@ -1895,6 +2261,17 @@ export function LiveOpenTradeWatcher({
                 );
               }
 
+              const isTrueBe = editSlMetric.trueBreakevenPrice && numSl === editSlMetric.trueBreakevenPrice;
+              if (isTrueBe) {
+                return (
+                  <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#10B981', 0.12), border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700, display: 'block' }}>
+                      🛡️ True Breakeven: Capital & Fees Protected (covers ₹{(editSlMetric.feeBufferPoints || 0).toFixed(2)} pts brokerage & govt taxes)
+                    </Typography>
+                  </Box>
+                );
+              }
+
               if (isProfitLock) {
                 return (
                   <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#10B981', 0.12), border: '1px solid rgba(16, 185, 129, 0.3)' }}>
@@ -2002,6 +2379,19 @@ export function LiveOpenTradeWatcher({
               newStopLoss: payload.newStopLoss,
               executeBroker: payload.executeBroker,
             });
+          }}
+        />
+      )}
+
+      {/* Custom Scaling Ladder Rules & Auto-Execution Dialog */}
+      {customRulesMetric && (
+        <LiveCustomRulesDialog
+          open={Boolean(customRulesMetric)}
+          onClose={() => setCustomRulesMetric(null)}
+          metric={customRulesMetric}
+          onSave={(rules) => {
+            handleSaveTradeRules(customRulesMetric.tradeId, rules);
+            setCustomRulesMetric(null);
           }}
         />
       )}

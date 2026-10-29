@@ -359,16 +359,30 @@ export class LiveWatcherService {
     ];
 
     // 4. Historical Setup Edge & Baseline Statistics
-    const setupName = trade.setup || trade.strategyId?.name;
-    if (setupName) {
-      const cacheKey = `${userId.toString()}:${setupName}`;
+    const setupName: string | undefined =
+      trade.setup?.variantKey ||
+      trade.setup?.patternType ||
+      trade.strategyName ||
+      (trade.strategyId as any)?.name ||
+      undefined;
+
+    if (setupName || trade.strategyId) {
+      const cacheKey = `${userId.toString()}:${setupName || trade.strategyId?.toString()}`;
       let stats = this.setupStatsCache.get(cacheKey);
       if (!stats) {
         try {
+          const matchConditions: any[] = [];
+          if (trade.strategyId) {
+            matchConditions.push({ strategyId: trade.strategyId });
+          }
+          if (trade.setup?.variantKey) {
+            matchConditions.push({ 'setup.variantKey': trade.setup.variantKey });
+          }
+
           const historical = await Trade.find({
             userId,
             status: 'CLOSED',
-            $or: [{ setup: setupName }, { strategyId: trade.strategyId }],
+            ...(matchConditions.length > 0 ? { $or: matchConditions } : {}),
           })
             .select('calculated.netPnL calculated.realizedR calculated.excursion')
             .limit(100)
@@ -386,7 +400,7 @@ export class LiveWatcherService {
             const expectancyR = realizedRs.length > 0 ? Number((realizedRs.reduce((a: number, b: number) => a + b, 0) / realizedRs.length).toFixed(2)) : 0.5;
 
             stats = {
-              setupName,
+              setupName: setupName || 'Strategy Edge',
               totalSampleTrades: historical.length,
               winRate,
               avgMfeR,

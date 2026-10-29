@@ -2172,7 +2172,13 @@ export function LiveOpenTradeWatcher({
                           >
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <Chip
-                                label={pos.setupEdgeStats.setupName || 'Strategy Edge'}
+                                label={
+                                  typeof pos.setupEdgeStats.setupName === 'string'
+                                    ? pos.setupEdgeStats.setupName
+                                    : (pos.setupEdgeStats.setupName as any)?.variantKey ||
+                                      (pos.setupEdgeStats.setupName as any)?.patternType ||
+                                      'Strategy Edge'
+                                }
                                 size="small"
                                 sx={{
                                   height: 18,

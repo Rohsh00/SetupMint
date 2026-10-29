@@ -1,4 +1,5 @@
-import type { Readable } from 'stream';
+import type { Readable } from 'node:stream';
+import { Buffer } from 'node:buffer';
 
 export interface IStorageProvider {
   save(key: string, buffer: Buffer, mime: string): Promise<void>;

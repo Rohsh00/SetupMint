@@ -31,6 +31,7 @@
     "@fastify/swagger-ui": "^5.2.2",
     "@tradevault/financial-engine": "*",
     "@tradevault/shared": "*",
+    "@types/node": "^22.13.4",
     "bcryptjs": "^2.4.3",
     "csv-parse": "^5.6.0",
     "csv-stringify": "^6.5.2",

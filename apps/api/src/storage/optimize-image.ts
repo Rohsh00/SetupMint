@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { Buffer } from 'node:buffer';
 
 export interface OptimizedImageResult {
   buffer: Buffer;

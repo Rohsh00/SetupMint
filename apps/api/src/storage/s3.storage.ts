@@ -6,7 +6,8 @@ import {
   HeadObjectCommand,
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
-import type { Readable } from 'stream';
+import type { Readable } from 'node:stream';
+import { Buffer } from 'node:buffer';
 import crypto from 'crypto';
 import { IStorageProvider, assertValidKey } from './types.js';
 

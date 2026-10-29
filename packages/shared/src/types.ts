@@ -1777,6 +1777,8 @@ export interface ILiveWatcherSettings {
     tradeClosed?: boolean;
     eodSummaryDigest?: boolean;
   };
+  lastDailyLossAlertDate?: string;
+  lastDailyLossWarnDate?: string;
   hardDisciplineLockoutEnabled: boolean;
   hardDisciplineLockoutDurationMins: number;
 }

@@ -10,8 +10,21 @@ import type {
   IFocusRuleEvaluation,
 } from '@tradevault/shared';
 
-const RAW_API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
-const BASE_URL = RAW_API_BASE ? `${RAW_API_BASE}/api/v1` : '/api/v1';
+export function getApiBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (envUrl) {
+    return `${envUrl}/api/v1`;
+  }
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location;
+    if (hostname.endsWith('.onrender.com') || hostname.includes('setupmint')) {
+      return 'https://setupmint-api.onrender.com/api/v1';
+    }
+  }
+  return '/api/v1';
+}
+
+export const BASE_URL = getApiBaseUrl();
 
 export class ApiError extends Error {
   code: string;

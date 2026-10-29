@@ -84,15 +84,31 @@ export class LiveExecutionWorker {
         }
       }
 
-      // Check Daily Loss threshold
+      // Check Daily Loss threshold (Calculated strictly against Indian Standard Time calendar day)
       const maxDailyLoss = user.riskSettings?.maxDailyLoss;
-      if (maxDailyLoss && maxDailyLoss > 0 && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
+      const isDailyLossAlertActive = watcherSettings?.telegramAlertEvents?.dailyLossBreached !== false;
+
+      if (
+        maxDailyLoss &&
+        maxDailyLoss > 0 &&
+        isDailyLossAlertActive &&
+        watcherSettings?.telegramAlertsEnabled &&
+        watcherSettings?.telegramBotToken &&
+        watcherSettings?.telegramChatId
+      ) {
+        // Calculate start of current day in IST (Asia/Kolkata)
+        const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const istYear = nowIST.getFullYear();
+        const istMonth = nowIST.getMonth();
+        const istDate = nowIST.getDate();
+        const istDateKey = `${istYear}-${String(istMonth + 1).padStart(2, '0')}-${String(istDate).padStart(2, '0')}`;
+        const istOffsetMs = 5.5 * 60 * 60 * 1000;
+        const startOfIstDay = new Date(Date.UTC(istYear, istMonth, istDate, 0, 0, 0) - istOffsetMs);
+
         const todayClosed = await Trade.find({
           userId: user._id,
           status: 'CLOSED',
-          exitTime: { $gte: startOfDay },
+          exitTime: { $gte: startOfIstDay },
         }).lean();
         const realizedDayLoss = todayClosed.reduce((sum, t) => sum + (t.calculated?.netPnL || 0), 0);
 
@@ -106,16 +122,33 @@ export class LiveExecutionWorker {
         if (netLoss > 0) {
           const lossPercent = (netLoss / maxDailyLoss) * 100;
           if (lossPercent >= 100) {
-            const breachKey = `daily_breach:${user._id}:${new Date().toDateString()}`;
+            const breachKey = `daily_breach:${user._id}:${istDateKey}`;
             if (!this.executedMilestones.has(breachKey)) {
               this.executedMilestones.add(breachKey);
-              TelegramAlertService.notifyDailyLoss(user, netLoss, maxDailyLoss, lossPercent).catch(() => {});
+
+              // Persistent database guard: atomically claim notification slot for this IST date
+              const updateResult = await User.updateOne(
+                { _id: user._id, 'liveWatcherSettings.lastDailyLossAlertDate': { $ne: istDateKey } },
+                { $set: { 'liveWatcherSettings.lastDailyLossAlertDate': istDateKey } }
+              );
+
+              if (updateResult.modifiedCount > 0) {
+                TelegramAlertService.notifyDailyLoss(user, netLoss, maxDailyLoss, lossPercent).catch(() => {});
+              }
             }
           } else if (lossPercent >= 75) {
-            const warnKey = `daily_warn75:${user._id}:${new Date().toDateString()}`;
+            const warnKey = `daily_warn75:${user._id}:${istDateKey}`;
             if (!this.executedMilestones.has(warnKey)) {
               this.executedMilestones.add(warnKey);
-              TelegramAlertService.notifyDailyLoss(user, netLoss, maxDailyLoss, lossPercent).catch(() => {});
+
+              const updateResult = await User.updateOne(
+                { _id: user._id, 'liveWatcherSettings.lastDailyLossWarnDate': { $ne: istDateKey } },
+                { $set: { 'liveWatcherSettings.lastDailyLossWarnDate': istDateKey } }
+              );
+
+              if (updateResult.modifiedCount > 0) {
+                TelegramAlertService.notifyDailyLoss(user, netLoss, maxDailyLoss, lossPercent).catch(() => {});
+              }
             }
           }
         }

@@ -111,7 +111,7 @@ export async function buildApp() {
       const isAllowed =
         allowedOrigins.includes(origin) ||
         allowedOrigins.includes('*') ||
-        origin.endsWith('.onrender.com') ||
+        origin.includes('onrender.com') ||
         origin.includes('localhost') ||
         origin.includes('127.0.0.1');
 
@@ -186,6 +186,18 @@ export async function buildApp() {
       version: '1.0.0',
       docs: '/api/docs',
       health: '/api/health',
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  // Root welcoming endpoint
+  app.get('/', async () => {
+    return {
+      name: 'SetupMint API Server',
+      status: 'online',
+      version: '1.0.0',
+      health: '/api/health',
+      docs: '/api/docs',
       timestamp: new Date().toISOString(),
     };
   });

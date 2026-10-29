@@ -816,5 +816,73 @@ describe('calculateExcursion', () => {
 
     expect(result.mfeReachFunnel.insight).toContain('Critical Giveback Alert');
   });
+
+  it('31. generates custom and data-adaptive MFE Reach Funnel thresholds with complete conversion percentages', async () => {
+    const { calculateExcursionAggregates } = await import('../src/excursion-analytics.js');
+    const mockTrades: any[] = [
+      {
+        id: 'trade-w1',
+        symbol: 'NIFTY',
+        tradeDate: new Date('2026-10-15'),
+        calculated: {
+          netPnL: 5000,
+          outcome: 'WIN',
+          excursion: { status: 'COMPUTED', mfeR: 4.2, maeR: 0.3, mfeAmount: 5200 },
+        },
+      },
+      {
+        id: 'trade-w2',
+        symbol: 'BANKNIFTY',
+        tradeDate: new Date('2026-10-16'),
+        calculated: {
+          netPnL: 3000,
+          outcome: 'WIN',
+          excursion: { status: 'COMPUTED', mfeR: 2.8, maeR: 0.5, mfeAmount: 3200 },
+        },
+      },
+      {
+        id: 'trade-l1',
+        symbol: 'RELIANCE',
+        tradeDate: new Date('2026-10-17'),
+        calculated: {
+          netPnL: -1500,
+          outcome: 'LOSS',
+          excursion: { status: 'COMPUTED', mfeR: 1.4, maeR: 1.0, mfeAmount: 1800 },
+        },
+      },
+    ];
+
+    // Test 1: User-defined Custom Steps
+    const customResult = calculateExcursionAggregates({
+      allClosedTrades: mockTrades,
+      customMfeSteps: [0.75, 1.25, 2.5, 4.0],
+      funnelMode: 'CUSTOM',
+    });
+
+    expect(customResult.mfeReachFunnel.mode).toBe('CUSTOM');
+    expect(customResult.mfeReachFunnel.steps).toHaveLength(4);
+    expect(customResult.mfeReachFunnel.steps.map((s) => s.thresholdR)).toEqual([0.75, 1.25, 2.5, 4.0]);
+    
+    // Check conversion metrics for 1.25R threshold (3 reached: 2 wins, 1 loss)
+    const step125 = customResult.mfeReachFunnel.steps.find((s) => s.thresholdR === 1.25);
+    expect(step125).toBeDefined();
+    expect(step125?.reachedCount).toBe(3);
+    expect(step125?.reachedPercent).toBe(100.0);
+    expect(step125?.closedAsWinCount).toBe(2);
+    expect(step125?.closedAsWinPercent).toBe(66.7);
+    expect(step125?.closedAsLossCount).toBe(1);
+    expect(step125?.closedAsLossPercent).toBe(33.3);
+
+    // Test 2: Auto Data-Adaptive Steps for high MFE dataset (max 4.2R)
+    const autoResult = calculateExcursionAggregates({
+      allClosedTrades: mockTrades,
+      funnelMode: 'AUTO',
+    });
+
+    expect(autoResult.mfeReachFunnel.mode).toBe('AUTO');
+    // max MFE is 4.2R (between 3.5 and 5.5), so steps span up to 5.0R
+    expect(autoResult.mfeReachFunnel.steps.some((s) => s.thresholdR === 4.0 || s.thresholdR === 5.0)).toBe(true);
+    expect(autoResult.mfeReachFunnel.dataRange?.maxMfeR).toBe(4.2);
+  });
 });
 

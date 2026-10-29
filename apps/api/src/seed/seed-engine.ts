@@ -929,7 +929,13 @@ export class SetupMintSeedEngine {
               flags.push('GAVE_BACK_PROFIT');
             } else {
               maePts = Number((Math.abs(exitPrice - entryPrice) * prng.nextNumber(1.0, 1.05)).toFixed(inst.pricePrecision));
-              mfePts = Number((stopDist * prng.nextNumber(0.05, 0.4)).toFixed(inst.pricePrecision));
+              const isRoundTripLoss = prng.chance(0.25) || mistakes.includes('PREMATURE_EXIT');
+              if (isRoundTripLoss) {
+                mfePts = Number((stopDist * prng.nextNumber(0.85, 1.75)).toFixed(inst.pricePrecision));
+                flags.push('GAVE_BACK_PROFIT');
+              } else {
+                mfePts = Number((stopDist * prng.nextNumber(0.05, 0.4)).toFixed(inst.pricePrecision));
+              }
               exitEff = 0;
               if (prng.chance(0.3) || mistakes.includes('STOP_MOVED')) {
                 reversedAfterStop = true;

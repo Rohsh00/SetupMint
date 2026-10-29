@@ -149,7 +149,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       });
     }
 
-    const { accountId, strategyId, variantKey, startDate, endDate, session } = parsed.data;
+    const { accountId, strategyId, variantKey, startDate, endDate, session, customMfeSteps, funnelMode } = parsed.data;
 
     const baseFilter: any = {
       userId: req.user!.id,
@@ -199,14 +199,28 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const result = calculateExcursionAggregates({
       allClosedTrades: formattedTrades,
       uncomputedReasonCounts,
+      customMfeSteps,
+      funnelMode,
     });
 
     // Provide legacy summary properties for seamless backward compatibility
     const legacySummary = {
       ...result.summary,
-      avgMaeR: result.summary.maeR.mean,
-      avgMfeR: result.summary.mfeR.mean,
+      avgMaeR: result.summary.maeR.mean !== undefined ? Number(result.summary.maeR.mean.toFixed(2)) : undefined,
+      medianMaeR: result.summary.maeR.median !== undefined ? Number(result.summary.maeR.median.toFixed(2)) : undefined,
+      p25MaeR: result.summary.maeR.p25 !== undefined ? Number(result.summary.maeR.p25.toFixed(2)) : undefined,
+      p75MaeR: result.summary.maeR.p75 !== undefined ? Number(result.summary.maeR.p75.toFixed(2)) : undefined,
+      avgMfeR: result.summary.mfeR.mean !== undefined ? Number(result.summary.mfeR.mean.toFixed(2)) : undefined,
+      medianMfeR: result.summary.mfeR.median !== undefined ? Number(result.summary.mfeR.median.toFixed(2)) : undefined,
       avgExitEfficiency: result.summary.exitEfficiency.mean,
+      medianExitEfficiency: result.summary.exitEfficiency.median,
+      avgStopEfficiency: result.summary.stopEfficiency.mean,
+      avgRLeftOnTable: result.summary.rLeftOnTable.mean !== undefined ? Number(result.summary.rLeftOnTable.mean.toFixed(2)) : undefined,
+      medianRLeftOnTable: result.summary.rLeftOnTable.median !== undefined ? Number(result.summary.rLeftOnTable.median.toFixed(2)) : undefined,
+      avgEntryQualityScore: result.summary.entryQualityScore?.mean !== undefined ? Number((result.summary.entryQualityScore.mean / 100).toFixed(2)) : undefined,
+      heatFirstCount: result.summary.timeOrdering.heatFirstCount,
+      runFirstCount: result.summary.timeOrdering.runFirstCount,
+      heatFirstPercent: result.summary.timeOrdering.heatFirstPercent,
     };
 
     return reply.send({

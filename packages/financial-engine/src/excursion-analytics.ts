@@ -50,13 +50,20 @@ export interface IMfeReachStep {
   label: string;
   reachedCount: number;
   reachPct: number;
+  reachedPercent: number;
   closedAsWinCount: number;
+  closedAsWinPercent: number;
   closedAsLossCount: number;
+  closedAsLossPercent: number;
+  closedAsBreakevenCount: number;
+  closedAsBreakevenPercent: number;
   winConversionPct: number;
+  isPlannedTarget?: boolean;
   tradeIds: string[];
 }
 
 export interface IMfeReachFunnel {
+  mode: 'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD';
   steps: IMfeReachStep[];
   roundTripLossCount: number;
   roundTripLossRate: number;
@@ -65,6 +72,14 @@ export interface IMfeReachFunnel {
   totalSurrenderedAmount: number;
   roundTripTradeIds: string[];
   insight: string;
+  dataRange?: {
+    minMfeR: number;
+    maxMfeR: number;
+    medianMfeR: number;
+    p75MfeR: number;
+    p90MfeR: number;
+    averagePlannedTargetR?: number;
+  };
 }
 
 export interface IWhatIfPrefillSuggestion {
@@ -387,8 +402,11 @@ function buildCohort(name: string, trades: ITradeForExcursionAnalytics[]): IExcu
 export function calculateExcursionAggregates(params: {
   allClosedTrades: ITradeForExcursionAnalytics[];
   uncomputedReasonCounts?: Record<string, number>;
+  totalClosedTradesCount?: number;
+  customMfeSteps?: number[];
+  funnelMode?: 'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD';
 }): IExcursionAnalyticsResult {
-  const { allClosedTrades, uncomputedReasonCounts = {} } = params;
+  const { allClosedTrades, uncomputedReasonCounts = {}, customMfeSteps, funnelMode = 'AUTO' } = params;
   const totalClosedTrades = allClosedTrades.length;
 
   // Separate trades with underlying fallback on options from aggregates
@@ -627,15 +645,79 @@ export function calculateExcursionAggregates(params: {
     insight: winnerInsight,
   };
 
-  // MFE Reach Funnel & Round-Trip Loss Prevention
-  const mfeStepDefs = [
-    { thresholdR: 0.5, label: 'Reached ≥ +0.5R' },
-    { thresholdR: 1.0, label: 'Reached ≥ +1.0R' },
-    { thresholdR: 1.5, label: 'Reached ≥ +1.5R' },
-    { thresholdR: 2.0, label: 'Reached ≥ +2.0R' },
-    { thresholdR: 2.5, label: 'Reached ≥ +2.5R' },
-    { thresholdR: 3.0, label: 'Reached ≥ +3.0R' },
-  ];
+  // MFE Reach Funnel & Round-Trip Loss Prevention (Dynamic Data-Adaptive & Custom)
+  const validMfeRs = validEvaluatedTrades
+    .map((t) => t.calculated?.excursion?.mfeR)
+    .filter((v): v is number => typeof v === 'number' && !isNaN(v) && v > 0);
+
+  const minMfeR = validMfeRs.length > 0 ? Number(Math.min(...validMfeRs).toFixed(2)) : 0;
+  const maxMfeR = validMfeRs.length > 0 ? Number(Math.max(...validMfeRs).toFixed(2)) : 3.0;
+  const medianMfeR = validMfeRs.length > 0 ? Number((calculatePercentile(validMfeRs, 0.5) ?? 1.5).toFixed(2)) : 1.5;
+  const p75MfeR = validMfeRs.length > 0 ? Number((calculatePercentile(validMfeRs, 0.75) ?? 2.0).toFixed(2)) : 2.0;
+  const p90MfeR = validMfeRs.length > 0 ? Number((calculatePercentile(validMfeRs, 0.90) ?? 2.5).toFixed(2)) : 2.5;
+
+  // Extract planned target R multiples from trade risk profiles
+  const plannedTargetRs: number[] = [];
+  for (const t of validEvaluatedTrades) {
+    const plannedTarget = t.risk?.plannedTarget;
+    const initialStop = t.risk?.initialStopLoss;
+    const entry = (t.calculated as any)?.averageEntryPrice ?? (t as any).simpleExecution?.entryPrice;
+    if (plannedTarget && initialStop && entry && Math.abs(entry - initialStop) > 0) {
+      const stopDist = Math.abs(entry - initialStop);
+      const targetDist = Math.abs(plannedTarget - entry);
+      const targetR = Number((targetDist / stopDist).toFixed(2));
+      if (targetR > 0.1 && targetR < 25) {
+        plannedTargetRs.push(targetR);
+      }
+    }
+  }
+
+  const averagePlannedTargetR =
+    plannedTargetRs.length > 0
+      ? Number((plannedTargetRs.reduce((a, b) => a + b, 0) / plannedTargetRs.length).toFixed(2))
+      : 2.0;
+
+  // Derive dynamic or custom thresholds
+  let thresholdNumbers: number[] = [];
+
+  if (customMfeSteps && customMfeSteps.length > 0) {
+    thresholdNumbers = Array.from(new Set(customMfeSteps.map((n) => Number(n.toFixed(2)))))
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b);
+  } else if (funnelMode === 'STANDARD') {
+    thresholdNumbers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+  } else if (funnelMode === 'PLANNED_TARGETS') {
+    const t1 = 1.0;
+    const t2 = averagePlannedTargetR > 1.2 ? averagePlannedTargetR : 2.0;
+    const t3 = Number((t2 * 1.5).toFixed(1));
+    const tRunner = Number((t2 * 2.0).toFixed(1));
+    const candidates = [0.5, t1, Number(((t1 + t2) / 2).toFixed(1)), t2, t3, tRunner].filter(
+      (n) => n <= Math.max(maxMfeR, 3.0)
+    );
+    thresholdNumbers = Array.from(new Set(candidates)).sort((a, b) => a - b);
+  } else {
+    // 'AUTO' - Data-driven milestones derived from actual trade data distribution
+    if (maxMfeR <= 1.2) {
+      thresholdNumbers = [0.25, 0.5, 0.75, 1.0, 1.25];
+    } else if (maxMfeR <= 2.2) {
+      thresholdNumbers = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    } else if (maxMfeR <= 3.5) {
+      thresholdNumbers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+    } else if (maxMfeR <= 5.5) {
+      thresholdNumbers = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0];
+    } else {
+      thresholdNumbers = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, Math.min(10, Math.round(maxMfeR))];
+    }
+  }
+
+  if (thresholdNumbers.length === 0) {
+    thresholdNumbers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
+  }
+
+  const mfeStepDefs = thresholdNumbers.map((r) => ({
+    thresholdR: r,
+    label: `Reached ≥ +${r % 1 === 0 ? r.toFixed(1) : r}R`,
+  }));
 
   const totalEvaluatedCount = validEvaluatedTrades.length;
   const mfeSteps: IMfeReachStep[] = mfeStepDefs.map((def) => {
@@ -649,17 +731,33 @@ export function calculateExcursionAggregates(params: {
 
     const closedAsWin = reachedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) > 0);
     const closedAsLoss = reachedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) < 0);
+    const closedAsBreakeven = reachedTrades.filter((t) => (t.calculated?.netPnL ?? t.netPnL ?? 0) === 0);
 
-    const winConversionPct = reachedCount > 0 ? Number(((closedAsWin.length / reachedCount) * 100).toFixed(1)) : 0;
+    const closedAsWinCount = closedAsWin.length;
+    const closedAsLossCount = closedAsLoss.length;
+    const closedAsBreakevenCount = closedAsBreakeven.length;
+
+    const closedAsWinPercent = reachedCount > 0 ? Number(((closedAsWinCount / reachedCount) * 100).toFixed(1)) : 0;
+    const closedAsLossPercent = reachedCount > 0 ? Number(((closedAsLossCount / reachedCount) * 100).toFixed(1)) : 0;
+    const closedAsBreakevenPercent = reachedCount > 0 ? Number(((closedAsBreakevenCount / reachedCount) * 100).toFixed(1)) : 0;
+
+    const winConversionPct = reachedCount > 0 ? Number(((closedAsWinCount / reachedCount) * 100).toFixed(1)) : 0;
+    const isPlannedTarget = Math.abs(def.thresholdR - averagePlannedTargetR) < 0.15 || def.thresholdR === 1.0;
 
     return {
       thresholdR: def.thresholdR,
       label: def.label,
       reachedCount,
       reachPct,
-      closedAsWinCount: closedAsWin.length,
-      closedAsLossCount: closedAsLoss.length,
+      reachedPercent: reachPct,
+      closedAsWinCount,
+      closedAsWinPercent,
+      closedAsLossCount,
+      closedAsLossPercent,
+      closedAsBreakevenCount,
+      closedAsBreakevenPercent,
       winConversionPct,
+      isPlannedTarget,
       tradeIds: reachedTrades.map((t) => t.id),
     };
   });
@@ -701,6 +799,7 @@ export function calculateExcursionAggregates(params: {
   }
 
   const mfeReachFunnel: IMfeReachFunnel = {
+    mode: funnelMode,
     steps: mfeSteps,
     roundTripLossCount,
     roundTripLossRate,
@@ -709,6 +808,14 @@ export function calculateExcursionAggregates(params: {
     totalSurrenderedAmount: Number(totalSurrenderedAmount.toFixed(2)),
     roundTripTradeIds: roundTripLossTrades.map((t) => t.id),
     insight: mfeInsight,
+    dataRange: {
+      minMfeR,
+      maxMfeR,
+      medianMfeR,
+      p75MfeR,
+      p90MfeR,
+      averagePlannedTargetR,
+    },
   };
 
   // Cohort Comparisons

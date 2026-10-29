@@ -13,6 +13,7 @@ import Paper from '@mui/material/Paper';
 import Skeleton from '@mui/material/Skeleton';
 import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
+import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 import { toast } from '../context/ToastContext.js';
@@ -68,6 +69,8 @@ export function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
   const [whatIfPrefill, setWhatIfPrefill] = useState<{ stopR?: number; targetR?: number } | null>(null);
+  const [funnelMode, setFunnelMode] = useState<'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD'>('AUTO');
+  const [customMfeStepsInput, setCustomMfeStepsInput] = useState<string>('0.5, 1.0, 1.5, 2.0, 3.0');
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -104,12 +107,14 @@ export function AnalyticsPage() {
   });
 
   const { data: excursionData, isLoading: isExcursionLoading } = useQuery({
-    queryKey: ['analytics-excursion', selectedAccountId, startDate, endDate],
+    queryKey: ['analytics-excursion', selectedAccountId, startDate, endDate, funnelMode, funnelMode === 'CUSTOM' ? customMfeStepsInput : ''],
     queryFn: () =>
       api.analytics.excursion({
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
         startDate,
         endDate,
+        funnelMode,
+        customMfeSteps: funnelMode === 'CUSTOM' ? customMfeStepsInput : undefined,
       }),
     enabled: activeTab === 'EXECUTION',
   });
@@ -1152,11 +1157,11 @@ export function AnalyticsPage() {
                       </Box>
                       <Tooltip title="Average peak potential across trades with stops. Median and 90% Bootstrap CI below.">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
-                          +{summary.avgMfeR !== undefined ? `${summary.avgMfeR}R` : '—'}
+                          +{summary.avgMfeR !== undefined ? `${Number(summary.avgMfeR).toFixed(2)}R` : (summary.mfeR?.mean !== undefined ? `${Number(summary.mfeR.mean).toFixed(2)}R` : '—')}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Median: <strong>+{summary.medianMfeR ?? '—'}R</strong> (IQR {summary.p25MfeR ?? '—'}R - {summary.p75MfeR ?? '—'}R)
+                        Median: <strong>+{summary.medianMfeR !== undefined ? `${Number(summary.medianMfeR).toFixed(2)}R` : (summary.mfeR?.median !== undefined ? `${Number(summary.mfeR.median).toFixed(2)}R` : '—')}</strong> (IQR {summary.p25MfeR ?? summary.mfeR?.p25 ?? '—'}R - {summary.p75MfeR ?? summary.mfeR?.p75 ?? '—'}R)
                       </Typography>
                       {confidenceIntervals?.avgMfeR && (
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
@@ -1198,11 +1203,11 @@ export function AnalyticsPage() {
                       </Box>
                       <Tooltip title="Average maximum adverse drawdown across trades with stops. Median and 90% Bootstrap CI below.">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
-                          -{summary.avgMaeR !== undefined ? `${summary.avgMaeR}R` : '—'}
+                          -{summary.avgMaeR !== undefined ? `${Number(summary.avgMaeR).toFixed(2)}R` : (summary.maeR?.mean !== undefined ? `${Number(summary.maeR.mean).toFixed(2)}R` : '—')}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Median: <strong>-{summary.medianMaeR ?? '—'}R</strong> (IQR -{summary.p75MaeR ?? '—'}R to -{summary.p25MaeR ?? '—'}R)
+                        Median: <strong>-{summary.medianMaeR !== undefined ? `${Number(summary.medianMaeR).toFixed(2)}R` : (summary.maeR?.median !== undefined ? `${Number(summary.maeR.median).toFixed(2)}R` : '—')}</strong> (IQR -{summary.p75MaeR ?? summary.maeR?.p75 ?? '—'}R to -{summary.p25MaeR ?? summary.maeR?.p25 ?? '—'}R)
                       </Typography>
                       {confidenceIntervals?.avgMaeR && (
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
@@ -1225,14 +1230,14 @@ export function AnalyticsPage() {
                       </Box>
                       <Tooltip title="Percentage of peak favorable excursion captured at exit (higher is better)">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                          {summary.avgExitEfficiency !== undefined ? `${(summary.avgExitEfficiency * 100).toFixed(1)}%` : '—'}
+                          {summary.avgExitEfficiency !== undefined ? `${(Number(summary.avgExitEfficiency) * 100).toFixed(1)}%` : (summary.exitEfficiency?.mean !== undefined ? `${(Number(summary.exitEfficiency.mean) * 100).toFixed(1)}%` : '—')}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Median: <strong>{summary.medianExitEfficiency !== undefined ? `${(summary.medianExitEfficiency * 100).toFixed(1)}%` : '—'}</strong>
+                        Median: <strong>{summary.medianExitEfficiency !== undefined ? `${(Number(summary.medianExitEfficiency) * 100).toFixed(1)}%` : (summary.exitEfficiency?.median !== undefined ? `${(Number(summary.exitEfficiency.median) * 100).toFixed(1)}%` : '—')}</strong>
                       </Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
-                        Stop Efficiency: {summary.avgStopEfficiency !== undefined ? `${(summary.avgStopEfficiency * 100).toFixed(1)}%` : '—'}
+                        Stop Efficiency: {summary.avgStopEfficiency !== undefined ? `${(Number(summary.avgStopEfficiency) * 100).toFixed(1)}%` : (summary.stopEfficiency?.mean !== undefined ? `${(Number(summary.stopEfficiency.mean) * 100).toFixed(1)}%` : '—')}
                       </Typography>
                     </Card>
                   </Grid>
@@ -1250,11 +1255,11 @@ export function AnalyticsPage() {
                       </Box>
                       <Tooltip title="Average unrealized R-multiple profit surrendered before exit">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
-                          +{summary.avgRLeftOnTable !== undefined ? `${summary.avgRLeftOnTable}R` : '—'}
+                          +{summary.avgRLeftOnTable !== undefined ? `${Number(summary.avgRLeftOnTable).toFixed(2)}R` : (summary.rLeftOnTable?.mean !== undefined ? `${Number(summary.rLeftOnTable.mean).toFixed(2)}R` : '—')}
                         </Typography>
                       </Tooltip>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Median: <strong>+{summary.medianRLeftOnTable ?? '—'}R</strong> surrendered
+                        Median: <strong>+{summary.medianRLeftOnTable !== undefined ? `${Number(summary.medianRLeftOnTable).toFixed(2)}R` : (summary.rLeftOnTable?.median !== undefined ? `${Number(summary.rLeftOnTable.median).toFixed(2)}R` : '—')}</strong> surrendered
                       </Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
                         Formula: max(0, MFE_R - Realized_R)
@@ -1274,14 +1279,14 @@ export function AnalyticsPage() {
                         <HelpHint hintKey="metric.mae" />
                       </Box>
                       <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
-                        {summary.avgEntryQualityScore !== undefined ? summary.avgEntryQualityScore : '—'}
+                        {summary.avgEntryQualityScore !== undefined ? summary.avgEntryQualityScore : (summary.entryQualityScore?.mean !== undefined ? (Number(summary.entryQualityScore.mean) / 100).toFixed(2) : '—')}
                         <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'text.secondary' }}> / 1.0</span>
                       </Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
-                        Heat-First: <strong>{summary.heatFirstPercent}%</strong> ({summary.heatFirstCount} trades)
+                        Heat-First: <strong>{summary.heatFirstPercent ?? summary.timeOrdering?.heatFirstPercent ?? 0}%</strong> ({summary.heatFirstCount ?? summary.timeOrdering?.heatFirstCount ?? 0} trades)
                       </Typography>
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
-                        Run-First: <strong>{(100 - (summary.heatFirstPercent || 0)).toFixed(1)}%</strong> ({summary.runFirstCount ?? 0} trades)
+                        Run-First: <strong>{summary.timeOrdering?.runFirstCount !== undefined ? (100 - (summary.timeOrdering.heatFirstPercent || 0)).toFixed(1) : (100 - (summary.heatFirstPercent || 0)).toFixed(1)}%</strong> ({summary.runFirstCount ?? summary.timeOrdering?.runFirstCount ?? 0} trades)
                       </Typography>
                     </Card>
                   </Grid>
@@ -1370,9 +1375,57 @@ export function AnalyticsPage() {
                           <TrendingUpRoundedIcon sx={{ color: '#06B6D4', fontSize: 22 }} />
                           MFE Reach Funnel & Round-Trip Loss Prevention
                         </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                           Tracks trade progression through milestone R levels and pinpoints where profitable trades reverse into full losses.
                         </Typography>
+
+                        {/* Interactive Dynamic / Custom Milestone Mode Selector */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.25, flexWrap: 'wrap' }}>
+                          <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', fontSize: '0.68rem', letterSpacing: '0.04em' }}>
+                            MILESTONES:
+                          </Typography>
+                          {(['AUTO', 'PLANNED_TARGETS', 'STANDARD', 'CUSTOM'] as const).map((m) => (
+                            <Chip
+                              key={m}
+                              size="small"
+                              label={
+                                m === 'AUTO'
+                                  ? 'Data-Adaptive (Auto)'
+                                  : m === 'PLANNED_TARGETS'
+                                  ? 'Planned Targets'
+                                  : m === 'STANDARD'
+                                  ? 'Standard (+0.5R)'
+                                  : 'Custom R Steps'
+                              }
+                              onClick={() => setFunnelMode(m)}
+                              color={funnelMode === m ? 'primary' : 'default'}
+                              variant={funnelMode === m ? 'filled' : 'outlined'}
+                              sx={{
+                                fontWeight: funnelMode === m ? 800 : 600,
+                                fontSize: '0.7rem',
+                                cursor: 'pointer',
+                              }}
+                            />
+                          ))}
+
+                          {funnelMode === 'CUSTOM' && (
+                            <TextField
+                              size="small"
+                              placeholder="e.g. 0.5, 1.0, 1.8, 2.5, 4.0"
+                              value={customMfeStepsInput}
+                              onChange={(e) => setCustomMfeStepsInput(e.target.value)}
+                              sx={{
+                                width: 200,
+                                '& .MuiInputBase-input': {
+                                  py: 0.4,
+                                  px: 1,
+                                  fontSize: '0.75rem',
+                                  fontFamily: `'JetBrains Mono', monospace`,
+                                },
+                              }}
+                            />
+                          )}
+                        </Box>
                       </Box>
 
                       {/* Top Badges */}
@@ -1444,26 +1497,48 @@ export function AnalyticsPage() {
                     {/* Funnel Step Cards Grid */}
                     <Grid container spacing={1.5} sx={{ mb: 2 }}>
                       {mfeReachFunnel.steps.map((step: any) => {
-                        const isOneToOne = step.thresholdR === 1.0;
+                        const isTarget = step.isPlannedTarget || step.thresholdR === 1.0;
+                        const reachedPct = step.reachedPercent ?? step.reachPct ?? 0;
+                        const winPct = step.closedAsWinPercent ?? step.winConversionPct ?? 0;
+                        const lossPct =
+                          step.closedAsLossPercent ??
+                          (step.reachedCount > 0 ? Number(((step.closedAsLossCount / step.reachedCount) * 100).toFixed(1)) : 0);
+
                         return (
                           <Grid size={{ xs: 6, sm: 4, md: 2 }} key={step.thresholdR}>
                             <Card
                               variant="outlined"
+                              onClick={() =>
+                                openDrill({
+                                  kind: 'FILTER',
+                                  filter: { mfeRMin: step.thresholdR },
+                                  label: `Trades Reaching ≥ +${step.thresholdR}R MFE (${step.label})`,
+                                })
+                              }
                               sx={{
                                 p: 1.5,
                                 borderRadius: 2,
-                                backgroundColor: isOneToOne
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                '&:hover': {
+                                  transform: 'translateY(-2px)',
+                                  boxShadow: isDark
+                                    ? '0 6px 16px rgba(6, 182, 212, 0.2)'
+                                    : '0 6px 16px rgba(6, 182, 212, 0.15)',
+                                  borderColor: '#06B6D4',
+                                },
+                                backgroundColor: isTarget
                                   ? (isDark ? 'rgba(6, 182, 212, 0.08)' : 'rgba(6, 182, 212, 0.04)')
                                   : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)'),
-                                borderColor: isOneToOne
+                                borderColor: isTarget
                                   ? '#06B6D4'
                                   : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'),
                                 position: 'relative',
                               }}
                             >
-                              {isOneToOne && (
+                              {isTarget && (
                                 <Chip
-                                  label="1:1 TARGET"
+                                  label={step.thresholdR === 1.0 ? '1:1 TARGET' : 'PT TARGET'}
                                   size="small"
                                   sx={{
                                     position: 'absolute',
@@ -1472,7 +1547,7 @@ export function AnalyticsPage() {
                                     height: 16,
                                     fontSize: '0.58rem',
                                     fontWeight: 800,
-                                    bgcolor: '#06B6D4',
+                                    bgcolor: step.thresholdR === 1.0 ? '#06B6D4' : '#8B5CF6',
                                     color: '#FFF',
                                   }}
                                 />
@@ -1485,7 +1560,7 @@ export function AnalyticsPage() {
                               <Typography variant="h6" sx={{ fontWeight: 800, my: 0.5, fontSize: '1rem', fontFamily: `'JetBrains Mono', monospace` }}>
                                 {step.reachedCount}{' '}
                                 <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'text.secondary' }}>
-                                  ({step.reachedPercent}%)
+                                  ({reachedPct}%)
                                 </span>
                               </Typography>
 
@@ -1512,13 +1587,13 @@ export function AnalyticsPage() {
                                 >
                                   <Box
                                     sx={{
-                                      width: `${step.closedAsWinPercent}%`,
+                                      width: `${winPct}%`,
                                       bgcolor: '#10B981',
                                     }}
                                   />
                                   <Box
                                     sx={{
-                                      width: `${step.closedAsLossPercent}%`,
+                                      width: `${lossPct}%`,
                                       bgcolor: '#EF4444',
                                     }}
                                   />
@@ -1527,13 +1602,14 @@ export function AnalyticsPage() {
                                 {step.closedAsLossCount > 0 && (
                                   <Typography
                                     variant="caption"
-                                    onClick={() =>
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       openDrill({
                                         kind: 'FILTER',
                                         filter: { mfeRMin: step.thresholdR, outcome: 'LOSS' },
                                         label: `Trades reaching ${step.label} that closed as loss`,
-                                      })
-                                    }
+                                      });
+                                    }}
                                     sx={{
                                       display: 'block',
                                       mt: 0.75,

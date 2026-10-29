@@ -641,6 +641,16 @@ export const excursionAnalyticsQuerySchema = z
     session: z
       .enum(['NSE_REGULAR', 'MCX_EVENING', 'ASIA', 'LONDON', 'NEW_YORK', 'OFF_HOURS'])
       .optional(),
+    customMfeSteps: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim().length > 0) {
+        return val.split(',').map((v) => Number(v.trim())).filter((n) => !isNaN(n) && n > 0);
+      }
+      if (Array.isArray(val)) {
+        return val.map((v) => Number(v)).filter((n) => !isNaN(n) && n > 0);
+      }
+      return undefined;
+    }, z.array(z.number().positive()).optional()),
+    funnelMode: z.enum(['AUTO', 'PLANNED_TARGETS', 'CUSTOM', 'STANDARD']).optional(),
   })
   .refine(
     (data) => {

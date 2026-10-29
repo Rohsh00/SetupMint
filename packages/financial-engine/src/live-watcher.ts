@@ -15,6 +15,9 @@ import {
 import { calculateLinearPnL } from './pnl.js';
 import { calculateIndianCharges, calculateTrueBreakevenPrice } from './charges.js';
 import { calculateRealizedRMultiple } from './risk.js';
+import { IPositionGreeksSummary } from './options-greeks.js';
+import { ITradeStagnationMetric } from './stagnation.js';
+import { calculatePortfolioRisk, IPortfolioRiskResult } from './portfolio-risk.js';
 
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
@@ -94,6 +97,10 @@ export interface ILiveOpenTradeMetric {
   asOf: Date;
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
+  optionsGreeks?: IPositionGreeksSummary;
+  stagnation?: ITradeStagnationMetric;
+  underlying?: string;
+  sparkline?: Array<{ timestamp: number; pnl: number; r: number; price: number; isLowestMae?: boolean; isPeakMfe?: boolean }>;
 }
 
 export interface ILiveWatcherSummary {
@@ -109,6 +116,7 @@ export interface ILiveWatcherSummary {
   positions: ILiveOpenTradeMetric[];
   provider: LiveQuoteProvider;
   asOf: Date;
+  portfolioRisk?: IPortfolioRiskResult;
 }
 
 export function calculateLiveGiveback(params: {
@@ -718,6 +726,23 @@ export function calculateLiveWatcherSummary(
     ? Array.from(providers)[0]
     : 'MIXED';
 
+  const portfolioRisk = calculatePortfolioRisk(
+    positions.map((p) => ({
+      tradeId: p.tradeId,
+      symbol: p.symbol,
+      underlying: p.underlying || p.symbol,
+      direction: p.direction,
+      quantity: p.quantity,
+      contractMultiplier: p.contractMultiplier ?? 1,
+      floatingNetPnL: p.floatingNetPnL,
+      unrealizedR: p.unrealizedR,
+      cashDeltaSensitivity: p.optionsGreeks?.cashDeltaSensitivity,
+      thetaHourlyDecay: p.optionsGreeks?.positionThetaHourly,
+      isOption: Boolean(p.optionsGreeks),
+      optionType: p.optionsGreeks ? (p.optionsGreeks.unitGreeks.delta >= 0 ? 'CALL' : 'PUT') : undefined,
+    }))
+  );
+
   return {
     openTradesCount: positions.length,
     totalFloatingGrossPnL: Number(totalGross.toFixed(2)),
@@ -731,6 +756,7 @@ export function calculateLiveWatcherSummary(
     positions,
     provider,
     asOf,
+    portfolioRisk,
   };
 }
 

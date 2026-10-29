@@ -66,6 +66,12 @@ The pipeline:
 6. Preserves existing journal notes, emotions, and attachments when merging.
 7. Calculates statutory charges.
 8. Recalculates account balances.
+9. **Automated Post-Close Backfill Pipeline (`FyersService.backfillSingleClosedTrade`):**
+   - Whenever closed trades are fetched from FYERS (either created as closed, transitioned from open to closed, or existing closed trades missing metrics), the backend automatically runs the complete backfill suite directly at sync time:
+     1. **Orderbook SL & Stop Move Detection:** Evaluates trailing and widening events against current-day FYERS orderbook (`detectStopMovesForTrade`).
+     2. **Excursion Metrics:** Computes 1m/5m historical MAE, MFE, R left on table, and exit efficiency (`computeExcursionForTrade`).
+     3. **Strategy Setup Variant Pattern Recognition:** Evaluates 4H trend + 5M setup patterns, matches against active user strategies & variants, and classifies `trade.setup` and `trade.strategyId` (`PatternRecognitionService.classifyTrade`).
+     4. **Visual Chart Snapshots:** Automatically generates permanent multi-resolution SVG chart attachments (`ChartGeneratorService.ensureTradeSnapshot`).
 
 ### Stop Loss Backfill Tooling
 - API Route: `POST /api/v1/integrations/fyers/sl-backfill` (supports `{ dryRun?: boolean, timeToleranceSeconds?: number }`).

@@ -186,6 +186,12 @@ The sync engine:
 5. Preserves manually entered journal context when merging.
 6. Calculates statutory charges through `@tradevault/financial-engine`.
 7. Recalculates affected account balances after importing trades.
+8. **Automated Post-Close Backfill Pipeline (`FyersService.backfillSingleClosedTrade`):**
+   - For all closed trades retrieved during sync (newly closed, transitioned, or existing closed trades needing backfill), automatically executes:
+     1. Stop-loss orderbook matching and move evaluation (`detectStopMovesForTrade`).
+     2. Historical candle excursion computation for MAE, MFE, and exit efficiency (`computeExcursionForTrade`).
+     3. 4H trend + 5M setup pattern recognition and strategy setup variant classification (`PatternRecognitionService.classifyTrade`).
+     4. Permanent SVG multi-resolution chart snapshot attachments (`ChartGeneratorService.ensureTradeSnapshot`).
 
 Live trade sync does not place, modify, or cancel orders.
 

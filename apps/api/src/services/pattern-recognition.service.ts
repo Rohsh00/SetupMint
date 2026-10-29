@@ -251,6 +251,25 @@ export class PatternRecognitionService {
       throw new Error(`Trade ${tradeId} not found`);
     }
 
+    if (trade.setup?.variantStatus === 'CLASSIFIED' && trade.setup?.variantKey) {
+      return {
+        tradeId: String(trade._id),
+        symbol: trade.symbol,
+        direction: trade.direction,
+        strategyId: trade.strategyId ? String(trade.strategyId) : undefined,
+        strategyName: trade.strategyName || 'Existing Classification',
+        variantKey: trade.setup.variantKey,
+        confidence: 100,
+        htfTrend: trade.setup.htfBias || 'NEUTRAL',
+        pattern: trade.setup.patternType || 'OTHER',
+        patternType: trade.setup.patternType || 'OTHER',
+        secondLegStatus: trade.setup.secondLegStatus || 'NOT_APPLICABLE',
+        liquiditySide: trade.setup.liquiditySide || 'NONE',
+        reasoning: 'Trade is already classified with a specific variant',
+        timeframeContext: 'Preserved Classification',
+      };
+    }
+
     // Resolve user detection settings and instrument-specific overrides
     const settings = user?.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS;
     const tradeSymbol = (trade.underlying || trade.symbol || '').toUpperCase().trim();
@@ -326,7 +345,7 @@ export class PatternRecognitionService {
     trade.setup = {
       ...((trade.setup as any)?.toObject ? (trade.setup as any).toObject() : trade.setup || {}),
       variantKey: match.variantKey || undefined,
-      variantStatus: 'CLASSIFIED',
+      variantStatus: match.variantKey ? 'CLASSIFIED' : 'UNCLASSIFIED',
       htfBias: match.htfBias,
       executionTimeframe: timeframeContext,
       patternType: match.patternType,
@@ -362,6 +381,26 @@ export class PatternRecognitionService {
         instrumentOverride: Boolean(override),
       },
     });
+
+    const latestTrade = await Trade.findById(trade._id);
+    if (latestTrade?.setup?.variantStatus === 'CLASSIFIED' && latestTrade?.setup?.variantKey && !match.variantKey) {
+      return {
+        tradeId: String(latestTrade._id),
+        symbol: latestTrade.symbol,
+        direction: latestTrade.direction,
+        strategyId: latestTrade.strategyId ? String(latestTrade.strategyId) : undefined,
+        strategyName: latestTrade.strategyName || 'Existing Classification',
+        variantKey: latestTrade.setup.variantKey,
+        confidence: 100,
+        htfTrend: latestTrade.setup.htfBias || 'NEUTRAL',
+        pattern: latestTrade.setup.patternType || 'OTHER',
+        patternType: latestTrade.setup.patternType || 'OTHER',
+        secondLegStatus: latestTrade.setup.secondLegStatus || 'NOT_APPLICABLE',
+        liquiditySide: latestTrade.setup.liquiditySide || 'NONE',
+        reasoning: 'Preserved user-assigned variant',
+        timeframeContext,
+      };
+    }
 
     await trade.save();
 

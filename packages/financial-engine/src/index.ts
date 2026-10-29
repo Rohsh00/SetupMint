@@ -25,4 +25,7 @@ export * from './reconciliation.js';
 export * from './sl-order-match.js';
 export * from './live-watcher.js';
 export * from './weekly-review.js';
+export * from './options-greeks.js';
+export * from './stagnation.js';
+export * from './portfolio-risk.js';
 

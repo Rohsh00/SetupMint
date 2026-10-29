@@ -1764,6 +1764,72 @@ export interface ILiveTargetLadder {
   activeStepIndex: number; // 1, 2, 3
 }
 
+export type MoneynessState = 'DEEP_ITM' | 'ITM' | 'ATM' | 'OTM' | 'DEEP_OTM';
+export type StagnationThreat = 'ACTIVE' | 'EXTENDED' | 'STAGNANT_MOMENTUM_EXHAUSTED' | 'THETA_BLEEDING';
+export type DirectionalBias =
+  | 'STRONGLY_BULLISH'
+  | 'BULLISH'
+  | 'NEUTRAL_HEDGED'
+  | 'BEARISH'
+  | 'STRONGLY_BEARISH';
+
+export interface IOptionsGreeksResult {
+  price: number;
+  delta: number;
+  gamma: number;
+  thetaAnnual: number;
+  thetaDaily: number;
+  thetaHourly: number;
+  vega: number;
+  impliedVolatility: number;
+  moneyness: MoneynessState;
+  moneynessRatio: number;
+  distanceToStrikePoints: number;
+  distanceToStrikePercent: number;
+}
+
+export interface IPositionGreeksSummary {
+  unitGreeks: IOptionsGreeksResult;
+  positionDelta: number;
+  cashDeltaSensitivity: number;
+  positionThetaDaily: number;
+  positionThetaHourly: number;
+  positionVega: number;
+  moneyness: MoneynessState;
+  timeToExpiryHours: number;
+  timeToExpiryDays: number;
+  isNearExpiry: boolean;
+  ivCrushWarning: boolean;
+}
+
+export interface ITradeStagnationMetric {
+  minutesOpen: number;
+  minutesSincePeakMfe: number;
+  pnlVelocityPerMinute: number;
+  rVelocityPerMinute: number;
+  isStagnant: boolean;
+  stagnationThreat: StagnationThreat;
+  holdingEfficiencyScore: number;
+  timeStopSuggested: boolean;
+  message: string;
+}
+
+export interface IPortfolioRiskResult {
+  totalOpenPositions: number;
+  netDirectionalDelta: number;
+  netDirectionalBias: DirectionalBias;
+  totalThetaBurnPerHour: number;
+  totalDailyThetaBurn: number;
+  conflictingPositionsWarning: boolean;
+  conflictingDetails: string[];
+  underlyingExposure: Record<string, {
+    count: number;
+    netLots: number;
+    directionalBias: 'LONG' | 'SHORT' | 'MIXED';
+    floatingPnL: number;
+  }>;
+}
+
 export interface ILiveOpenTradeMetric {
   tradeId: string;
   symbol: string;
@@ -1798,6 +1864,10 @@ export interface ILiveOpenTradeMetric {
   asOf: string | Date;
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
+  optionsGreeks?: IPositionGreeksSummary;
+  stagnation?: ITradeStagnationMetric;
+  underlying?: string;
+  sparkline?: Array<{ timestamp: number; pnl: number; r: number; price: number; isLowestMae?: boolean; isPeakMfe?: boolean }>;
 }
 
 export interface ILiveWatcherSummary {
@@ -1813,6 +1883,7 @@ export interface ILiveWatcherSummary {
   positions: ILiveOpenTradeMetric[];
   provider: LiveQuoteProvider;
   asOf: string | Date;
+  portfolioRisk?: IPortfolioRiskResult;
 }
 
 // ==========================================

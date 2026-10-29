@@ -7,9 +7,10 @@ import { ILiveOpenTradeMetric } from '@tradevault/shared';
 
 export interface LivePriceGaugeProps {
   metric: ILiveOpenTradeMetric;
+  onQuickTrailSl?: (newStop: number) => void;
 }
 
-export function LivePriceGauge({ metric }: LivePriceGaugeProps) {
+export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -161,6 +162,31 @@ export function LivePriceGauge({ metric }: LivePriceGaugeProps) {
             }}
           />
         </Tooltip>
+
+        {/* True Breakeven (Lock BE + Fees) Marker (Cyan) */}
+        {metric.trueBreakevenPrice && metric.trueBreakevenPrice > 0 && (
+          <Tooltip
+            title={`Fee-Protected True Breakeven: ₹${metric.trueBreakevenPrice.toFixed(2)} (${metric.feeBufferPoints ? `+${metric.feeBufferPoints.toFixed(2)}pts fee buffer` : 'fees covered'}) • Click to Lock BE`}
+            arrow
+            placement="top"
+          >
+            <Box
+              onClick={() => onQuickTrailSl?.(metric.trueBreakevenPrice!)}
+              sx={{
+                position: 'absolute',
+                left: `${getPct(metric.trueBreakevenPrice)}%`,
+                transform: 'translateX(-50%)',
+                width: 3,
+                height: 14,
+                borderRadius: 1,
+                bgcolor: '#06B6D4',
+                zIndex: 3,
+                cursor: 'pointer',
+                boxShadow: '0 0 6px #06B6D4',
+              }}
+            />
+          </Tooltip>
+        )}
 
         {/* Peak MFE Diamond Marker (Amber) */}
         {peakPct !== currentPct && (

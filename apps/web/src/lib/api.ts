@@ -250,6 +250,11 @@ export const api = {
     },
     getLiveMetric: (id: string) =>
       request<ILiveOpenTradeMetric>(`/trades/${id}/live`),
+    recordLivePulse: (id: string, emotion: string, notes?: string) =>
+      request<any>(`/trades/${id}/live-pulse`, {
+        method: 'POST',
+        body: JSON.stringify({ emotion, notes }),
+      }),
     computeExcursion: (id: string, options?: { provider?: 'AUTO' | 'ANGEL_ONE'; forceRefetch?: boolean }) =>
       request<any>(`/trades/${id}/excursion/compute`, {
         method: 'POST',

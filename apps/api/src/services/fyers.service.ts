@@ -67,6 +67,7 @@ export interface IFyersSyncResult {
   accountId: string;
   accountName: string;
   lastSyncAt: Date;
+  backfilledClosedTradesCount?: number;
 }
 
 export interface IFyersFundsResult {
@@ -1048,7 +1049,7 @@ export class FyersService {
 
     let syncedTradesCount = 0;
     let duplicateTradesCount = 0;
-    const closedTradeIds: string[] = [];
+    const closedTradeIds = new Set<string>();
     const batchId = `fyers_sync_${Date.now()}`;
 
     // For each symbol, match fills chronologically via FIFO
@@ -1279,7 +1280,7 @@ export class FyersService {
               await existing.save();
               syncedTradesCount++;
               if (fifoSummary.isFullyClosed) {
-                closedTradeIds.push(existing._id.toString());
+                closedTradeIds.add(existing._id.toString());
               }
               return;
             }
@@ -1299,6 +1300,17 @@ export class FyersService {
                 existing.markModified('psychology');
                 existing.markModified('auditLog');
                 updated = true;
+              }
+            }
+
+            // If existing trade was already CLOSED, check if it is missing excursion computation or setup classification
+            if (existing.status === 'CLOSED') {
+              const needsExcursion =
+                !existing.calculated?.excursion?.status || existing.calculated?.excursion?.status === 'PENDING';
+              const needsSetup =
+                !existing.setup?.variantStatus || existing.setup?.variantStatus === 'UNCLASSIFIED';
+              if (needsExcursion || needsSetup) {
+                closedTradeIds.add(existing._id.toString());
               }
             }
 
@@ -1384,7 +1396,7 @@ export class FyersService {
           const createdTrade = await Trade.create(tradePayload);
 
           if (fifoSummary.isFullyClosed) {
-            closedTradeIds.push(createdTrade._id.toString());
+            closedTradeIds.add(createdTrade._id.toString());
           }
 
           syncedTradesCount++;
@@ -1483,19 +1495,40 @@ export class FyersService {
       await AccountService.recalculateAccountBalances(account._id, uId);
     }
 
-    // Fire-and-forget background auto-snapshot generation for closed trades (cap 25, 220ms pacing)
-    if (closedTradeIds.length > 0) {
-      (async () => {
-        const batchToProcess = closedTradeIds.slice(0, 25);
-        for (const tId of batchToProcess) {
-          try {
-            await ChartGeneratorService.ensureTradeSnapshot(tId, uId);
-          } catch (err: any) {
-            console.warn(`[FYERS Sync] Snapshot auto-generation failed for trade ${tId}:`, err.message);
-          }
-          await new Promise((r) => setTimeout(r, 220));
+    // Automated post-close backfill pipeline for closed trades:
+    // 1. Orderbook SL & stop move detection
+    // 2. 1m/5m historical excursion (MFE, MAE, R left on table, exit efficiency)
+    // 3. Strategy setup variant pattern recognition (4H trend + 5M setup)
+    // 4. Multi-resolution SVG chart snapshot attachments
+    const closedTradeList = Array.from(closedTradeIds);
+    let backfilledClosedTradesCount = 0;
+
+    if (closedTradeList.length > 0) {
+      // Synchronously backfill the primary batch (up to 10 trades) at the time of trade fetch
+      const inlineBatch = closedTradeList.slice(0, 10);
+      for (const tId of inlineBatch) {
+        try {
+          await this.backfillSingleClosedTrade(tId, uId, { normalizedOrders });
+          backfilledClosedTradesCount++;
+        } catch (err: any) {
+          console.warn(`[FYERS Sync] Auto-backfill failed for closed trade ${tId}:`, err?.message || err);
         }
-      })().catch(() => {});
+      }
+
+      // If more than 10 closed trades were returned, process remainder in background with pacing
+      if (closedTradeList.length > 10) {
+        const remainingBatch = closedTradeList.slice(10);
+        (async () => {
+          for (const tId of remainingBatch) {
+            try {
+              await this.backfillSingleClosedTrade(tId, uId, { normalizedOrders });
+            } catch (err: any) {
+              console.warn(`[FYERS Sync Background] Auto-backfill failed for trade ${tId}:`, err?.message || err);
+            }
+            await new Promise((r) => setTimeout(r, 220));
+          }
+        })().catch(() => {});
+      }
     }
 
     integration.status = 'CONNECTED';
@@ -1518,6 +1551,7 @@ export class FyersService {
       accountId: account._id.toString(),
       accountName: account.name,
       lastSyncAt: integration.lastSyncAt,
+      backfilledClosedTradesCount,
     };
   }
 
@@ -1997,13 +2031,81 @@ export class FyersService {
   }
 
   /**
+   * Automated post-close backfill pipeline for a single closed trade:
+   * 1. Detect stop-loss moves & trailing ratchet events from broker orderbook
+   * 2. Compute 1m/5m historical excursion (MFE, MAE, R left on table, exit efficiency) & cache candles
+   * 3. Run pattern recognition (4H trend + 5M setup) and auto-classify strategy setup variant
+   * 4. Ensure visual SVG chart snapshot attachments
+   */
+  static async backfillSingleClosedTrade(
+    tradeId: string | mongoose.Types.ObjectId,
+    userId: string | mongoose.Types.ObjectId,
+    options?: { normalizedOrders?: any[] }
+  ): Promise<{
+    tradeId: string;
+    stopMoves: boolean;
+    excursion: boolean;
+    setupClassified: boolean;
+    snapshot: boolean;
+  }> {
+    const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+    const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+
+    const summary = {
+      tradeId: tId.toString(),
+      stopMoves: false,
+      excursion: false,
+      setupClassified: false,
+      snapshot: false,
+    };
+
+    // 1. Detect Stop Moves from FYERS Orderbook (reuses in-memory orderbook if provided)
+    try {
+      await this.detectStopMovesForTrade(tId, uId, {
+        normalizedOrders: options?.normalizedOrders,
+      });
+      summary.stopMoves = true;
+    } catch (err: any) {
+      console.warn(`[Auto-Backfill] Stop moves detection failed for trade ${tId}:`, err?.message || err);
+    }
+
+    // 2. Compute Excursion Analytics (MAE/MFE, R left on table, exit efficiency) & cache candles
+    try {
+      await this.computeExcursionForTrade(tId, uId, false);
+      summary.excursion = true;
+    } catch (err: any) {
+      console.warn(`[Auto-Backfill] Excursion computation failed for trade ${tId}:`, err?.message || err);
+    }
+
+    // 3. Run 4H Trend + 5M Setup Pattern Recognition and Auto-Classify Setup Variant
+    try {
+      const { PatternRecognitionService } = await import('./pattern-recognition.service.js');
+      await PatternRecognitionService.classifyTrade(tId, uId);
+      summary.setupClassified = true;
+    } catch (err: any) {
+      console.warn(`[Auto-Backfill] Setup pattern classification failed for trade ${tId}:`, err?.message || err);
+    }
+
+    // 4. Ensure Visual SVG Chart Snapshots
+    try {
+      const { ChartGeneratorService } = await import('./chart-generator.service.js');
+      await ChartGeneratorService.ensureTradeSnapshot(tId, uId);
+      summary.snapshot = true;
+    } catch (err: any) {
+      console.warn(`[Auto-Backfill] Chart snapshot generation failed for trade ${tId}:`, err?.message || err);
+    }
+
+    return summary;
+  }
+
+  /**
    * Detects trailing and widening stop loss modifications for a trade,
    * evaluates risk expansion, and flags STOP_MOVED mistake suggestions.
    */
   static async detectStopMovesForTrade(
     tradeId: string | mongoose.Types.ObjectId,
     userId: string | mongoose.Types.ObjectId,
-    options: { manualModifications?: any[] } = {}
+    options: { manualModifications?: any[]; normalizedOrders?: any[] } = {}
   ): Promise<any> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
     const tId = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
@@ -2017,56 +2119,61 @@ export class FyersService {
 
     // If manual modifications were not explicitly provided, attempt to pull from FYERS orderbook
     if (rawModifications.length === 0) {
-      const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
-      if (integration?.appId && integration?.accessToken) {
-        try {
-          const accessToken = decryptSecret(integration.accessToken) as string;
-          const orderBook = await this.fetchOrderbook(integration.appId, accessToken);
-          const normalized = this.normalizeOrderbook(orderBook);
-
-          // Find orders matching this trade's symbol
-          const symbol = formatFyersSymbol({
-            symbol: trade.symbol,
-            underlying: trade.underlying,
-            assetClass: trade.assetClass,
-            exchange: trade.exchange,
-            marketSegment: trade.marketSegment,
-            optionType: trade.optionType,
-            strikePrice: trade.strikePrice,
-            expiryDate: trade.expiryDate,
-          });
-
-          // If initialStopLoss was not pre-set, attempt to auto-fill from orderbook
-          if (!trade.risk?.initialStopLoss) {
-            this.applySLOrderMatchingToTrade(trade, normalized, {
-              formattedSymbol: symbol,
-              underlyingSymbol: trade.underlying,
-            });
-            await trade.save();
+      let normalized = options.normalizedOrders;
+      if (!normalized) {
+        const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
+        if (integration?.appId && integration?.accessToken) {
+          try {
+            const accessToken = decryptSecret(integration.accessToken) as string;
+            const orderBook = await this.fetchOrderbook(integration.appId, accessToken);
+            normalized = this.normalizeOrderbook(orderBook);
+          } catch {
+            // If broker is offline and no manual modifications, proceed with empty
           }
-
-          const tradeStart = moment(trade.entryTime).subtract(5, 'minutes');
-          const tradeEnd = trade.exitTime ? moment(trade.exitTime).add(5, 'minutes') : moment().add(5, 'minutes');
-
-          const stopOrders = normalized.filter((ord) => {
-            const matchesSymbol = ord.symbol === symbol || ord.symbol === trade.symbol;
-            if (!matchesSymbol) return false;
-            const hasStop = Number(ord.stopPrice || 0) > 0 || ord.orderType === 3 || ord.orderType === 4;
-            if (!hasStop) return false;
-            const ordTime = moment(ord.orderDateTime);
-            return ordTime.isValid() && ordTime.isBetween(tradeStart, tradeEnd, undefined, '[]');
-          });
-
-          rawModifications = stopOrders.map((ord) => ({
-            stopPrice: Number(ord.stopPrice),
-            modifiedAt: moment(ord.orderDateTime).toDate(),
-            orderId: ord.orderId,
-            orderType: ord.orderType,
-            reason: ord.message || 'FYERS Stop Order',
-          }));
-        } catch {
-          // If broker is offline and no manual modifications, proceed with empty
         }
+      }
+
+      if (normalized && normalized.length > 0) {
+        // Find orders matching this trade's symbol
+        const symbol = formatFyersSymbol({
+          symbol: trade.symbol,
+          underlying: trade.underlying,
+          assetClass: trade.assetClass,
+          exchange: trade.exchange,
+          marketSegment: trade.marketSegment,
+          optionType: trade.optionType,
+          strikePrice: trade.strikePrice,
+          expiryDate: trade.expiryDate,
+        });
+
+        // If initialStopLoss was not pre-set, attempt to auto-fill from orderbook
+        if (!trade.risk?.initialStopLoss) {
+          this.applySLOrderMatchingToTrade(trade, normalized, {
+            formattedSymbol: symbol,
+            underlyingSymbol: trade.underlying,
+          });
+          await trade.save();
+        }
+
+        const tradeStart = moment(trade.entryTime).subtract(5, 'minutes');
+        const tradeEnd = trade.exitTime ? moment(trade.exitTime).add(5, 'minutes') : moment().add(5, 'minutes');
+
+        const stopOrders = normalized.filter((ord) => {
+          const matchesSymbol = ord.symbol === symbol || ord.symbol === trade.symbol;
+          if (!matchesSymbol) return false;
+          const hasStop = Number(ord.stopPrice || 0) > 0 || ord.orderType === 3 || ord.orderType === 4;
+          if (!hasStop) return false;
+          const ordTime = moment(ord.orderDateTime);
+          return ordTime.isValid() && ordTime.isBetween(tradeStart, tradeEnd, undefined, '[]');
+        });
+
+        rawModifications = stopOrders.map((ord) => ({
+          stopPrice: Number(ord.stopPrice),
+          modifiedAt: moment(ord.orderDateTime).toDate(),
+          orderId: ord.orderId,
+          orderType: ord.orderType,
+          reason: ord.message || 'FYERS Stop Order',
+        }));
       }
     }
 

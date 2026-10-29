@@ -553,14 +553,37 @@ This document provides a comprehensive, verified feature inventory of all module
       - User-configurable R-multiples for T1, T2, T3 (e.g., +1.0R, +1.5R, +2.0R, +3.0R) and custom exit ratios (30%, 50%, 70%, or custom lots).
       - User-selectable trailing actions: **True BE with Fees Protected**, **Nominal BE**, **Custom Points**, or **Trail to Previous Step Target**.
       - User-controlled **Auto-Execution Switch**: When enabled, automatically transmits partial exits to FYERS API and modifies live trailing stop losses as price milestones are hit in real time.
-    - **True Breakeven Calculation Including Fees (`charges.ts`):** 30-digit precision math calculating the exact price at which Gross P&L covers all estimated brokerage, STT/CTT, exchange turnover, GST, and SEBI charges, ensuring Net P&L = ₹0 upon stop hit.
+    - **True Breakeven Calculation Including Fees (`charges.ts`):** 30-digit precision math calculating the exact price at which Gross P&L covers all estimated brokerage, STT/CTT, exchange turnover, GST, and SEBI charges, ensuring Net P&L = ₹0 upon stop hit. Surfaced directly in 1-click **Lock BE + Fees** button and hotkey `B`.
+    - **Quantitative Options Greeks Engine (`options-greeks.ts` & `LiveOptionsGreeksCard.tsx`):**
+      - Real-time analytical Black-Scholes pricing and Greeks calculation for option contracts.
+      - Positional Delta, Gamma, Vega, and market-hours Theta decay (₹/hour and ₹/day based on 6.25 IST trading hours).
+      - Moneyness badge (`ITM`, `ATM`, `OTM`), intrinsic vs time value breakdown, and IV crush radar.
+    - **Trade Stagnation & Time-Stop Radar (`stagnation.ts`):**
+      - Continuous monitoring of trade holding duration, time elapsed since peak MFE, and real-time P&L velocity (₹/min and R/min).
+      - Holding efficiency score (0–100%) and early time-stop warnings (`THETA_BLEEDING`, `STAGNANT_MOMENTUM_EXHAUSTED`, `GIVEBACK_ACCELERATING`) to curb capital deadweight.
+    - **Portfolio-Level Risk & Correlated Exposure (`portfolio-risk.ts` & `LivePortfolioRiskBanner.tsx`):**
+      - Aggregates net directional delta and directional bias across all open trades.
+      - Conflicting correlated index positions radar: detects when simultaneous opposing bets (e.g. Long NIFTY CE and Long BANKNIFTY PE) neutralize delta while doubling brokerage and exchange taxes.
+      - Total portfolio theta burn monitoring across multi-leg and concurrent option positions.
+    - **Ultra-Fast Scalper Keyboard Hotkeys:**
+      - Optional toggle for instantaneous zero-latency cockpit hotkeys:
+        - `B`: Quick Lock True Breakeven + statutory fee buffer points.
+        - `Space`: Execute 50% partial exit at current market LTP.
+        - `K`: Open emergency Panic Kill Switch modal to flatten all open trades immediately.
+    - **In-Trade Psychological Pulse Check-In (`LiveOpenTradeWatcher.tsx` & `POST /live-pulse`):**
+      - Low-friction emotional check-in buttons (`😌 Calm`, `⚡ FOMO`, `⏳ Hesitant`, `💰 Greedy`, `🚨 Anxious`) allowing traders to tag their intra-trade psychological state.
+      - Appends timestamped emotional pulse checkpoints to `trade.auditLog` with LTP and floating MTM snapshot for post-trade psychological review.
+    - **Intra-Trade P&L Trajectory Sparklines (`LiveSparkline.tsx`):**
+      - Compact SVG sparklines embedded in Cockpit Card headers and Dense Table rows showing trade MTM progression from entry through MAE, MFE, and current floating net P&L.
+    - **Server-Sent Events (SSE) Streaming (`GET /trades/live/stream`):**
+      - Dedicated SSE endpoint providing low-overhead server-pushed updates for active positions without polling overhead.
     - **Live Profit Giveback Meter & Leak Alerts (`LiveGivebackMeter.tsx`):** Real-time gauge monitoring peak floating MTM vs current MTM, displaying ₹/R giveback, retention percentage, and threat alert levels (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`).
     - **Active FYERS Live Order Execution:** 1-click True Breakeven lock, lot-aware partial exits, live trailing stop modification, and full market close with automatic pending SL orderbook cancellation.
 - **Frontend & Backend Components:**
-  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider`, `GivebackThreatLevel`, `ILiveGivebackMetric`, `TargetLadderStepStatus`, `ILiveTargetLadderStep`, `ILiveTargetLadder`, `ICustomLadderRuleStep`, `ICustomLadderRules` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
-  - Engine: `live-watcher.ts`, `charges.ts` in [`packages/financial-engine/src/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/).
-  - Backend API: `live-watcher.service.ts`, `fyers.service.ts`, `POST /trades/:id/broker-sl`, `POST /trades/:id/broker-exit`, `POST /trades/:id/broker-ladder-step`, `GET /trades/live/watcher`, `GET /trades/:id/live`.
-  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`LiveCustomRulesDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveCustomRulesDialog.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
+  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider`, `GivebackThreatLevel`, `ILiveGivebackMetric`, `TargetLadderStepStatus`, `ILiveTargetLadderStep`, `ILiveTargetLadder`, `ICustomLadderRuleStep`, `ICustomLadderRules`, `IOptionsGreeksResult`, `IPositionGreeksSummary`, `ITradeStagnationMetric`, `IPortfolioRiskResult` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
+  - Engine: `live-watcher.ts`, `charges.ts`, `options-greeks.ts`, `stagnation.ts`, `portfolio-risk.ts` in [`packages/financial-engine/src/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/).
+  - Backend API: `live-watcher.service.ts`, `fyers.service.ts`, `POST /trades/:id/broker-sl`, `POST /trades/:id/broker-exit`, `POST /trades/:id/broker-ladder-step`, `POST /trades/:id/live-pulse`, `GET /trades/live/watcher`, `GET /trades/:id/live`, `GET /trades/live/stream`.
+  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`LiveOptionsGreeksCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOptionsGreeksCard.tsx), [`LivePortfolioRiskBanner.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LivePortfolioRiskBanner.tsx), [`LiveSparkline.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveSparkline.tsx), [`LivePriceGauge.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LivePriceGauge.tsx), [`LiveCustomRulesDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveCustomRulesDialog.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
 
 ---
 

@@ -556,10 +556,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // Recalculate account realized P&L and balance authoritatively
     await AccountService.recalculateAccountBalances(account._id, req.user!.id);
 
-    // Auto-compute excursion & generate snapshot if trade was created in CLOSED status
+    // Auto-compute excursion, setup classification & generate snapshot if trade was created in CLOSED status
     if (trade.status === 'CLOSED') {
       FyersService.computeExcursionForTrade(trade._id, req.user!.id).catch((err: any) => {
         req.log.warn('Auto excursion computation threw for trade %s: %s', trade._id, err.message);
+      });
+      PatternRecognitionService.classifyTrade(trade._id, req.user!.id).catch((err: any) => {
+        req.log.warn('Auto setup classification threw for trade %s: %s', trade._id, err.message);
       });
       ChartGeneratorService.ensureTradeSnapshot(trade._id, req.user!.id).catch((err: any) => {
         req.log.warn('Auto snapshot generation threw for trade %s: %s', trade._id, err.message);
@@ -733,6 +736,90 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         },
       });
     }
+  });
+
+  // GET /live/stream - Real-time Server-Sent Events (SSE) stream for zero-polling live metrics
+  app.get('/live/stream', async (req: any, reply) => {
+    const accountId = (req.query as any)?.accountId;
+    const userId = req.user!.id;
+
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('X-Accel-Buffering', 'no');
+
+    // Send initial snapshot
+    try {
+      const initial = await LiveWatcherService.getLiveWatcherSummary(userId, accountId);
+      reply.raw.write(`data: ${JSON.stringify(initial)}\n\n`);
+    } catch (e: any) {
+      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`);
+    }
+
+    if (req.query?.once === 'true' || req.query?.once === true) {
+      reply.raw.end();
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const update = await LiveWatcherService.getLiveWatcherSummary(userId, accountId);
+        reply.raw.write(`data: ${JSON.stringify(update)}\n\n`);
+      } catch (err: any) {
+        req.log.warn('SSE stream error: %s', err?.message);
+      }
+    }, 2000);
+
+    req.raw.on('close', () => {
+      clearInterval(intervalId);
+    });
+  });
+
+  // POST /:id/live-pulse - Records real-time in-trade emotional checkpoint into auditLog
+  app.post('/:id/live-pulse', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    const { emotion, notes } = req.body || {};
+    if (!emotion) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_INPUT', message: 'Emotion tag is required' },
+      });
+    }
+
+    const metric = await LiveWatcherService.getSingleTradeLiveMetric(req.user!.id, trade._id.toString());
+
+    trade.auditLog = trade.auditLog || [];
+    trade.auditLog.push({
+      action: 'LIVE_PULSE_CHECK' as any,
+      timestamp: new Date(),
+      changedBy: req.user?.name || 'Trader',
+      details: {
+        emotion,
+        notes: notes || undefined,
+        currentLtp: metric?.currentLtp,
+        floatingNetPnL: metric?.floatingNetPnL,
+        unrealizedR: metric?.unrealizedR,
+      },
+    });
+
+    await trade.save();
+
+    return reply.send({
+      success: true,
+      message: `Logged ${emotion} emotional checkpoint`,
+      data: {
+        emotion,
+        timestamp: new Date(),
+        metric,
+      },
+    });
   });
 
   // Get trade details
@@ -1037,9 +1124,12 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     if (updated?.status === 'CLOSED') {
       if (existingTrade.status !== 'CLOSED') {
-        // Transitioned to CLOSED (e.g. Quick Close): compute excursion and auto-generate snapshot
+        // Transitioned to CLOSED (e.g. Quick Close): compute excursion, classify setup and auto-generate snapshot
         FyersService.computeExcursionForTrade(updated._id, req.user!.id).catch((err: any) => {
           req.log.warn('Auto excursion computation threw for trade %s: %s', updated._id, err.message);
+        });
+        PatternRecognitionService.classifyTrade(updated._id, req.user!.id).catch((err: any) => {
+          req.log.warn('Auto setup classification threw for trade %s: %s', updated._id, err.message);
         });
         ChartGeneratorService.ensureTradeSnapshot(updated._id, req.user!.id).catch((err: any) => {
           req.log.warn('Auto snapshot generation threw for trade %s: %s', updated._id, err.message);

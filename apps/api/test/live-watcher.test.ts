@@ -288,4 +288,80 @@ describe('Live Open Trade Watcher API Integration Tests', () => {
     await Trade.findByIdAndDelete(openTrade._id);
     await BrokerIntegration.deleteMany({ userId: new mongoose.Types.ObjectId(userId) });
   });
+
+  it('records emotional pulse check-in to trade auditLog via POST /:id/live-pulse', async () => {
+    const pulseTrade = await Trade.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: new mongoose.Types.ObjectId(accountId),
+      symbol: 'NIFTY24OCT24100CE',
+      assetClass: 'OPTIONS',
+      exchange: 'NSE',
+      marketSegment: 'NSE_FNO',
+      currency: 'INR',
+      direction: 'LONG',
+      status: 'OPEN',
+      openQuantity: 50,
+      quantity: 50,
+      entryTime: new Date(Date.now() - 15 * 60 * 1000),
+      tradeDate: '2026-10-24',
+      executionMode: 'SIMPLE',
+      simpleExecution: {
+        entryPrice: 150,
+        quantity: 50,
+        contractMultiplier: 1,
+        brokerage: 40,
+        exchangeFees: 10,
+        regulatoryFees: 5,
+        taxes: 25,
+        otherFees: 0,
+        explicitAdjustments: 0,
+      },
+      auditLog: [],
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/trades/${pulseTrade._id}/live-pulse`,
+      headers: { cookie: `tv_session=${authCookie}` },
+      payload: {
+        emotion: 'CALM',
+        notes: 'Holding as plan dictates, strong support held',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.data.emotion).toBe('CALM');
+
+    // Verify trade auditLog was updated
+    const updated = await Trade.findById(pulseTrade._id);
+    expect(updated?.auditLog).toHaveLength(1);
+    expect(updated?.auditLog[0].action).toBe('LIVE_PULSE_CHECK');
+    expect((updated?.auditLog[0].details as any)?.emotion).toBe('CALM');
+
+    // Tenant isolation: User B cannot record pulse for User A trade
+    const userBRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/trades/${pulseTrade._id}/live-pulse`,
+      headers: { cookie: `tv_session=${userBAuthCookie}` },
+      payload: { emotion: 'FOMO' },
+    });
+    expect(userBRes.statusCode).toBe(404);
+
+    await Trade.findByIdAndDelete(pulseTrade._id);
+  });
+
+  it('streams live SSE updates via GET /api/v1/trades/live/stream with event-stream headers', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/trades/live/stream?once=true',
+      headers: { cookie: `tv_session=${authCookie}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache, no-transform');
+    expect(res.body).toContain('data:');
+  });
 });

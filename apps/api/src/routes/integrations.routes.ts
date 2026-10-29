@@ -284,10 +284,13 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         const balanceMsg = fundsResult?.brokerBalance != null
           ? ` and live balance (₹${fundsResult.brokerBalance.toFixed(2)})`
           : '';
+        const backfillMsg = tradeResult.backfilledClosedTradesCount
+          ? ` (${tradeResult.backfilledClosedTradesCount} closed trade${tradeResult.backfilledClosedTradesCount > 1 ? 's' : ''} auto-backfilled with excursion & setup)`
+          : '';
 
         return reply.send({
           success: true,
-          message: `Synchronized ${tradeResult.syncedTradesCount} new trades${balanceMsg} from FYERS.`,
+          message: `Synchronized ${tradeResult.syncedTradesCount} new trades${balanceMsg}${backfillMsg} from FYERS.`,
           data: {
             ...tradeResult,
             funds: fundsResult,

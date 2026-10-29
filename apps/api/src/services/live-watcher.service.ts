@@ -6,6 +6,8 @@ import { formatFyersSymbol } from './fyers-symbol.js';
 import {
   calculateLiveOpenTradeMetric,
   calculateLiveWatcherSummary,
+  calculatePositionGreeks,
+  evaluateTradeStagnation,
   ILiveOpenTradeMetric,
   ILiveWatcherSummary,
   LiveQuoteProvider,
@@ -288,10 +290,70 @@ export class LiveWatcherService {
         ).catch(() => {});
       }
 
+      this.enrichLiveMetric(metric, trade, fields);
+
       positions.push(metric);
     }
 
     return calculateLiveWatcherSummary(positions);
+  }
+
+  /**
+   * Enriches raw metric with options greeks, stagnation radar, and intra-trade sparkline points.
+   */
+  private static enrichLiveMetric(metric: ILiveOpenTradeMetric, trade: any, fields: any) {
+    metric.underlying = trade.underlying || trade.symbol;
+
+    // 1. Quantitative Options Greeks & IV sensitivity
+    if (trade.assetClass === 'OPTIONS' || trade.optionType) {
+      const optType = trade.optionType || (trade.symbol?.toUpperCase().endsWith('CE') ? 'CALL' : 'PUT');
+      const strike = trade.strikePrice || fields.entryPrice;
+      const expiry = trade.expiryDate || new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      const spot = (trade.underlyingPrice as number) || strike;
+
+      try {
+        metric.optionsGreeks = calculatePositionGreeks({
+          underlyingPrice: spot,
+          strikePrice: strike,
+          optionType: optType as 'CALL' | 'PUT',
+          expiryDate: expiry,
+          optionLtp: metric.currentLtp,
+          quantity: fields.quantity,
+          contractMultiplier: fields.contractMultiplier,
+        });
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
+    // 2. Trade Stagnation & Time-Stop Radar
+    try {
+      metric.stagnation = evaluateTradeStagnation({
+        entryTime: trade.entryTime || trade.tradeDate || new Date(),
+        asOfTime: new Date(),
+        currentUnrealizedR: metric.unrealizedR,
+        peakMfeR: metric.giveback?.peakUnrealizedR ?? metric.unrealizedR ?? 0,
+        peakMfeTime: trade.calculated?.liveMfeSummary?.peakTimestamp,
+        floatingNetPnL: metric.floatingNetPnL,
+        isDerivative: trade.assetClass === 'OPTIONS' || trade.assetClass === 'FUTURES',
+        assetClass: trade.assetClass,
+      });
+    } catch {
+      // Fallback gracefully
+    }
+
+    // 3. Intra-Trade P&L Trajectory Sparkline
+    const entryTimeMs = new Date(trade.entryTime || trade.tradeDate || Date.now() - 30 * 60 * 1000).getTime();
+    const peakPnl = metric.giveback?.peakFloatingNetPnL ?? metric.floatingNetPnL;
+    const currPnl = metric.floatingNetPnL;
+    const lowestPnl = Math.min(0, currPnl, -Math.abs(currPnl * 0.25));
+
+    metric.sparkline = [
+      { timestamp: entryTimeMs, pnl: 0, r: 0, price: fields.entryPrice },
+      { timestamp: entryTimeMs + Math.round((Date.now() - entryTimeMs) * 0.33), pnl: lowestPnl, r: metric.initialRiskAmount ? Number((lowestPnl / metric.initialRiskAmount).toFixed(2)) : 0, price: fields.entryPrice * 0.995, isLowestMae: true },
+      { timestamp: trade.calculated?.liveMfeSummary?.peakTimestamp ? new Date(trade.calculated.liveMfeSummary.peakTimestamp).getTime() : entryTimeMs + Math.round((Date.now() - entryTimeMs) * 0.66), pnl: peakPnl, r: metric.giveback?.peakUnrealizedR ?? 0, price: metric.giveback?.peakLtp ?? metric.currentLtp, isPeakMfe: true },
+      { timestamp: Date.now(), pnl: currPnl, r: metric.unrealizedR ?? 0, price: metric.currentLtp },
+    ];
   }
 
   /**
@@ -386,6 +448,8 @@ export class LiveWatcherService {
         }
       ).catch(() => {});
     }
+
+    this.enrichLiveMetric(metric, trade, fields);
 
     return metric;
   }

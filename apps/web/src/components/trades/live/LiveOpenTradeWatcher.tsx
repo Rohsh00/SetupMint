@@ -44,6 +44,7 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
+import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
@@ -57,12 +58,16 @@ import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsAct
 import NotificationsOffRoundedIcon from '@mui/icons-material/NotificationsOffRounded';
 import DangerousRoundedIcon from '@mui/icons-material/DangerousRounded';
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
+import KeyboardAltRoundedIcon from '@mui/icons-material/KeyboardAltRounded';
 
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
 import { ExecuteLadderStepDialog } from './ExecuteLadderStepDialog.js';
 import { LiveCustomRulesDialog } from './LiveCustomRulesDialog.js';
 import { LivePriceGauge } from './LivePriceGauge.js';
+import { LiveSparkline } from './LiveSparkline.js';
+import { LiveOptionsGreeksCard } from './LiveOptionsGreeksCard.js';
+import { LivePortfolioRiskBanner } from './LivePortfolioRiskBanner.js';
 import { PanicKillSwitchDialog } from './PanicKillSwitchDialog.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
@@ -285,6 +290,26 @@ export function LiveOpenTradeWatcher({
     );
   };
 
+  // Scalper Hotkeys State [B: Lock BE+Fees | Space: 50% Exit | K: Kill Switch]
+  const [scalperHotkeysEnabled, setScalperHotkeysEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('tv_scalper_hotkeys') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleRecordPulse = async (tradeId: string, emotion: string) => {
+    try {
+      await api.trades.recordLivePulse(tradeId, emotion);
+      toast.success(`Logged "${emotion}" emotional pulse check!`);
+      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to record emotional pulse');
+    }
+  };
+
+
   const executedAutoTriggersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -368,6 +393,35 @@ export function LiveOpenTradeWatcher({
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+
+  // Global Scalper Keyboard Hotkeys Listener
+  useEffect(() => {
+    if (!scalperHotkeysEnabled || !summary?.positions?.length) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      const topPos = summary.positions[0];
+      if (!topPos) return;
+
+      if (e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        const bePrice = topPos.trueBreakevenPrice ?? topPos.entryPrice;
+        toast.info(`⚡ Hotkey [B]: Locking BE + Fees for ${topPos.symbol} @ ₹${bePrice.toFixed(2)}`);
+        handleQuickMoveToBe(topPos);
+      } else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        toast.info(`⚡ Hotkey [Space]: Triggering 50% quick partial close for ${topPos.symbol}`);
+        handleOpenQuickClose(topPos, 0.5);
+      } else if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        setKillSwitchOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [scalperHotkeysEnabled, summary?.positions]);
 
   // Auto-Execution Engine: triggers partial exit & SL trail when targets met on armed trades
   useEffect(() => {
@@ -994,6 +1048,33 @@ export function LiveOpenTradeWatcher({
               />
             </Tooltip>
 
+            {/* ⌨️ Scalper Hotkeys Toggle */}
+            {openTradesCount > 0 && (
+              <Tooltip title={scalperHotkeysEnabled ? 'Scalper Hotkeys: ARMED [B: Lock BE+Fees | Space: 50% Exit | K: Kill Switch]' : 'Enable Scalper Keyboard Shortcuts'} arrow>
+                <Chip
+                  icon={<KeyboardAltRoundedIcon sx={{ fontSize: '13px !important' }} />}
+                  label={scalperHotkeysEnabled ? 'HOTKEYS ARMED' : 'Hotkeys'}
+                  onClick={() => {
+                    const next = !scalperHotkeysEnabled;
+                    setScalperHotkeysEnabled(next);
+                    localStorage.setItem('tv_scalper_hotkeys', String(next));
+                    toast.info(next ? '⚡ Scalper Hotkeys Armed: [B] Lock BE+Fees | [Space] 50% Exit | [K] Kill Switch' : 'Scalper Hotkeys Disabled');
+                  }}
+                  size="small"
+                  sx={{
+                    height: 28,
+                    fontSize: '0.68rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    color: scalperHotkeysEnabled ? '#10B981' : 'text.secondary',
+                    bgcolor: scalperHotkeysEnabled ? alpha('#10B981', 0.15) : 'transparent',
+                    border: `1px solid ${scalperHotkeysEnabled ? alpha('#10B981', 0.4) : 'rgba(255, 255, 255, 0.1)'}`,
+                    display: { xs: 'none', md: 'inline-flex' },
+                  }}
+                />
+              </Tooltip>
+            )}
+
             {/* 🔊 Audio Alerts Toggle */}
             <Tooltip title={soundEnabled ? 'Audio Alerts: ON (Click to Mute)' : 'Audio Alerts: MUTED (Click to Enable)'} arrow>
               <IconButton
@@ -1135,7 +1216,14 @@ export function LiveOpenTradeWatcher({
                   No open positions currently active. Open trades will automatically appear here with real-time MTM and risk gauges.
                 </Typography>
               </Box>
-            ) : viewMode === 'table' ? (
+            ) : (
+              <>
+                {summary?.portfolioRisk && summary.positions.length > 0 && (
+                  <Box sx={{ pt: 2 }}>
+                    <LivePortfolioRiskBanner risk={summary.portfolioRisk} isDark={isDark} />
+                  </Box>
+                )}
+                {viewMode === 'table' ? (
               /* DENSE TABLE VIEW: Ultra-compact, 1-row per trade, zero scrolling */
               <TableContainer sx={{ pt: 1.5, overflowX: 'auto' }}>
                 <Table size="small" sx={{ minWidth: 840 }}>
@@ -1275,24 +1363,48 @@ export function LiveOpenTradeWatcher({
                                   />
                                 </Tooltip>
                               )}
+                              {pos.stagnation?.isStagnant && (
+                                <Tooltip title={`${pos.stagnation.message} (Velocity: ₹${pos.stagnation.pnlVelocityPerMinute}/min)`} arrow>
+                                  <Chip
+                                    label="STALLED"
+                                    size="small"
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.58rem',
+                                      fontWeight: 800,
+                                      color: '#F59E0B',
+                                      bgcolor: alpha('#F59E0B', 0.15),
+                                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                                      borderRadius: '4px',
+                                    }}
+                                  />
+                                </Tooltip>
+                              )}
                             </Box>
                           </TableCell>
 
                           {/* Entry vs LTP */}
                           <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                                ₹{pos.currentLtp}
-                              </Typography>
-                              {pos.priceDeltaPoints >= 0 ? (
-                                <TrendingUpRoundedIcon sx={{ fontSize: 14, color: '#10B981' }} />
-                              ) : (
-                                <TrendingDownRoundedIcon sx={{ fontSize: 14, color: '#F43F5E' }} />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                    ₹{pos.currentLtp}
+                                  </Typography>
+                                  {pos.priceDeltaPoints >= 0 ? (
+                                    <TrendingUpRoundedIcon sx={{ fontSize: 14, color: '#10B981' }} />
+                                  ) : (
+                                    <TrendingDownRoundedIcon sx={{ fontSize: 14, color: '#F43F5E' }} />
+                                  )}
+                                </Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                  Entry: ₹{pos.entryPrice} ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
+                                </Typography>
+                              </Box>
+                              {pos.sparkline && (
+                                <LiveSparkline points={pos.sparkline} isDark={isDark} width={70} height={22} />
                               )}
                             </Box>
-                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                              Entry: ₹{pos.entryPrice} ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
-                            </Typography>
                           </TableCell>
 
                           {/* Floating Net MTM */}
@@ -1537,7 +1649,7 @@ export function LiveOpenTradeWatcher({
                                       borderRadius: '5px',
                                     }}
                                   >
-                                    {isAtOrBeyondBe ? 'BE Locked' : 'Lock BE'}
+                                    {isAtOrBeyondBe ? 'BE Locked' : 'Lock BE+Fees'}
                                   </Button>
                                 </span>
                               </Tooltip>
@@ -1739,6 +1851,27 @@ export function LiveOpenTradeWatcher({
                                 />
                               </Tooltip>
                             )}
+                            {pos.stagnation?.isStagnant && (
+                              <Tooltip
+                                title={`${pos.stagnation.message} • Velocity: ₹${pos.stagnation.pnlVelocityPerMinute}/min • In Trade: ${pos.stagnation.minutesOpen}m`}
+                                arrow
+                              >
+                                <Chip
+                                  icon={<HourglassEmptyRoundedIcon sx={{ fontSize: '12px !important', color: '#F59E0B' }} />}
+                                  label={pos.stagnation.stagnationThreat.replace(/_/g, ' ')}
+                                  size="small"
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.62rem',
+                                    fontWeight: 800,
+                                    color: '#F59E0B',
+                                    bgcolor: alpha('#F59E0B', 0.15),
+                                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              </Tooltip>
+                            )}
                             <Tooltip title="Open full trade review" arrow>
                               <IconButton
                                 size="small"
@@ -1750,8 +1883,13 @@ export function LiveOpenTradeWatcher({
                             </Tooltip>
                           </Box>
 
-                          {/* Right Ticker: LTP & Floating Net MTM */}
+                          {/* Middle Sparkline & Right Ticker: LTP & Floating Net MTM */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            {pos.sparkline && (
+                              <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+                                <LiveSparkline points={pos.sparkline} isDark={isDark} width={120} height={26} />
+                              </Box>
+                            )}
                             <Box sx={{ textAlign: 'right' }}>
                               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
                                 LTP
@@ -1923,7 +2061,7 @@ export function LiveOpenTradeWatcher({
                                     borderRadius: '6px',
                                   }}
                                 >
-                                  {isAtOrBeyondBe ? 'BE Protected' : 'Lock BE'}
+                                  {isAtOrBeyondBe ? 'BE Protected' : `Lock BE+Fees${pos.trueBreakevenPrice ? ` (₹${pos.trueBreakevenPrice.toFixed(1)})` : ''}`}
                                 </Button>
                               </span>
                             </Tooltip>
@@ -2002,10 +2140,76 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
+                        {/* Psychological Pulse Check-In */}
+                        <Box
+                          sx={{
+                            mb: 1.5,
+                            px: 1.25,
+                            py: 0.75,
+                            borderRadius: '8px',
+                            bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+                            border: '1px solid',
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <span>🧠 In-Trade Pulse Check:</span>
+                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                            {[
+                              { emotion: 'CALM', label: '😌 Calm', color: '#10B981' },
+                              { emotion: 'FOMO', label: '⚡ FOMO', color: '#F59E0B' },
+                              { emotion: 'HESITANT', label: '⏳ Hesitant', color: '#6366F1' },
+                              { emotion: 'GREEDY', label: '💰 Greedy', color: '#EC4899' },
+                              { emotion: 'ANXIOUS', label: '🚨 Anxious', color: '#EF4444' },
+                            ].map((item) => (
+                              <Button
+                                key={item.emotion}
+                                size="small"
+                                onClick={() => handleRecordPulse(pos.tradeId, item.emotion)}
+                                sx={{
+                                  minWidth: 'auto',
+                                  px: 1,
+                                  py: 0.25,
+                                  fontSize: '0.64rem',
+                                  fontWeight: 700,
+                                  borderRadius: '5px',
+                                  textTransform: 'none',
+                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                                  color: 'text.secondary',
+                                  '&:hover': {
+                                    bgcolor: alpha(item.color, 0.15),
+                                    color: item.color,
+                                  },
+                                }}
+                              >
+                                {item.label}
+                              </Button>
+                            ))}
+                          </Box>
+                        </Box>
+
                         {/* Tactical Real-Time Range & Price Gauge */}
                         <Box sx={{ mb: 1.5 }}>
-                          <LivePriceGauge metric={pos} />
+                          <LivePriceGauge
+                            metric={pos}
+                            onQuickTrailSl={(newSl) => {
+                              updateSlMutation.mutate({ tradeId: pos.tradeId, newStopLoss: newSl, executeBroker: true });
+                            }}
+                          />
                         </Box>
+
+                        {/* Quantitative Options Greeks Card (when derivatives / options trade) */}
+                        {pos.optionsGreeks && (
+                          <Box sx={{ mb: 1.5 }}>
+                            <LiveOptionsGreeksCard greeks={pos.optionsGreeks} isDark={isDark} />
+                          </Box>
+                        )}
 
                         {/* 3. Responsive 2-Column Split Body */}
                         <Grid container spacing={1.5} sx={{ alignItems: 'stretch' }}>
@@ -2416,6 +2620,8 @@ export function LiveOpenTradeWatcher({
                 })}
               </Grid>
             )}
+          </>
+        )}
           </Box>
         </Collapse>
       </Card>

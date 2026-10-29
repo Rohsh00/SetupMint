@@ -10,6 +10,7 @@ import {
   Instrument,
 } from '../src/db/models/index.js';
 import {
+  FyersService,
   getNextFyersTokenExpiry,
   normalizeFyersFunds,
 } from '../src/services/fyers.service.js';
@@ -64,6 +65,18 @@ describe('FYERS funds sync and reconciliation', () => {
             }),
             { status: 200, headers: { 'content-type': 'application/json' } }
           );
+        }
+        if (url.includes('/orders')) {
+          return new Response(JSON.stringify({ s: 'ok', orderBook: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (url.includes('/history')) {
+          return new Response(JSON.stringify({ s: 'ok', candles: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
         }
         throw new Error(`Unexpected fetch: ${url}`);
       })
@@ -719,5 +732,69 @@ describe('FYERS funds sync and reconciliation', () => {
     expect(longTrade?.calculated.grossPnL).toBe(300); // (980 - 950) * 10
     expect(longTrade?.calculated.outcome).toBe('WIN');
   }, 15000);
+
+  it('automatically triggers backfill of excursion, setup pattern recognition, and stop moves for closed trades fetched during sync', async () => {
+    const backfillSpy = vi.spyOn(FyersService, 'backfillSingleClosedTrade');
+
+    tradebookExecutions = [
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '27-Oct-2026 09:30:00',
+        orderNumber: 'ORD-AUTO-EXC-1',
+        tradeNumber: 'TRD-AUTO-EXC-1',
+        tradePrice: 2400,
+        tradeValue: 24000,
+        tradedQty: 10,
+        orderType: 2,
+        side: 1, // BUY 10
+        productType: 'INTRADAY',
+        segment: 10,
+        exchange: 10,
+        fyToken: 'token-auto-exc-1',
+        symbol: 'NSE:INFY-EQ',
+      },
+      {
+        clientId: 'CPCJNZWGA9',
+        orderDateTime: '27-Oct-2026 10:15:00',
+        orderNumber: 'ORD-AUTO-EXC-2',
+        tradeNumber: 'TRD-AUTO-EXC-2',
+        tradePrice: 2450,
+        tradeValue: 24500,
+        tradedQty: 10,
+        orderType: 2,
+        side: -1, // SELL 10 (closes trade)
+        productType: 'INTRADAY',
+        segment: 10,
+        exchange: 10,
+        fyToken: 'token-auto-exc-1',
+        symbol: 'NSE:INFY-EQ',
+      },
+    ];
+
+    const syncRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/integrations/fyers/sync',
+      headers: { cookie: authCookie },
+    });
+    expect(syncRes.statusCode).toBe(200);
+    const body = JSON.parse(syncRes.body);
+    expect(body.data.syncedTradesCount).toBe(1);
+    expect(body.data.backfilledClosedTradesCount).toBe(1);
+    expect(body.message).toContain('auto-backfilled with excursion & setup');
+
+    const closedTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      'fills.fillId': 'TRD-AUTO-EXC-1',
+    });
+    expect(closedTrade).toBeTruthy();
+    expect(closedTrade?.status).toBe('CLOSED');
+    expect(backfillSpy).toHaveBeenCalledWith(
+      closedTrade?._id.toString(),
+      expect.anything(),
+      expect.anything()
+    );
+
+    backfillSpy.mockRestore();
+  });
 });
 

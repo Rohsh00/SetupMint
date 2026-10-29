@@ -51,10 +51,21 @@ import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 
+import VolumeUpRoundedIcon from '@mui/icons-material/VolumeUpRounded';
+import VolumeOffRoundedIcon from '@mui/icons-material/VolumeOffRounded';
+import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded';
+import NotificationsOffRoundedIcon from '@mui/icons-material/NotificationsOffRounded';
+import DangerousRoundedIcon from '@mui/icons-material/DangerousRounded';
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
+
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
 import { ExecuteLadderStepDialog } from './ExecuteLadderStepDialog.js';
 import { LiveCustomRulesDialog } from './LiveCustomRulesDialog.js';
+import { LivePriceGauge } from './LivePriceGauge.js';
+import { PanicKillSwitchDialog } from './PanicKillSwitchDialog.js';
+import { soundEngine } from '../../../lib/sound-engine.js';
+import { notificationService } from '../../../lib/notification-service.js';
 import {
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
@@ -62,7 +73,11 @@ import {
   ICustomLadderRules,
   StopThreatLevel,
 } from '@tradevault/shared';
-import { calculateTargetLadder } from '@tradevault/financial-engine';
+import {
+  calculateTargetLadder,
+  calculateDynamicTrailingStop,
+  evaluateGivebackAutoExit,
+} from '@tradevault/financial-engine';
 import { api } from '../../../lib/api.js';
 import { formatCurrency } from '../../../lib/utils.js';
 import { toast } from '../../../context/ToastContext.js';
@@ -73,6 +88,46 @@ export interface LiveOpenTradeWatcherProps {
   defaultExpanded?: boolean;
   showWhenEmpty?: boolean;
   onTradeCloseSuccess?: () => void;
+}
+
+function getIstInfo() {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const istNow = new Date(utc + (3600000 * 5.5));
+
+  const hours = istNow.getHours();
+  const minutes = istNow.getMinutes();
+  const seconds = istNow.getSeconds();
+
+  const targetSeconds = 15 * 3600 + 15 * 60; // 15:15:00 IST
+  const currentSeconds = hours * 3600 + minutes * 60 + seconds;
+  const diffSeconds = targetSeconds - currentSeconds;
+
+  const isMarketOpen = (hours > 9 || (hours === 9 && minutes >= 15)) && (hours < 15 || (hours === 15 && minutes <= 30));
+  const isPastMisCutoff = diffSeconds <= 0;
+
+  let countdownStr = '';
+  if (diffSeconds > 0) {
+    const h = Math.floor(diffSeconds / 3600);
+    const m = Math.floor((diffSeconds % 3600) / 60);
+    const s = diffSeconds % 60;
+    countdownStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  const isMisCriticalWindow = isMarketOpen && diffSeconds > 0 && diffSeconds <= 900;
+  const isMisActionTime = isMarketOpen && hours === 15 && minutes === 14;
+
+  return {
+    hours,
+    minutes,
+    seconds,
+    diffSeconds,
+    countdownStr,
+    isMarketOpen,
+    isPastMisCutoff,
+    isMisCriticalWindow,
+    isMisActionTime,
+  };
 }
 
 export function LiveOpenTradeWatcher({
@@ -97,6 +152,56 @@ export function LiveOpenTradeWatcher({
     const saved = localStorage.getItem('tv_live_watcher_interval');
     return saved !== null ? Number(saved) : 5;
   });
+
+  // Sound & notification state
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => soundEngine.isEnabled());
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => notificationService.getPermission() === 'granted');
+  const [killSwitchOpen, setKillSwitchOpen] = useState<boolean>(false);
+  const [maxDailyLoss] = useState<number>(() => {
+    const saved = localStorage.getItem('tv_max_daily_loss');
+    return saved ? Number(saved) : 5000;
+  });
+
+  // IST Clock & MIS countdown ticker
+  const [istInfo, setIstInfo] = useState(() => getIstInfo());
+  const lastThreatAudioTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIstInfo(getIstInfo());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleToggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    soundEngine.setEnabled(next);
+    if (next) soundEngine.playAutoExecuted();
+    toast.info(next ? '🔊 Audio alerts enabled' : '🔇 Audio alerts muted');
+  };
+
+  const handleToggleNotifications = async () => {
+    if (!notificationService.isSupported()) {
+      toast.warning('Desktop notifications are not supported by this browser.');
+      return;
+    }
+    if (notificationsEnabled) {
+      setNotificationsEnabled(false);
+      toast.info('Desktop notifications disabled.');
+    } else {
+      const granted = await notificationService.requestPermission();
+      setNotificationsEnabled(granted);
+      if (granted) {
+        notificationService.sendNotification('SetupMint Notifications Active', {
+          body: 'You will receive instant alerts for target executions and risk triggers.',
+        });
+        toast.success('🔔 Desktop notifications active!');
+      } else {
+        toast.warning('Notification permission was denied in browser settings.');
+      }
+    }
+  };
 
   // Quick close modal state
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
@@ -330,6 +435,10 @@ export function LiveOpenTradeWatcher({
             executeBroker: true,
           })
           .then(() => {
+            soundEngine.playTargetHit();
+            notificationService.sendNotification(`⚡ FYERS Target Met: ${pos.symbol}`, {
+              body: `Hit ${step.name} @ ₹${pos.currentLtp}! Exited ${exitQty} units.`,
+            });
             if (step.suggestedStopLoss) {
               api.trades
                 .liveBrokerSl(pos.tradeId, {
@@ -362,8 +471,142 @@ export function LiveOpenTradeWatcher({
             executedAutoTriggersRef.current.delete(triggerKey);
           });
       }
+
+      // 2. Dynamic Step-Trailing Ratchet Engine
+      if (rules.dynamicTrailing?.enabled && ladder) {
+        const dynEval = calculateDynamicTrailingStop({
+          direction: pos.direction,
+          entryPrice: pos.entryPrice,
+          currentLtp: pos.currentLtp,
+          peakLtp: pos.giveback?.peakLtp ?? pos.currentLtp,
+          currentStopLoss: pos.stopLoss,
+          initialRiskPoints: ladder.initialRiskPoints,
+          rule: rules.dynamicTrailing,
+        });
+
+        if (dynEval.shouldTrail) {
+          const dynKey = `${pos.tradeId}_dyn_sl_${dynEval.newStopPrice}`;
+          if (!executedAutoTriggersRef.current.has(dynKey)) {
+            executedAutoTriggersRef.current.add(dynKey);
+            try {
+              sessionStorage.setItem(
+                'tv_auto_executed_triggers',
+                JSON.stringify(Array.from(executedAutoTriggersRef.current))
+              );
+            } catch {}
+
+            api.trades
+              .liveBrokerSl(pos.tradeId, {
+                stopPrice: dynEval.newStopPrice,
+                executeBroker: true,
+              })
+              .then(() => {
+                soundEngine.playAutoExecuted();
+                notificationService.sendNotification(`⚡ FYERS Dynamic SL Trailed: ${pos.symbol}`, {
+                  body: `Ratcheted Stop Loss to ₹${dynEval.newStopPrice} (${dynEval.reason})`,
+                });
+                toast.success(
+                  `⚡ Dynamic Trailing: Ratcheted Stop Loss to ₹${dynEval.newStopPrice} on FYERS! (${dynEval.reason})`
+                );
+                queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                queryClient.invalidateQueries({ queryKey: ['trades'] });
+              })
+              .catch((err: any) => {
+                executedAutoTriggersRef.current.delete(dynKey);
+                console.error('Dynamic SL trailing failed:', err);
+              });
+          }
+        }
+      }
+
+      // 3. Giveback Protection Auto-Exit Engine
+      if (rules.givebackAutoExit?.enabled && pos.giveback) {
+        const gbEval = evaluateGivebackAutoExit({
+          giveback: pos.giveback,
+          rule: rules.givebackAutoExit,
+        });
+
+        if (gbEval.shouldExit) {
+          const gbKey = `${pos.tradeId}_gb_exit`;
+          if (!executedAutoTriggersRef.current.has(gbKey)) {
+            executedAutoTriggersRef.current.add(gbKey);
+            try {
+              sessionStorage.setItem(
+                'tv_auto_executed_triggers',
+                JSON.stringify(Array.from(executedAutoTriggersRef.current))
+              );
+            } catch {}
+
+            api.trades
+              .liveBrokerExit(pos.tradeId, {
+                quantity: pos.quantity,
+                exitPrice: pos.currentLtp,
+                isFullClose: true,
+                executeBroker: true,
+              })
+              .then(() => {
+                soundEngine.playGivebackAlert();
+                notificationService.sendNotification(`🛡️ FYERS Giveback Auto-Exit: ${pos.symbol}`, {
+                  body: `Closed runner position at ₹${pos.currentLtp}! (${gbEval.reason})`,
+                });
+                toast.warning(
+                  `🛡️ Giveback Protection: Closed runner at ₹${pos.currentLtp}! (${gbEval.reason})`
+                );
+                queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                queryClient.invalidateQueries({ queryKey: ['trades'] });
+              })
+              .catch((err: any) => {
+                executedAutoTriggersRef.current.delete(gbKey);
+                toast.error(`❌ Giveback auto-exit failed: ${err?.message || err}`);
+              });
+          }
+        }
+      }
+
+      // 4. Intraday MIS Square-Off Guard (15:14 IST)
+      if (rules.misSquareOff?.enabled && istInfo.isMisActionTime) {
+        const misKey = `${pos.tradeId}_mis_exit`;
+        if (!executedAutoTriggersRef.current.has(misKey)) {
+          executedAutoTriggersRef.current.add(misKey);
+          try {
+            sessionStorage.setItem(
+              'tv_auto_executed_triggers',
+              JSON.stringify(Array.from(executedAutoTriggersRef.current))
+            );
+          } catch {}
+
+          api.trades
+            .liveBrokerExit(pos.tradeId, {
+              quantity: pos.quantity,
+              exitPrice: pos.currentLtp,
+              isFullClose: true,
+              executeBroker: true,
+            })
+            .then(() => {
+              soundEngine.playKillSwitch();
+              notificationService.sendNotification(`⏱️ MIS Square-Off: ${pos.symbol}`, {
+                body: `Auto-exited at 15:14 IST to avoid broker penalty charges.`,
+              });
+              toast.info(`⏱️ MIS Auto-Square-Off: Closed ${pos.symbol} at 15:14 IST before broker penalties.`);
+              queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+              queryClient.invalidateQueries({ queryKey: ['trades'] });
+            })
+            .catch((err: any) => {
+              executedAutoTriggersRef.current.delete(misKey);
+            });
+        }
+      }
+
+      // 5. Auditory Warning for Critical Stop Loss Threat
+      if (pos.stopThreatLevel === 'CRITICAL' || pos.stopThreatLevel === 'BREACHED') {
+        const nowMs = Date.now();
+        if (nowMs - lastThreatAudioTimeRef.current > 30000) {
+          lastThreatAudioTimeRef.current = nowMs;
+          soundEngine.playStopThreat();
+        }
+      }
     }
-  }, [summary?.positions, tradeRulesMap, queryClient]);
+  }, [summary?.positions, tradeRulesMap, queryClient, istInfo]);
 
   const handleManualRefetch = async () => {
     setIsManualRefreshing(true);
@@ -733,6 +976,88 @@ export function LiveOpenTradeWatcher({
               </Tooltip>
             )}
 
+            {/* ⏱️ MIS Auto-Square-Off Countdown */}
+            <Tooltip title={`Intraday MIS cut-off countdown (Target: 15:15 IST)${istInfo.isMisCriticalWindow ? ' ⚠️ Critical Square-Off Window!' : ''}`} arrow>
+              <Chip
+                icon={<AccessTimeRoundedIcon sx={{ fontSize: '13px !important' }} />}
+                label={istInfo.isMarketOpen ? `MIS ${istInfo.countdownStr || '00:00:00'}` : 'Market Closed'}
+                size="small"
+                sx={{
+                  height: 28,
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  bgcolor: istInfo.isMisCriticalWindow ? alpha('#EF4444', 0.15) : alpha('#3B82F6', 0.1),
+                  color: istInfo.isMisCriticalWindow ? '#EF4444' : '#3B82F6',
+                  border: `1px solid ${istInfo.isMisCriticalWindow ? alpha('#EF4444', 0.4) : alpha('#3B82F6', 0.3)}`,
+                  display: { xs: 'none', sm: 'inline-flex' },
+                }}
+              />
+            </Tooltip>
+
+            {/* 🔊 Audio Alerts Toggle */}
+            <Tooltip title={soundEnabled ? 'Audio Alerts: ON (Click to Mute)' : 'Audio Alerts: MUTED (Click to Enable)'} arrow>
+              <IconButton
+                size="small"
+                onClick={handleToggleSound}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  color: soundEnabled ? '#10B981' : 'text.secondary',
+                  bgcolor: soundEnabled ? alpha('#10B981', 0.1) : 'transparent',
+                  border: `1px solid ${soundEnabled ? alpha('#10B981', 0.3) : 'transparent'}`,
+                  borderRadius: 1,
+                }}
+              >
+                {soundEnabled ? <VolumeUpRoundedIcon sx={{ fontSize: 16 }} /> : <VolumeOffRoundedIcon sx={{ fontSize: 16 }} />}
+              </IconButton>
+            </Tooltip>
+
+            {/* 🔔 Desktop Web Notifications Toggle */}
+            <Tooltip title={notificationsEnabled ? 'Desktop Web Notifications: ON' : 'Enable Desktop Web Notifications'} arrow>
+              <IconButton
+                size="small"
+                onClick={handleToggleNotifications}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  color: notificationsEnabled ? '#3B82F6' : 'text.secondary',
+                  bgcolor: notificationsEnabled ? alpha('#3B82F6', 0.1) : 'transparent',
+                  border: `1px solid ${notificationsEnabled ? alpha('#3B82F6', 0.3) : 'transparent'}`,
+                  borderRadius: 1,
+                }}
+              >
+                {notificationsEnabled ? <NotificationsActiveRoundedIcon sx={{ fontSize: 16 }} /> : <NotificationsOffRoundedIcon sx={{ fontSize: 16 }} />}
+              </IconButton>
+            </Tooltip>
+
+            {/* 🚨 Emergency Panic Kill Switch */}
+            {openTradesCount > 0 && (
+              <Tooltip title="🚨 Emergency Kill Switch: Market-close all open positions on FYERS and cancel open stops" arrow>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  startIcon={<DangerousRoundedIcon sx={{ fontSize: 15 }} />}
+                  onClick={() => setKillSwitchOpen(true)}
+                  sx={{
+                    height: 28,
+                    px: 1.2,
+                    fontSize: '0.68rem',
+                    fontWeight: 800,
+                    borderColor: '#EF4444',
+                    color: '#EF4444',
+                    bgcolor: alpha('#EF4444', 0.08),
+                    '&:hover': {
+                      bgcolor: '#EF4444',
+                      color: '#FFFFFF',
+                    },
+                  }}
+                >
+                  KILL SWITCH
+                </Button>
+              </Tooltip>
+            )}
+
             {/* Expand / Collapse Toggle */}
             <IconButton
               size="small"
@@ -748,6 +1073,46 @@ export function LiveOpenTradeWatcher({
 
         {/* Collapsible Open Trade Cards Grid */}
         <Collapse in={expanded}>
+          {/* Daily Floating Loss Circuit Breaker Warning */}
+          {summary && summary.totalFloatingNetPnL !== undefined && summary.totalFloatingNetPnL <= -maxDailyLoss && (
+            <Box
+              sx={{
+                p: 1.5,
+                mx: 2,
+                mt: 2,
+                borderRadius: 2,
+                bgcolor: alpha('#EF4444', 0.12),
+                border: '2px solid #EF4444',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 1.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <DangerousRoundedIcon sx={{ color: '#EF4444', fontSize: 28 }} />
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#EF4444' }}>
+                    🚨 DAILY FLOATING LOSS CIRCUIT BREAKER BREACHED!
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Floating drawdown ({formatCurrency(summary.totalFloatingNetPnL)}) exceeds your max risk limit ({formatCurrency(maxDailyLoss)}). Consider flattening positions.
+                  </Typography>
+                </Box>
+              </Box>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                startIcon={<DangerousRoundedIcon />}
+                onClick={() => setKillSwitchOpen(true)}
+                sx={{ fontWeight: 800, px: 2, bgcolor: '#DC2626' }}
+              >
+                FLATTEN ALL NOW
+              </Button>
+            </Box>
+          )}
           <Box
             sx={{
               p: { xs: 2, sm: 2.5 },
@@ -1637,6 +2002,11 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
+                        {/* Tactical Real-Time Range & Price Gauge */}
+                        <Box sx={{ mb: 1.5 }}>
+                          <LivePriceGauge metric={pos} />
+                        </Box>
+
                         {/* 3. Responsive 2-Column Split Body */}
                         <Grid container spacing={1.5} sx={{ alignItems: 'stretch' }}>
                           {/* Left Column: Live Vitals & Proximity */}
@@ -2399,6 +2769,22 @@ export function LiveOpenTradeWatcher({
           onSave={(rules) => {
             handleSaveTradeRules(customRulesMetric.tradeId, rules);
             setCustomRulesMetric(null);
+          }}
+        />
+      )}
+
+      {/* 🚨 Emergency Panic Kill Switch Dialog */}
+      {killSwitchOpen && (
+        <PanicKillSwitchDialog
+          open={killSwitchOpen}
+          onClose={() => setKillSwitchOpen(false)}
+          summary={summary ?? null}
+          onCompleted={() => {
+            setKillSwitchOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+            queryClient.invalidateQueries({ queryKey: ['trades'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+            if (onTradeCloseSuccess) onTradeCloseSuccess();
           }}
         />
       )}

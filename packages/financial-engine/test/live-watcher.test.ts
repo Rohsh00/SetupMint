@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   calculateLiveOpenTradeMetric,
   calculateLiveWatcherSummary,
+  calculateDynamicTrailingStop,
+  evaluateGivebackAutoExit,
   ILiveOpenTradeCalculationParams,
 } from '../src/live-watcher.js';
 
@@ -429,6 +431,143 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(step2.plannedExitLots).toBe(1);
       expect(step2.plannedExitQty).toBe(65);
       expect(step2.suggestedStopLabel).toContain('Open Trail');
+    });
+  });
+
+  describe('calculateDynamicTrailingStop', () => {
+    it('evaluates STEP_R trailing for long trades correctly', () => {
+      // Entry: 100, Stop: 90 (Risk: 10 pts)
+      // Peak LTP reached: 116 (+1.6R)
+      // Trigger R: 1.5R (115), Step R: 0.5R
+      // At +1.5R, locks in triggerR - stepR = 1.0R (110)
+      const res = calculateDynamicTrailingStop({
+        direction: 'LONG',
+        entryPrice: 100,
+        currentLtp: 114,
+        peakLtp: 116,
+        currentStopLoss: 100, // Currently at BE
+        initialRiskPoints: 10,
+        rule: {
+          enabled: true,
+          triggerR: 1.5,
+          trailStepR: 0.5,
+          trailType: 'STEP_R',
+        },
+      });
+
+      expect(res.shouldTrail).toBe(true);
+      expect(res.newStopPrice).toBe(110);
+      expect(res.lockedR).toBe(1.0);
+    });
+
+    it('advances locked R when higher peak is reached', () => {
+      // Peak LTP: 122 (+2.2R), Trigger: 1.5, Step: 0.5
+      // Steps above = floor((2.2 - 1.5)/0.5) = 1 step
+      // Target locked R = (1.5 - 0.5) + 0.5 = 1.5R (115)
+      const res = calculateDynamicTrailingStop({
+        direction: 'LONG',
+        entryPrice: 100,
+        currentLtp: 120,
+        peakLtp: 122,
+        currentStopLoss: 110,
+        initialRiskPoints: 10,
+        rule: {
+          enabled: true,
+          triggerR: 1.5,
+          trailStepR: 0.5,
+          trailType: 'STEP_R',
+        },
+      });
+
+      expect(res.shouldTrail).toBe(true);
+      expect(res.newStopPrice).toBe(115);
+      expect(res.lockedR).toBe(1.5);
+    });
+
+    it('does not trail if peak is below trigger R', () => {
+      const res = calculateDynamicTrailingStop({
+        direction: 'LONG',
+        entryPrice: 100,
+        currentLtp: 112,
+        peakLtp: 113, // 1.3R < 1.5R
+        currentStopLoss: 95,
+        initialRiskPoints: 10,
+        rule: {
+          enabled: true,
+          triggerR: 1.5,
+          trailType: 'STEP_R',
+        },
+      });
+
+      expect(res.shouldTrail).toBe(false);
+    });
+
+    it('evaluates HIGH_WATER_POINTS trailing for short trades correctly', () => {
+      // Short Entry: 200, Stop: 210 (Risk: 10 pts)
+      // Peak LTP down to: 180 (+2.0R gain)
+      // Trigger R: 1.5R (185)
+      // Trail Points: 8 pts behind peak => 180 + 8 = 188
+      // Current Stop: 195
+      const res = calculateDynamicTrailingStop({
+        direction: 'SHORT',
+        entryPrice: 200,
+        currentLtp: 182,
+        peakLtp: 180,
+        currentStopLoss: 195,
+        initialRiskPoints: 10,
+        rule: {
+          enabled: true,
+          triggerR: 1.5,
+          trailPoints: 8,
+          trailType: 'HIGH_WATER_POINTS',
+        },
+      });
+
+      expect(res.shouldTrail).toBe(true);
+      expect(res.newStopPrice).toBe(188);
+    });
+  });
+
+  describe('evaluateGivebackAutoExit', () => {
+    it('triggers exit when giveback exceeds maximum threshold on high-MFE trade', () => {
+      const res = evaluateGivebackAutoExit({
+        giveback: {
+          peakLtp: 130,
+          peakUnrealizedR: 2.5,
+          peakFloatingNetPnL: 3000,
+          currentSurrenderedNetPnL: 1500,
+          givebackPercent: 50, // 50% surrendered!
+          threatLevel: 'CRITICAL_REVERSAL',
+        },
+        rule: {
+          enabled: true,
+          minPeakR: 1.5,
+          maxGivebackPercent: 40,
+        },
+      });
+
+      expect(res.shouldExit).toBe(true);
+      expect(res.reason).toContain('Giveback reached 50.0%');
+    });
+
+    it('does not trigger exit if peak R was too small', () => {
+      const res = evaluateGivebackAutoExit({
+        giveback: {
+          peakLtp: 108,
+          peakUnrealizedR: 0.8,
+          peakFloatingNetPnL: 800,
+          currentSurrenderedNetPnL: 400,
+          givebackPercent: 50,
+          threatLevel: 'WATCH',
+        },
+        rule: {
+          enabled: true,
+          minPeakR: 1.5,
+          maxGivebackPercent: 40,
+        },
+      });
+
+      expect(res.shouldExit).toBe(false);
     });
   });
 });

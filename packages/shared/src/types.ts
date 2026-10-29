@@ -1700,6 +1700,25 @@ export interface ICustomLadderRuleStep {
   trailPoints?: number;
 }
 
+export interface IDynamicTrailingRule {
+  enabled: boolean;
+  triggerR: number; // e.g. 1.5R (starts trailing after reaching this R)
+  trailStepR?: number; // e.g. 0.5R step
+  trailPoints?: number; // e.g. 15 points
+  trailType: 'STEP_R' | 'HIGH_WATER_POINTS';
+}
+
+export interface IGivebackAutoExitRule {
+  enabled: boolean;
+  minPeakR: number; // e.g. 1.5R
+  maxGivebackPercent: number; // e.g. 40% (if giveback >= 40%, auto-exit runner)
+}
+
+export interface IMisSquareOffRule {
+  enabled: boolean;
+  squareOffTime?: string; // e.g. "15:14"
+}
+
 export interface ICustomLadderRules {
   tradeId?: string;
   lotSize?: number;
@@ -1708,6 +1727,9 @@ export interface ICustomLadderRules {
   t1: ICustomLadderRuleStep;
   t2?: ICustomLadderRuleStep;
   t3?: ICustomLadderRuleStep;
+  dynamicTrailing?: IDynamicTrailingRule;
+  givebackAutoExit?: IGivebackAutoExitRule;
+  misSquareOff?: IMisSquareOffRule;
   updatedAt?: string;
 }
 

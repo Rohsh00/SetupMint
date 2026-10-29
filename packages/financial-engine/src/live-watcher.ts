@@ -9,6 +9,8 @@ import {
   ILiveTargetLadderStep,
   ILiveTargetLadder,
   ICustomLadderRules,
+  IDynamicTrailingRule,
+  IGivebackAutoExitRule,
 } from '@tradevault/shared';
 import { calculateLinearPnL } from './pnl.js';
 import { calculateIndianCharges, calculateTrueBreakevenPrice } from './charges.js';
@@ -731,3 +733,147 @@ export function calculateLiveWatcherSummary(
     asOf,
   };
 }
+
+export interface IDynamicTrailingEvaluation {
+  shouldTrail: boolean;
+  newStopPrice: number;
+  reason: string;
+  lockedR?: number;
+}
+
+/**
+ * Evaluates dynamic trailing stop rules (Step-R or High-Water Mark points).
+ * Uses Decimal.js for exact 30-digit precision.
+ */
+export function calculateDynamicTrailingStop(params: {
+  direction: Direction;
+  entryPrice: number | Decimal;
+  currentLtp: number | Decimal;
+  peakLtp: number | Decimal;
+  currentStopLoss: number | Decimal | null;
+  initialRiskPoints: number | Decimal;
+  rule: IDynamicTrailingRule;
+}): IDynamicTrailingEvaluation {
+  const { direction, rule } = params;
+  if (!rule || !rule.enabled) {
+    return { shouldTrail: false, newStopPrice: 0, reason: 'Rule disabled' };
+  }
+
+  const isLong = direction === 'LONG';
+  const dEntry = params.entryPrice instanceof Decimal ? params.entryPrice : new Decimal(params.entryPrice);
+  const dLtp = params.currentLtp instanceof Decimal ? params.currentLtp : new Decimal(params.currentLtp);
+  const dPeak = params.peakLtp instanceof Decimal ? params.peakLtp : new Decimal(params.peakLtp);
+  const dCurrentStop = params.currentStopLoss !== null && params.currentStopLoss !== undefined
+    ? (params.currentStopLoss instanceof Decimal ? params.currentStopLoss : new Decimal(params.currentStopLoss))
+    : null;
+  const dRiskPts = params.initialRiskPoints instanceof Decimal
+    ? params.initialRiskPoints
+    : new Decimal(params.initialRiskPoints);
+
+  if (dRiskPts.isZero() || dRiskPts.isNegative()) {
+    return { shouldTrail: false, newStopPrice: 0, reason: 'Invalid risk points' };
+  }
+
+  const triggerR = new Decimal(rule.triggerR ?? 1.5);
+  const triggerPoints = dRiskPts.times(triggerR);
+
+  // Peak excursion in points
+  const peakGainPts = isLong ? dPeak.minus(dEntry) : dEntry.minus(dPeak);
+  if (peakGainPts.lessThan(triggerPoints)) {
+    return {
+      shouldTrail: false,
+      newStopPrice: 0,
+      reason: `Peak gain (${peakGainPts.toFixed(2)} pts) below activation threshold (${triggerPoints.toFixed(2)} pts / ${triggerR}R)`,
+    };
+  }
+
+  let dCandidateStop: Decimal;
+  let reason = '';
+  let lockedR: number | undefined;
+
+  if (rule.trailType === 'HIGH_WATER_POINTS') {
+    const pts = new Decimal(rule.trailPoints && rule.trailPoints > 0 ? rule.trailPoints : dRiskPts);
+    dCandidateStop = isLong ? dPeak.minus(pts) : dPeak.plus(pts);
+    reason = `Trailing ${pts.toFixed(2)} pts behind high-water mark ₹${dPeak.toFixed(2)}`;
+  } else {
+    // STEP_R mode (e.g., at +1.5R lock +1.0R, at +2.0R lock +1.5R)
+    const stepR = new Decimal(rule.trailStepR && rule.trailStepR > 0 ? rule.trailStepR : 0.5);
+    const currentPeakR = peakGainPts.dividedBy(dRiskPts);
+    const stepsAbove = currentPeakR.minus(triggerR).dividedBy(stepR).floor();
+    const targetLockedR = triggerR.minus(stepR).plus(stepsAbove.times(stepR));
+    lockedR = Number(targetLockedR.toFixed(2));
+
+    const lockPoints = dRiskPts.times(targetLockedR);
+    dCandidateStop = isLong ? dEntry.plus(lockPoints) : dEntry.minus(lockPoints);
+    reason = `Locked +${lockedR}R step trail at ₹${dCandidateStop.toFixed(2)} (Peak MFE: +${currentPeakR.toFixed(2)}R)`;
+  }
+
+  const candidateStopNum = Number(dCandidateStop.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2));
+
+  // Verify candidate stop strictly tightens risk
+  if (dCurrentStop) {
+    if (isLong && dCandidateStop.lessThanOrEqualTo(dCurrentStop)) {
+      return {
+        shouldTrail: false,
+        newStopPrice: candidateStopNum,
+        reason: `Candidate stop (₹${candidateStopNum}) is not higher than current stop (₹${dCurrentStop.toFixed(2)})`,
+      };
+    }
+    if (!isLong && dCandidateStop.greaterThanOrEqualTo(dCurrentStop)) {
+      return {
+        shouldTrail: false,
+        newStopPrice: candidateStopNum,
+        reason: `Candidate stop (₹${candidateStopNum}) is not lower than current stop (₹${dCurrentStop.toFixed(2)})`,
+      };
+    }
+  }
+
+  return {
+    shouldTrail: true,
+    newStopPrice: candidateStopNum,
+    reason,
+    lockedR,
+  };
+}
+
+export interface IGivebackAutoExitEvaluation {
+  shouldExit: boolean;
+  reason: string;
+}
+
+/**
+ * Evaluates Giveback protection rule to automatically trigger exit when
+ * a high-MFE trade surrenders too much profit.
+ */
+export function evaluateGivebackAutoExit(params: {
+  giveback?: ILiveGivebackMetric;
+  rule?: IGivebackAutoExitRule;
+}): IGivebackAutoExitEvaluation {
+  const { giveback, rule } = params;
+  if (!rule || !rule.enabled || !giveback) {
+    return { shouldExit: false, reason: 'Giveback rule disabled or no giveback metric' };
+  }
+
+  const minPeakR = rule.minPeakR ?? 1.5;
+  const maxGivebackPercent = rule.maxGivebackPercent ?? 40;
+
+  if (giveback.peakUnrealizedR < minPeakR) {
+    return {
+      shouldExit: false,
+      reason: `Peak MFE (+${giveback.peakUnrealizedR.toFixed(2)}R) did not reach minimum +${minPeakR}R requirement`,
+    };
+  }
+
+  if (giveback.givebackPercent >= maxGivebackPercent || giveback.threatLevel === 'CRITICAL_REVERSAL') {
+    return {
+      shouldExit: true,
+      reason: `Giveback reached ${giveback.givebackPercent.toFixed(1)}% (Threshold: ${maxGivebackPercent}%) from peak +${giveback.peakUnrealizedR.toFixed(2)}R MFE`,
+    };
+  }
+
+  return {
+    shouldExit: false,
+    reason: `Giveback ${giveback.givebackPercent.toFixed(1)}% within acceptable threshold (${maxGivebackPercent}%)`,
+  };
+}
+

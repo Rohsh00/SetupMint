@@ -81,6 +81,21 @@ export function LiveCustomRulesDialog({
   const [isFreeRunner, setIsFreeRunner] = useState<boolean>(true);
   const [t3R, setT3R] = useState<number>(3.0);
 
+  // Dynamic Trailing Ratchet
+  const [dynamicTrailingEnabled, setDynamicTrailingEnabled] = useState<boolean>(false);
+  const [dynamicTriggerR, setDynamicTriggerR] = useState<number>(1.5);
+  const [dynamicTrailType, setDynamicTrailType] = useState<'STEP_R' | 'HIGH_WATER_POINTS'>('STEP_R');
+  const [dynamicStepR, setDynamicStepR] = useState<number>(0.5);
+  const [dynamicTrailPoints, setDynamicTrailPoints] = useState<number>(15);
+
+  // Giveback Protection Auto-Exit
+  const [givebackAutoExitEnabled, setGivebackAutoExitEnabled] = useState<boolean>(false);
+  const [givebackMinPeakR, setGivebackMinPeakR] = useState<number>(1.5);
+  const [givebackMaxPercent, setGivebackMaxPercent] = useState<number>(40);
+
+  // Intraday MIS Square-Off Guard
+  const [misSquareOffEnabled, setMisSquareOffEnabled] = useState<boolean>(false);
+
   // Load existing rules from localStorage on open
   useEffect(() => {
     if (metric && open) {
@@ -113,6 +128,21 @@ export function LiveCustomRulesDialog({
             setIsFreeRunner(parsed.t3.isFreeRunner === true);
             setT3R(parsed.t3.targetR ?? 3.0);
           }
+          if (parsed.dynamicTrailing) {
+            setDynamicTrailingEnabled(Boolean(parsed.dynamicTrailing.enabled));
+            if (parsed.dynamicTrailing.triggerR) setDynamicTriggerR(parsed.dynamicTrailing.triggerR);
+            if (parsed.dynamicTrailing.trailType) setDynamicTrailType(parsed.dynamicTrailing.trailType);
+            if (parsed.dynamicTrailing.trailStepR) setDynamicStepR(parsed.dynamicTrailing.trailStepR);
+            if (parsed.dynamicTrailing.trailPoints) setDynamicTrailPoints(parsed.dynamicTrailing.trailPoints);
+          }
+          if (parsed.givebackAutoExit) {
+            setGivebackAutoExitEnabled(Boolean(parsed.givebackAutoExit.enabled));
+            if (parsed.givebackAutoExit.minPeakR) setGivebackMinPeakR(parsed.givebackAutoExit.minPeakR);
+            if (parsed.givebackAutoExit.maxGivebackPercent) setGivebackMaxPercent(parsed.givebackAutoExit.maxGivebackPercent);
+          }
+          if (parsed.misSquareOff) {
+            setMisSquareOffEnabled(Boolean(parsed.misSquareOff.enabled));
+          }
           return;
         } catch {
           // fallback to defaults
@@ -132,6 +162,15 @@ export function LiveCustomRulesDialog({
       setT2TrailAction('TRAIL_T1');
       setIsFreeRunner(true);
       setT3R(3.0);
+      setDynamicTrailingEnabled(false);
+      setDynamicTriggerR(1.5);
+      setDynamicTrailType('STEP_R');
+      setDynamicStepR(0.5);
+      setDynamicTrailPoints(15);
+      setGivebackAutoExitEnabled(false);
+      setGivebackMinPeakR(1.5);
+      setGivebackMaxPercent(40);
+      setMisSquareOffEnabled(false);
     }
   }, [metric, open, defaultLotSize]);
 
@@ -235,6 +274,21 @@ export function LiveCustomRulesDialog({
         customLots: isLotBased && effectiveRunnerEnabled ? runnerLots : undefined,
         trailAction: 'NONE',
         isFreeRunner,
+      },
+      dynamicTrailing: {
+        enabled: dynamicTrailingEnabled,
+        triggerR: dynamicTriggerR,
+        trailType: dynamicTrailType,
+        trailStepR: dynamicStepR,
+        trailPoints: dynamicTrailPoints,
+      },
+      givebackAutoExit: {
+        enabled: givebackAutoExitEnabled,
+        minPeakR: givebackMinPeakR,
+        maxGivebackPercent: givebackMaxPercent,
+      },
+      misSquareOff: {
+        enabled: misSquareOffEnabled,
       },
       updatedAt: new Date().toISOString(),
     };
@@ -810,6 +864,183 @@ export function LiveCustomRulesDialog({
             )}
           </Box>
         )}
+
+        {/* 🔄 DYNAMIC STEP-TRAILING RATCHET */}
+        <Box
+          sx={{
+            p: 1.5,
+            borderRadius: '10px',
+            bgcolor: dynamicTrailingEnabled
+              ? alpha('#3B82F6', isDark ? 0.12 : 0.06)
+              : isDark
+              ? 'rgba(255, 255, 255, 0.02)'
+              : 'rgba(0, 0, 0, 0.02)',
+            border: '1px solid',
+            borderColor: dynamicTrailingEnabled ? alpha('#3B82F6', 0.4) : isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: dynamicTrailingEnabled ? 1.5 : 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TuneRoundedIcon sx={{ fontSize: 18, color: dynamicTrailingEnabled ? '#3B82F6' : 'text.secondary' }} />
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Dynamic Step-Trailing Ratchet
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Continuously advances broker Stop Loss as trade sets new peak highs
+                </Typography>
+              </Box>
+            </Box>
+            <Switch
+              size="small"
+              checked={dynamicTrailingEnabled}
+              onChange={(e) => setDynamicTrailingEnabled(e.target.checked)}
+              color="primary"
+            />
+          </Box>
+
+          {dynamicTrailingEnabled && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1, borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+              <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Activation Trigger R"
+                  value={dynamicTriggerR}
+                  onChange={(e) => setDynamicTriggerR(Math.max(1.0, Number(e.target.value)))}
+                  slotProps={{ htmlInput: { step: 0.5, min: 1.0 } }}
+                  sx={{ width: 150 }}
+                  helperText="Start trailing once R is reached"
+                />
+
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <InputLabel>Trailing Method</InputLabel>
+                  <Select
+                    value={dynamicTrailType}
+                    label="Trailing Method"
+                    onChange={(e) => setDynamicTrailType(e.target.value as any)}
+                  >
+                    <MenuItem value="STEP_R">Step R (+0.5R ratchet)</MenuItem>
+                    <MenuItem value="HIGH_WATER_POINTS">High-Water Mark (Points)</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+
+              {dynamicTrailType === 'HIGH_WATER_POINTS' ? (
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Trailing Distance (Points)"
+                  value={dynamicTrailPoints}
+                  onChange={(e) => setDynamicTrailPoints(Math.max(1, Number(e.target.value)))}
+                  slotProps={{ htmlInput: { step: 1, min: 1 } }}
+                  sx={{ width: 180 }}
+                  helperText="Points behind peak price"
+                />
+              ) : (
+                <Typography variant="caption" color="text.secondary">
+                  Locks in <strong>+{Math.max(0.5, dynamicTriggerR - dynamicStepR).toFixed(1)}R</strong> upon hitting {dynamicTriggerR}R, then ratchets stop by <strong>+{dynamicStepR}R</strong> for every additional {dynamicStepR}R gained.
+                </Typography>
+              )}
+            </Box>
+          )}
+        </Box>
+
+        {/* 🛡️ GIVEBACK PROTECTION AUTO-EXIT */}
+        <Box
+          sx={{
+            p: 1.5,
+            borderRadius: '10px',
+            bgcolor: givebackAutoExitEnabled
+              ? alpha('#F59E0B', isDark ? 0.12 : 0.06)
+              : isDark
+              ? 'rgba(255, 255, 255, 0.02)'
+              : 'rgba(0, 0, 0, 0.02)',
+            border: '1px solid',
+            borderColor: givebackAutoExitEnabled ? alpha('#F59E0B', 0.4) : isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: givebackAutoExitEnabled ? 1.5 : 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ShieldRoundedIcon sx={{ fontSize: 18, color: givebackAutoExitEnabled ? '#F59E0B' : 'text.secondary' }} />
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Giveback Protection Auto-Exit
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Auto-exits runner if peak profit surrenders beyond safety threshold
+                </Typography>
+              </Box>
+            </Box>
+            <Switch
+              size="small"
+              checked={givebackAutoExitEnabled}
+              onChange={(e) => setGivebackAutoExitEnabled(e.target.checked)}
+              color="warning"
+            />
+          </Box>
+
+          {givebackAutoExitEnabled && (
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', pt: 1, borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` }}>
+              <TextField
+                size="small"
+                type="number"
+                label="Min Peak MFE (R)"
+                value={givebackMinPeakR}
+                onChange={(e) => setGivebackMinPeakR(Math.max(1.0, Number(e.target.value)))}
+                slotProps={{ htmlInput: { step: 0.5, min: 1.0 } }}
+                sx={{ width: 140 }}
+                helperText="Must reach e.g. +1.5R"
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="Max Giveback %"
+                value={givebackMaxPercent}
+                onChange={(e) => setGivebackMaxPercent(Math.min(90, Math.max(10, Number(e.target.value))))}
+                slotProps={{ htmlInput: { step: 5, min: 10, max: 90 } }}
+                sx={{ width: 140 }}
+                helperText="Exit if gives back > 40%"
+              />
+            </Box>
+          )}
+        </Box>
+
+        {/* ⏱️ INTRADAY MIS AUTO-SQUARE-OFF */}
+        <Box
+          sx={{
+            p: 1.5,
+            borderRadius: '10px',
+            bgcolor: misSquareOffEnabled
+              ? alpha('#EC4899', isDark ? 0.12 : 0.06)
+              : isDark
+              ? 'rgba(255, 255, 255, 0.02)'
+              : 'rgba(0, 0, 0, 0.02)',
+            border: '1px solid',
+            borderColor: misSquareOffEnabled ? alpha('#EC4899', 0.4) : isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ color: misSquareOffEnabled ? '#EC4899' : 'text.secondary' }}>⏱️</Box>
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Intraday MIS Auto-Square-Off Guard (15:14 IST)
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Auto-exits at 15:14 IST before FYERS levies ₹50+GST broker square-off penalties
+              </Typography>
+            </Box>
+          </Box>
+          <Switch
+            size="small"
+            checked={misSquareOffEnabled}
+            onChange={(e) => setMisSquareOffEnabled(e.target.checked)}
+            color="secondary"
+          />
+        </Box>
 
         {/* ⚡ AUTO-EXECUTION MASTER SWITCH */}
         <Box

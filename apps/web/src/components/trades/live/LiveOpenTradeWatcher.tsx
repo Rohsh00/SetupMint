@@ -979,6 +979,27 @@ export function LiveOpenTradeWatcher({
 
                   const activeTacticalTab = getActiveTacticalTab(pos);
 
+                  const notionalExposure = (pos.quantity || 1) * pos.currentLtp;
+                  const initialRiskAmount =
+                    pos.initialRiskAmount ??
+                    (pos.stopLoss !== null
+                      ? Math.abs(pos.entryPrice - pos.stopLoss) * (pos.quantity || 1)
+                      : null);
+
+                  const initialRiskPts =
+                    pos.targetLadder?.initialRiskPoints ??
+                    (pos.stopLoss !== null ? Math.abs(pos.entryPrice - pos.stopLoss) : null);
+
+                  const stopSafetyPercent =
+                    initialRiskPts && initialRiskPts > 0 && pos.distanceToStopPoints !== null
+                      ? Math.min(100, Math.max(0, (pos.distanceToStopPoints / initialRiskPts) * 100))
+                      : null;
+
+                  const nextLadderMilestone =
+                    pos.targetLadder?.steps.find((s) => s.status === 'IN_PROGRESS' || s.isActionable) ||
+                    pos.targetLadder?.steps.find((s) => s.status === 'PENDING') ||
+                    pos.targetLadder?.steps[0];
+
                   return (
                     <Grid size={{ xs: 12, lg: openTradesCount === 1 ? 12 : 6 }} key={pos.tradeId}>
                       <Card
@@ -1260,9 +1281,9 @@ export function LiveOpenTradeWatcher({
                         </Box>
 
                         {/* 3. Responsive 2-Column Split Body */}
-                        <Grid container spacing={1.5}>
+                        <Grid container spacing={1.5} sx={{ alignItems: 'stretch' }}>
                           {/* Left Column: Live Vitals & Proximity */}
-                          <Grid size={{ xs: 12, md: 5 }}>
+                          <Grid size={{ xs: 12, md: 5.5, lg: 5.5 }}>
                             {/* Execution & Stop Buffer Card */}
                             <Box
                               sx={{
@@ -1274,47 +1295,190 @@ export function LiveOpenTradeWatcher({
                                 height: '100%',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                justifyContent: 'space-between',
+                                gap: 1.25,
                               }}
                             >
-                              <Box sx={{ mb: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
-                                    Entry: <strong>₹{pos.entryPrice}</strong>
-                                  </Typography>
-                                  <Typography
-                                    variant="caption"
+                              {/* 4-Metric Position Vitals Matrix */}
+                              <Grid container spacing={1}>
+                                {/* Entry */}
+                                <Grid size={{ xs: 6 }}>
+                                  <Box
                                     sx={{
-                                      fontSize: '0.68rem',
-                                      fontWeight: 700,
-                                      color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
+                                      p: 1,
+                                      borderRadius: '8px',
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
+                                      border: '1px solid',
+                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
                                     }}
                                   >
-                                    {pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts ({pos.priceDeltaPercent >= 0 ? '+' : ''}{pos.priceDeltaPercent}%)
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                      Entry Price
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                      ₹{pos.entryPrice}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        fontSize: '0.62rem',
+                                        fontWeight: 700,
+                                        color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
+                                      }}
+                                    >
+                                      {pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts ({pos.priceDeltaPercent >= 0 ? '+' : ''}{pos.priceDeltaPercent}%)
+                                    </Typography>
+                                  </Box>
+                                </Grid>
+
+                                {/* Current LTP */}
+                                <Grid size={{ xs: 6 }}>
+                                  <Box
+                                    sx={{
+                                      p: 1,
+                                      borderRadius: '8px',
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
+                                      border: '1px solid',
+                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                    }}
+                                  >
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                      Current LTP
+                                    </Typography>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        fontWeight: 800,
+                                        color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.25,
+                                      }}
+                                    >
+                                      ₹{pos.currentLtp}
+                                      {pos.priceDeltaPoints >= 0 ? (
+                                        <TrendingUpRoundedIcon sx={{ fontSize: 13 }} />
+                                      ) : (
+                                        <TrendingDownRoundedIcon sx={{ fontSize: 13 }} />
+                                      )}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                      Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, 'INR')}
+                                    </Typography>
+                                  </Box>
+                                </Grid>
+
+                                {/* Capital At Risk (1R) */}
+                                <Grid size={{ xs: 6 }}>
+                                  <Box
+                                    sx={{
+                                      p: 1,
+                                      borderRadius: '8px',
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
+                                      border: '1px solid',
+                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                    }}
+                                  >
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                      Risk Capital (1R)
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 800, color: '#F43F5E' }}>
+                                      {initialRiskAmount !== null ? formatCurrency(initialRiskAmount, 'INR') : '—'}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                      {initialRiskPts !== null ? `${initialRiskPts.toFixed(1)} pts risk` : 'No stop set'}
+                                    </Typography>
+                                  </Box>
+                                </Grid>
+
+                                {/* Position Notional Exposure */}
+                                <Grid size={{ xs: 6 }}>
+                                  <Box
+                                    sx={{
+                                      p: 1,
+                                      borderRadius: '8px',
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
+                                      border: '1px solid',
+                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                                    }}
+                                  >
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                      Position Value
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                      {formatCurrency(notionalExposure, 'INR')}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                      {pos.quantity ?? 1} units @ LTP
+                                    </Typography>
+                                  </Box>
+                                </Grid>
+                              </Grid>
+
+                              {/* Stop Loss Safety Runway Bar */}
+                              <Box
+                                sx={{
+                                  p: 1,
+                                  borderRadius: '8px',
+                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                                  border: '1px solid',
+                                  borderColor: threat.border,
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <ShieldRoundedIcon sx={{ fontSize: 13, color: threat.color }} />
+                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700 }}>
+                                      Stop Loss Runway
+                                    </Typography>
+                                  </Box>
+                                  <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 800, color: threat.color }}>
+                                    {pos.distanceToStopPoints !== null
+                                      ? `${pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'} (${pos.distanceToStopTicks ?? 0} ticks)`
+                                      : 'No Stop Loss Set'}
                                   </Typography>
                                 </Box>
 
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
-                                    SL Buffer:
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={stopSafetyPercent ?? (pos.stopLoss !== null ? 100 : 0)}
+                                  sx={{
+                                    height: 5,
+                                    borderRadius: 2.5,
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                    '& .MuiLinearProgress-bar': {
+                                      bgcolor: threat.color,
+                                      borderRadius: 2.5,
+                                    },
+                                  }}
+                                />
+
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                    SL: {pos.stopLoss !== null ? `₹${pos.stopLoss}` : '—'}
                                   </Typography>
-                                  <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 700, color: threat.color }}>
-                                    {pos.distanceToStopPoints !== null
-                                      ? `${pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'} (${pos.distanceToStopTicks ?? 0} ticks)`
-                                      : 'No Stop Set'}
+                                  <Typography variant="caption" sx={{ fontSize: '0.62rem', fontWeight: 700, color: threat.color }}>
+                                    {threat.label} {stopSafetyPercent !== null ? `(${stopSafetyPercent.toFixed(0)}% runway)` : ''}
                                   </Typography>
                                 </Box>
                               </Box>
 
-                              {/* Target Progress */}
+                              {/* Target Runway / Active Objective Bar */}
                               {pos.target !== null ? (
-                                <Box sx={{ mt: 0.5 }}>
+                                <Box
+                                  sx={{
+                                    p: 1,
+                                    borderRadius: '8px',
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                                    border: '1px solid',
+                                    borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                                  }}
+                                >
                                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                      <TrackChangesRoundedIcon sx={{ fontSize: 13, color: '#3B82F6' }} />
+                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5, color: '#3B82F6' }}>
+                                      <TrackChangesRoundedIcon sx={{ fontSize: 13 }} />
                                       Target: ₹{pos.target}
                                     </Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: '#3B82F6' }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.68rem', color: '#3B82F6' }}>
                                       {pos.targetProgressPercent !== null ? `${pos.targetProgressPercent}%` : ''}
                                     </Typography>
                                   </Box>
@@ -1323,31 +1487,93 @@ export function LiveOpenTradeWatcher({
                                     variant="determinate"
                                     value={Math.min(Math.max(pos.targetProgressPercent ?? 0, 0), 100)}
                                     sx={{
-                                      height: 4,
-                                      borderRadius: 2,
+                                      height: 5,
+                                      borderRadius: 2.5,
                                       bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2 },
+                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2.5 },
                                     }}
                                   />
 
-                                  {pos.distanceToTargetPoints !== null && (
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', mt: 0.5, display: 'block' }}>
-                                      {Math.abs(pos.distanceToTargetPoints)} pts away
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                      {pos.distanceToTargetPoints !== null ? `${Math.abs(pos.distanceToTargetPoints)} pts away` : ''}
                                     </Typography>
-                                  )}
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                      {pos.distanceToTargetTicks !== null ? `${pos.distanceToTargetTicks} ticks` : ''}
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              ) : nextLadderMilestone ? (
+                                <Box
+                                  sx={{
+                                    p: 1,
+                                    borderRadius: '8px',
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                                    border: '1px solid',
+                                    borderColor: alpha('#3B82F6', 0.25),
+                                  }}
+                                >
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5, color: '#3B82F6' }}>
+                                      <TrackChangesRoundedIcon sx={{ fontSize: 13 }} />
+                                      Next Objective: {nextLadderMilestone.name} @ ₹{nextLadderMilestone.targetPrice}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.68rem', color: '#3B82F6' }}>
+                                      {nextLadderMilestone.progressPercent}% RUN
+                                    </Typography>
+                                  </Box>
+
+                                  <LinearProgress
+                                    variant="determinate"
+                                    value={Math.min(Math.max(nextLadderMilestone.progressPercent ?? 0, 0), 100)}
+                                    sx={{
+                                      height: 5,
+                                      borderRadius: 2.5,
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2.5 },
+                                    }}
+                                  />
+
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                      {nextLadderMilestone.distancePoints} pts remaining ({nextLadderMilestone.plannedExitQty} qty book)
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontSize: '0.62rem', fontWeight: 700, color: '#3B82F6' }}>
+                                      {nextLadderMilestone.status}
+                                    </Typography>
+                                  </Box>
                                 </Box>
                               ) : (
-                                <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
+                                <Box
+                                  sx={{
+                                    p: 1,
+                                    borderRadius: '8px',
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                                    border: '1px dashed',
+                                    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                                    textAlign: 'center',
+                                  }}
+                                >
                                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                    No planned target defined
+                                    Runner Mode • No fixed target defined
                                   </Typography>
                                 </Box>
                               )}
+
+                              {/* Footer Friction Summary */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 0.5, mt: 'auto' }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                  Est. Charges: ~{formatCurrency(pos.estimatedCharges ?? 0, 'INR')}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                  Contract: {pos.quantity} units
+                                </Typography>
+                              </Box>
                             </Box>
                           </Grid>
 
                           {/* Right Column: Tactical Strategy Inspector (Scaling Ladder vs Giveback Meter) */}
-                          <Grid size={{ xs: 12, md: 7 }}>
+                          <Grid size={{ xs: 12, md: 6.5, lg: 6.5 }}>
                             <Box
                               sx={{
                                 p: 1,

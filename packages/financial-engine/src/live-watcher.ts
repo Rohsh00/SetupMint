@@ -48,7 +48,9 @@ export interface ILiveOpenTradeCalculationParams {
   contractMultiplier?: number | string | Decimal;
   lotSize?: number | string | Decimal;
   stopLoss?: number | string | Decimal | null;
+  initialStopLoss?: number | string | Decimal | null;
   target?: number | string | Decimal | null;
+  plannedTarget?: number | string | Decimal | null;
   plannedRiskAmount?: number | string | Decimal | null;
   tickSize?: number | string | Decimal | null;
   assetClass?: AssetClass;
@@ -524,11 +526,18 @@ export function calculateLiveOpenTradeMetric(
   const floatingNetPnL = floatingGrossPnL.minus(estimatedCharges);
 
   // 4. Initial Planned Risk & Unrealized R-multiple
+  const effectiveStopLoss = params.stopLoss !== undefined && params.stopLoss !== null
+    ? params.stopLoss
+    : params.initialStopLoss;
+  const effectiveTarget = params.target !== undefined && params.target !== null
+    ? params.target
+    : params.plannedTarget;
+
   let initialRiskAmount: Decimal | null = null;
   if (params.plannedRiskAmount !== undefined && params.plannedRiskAmount !== null && Number(params.plannedRiskAmount) > 0) {
     initialRiskAmount = new Decimal(params.plannedRiskAmount);
-  } else if (params.stopLoss !== undefined && params.stopLoss !== null) {
-    const dStop = new Decimal(params.stopLoss);
+  } else if (effectiveStopLoss !== undefined && effectiveStopLoss !== null) {
+    const dStop = new Decimal(effectiveStopLoss);
     const stopDistance = dEntry.minus(dStop).abs();
     if (!stopDistance.isZero()) {
       initialRiskAmount = stopDistance.times(dQty).times(dMultiplier);
@@ -547,8 +556,8 @@ export function calculateLiveOpenTradeMetric(
   let distanceToStopPercent: Decimal | null = null;
   let stopThreatLevel: StopThreatLevel = 'NO_STOP';
 
-  if (params.stopLoss !== undefined && params.stopLoss !== null) {
-    const dStop = new Decimal(params.stopLoss);
+  if (effectiveStopLoss !== undefined && effectiveStopLoss !== null) {
+    const dStop = new Decimal(effectiveStopLoss);
 
     // Distance remaining to stop loss
     // For LONG: buffer = currentLtp - stopLoss
@@ -585,8 +594,8 @@ export function calculateLiveOpenTradeMetric(
   let distanceToTargetTicks: number | null = null;
   let targetProgressPercent: number | null = null;
 
-  if (params.target !== undefined && params.target !== null) {
-    const dTarget = new Decimal(params.target);
+  if (effectiveTarget !== undefined && effectiveTarget !== null) {
+    const dTarget = new Decimal(effectiveTarget);
 
     // Remaining distance to hit target
     // For LONG: distance = target - currentLtp

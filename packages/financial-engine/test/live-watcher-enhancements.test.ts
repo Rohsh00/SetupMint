@@ -165,8 +165,8 @@ describe('Live Trading Watcher Enhancements Suite', () => {
         quantity: 50,
         entryPrice: 24000,
         currentLtp: 24100,
-        initialStopLoss: 23950,
-        plannedTarget: 24200,
+        stopLoss: 23950,
+        target: 24200,
       });
 
       const summary = calculateLiveWatcherSummary([metric]);

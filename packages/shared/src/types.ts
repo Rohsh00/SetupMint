@@ -1691,7 +1691,9 @@ export interface ILiveGivebackMetric {
 export type TargetLadderStepStatus = 'PENDING' | 'IN_PROGRESS' | 'MET' | 'EXECUTED';
 
 export interface ICustomLadderRuleStep {
-  targetR: number; // e.g. 1.0, 2.0, 3.0
+  enabled?: boolean;
+  isFreeRunner?: boolean;
+  targetR?: number; // e.g. 1.0, 2.0, 3.0
   exitRatio: number; // e.g. 0.30, 0.50, 0.70, 1.0
   customLots?: number;
   trailAction: 'TRUE_BE_WITH_FEES' | 'NOMINAL_BE' | 'TRAIL_T1' | 'CUSTOM_POINTS' | 'NONE';
@@ -1701,10 +1703,11 @@ export interface ICustomLadderRuleStep {
 export interface ICustomLadderRules {
   tradeId?: string;
   lotSize?: number;
+  targetMode?: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE';
   autoExecuteEnabled?: boolean;
   t1: ICustomLadderRuleStep;
-  t2: ICustomLadderRuleStep;
-  t3: ICustomLadderRuleStep;
+  t2?: ICustomLadderRuleStep;
+  t3?: ICustomLadderRuleStep;
   updatedAt?: string;
 }
 
@@ -1724,6 +1727,7 @@ export interface ILiveTargetLadderStep {
   progressPercent: number; // 0 to 100%
   status: TargetLadderStepStatus;
   isActionable: boolean; // true if reached or currently met
+  isFreeRunner?: boolean;
 }
 
 export interface ILiveTargetLadder {

@@ -282,6 +282,8 @@ export function LiveOpenTradeWatcher({
         entryPrice: pos.entryPrice,
         currentLtp: pos.currentLtp,
         direction: pos.direction,
+        quantity: pos.quantity,
+        contractMultiplier: pos.contractMultiplier,
         stopLoss: pos.stopLoss,
         plannedTarget: pos.target,
         tickSize: pos.tickSize,
@@ -294,6 +296,7 @@ export function LiveOpenTradeWatcher({
 
       for (let i = 0; i < ladder.steps.length; i++) {
         const step = ladder.steps[i];
+        if (step.isFreeRunner) continue; // Free runner has no fixed target price trigger
         const isLong = pos.direction === 'LONG';
         const isTargetMet =
           step.status === 'MET' ||
@@ -819,6 +822,8 @@ export function LiveOpenTradeWatcher({
                               entryPrice: pos.entryPrice,
                               currentLtp: pos.currentLtp,
                               direction: pos.direction,
+                              quantity: pos.quantity,
+                              contractMultiplier: pos.contractMultiplier,
                               stopLoss: pos.stopLoss,
                               plannedTarget: pos.target,
                               tickSize: pos.tickSize,
@@ -1245,6 +1250,8 @@ export function LiveOpenTradeWatcher({
                           entryPrice: pos.entryPrice,
                           currentLtp: pos.currentLtp,
                           direction: pos.direction,
+                          quantity: pos.quantity,
+                          contractMultiplier: pos.contractMultiplier,
                           stopLoss: pos.stopLoss,
                           plannedTarget: pos.target,
                           tickSize: pos.tickSize,

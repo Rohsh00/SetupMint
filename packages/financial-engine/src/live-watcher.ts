@@ -290,6 +290,11 @@ export function calculateTargetLadder(params: {
     t1StopLabel = `Lock BE (₹${t1StopLoss})`;
   }
 
+  const isT1AllOut = t1ExitRatio >= 1.0;
+  const t2Enabled = !isT1AllOut && (rules?.t2 ? rules.t2.enabled !== false : true);
+  const isRunnerFree = rules?.t3?.isFreeRunner === true;
+  const t3Enabled = !isT1AllOut && (rules?.t3 ? rules.t3.enabled !== false : true);
+
   // T2: Target 2
   const t2RiskPoints = riskPoints.times(t2TargetR);
   const t2Price = isLong ? dEntry.plus(t2RiskPoints) : dEntry.minus(t2RiskPoints);
@@ -324,14 +329,20 @@ export function calculateTargetLadder(params: {
     t2StopLabel = `Trail +${rules.t2.trailPoints} pts (₹${t2StopLoss})`;
   }
 
-  // T3: Runner
+  // T3: Runner (Free Move or Fixed Target)
   const t3RiskPoints = riskPoints.times(t3TargetR);
   const t3Price = dPlannedTarget && !dPlannedTarget.isZero()
     ? dPlannedTarget
     : isLong ? dEntry.plus(t3RiskPoints) : dEntry.minus(t3RiskPoints);
   const isT3Met = isLong ? dLtp.greaterThanOrEqualTo(t3Price) : dLtp.lessThanOrEqualTo(t3Price);
-  const runnerLots = Math.max(1, totalLots - t1ExitLots - (isT2Met ? t2ExitLots : 0));
-  const runnerQty = totalLots > 1 ? runnerLots * lotSizeNum : totalQty;
+  const runnerLots = rules?.t3?.customLots && rules.t3.customLots > 0
+    ? rules.t3.customLots
+    : (t2Enabled
+      ? Math.max(1, totalLots - t1ExitLots - t2ExitLots)
+      : Math.max(1, totalLots - t1ExitLots));
+  const runnerQty = totalLots > 1
+    ? runnerLots * lotSizeNum
+    : Math.max(1, totalQty - t1ExitQty - (t2Enabled ? t2ExitQty : 0));
 
   const t3Dist = isLong ? t3Price.minus(dLtp) : dLtp.minus(t3Price);
   const t3PlannedRun = isLong ? t3Price.minus(dEntry).abs() : dEntry.minus(t3Price).abs();
@@ -339,30 +350,31 @@ export function calculateTargetLadder(params: {
     ? 0
     : Math.min(100, Math.max(0, Number(t1Run.dividedBy(t3PlannedRun).times(100).toFixed(1))));
 
-  let activeStepIndex = 1;
-  if (isT2Met) activeStepIndex = 3;
-  else if (isT1Met) activeStepIndex = 2;
+  const steps: ILiveTargetLadderStep[] = [];
 
-  const steps: ILiveTargetLadderStep[] = [
-    {
-      targetIndex: 1,
-      name: `T1 (+${t1TargetR.toFixed(1)}R)`,
-      targetR: t1TargetR,
-      targetPrice: Number(t1Price.toFixed(2)),
-      plannedExitRatio: t1ExitRatio,
-      plannedExitQty: t1ExitQty,
-      plannedExitLots: totalLots > 1 ? t1ExitLots : 1,
-      lotSize: lotSizeNum,
-      suggestedStopLoss: t1StopLoss,
-      suggestedStopLabel: t1StopLabel,
-      distancePoints: Number(t1Dist.toFixed(2)),
-      distancePercent: Number(t1Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
-      progressPercent: t1Progress,
-      status: isT1Met ? 'MET' : t1Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
-      isActionable: isT1Met,
-    },
-    {
-      targetIndex: 2,
+  // Step 1: Target 1 (R1)
+  steps.push({
+    targetIndex: 1,
+    name: `T1 (+${t1TargetR.toFixed(1)}R)`,
+    targetR: t1TargetR,
+    targetPrice: Number(t1Price.toFixed(2)),
+    plannedExitRatio: t1ExitRatio,
+    plannedExitQty: t1ExitQty,
+    plannedExitLots: totalLots > 1 ? t1ExitLots : 1,
+    lotSize: lotSizeNum,
+    suggestedStopLoss: t1StopLoss,
+    suggestedStopLabel: t1StopLabel,
+    distancePoints: Number(t1Dist.toFixed(2)),
+    distancePercent: Number(t1Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
+    progressPercent: t1Progress,
+    status: isT1Met ? 'MET' : t1Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+    isActionable: isT1Met,
+  });
+
+  // Step 2: Target 2 (R2) if enabled
+  if (t2Enabled) {
+    steps.push({
+      targetIndex: steps.length + 1,
       name: `T2 (+${t2TargetR.toFixed(1)}R)`,
       targetR: t2TargetR,
       targetPrice: Number(t2Price.toFixed(2)),
@@ -377,25 +389,57 @@ export function calculateTargetLadder(params: {
       progressPercent: t2Progress,
       status: isT2Met ? 'MET' : t2Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
       isActionable: isT2Met,
-    },
-    {
-      targetIndex: 3,
-      name: `Runner (+${t3TargetR.toFixed(1)}R)`,
-      targetR: t3TargetR,
-      targetPrice: Number(t3Price.toFixed(2)),
-      plannedExitRatio: 1.0,
-      plannedExitQty: runnerQty,
-      plannedExitLots: totalLots > 1 ? runnerLots : 1,
-      lotSize: lotSizeNum,
-      suggestedStopLoss: Number(t2Price.toFixed(2)),
-      suggestedStopLabel: `Trail Behind Swing (₹${Number(t2Price.toFixed(2))})`,
-      distancePoints: Number(t3Dist.toFixed(2)),
-      distancePercent: Number(t3Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
-      progressPercent: t3Progress,
-      status: isT3Met ? 'MET' : t3Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
-      isActionable: isT3Met,
-    },
-  ];
+    });
+  }
+
+  // Step 3 (or 2): Runner (Free Move or Fixed Target)
+  if (t3Enabled) {
+    if (isRunnerFree) {
+      steps.push({
+        targetIndex: steps.length + 1,
+        name: 'Runner (Free Move)',
+        targetR: 0,
+        targetPrice: 0,
+        plannedExitRatio: 1.0,
+        plannedExitQty: runnerQty,
+        plannedExitLots: totalLots > 1 ? runnerLots : 1,
+        lotSize: lotSizeNum,
+        suggestedStopLoss: t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss,
+        suggestedStopLabel: `Open Trail (SL: ₹${t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss})`,
+        distancePoints: 0,
+        distancePercent: 0,
+        progressPercent: isT1Met ? 100 : 0,
+        status: isT1Met ? 'IN_PROGRESS' : 'PENDING',
+        isActionable: isT1Met,
+        isFreeRunner: true,
+      });
+    } else {
+      steps.push({
+        targetIndex: steps.length + 1,
+        name: `Runner (+${t3TargetR.toFixed(1)}R)`,
+        targetR: t3TargetR,
+        targetPrice: Number(t3Price.toFixed(2)),
+        plannedExitRatio: 1.0,
+        plannedExitQty: runnerQty,
+        plannedExitLots: totalLots > 1 ? runnerLots : 1,
+        lotSize: lotSizeNum,
+        suggestedStopLoss: Number(t2Price.toFixed(2)),
+        suggestedStopLabel: `Trail Behind Swing (₹${Number(t2Price.toFixed(2))})`,
+        distancePoints: Number(t3Dist.toFixed(2)),
+        distancePercent: Number(t3Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
+        progressPercent: t3Progress,
+        status: isT3Met ? 'MET' : t3Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+        isActionable: isT3Met,
+      });
+    }
+  }
+
+  let activeStepIndex = 1;
+  if (t2Enabled && isT2Met) {
+    activeStepIndex = steps.length;
+  } else if (isT1Met) {
+    activeStepIndex = Math.min(2, steps.length);
+  }
 
   return {
     initialRiskPoints,

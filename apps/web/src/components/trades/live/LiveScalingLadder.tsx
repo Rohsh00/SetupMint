@@ -95,9 +95,12 @@ export function LiveScalingLadder({
           const isMet = step.status === 'MET';
           const isInProgress = step.status === 'IN_PROGRESS';
           const isExecuted = step.status === 'EXECUTED';
+          const isFree = Boolean(step.isFreeRunner);
 
-          const stepColor = isMet ? '#10B981' : isInProgress ? '#3B82F6' : '#64748B';
-          const stepBg = isMet
+          const stepColor = isFree ? '#A855F7' : isMet ? '#10B981' : isInProgress ? '#3B82F6' : '#64748B';
+          const stepBg = isFree
+            ? alpha('#A855F7', isDark ? 0.12 : 0.05)
+            : isMet
             ? alpha('#10B981', isDark ? 0.15 : 0.08)
             : isInProgress
             ? alpha('#3B82F6', isDark ? 0.12 : 0.06)
@@ -113,7 +116,9 @@ export function LiveScalingLadder({
                 borderRadius: '8px',
                 bgcolor: stepBg,
                 border: '1px solid',
-                borderColor: isMet
+                borderColor: isFree
+                  ? alpha('#A855F7', 0.35)
+                  : isMet
                   ? alpha('#10B981', 0.4)
                   : isInProgress
                   ? alpha('#3B82F6', 0.3)
@@ -129,15 +134,23 @@ export function LiveScalingLadder({
                   <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.72rem', color: stepColor }}>
                     {step.name}
                   </Typography>
-                  <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem' }}>
-                    @ ₹{step.targetPrice}
+                  <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem', color: isFree ? '#A855F7' : 'inherit' }}>
+                    {isFree ? '• Open Trail (No Cap)' : `@ ₹${step.targetPrice}`}
                   </Typography>
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Chip
-                    icon={isMet ? <CheckCircleRoundedIcon sx={{ fontSize: '11px !important' }} /> : undefined}
-                    label={isMet ? 'TARGET MET' : isInProgress ? `${step.progressPercent}% RUN` : 'PENDING'}
+                    icon={isMet ? <CheckCircleRoundedIcon sx={{ fontSize: '11px !important' }} /> : isFree ? <TrackChangesRoundedIcon sx={{ fontSize: '11px !important' }} /> : undefined}
+                    label={
+                      isFree
+                        ? 'FREE RUNNER'
+                        : isMet
+                        ? 'TARGET MET'
+                        : isInProgress
+                        ? `${step.progressPercent}% RUN`
+                        : 'PENDING'
+                    }
                     size="small"
                     sx={{
                       height: 18,
@@ -156,7 +169,7 @@ export function LiveScalingLadder({
               <Box sx={{ mb: 0.75 }}>
                 <LinearProgress
                   variant="determinate"
-                  value={Math.min(100, Math.max(0, step.progressPercent))}
+                  value={isFree ? 100 : Math.min(100, Math.max(0, step.progressPercent))}
                   sx={{
                     height: 4,
                     borderRadius: 2,
@@ -164,6 +177,9 @@ export function LiveScalingLadder({
                     '& .MuiLinearProgress-bar': {
                       bgcolor: stepColor,
                       borderRadius: 2,
+                      ...(isFree && {
+                        backgroundImage: 'linear-gradient(90deg, #A855F7 0%, #3B82F6 100%)',
+                      }),
                     },
                   }}
                 />
@@ -173,7 +189,11 @@ export function LiveScalingLadder({
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                 <Box>
                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
-                    {step.distancePoints > 0 ? `${step.distancePoints} pts remaining` : 'Target reached!'}
+                    {isFree
+                      ? 'Riding open market trend • Trailing SL protected'
+                      : step.distancePoints > 0
+                      ? `${step.distancePoints} pts remaining`
+                      : 'Target reached!'}
                   </Typography>
                   {(() => {
                     const isLotBased = resolvedLotSize > 1;
@@ -207,19 +227,19 @@ export function LiveScalingLadder({
                     fontSize: '0.65rem',
                     fontWeight: 800,
                     textTransform: 'none',
-                    bgcolor: isMet ? '#10B981' : 'transparent',
+                    bgcolor: isMet ? '#10B981' : isFree ? alpha('#A855F7', 0.12) : 'transparent',
                     color: isMet ? '#FFFFFF' : stepColor,
                     borderColor: stepColor,
                     borderRadius: '4px',
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      bgcolor: isMet ? '#059669' : alpha(stepColor, 0.1),
+                      bgcolor: isMet ? '#059669' : alpha(stepColor, 0.2),
                       borderColor: stepColor,
                     },
                   }}
                 >
-                  Execute {step.targetIndex === 3 ? 'Runner' : `T${step.targetIndex}`}
+                  {isFree ? 'Close Runner' : `Execute ${step.targetIndex === 3 ? 'Runner' : `T${step.targetIndex}`}`}
                 </Button>
               </Box>
             </Box>

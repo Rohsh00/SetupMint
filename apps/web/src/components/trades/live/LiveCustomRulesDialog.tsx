@@ -26,6 +26,9 @@ import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 
 import {
   ILiveOpenTradeMetric,
@@ -33,6 +36,8 @@ import {
   ICustomLadderRuleStep,
 } from '@tradevault/shared';
 import { formatCurrency } from '../../../lib/utils.js';
+
+export type TargetPlanningPreset = 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE' | 'T1_ONLY';
 
 export interface LiveCustomRulesDialogProps {
   open: boolean;
@@ -57,6 +62,7 @@ export function LiveCustomRulesDialog({
 
   const [lotSize, setLotSize] = useState<number>(defaultLotSize);
   const [autoExecute, setAutoExecute] = useState<boolean>(false);
+  const [targetMode, setTargetMode] = useState<TargetPlanningPreset>('T1_FREE_RUNNER');
 
   // Target 1
   const [t1R, setT1R] = useState<number>(1.0);
@@ -65,12 +71,14 @@ export function LiveCustomRulesDialog({
   const [t1TrailPoints, setT1TrailPoints] = useState<number>(15);
 
   // Target 2
+  const [t2Enabled, setT2Enabled] = useState<boolean>(false);
   const [t2R, setT2R] = useState<number>(2.0);
   const [t2Ratio, setT2Ratio] = useState<number>(0.5);
   const [t2TrailAction, setT2TrailAction] = useState<'TRAIL_T1' | 'CUSTOM_POINTS' | 'NONE'>('TRAIL_T1');
   const [t2TrailPoints, setT2TrailPoints] = useState<number>(30);
 
-  // Target 3 (Runner)
+  // Runner
+  const [isFreeRunner, setIsFreeRunner] = useState<boolean>(true);
   const [t3R, setT3R] = useState<number>(3.0);
 
   // Load existing rules from localStorage on open
@@ -83,6 +91,9 @@ export function LiveCustomRulesDialog({
           const parsed = JSON.parse(saved) as ICustomLadderRules;
           if (parsed.lotSize) setLotSize(parsed.lotSize);
           setAutoExecute(Boolean(parsed.autoExecuteEnabled));
+          if (parsed.targetMode) {
+            setTargetMode(parsed.targetMode as TargetPlanningPreset);
+          }
           if (parsed.t1) {
             setT1R(parsed.t1.targetR ?? 1.0);
             setT1Ratio(parsed.t1.exitRatio ?? 0.5);
@@ -90,12 +101,16 @@ export function LiveCustomRulesDialog({
             if (parsed.t1.trailPoints) setT1TrailPoints(parsed.t1.trailPoints);
           }
           if (parsed.t2) {
+            setT2Enabled(parsed.t2.enabled !== false);
             setT2R(parsed.t2.targetR ?? 2.0);
             setT2Ratio(parsed.t2.exitRatio ?? 0.5);
             setT2TrailAction((parsed.t2.trailAction as any) ?? 'TRAIL_T1');
             if (parsed.t2.trailPoints) setT2TrailPoints(parsed.t2.trailPoints);
+          } else if (parsed.targetMode === 'T1_FREE_RUNNER' || parsed.targetMode === 'T1_ONLY') {
+            setT2Enabled(false);
           }
           if (parsed.t3) {
+            setIsFreeRunner(parsed.t3.isFreeRunner === true);
             setT3R(parsed.t3.targetR ?? 3.0);
           }
           return;
@@ -104,14 +119,18 @@ export function LiveCustomRulesDialog({
         }
       }
 
+      // Default preset: Target 1 + Free Move Runner (T2 disabled, Free Runner enabled)
       setLotSize(defaultLotSize);
       setAutoExecute(false);
+      setTargetMode('T1_FREE_RUNNER');
       setT1R(1.0);
       setT1Ratio(0.5);
       setT1TrailAction('TRUE_BE_WITH_FEES');
+      setT2Enabled(false);
       setT2R(2.0);
       setT2Ratio(0.5);
       setT2TrailAction('TRAIL_T1');
+      setIsFreeRunner(true);
       setT3R(3.0);
     }
   }, [metric, open, defaultLotSize]);
@@ -123,6 +142,10 @@ export function LiveCustomRulesDialog({
   const isLotBased = lotSize > 1;
   const totalLots = isLotBased ? Math.max(1, Math.floor(totalQty / lotSize)) : totalQty;
 
+  const isT1AllOut = t1Ratio >= 1.0;
+  const effectiveT2Enabled = !isT1AllOut && t2Enabled;
+  const effectiveRunnerEnabled = !isT1AllOut;
+
   // Calculate live prices based on risk
   const riskPts = metric.targetLadder?.initialRiskPoints ?? (metric.stopLoss !== null ? Math.abs(metric.entryPrice - metric.stopLoss) : 10);
   const t1Price = Number((isLong ? metric.entryPrice + t1R * riskPts : metric.entryPrice - t1R * riskPts).toFixed(2));
@@ -131,25 +154,65 @@ export function LiveCustomRulesDialog({
 
   // Exit lots calculation
   let t1ExitLots = 1;
-  if (totalLots > 1) {
+  if (isT1AllOut) {
+    t1ExitLots = totalLots;
+  } else if (totalLots > 1) {
     t1ExitLots = Math.max(1, Math.min(totalLots - 1, Math.round(totalLots * t1Ratio)));
   }
   const t1ExitUnits = isLotBased ? t1ExitLots * lotSize : Math.round(totalQty * t1Ratio);
 
-  const remLots = Math.max(1, totalLots - t1ExitLots);
-  const t2ExitLots = remLots > 1 ? Math.max(1, Math.min(remLots - 1, Math.round(remLots * t2Ratio))) : 1;
-  const t2ExitUnits = isLotBased ? t2ExitLots * lotSize : Math.round((totalQty - t1ExitUnits) * t2Ratio);
+  const remLotsAfterT1 = Math.max(0, totalLots - t1ExitLots);
+  const remUnitsAfterT1 = Math.max(0, totalQty - t1ExitUnits);
 
-  const runnerLots = Math.max(1, totalLots - t1ExitLots - (t2ExitLots > 0 ? t2ExitLots : 0));
-  const runnerUnits = isLotBased ? runnerLots * lotSize : Math.max(1, totalQty - t1ExitUnits - t2ExitUnits);
+  let t2ExitLots = 0;
+  let t2ExitUnits = 0;
+  if (effectiveT2Enabled && remLotsAfterT1 > 0) {
+    if (remLotsAfterT1 > 1) {
+      t2ExitLots = Math.max(1, Math.min(remLotsAfterT1 - 1, Math.round(remLotsAfterT1 * t2Ratio)));
+    } else {
+      t2ExitLots = 1;
+    }
+    t2ExitUnits = isLotBased ? t2ExitLots * lotSize : Math.round(remUnitsAfterT1 * t2Ratio);
+  }
+
+  let runnerLots = 0;
+  let runnerUnits = 0;
+  if (effectiveRunnerEnabled) {
+    runnerLots = Math.max(1, totalLots - t1ExitLots - (effectiveT2Enabled ? t2ExitLots : 0));
+    runnerUnits = isLotBased
+      ? runnerLots * lotSize
+      : Math.max(1, totalQty - t1ExitUnits - (effectiveT2Enabled ? t2ExitUnits : 0));
+  }
 
   const trueBe = metric.trueBreakevenPrice ?? metric.entryPrice;
+
+  const handleApplyPreset = (mode: TargetPlanningPreset) => {
+    setTargetMode(mode);
+    if (mode === 'T1_FREE_RUNNER') {
+      setT1Ratio(0.5);
+      setT2Enabled(false);
+      setIsFreeRunner(true);
+    } else if (mode === 'TWO_TARGETS_RUNNER') {
+      setT1Ratio(0.5);
+      setT2Enabled(true);
+      setIsFreeRunner(true);
+    } else if (mode === 'CLASSIC_THREE') {
+      setT1Ratio(totalLots >= 3 ? 0.33 : 0.5);
+      setT2Enabled(true);
+      setIsFreeRunner(false);
+    } else if (mode === 'T1_ONLY') {
+      setT1Ratio(1.0);
+      setT2Enabled(false);
+      setIsFreeRunner(false);
+    }
+  };
 
   const handleSave = () => {
     const rules: ICustomLadderRules = {
       tradeId: metric.tradeId,
       lotSize,
       autoExecuteEnabled: autoExecute,
+      targetMode,
       t1: {
         targetR: t1R,
         exitRatio: t1Ratio,
@@ -158,17 +221,20 @@ export function LiveCustomRulesDialog({
         trailPoints: t1TrailAction === 'CUSTOM_POINTS' ? t1TrailPoints : undefined,
       },
       t2: {
+        enabled: effectiveT2Enabled,
         targetR: t2R,
         exitRatio: t2Ratio,
-        customLots: isLotBased ? t2ExitLots : undefined,
+        customLots: isLotBased && effectiveT2Enabled ? t2ExitLots : undefined,
         trailAction: t2TrailAction,
         trailPoints: t2TrailAction === 'CUSTOM_POINTS' ? t2TrailPoints : undefined,
       },
       t3: {
-        targetR: t3R,
+        enabled: effectiveRunnerEnabled && runnerLots > 0,
+        targetR: isFreeRunner ? 0 : t3R,
         exitRatio: 1.0,
-        customLots: isLotBased ? runnerLots : undefined,
+        customLots: isLotBased && effectiveRunnerEnabled ? runnerLots : undefined,
         trailAction: 'NONE',
+        isFreeRunner,
       },
       updatedAt: new Date().toISOString(),
     };
@@ -226,6 +292,102 @@ export function LiveCustomRulesDialog({
       </DialogTitle>
 
       <DialogContent sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {/* Quick Strategy Presets */}
+        <Box>
+          <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'text.secondary', display: 'block', mb: 1 }}>
+            Target Strategy Preset
+          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
+            <Button
+              size="small"
+              variant={targetMode === 'T1_FREE_RUNNER' ? 'contained' : 'outlined'}
+              onClick={() => handleApplyPreset('T1_FREE_RUNNER')}
+              startIcon={<RocketLaunchRoundedIcon sx={{ fontSize: '14px !important' }} />}
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.72rem',
+                py: 0.75,
+                bgcolor: targetMode === 'T1_FREE_RUNNER' ? '#8B5CF6' : 'transparent',
+                borderColor: targetMode === 'T1_FREE_RUNNER' ? '#8B5CF6' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                color: targetMode === 'T1_FREE_RUNNER' ? '#FFFFFF' : 'text.primary',
+                '&:hover': {
+                  bgcolor: targetMode === 'T1_FREE_RUNNER' ? '#7C3AED' : alpha('#8B5CF6', 0.1),
+                },
+              }}
+            >
+              ⚡ Target 1 + Free Move
+            </Button>
+
+            <Button
+              size="small"
+              variant={targetMode === 'TWO_TARGETS_RUNNER' ? 'contained' : 'outlined'}
+              onClick={() => handleApplyPreset('TWO_TARGETS_RUNNER')}
+              startIcon={<TrendingUpRoundedIcon sx={{ fontSize: '14px !important' }} />}
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.72rem',
+                py: 0.75,
+                bgcolor: targetMode === 'TWO_TARGETS_RUNNER' ? '#3B82F6' : 'transparent',
+                borderColor: targetMode === 'TWO_TARGETS_RUNNER' ? '#3B82F6' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                color: targetMode === 'TWO_TARGETS_RUNNER' ? '#FFFFFF' : 'text.primary',
+                '&:hover': {
+                  bgcolor: targetMode === 'TWO_TARGETS_RUNNER' ? '#2563EB' : alpha('#3B82F6', 0.1),
+                },
+              }}
+            >
+              🎯 2 Targets + Free Move
+            </Button>
+
+            <Button
+              size="small"
+              variant={targetMode === 'CLASSIC_THREE' ? 'contained' : 'outlined'}
+              onClick={() => handleApplyPreset('CLASSIC_THREE')}
+              startIcon={<TrackChangesRoundedIcon sx={{ fontSize: '14px !important' }} />}
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.72rem',
+                py: 0.75,
+                bgcolor: targetMode === 'CLASSIC_THREE' ? '#0284C7' : 'transparent',
+                borderColor: targetMode === 'CLASSIC_THREE' ? '#0284C7' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                color: targetMode === 'CLASSIC_THREE' ? '#FFFFFF' : 'text.primary',
+                '&:hover': {
+                  bgcolor: targetMode === 'CLASSIC_THREE' ? '#0369A1' : alpha('#0284C7', 0.1),
+                },
+              }}
+            >
+              📐 Classic Fixed R1-R3
+            </Button>
+
+            <Button
+              size="small"
+              variant={targetMode === 'T1_ONLY' ? 'contained' : 'outlined'}
+              onClick={() => handleApplyPreset('T1_ONLY')}
+              startIcon={<CheckCircleRoundedIcon sx={{ fontSize: '14px !important' }} />}
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.72rem',
+                py: 0.75,
+                bgcolor: targetMode === 'T1_ONLY' ? '#10B981' : 'transparent',
+                borderColor: targetMode === 'T1_ONLY' ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                color: targetMode === 'T1_ONLY' ? '#FFFFFF' : 'text.primary',
+                '&:hover': {
+                  bgcolor: targetMode === 'T1_ONLY' ? '#059669' : alpha('#10B981', 0.1),
+                },
+              }}
+            >
+              🏁 All-Out at T1 (100%)
+            </Button>
+          </Box>
+        </Box>
+
         {/* Lot Sizing Configuration */}
         <Box
           sx={{
@@ -273,6 +435,42 @@ export function LiveCustomRulesDialog({
           </Grid>
         </Box>
 
+        {/* Live Lot & Position Distribution Preview */}
+        <Box
+          sx={{
+            p: 1.25,
+            borderRadius: '8px',
+            bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+            border: '1px dashed',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', fontWeight: 700, display: 'block', mb: 0.75 }}>
+            PLANNED POSITION DISTRIBUTION:
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Chip
+              label={`T1: ${isLotBased ? `${t1ExitLots} lots` : `${t1ExitUnits} qty`} (${Math.round((t1ExitUnits / totalQty) * 100)}%)`}
+              size="small"
+              sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700, bgcolor: alpha('#10B981', 0.15), color: '#10B981', border: `1px solid ${alpha('#10B981', 0.3)}` }}
+            />
+            {effectiveT2Enabled && (
+              <Chip
+                label={`T2: ${isLotBased ? `${t2ExitLots} lots` : `${t2ExitUnits} qty`} (${Math.round((t2ExitUnits / totalQty) * 100)}%)`}
+                size="small"
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700, bgcolor: alpha('#3B82F6', 0.15), color: '#3B82F6', border: `1px solid ${alpha('#3B82F6', 0.3)}` }}
+              />
+            )}
+            {effectiveRunnerEnabled && (
+              <Chip
+                label={`Runner (${isFreeRunner ? 'Free Move' : `+${t3R}R`}): ${isLotBased ? `${runnerLots} lots` : `${runnerUnits} qty`} (${Math.round((runnerUnits / totalQty) * 100)}%)`}
+                size="small"
+                sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700, bgcolor: alpha('#8B5CF6', 0.15), color: '#8B5CF6', border: `1px solid ${alpha('#8B5CF6', 0.3)}` }}
+              />
+            )}
+          </Box>
+        </Box>
+
         {/* Target 1 (R1) Rule Card */}
         <Box
           sx={{
@@ -314,11 +512,17 @@ export function LiveCustomRulesDialog({
                 <Select
                   value={t1Ratio}
                   label="Exit Scope"
-                  onChange={(e) => setT1Ratio(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setT1Ratio(val);
+                    if (val >= 1.0) {
+                      setTargetMode('T1_ONLY');
+                    }
+                  }}
                 >
-                  <MenuItem value={0.3}>30% ({isLotBased ? `${t1ExitLots} lots` : `${t1ExitUnits} qty`})</MenuItem>
-                  <MenuItem value={0.5}>50% ({isLotBased ? `${t1ExitLots} lots` : `${t1ExitUnits} qty`})</MenuItem>
-                  <MenuItem value={0.7}>70% ({isLotBased ? `${t1ExitLots} lots` : `${t1ExitUnits} qty`})</MenuItem>
+                  <MenuItem value={0.3}>30% ({isLotBased ? `${Math.max(1, Math.round(totalLots * 0.3))} lots` : `${Math.round(totalQty * 0.3)} qty`})</MenuItem>
+                  <MenuItem value={0.5}>50% ({isLotBased ? `${Math.max(1, Math.round(totalLots * 0.5))} lots` : `${Math.round(totalQty * 0.5)} qty`})</MenuItem>
+                  <MenuItem value={0.7}>70% ({isLotBased ? `${Math.max(1, Math.round(totalLots * 0.7))} lots` : `${Math.round(totalQty * 0.7)} qty`})</MenuItem>
                   <MenuItem value={1.0}>100% (All {totalQty} qty)</MenuItem>
                 </Select>
               </FormControl>
@@ -369,104 +573,243 @@ export function LiveCustomRulesDialog({
           sx={{
             p: 1.5,
             borderRadius: '10px',
-            bgcolor: alpha('#3B82F6', isDark ? 0.06 : 0.04),
+            bgcolor: effectiveT2Enabled
+              ? alpha('#3B82F6', isDark ? 0.06 : 0.04)
+              : isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(0, 0, 0, 0.015)',
             border: '1px solid',
-            borderColor: alpha('#3B82F6', 0.25),
+            borderColor: effectiveT2Enabled
+              ? alpha('#3B82F6', 0.25)
+              : isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+            opacity: isT1AllOut ? 0.5 : 1,
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <TrackChangesRoundedIcon sx={{ fontSize: 16, color: '#3B82F6' }} />
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#3B82F6', fontSize: '0.8rem' }}>
+              <TrackChangesRoundedIcon sx={{ fontSize: 16, color: effectiveT2Enabled ? '#3B82F6' : 'text.disabled' }} />
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 800,
+                  color: effectiveT2Enabled ? '#3B82F6' : 'text.disabled',
+                  fontSize: '0.8rem',
+                }}
+              >
                 TARGET 2 (R2)
               </Typography>
+              {!effectiveT2Enabled && !isT1AllOut && (
+                <Chip label="DISABLED" size="small" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />
+              )}
             </Box>
-            <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
-              @ ₹{t2Price}
-            </Typography>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {effectiveT2Enabled && (
+                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
+                  @ ₹{t2Price}
+                </Typography>
+              )}
+              {!isT1AllOut && (
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={t2Enabled}
+                      onChange={(e) => setT2Enabled(e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label={
+                    <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                      {t2Enabled ? 'Enabled' : 'Disabled'}
+                    </Typography>
+                  }
+                  sx={{ m: 0 }}
+                />
+              )}
+            </Box>
           </Box>
 
-          <Grid container spacing={1.5}>
-            <Grid size={{ xs: 4 }}>
-              <TextField
-                fullWidth
-                size="small"
-                type="number"
-                label="Target R"
-                value={t2R}
-                onChange={(e) => setT2R(Math.max(t1R + 0.5, Number(e.target.value)))}
-                slotProps={{ htmlInput: { step: 0.5, min: t1R + 0.5 } }}
-              />
-            </Grid>
+          {effectiveT2Enabled ? (
+            <>
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 4 }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="Target R"
+                    value={t2R}
+                    onChange={(e) => setT2R(Math.max(t1R + 0.5, Number(e.target.value)))}
+                    slotProps={{ htmlInput: { step: 0.5, min: t1R + 0.5 } }}
+                  />
+                </Grid>
 
-            <Grid size={{ xs: 4 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Exit Scope</InputLabel>
-                <Select
-                  value={t2Ratio}
-                  label="Exit Scope"
-                  onChange={(e) => setT2Ratio(Number(e.target.value))}
-                >
-                  <MenuItem value={0.5}>50% of Remainder ({isLotBased ? `${t2ExitLots} lots` : `${t2ExitUnits} qty`})</MenuItem>
-                  <MenuItem value={1.0}>100% of Remainder</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
+                <Grid size={{ xs: 4 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Exit Scope</InputLabel>
+                    <Select
+                      value={t2Ratio}
+                      label="Exit Scope"
+                      onChange={(e) => setT2Ratio(Number(e.target.value))}
+                    >
+                      <MenuItem value={0.5}>50% of Remainder ({isLotBased ? `${t2ExitLots} lots` : `${t2ExitUnits} qty`})</MenuItem>
+                      <MenuItem value={1.0}>100% of Remainder ({isLotBased ? `${remLotsAfterT1} lots` : `${remUnitsAfterT1} qty`})</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
 
-            <Grid size={{ xs: 4 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Trailing SL Action</InputLabel>
-                <Select
-                  value={t2TrailAction}
-                  label="Trailing SL Action"
-                  onChange={(e) => setT2TrailAction(e.target.value as any)}
-                >
-                  <MenuItem value="TRAIL_T1">Trail to +1R (₹{t1Price})</MenuItem>
-                  <MenuItem value="CUSTOM_POINTS">Trail Custom Pts</MenuItem>
-                  <MenuItem value="NONE">Don't Move SL</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-        </Box>
+                <Grid size={{ xs: 4 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Trailing SL Action</InputLabel>
+                    <Select
+                      value={t2TrailAction}
+                      label="Trailing SL Action"
+                      onChange={(e) => setT2TrailAction(e.target.value as any)}
+                    >
+                      <MenuItem value="TRAIL_T1">Trail to +1R (₹{t1Price})</MenuItem>
+                      <MenuItem value="CUSTOM_POINTS">Trail Custom Pts</MenuItem>
+                      <MenuItem value="NONE">Don't Move SL</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
 
-        {/* Target 3 / Runner (R3) Rule Card */}
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: '10px',
-            bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
-            border: '1px solid',
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <TrackChangesRoundedIcon sx={{ fontSize: 16, color: '#A855F7' }} />
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#A855F7', fontSize: '0.8rem' }}>
-                RUNNER (R3)
+              {t2TrailAction === 'CUSTOM_POINTS' && (
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Trail by Points"
+                  value={t2TrailPoints}
+                  onChange={(e) => setT2TrailPoints(Math.max(1, Number(e.target.value)))}
+                  sx={{ mt: 1, width: 180 }}
+                />
+              )}
+
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.65rem' }}>
+                Action: Book {isLotBased ? `${t2ExitLots} lot (${t2ExitUnits} units)` : `${t2ExitUnits} units`} &{' '}
+                {t2TrailAction === 'TRAIL_T1'
+                  ? `trail SL to +1R (₹${t1Price})`
+                  : t2TrailAction === 'CUSTOM_POINTS'
+                  ? `trail SL by +${t2TrailPoints} pts`
+                  : 'maintain current SL'}
               </Typography>
+            </>
+          ) : (
+            <Box sx={{ py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem' }}>
+                {isT1AllOut
+                  ? 'Target 2 inactive because Target 1 is set to 100% all-out exit.'
+                  : 'Target 2 is disabled. 100% of the remaining position after Target 1 passes directly to the Runner.'}
+              </Typography>
+              {!isT1AllOut && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setT2Enabled(true)}
+                  startIcon={<AddCircleOutlineRoundedIcon sx={{ fontSize: '13px !important' }} />}
+                  sx={{ height: 24, fontSize: '0.65rem', textTransform: 'none', fontWeight: 700 }}
+                >
+                  Enable T2
+                </Button>
+              )}
             </Box>
-            <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
-              @ ₹{t3Price}
-            </Typography>
-          </Box>
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <TextField
-              size="small"
-              type="number"
-              label="Runner Target R"
-              value={t3R}
-              onChange={(e) => setT3R(Math.max(t2R + 0.5, Number(e.target.value)))}
-              slotProps={{ htmlInput: { step: 0.5, min: t2R + 0.5 } }}
-              sx={{ width: 140 }}
-            />
-            <Typography variant="caption" color="text.secondary">
-              Exits remaining position: <strong>{isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong>
-            </Typography>
-          </Box>
+          )}
         </Box>
+
+        {/* Runner Rule Card */}
+        {effectiveRunnerEnabled && (
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: '10px',
+              bgcolor: isFreeRunner
+                ? alpha('#8B5CF6', isDark ? 0.08 : 0.04)
+                : isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+              border: '1px solid',
+              borderColor: isFreeRunner
+                ? alpha('#8B5CF6', 0.3)
+                : isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <RocketLaunchRoundedIcon sx={{ fontSize: 16, color: '#8B5CF6' }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#8B5CF6', fontSize: '0.8rem' }}>
+                  RUNNER {isFreeRunner ? '(FREE MOVE)' : '(FIXED TARGET)'}
+                </Typography>
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {!isFreeRunner && (
+                  <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
+                    @ ₹{t3Price}
+                  </Typography>
+                )}
+                <Box sx={{ display: 'flex', bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)', borderRadius: '6px', p: 0.25 }}>
+                  <Button
+                    size="small"
+                    onClick={() => setIsFreeRunner(true)}
+                    sx={{
+                      height: 20,
+                      px: 0.75,
+                      fontSize: '0.62rem',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      bgcolor: isFreeRunner ? '#8B5CF6' : 'transparent',
+                      color: isFreeRunner ? '#FFFFFF' : 'text.secondary',
+                      borderRadius: '4px',
+                      '&:hover': { bgcolor: isFreeRunner ? '#7C3AED' : alpha('#8B5CF6', 0.1) },
+                    }}
+                  >
+                    🚀 Free Move
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => setIsFreeRunner(false)}
+                    sx={{
+                      height: 20,
+                      px: 0.75,
+                      fontSize: '0.62rem',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      bgcolor: !isFreeRunner ? '#8B5CF6' : 'transparent',
+                      color: !isFreeRunner ? '#FFFFFF' : 'text.secondary',
+                      borderRadius: '4px',
+                      '&:hover': { bgcolor: !isFreeRunner ? '#7C3AED' : alpha('#8B5CF6', 0.1) },
+                    }}
+                  >
+                    🎯 Fixed R
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+
+            {isFreeRunner ? (
+              <Box sx={{ p: 1, borderRadius: '6px', bgcolor: alpha('#8B5CF6', 0.08), border: `1px solid ${alpha('#8B5CF6', 0.2)}` }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: '#8B5CF6', display: 'block', mb: 0.25 }}>
+                  ✨ Open Trend Runner Active (No Target Price Cap)
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                  Remaining <strong>{isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong> will ride market momentum without an artificial ceiling. Trailing Stop Loss protects profits.
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Runner Target R"
+                  value={t3R}
+                  onChange={(e) => setT3R(Math.max(t2Enabled ? t2R + 0.5 : t1R + 0.5, Number(e.target.value)))}
+                  slotProps={{ htmlInput: { step: 0.5, min: t2Enabled ? t2R + 0.5 : t1R + 0.5 } }}
+                  sx={{ width: 140 }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Exits remaining: <strong>{isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong>
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
 
         {/* ⚡ AUTO-EXECUTION MASTER SWITCH */}
         <Box

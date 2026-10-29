@@ -379,5 +379,56 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(ladder.steps[2].name).toBe('Runner (+4.0R)');
       expect(ladder.steps[2].targetPrice).toBe(50800); // 50000 + 4 * 200 = 50800
     });
+
+    it('supports planning Target 1 only with Free Move Runner (T2 disabled, Runner open trail)', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 't1-only-free-runner-1',
+        symbol: 'NIFTY',
+        direction: 'LONG',
+        entryPrice: 25000,
+        currentLtp: 25050,
+        quantity: 130, // 2 lots of 65
+        contractMultiplier: 1,
+        lotSize: 65,
+        stopLoss: 24950, // 50 pts risk
+        plannedRiskAmount: 6500,
+        customRules: {
+          t1: {
+            targetR: 1.0,
+            exitRatio: 0.5, // 1 lot out at 1R
+            trailAction: 'TRUE_BE_WITH_FEES',
+          },
+          t2: {
+            enabled: false, // Target 2 disabled!
+            targetR: 2.0,
+            exitRatio: 0.5,
+            trailAction: 'NONE',
+          },
+          t3: {
+            enabled: true,
+            isFreeRunner: true, // Free move runner (no price limit)
+            exitRatio: 1.0,
+            trailAction: 'NONE',
+          },
+        },
+      });
+
+      const ladder = metric.targetLadder!;
+      expect(ladder.steps).toHaveLength(2); // Only T1 and Runner!
+
+      const step1 = ladder.steps[0];
+      expect(step1.name).toBe('T1 (+1.0R)');
+      expect(step1.targetPrice).toBe(25050);
+      expect(step1.plannedExitLots).toBe(1);
+      expect(step1.plannedExitQty).toBe(65);
+
+      const step2 = ladder.steps[1];
+      expect(step2.name).toBe('Runner (Free Move)');
+      expect(step2.isFreeRunner).toBe(true);
+      expect(step2.targetPrice).toBe(0); // No fixed target cap
+      expect(step2.plannedExitLots).toBe(1);
+      expect(step2.plannedExitQty).toBe(65);
+      expect(step2.suggestedStopLabel).toContain('Open Trail');
+    });
   });
 });

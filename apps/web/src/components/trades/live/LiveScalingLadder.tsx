@@ -17,12 +17,14 @@ interface LiveScalingLadderProps {
   ladder: ILiveTargetLadder;
   metric: ILiveOpenTradeMetric;
   onExecuteStep: (step: ILiveTargetLadderStep) => void;
+  compact?: boolean;
 }
 
 export function LiveScalingLadder({
   ladder,
   metric,
   onExecuteStep,
+  compact = false,
 }: LiveScalingLadderProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -34,9 +36,9 @@ export function LiveScalingLadder({
   return (
     <Box
       sx={{
-        mt: 1.5,
-        mb: 1.5,
-        p: 1.25,
+        mt: compact ? 0 : 1.5,
+        mb: compact ? 0 : 1.5,
+        p: compact ? 1 : 1.25,
         borderRadius: '10px',
         bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
         border: '1px solid',

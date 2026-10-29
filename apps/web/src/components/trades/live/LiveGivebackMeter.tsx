@@ -16,12 +16,14 @@ interface LiveGivebackMeterProps {
   giveback: ILiveGivebackMetric;
   metric: ILiveOpenTradeMetric;
   onLockProfit?: (metric: ILiveOpenTradeMetric) => void;
+  compact?: boolean;
 }
 
 export function LiveGivebackMeter({
   giveback,
   metric,
   onLockProfit,
+  compact = false,
 }: LiveGivebackMeterProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -57,9 +59,9 @@ export function LiveGivebackMeter({
   return (
     <Box
       sx={{
-        mt: 1.5,
-        mb: 1.5,
-        p: 1.25,
+        mt: compact ? 0 : 1.5,
+        mb: compact ? 0 : 1.5,
+        p: compact ? 1 : 1.25,
         borderRadius: '10px',
         bgcolor: isDark
           ? isCritical

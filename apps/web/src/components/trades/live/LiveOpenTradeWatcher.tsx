@@ -23,6 +23,12 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Skeleton from '@mui/material/Skeleton';
 import Grid from '@mui/material/Grid';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 
 // Icons
@@ -41,6 +47,8 @@ import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
+import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
@@ -75,6 +83,12 @@ export function LiveOpenTradeWatcher({
   const queryClient = useQueryClient();
 
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [viewMode, setViewMode] = useState<'cockpit' | 'table'>(() => {
+    const saved = localStorage.getItem('tv_live_watcher_view_mode');
+    return saved === 'table' ? 'table' : 'cockpit';
+  });
+  const [tacticalTabs, setTacticalTabs] = useState<Record<string, 'ladder' | 'giveback'>>({});
+
   const [refreshIntervalSec, setRefreshIntervalSec] = useState<number>(() => {
     const saved = localStorage.getItem('tv_live_watcher_interval');
     return saved !== null ? Number(saved) : 5;
@@ -327,6 +341,16 @@ export function LiveOpenTradeWatcher({
     }
   };
 
+  const getActiveTacticalTab = (pos: ILiveOpenTradeMetric): 'ladder' | 'giveback' => {
+    if (tacticalTabs[pos.tradeId]) return tacticalTabs[pos.tradeId];
+    if (pos.giveback?.threatLevel === 'CRITICAL_REVERSAL' || pos.giveback?.threatLevel === 'LEAKING') {
+      return 'giveback';
+    }
+    if (pos.targetLadder) return 'ladder';
+    if (pos.giveback) return 'giveback';
+    return 'ladder';
+  };
+
   return (
     <>
       <Card
@@ -536,6 +560,38 @@ export function LiveOpenTradeWatcher({
               </Tooltip>
             </Box>
 
+            {/* View Mode Switcher: Cockpit Cards vs Compact Table */}
+            {openTradesCount > 0 && (
+              <Tooltip title="Toggle Cockpit Cards vs Compact Table View" arrow>
+                <ToggleButtonGroup
+                  value={viewMode}
+                  exclusive
+                  onChange={(_, newMode) => {
+                    if (newMode) {
+                      setViewMode(newMode);
+                      localStorage.setItem('tv_live_watcher_view_mode', newMode);
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    height: 28,
+                    '& .MuiToggleButton-root': {
+                      px: 0.9,
+                      py: 0,
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                    },
+                  }}
+                >
+                  <ToggleButton value="cockpit" title="Cockpit Card View">
+                    <GridViewRoundedIcon sx={{ fontSize: 15 }} />
+                  </ToggleButton>
+                  <ToggleButton value="table" title="Compact Table View">
+                    <TableRowsRoundedIcon sx={{ fontSize: 15 }} />
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Tooltip>
+            )}
+
             {/* Expand / Collapse Toggle */}
             <IconButton
               size="small"
@@ -573,7 +629,343 @@ export function LiveOpenTradeWatcher({
                   No open positions currently active. Open trades will automatically appear here with real-time MTM and risk gauges.
                 </Typography>
               </Box>
+            ) : viewMode === 'table' ? (
+              /* DENSE TABLE VIEW: Ultra-compact, 1-row per trade, zero scrolling */
+              <TableContainer sx={{ pt: 1.5, overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 840 }}>
+                  <TableHead>
+                    <TableRow
+                      sx={{
+                        '& th': {
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          color: 'text.secondary',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.3,
+                          py: 1,
+                          borderBottom: '1px solid',
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                        },
+                      }}
+                    >
+                      <TableCell>Instrument & Side</TableCell>
+                      <TableCell>Entry vs LTP</TableCell>
+                      <TableCell>Floating Net MTM</TableCell>
+                      <TableCell>Stop Loss & Buffer</TableCell>
+                      <TableCell>Target & Ladder</TableCell>
+                      <TableCell>Giveback Radar</TableCell>
+                      <TableCell align="right">Quick Cockpit Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {summary?.positions.map((pos) => {
+                      const isLong = pos.direction === 'LONG';
+                      const threat = getThreatBadge(pos.stopThreatLevel);
+                      const isPosProfitable = pos.floatingNetPnL >= 0;
+                      const posPnLColor = isPosProfitable ? '#10B981' : '#F43F5E';
+                      const isOneToOne = pos.unrealizedR !== null && pos.unrealizedR >= 1.0;
+                      const isAtOrBeyondBe =
+                        pos.stopLoss !== null &&
+                        (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
+
+                      const activeLadderStep =
+                        pos.targetLadder?.steps.find((s) => s.status === 'MET') ||
+                        pos.targetLadder?.steps.find((s) => s.status === 'IN_PROGRESS') ||
+                        pos.targetLadder?.steps[0];
+
+                      return (
+                        <TableRow
+                          key={pos.tradeId}
+                          hover
+                          sx={{
+                            '& td': {
+                              py: 1.25,
+                              borderBottom: '1px solid',
+                              borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+                            },
+                            bgcolor: isOneToOne
+                              ? alpha('#10B981', isDark ? 0.05 : 0.03)
+                              : 'transparent',
+                          }}
+                        >
+                          {/* Instrument & Side */}
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  '&:hover': { color: '#3B82F6', textDecoration: 'underline' },
+                                }}
+                                onClick={() => navigate(`/trades/${pos.tradeId}`)}
+                              >
+                                {pos.symbol}
+                              </Typography>
+                              <Chip
+                                label={pos.direction}
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  color: isLong ? '#10B981' : '#A855F7',
+                                  bgcolor: alpha(isLong ? '#10B981' : '#A855F7', 0.12),
+                                  borderRadius: '4px',
+                                }}
+                              />
+                              {pos.quantity !== undefined && pos.quantity > 0 && (
+                                <Chip
+                                  label={`${pos.quantity} Qty`}
+                                  size="small"
+                                  sx={{
+                                    height: 18,
+                                    fontSize: '0.62rem',
+                                    fontWeight: 700,
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              )}
+                            </Box>
+                          </TableCell>
+
+                          {/* Entry vs LTP */}
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                ₹{pos.currentLtp}
+                              </Typography>
+                              {pos.priceDeltaPoints >= 0 ? (
+                                <TrendingUpRoundedIcon sx={{ fontSize: 14, color: '#10B981' }} />
+                              ) : (
+                                <TrendingDownRoundedIcon sx={{ fontSize: 14, color: '#F43F5E' }} />
+                              )}
+                            </Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                              Entry: ₹{pos.entryPrice} ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
+                            </Typography>
+                          </TableCell>
+
+                          {/* Floating Net MTM */}
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 800, color: posPnLColor }}>
+                              {isPosProfitable ? '+' : ''}
+                              {formatCurrency(pos.floatingNetPnL, 'INR')}
+                            </Typography>
+                            {pos.unrealizedR !== null && (
+                              <Chip
+                                label={`${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR} R`}
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  color: posPnLColor,
+                                  bgcolor: alpha(posPnLColor, 0.12),
+                                  borderRadius: '4px',
+                                }}
+                              />
+                            )}
+                          </TableCell>
+
+                          {/* Stop Loss & Buffer */}
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem' }}>
+                                {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'None'}
+                              </Typography>
+                              <Chip
+                                label={threat.label}
+                                size="small"
+                                sx={{
+                                  height: 16,
+                                  fontSize: '0.58rem',
+                                  fontWeight: 800,
+                                  color: threat.color,
+                                  bgcolor: threat.bg,
+                                  borderRadius: '3px',
+                                }}
+                              />
+                              {!isAtOrBeyondBe && pos.stopLoss !== null && (
+                                <Tooltip title="Quick Lock Breakeven Stop" arrow>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleQuickMoveToBe(pos)}
+                                    disabled={updateSlMutation.isPending}
+                                    sx={{ p: 0.25, color: '#3B82F6' }}
+                                  >
+                                    <LockRoundedIcon sx={{ fontSize: 13 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Box>
+                            {pos.distanceToStopPoints !== null && (
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                Buffer: <strong style={{ color: threat.color }}>{pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'}</strong>
+                              </Typography>
+                            )}
+                          </TableCell>
+
+                          {/* Target & Ladder */}
+                          <TableCell>
+                            {activeLadderStep ? (
+                              <Box sx={{ minWidth: 120 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: activeLadderStep.status === 'MET' ? '#10B981' : '#3B82F6' }}>
+                                    {activeLadderStep.name}
+                                  </Typography>
+                                  {activeLadderStep.isActionable && (
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      onClick={() => setSelectedLadderStep({ step: activeLadderStep, metric: pos })}
+                                      sx={{
+                                        height: 18,
+                                        fontSize: '0.58rem',
+                                        fontWeight: 800,
+                                        py: 0,
+                                        px: 0.75,
+                                        textTransform: 'none',
+                                        bgcolor: '#10B981',
+                                        '&:hover': { bgcolor: '#059669' },
+                                        borderRadius: '3px',
+                                      }}
+                                    >
+                                      Execute
+                                    </Button>
+                                  )}
+                                </Box>
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={Math.min(100, Math.max(0, activeLadderStep.progressPercent))}
+                                  sx={{
+                                    height: 3,
+                                    borderRadius: 2,
+                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                    '& .MuiLinearProgress-bar': { bgcolor: activeLadderStep.status === 'MET' ? '#10B981' : '#3B82F6' },
+                                  }}
+                                />
+                              </Box>
+                            ) : pos.target !== null ? (
+                              <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 600 }}>
+                                ₹{pos.target} ({pos.targetProgressPercent ?? 0}%)
+                              </Typography>
+                            ) : (
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                Not set
+                              </Typography>
+                            )}
+                          </TableCell>
+
+                          {/* Giveback Radar */}
+                          <TableCell>
+                            {pos.giveback ? (
+                              <Tooltip
+                                title={`Peak MTM: +₹${pos.giveback.peakFloatingNetPnL} (+${pos.giveback.peakUnrealizedR}R) | Retained: ${pos.giveback.retentionPercent}%`}
+                                arrow
+                              >
+                                <Chip
+                                  label={
+                                    pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                      ? 'REVERSAL'
+                                      : pos.giveback.threatLevel === 'LEAKING'
+                                      ? `${pos.giveback.givebackPercent}% LEAK`
+                                      : `${pos.giveback.retentionPercent}% HELD`
+                                  }
+                                  size="small"
+                                  sx={{
+                                    height: 18,
+                                    fontSize: '0.6rem',
+                                    fontWeight: 800,
+                                    color:
+                                      pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                        ? '#EF4444'
+                                        : pos.giveback.threatLevel === 'LEAKING'
+                                        ? '#F59E0B'
+                                        : '#10B981',
+                                    bgcolor: alpha(
+                                      pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                        ? '#EF4444'
+                                        : pos.giveback.threatLevel === 'LEAKING'
+                                        ? '#F59E0B'
+                                        : '#10B981',
+                                      0.12
+                                    ),
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              </Tooltip>
+                            ) : (
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                -
+                              </Typography>
+                            )}
+                          </TableCell>
+
+                          {/* Quick Cockpit Actions */}
+                          <TableCell align="right">
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.75 }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => handleOpenQuickClose(pos, 0.5)}
+                                sx={{
+                                  height: 24,
+                                  px: 1,
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  textTransform: 'none',
+                                  borderRadius: '5px',
+                                  borderColor: '#10B981',
+                                  color: '#10B981',
+                                  '&:hover': { bgcolor: alpha('#10B981', 0.1) },
+                                }}
+                              >
+                                Book 50%
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                onClick={() => handleOpenQuickClose(pos, 1.0)}
+                                sx={{
+                                  height: 24,
+                                  px: 1,
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  textTransform: 'none',
+                                  borderRadius: '5px',
+                                  bgcolor: '#EF4444',
+                                  color: '#FFFFFF',
+                                  '&:hover': { bgcolor: '#DC2626' },
+                                }}
+                              >
+                                Close 100%
+                              </Button>
+                              <Tooltip title="Adjust Stop Loss" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenEditSl(pos)}
+                                  sx={{
+                                    p: 0.5,
+                                    border: '1px solid',
+                                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+                                    borderRadius: '5px',
+                                  }}
+                                >
+                                  <ShieldRoundedIcon sx={{ fontSize: 13, color: '#3B82F6' }} />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             ) : (
+              /* OPTION A COCKPIT CARDS: Split 2-Column Wide Cards with Top-Mounted Quick Action Cockpit */
               <Grid container spacing={2} sx={{ pt: 2 }}>
                 {summary?.positions.map((pos) => {
                   const isLong = pos.direction === 'LONG';
@@ -585,14 +977,16 @@ export function LiveOpenTradeWatcher({
                     pos.stopLoss !== null &&
                     (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
 
+                  const activeTacticalTab = getActiveTacticalTab(pos);
+
                   return (
-                    <Grid size={{ xs: 12, md: 6, lg: 4 }} key={pos.tradeId}>
+                    <Grid size={{ xs: 12, lg: openTradesCount === 1 ? 12 : 6 }} key={pos.tradeId}>
                       <Card
                         variant="outlined"
                         sx={{
                           p: 2,
-                          borderRadius: '12px',
-                          bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : '#FFFFFF',
+                          borderRadius: '14px',
+                          bgcolor: isDark ? 'rgba(15, 23, 42, 0.7)' : '#FFFFFF',
                           borderColor: isOneToOne
                             ? alpha('#10B981', 0.5)
                             : isDark
@@ -616,10 +1010,19 @@ export function LiveOpenTradeWatcher({
                           },
                         }}
                       >
-                        {/* Card Top: Symbol, Direction, Qty & Details Link */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                        {/* 1. Header Bar: Symbol & Financial Ticker */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25, flexWrap: 'wrap', gap: 1 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800, letterSpacing: -0.2 }}>
+                            <Typography
+                              variant="subtitle1"
+                              sx={{
+                                fontWeight: 800,
+                                letterSpacing: -0.2,
+                                cursor: 'pointer',
+                                '&:hover': { color: '#3B82F6' },
+                              }}
+                              onClick={() => navigate(`/trades/${pos.tradeId}`)}
+                            >
                               {pos.symbol}
                             </Typography>
                             <Chip
@@ -647,229 +1050,205 @@ export function LiveOpenTradeWatcher({
                                 }}
                               />
                             )}
-                          </Box>
-
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <Tooltip title="View full trade details" arrow>
+                            <Tooltip title="Open full trade review" arrow>
                               <IconButton
                                 size="small"
                                 onClick={() => navigate(`/trades/${pos.tradeId}`)}
-                                sx={{ p: 0.5 }}
+                                sx={{ p: 0.5, color: 'text.secondary' }}
                               >
-                                <OpenInNewRoundedIcon sx={{ fontSize: 16 }} />
+                                <OpenInNewRoundedIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             </Tooltip>
                           </Box>
-                        </Box>
 
-                        {/* 1:1 Target Met Alert & 1-Click Action Banner */}
-                        {isOneToOne && (
-                          <Box
-                            sx={{
-                              mb: 1.5,
-                              p: 1.25,
-                              borderRadius: '8px',
-                              background: isDark
-                                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(6, 182, 212, 0.1) 100%)'
-                                : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 182, 212, 0.08) 100%)',
-                              border: '1px solid',
-                              borderColor: alpha('#10B981', 0.4),
-                              boxShadow: '0 0 12px rgba(16, 185, 129, 0.12)',
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                          {/* Right Ticker: LTP & Floating Net MTM */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
+                                LTP
+                              </Typography>
                               <Typography
-                                variant="caption"
+                                variant="body2"
                                 sx={{
                                   fontWeight: 800,
-                                  color: '#10B981',
+                                  color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: 0.5,
-                                  fontSize: '0.72rem',
+                                  gap: 0.25,
                                 }}
                               >
-                                🎯 1:1 Reached (+{pos.unrealizedR} R)
+                                ₹{pos.currentLtp}
+                                {pos.priceDeltaPoints >= 0 ? (
+                                  <TrendingUpRoundedIcon sx={{ fontSize: 15 }} />
+                                ) : (
+                                  <TrendingDownRoundedIcon sx={{ fontSize: 15 }} />
+                                )}
                               </Typography>
-                              <Chip
-                                label="Target 1 Met"
-                                size="small"
-                                sx={{
-                                  height: 18,
-                                  fontSize: '0.62rem',
-                                  fontWeight: 800,
-                                  bgcolor: '#10B981',
-                                  color: '#FFFFFF',
-                                  borderRadius: '4px',
-                                }}
-                              />
                             </Box>
 
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Button
-                                size="small"
-                                variant="contained"
-                                startIcon={<PieChartRoundedIcon sx={{ fontSize: '13px !important' }} />}
-                                onClick={() => handleOpenQuickClose(pos, 0.5)}
-                                sx={{
-                                  flex: 1,
-                                  height: 28,
-                                  fontSize: '0.68rem',
-                                  fontWeight: 700,
-                                  textTransform: 'none',
-                                  bgcolor: '#10B981',
-                                  '&:hover': { bgcolor: '#059669' },
-                                  borderRadius: '6px',
-                                  boxShadow: 'none',
-                                }}
-                              >
-                                Book 50% @ LTP
-                              </Button>
-
-                              {!isAtOrBeyondBe && (
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  startIcon={<LockRoundedIcon sx={{ fontSize: '12px !important' }} />}
-                                  onClick={() => handleQuickMoveToBe(pos)}
-                                  disabled={updateSlMutation.isPending}
-                                  sx={{
-                                    flex: 1,
-                                    height: 28,
-                                    fontSize: '0.68rem',
-                                    fontWeight: 700,
-                                    textTransform: 'none',
-                                    borderColor: '#10B981',
-                                    color: '#10B981',
-                                    '&:hover': { bgcolor: alpha('#10B981', 0.1), borderColor: '#059669' },
-                                    borderRadius: '6px',
-                                  }}
-                                >
-                                  Lock BE Stop
-                                </Button>
-                              )}
-                            </Box>
-                          </Box>
-                        )}
-
-                        {/* Price Execution Row: Entry vs Current LTP */}
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'baseline',
-                            justifyContent: 'space-between',
-                            p: 1.25,
-                            borderRadius: '8px',
-                            bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                            mb: 1.5,
-                          }}
-                        >
-                          <Box>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>
-                              Entry Price
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                              ₹{pos.entryPrice}
-                            </Typography>
-                          </Box>
-
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>
-                              Current LTP
-                            </Typography>
-                            <Typography
-                              variant="body1"
-                              sx={{
-                                fontWeight: 800,
-                                color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.25,
-                              }}
-                            >
-                              ₹{pos.currentLtp}
-                              {pos.priceDeltaPoints >= 0 ? (
-                                <TrendingUpRoundedIcon sx={{ fontSize: 16 }} />
-                              ) : (
-                                <TrendingDownRoundedIcon sx={{ fontSize: 16 }} />
-                              )}
-                            </Typography>
-                          </Box>
-
-                          <Box sx={{ textAlign: 'right' }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>
-                              Floating Net P&L
-                            </Typography>
-                            <Typography variant="body2" sx={{ fontWeight: 800, color: posPnLColor }}>
-                              {isPosProfitable ? '+' : ''}
-                              {formatCurrency(pos.floatingNetPnL, 'INR')}
-                            </Typography>
-                            {pos.unrealizedR !== null && (
-                              <Typography variant="caption" sx={{ fontWeight: 700, color: posPnLColor, fontSize: '0.68rem' }}>
-                                {pos.unrealizedR >= 0 ? '+' : ''}{pos.unrealizedR} R
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
+                                Floating MTM
                               </Typography>
-                            )}
-                          </Box>
-                        </Box>
-
-                        {/* Stop Loss Row with 1-Click Move SL & BE Lock */}
-                        <Box sx={{ mb: 1.25 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <ShieldRoundedIcon sx={{ fontSize: 13, color: '#94A3B8' }} />
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                Stop Loss:
-                              </Typography>
-                              <Typography variant="caption" sx={{ fontSize: '0.72rem', fontWeight: 700 }}>
-                                {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'Not Set'}
-                              </Typography>
-
-                              {/* Edit / Move SL Button */}
-                              <Tooltip title={pos.stopLoss !== null ? 'Move / Adjust Stop Loss' : 'Set Stop Loss'} arrow>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleOpenEditSl(pos)}
-                                  sx={{
-                                    p: 0.25,
-                                    color: pos.stopLoss !== null ? 'text.secondary' : '#F59E0B',
-                                    '&:hover': { color: '#3B82F6' },
-                                  }}
-                                >
-                                  <EditRoundedIcon sx={{ fontSize: 13 }} />
-                                </IconButton>
-                              </Tooltip>
-
-                              {/* Quick Move to BE Chip if SL is set and not at BE */}
-                              {pos.stopLoss !== null && !isAtOrBeyondBe && (
-                                <Tooltip title={`Quick move SL to Breakeven (₹${pos.entryPrice})`} arrow>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: posPnLColor, lineHeight: 1.1 }}>
+                                  {isPosProfitable ? '+' : ''}
+                                  {formatCurrency(pos.floatingNetPnL, 'INR')}
+                                </Typography>
+                                {pos.unrealizedR !== null && (
                                   <Chip
-                                    icon={<LockRoundedIcon sx={{ fontSize: '11px !important' }} />}
-                                    label="Set BE"
+                                    label={`${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR} R`}
                                     size="small"
-                                    onClick={() => handleQuickMoveToBe(pos)}
-                                    clickable
                                     sx={{
                                       height: 18,
                                       fontSize: '0.62rem',
-                                      fontWeight: 700,
-                                      bgcolor: alpha('#3B82F6', 0.1),
-                                      color: '#3B82F6',
-                                      border: `1px solid ${alpha('#3B82F6', 0.25)}`,
+                                      fontWeight: 800,
+                                      color: posPnLColor,
+                                      bgcolor: alpha(posPnLColor, 0.12),
                                       borderRadius: '4px',
-                                      '&:hover': { bgcolor: alpha('#3B82F6', 0.2) },
                                     }}
                                   />
-                                </Tooltip>
-                              )}
+                                )}
+                              </Box>
                             </Box>
+                          </Box>
+                        </Box>
 
+                        {/* 2. ⚡ TOP-MOUNTED INSTANT ACTION COCKPIT (Zero Scroll - Always Accessible) */}
+                        <Box
+                          sx={{
+                            mb: 1.5,
+                            p: 1.25,
+                            borderRadius: '10px',
+                            bgcolor: isOneToOne
+                              ? alpha('#10B981', isDark ? 0.15 : 0.08)
+                              : isDark
+                              ? 'rgba(255, 255, 255, 0.03)'
+                              : 'rgba(0, 0, 0, 0.02)',
+                            border: '1px solid',
+                            borderColor: isOneToOne
+                              ? alpha('#10B981', 0.4)
+                              : isDark
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.08)',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                          }}
+                        >
+                          {/* Left Fast Actions */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', flex: 1 }}>
+                            {isOneToOne && (
+                              <Chip
+                                label={`🎯 1:1 MET (+${pos.unrealizedR}R)`}
+                                size="small"
+                                sx={{
+                                  height: 26,
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  bgcolor: '#10B981',
+                                  color: '#FFFFFF',
+                                  borderRadius: '6px',
+                                }}
+                              />
+                            )}
+
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<PieChartRoundedIcon sx={{ fontSize: 13 }} />}
+                              onClick={() => handleOpenQuickClose(pos, 0.5)}
+                              sx={{
+                                height: 28,
+                                px: 1.25,
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                textTransform: 'none',
+                                bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
+                                color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
+                                '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
+                                borderRadius: '6px',
+                                boxShadow: 'none',
+                              }}
+                            >
+                              Book 50%
+                            </Button>
+
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<FlashOnRoundedIcon sx={{ fontSize: 13 }} />}
+                              onClick={() => handleOpenQuickClose(pos, 1.0)}
+                              sx={{
+                                height: 28,
+                                px: 1.25,
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                textTransform: 'none',
+                                bgcolor: '#EF4444',
+                                color: '#FFFFFF',
+                                '&:hover': { bgcolor: '#DC2626' },
+                                borderRadius: '6px',
+                                boxShadow: 'none',
+                              }}
+                            >
+                              Close 100% @ LTP
+                            </Button>
+
+                            {!isAtOrBeyondBe && pos.stopLoss !== null && (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<LockRoundedIcon sx={{ fontSize: 12 }} />}
+                                onClick={() => handleQuickMoveToBe(pos)}
+                                disabled={updateSlMutation.isPending}
+                                sx={{
+                                  height: 28,
+                                  px: 1.25,
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  textTransform: 'none',
+                                  borderColor: '#3B82F6',
+                                  color: '#3B82F6',
+                                  '&:hover': { bgcolor: alpha('#3B82F6', 0.1), borderColor: '#2563EB' },
+                                  borderRadius: '6px',
+                                }}
+                              >
+                                Lock BE
+                              </Button>
+                            )}
+                          </Box>
+
+                          {/* Right SL Controls */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<ShieldRoundedIcon sx={{ fontSize: 13 }} />}
+                              endIcon={<EditRoundedIcon sx={{ fontSize: 11 }} />}
+                              onClick={() => handleOpenEditSl(pos)}
+                              sx={{
+                                height: 28,
+                                px: 1,
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                textTransform: 'none',
+                                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                                color: isDark ? '#E2E8F0' : '#1E293B',
+                                borderRadius: '6px',
+                                '&:hover': { borderColor: '#3B82F6', color: '#3B82F6' },
+                              }}
+                            >
+                              SL: {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'Set'}
+                            </Button>
                             <Chip
-                              icon={threat.icon || undefined}
                               label={threat.label}
                               size="small"
                               sx={{
-                                height: 20,
-                                fontSize: '0.65rem',
+                                height: 24,
+                                fontSize: '0.62rem',
                                 fontWeight: 800,
                                 color: threat.color,
                                 bgcolor: threat.bg,
@@ -878,153 +1257,205 @@ export function LiveOpenTradeWatcher({
                               }}
                             />
                           </Box>
-
-                          {pos.distanceToStopPoints !== null && (
-                            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block' }}>
-                              Buffer remaining:{' '}
-                              <strong style={{ color: threat.color }}>
-                                {pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'}
-                              </strong>{' '}
-                              ({pos.distanceToStopTicks} ticks)
-                            </Typography>
-                          )}
                         </Box>
 
-                        {/* Target Progress Gauge */}
-                        {pos.target !== null && (
-                          <Box sx={{ mb: 1.5 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <TrackChangesRoundedIcon sx={{ fontSize: 13, color: '#3B82F6' }} />
-                                Target: ₹{pos.target}
-                              </Typography>
-
-                              <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.7rem', color: '#3B82F6' }}>
-                                {pos.targetProgressPercent !== null ? `${pos.targetProgressPercent}%` : ''}
-                              </Typography>
-                            </Box>
-
-                            <LinearProgress
-                              variant="determinate"
-                              value={Math.min(Math.max(pos.targetProgressPercent ?? 0, 0), 100)}
+                        {/* 3. Responsive 2-Column Split Body */}
+                        <Grid container spacing={1.5}>
+                          {/* Left Column: Live Vitals & Proximity */}
+                          <Grid size={{ xs: 12, md: 5 }}>
+                            {/* Execution & Stop Buffer Card */}
+                            <Box
                               sx={{
-                                height: 5,
-                                borderRadius: 3,
-                                bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                                '& .MuiLinearProgress-bar': {
-                                  bgcolor: '#3B82F6',
-                                  borderRadius: 3,
-                                },
-                              }}
-                            />
-
-                            {pos.distanceToTargetPoints !== null && (
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem', mt: 0.5, display: 'block' }}>
-                                Distance to target: <strong>{Math.abs(pos.distanceToTargetPoints)} pts</strong> ({Math.abs(pos.distanceToTargetTicks || 0)} ticks)
-                              </Typography>
-                            )}
-                          </Box>
-                        )}
-
-                        {/* Live Profit Giveback Meter & Peak MFE Tracker */}
-                        {pos.giveback && (
-                          <LiveGivebackMeter
-                            giveback={pos.giveback}
-                            metric={pos}
-                            onLockProfit={() => handleOpenQuickClose(pos, 0.5)}
-                          />
-                        )}
-
-                        {/* Multi-Target Scaling Ladder */}
-                        {pos.targetLadder && (
-                          <LiveScalingLadder
-                            ladder={pos.targetLadder}
-                            metric={pos}
-                            onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
-                          />
-                        )}
-
-                        {/* Card Bottom: Book 50%, Close 100%, and Move SL */}
-                        <Box
-                          sx={{
-                            mt: 1.5,
-                            pt: 1.25,
-                            borderTop: '1px solid',
-                            borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                          }}
-                        >
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<PieChartRoundedIcon sx={{ fontSize: 14 }} />}
-                            onClick={() => handleOpenQuickClose(pos, 0.5)}
-                            sx={{
-                              flex: 1,
-                              height: 30,
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              textTransform: 'none',
-                              borderRadius: '8px',
-                              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
-                              color: isDark ? '#E2E8F0' : '#1E293B',
-                              '&:hover': {
-                                borderColor: '#10B981',
-                                bgcolor: alpha('#10B981', 0.08),
-                                color: '#10B981',
-                              },
-                            }}
-                          >
-                            Book 50%
-                          </Button>
-
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<FlashOnRoundedIcon sx={{ fontSize: 14 }} />}
-                            onClick={() => handleOpenQuickClose(pos, 1.0)}
-                            sx={{
-                              flex: 1,
-                              height: 30,
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              textTransform: 'none',
-                              borderRadius: '8px',
-                              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
-                              color: isDark ? '#E2E8F0' : '#1E293B',
-                              '&:hover': {
-                                borderColor: '#3B82F6',
-                                bgcolor: alpha('#3B82F6', 0.08),
-                                color: '#3B82F6',
-                              },
-                            }}
-                          >
-                            Close 100%
-                          </Button>
-
-                          <Tooltip title="Move / Adjust Stop Loss" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleOpenEditSl(pos)}
-                              sx={{
-                                height: 30,
-                                width: 30,
-                                borderRadius: '8px',
+                                p: 1.25,
+                                borderRadius: '10px',
+                                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
                                 border: '1px solid',
-                                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
-                                color: pos.stopLoss !== null ? '#3B82F6' : '#F59E0B',
-                                '&:hover': {
-                                  borderColor: '#3B82F6',
-                                  bgcolor: alpha('#3B82F6', 0.08),
-                                },
+                                borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                                height: '100%',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
                               }}
                             >
-                              <ShieldRoundedIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+                              <Box sx={{ mb: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                    Entry: <strong>₹{pos.entryPrice}</strong>
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
+                                    }}
+                                  >
+                                    {pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts ({pos.priceDeltaPercent >= 0 ? '+' : ''}{pos.priceDeltaPercent}%)
+                                  </Typography>
+                                </Box>
+
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                    SL Buffer:
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 700, color: threat.color }}>
+                                    {pos.distanceToStopPoints !== null
+                                      ? `${pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'} (${pos.distanceToStopTicks ?? 0} ticks)`
+                                      : 'No Stop Set'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+
+                              {/* Target Progress */}
+                              {pos.target !== null ? (
+                                <Box sx={{ mt: 0.5 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <TrackChangesRoundedIcon sx={{ fontSize: 13, color: '#3B82F6' }} />
+                                      Target: ₹{pos.target}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: '#3B82F6' }}>
+                                      {pos.targetProgressPercent !== null ? `${pos.targetProgressPercent}%` : ''}
+                                    </Typography>
+                                  </Box>
+
+                                  <LinearProgress
+                                    variant="determinate"
+                                    value={Math.min(Math.max(pos.targetProgressPercent ?? 0, 0), 100)}
+                                    sx={{
+                                      height: 4,
+                                      borderRadius: 2,
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2 },
+                                    }}
+                                  />
+
+                                  {pos.distanceToTargetPoints !== null && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', mt: 0.5, display: 'block' }}>
+                                      {Math.abs(pos.distanceToTargetPoints)} pts away
+                                    </Typography>
+                                  )}
+                                </Box>
+                              ) : (
+                                <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                    No planned target defined
+                                  </Typography>
+                                </Box>
+                              )}
+                            </Box>
+                          </Grid>
+
+                          {/* Right Column: Tactical Strategy Inspector (Scaling Ladder vs Giveback Meter) */}
+                          <Grid size={{ xs: 12, md: 7 }}>
+                            <Box
+                              sx={{
+                                p: 1,
+                                borderRadius: '10px',
+                                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+                                border: '1px solid',
+                                borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                              }}
+                            >
+                              {/* Sub-tab switcher */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                  <Chip
+                                    label="🪜 SCALING LADDER"
+                                    size="small"
+                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'ladder' }))}
+                                    clickable
+                                    sx={{
+                                      height: 22,
+                                      fontSize: '0.62rem',
+                                      fontWeight: 800,
+                                      bgcolor: activeTacticalTab === 'ladder' ? alpha('#3B82F6', 0.2) : 'transparent',
+                                      color: activeTacticalTab === 'ladder' ? '#3B82F6' : 'text.secondary',
+                                      border: `1px solid ${activeTacticalTab === 'ladder' ? alpha('#3B82F6', 0.4) : 'transparent'}`,
+                                      borderRadius: '5px',
+                                    }}
+                                  />
+
+                                  {pos.giveback && (
+                                    <Chip
+                                      label={`🛡️ GIVEBACK ${
+                                        pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                          ? '🚨'
+                                          : pos.giveback.threatLevel === 'LEAKING'
+                                          ? '⚠️'
+                                          : ''
+                                      }`}
+                                      size="small"
+                                      onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'giveback' }))}
+                                      clickable
+                                      sx={{
+                                        height: 22,
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        bgcolor: activeTacticalTab === 'giveback'
+                                          ? pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                            ? alpha('#EF4444', 0.2)
+                                            : pos.giveback.threatLevel === 'LEAKING'
+                                            ? alpha('#F59E0B', 0.2)
+                                            : alpha('#10B981', 0.2)
+                                          : 'transparent',
+                                        color: activeTacticalTab === 'giveback'
+                                          ? pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                            ? '#EF4444'
+                                            : pos.giveback.threatLevel === 'LEAKING'
+                                            ? '#F59E0B'
+                                            : '#10B981'
+                                          : 'text.secondary',
+                                        border: `1px solid ${
+                                          activeTacticalTab === 'giveback'
+                                            ? alpha(
+                                                pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                                  ? '#EF4444'
+                                                  : pos.giveback.threatLevel === 'LEAKING'
+                                                  ? '#F59E0B'
+                                                  : '#10B981',
+                                                0.4
+                                              )
+                                            : 'transparent'
+                                        }`,
+                                        borderRadius: '5px',
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+
+                                {activeTacticalTab === 'ladder' && pos.targetLadder && (
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                    1R = {pos.targetLadder.initialRiskPoints.toFixed(1)} pts
+                                  </Typography>
+                                )}
+                              </Box>
+
+                              {/* Tab Content */}
+                              {activeTacticalTab === 'ladder' && pos.targetLadder ? (
+                                <LiveScalingLadder
+                                  ladder={pos.targetLadder}
+                                  metric={pos}
+                                  compact
+                                  onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
+                                />
+                              ) : pos.giveback ? (
+                                <LiveGivebackMeter
+                                  giveback={pos.giveback}
+                                  metric={pos}
+                                  compact
+                                  onLockProfit={() => handleOpenQuickClose(pos, 0.5)}
+                                />
+                              ) : (
+                                <Box sx={{ py: 2, textAlign: 'center' }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Set Stop Loss & Target in trade details to activate automated scaling ladder.
+                                  </Typography>
+                                </Box>
+                              )}
+                            </Box>
+                          </Grid>
+                        </Grid>
                       </Card>
                     </Grid>
                   );

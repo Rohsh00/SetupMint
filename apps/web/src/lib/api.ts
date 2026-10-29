@@ -10,7 +10,8 @@ import type {
   IFocusRuleEvaluation,
 } from '@tradevault/shared';
 
-const BASE_URL = '/api/v1';
+const RAW_API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+const BASE_URL = RAW_API_BASE ? `${RAW_API_BASE}/api/v1` : '/api/v1';
 
 export class ApiError extends Error {
   code: string;

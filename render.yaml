@@ -34,3 +34,16 @@ services:
       - key: S3_REGION
         value: auto
 
+  - type: static
+    name: setupmint-web
+    buildCommand: npm install --include=dev && npm run build:web
+    staticPublishPath: apps/web/dist
+    autoDeploy: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://setupmint-api.onrender.com
+

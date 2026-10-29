@@ -47,6 +47,7 @@ import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
 import { LiveWatcherService } from '../services/live-watcher.service.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
+import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { User } from '../db/models/index.js';
 
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -599,6 +600,21 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // Recalculate account realized P&L and balance authoritatively
     await AccountService.recalculateAccountBalances(account._id, req.user!.id);
+
+    // Telegram Notification on Trade Creation
+    User.findById(req.user!.id).lean().then((u) => {
+      if (u) {
+        if (trade.status === 'OPEN') {
+          TelegramAlertService.notifyTradeOpened(u, trade).catch(() => {});
+        } else if (trade.status === 'CLOSED') {
+          TelegramAlertService.notifyTradeClosed(u, trade, {
+            netPnL: trade.calculated?.netPnL || 0,
+            realizedR: trade.calculated?.realizedRMultiple,
+            exitPrice: trade.simpleExecution?.exitPrice || (trade as any).exits?.[0]?.price || 0,
+          }).catch(() => {});
+        }
+      }
+    }).catch(() => {});
 
     // Auto-compute excursion, setup classification & generate snapshot if trade was created in CLOSED status
     if (trade.status === 'CLOSED') {
@@ -1178,6 +1194,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         ChartGeneratorService.ensureTradeSnapshot(updated._id, req.user!.id).catch((err: any) => {
           req.log.warn('Auto snapshot generation threw for trade %s: %s', updated._id, err.message);
         });
+
+        // Telegram Notification for Trade Closure
+        User.findById(req.user!.id).lean().then((u) => {
+          if (u) {
+            TelegramAlertService.notifyTradeClosed(u, updated, {
+              netPnL: updated.calculated?.netPnL || 0,
+              realizedR: updated.calculated?.realizedRMultiple,
+              exitPrice: updated.simpleExecution?.exitPrice || (updated as any).exits?.[0]?.price || 0,
+            }).catch(() => {});
+          }
+        }).catch(() => {});
       } else {
         // Already closed trade was edited: mark snapshots as stale
         await ChartGeneratorService.markSnapshotsStale(updated._id, req.user!.id);

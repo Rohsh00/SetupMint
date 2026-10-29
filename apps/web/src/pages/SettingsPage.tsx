@@ -29,6 +29,8 @@ import {
   Tab,
   Slider,
   Collapse,
+  Checkbox,
+  FormControlLabel,
   useTheme as useMuiTheme,
   alpha,
 } from '@mui/material';
@@ -196,6 +198,19 @@ export function SettingsPage() {
   const [hardDisciplineLockoutEnabled, setHardDisciplineLockoutEnabled] = useState(initialWatcher.hardDisciplineLockoutEnabled ?? false);
   const [hardDisciplineLockoutDurationMins, setHardDisciplineLockoutDurationMins] = useState(initialWatcher.hardDisciplineLockoutDurationMins ?? 60);
   const [testingTelegram, setTestingTelegram] = useState(false);
+  const [registeringWebhook, setRegisteringWebhook] = useState(false);
+  const [telegramAlertEvents, setTelegramAlertEvents] = useState({
+    stopThreatCritical: true,
+    givebackLeaking: true,
+    dailyLossBreached: true,
+    nakedPositionWarning: true,
+    tokenExpiryWarning: true,
+    ladderMilestoneReached: true,
+    tradeOpened: true,
+    tradeClosed: true,
+    eodSummaryDigest: true,
+    ...(initialWatcher.telegramAlertEvents || {}),
+  });
 
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
@@ -236,6 +251,20 @@ export function SettingsPage() {
       setTelegramChatId(s.telegramChatId ?? '');
       setHardDisciplineLockoutEnabled(s.hardDisciplineLockoutEnabled ?? false);
       setHardDisciplineLockoutDurationMins(s.hardDisciplineLockoutDurationMins ?? 60);
+      if (s.telegramAlertEvents) {
+        setTelegramAlertEvents({
+          stopThreatCritical: true,
+          givebackLeaking: true,
+          dailyLossBreached: true,
+          nakedPositionWarning: true,
+          tokenExpiryWarning: true,
+          ladderMilestoneReached: true,
+          tradeOpened: true,
+          tradeClosed: true,
+          eodSummaryDigest: true,
+          ...s.telegramAlertEvents,
+        });
+      }
     }
   }, [user?.liveWatcherSettings]);
 
@@ -330,6 +359,18 @@ export function SettingsPage() {
     setTelegramChatId(d.telegramChatId ?? '');
     setHardDisciplineLockoutEnabled(d.hardDisciplineLockoutEnabled ?? false);
     setHardDisciplineLockoutDurationMins(d.hardDisciplineLockoutDurationMins ?? 60);
+    setTelegramAlertEvents({
+      stopThreatCritical: true,
+      givebackLeaking: true,
+      dailyLossBreached: true,
+      nakedPositionWarning: true,
+      tokenExpiryWarning: true,
+      ladderMilestoneReached: true,
+      tradeOpened: true,
+      tradeClosed: true,
+      eodSummaryDigest: true,
+      ...(d.telegramAlertEvents || {}),
+    });
     toast.info('Reset live watcher settings to institutional defaults. Click "Save Execution Settings" to persist.');
   };
 
@@ -350,6 +391,33 @@ export function SettingsPage() {
       toast.error(err.message || 'Error connecting to Telegram Bot API');
     } finally {
       setTestingTelegram(false);
+    }
+  };
+
+  const handleRegisterWebhook = async () => {
+    if (!telegramBotToken) {
+      toast.error('Telegram Bot Token is required to configure webhook.');
+      return;
+    }
+    const defaultUrl = `${window.location.origin}/api/v1/integrations/telegram/webhook`;
+    const webhookUrl = prompt(
+      'Enter your public HTTPS URL for Telegram Webhook (e.g. ngrok / cloudflare tunnel / domain):',
+      defaultUrl
+    );
+    if (!webhookUrl) return;
+
+    setRegisteringWebhook(true);
+    try {
+      const res = await api.settings.registerTelegramWebhook({ botToken: telegramBotToken, webhookUrl });
+      if (res.success) {
+        toast.success(res.message || 'Telegram Webhook registered successfully!');
+      } else {
+        toast.error(res.error?.message || 'Failed to configure Telegram Webhook.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error registering Telegram Webhook');
+    } finally {
+      setRegisteringWebhook(false);
     }
   };
 
@@ -387,6 +455,7 @@ export function SettingsPage() {
       telegramAlertsEnabled,
       telegramBotToken,
       telegramChatId,
+      telegramAlertEvents,
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
     };
@@ -1507,13 +1576,13 @@ export function SettingsPage() {
                     </Grid>
 
                     {/* Telegram Push Alerts */}
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: telegramAlertsEnabled ? 'info.main' : 'divider', bgcolor: telegramAlertsEnabled ? alpha('#0284C7', 0.08) : 'transparent' }}>
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: telegramAlertsEnabled ? 'info.main' : 'divider', bgcolor: telegramAlertsEnabled ? alpha('#0284C7', 0.04) : 'transparent' }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <SendRounded sx={{ color: telegramAlertsEnabled ? 'info.main' : 'text.secondary', fontSize: 20 }} />
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                              Telegram Off-Screen Push Alerts
+                            <SendRounded sx={{ color: telegramAlertsEnabled ? 'info.main' : 'text.secondary', fontSize: 22 }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                              Telegram Off-Screen Terminal & Mobile Remote Control
                             </Typography>
                           </Box>
                           <Switch
@@ -1522,39 +1591,204 @@ export function SettingsPage() {
                             color="info"
                           />
                         </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                          Receive high-priority phone notifications for Critical Stop Threats, Naked Position warnings, Profit Giveback reversals, and Daily Loss Limit breaches.
+                        <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                          Receive loud, real-time risk alerts and interact directly with your trading account from Telegram using inline buttons (1-tap Exit, Lock BE) and two-way chat commands (/pnl, /trades, /panic).
                         </Typography>
+
                         {telegramAlertsEnabled && (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
-                            <TextField
-                              size="small"
-                              type="password"
-                              label="Telegram Bot Token"
-                              placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                              value={telegramBotToken}
-                              onChange={(e) => setTelegramBotToken(e.target.value)}
-                              fullWidth
-                            />
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <TextField
-                                size="small"
-                                label="Telegram Chat ID"
-                                placeholder="e.g. 987654321"
-                                value={telegramChatId}
-                                onChange={(e) => setTelegramChatId(e.target.value)}
-                                sx={{ flex: 1 }}
-                              />
-                              <Button
-                                variant="outlined"
-                                color="info"
-                                size="small"
-                                onClick={handleTestTelegram}
-                                disabled={testingTelegram || !telegramBotToken || !telegramChatId}
-                                sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                              >
-                                {testingTelegram ? 'Testing...' : 'Test Connection'}
-                              </Button>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                            {/* Credentials and Testing */}
+                            <Grid container spacing={2}>
+                              <Grid size={{ xs: 12, md: 5 }}>
+                                <TextField
+                                  size="small"
+                                  type="password"
+                                  label="Telegram Bot Token"
+                                  placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                                  value={telegramBotToken}
+                                  onChange={(e) => setTelegramBotToken(e.target.value)}
+                                  fullWidth
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 4 }}>
+                                <TextField
+                                  size="small"
+                                  label="Telegram Chat ID"
+                                  placeholder="e.g. 987654321"
+                                  value={telegramChatId}
+                                  onChange={(e) => setTelegramChatId(e.target.value)}
+                                  fullWidth
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 3 }}>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                  <Button
+                                    variant="outlined"
+                                    color="info"
+                                    size="small"
+                                    onClick={handleTestTelegram}
+                                    disabled={testingTelegram || !telegramBotToken || !telegramChatId}
+                                    sx={{ fontWeight: 700, flex: 1, whiteSpace: 'nowrap' }}
+                                  >
+                                    {testingTelegram ? 'Testing...' : 'Test Link'}
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    color="secondary"
+                                    size="small"
+                                    onClick={handleRegisterWebhook}
+                                    disabled={registeringWebhook || !telegramBotToken}
+                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                    title="Connects two-way buttons and commands to your Telegram Bot"
+                                  >
+                                    {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
+                                  </Button>
+                                </Box>
+                              </Grid>
+                            </Grid>
+
+                            <Divider sx={{ my: 0.5 }} />
+
+                            {/* Event Subscriptions Toggles */}
+                            <Box>
+                              <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary', display: 'block', mb: 1 }}>
+                                Subscribed Push Alert Categories (All alerts sound audibly — zero silent mode)
+                              </Typography>
+                              <Grid container spacing={1}>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.stopThreatCritical !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, stopThreatCritical: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚨 Critical Stop Threats (&lt;25% Runway)</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.givebackLeaking !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, givebackLeaking: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⚠️ Profit Giveback Reversals (&gt;35% Leak)</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.ladderMilestoneReached !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, ladderMilestoneReached: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🎯 Ladder Target Met (T1, T2 Hits)</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.dailyLossBreached !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, dailyLossBreached: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🛑 Daily Max Loss Breach & 75% Warning</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.nakedPositionWarning !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, nakedPositionWarning: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⚠️ Naked Positions (No Resting Exchange SL)</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.tokenExpiryWarning !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tokenExpiryWarning: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⏰ 08:45 AM FYERS Token Expiry Alert</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.tradeOpened !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeOpened: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚀 Trade Opened &amp; Synced Notice</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.tradeClosed !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeClosed: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🏁 Trade Closed &amp; Excursion Summary</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.eodSummaryDigest !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, eodSummaryDigest: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>📊 Daily EOD Session Digest (15:35 IST)</Typography>}
+                                  />
+                                </Grid>
+                              </Grid>
+                            </Box>
+
+                            {/* Two-Way Bot Interactive Commands Cheatsheet */}
+                            <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'background.paper', border: '1px dashed', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ fontWeight: 800, color: 'info.main', display: 'block', mb: 0.5 }}>
+                                📱 Interactive Mobile Bot Commands (Send anytime in Telegram):
+                              </Typography>
+                              <Grid container spacing={1}>
+                                <Grid size={{ xs: 6, sm: 3 }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/pnl</Typography>
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Live floating PnL, Net R &amp; Day total</Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6, sm: 3 }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/trades</Typography>
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Open positions with 1-tap Exit &amp; Lock BE</Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6, sm: 3 }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/summary</Typography>
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Today's win rate, closed trades &amp; net R</Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6, sm: 3 }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'error.main' }}>/panic</Typography>
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Emergency market-exit for all positions</Typography>
+                                </Grid>
+                              </Grid>
                             </Box>
                           </Box>
                         )}

@@ -591,6 +591,8 @@ export const api = {
     systemStatus: () => request<any>('/settings/system-status'),
     testTelegram: (data: { botToken?: string; chatId?: string }) =>
       request<any>('/settings/test-telegram', { method: 'POST', body: JSON.stringify(data) }),
+    registerTelegramWebhook: (data: { botToken: string; webhookUrl: string }) =>
+      request<any>('/settings/register-telegram-webhook', { method: 'POST', body: JSON.stringify(data) }),
   },
 
   // Review Queue & Mistake Detection

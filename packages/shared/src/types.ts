@@ -1773,6 +1773,9 @@ export interface ILiveWatcherSettings {
     nakedPositionWarning?: boolean;
     tokenExpiryWarning?: boolean;
     ladderMilestoneReached?: boolean;
+    tradeOpened?: boolean;
+    tradeClosed?: boolean;
+    eodSummaryDigest?: boolean;
   };
   hardDisciplineLockoutEnabled: boolean;
   hardDisciplineLockoutDurationMins: number;
@@ -1815,6 +1818,9 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
     nakedPositionWarning: true,
     tokenExpiryWarning: true,
     ladderMilestoneReached: true,
+    tradeOpened: true,
+    tradeClosed: true,
+    eodSummaryDigest: true,
   },
   hardDisciplineLockoutEnabled: false,
   hardDisciplineLockoutDurationMins: 60,

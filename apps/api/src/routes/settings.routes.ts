@@ -181,6 +181,27 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     return reply.send({ success: true, message: res.message });
   });
 
+  // Register Telegram Webhook URL for interactive buttons and two-way commands
+  app.post('/register-telegram-webhook', async (req: any, reply) => {
+    const { botToken, webhookUrl } = req.body || {};
+    if (!botToken || !webhookUrl) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_PARAMS', message: 'botToken and webhookUrl are required' },
+      });
+    }
+
+    const res = await TelegramAlertService.setWebhook(botToken, webhookUrl);
+    if (!res.success) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'WEBHOOK_FAILED', message: res.message },
+      });
+    }
+
+    return reply.send({ success: true, message: res.message });
+  });
+
   // Get system statistics for settings overview
   app.get('/system-status', async (req, reply) => {
     const tradeCount = await Trade.countDocuments({ userId: req.user!.id });

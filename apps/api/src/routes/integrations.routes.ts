@@ -3,6 +3,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { BrokerIntegration, MarketDataIntegration } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { FyersService } from '../services/fyers.service.js';
+import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto.service.js';
 import { excursionBackfillSchema } from '@tradevault/shared';
 import { config } from '../config.js';
@@ -101,6 +102,17 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           message: err.message || 'Authentication failed',
         })
       );
+    }
+  });
+
+  // Public Telegram Webhook Endpoint (Receives button clicks and two-way commands)
+  app.post('/telegram/webhook', async (req, reply) => {
+    try {
+      await TelegramAlertService.processWebhookUpdate(req.body);
+      return reply.send({ ok: true });
+    } catch (err: any) {
+      req.log.warn('[TelegramWebhook] Error processing update: %s', err.message);
+      return reply.send({ ok: true }); // Always return 200 OK so Telegram doesn't retry repeatedly
     }
   });
 

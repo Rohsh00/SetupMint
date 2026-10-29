@@ -84,6 +84,65 @@ export class LiveExecutionWorker {
         }
       }
 
+      // Check Daily Loss threshold
+      const maxDailyLoss = user.riskSettings?.maxDailyLoss;
+      if (maxDailyLoss && maxDailyLoss > 0 && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const todayClosed = await Trade.find({
+          userId: user._id,
+          status: 'CLOSED',
+          exitTime: { $gte: startOfDay },
+        }).lean();
+        const realizedDayLoss = todayClosed.reduce((sum, t) => sum + (t.calculated?.netPnL || 0), 0);
+
+        let floatingDayLoss = 0;
+        try {
+          const liveSummary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString());
+          floatingDayLoss = liveSummary.totalFloatingNetPnL;
+        } catch {}
+
+        const netLoss = -(realizedDayLoss + floatingDayLoss);
+        if (netLoss > 0) {
+          const lossPercent = (netLoss / maxDailyLoss) * 100;
+          if (lossPercent >= 100) {
+            const breachKey = `daily_breach:${user._id}:${new Date().toDateString()}`;
+            if (!this.executedMilestones.has(breachKey)) {
+              this.executedMilestones.add(breachKey);
+              TelegramAlertService.notifyDailyLoss(user, netLoss, maxDailyLoss, lossPercent).catch(() => {});
+            }
+          } else if (lossPercent >= 75) {
+            const warnKey = `daily_warn75:${user._id}:${new Date().toDateString()}`;
+            if (!this.executedMilestones.has(warnKey)) {
+              this.executedMilestones.add(warnKey);
+              TelegramAlertService.notifyDailyLoss(user, netLoss, maxDailyLoss, lossPercent).catch(() => {});
+            }
+          }
+        }
+      }
+
+      // Pre-market 08:45 AM FYERS Session Check (Mon-Fri)
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const hours = nowIST.getHours();
+      const minutes = nowIST.getMinutes();
+      const dayOfWeek = nowIST.getDay();
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && hours === 8 && minutes >= 45 && minutes <= 50) {
+        const morningKey = `morning_token_check:${user._id}:${nowIST.toDateString()}`;
+        if (!this.executedMilestones.has(morningKey) && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+          this.executedMilestones.add(morningKey);
+          const isExpired = !broker.tokenExpiresAt || new Date(broker.tokenExpiresAt).getTime() <= Date.now();
+          if (isExpired) {
+            TelegramAlertService.sendAlert({
+              botToken: watcherSettings.telegramBotToken,
+              chatId: watcherSettings.telegramChatId,
+              title: '⏰ Pre-Market FYERS Session Expired',
+              body: 'Your FYERS 24h broker access token has expired. Re-authenticate on SetupMint before market opens at 09:15 AM to enable live tracking and automated trailing.',
+              severity: 'WARNING',
+            }).catch(() => {});
+          }
+        }
+      }
+
       // Find open trades for this user
       const openTrades = await Trade.find({
         userId: user._id,
@@ -136,6 +195,12 @@ export class LiveExecutionWorker {
               Entry: `₹${metric.entryPrice}`,
               LTP: `₹${metric.currentLtp}`,
             },
+            buttons: [
+              [
+                { text: '🚨 Market Exit Position', callback_data: `exit:${tradeId}` },
+                { text: '🛡️ Lock True BE', callback_data: `lock_be:${tradeId}` },
+              ],
+            ],
           }).catch(() => {});
         }
       }
@@ -146,6 +211,10 @@ export class LiveExecutionWorker {
       const threatKey = `threat:${tradeId}:${metric.stopThreatLevel}`;
       if (!this.executedMilestones.has(threatKey) && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
         this.executedMilestones.add(threatKey);
+        const runwayPct = typeof metric.distanceToStopPercent === 'number'
+          ? metric.distanceToStopPercent
+          : 25;
+
         TelegramAlertService.sendAlert({
           botToken: watcherSettings.telegramBotToken,
           chatId: watcherSettings.telegramChatId,
@@ -156,7 +225,18 @@ export class LiveExecutionWorker {
             Symbol: metric.symbol,
             FloatingPnL: `₹${metric.floatingNetPnL.toFixed(2)}`,
             CurrentStop: `₹${metric.stopLoss}`,
+            DistancePts: `${metric.distanceToStopPoints?.toFixed(2) || 0} pts`,
           },
+          progressBar: {
+            label: 'SL Runway Remaining',
+            percent: runwayPct,
+          },
+          buttons: [
+            [
+              { text: '🚨 Emergency Market Exit', callback_data: `exit:${tradeId}` },
+              { text: '🛡️ Lock True BE', callback_data: `lock_be:${tradeId}` },
+            ],
+          ],
         }).catch(() => {});
       }
     }
@@ -179,6 +259,16 @@ export class LiveExecutionWorker {
               CurrentR: `${metric.unrealizedR?.toFixed(2) || 0}R`,
               Retreated: `₹${metric.giveback.givebackAmount.toFixed(2)}`,
             },
+            progressBar: {
+              label: 'Profit Giveback Surrendered',
+              percent: metric.giveback.givebackPercent,
+            },
+            buttons: [
+              [
+                { text: '🏃 Close Runner Now', callback_data: `exit:${tradeId}` },
+                { text: '🛡️ Trail Stop to BE', callback_data: `lock_be:${tradeId}` },
+              ],
+            ],
           }).catch(() => {});
         }
 
@@ -231,6 +321,12 @@ export class LiveExecutionWorker {
               Target: `₹${step.targetPrice}`,
               PlannedExit: `${(step.plannedExitRatio * 100).toFixed(0)}% (${step.plannedExitQty} units)`,
             },
+            buttons: [
+              [
+                { text: `🎯 Book ${step.name} & Lock BE`, callback_data: `book_50:${tradeId}` },
+                { text: '🚨 Exit 100%', callback_data: `exit:${tradeId}` },
+              ],
+            ],
           }).catch(() => {});
         }
         continue;

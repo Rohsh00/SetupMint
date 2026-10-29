@@ -15,7 +15,7 @@ const cookieDomain = rawCookieDomain && rawCookieDomain !== 'localhost' ? rawCoo
 
 export const config = {
   port: Number(process.env.PORT || 4000),
-  host: process.env.HOST || '127.0.0.1',
+  host: process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1'),
   nodeEnv: process.env.NODE_ENV || 'development',
   isDev: (process.env.NODE_ENV || 'development') === 'development',
 

@@ -1270,6 +1270,14 @@ export class FyersService {
               existing.calculated.totalCosts = charges.totalCosts;
               existing.calculated.grossPnL = grossPnL;
               existing.calculated.netPnL = netPnL;
+
+              // When partially exiting an open position, adjust peak MFE to reflect current remaining open quantity
+              if (!fifoSummary.isFullyClosed && existing.calculated.liveMfeSummary && totalTradeQty > 0) {
+                const openRatio = fifoSummary.openQuantity.toNumber() / totalTradeQty;
+                const prevPeakNet = existing.calculated.liveMfeSummary.peakFloatingNetPnL || 0;
+                // Re-scale recorded peak MTM to remaining open quantity
+                existing.calculated.liveMfeSummary.peakFloatingNetPnL = Number((prevPeakNet * openRatio).toFixed(2));
+              }
               if (exitTime) {
                 existing.calculated.holdingTimeMinutes = Math.max(
                   0,

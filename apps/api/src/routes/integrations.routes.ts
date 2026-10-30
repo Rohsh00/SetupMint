@@ -15,9 +15,11 @@ function getEffectiveFyersRedirectUri(req: any): string {
     return process.env.FYERS_REDIRECT_URI;
   }
   const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
-  const proto = req?.headers?.['x-forwarded-proto'] || (host?.includes('localhost') || host?.includes('127.0.0.1') ? 'http' : 'https');
   if (host && (host.includes('onrender.com') || host.includes('setupmint-api'))) {
-    return `https://${host}/api/v1/integrations/fyers/callback`;
+    return 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback';
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback';
   }
   return config.fyersRedirectUri;
 }

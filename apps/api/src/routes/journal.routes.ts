@@ -10,7 +10,7 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
   // Get calendar summary for a month
   app.get('/calendar', async (req: any, reply) => {
-    const { yearMonth } = req.query; // format 'YYYY-MM'
+    const { yearMonth, accountId } = req.query; // format 'YYYY-MM'
     const currentYM = yearMonth || new Date().toISOString().slice(0, 7);
 
     const [yearStr, monthStr] = currentYM.split('-');
@@ -21,18 +21,28 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
 
     // Aggregate trades by day
-    const trades = await Trade.find({
+    const tradeFilter: any = {
       userId: req.user!.id,
       tradeDate: { $gte: startOfMonth, $lte: endOfMonth },
-    });
+    };
+    if (accountId && accountId !== 'ALL') {
+      tradeFilter.accountId = accountId;
+    }
 
-    const dayMap = new Map<string, { netPnL: number; tradesCount: number; winCount: number; lossCount: number }>();
+    const trades = await Trade.find(tradeFilter);
+
+    const dayMap = new Map<
+      string,
+      { netPnL: number; totalR: number; tradesCount: number; winCount: number; lossCount: number }
+    >();
 
     for (const t of trades) {
       const dStr = t.tradeDate.toISOString().split('T')[0];
-      const rec = dayMap.get(dStr) ?? { netPnL: 0, tradesCount: 0, winCount: 0, lossCount: 0 };
+      const rec = dayMap.get(dStr) ?? { netPnL: 0, totalR: 0, tradesCount: 0, winCount: 0, lossCount: 0 };
       const pnl = t.calculated?.netPnL || 0;
+      const r = t.calculated?.realizedRMultiple ?? 0;
       rec.netPnL += pnl;
+      rec.totalR += r;
       rec.tradesCount++;
       if (pnl > 0) rec.winCount++;
       else if (pnl < 0) rec.lossCount++;
@@ -57,13 +67,14 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     for (let d = 1; d <= numDays; d++) {
       const dayFormatted = d < 10 ? `0${d}` : `${d}`;
       const dateStr = `${currentYM}-${dayFormatted}`;
-      const dayData = dayMap.get(dateStr) ?? { netPnL: 0, tradesCount: 0, winCount: 0, lossCount: 0 };
+      const dayData = dayMap.get(dateStr) ?? { netPnL: 0, totalR: 0, tradesCount: 0, winCount: 0, lossCount: 0 };
       const journalEntry = journalMap.get(dateStr);
 
       days.push({
         date: dateStr,
         dayNumber: d,
         netPnL: Number(dayData.netPnL.toFixed(2)),
+        totalR: Number(dayData.totalR.toFixed(2)),
         tradesCount: dayData.tradesCount,
         winCount: dayData.winCount,
         lossCount: dayData.lossCount,
@@ -71,6 +82,10 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         disciplineRating: journalEntry?.disciplineRating,
         marketBias: journalEntry?.marketBias,
         emotionalState: journalEntry?.emotionalState,
+        mistakes: journalEntry?.mistakes || [],
+        mistakesCount: journalEntry?.mistakes?.length || 0,
+        lessonsLearned: journalEntry?.lessonsLearned || '',
+        marketConditions: journalEntry?.marketConditions || '',
       });
     }
 

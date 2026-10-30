@@ -465,8 +465,11 @@ export const api = {
 
   // Journal
   journal: {
-    calendar: (yearMonth?: string) => {
-      const query = yearMonth ? `?yearMonth=${yearMonth}` : '';
+    calendar: (yearMonth?: string, accountId?: string) => {
+      const params = new URLSearchParams();
+      if (yearMonth) params.set('yearMonth', yearMonth);
+      if (accountId && accountId !== 'ALL') params.set('accountId', accountId);
+      const query = params.toString() ? `?${params.toString()}` : '';
       return request<{ yearMonth: string; days: any[] }>(`/journal/calendar${query}`);
     },
     getDay: (date: string) => request<any>(`/journal/${date}`),

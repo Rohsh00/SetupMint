@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link as RouterLink, useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useOutletContext, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
@@ -43,8 +43,6 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
-import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
@@ -63,62 +61,10 @@ import { HelpHint } from '../components/help/index.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
-
-  // FYERS Live Status & Sync
-  const { data: fyersStatus } = useQuery({
-    queryKey: ['fyers-status'],
-    queryFn: () => api.integrations.fyersStatus(),
-  });
-
-  const fyersData = (fyersStatus as any)?.data ?? fyersStatus;
-  const isFyersConfigured = Boolean(fyersData?.isConfigured || fyersData?.appId);
-  const isFyersConnected = Boolean(fyersData?.isConnected);
-
-  const fyersSyncMutation = useMutation({
-    mutationFn: () => api.integrations.fyersSync(),
-    onSuccess: (res: any) => {
-      queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
-      queryClient.invalidateQueries({ queryKey: ['trades'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      toast.success(res?.message || 'Synchronized trades from FYERS successfully.');
-    },
-    onError: (err: any) => {
-      toast.error(err.message || 'Failed to sync trades from FYERS.');
-    },
-  });
-
-  const fyersConnectMutation = useMutation({
-    mutationFn: async () => {
-      if (!isFyersConfigured) {
-        throw new Error('NOT_CONFIGURED');
-      }
-      return api.integrations.fyersLoginUrl();
-    },
-    onSuccess: (res: any) => {
-      const url = res?.url || res?.data?.url;
-      if (url) {
-        toast.info('Opening FYERS login portal...');
-        window.location.href = url;
-      } else {
-        toast.info('Redirecting to Settings to complete FYERS setup...');
-        navigate('/settings');
-      }
-    },
-    onError: (err: any) => {
-      if (err.message === 'NOT_CONFIGURED') {
-        toast.info('Configure your FYERS API credentials in Settings.');
-      } else {
-        toast.error(err.message || 'Failed to initialize FYERS login.');
-      }
-      navigate('/settings');
-    },
-  });
 
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
@@ -379,102 +325,17 @@ export function TradesPage() {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-          {/* Dynamic FYERS Broker Sync / Connect Button */}
-          {isFyersConnected ? (
-            /* FYERS IS CONNECTED: Show live Sync Trades button */
-            <Tooltip
-              title="FYERS broker session active. Click to fetch today's executed trades into your journal."
-              arrow
-            >
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                onClick={() => fyersSyncMutation.mutate()}
-                disabled={fyersSyncMutation.isPending}
-                startIcon={
-                  <SyncRoundedIcon
-                    fontSize="small"
-                    sx={{
-                      animation: fyersSyncMutation.isPending ? 'spin 1s linear infinite' : 'none',
-                      '@keyframes spin': {
-                        '0%': { transform: 'rotate(0deg)' },
-                        '100%': { transform: 'rotate(360deg)' },
-                      },
-                    }}
-                  />
-                }
-                sx={{
-                  fontWeight: 700,
-                  fontSize: '0.8125rem',
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
-                }}
-              >
-                {fyersSyncMutation.isPending ? 'Syncing FYERS...' : 'Sync FYERS Trades'}
-              </Button>
-            </Tooltip>
-          ) : (
-            /* FYERS IS NOT CONNECTED: Show dynamic Connect FYERS & Import CSV buttons */
-            <>
-              <Tooltip
-                title={
-                  isFyersConfigured
-                    ? 'FYERS daily session expired. Click for 1-Click Daily Auth.'
-                    : 'Connect your FYERS broker to auto-sync trades with exact executions and fees.'
-                }
-                arrow
-              >
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={() => {
-                    if (isFyersConfigured) {
-                      fyersConnectMutation.mutate();
-                    } else {
-                      toast.info('Configure your FYERS API credentials in Settings.');
-                      navigate('/settings');
-                    }
-                  }}
-                  disabled={fyersConnectMutation.isPending}
-                  startIcon={
-                    fyersConnectMutation.isPending ? (
-                      <CircularProgress size={14} color="inherit" />
-                    ) : (
-                      <LinkRoundedIcon fontSize="small" />
-                    )
-                  }
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '0.8125rem',
-                    borderColor: isDark ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.4)',
-                    color: isDark ? '#FBBF24' : '#D97706',
-                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
-                    '&:hover': {
-                      borderColor: isDark ? '#FBBF24' : '#D97706',
-                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
-                    },
-                  }}
-                >
-                  {fyersConnectMutation.isPending
-                    ? 'Connecting...'
-                    : 'Connect FYERS'}
-                </Button>
-              </Tooltip>
-
-              <Tooltip title="Import tradebook CSV from Zerodha, Angel One, FYERS, or Upstox" arrow>
-                <Button
-                  component={RouterLink}
-                  to="/reports"
-                  variant="outlined"
-                  size="small"
-                  startIcon={<UploadFileRoundedIcon fontSize="small" />}
-                  sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
-                >
-                  Import CSV
-                </Button>
-              </Tooltip>
-            </>
-          )}
+          {/* Import CSV button */}
+          <Button
+            component={RouterLink}
+            to="/reports"
+            variant="outlined"
+            size="small"
+            startIcon={<UploadFileRoundedIcon fontSize="small" />}
+            sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
+          >
+            Import CSV
+          </Button>
 
           {/* Export CSV button */}
           <Button

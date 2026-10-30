@@ -1,6 +1,7 @@
 import React from 'react';
 import { UseFormRegister, UseFormWatch } from 'react-hook-form';
 import { formatCurrency, formatPercent } from '../../../lib/utils.js';
+import { HelpHint } from '../../help/index.js';
 
 interface TradeRiskTabProps {
   register: UseFormRegister<any>;
@@ -96,7 +97,10 @@ export function TradeRiskTab({ register, watch }: TradeRiskTabProps) {
           </div>
 
           <div className="bg-background p-2.5 rounded-lg border border-border">
-            <span className="block text-[10px] uppercase">Planned Reward:Risk</span>
+            <div className="flex items-center">
+              <span className="block text-[10px] uppercase">Planned Reward:Risk</span>
+              <HelpHint hintKey="metric.plannedRR" />
+            </div>
             <span className="text-foreground font-bold text-sm">
               {rewardToRisk > 0 ? `1 : ${rewardToRisk}` : 'N/A'}
             </span>

@@ -57,6 +57,7 @@ import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
+import { HelpHint } from '../components/help/index.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
@@ -697,8 +698,18 @@ export function TradesPage() {
                 <TableCell align="right">Qty</TableCell>
                 <TableCell align="right">Fees</TableCell>
                 <TableCell align="right">Net P&L</TableCell>
-                <TableCell align="right">R-Mult</TableCell>
-                <TableCell align="center">Discipline</TableCell>
+                <TableCell align="right">
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                    R-Mult
+                    <HelpHint hintKey="metric.rMultiple" />
+                  </Box>
+                </TableCell>
+                <TableCell align="center">
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                    Discipline
+                    <HelpHint hintKey="journal.disciplineScore" />
+                  </Box>
+                </TableCell>
                 <TableCell align="center">Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>

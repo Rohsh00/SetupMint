@@ -41,6 +41,7 @@ import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import { api } from '../../lib/api.js';
 import { formatCurrency, formatR, formatPercent, formatDate } from '../../lib/utils.js';
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
+import { HelpHint } from '../help/index.js';
 import type { IEquityCurvesResponse, IStrategyOverlayCurve } from '@tradevault/shared';
 
 const STRATEGY_COLORS = ['#8B5CF6', '#EC4899', '#F59E0B', '#06B6D4', '#10B981', '#3B82F6'];
@@ -297,9 +298,12 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.01em' }}>
-              Multi-Panel Performance Curves
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.01em' }}>
+                Multi-Panel Performance Curves
+              </Typography>
+              <HelpHint hintKey="metric.rMultiple" />
+            </Box>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               Synchronized Money Curve, Cumulative R, Strategy Overlays & Underwater Drawdown
             </Typography>
@@ -713,15 +717,16 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
               gap: 1,
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
                 Underwater Drawdown
               </Typography>
+              <HelpHint hintKey="metric.drawdown" />
               <Chip
                 label={`Current DD: -${formatPercent(currentDrawdownPct)}`}
                 size="small"
                 color={currentDrawdownPct > 0 ? 'error' : 'success'}
-                sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
+                sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700, ml: 0.5 }}
               />
             </Box>
 

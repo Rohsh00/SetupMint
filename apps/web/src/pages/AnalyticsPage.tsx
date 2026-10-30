@@ -259,9 +259,12 @@ export function AnalyticsPage() {
           <Card sx={{ p: 2.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                  Peak-to-Trough Drawdown Curve
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Peak-to-Trough Drawdown Curve
+                  </Typography>
+                  <HelpHint hintKey="metric.drawdown" />
+                </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                   Percentage drawdown from historical high equity mark
                 </Typography>
@@ -343,9 +346,12 @@ export function AnalyticsPage() {
             <Grid size={{ xs: 12, md: 6 }}>
               <Card sx={{ p: 2.5, height: '100%' }}>
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                    Trade P&L Distribution
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                      Trade P&L Distribution
+                    </Typography>
+                    <HelpHint hintKey="analytics.overview.pnlDistribution" />
+                  </Box>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                     Frequency of trade profits and losses by range (click bar to drill down)
                   </Typography>
@@ -403,9 +409,12 @@ export function AnalyticsPage() {
             <Grid size={{ xs: 12, md: 6 }}>
               <Card sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                    Consistency & Run Streaks
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                      Consistency & Run Streaks
+                    </Typography>
+                    <HelpHint hintKey="analytics.overview.runStreaks" />
+                  </Box>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                     Consecutive execution patterns and outcome ratios
                   </Typography>
@@ -474,10 +483,13 @@ export function AnalyticsPage() {
             <Grid size={{ xs: 12, md: 6 }}>
               <Card sx={{ p: 2.5, height: '100%' }}>
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <SecurityIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
-                    Discipline Rating vs Performance
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <SecurityIcon fontSize="small" sx={{ color: muiTheme.palette.primary.main }} />
+                      Discipline Rating vs Performance
+                    </Typography>
+                    <HelpHint hintKey="analytics.psychology.discipline" />
+                  </Box>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                     Correlation between execution discipline rating (1 to 5) and trading results (click row to drill down)
                   </Typography>
@@ -540,10 +552,13 @@ export function AnalyticsPage() {
             <Grid size={{ xs: 12, md: 6 }}>
               <Card sx={{ p: 2.5, height: '100%' }}>
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
-                    Emotional State at Entry vs P&L
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
+                      Emotional State at Entry vs P&L
+                    </Typography>
+                    <HelpHint hintKey="analytics.psychology.emotions" />
+                  </Box>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                     How emotional mindset at entry impacts your bottom-line profitability (click row to drill down)
                   </Typography>
@@ -606,9 +621,12 @@ export function AnalyticsPage() {
           {/* Cost of Trading Mistakes */}
           <Card sx={{ p: 2.5 }}>
             <Box sx={{ mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', color: muiTheme.palette.loss.main }}>
-                The Monetary Cost of Discipline Mistakes
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', color: muiTheme.palette.loss.main }}>
+                  The Monetary Cost of Discipline Mistakes
+                </Typography>
+                <HelpHint hintKey="analytics.psychology.mistakes" />
+              </Box>
               <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                 Direct monetary loss incurred from specific psychological violations (click card to drill down)
               </Typography>
@@ -671,9 +689,12 @@ export function AnalyticsPage() {
           <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ p: 2.5, height: '100%' }}>
               <Box sx={{ mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                  Performance by Day of Week
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Performance by Day of Week
+                  </Typography>
+                  <HelpHint hintKey="analytics.time.weekday" />
+                </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                   Identify which trading weekdays provide maximum discretionary edge (click row to drill down)
                 </Typography>
@@ -752,9 +773,12 @@ export function AnalyticsPage() {
           <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ p: 2.5, height: '100%' }}>
               <Box sx={{ mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                  Performance by Trading Session
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Performance by Trading Session
+                  </Typography>
+                  <HelpHint hintKey="trade.form.sessionCodes" />
+                </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                   NSE Regular equity market vs MCX Commodity evening session (click row to drill down)
                 </Typography>
@@ -843,10 +867,13 @@ export function AnalyticsPage() {
           {/* Header Action Bar */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 1 }}>
-                <TimelineRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
-                Maximum Adverse Excursion (MAE) & Favorable Excursion (MFE)
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <TimelineRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                  Maximum Adverse Excursion (MAE) & Favorable Excursion (MFE)
+                </Typography>
+                <HelpHint hintKey="metric.excursionFlags" />
+              </Box>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 Measures execution efficiency, profit giveback, and optimal stop placement across evaluated trades.
               </Typography>
@@ -1251,7 +1278,7 @@ export function AnalyticsPage() {
                             R Left on Table
                           </Typography>
                         </Tooltip>
-                        <HelpHint hintKey="metric.exitEfficiency" />
+                        <HelpHint hintKey="analytics.execution.rLeftOnTable" />
                       </Box>
                       <Tooltip title="Average unrealized R-multiple profit surrendered before exit">
                         <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.warning.main, mt: 0.5 }}>
@@ -1276,7 +1303,7 @@ export function AnalyticsPage() {
                             Follow-Through
                           </Typography>
                         </Tooltip>
-                        <HelpHint hintKey="metric.mae" />
+                        <HelpHint hintKey="analytics.execution.followThrough" />
                       </Box>
                       <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: '#8B5CF6', mt: 0.5 }}>
                         {summary.avgEntryQualityScore !== undefined ? summary.avgEntryQualityScore : (summary.entryQualityScore?.mean !== undefined ? (Number(summary.entryQualityScore.mean) / 100).toFixed(2) : '—')}
@@ -1297,10 +1324,13 @@ export function AnalyticsPage() {
                   <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
                       <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <SecurityIcon sx={{ color: muiTheme.palette.profit.main, fontSize: 20 }} />
-                          Winner-Only MAE Distribution (Stop Loss Optimization)
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SecurityIcon sx={{ color: muiTheme.palette.profit.main, fontSize: 20 }} />
+                            Winner-Only MAE Distribution (Stop Loss Optimization)
+                          </Typography>
+                          <HelpHint hintKey="analytics.execution.winnersMae" />
+                        </Box>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                           Did your winners actually need their full stop room? If 90% of winners never suffer &gt;0.4R adverse heat, a 1.0R stop absorbs unnecessary risk.
                         </Typography>
@@ -1371,10 +1401,13 @@ export function AnalyticsPage() {
                   <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
                       <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <TrendingUpRoundedIcon sx={{ color: '#06B6D4', fontSize: 22 }} />
-                          MFE Reach Funnel & Round-Trip Loss Prevention
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <TrendingUpRoundedIcon sx={{ color: '#06B6D4', fontSize: 22 }} />
+                            MFE Reach Funnel & Round-Trip Loss Prevention
+                          </Typography>
+                          <HelpHint hintKey="analytics.execution.funnel" />
+                        </Box>
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                           Tracks trade progression through milestone R levels and pinpoints where profitable trades reverse into full losses.
                         </Typography>
@@ -1872,10 +1905,13 @@ export function AnalyticsPage() {
                 {cohorts.length > 0 && (
                   <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
                     <Box sx={{ mb: 2 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <PsychologyIcon sx={{ color: 'primary.main', fontSize: 20 }} />
-                        Execution Quality Cohort Comparisons
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <PsychologyIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                          Execution Quality Cohort Comparisons
+                        </Typography>
+                        <HelpHint hintKey="analytics.execution.cohorts" />
+                      </Box>
                       <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                         Connect execution efficiency directly to discipline, psychology, and trading session conditions.
                       </Typography>
@@ -1942,10 +1978,13 @@ export function AnalyticsPage() {
                 {rollingTrend.length > 5 && (
                   <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
                     <Box sx={{ mb: 2 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <TrendingUpRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
-                        Rolling 20-Trade Execution Quality Trend
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <TrendingUpRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+                          Rolling 20-Trade Execution Quality Trend
+                        </Typography>
+                        <HelpHint hintKey="analytics.execution.rollingTrend" />
+                      </Box>
                       <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                         Tracks whether your exit discipline and adverse drawdown management are improving or deteriorating over time.
                       </Typography>

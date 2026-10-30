@@ -6,6 +6,7 @@ import {
   LIQUIDITY_RULE_CHECKLIST,
   MistakeCategory,
 } from '@tradevault/shared';
+import { HelpHint } from '../../help/index.js';
 
 interface TradePsychologyTabProps {
   register: UseFormRegister<any>;
@@ -84,9 +85,12 @@ export function TradePsychologyTab({ register, watch, setValue }: TradePsycholog
       {/* Emotional state dropdowns (Grouped Positive/Neutral/Negative) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Emotion Before Entry
-          </label>
+          <div className="flex items-center mb-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Emotion Before Entry
+            </label>
+            <HelpHint hintKey="analytics.psychology.emotions" />
+          </div>
           {renderEmotionSelect('psychology.emotionBefore')}
         </div>
 
@@ -107,9 +111,12 @@ export function TradePsychologyTab({ register, watch, setValue }: TradePsycholog
 
       {/* Discipline Score Selector (1-5) */}
       <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-2">
-          Discipline Rating (1 to 5)
-        </label>
+        <div className="flex items-center mb-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            Discipline Rating (1 to 5)
+          </label>
+          <HelpHint hintKey="analytics.psychology.discipline" />
+        </div>
         <div className="flex items-center gap-3">
           {[1, 2, 3, 4, 5].map((score) => (
             <button
@@ -205,9 +212,12 @@ export function TradePsychologyTab({ register, watch, setValue }: TradePsycholog
 
       {/* Direct Mistake Tags Grouped by Category */}
       <div className="pt-2 border-t border-border space-y-3">
-        <label className="block text-xs font-medium text-rose-400 font-semibold">
-          Costly Trading Mistakes Tracked ({selectedMistakes.length} tagged)
-        </label>
+        <div className="flex items-center">
+          <label className="text-xs font-medium text-rose-400 font-semibold">
+            Costly Trading Mistakes Tracked ({selectedMistakes.length} tagged)
+          </label>
+          <HelpHint hintKey="analytics.psychology.mistakes" />
+        </div>
 
         {MISTAKE_GROUPS.map((group) => {
           const items = MISTAKE_TAGS.filter((m) => m.category === group.category);

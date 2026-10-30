@@ -2,6 +2,7 @@ import React from 'react';
 import { UseFormRegister, UseFormWatch, UseFieldArrayReturn } from 'react-hook-form';
 import { Plus, Trash2, Sliders } from 'lucide-react';
 import { formatCurrency, currentLocalIsoDateTime } from '../../../lib/utils.js';
+import { HelpHint } from '../../help/index.js';
 
 interface TradeExecutionTabProps {
   register: UseFormRegister<any>;
@@ -58,13 +59,14 @@ export function TradeExecutionTab({
           <button
             type="button"
             onClick={() => setExecutionMode('ADVANCED')}
-            className={`px-3 py-1 rounded-md font-medium transition-all ${
+            className={`px-3 py-1 rounded-md font-medium transition-all inline-flex items-center gap-1 ${
               executionMode === 'ADVANCED'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Advanced Fills (FIFO)
+            <HelpHint hintKey="trade.form.fifo" />
           </button>
         </div>
       </div>
@@ -110,9 +112,12 @@ export function TradeExecutionTab({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Contract Multiplier
-              </label>
+              <div className="flex items-center mb-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Contract Multiplier
+                </label>
+                <HelpHint hintKey="trade.form.multiplier" />
+              </div>
               <input
                 type="number"
                 step="any"
@@ -124,9 +129,12 @@ export function TradeExecutionTab({
 
           {/* Transaction Costs Section */}
           <div className="pt-3 border-t border-border">
-            <span className="text-xs font-semibold text-foreground block mb-2">
-              Trading Costs & Fee Breakdown
-            </span>
+            <div className="flex items-center mb-2">
+              <span className="text-xs font-semibold text-foreground">
+                Trading Costs & Fee Breakdown
+              </span>
+              <HelpHint hintKey="trade.fees.autoManual" />
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <div>
                 <label className="block text-[11px] text-muted-foreground mb-1">Brokerage</label>

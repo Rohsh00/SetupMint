@@ -19,6 +19,7 @@ import {
 } from '@mui/icons-material';
 import { TradeOutcome } from '@tradevault/shared';
 import { formatCurrency, formatR } from '../../../lib/utils.js';
+import { HelpHint } from '../../help/index.js';
 
 interface TradeCalculationBannerProps {
   grossPnL: number;
@@ -224,9 +225,12 @@ export function TradeCalculationBanner({
                     fontSize: '0.75rem',
                   }}
                 >
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
-                    REALIZED R
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
+                      REALIZED R
+                    </Typography>
+                    <HelpHint hintKey="metric.rMultiple" />
+                  </Box>
                   <Typography
                     variant="caption"
                     sx={{
@@ -283,6 +287,7 @@ export function TradeCalculationBanner({
                   <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
                     TOTAL FEES
                   </Typography>
+                  <HelpHint hintKey="trade.fees.autoManual" />
                   {isAutoFees !== undefined && (
                     <Chip
                       label={isAutoFees ? 'AUTO' : 'MANUAL'}

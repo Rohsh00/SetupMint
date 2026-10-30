@@ -45,6 +45,7 @@ import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { HelpHint } from '../components/help/index.js';
 
 type SortColumn =
   | 'key'
@@ -466,9 +467,12 @@ export function StrategyVariantAnalyticsPage() {
       <Card sx={{ overflow: 'hidden' }}>
         <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 800 }}>
-              Mutually Exclusive Setup Variant Breakdown
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                Mutually Exclusive Setup Variant Breakdown
+              </Typography>
+              <HelpHint hintKey="strategy.invariantCheck" />
+            </Box>
             <Typography variant="caption" color="text.secondary">
               Invariant: Sum of variant bucket closed trades ({analytics.buckets.reduce((acc: number, b: any) => acc + b.closedTrades, 0)}) equals parent closed trades ({parentMetrics.closedTrades}).
             </Typography>

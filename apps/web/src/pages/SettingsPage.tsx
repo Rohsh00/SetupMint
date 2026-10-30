@@ -90,6 +90,7 @@ import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { api, BASE_URL } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
+import { HelpHint } from '../components/help/index.js';
 
 function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
   if (!ua) return { browser: 'Unknown Browser', os: 'Unknown Device', full: 'Web Session (Unknown Device)', isMobile: false };
@@ -1908,9 +1909,12 @@ export function SettingsPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <ShieldRounded sx={{ color: 'primary.main' }} />
               <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  Discipline & Daily Risk Guardrails
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                    Discipline & Daily Risk Guardrails
+                  </Typography>
+                  <HelpHint hintKey="settings.riskGuardrails" />
+                </Box>
                 <Typography variant="body2" color="text.secondary">
                   Parameters used by the financial engine for mistake detection, revenge trade cooldowns, and daily loss warnings.
                 </Typography>
@@ -2318,10 +2322,13 @@ export function SettingsPage() {
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
                 <Box>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <KeyRounded sx={{ color: 'primary.main' }} />
-                    FYERS Broker Integration (Live API v3)
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <KeyRounded sx={{ color: 'primary.main' }} />
+                      FYERS Broker Integration (Live API v3)
+                    </Typography>
+                    <HelpHint hintKey="settings.fyersExpiry" />
+                  </Box>
                   <Typography variant="body2" color="text.secondary">
                     Real-time execution, round-trip FIFO tradebook synchronization, and Indian statutory charges
                   </Typography>
@@ -2574,10 +2581,13 @@ export function SettingsPage() {
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
                 <Box>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TimelineRounded sx={{ color: '#f59e0b' }} />
-                    Angel One SmartAPI (Market Data Fallback)
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TimelineRounded sx={{ color: '#f59e0b' }} />
+                      Angel One SmartAPI (Market Data Fallback)
+                    </Typography>
+                    <HelpHint hintKey="settings.angelOneFallback" />
+                  </Box>
                   <Typography variant="body2" color="text.secondary">
                     Secondary candle feed for excursion analytics and chart snapshots when primary feeds are unavailable
                   </Typography>

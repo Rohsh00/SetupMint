@@ -46,6 +46,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { HelpHint } from '../components/help/index.js';
 
 export function ReportsPage() {
   const muiTheme = useTheme();
@@ -606,6 +607,7 @@ export function ReportsPage() {
                       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                         Detected Format:
                       </Typography>
+                      <HelpHint hintKey="import.columnMapping" />
                       <Chip
                         label={previewData.detectedBroker}
                         color="primary"
@@ -874,6 +876,7 @@ export function ReportsPage() {
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                   Recent Import Batches
                 </Typography>
+                <HelpHint hintKey="import.undoBatch" />
               </Box>
               <Typography variant="caption" color="text.secondary">
                 You can undo any batch. Deleting a batch removes its imported records and reconciles account balances.

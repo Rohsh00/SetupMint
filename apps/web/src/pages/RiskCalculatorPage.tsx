@@ -35,6 +35,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent, currentLocalIsoDateTime } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
+import { HelpHint } from '../components/help/index.js';
 
 /**
  * Sanitizes input text into a clean numeric string, preventing leading zeros
@@ -838,9 +839,12 @@ export function RiskCalculatorPage() {
               </Grid>
 
               <Grid size={{ xs: 4 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                  Contract Multiplier
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
+                    Contract Multiplier
+                  </Typography>
+                  <HelpHint hintKey="trade.form.multiplier" />
+                </Box>
                 <TextField
                   fullWidth
                   size="small"
@@ -1025,7 +1029,10 @@ export function RiskCalculatorPage() {
                 {/* Reward to Risk Ratio (Always Live) */}
                 <Grid size={{ xs: 6 }}>
                   <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Reward-to-Risk (R:R)</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>Reward-to-Risk (R:R)</Typography>
+                      <HelpHint hintKey="metric.plannedRR" />
+                    </Box>
                     <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
                       {structuralRR !== undefined ? `1 : ${structuralRR.toFixed(2)}` : '—'}
                     </Typography>

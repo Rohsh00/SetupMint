@@ -55,6 +55,7 @@ import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { HelpHint } from '../components/help/index.js';
 import {
   ITradeTemplate,
   TemplateGroup,
@@ -825,18 +826,21 @@ export function StrategyPlaybookPage() {
                           }}
                         >
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                fontWeight: 800,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                color: muiTheme.palette.text.secondary,
-                                fontSize: '0.625rem',
-                              }}
-                            >
-                              Edge Validation Engine
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 800,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.05em',
+                                  color: muiTheme.palette.text.secondary,
+                                  fontSize: '0.625rem',
+                                }}
+                              >
+                                Edge Validation Engine
+                              </Typography>
+                              <HelpHint hintKey="strategy.edgeVerdict" />
+                            </Box>
                             <Chip
                               size="small"
                               onClick={(e) => {
@@ -1427,9 +1431,12 @@ export function StrategyPlaybookPage() {
                           gap: 1,
                         }}
                       >
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.625rem', fontWeight: 600 }}>
-                          Edge Status
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.625rem', fontWeight: 600 }}>
+                            Edge Status
+                          </Typography>
+                          <HelpHint hintKey="strategy.edgeVerdict" />
+                        </Box>
                         {perf.totalTrades < 30 ? (
                           <Tooltip
                             title={`Sample size N = ${perf.totalTrades}/30 trades. Statistical edge is unproven because small samples suffer from sampling randomness.`}

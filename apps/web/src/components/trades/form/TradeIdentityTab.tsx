@@ -8,6 +8,7 @@ import {
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { toLocalIsoDateTime } from '../../../lib/utils.js';
+import { HelpHint } from '../../help/index.js';
 
 interface TradeIdentityTabProps {
   register: UseFormRegister<any>;
@@ -315,9 +316,12 @@ export function TradeIdentityTab({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Trading Session
-          </label>
+          <div className="flex items-center mb-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Trading Session
+            </label>
+            <HelpHint hintKey="trade.form.sessionCodes" />
+          </div>
           <select
             {...register('session')}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"

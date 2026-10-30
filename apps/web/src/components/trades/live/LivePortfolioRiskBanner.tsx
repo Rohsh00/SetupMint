@@ -5,6 +5,7 @@ import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import { alpha } from '@mui/material/styles';
 import { IPortfolioRiskResult } from '@tradevault/shared';
+import { HelpHint } from '../../help/index.js';
 
 export interface LivePortfolioRiskBannerProps {
   risk: IPortfolioRiskResult;
@@ -46,9 +47,12 @@ export function LivePortfolioRiskBanner({ risk, isDark = true }: LivePortfolioRi
     >
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', letterSpacing: 0.5 }}>
-            PORTFOLIO DIRECTIONAL EXPOSURE
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', letterSpacing: 0.5 }}>
+              PORTFOLIO DIRECTIONAL EXPOSURE
+            </Typography>
+            <HelpHint hintKey="portfolio.directionalDelta" />
+          </Box>
           <Chip
             label={netDirectionalBias.replace('_', ' ')}
             size="small"
@@ -66,11 +70,14 @@ export function LivePortfolioRiskBanner({ risk, isDark = true }: LivePortfolioRi
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           {totalThetaBurnPerHour > 0 && (
-            <Tooltip title="Total options time decay bleed across all open derivative contracts" arrow>
-              <Typography variant="caption" sx={{ fontWeight: 700, color: '#F59E0B' }}>
-                🔥 Theta Burn: -₹{totalThetaBurnPerHour.toFixed(0)}/hr (-₹{totalDailyThetaBurn.toFixed(0)}/day)
-              </Typography>
-            </Tooltip>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+              <Tooltip title="Total options time decay bleed across all open derivative contracts" arrow>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: '#F59E0B' }}>
+                  🔥 Theta Burn: -₹{totalThetaBurnPerHour.toFixed(0)}/hr (-₹{totalDailyThetaBurn.toFixed(0)}/day)
+                </Typography>
+              </Tooltip>
+              <HelpHint hintKey="portfolio.thetaBurn" />
+            </Box>
           )}
 
           <Tooltip title="Net Rupee P&L impact across all positions per 1% directional move" arrow>

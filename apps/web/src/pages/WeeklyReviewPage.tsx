@@ -64,6 +64,7 @@ import { formatCurrency, formatPercent, formatR, formatDate } from '../lib/utils
 import { toast } from '../context/ToastContext.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
+import { HelpHint } from '../components/help/index.js';
 
 const COMMON_FOCUS_RULES = [
   {
@@ -332,6 +333,7 @@ export function WeeklyReviewPage() {
                 <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: 'monospace', letterSpacing: 0.5 }}>
                   {currentWeek}
                 </Typography>
+                <HelpHint hintKey="review.weekly" />
                 <Chip
                   icon={isFinalized ? <LockIcon sx={{ fontSize: '14px !important' }} /> : <LockOpenIcon sx={{ fontSize: '14px !important' }} />}
                   label={isFinalized ? 'FINALIZED' : 'DRAFT'}
@@ -640,6 +642,7 @@ export function WeeklyReviewPage() {
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Last Week&apos;s Focus Rule
             </Typography>
+            <HelpHint hintKey="review.focusRule" />
           </Box>
           {previousFocusRule ? (
             <Chip
@@ -1399,9 +1402,12 @@ export function WeeklyReviewPage() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <AutoAwesomeRoundedIcon sx={{ color: '#0EA5E9', fontSize: 24 }} />
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                ONE Focus Rule for Next Week
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  ONE Focus Rule for Next Week
+                </Typography>
+                <HelpHint hintKey="review.focusRule" />
+              </Box>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 Objective, deterministic rule prioritized by loss breach &gt; mistake cost &gt; setup expectancy
               </Typography>

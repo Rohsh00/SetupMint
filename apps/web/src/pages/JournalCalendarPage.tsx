@@ -37,6 +37,7 @@ import { formatCurrency } from '../lib/utils.js';
 import { MISTAKE_TAGS } from '@tradevault/shared';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { HelpHint } from '../components/help/index.js';
 
 export function JournalCalendarPage() {
   const { openDrill } = useTradeDrilldown();
@@ -684,9 +685,12 @@ export function JournalCalendarPage() {
                   </Grid>
 
                   <Grid size={{ xs: 6 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                      Discipline Rating (1-5)
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
+                        Discipline Rating (1-5)
+                      </Typography>
+                      <HelpHint hintKey="journal.disciplineScore" />
+                    </Box>
                     <FormControl size="small" fullWidth>
                       <Select
                         value={disciplineRating}

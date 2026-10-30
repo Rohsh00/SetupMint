@@ -46,6 +46,7 @@ import { formatCurrency, formatDate } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { HelpHint } from '../components/help/index.js';
 
 interface InstrumentFormData {
   symbol: string;
@@ -286,10 +287,13 @@ export function InstrumentsPage() {
       {/* Top Header */}
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, pb: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <TuneRounded sx={{ color: 'primary.main', fontSize: 28 }} />
-            Instruments & Contract Specs
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TuneRounded sx={{ color: 'primary.main', fontSize: 28 }} />
+              Instruments & Contract Specs
+            </Typography>
+            <HelpHint hintKey="instrument.tradedOnly" />
+          </Box>
           <Typography variant="body2" color="text.secondary">
             Only instruments you have traded or created appear here. Updates can automatically cascade across all trade history.
           </Typography>
@@ -906,9 +910,12 @@ export function InstrumentsPage() {
                 }
                 label={
                   <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Apply to all {editingInstrument?.tradeCount || 0} existing trades
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Apply to all {editingInstrument?.tradeCount || 0} existing trades
+                      </Typography>
+                      <HelpHint hintKey="instrument.cascadeSpecs" />
+                    </Box>
                     <Typography variant="caption" color="text.secondary">
                       Recalculates trade P&Ls, fees, and account balances using updated specifications.
                     </Typography>

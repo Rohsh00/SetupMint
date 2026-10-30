@@ -55,6 +55,7 @@ import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
+import { HelpHint } from '../components/help/index.js';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -426,9 +427,12 @@ export function DashboardPage() {
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Win Rate & Outcome
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Win Rate & Outcome
+                  </Typography>
+                  <HelpHint hintKey="metric.winRateCredible" />
+                </Box>
                 <Box
                   sx={{
                     width: 32,
@@ -514,9 +518,12 @@ export function DashboardPage() {
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Profit Factor & Expectancy
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Profit Factor & Expectancy
+                  </Typography>
+                  <HelpHint hintKey="metric.profitFactor" />
+                </Box>
                 <Box
                   sx={{
                     width: 32,
@@ -574,9 +581,12 @@ export function DashboardPage() {
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Max Drawdown & Discipline
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Max Drawdown & Discipline
+                  </Typography>
+                  <HelpHint hintKey="metric.drawdown" />
+                </Box>
                 <Box
                   sx={{
                     width: 32,
@@ -865,6 +875,7 @@ export function DashboardPage() {
                 <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', letterSpacing: '-0.01em' }}>
                   Daily Review Queue
                 </Typography>
+                <HelpHint hintKey="dashboard.reviewQueue" />
                 <Chip
                   label={`${reviewQueueData?.summary?.totalUnreviewedTrades || 0} Trades`}
                   size="small"

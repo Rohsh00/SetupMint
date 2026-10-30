@@ -69,6 +69,7 @@ import {
   saveRememberedTradePreferences,
   TradeSetupTemplate,
 } from './tradeTemplates.js';
+import { HelpHint } from '../help/index.js';
 
 interface TradeFormModalProps {
   isOpen: boolean;
@@ -1306,6 +1307,7 @@ export function TradeFormModal({
                     border: `1px solid ${executionMode === 'ADVANCED' ? 'rgba(99, 102, 241, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
                   }}
                 />
+                <HelpHint hintKey="trade.form.fifo" />
               </Box>
               <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
                 High-precision execution auditing, live risk metrics & psychological tracking
@@ -1514,21 +1516,24 @@ export function TradeFormModal({
                 </Typography>
               </Box>
 
-              <Button
-                size="small"
-                variant={executionMode === 'ADVANCED' ? 'contained' : 'outlined'}
-                color={executionMode === 'ADVANCED' ? 'secondary' : 'inherit'}
-                onClick={() => setExecutionMode((prev) => (prev === 'SIMPLE' ? 'ADVANCED' : 'SIMPLE'))}
-                startIcon={<SwapHorizRounded />}
-                sx={{
-                  textTransform: 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  borderRadius: 1.5,
-                }}
-              >
-                {executionMode === 'SIMPLE' ? 'Switch to Multi-Fill (FIFO)' : 'Switch to Simple Fill'}
-              </Button>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Button
+                  size="small"
+                  variant={executionMode === 'ADVANCED' ? 'contained' : 'outlined'}
+                  color={executionMode === 'ADVANCED' ? 'secondary' : 'inherit'}
+                  onClick={() => setExecutionMode((prev) => (prev === 'SIMPLE' ? 'ADVANCED' : 'SIMPLE'))}
+                  startIcon={<SwapHorizRounded />}
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    borderRadius: 1.5,
+                  }}
+                >
+                  {executionMode === 'SIMPLE' ? 'Switch to Multi-Fill (FIFO)' : 'Switch to Simple Fill'}
+                </Button>
+                <HelpHint hintKey="trade.form.fifo" />
+              </Box>
             </Box>
 
             {/* Advanced Multi-Fill Section (if executionMode === 'ADVANCED') */}

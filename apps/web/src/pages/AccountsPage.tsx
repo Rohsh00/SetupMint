@@ -44,6 +44,7 @@ import {
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency } from '../lib/utils.js';
+import { HelpHint } from '../components/help/index.js';
 
 export function AccountsPage() {
   const muiTheme = useTheme();
@@ -279,10 +280,13 @@ export function AccountsPage() {
       {/* Top Header */}
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, pb: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <AccountBalanceWalletRounded sx={{ color: 'primary.main', fontSize: 28 }} />
-            Trading Accounts & Cash Flow
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AccountBalanceWalletRounded sx={{ color: 'primary.main', fontSize: 28 }} />
+              Trading Accounts & Cash Flow
+            </Typography>
+            <HelpHint hintKey="account.balanceFormula" />
+          </Box>
           <Typography variant="body2" color="text.secondary">
             Manage brokerage sub-accounts, cash deposits, withdrawals, and consolidated portfolio balances
           </Typography>
@@ -621,6 +625,7 @@ export function AccountsPage() {
                           >
                             Reconcile
                           </Button>
+                          <HelpHint hintKey="account.pendingAdjustment" />
                         </>
                       )}
                     </Box>
@@ -670,6 +675,7 @@ export function AccountsPage() {
                           </Button>
                         </span>
                       </Tooltip>
+                      <HelpHint hintKey="account.reconcile" />
                     </Box>
                   </CardActions>
                 </Card>

@@ -41,6 +41,20 @@ export type HelpKey =
   | 'analytics.excursion.scatter'
   | 'metric.sampleReliability'
 
+  // Analytics Section Overview, Psychology & Time Keys
+  | 'analytics.overview.pnlDistribution'
+  | 'analytics.overview.runStreaks'
+  | 'analytics.psychology.discipline'
+  | 'analytics.psychology.emotions'
+  | 'analytics.psychology.mistakes'
+  | 'analytics.time.weekday'
+  | 'analytics.execution.rLeftOnTable'
+  | 'analytics.execution.followThrough'
+  | 'analytics.execution.winnersMae'
+  | 'analytics.execution.funnel'
+  | 'analytics.execution.cohorts'
+  | 'analytics.execution.rollingTrend'
+
   // Trade Detail & Execution Keys
   | 'trade.fees.autoManual'
   | 'trade.chartGen.padding'
@@ -71,7 +85,12 @@ export type HelpKey =
   | 'journal.disciplineScore'
   | 'dashboard.reviewQueue'
   | 'review.weekly'
-  | 'review.focusRule';
+  | 'review.focusRule'
+
+  // Live Portfolio & Options Greeks Keys
+  | 'portfolio.directionalDelta'
+  | 'portfolio.thetaBurn'
+  | 'options.greeks';
 
 export interface IHelpEntry {
   title: string;
@@ -572,5 +591,158 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     details: 'Evaluated deterministically the following week against closed trades to verify adherence and build consistency.',
     seeAlso: ['review.weekly', 'settings.riskGuardrails'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#focus-rule-suggestions',
+  },
+
+  // --------------------------------------------------------------------------
+  // ANALYTICS OVERVIEW, PSYCHOLOGY & TIME
+  // --------------------------------------------------------------------------
+  'analytics.overview.pnlDistribution': {
+    title: 'Trade P&L Distribution',
+    summary: 'Histogram grouping completed trades into profit and loss brackets to visualize payoff asymmetry.',
+    details: 'Reveals whether your returns are positively skewed with small controlled losses and large right-tail winners, or negatively skewed with occasional catastrophic losses wiping out many gains.',
+    example: 'A tight cluster of small losses with a spread of large ₹5,000+ winners indicates asymmetric risk/reward.',
+    caveats: 'Watch for fat loss bars on the far left: single outlier losses that overwhelm multiple typical winning trades.',
+    seeAlso: ['metric.expectancy', 'metric.profitFactor'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#pnl-distribution',
+  },
+
+  'analytics.overview.runStreaks': {
+    title: 'Consistency & Run Streaks',
+    summary: 'Consecutive execution streaks and average win-to-loss payout ratio.',
+    details: 'Tracks statistical clustering of outcomes. Consecutive loss streaks of 4 to 8 trades are normal even for winning systems. Avg Win/Loss Ratio shows payout asymmetry.',
+    formula: 'Avg Win/Loss Ratio = Average Profit of Winning Trades / Average Loss of Losing Trades',
+    example: 'If average win is ₹6,000 and average loss is ₹2,500, ratio is 2.40x. You only need a 30% win rate to break even.',
+    seeAlso: ['metric.profitFactor', 'metric.expectancy'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#streaks',
+  },
+
+  'analytics.psychology.discipline': {
+    title: 'Discipline Rating vs. Performance',
+    summary: 'Objective 1-to-5 score measuring how strictly you followed your trading rules and risk limits.',
+    details: 'Calculated starting at 5 stars with rule-based deductions: -2 for daily loss breach, -1 for revenge trading, -1 for overtrading, -1 for position size violations.',
+    formula: 'Discipline = 5 - (Loss Breach ? 2 : 0) - (Revenge ? 1 : 0) - (Overtrading ? 1 : 0) - (Size Breach ? 1 : 0)',
+    example: 'Trades rated 5/5 typically produce positive expectancy, while 1/5 and 2/5 ratings account for most account drawdowns.',
+    seeAlso: ['journal.disciplineScore', 'settings.riskGuardrails'],
+    docsAnchor: 'docs/BUSINESS_LOGIC.md#discipline-score',
+  },
+
+  'analytics.psychology.emotions': {
+    title: 'Emotional State at Entry vs. P&L',
+    summary: 'Correlation between your psychological mindset at trade entry and bottom-line profitability.',
+    details: 'Categorized into Positive (Calm, Confident, Patient), Neutral (Disciplined), and Negative (Anxious, FOMO, Greed, Frustrated). Pinpoints emotions that trigger losses.',
+    example: 'Entries tagged with FOMO or Revenge frequently yield negative expectancy, whereas Calm entries produce higher win rates.',
+    caveats: 'Tag your emotional state before or during entry for honest, untainted psychological data.',
+    seeAlso: ['journal.disciplineScore', 'settings.riskGuardrails'],
+    docsAnchor: 'docs/BUSINESS_LOGIC.md#psychology-tracking',
+  },
+
+  'analytics.psychology.mistakes': {
+    title: 'Monetary Cost of Trading Mistakes',
+    summary: 'Quantified monetary loss in Rupees attributed directly to specific psychological violations.',
+    details: 'Each mistake (Revenge Trading, Overtrading, Premature Exit, Stop Loss Moved, Position Size Violation) sums the absolute loss of flagged trades.',
+    example: 'Moving stop losses cost ₹45,000 this month. Eliminating this single mistake would turn an overall losing month into a profitable one.',
+    caveats: 'Focus on fixing the single highest-cost mistake first rather than trying to fix everything at once.',
+    seeAlso: ['trade.stopMoves.audit', 'settings.riskGuardrails'],
+    docsAnchor: 'docs/BUSINESS_LOGIC.md#mistake-tracking',
+  },
+
+  'analytics.time.weekday': {
+    title: 'Performance by Day of Week',
+    summary: 'Identifies cyclical weekday performance patterns and expiry day variations.',
+    details: 'Exposes whether specific trading days consistently generate or destroy edge. Subgroups with fewer than 30 trades carry high sampling variance.',
+    example: 'Thursday index expiry may show high win rate for scalping but negative expectancy for trend-following due to theta decay.',
+    caveats: 'Do not eliminate a weekday from your trading routine without at least 30 recorded trades.',
+    seeAlso: ['metric.sampleReliability', 'trade.form.sessionCodes'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#time-analytics',
+  },
+
+  'analytics.execution.rLeftOnTable': {
+    title: 'R Left on the Table',
+    summary: 'Average unrealized R-multiple profit surrendered between peak favorable price and your actual exit.',
+    details: 'Measures profit giveback after a winning run. High surrendered R (>1.0R) signals trailing stops that are too loose or failure to take partial profits at targets.',
+    formula: 'R Left on Table = max(0, Peak MFE (in R) - Realized Return (in R))',
+    example: 'If a trade reached +2.8R peak unrealized gain but you exited at +1.0R, you left 1.8R on the table.',
+    seeAlso: ['metric.mfe', 'metric.exitEfficiency', 'metric.gaveBackProfit'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#mae-mfe',
+  },
+
+  'analytics.execution.followThrough': {
+    title: 'Order Flow & Follow-Through Score',
+    summary: 'Measures whether market price moved in your favor immediately upon entry or dipped into heat first.',
+    details: 'Evaluates execution precision: Run-First trades move toward target within the first 5 candles. Heat-First trades dip against you before (or instead of) running.',
+    example: 'A score of 0.80 indicates 80% of trades moved in your favor immediately, indicating accurate entry timing at turning points.',
+    seeAlso: ['metric.mae', 'metric.exitEfficiency'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#order-flow-quality',
+  },
+
+  'analytics.execution.winnersMae': {
+    title: 'Winner-Only MAE (Stop Optimization)',
+    summary: 'Adverse drawdown distribution suffered strictly on winning trades before reaching profit.',
+    details: 'Answers whether winners needed their full stop room. If 90% of winners never dip below 0.4R adverse heat, a 1.0R stop absorbs unnecessary risk. Tightening stops improves R:R.',
+    formula: 'P90 MAE = 90th percentile of maximum adverse excursion across winning trades.',
+    example: 'If P90 MAE is 0.45R, 9 out of 10 winners moved to profit without ever threatening a 0.5R stop.',
+    seeAlso: ['metric.mae', 'analytics.whatIf.calibration'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#mae-mfe',
+  },
+
+  'analytics.execution.funnel': {
+    title: 'MFE Reach Funnel & Round-Trip Losses',
+    summary: 'Tracks trade progression through milestone R levels (+0.5R, +1.0R, +2.0R) and where profits decay.',
+    details: 'Identifies Round-Trip Loss Rate: trades reaching >= +1.0R that reverse and close at a complete loss. Moving stops to breakeven or booking 50% partials protects this profit.',
+    formula: 'Round-Trip Loss % = (Trades reaching >= +1.0R closing at loss / Total reaching >= +1.0R) * 100',
+    example: 'If 30% of trades reaching +1.0R close as losses, trailing stop to breakeven at +1.0R would save that capital.',
+    seeAlso: ['metric.gaveBackProfit', 'metric.mfe'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#mfe-reach-funnel',
+  },
+
+  'analytics.execution.cohorts': {
+    title: 'Execution Quality Cohorts',
+    summary: 'Compares exit efficiency and MAE across discipline, emotion, and session cohorts.',
+    details: 'Bridges psychology and execution math: demonstrates whether high-discipline trades achieve superior exit efficiency and lower drawdown than emotional entries.',
+    example: 'Trades with Discipline Score 5/5 average 70% exit efficiency vs 35% for lower-rated trades.',
+    seeAlso: ['metric.exitEfficiency', 'journal.disciplineScore'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#cohorts',
+  },
+
+  'analytics.execution.rollingTrend': {
+    title: 'Rolling 20-Trade Execution Trend',
+    summary: '20-trade moving average tracking whether Exit Efficiency % and Average MAE are improving.',
+    details: 'Smooths single-trade noise to reveal execution trajectory. Rising exit efficiency indicates sharper trade management and tighter profit locks over time.',
+    seeAlso: ['metric.exitEfficiency', 'metric.mae'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#rolling-trend',
+  },
+
+  // --------------------------------------------------------------------------
+  // LIVE PORTFOLIO & OPTIONS GREEKS
+  // --------------------------------------------------------------------------
+  'portfolio.directionalDelta': {
+    title: 'Portfolio Directional Exposure & Delta Sensitivity',
+    summary: 'Rupee P&L sensitivity across all open equity and derivative positions per 1% or 1-point move in underlying index.',
+    details: 'Combines stock positions and option cash delta to indicate net directional bias. A strongly positive delta benefits from market rallies; negative delta profits from selloffs.',
+    formula: 'Net Delta = Sum(Position Delta * Contract Multiplier * Spot Price)',
+    example: '+₹2,500 Net Delta means a 1% upward index move yields an estimated ₹2,500 portfolio gain.',
+    seeAlso: ['options.greeks', 'settings.riskGuardrails'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#portfolio-risk',
+  },
+
+  'portfolio.thetaBurn': {
+    title: 'Aggregate Options Theta Burn Rate',
+    summary: 'Rupee time decay bleeding from all open option buyer positions per active trading hour and calendar day.',
+    details: 'Option buyers pay time decay to sellers every hour market is open. On expiry days, theta decay accelerates exponentially as time to expiration drops to zero.',
+    formula: 'Total Hourly Theta = Sum(Position Theta / 6.25 trading hours)',
+    example: '-₹1,200/hr theta burn means holding positions for 2 hours costs ₹2,400 in time decay alone.',
+    caveats: 'High theta burn requires quick directional movement to stay profitable.',
+    seeAlso: ['options.greeks', 'portfolio.directionalDelta'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#theta-decay',
+  },
+
+  'options.greeks': {
+    title: 'Options Greeks (Delta, Gamma, Theta, IV)',
+    summary: 'Mathematical sensitivities measuring how option prices respond to underlying movement, time decay, and volatility.',
+    details: 'Delta measures price move per 1 pt index shift; Gamma measures Delta acceleration; Theta measures hourly time decay; IV measures market expectations of volatility.',
+    formula: 'Call Delta: N(d1); Put Delta: N(d1) - 1; Theta: -dV/dt',
+    example: 'A NIFTY Call with Delta 0.50 gains ₹25 for every 1-point rise in NIFTY index (lot size 50).',
+    seeAlso: ['portfolio.directionalDelta', 'portfolio.thetaBurn'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#options-greeks',
   },
 };

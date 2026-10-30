@@ -670,9 +670,12 @@ export function TradeDetailPage() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
             <AccountTreeRoundedIcon sx={{ color: 'primary.main', fontSize: 22 }} />
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', lineHeight: 1.2 }}>
-                Playbook Strategy & Setup Variant
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', lineHeight: 1.2 }}>
+                  Playbook Strategy & Setup Variant
+                </Typography>
+                <HelpHint hintKey="strategy.edgeVerdict" />
+              </Box>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 Classification, structural criteria, and post-trade execution adherence
               </Typography>
@@ -1185,9 +1188,12 @@ export function TradeDetailPage() {
                   {/* MFE */}
                   <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.04)' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-                        Max Favorable Excursion (MFE)
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Max Favorable Excursion (MFE)
+                        </Typography>
+                        <HelpHint hintKey="metric.mfe" />
+                      </Box>
                       <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
                         +{exc.mfePoints} pts
                       </Typography>
@@ -1205,9 +1211,12 @@ export function TradeDetailPage() {
                   {/* MAE */}
                   <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.04)' }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-                        Max Adverse Excursion (MAE)
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Max Adverse Excursion (MAE)
+                        </Typography>
+                        <HelpHint hintKey="metric.mae" />
+                      </Box>
                       <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
                         -{exc.maePoints} pts
                       </Typography>
@@ -1225,9 +1234,12 @@ export function TradeDetailPage() {
                   {/* Exit Efficiency */}
                   <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                     <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-                        Exit Efficiency
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Exit Efficiency
+                        </Typography>
+                        <HelpHint hintKey="metric.exitEfficiency" />
+                      </Box>
                       <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
                         {exc.exitEfficiency !== undefined ? `${(exc.exitEfficiency * 100).toFixed(1)}%` : '—'}
                       </Typography>
@@ -1284,9 +1296,12 @@ export function TradeDetailPage() {
 
                 {exc.excursionFlags && exc.excursionFlags.length > 0 && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                      Diagnostic Flags:
-                    </Typography>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                      <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                        Diagnostic Flags:
+                      </Typography>
+                      <HelpHint hintKey="metric.excursionFlags" />
+                    </Box>
                     {exc.excursionFlags.map((flag: string) => {
                       let label = flag;
                       let color: 'default' | 'warning' | 'info' | 'error' | 'secondary' = 'default';
@@ -1956,10 +1971,13 @@ export function TradeDetailPage() {
       {/* Psychology & Discipline Report */}
       <Card sx={{ p: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 2, mb: 2, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
-            Psychology & Discipline Audit
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
+              Psychology & Discipline Audit
+            </Typography>
+            <HelpHint hintKey="analytics.psychology.discipline" />
+          </Box>
           <Chip
             label={`Discipline Rating: ${trade.psychology?.disciplineScore || 4}/5`}
             size="small"

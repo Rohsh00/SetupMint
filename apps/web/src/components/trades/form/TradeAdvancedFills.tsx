@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { calculateFIFOExecution } from '@tradevault/financial-engine';
 import { formatCurrency, toLocalIsoDateTime, currentLocalIsoDateTime } from '../../../lib/utils.js';
+import { HelpHint } from '../../help/index.js';
 
 interface TradeAdvancedFillsProps {
   register: UseFormRegister<any>;
@@ -89,9 +90,12 @@ export function TradeAdvancedFills({
       {/* Header & Add Fill Actions */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-            Execution Fills (FIFO Matching)
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+              Execution Fills (FIFO Matching)
+            </Typography>
+            <HelpHint hintKey="trade.form.fifo" />
+          </Box>
           <Typography variant="caption" color="text.secondary">
             Log multiple entry scale-ins and staggered profit targets with chronological matching
           </Typography>

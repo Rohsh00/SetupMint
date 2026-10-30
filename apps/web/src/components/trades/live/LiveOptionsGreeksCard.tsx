@@ -5,6 +5,7 @@ import Chip from '@mui/material/Chip';
 import Tooltip from '@mui/material/Tooltip';
 import { alpha } from '@mui/material/styles';
 import { IPositionGreeksSummary } from '@tradevault/shared';
+import { HelpHint } from '../../help/index.js';
 
 export interface LiveOptionsGreeksCardProps {
   greeks: IPositionGreeksSummary;
@@ -46,9 +47,12 @@ export function LiveOptionsGreeksCard({ greeks, isDark = true }: LiveOptionsGree
       {/* Header Badges */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-          <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', letterSpacing: 0.4 }}>
-            OPTIONS GREEKS
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', letterSpacing: 0.4 }}>
+              OPTIONS GREEKS
+            </Typography>
+            <HelpHint hintKey="options.greeks" />
+          </Box>
           <Chip
             label={moneyness.replace('_', ' ')}
             size="small"

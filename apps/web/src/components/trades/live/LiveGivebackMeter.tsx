@@ -11,6 +11,7 @@ import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import { ILiveGivebackMetric, ILiveOpenTradeMetric } from '@tradevault/shared';
 import { formatCurrency } from '../../../lib/utils.js';
+import { HelpHint } from '../../help/index.js';
 
 interface LiveGivebackMeterProps {
   giveback: ILiveGivebackMetric;
@@ -92,6 +93,7 @@ export function LiveGivebackMeter({
           <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.72rem', letterSpacing: 0.1 }}>
             PEAK MFE TRACKER
           </Typography>
+          <HelpHint hintKey="metric.gaveBackProfit" />
         </Box>
 
         <Chip

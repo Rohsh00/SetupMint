@@ -8,6 +8,7 @@ import {
 import { Confluence, Emotion, MistakeTag, TradingSession } from '@tradevault/shared';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { generateSyntheticCandlesForTrade } from '../services/synthetic-candle.service.js';
 import {
   AccountTransaction,
   Attachment,
@@ -17,6 +18,7 @@ import {
   Strategy,
   Trade,
   TradingAccount,
+  TradeCandleSnapshot,
   User,
 } from '../db/models/index.js';
 import { SeededPRNG } from './prng.js';
@@ -90,6 +92,7 @@ export class SetupMintSeedEngine {
       }
     }
     await Trade.deleteMany({ userId });
+    await TradeCandleSnapshot.deleteMany({ userId });
     await TradingAccount.deleteMany({ userId });
     await AccountTransaction.deleteMany({ userId });
     await DailyJournal.deleteMany({ userId });
@@ -1037,6 +1040,45 @@ export class SetupMintSeedEngine {
 
     // Bulk insert all trades
     await Trade.insertMany(tradesToInsert);
+
+    // Seed realistic intraday candle snapshots for What-If replay & interactive chart viewing
+    const snapshotsToInsert: any[] = [];
+    for (const tradeDoc of tradesToInsert) {
+      if (tradeDoc.status === 'CLOSED') {
+        const entryPrice = tradeDoc.simpleExecution?.entryPrice ?? tradeDoc.calculated?.averageEntryPrice;
+        const exitPrice = tradeDoc.simpleExecution?.exitPrice ?? tradeDoc.calculated?.averageExitPrice;
+        if (entryPrice && exitPrice && tradeDoc.entryTime) {
+          const { resolution, candles } = generateSyntheticCandlesForTrade({
+            symbol: tradeDoc.symbol,
+            direction: tradeDoc.direction,
+            entryTime: tradeDoc.entryTime,
+            exitTime: tradeDoc.exitTime,
+            entryPrice,
+            exitPrice,
+            initialStopLoss: tradeDoc.risk?.initialStopLoss,
+            plannedTarget: tradeDoc.risk?.plannedTarget,
+            excursion: tradeDoc.calculated?.excursion,
+          });
+
+          snapshotsToInsert.push({
+            userId,
+            tradeId: tradeDoc._id,
+            symbol: tradeDoc.symbol,
+            resolution,
+            candles,
+            provider: 'SYNTHETIC',
+            isUnderlyingFallback: false,
+            coverageFrom: tradeDoc.entryTime,
+            coverageTo: tradeDoc.exitTime,
+            fetchedAt: new Date(),
+          });
+        }
+      }
+    }
+    if (snapshotsToInsert.length > 0) {
+      await TradeCandleSnapshot.insertMany(snapshotsToInsert);
+      console.log(`[SeedEngine] Generated ${snapshotsToInsert.length} candle snapshots for closed trades.`);
+    }
 
     const winRatePercent = closedCount > 0 ? (winCount / closedCount) * 100 : 0;
 

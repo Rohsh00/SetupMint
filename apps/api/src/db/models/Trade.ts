@@ -134,7 +134,7 @@ export interface ITradeDoc extends Document {
       status: 'PENDING' | 'COMPUTED' | 'UNAVAILABLE' | 'FAILED';
       computedAt?: Date;
       source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK';
-      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
       isUnderlyingFallback?: boolean;
       resolution?: string;
       isLowResolution?: boolean;
@@ -412,7 +412,7 @@ const TradeSchema = new Schema<ITradeDoc>(
         },
         provider: {
           type: String,
-          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING'],
+          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC'],
           default: 'FYERS',
         },
         isUnderlyingFallback: { type: Boolean, default: false },

@@ -10,6 +10,7 @@ import {
 } from '@tradevault/shared';
 import { runWhatIfSimulation, IWhatIfSnapshotInput } from '@tradevault/financial-engine';
 import { Trade, TradeCandleSnapshot } from '../db/models/index.js';
+import { generateSyntheticCandlesForTrade } from './synthetic-candle.service.js';
 
 interface ICacheEntry {
   expiresAt: number;
@@ -178,6 +179,56 @@ export async function computeWhatIf(
           });
         }
       }
+    }
+  }
+
+  // 5b. Auto-synthesize high-fidelity candle snapshots for closed trades lacking broker history
+  const missingTrades = trades.filter((t) => !snapshotsByTradeId.has(t._id.toString()));
+  if (missingTrades.length > 0) {
+    const newSnapshotsToSave: any[] = [];
+    for (const t of missingTrades) {
+      const entryPrice = t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice;
+      const exitPrice = t.simpleExecution?.exitPrice ?? t.calculated?.averageExitPrice;
+      if (entryPrice && exitPrice && t.entryTime) {
+        const { resolution, candles } = generateSyntheticCandlesForTrade({
+          symbol: t.symbol,
+          direction: t.direction,
+          entryTime: t.entryTime,
+          exitTime: t.exitTime,
+          entryPrice,
+          exitPrice,
+          initialStopLoss: t.risk?.initialStopLoss,
+          plannedTarget: t.risk?.plannedTarget,
+          excursion: t.calculated?.excursion,
+        });
+
+        const tid = t._id.toString();
+        snapshotsByTradeId.set(tid, {
+          tradeId: tid,
+          resolution,
+          candles,
+          isUnderlyingFallback: false,
+          coverageFrom: t.entryTime,
+          coverageTo: t.exitTime,
+        });
+
+        newSnapshotsToSave.push({
+          userId: userObjectId,
+          tradeId: t._id,
+          symbol: t.symbol,
+          resolution,
+          candles,
+          provider: 'SYNTHETIC',
+          isUnderlyingFallback: false,
+          coverageFrom: t.entryTime,
+          coverageTo: t.exitTime,
+          fetchedAt: new Date(),
+        });
+      }
+    }
+
+    if (newSnapshotsToSave.length > 0) {
+      TradeCandleSnapshot.insertMany(newSnapshotsToSave, { ordered: false }).catch(() => {});
     }
   }
 

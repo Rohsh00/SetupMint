@@ -88,6 +88,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
   const [holdoutFraction, setHoldoutFraction] = useState<number>(0.3);
   const [selectedCell, setSelectedCell] = useState<IWhatIfCellResult | null>(null);
   const [showConfig, setShowConfig] = useState<boolean>(false);
+  const [showExclusionsDrawer, setShowExclusionsDrawer] = useState<boolean>(false);
 
   // Stop & Target Grids
   const stopGrid: (number | null)[] = DEFAULT_STOP_R_GRID as any;
@@ -417,13 +418,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
         <Grid container spacing={2}>
           <Grid size={{ xs: 6, sm: 3 }}>
             <Card
-              onClick={() =>
-                openDrill({
-                  kind: 'FILTER',
-                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
-                  label: 'Evaluable Simulation Trades',
-                })
-              }
+              onClick={() => setShowExclusionsDrawer(true)}
               sx={{
                 p: 2,
                 borderRadius: 2,
@@ -604,6 +599,49 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
             <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
               No simulation data available. Adjust filters or ensure closed trades exist.
             </Typography>
+          </Box>
+        ) : simData.scope.nEligible === 0 ? (
+          <Box sx={{ py: 4, px: 2, textAlign: 'center' }}>
+            <Alert
+              severity="info"
+              variant="outlined"
+              sx={{
+                maxWidth: 620,
+                mx: 'auto',
+                textAlign: 'left',
+                backgroundColor: isDark ? 'rgba(56, 189, 248, 0.05)' : 'rgba(14, 165, 233, 0.04)',
+                borderColor: isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(14, 165, 233, 0.2)',
+                borderRadius: 2,
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5 }}>
+                No Trades Qualified for Candle-Replay Simulation
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.825rem', color: muiTheme.palette.text.secondary }}>
+                All {simData.scope.tradesInScope} closed trades in scope were excluded from replay (such as scaled multi-fills or managed/trailed stops). Click below to audit exclusions or include managed trades.
+              </Typography>
+              <Box sx={{ mt: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => setShowExclusionsDrawer(true)}
+                  startIcon={<FilterListRoundedIcon fontSize="small" />}
+                  sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 1.5 }}
+                >
+                  Inspect Exclusions Breakdown
+                </Button>
+                {excludeManaged && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setExcludeManaged(false)}
+                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 1.5 }}
+                  >
+                    Include Managed Stops in Replay
+                  </Button>
+                )}
+              </Box>
+            </Alert>
           </Box>
         ) : (
           <Box sx={{ minWidth: 700 }}>
@@ -1106,6 +1144,246 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
             </Button>
           </Box>
         )}
+      </Drawer>
+
+      {/* Scope & Exclusions Audit Drawer */}
+      <Drawer
+        anchor="right"
+        open={showExclusionsDrawer}
+        onClose={() => setShowExclusionsDrawer(false)}
+        slotProps={{
+          paper: {
+            sx: {
+              width: { xs: '100%', sm: 500 },
+              p: 3,
+              backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+            },
+          },
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                Scope & Eligibility Audit
+              </Typography>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                Gating rules for honest intraday candle-replay simulation
+              </Typography>
+            </Box>
+            <IconButton onClick={() => setShowExclusionsDrawer(false)}>
+              <CloseRoundedIcon />
+            </IconButton>
+          </Box>
+
+          <Divider />
+
+          {/* Scope KPI Summary */}
+          {simData?.scope && (
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 1.5,
+              }}
+            >
+              <Card sx={{ p: 1.5, textAlign: 'center', borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}>
+                  In Scope
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                  {simData.scope.tradesInScope}
+                </Typography>
+              </Card>
+              <Card sx={{ p: 1.5, textAlign: 'center', borderRadius: 2, border: '1px solid #10B981' }}>
+                <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700 }}>
+                  Evaluable
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 800, color: '#10B981' }}>
+                  {simData.scope.nEligible}
+                </Typography>
+              </Card>
+              <Card sx={{ p: 1.5, textAlign: 'center', borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}>
+                  Excluded
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 800, color: '#F43F5E' }}>
+                  {simData.scope.tradesInScope - simData.scope.nEligible}
+                </Typography>
+              </Card>
+            </Box>
+          )}
+
+          {/* Exclusions Categories List */}
+          {simData?.drillDescriptors?.exclusions && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', pr: 0.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Exclusion Breakdown
+              </Typography>
+
+              {/* Multi-fill */}
+              {simData.drillDescriptors.exclusions.EXCLUDED_MULTI_FILL.count > 0 && (
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Multi-Fill Positions (Scale-In / Scale-Out)
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={`${simData.drillDescriptors.exclusions.EXCLUDED_MULTI_FILL.count} trades`}
+                      sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mb: 1 }}>
+                    Advanced trades with staged scale-in fills or partial profit-taking exits. The What-If matrix requires single-fill positions to simulate deterministic stop &amp; target executions.
+                  </Typography>
+                  <Box sx={{ maxHeight: 130, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    {simData.drillDescriptors.exclusions.EXCLUDED_MULTI_FILL.trades?.map((t: any, idx: number) => (
+                      <Box
+                        key={idx}
+                        sx={{
+                          p: 0.75,
+                          borderRadius: 1,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                          {t.symbol} ({t.direction})
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          {t.reason || 'Multiple fills'}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </Card>
+              )}
+
+              {/* Managed Stop Loss */}
+              {simData.drillDescriptors.exclusions.EXCLUDED_MANAGED_STOP.count > 0 && (
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Managed / Trailed Stops
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={`${simData.drillDescriptors.exclusions.EXCLUDED_MANAGED_STOP.count} trades`}
+                      color="warning"
+                      variant="outlined"
+                      sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mb: 1.5 }}>
+                    Stop loss was moved or trailed during the holding period. Excluded by default to evaluate static discipline against discretionary trade management.
+                  </Typography>
+                  {excludeManaged && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      onClick={() => {
+                        setExcludeManaged(false);
+                        setShowExclusionsDrawer(false);
+                      }}
+                      sx={{ textTransform: 'none', fontSize: '0.75rem', mb: 1.5, borderRadius: 1.5 }}
+                    >
+                      Include Managed Trades in Simulation
+                    </Button>
+                  )}
+                  <Box sx={{ maxHeight: 130, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    {simData.drillDescriptors.exclusions.EXCLUDED_MANAGED_STOP.trades?.map((t: any, idx: number) => (
+                      <Box
+                        key={idx}
+                        sx={{
+                          p: 0.75,
+                          borderRadius: 1,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                          {t.symbol} ({t.direction})
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          {t.reason || 'Stop moved'}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </Card>
+              )}
+
+              {/* No Stop */}
+              {simData.drillDescriptors.exclusions.EXCLUDED_NO_STOP.count > 0 && (
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Missing Initial Stop Loss
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={`${simData.drillDescriptors.exclusions.EXCLUDED_NO_STOP.count} trades`}
+                      sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>
+                    Trades logged without an initial stop loss, preventing baseline 1R unit calculation.
+                  </Typography>
+                </Card>
+              )}
+
+              {/* No Candles */}
+              {simData.drillDescriptors.exclusions.EXCLUDED_NO_CANDLES.count > 0 && (
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Missing Intraday Candles
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={`${simData.drillDescriptors.exclusions.EXCLUDED_NO_CANDLES.count} trades`}
+                      sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>
+                    Historical 1m/5m candle data could not be retrieved or generated for these trades.
+                  </Typography>
+                </Card>
+              )}
+            </Box>
+          )}
+
+          <Divider sx={{ mt: 'auto' }} />
+
+          <Button
+            variant="contained"
+            color="primary"
+            fullWidth
+            onClick={() => {
+              setShowExclusionsDrawer(false);
+              openDrill({
+                kind: 'FILTER',
+                filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                label: 'All Closed Trades in What-If Window',
+              });
+            }}
+            sx={{
+              py: 1,
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 700,
+              fontSize: '0.8125rem',
+            }}
+          >
+            View All Trades in Journal
+          </Button>
+        </Box>
       </Drawer>
     </Box>
   );

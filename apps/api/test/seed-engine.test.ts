@@ -11,7 +11,7 @@ import {
   User,
 } from '../src/db/models/index.js';
 
-describe('SetupMint Heavy Seed Data Engine & Integrity Tests', () => {
+describe('SetupMint Heavy Seed Data Engine & Integrity Tests', { timeout: 30000 }, () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     await connectDatabase();

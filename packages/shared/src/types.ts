@@ -455,7 +455,7 @@ export interface ITradeExcursion {
   status: ExcursionStatus;
   computedAt?: string;
   source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK';
-  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
   isUnderlyingFallback?: boolean;
   resolution?: string;
   isLowResolution?: boolean;
@@ -491,7 +491,7 @@ export interface ITradeExcursion {
   warnings?: string[];
 }
 
-export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
 export type CandleFallbackProvider = 'AUTO' | 'FYERS' | 'ANGEL_ONE';
 export type MarketDataProvider = 'ANGEL_ONE';
 export type MarketDataStatus = 'DISABLED' | 'IDLE' | 'ERROR';
@@ -541,7 +541,7 @@ export interface ITradeCandleSnapshot {
   symbol: string;
   resolution: string;
   candles: ITradeCandle[];
-  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING';
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
   isUnderlyingFallback?: boolean;
   droppedRowsCount?: number;
   fetchedAt: string;

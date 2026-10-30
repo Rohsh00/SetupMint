@@ -7,6 +7,7 @@ import {
   Instrument,
   Strategy,
   Trade,
+  TradeCandleSnapshot,
   TradingAccount,
   User,
 } from '../db/models/index.js';
@@ -47,6 +48,7 @@ export async function resetDemoData() {
   }
 
   const tRes = await Trade.deleteMany({ userId });
+  await TradeCandleSnapshot.deleteMany({ userId });
   const aRes = await TradingAccount.deleteMany({ userId });
   const txRes = await AccountTransaction.deleteMany({ userId });
   const jRes = await DailyJournal.deleteMany({ userId });

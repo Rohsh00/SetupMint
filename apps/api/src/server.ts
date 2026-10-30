@@ -190,18 +190,6 @@ export async function buildApp() {
     };
   });
 
-  // Root welcoming endpoint
-  app.get('/', async () => {
-    return {
-      name: 'SetupMint API Server',
-      status: 'online',
-      version: '1.0.0',
-      health: '/api/health',
-      docs: '/api/docs',
-      timestamp: new Date().toISOString(),
-    };
-  });
-
   // Health check endpoint
   app.get('/api/health', async () => {
     return {

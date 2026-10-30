@@ -2237,7 +2237,13 @@ export class FyersService {
         const tradeEnd = trade.exitTime ? moment(trade.exitTime).add(5, 'minutes') : moment().add(5, 'minutes');
 
         const stopOrders = normalized.filter((ord) => {
-          const matchesSymbol = ord.symbol === symbol || ord.symbol === trade.symbol;
+          const normSym = InstrumentService.normalizeUnderlying(ord.symbol);
+          const matchesSymbol =
+            ord.symbol === symbol ||
+            ord.symbol === trade.symbol ||
+            normSym === trade.underlying ||
+            (ord.symbol && ord.symbol.includes(trade.underlying)) ||
+            (trade.symbol && trade.symbol.includes(ord.symbol));
           if (!matchesSymbol) return false;
           const hasStop = Number(ord.stopPrice || 0) > 0 || ord.orderType === 3 || ord.orderType === 4;
           if (!hasStop) return false;
@@ -2265,29 +2271,102 @@ export class FyersService {
       modifications: rawModifications,
     });
 
-    trade.stopLossMoveEvents = result.moves.map((m: any) => ({
-      previousStop: m.previousStop,
-      newStop: m.newStop,
-      changePoints: m.changePoints,
-      changePercent: m.changePercent,
-      moveType: m.moveType,
-      movedAt: moment(m.movedAt).toDate(),
-      orderId: m.orderId,
-      orderType: m.orderType,
-      reason: m.reason,
-    }));
+    if (result.moves.length > 0 || (options.manualModifications && options.manualModifications.length > 0)) {
+      trade.stopLossMoveEvents = result.moves.map((m: any) => ({
+        previousStop: m.previousStop,
+        newStop: m.newStop,
+        changePoints: m.changePoints,
+        changePercent: m.changePercent,
+        moveType: m.moveType,
+        movedAt: moment(m.movedAt).toDate(),
+        orderId: m.orderId,
+        orderType: m.orderType,
+        reason: m.reason,
+      }));
 
-    trade.calculated = trade.calculated || ({} as any);
-    trade.calculated.stopMoveSummary = {
-      totalMoves: result.summary.totalMoves,
-      widenedCount: result.summary.widenedCount,
-      trailedCount: result.summary.trailedCount,
-      initialStop: result.summary.initialStop,
-      finalStop: result.summary.finalStop,
-      netRiskChangePoints: result.summary.netRiskChangePoints,
-      hasWidenedRisk: result.summary.hasWidenedRisk,
-      detectedAt: new Date(),
-    };
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.stopMoveSummary = {
+        totalMoves: result.summary.totalMoves,
+        widenedCount: result.summary.widenedCount,
+        trailedCount: result.summary.trailedCount,
+        initialStop: result.summary.initialStop,
+        finalStop: result.summary.finalStop,
+        netRiskChangePoints: result.summary.netRiskChangePoints,
+        hasWidenedRisk: result.summary.hasWidenedRisk,
+        detectedAt: new Date(),
+      };
+    } else if (trade.stopLossMoveEvents && trade.stopLossMoveEvents.length > 0) {
+      // Preserve previously captured stop move events
+      const trailedCount = trade.stopLossMoveEvents.filter((e: any) => e.moveType === 'TRAILED_FAVORABLY').length;
+      const widenedCount = trade.stopLossMoveEvents.filter((e: any) => e.moveType === 'WIDENED_RISK').length;
+      const lastEvt = trade.stopLossMoveEvents[trade.stopLossMoveEvents.length - 1];
+      const finalStop = lastEvt?.newStop ?? trade.risk?.currentStopLoss ?? initialStop;
+      const isLong = trade.direction === 'LONG';
+      const netRiskChangePoints = isLong
+        ? Number(((initialStop || finalStop) - finalStop).toFixed(4))
+        : Number((finalStop - (initialStop || finalStop)).toFixed(4));
+
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.stopMoveSummary = {
+        totalMoves: trade.stopLossMoveEvents.length,
+        widenedCount,
+        trailedCount,
+        initialStop: initialStop || trade.stopLossMoveEvents[0]?.previousStop,
+        finalStop,
+        netRiskChangePoints,
+        hasWidenedRisk: widenedCount > 0,
+        detectedAt: new Date(),
+      };
+    } else if (trade.risk?.currentStopLoss && initialStop && trade.risk.currentStopLoss !== initialStop) {
+      // Synthesize move from initialStop to currentStopLoss
+      const curStop = trade.risk.currentStopLoss;
+      const isLong = trade.direction === 'LONG';
+      const isTrailed = isLong ? curStop > initialStop : curStop < initialStop;
+      const moveType = isTrailed ? 'TRAILED_FAVORABLY' : 'WIDENED_RISK';
+      const changePts = Math.abs(curStop - initialStop);
+      const changePct = initialStop > 0 ? (changePts / initialStop) * 100 : 0;
+
+      trade.stopLossMoveEvents = [
+        {
+          previousStop: initialStop,
+          newStop: curStop,
+          changePoints: Number(changePts.toFixed(4)),
+          changePercent: Number(changePct.toFixed(2)),
+          moveType,
+          movedAt: trade.exitTime ? moment(trade.exitTime).subtract(1, 'minute').toDate() : new Date(),
+          reason: 'Trailed Stop Loss (Verified from resting order)',
+        },
+      ];
+
+      const netRiskChangePoints = isLong
+        ? Number((initialStop - curStop).toFixed(4))
+        : Number((curStop - initialStop).toFixed(4));
+
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.stopMoveSummary = {
+        totalMoves: 1,
+        widenedCount: isTrailed ? 0 : 1,
+        trailedCount: isTrailed ? 1 : 0,
+        initialStop,
+        finalStop: curStop,
+        netRiskChangePoints,
+        hasWidenedRisk: !isTrailed,
+        detectedAt: new Date(),
+      };
+    } else {
+      trade.stopLossMoveEvents = [];
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.stopMoveSummary = {
+        totalMoves: 0,
+        widenedCount: 0,
+        trailedCount: 0,
+        initialStop: initialStop || 0,
+        finalStop: initialStop || 0,
+        netRiskChangePoints: 0,
+        hasWidenedRisk: false,
+        detectedAt: new Date(),
+      };
+    }
 
     if (result.summary.hasWidenedRisk) {
       trade.psychology = trade.psychology || ({} as any);

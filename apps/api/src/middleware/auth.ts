@@ -130,6 +130,11 @@ export async function requireAuth(
     token = req.headers.authorization.slice(7);
   }
 
+  // Dual auth token support: allow query token for media streaming, <img> tags, and direct export downloads
+  if (!token && (req.query as any)?.token && typeof (req.query as any).token === 'string') {
+    token = (req.query as any).token;
+  }
+
   if (!token) {
     return reply.status(401).send({
       success: false,

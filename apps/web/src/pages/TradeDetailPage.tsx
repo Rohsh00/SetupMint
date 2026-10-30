@@ -25,6 +25,7 @@ import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
 import Alert from '@mui/material/Alert';
+import TextField from '@mui/material/TextField';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 
 // Icons
@@ -50,6 +51,8 @@ import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import moment from 'moment';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -76,6 +79,8 @@ export function TradeDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [isManualStopMovesOpen, setIsManualStopMovesOpen] = useState(false);
+  const [manualMovesList, setManualMovesList] = useState<Array<{ stopPrice: string; reason: string }>>([]);
 
   const { data: rawTrade, isLoading, isError } = useQuery({
     queryKey: ['trade', id],
@@ -199,7 +204,7 @@ export function TradeDetailPage() {
 
 
   const detectStopMovesMutation = useMutation({
-    mutationFn: () => api.trades.detectStopMoves(id!),
+    mutationFn: (manualModifications?: any[]) => api.trades.detectStopMoves(id!, manualModifications),
     onSuccess: (data: any) => {
       setActionError(null);
       const summary = data?.data?.stopMoveSummary;
@@ -1369,12 +1374,26 @@ export function TradeDetailPage() {
       {(() => {
         const events = trade.stopLossMoveEvents || [];
         const summary = trade.calculated?.stopMoveSummary;
-        const isScanned = !!summary || events.length > 0;
-        const hasWidened = summary?.hasWidenedRisk || events.some((e: any) => e.moveType === 'WIDENED_RISK');
-        const trailedCount = summary?.trailedCount ?? events.filter((e: any) => e.moveType === 'TRAILED_FAVORABLY').length;
-        const widenedCount = summary?.widenedCount ?? events.filter((e: any) => e.moveType === 'WIDENED_RISK').length;
+        const currentStop = trade.risk?.currentStopLoss;
         const initialStop = summary?.initialStop ?? trade.risk?.initialStopLoss;
-        const finalStop = summary?.finalStop ?? (events.length > 0 ? events[events.length - 1].newStop : null);
+        const finalStop = summary?.finalStop ?? (events.length > 0 ? events[events.length - 1].newStop : (currentStop ?? initialStop));
+        const isLong = trade.direction === 'LONG';
+        const isTrailed = (initialStop != null && finalStop != null && initialStop !== finalStop)
+          ? (isLong ? finalStop > initialStop : finalStop < initialStop)
+          : false;
+        const isWidenedDirect = (initialStop != null && finalStop != null && initialStop !== finalStop)
+          ? (isLong ? finalStop < initialStop : finalStop > initialStop)
+          : false;
+        const hasWidened = summary?.hasWidenedRisk || events.some((e: any) => e.moveType === 'WIDENED_RISK') || isWidenedDirect;
+        const trailedCount = summary?.trailedCount ?? (events.filter((e: any) => e.moveType === 'TRAILED_FAVORABLY').length || (isTrailed ? 1 : 0));
+        const widenedCount = summary?.widenedCount ?? (events.filter((e: any) => e.moveType === 'WIDENED_RISK').length || (isWidenedDirect ? 1 : 0));
+        const totalMovesCount = summary?.totalMoves ?? (events.length > 0 ? events.length : ((isTrailed || isWidenedDirect) ? 1 : 0));
+        const isScanned = !!summary || events.length > 0 || (initialStop != null && finalStop != null && initialStop !== finalStop);
+        const netRiskChangePoints = summary?.netRiskChangePoints != null
+          ? summary.netRiskChangePoints
+          : (initialStop != null && finalStop != null)
+          ? Number((isLong ? (initialStop - finalStop) : (finalStop - initialStop)).toFixed(2))
+          : 0;
 
         return (
           <Card sx={{ p: 2.5 }}>
@@ -1412,10 +1431,10 @@ export function TradeDetailPage() {
                     size="small"
                     sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
                   />
-                ) : trailedCount > 0 ? (
+                ) : (trailedCount > 0 || isTrailed) ? (
                   <Chip
                     icon={<CheckCircleRoundedIcon fontSize="small" />}
-                    label={`TRAILED FAVORABLY (${trailedCount})`}
+                    label={`TRAILED FAVORABLY (${trailedCount || 1})`}
                     color="success"
                     size="small"
                     sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
@@ -1438,15 +1457,33 @@ export function TradeDetailPage() {
                 <Button
                   size="small"
                   variant="outlined"
-                  startIcon={
-                    detectStopMovesMutation.isPending ? (
-                      <CircularProgress size={14} color="inherit" />
-                    ) : (
-                      <SyncRoundedIcon fontSize="small" sx={{ color: '#0EA5E9' }} />
-                    )
-                  }
-                  disabled={detectStopMovesMutation.isPending}
-                  onClick={() => detectStopMovesMutation.mutate()}
+                  startIcon={<TuneRoundedIcon fontSize="small" sx={{ color: '#0EA5E9' }} />}
+                  onClick={() => {
+                    const existing = trade.stopLossMoveEvents || [];
+                    if (existing.length > 0) {
+                      setManualMovesList(
+                        existing.map((e: any) => ({
+                          stopPrice: String(e.newStop),
+                          reason: e.reason || '',
+                        }))
+                      );
+                    } else if (trade.risk?.currentStopLoss && trade.risk.currentStopLoss !== trade.risk.initialStopLoss) {
+                      setManualMovesList([
+                        {
+                          stopPrice: String(trade.risk.currentStopLoss),
+                          reason: 'Trailed Stop',
+                        },
+                      ]);
+                    } else {
+                      setManualMovesList([
+                        {
+                          stopPrice: '',
+                          reason: 'Trailed Stop',
+                        },
+                      ]);
+                    }
+                    setIsManualStopMovesOpen(true);
+                  }}
                   sx={{
                     textTransform: 'none',
                     fontWeight: 600,
@@ -1459,7 +1496,34 @@ export function TradeDetailPage() {
                     },
                   }}
                 >
-                  {isScanned ? 'Rescan Stop Moves' : 'Detect Stop Moves'}
+                  Log / Edit Stop Moves
+                </Button>
+
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
+                    detectStopMovesMutation.isPending ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <SyncRoundedIcon fontSize="small" sx={{ color: '#0EA5E9' }} />
+                    )
+                  }
+                  disabled={detectStopMovesMutation.isPending}
+                  onClick={() => detectStopMovesMutation.mutate(undefined)}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    borderColor: 'rgba(14, 165, 233, 0.4)',
+                    color: '#0EA5E9',
+                    '&:hover': {
+                      borderColor: '#0EA5E9',
+                      backgroundColor: 'rgba(14, 165, 233, 0.08)',
+                    },
+                  }}
+                >
+                  {isScanned ? 'Rescan Orderbook' : 'Detect Stop Moves'}
                 </Button>
               </Box>
             </Box>
@@ -1478,7 +1542,7 @@ export function TradeDetailPage() {
               >
                 <Typography variant="body2" sx={{ fontWeight: 600, color: muiTheme.palette.loss.main }}>
                   Discipline Warning: Stop-loss was widened during this trade ({widenedCount} time{widenedCount > 1 ? 's' : ''}), increasing downside capital risk
-                  {summary?.netRiskChangePoints ? ` by ${Math.abs(summary.netRiskChangePoints).toFixed(2)} pts` : ''}. This trade has been flagged with the <strong>STOP_MOVED</strong> mistake tag.
+                  {netRiskChangePoints ? ` by ${Math.abs(netRiskChangePoints).toFixed(2)} pts` : ''}. This trade has been flagged with the <strong>STOP_MOVED</strong> mistake tag.
                 </Typography>
               </Alert>
             )}
@@ -1486,7 +1550,7 @@ export function TradeDetailPage() {
             {isScanned ? (
               <>
                 {/* Metric Summary Tiles */}
-                <Grid container spacing={1.5} sx={{ mb: events.length > 0 ? 2.5 : 0 }}>
+                <Grid container spacing={1.5} sx={{ mb: (events.length > 0 || isTrailed || isWidenedDirect) ? 2.5 : 0 }}>
                   <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                     <Box
                       sx={{
@@ -1536,7 +1600,7 @@ export function TradeDetailPage() {
                         Modifications
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25 }}>
-                        {summary?.totalMoves ?? events.length}
+                        {totalMovesCount}
                       </Typography>
                     </Box>
                   </Grid>
@@ -1603,15 +1667,15 @@ export function TradeDetailPage() {
                           mt: 0.25,
                           fontFamily: `'JetBrains Mono', monospace`,
                           color:
-                            summary?.netRiskChangePoints != null && summary.netRiskChangePoints > 0
+                            netRiskChangePoints > 0
                               ? muiTheme.palette.loss.main
-                              : summary?.netRiskChangePoints != null && summary.netRiskChangePoints < 0
+                              : netRiskChangePoints < 0
                               ? muiTheme.palette.profit.main
                               : 'inherit',
                         }}
                       >
-                        {summary?.netRiskChangePoints != null
-                          ? `${summary.netRiskChangePoints > 0 ? '+' : ''}${summary.netRiskChangePoints.toFixed(2)} pts`
+                        {netRiskChangePoints !== 0
+                          ? `${netRiskChangePoints > 0 ? '+' : ''}${netRiskChangePoints.toFixed(2)} pts`
                           : '0.00 pts'}
                       </Typography>
                     </Box>
@@ -1624,6 +1688,7 @@ export function TradeDetailPage() {
                     <Table size="small">
                       <TableHead sx={{ backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)' }}>
                         <TableRow>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>#</TableCell>
                           <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Time</TableCell>
                           <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Action Type</TableCell>
                           <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Previous Stop</TableCell>
@@ -1634,23 +1699,26 @@ export function TradeDetailPage() {
                       </TableHead>
                       <TableBody>
                         {events.map((evt: any, idx: number) => {
-                          const isTrailed = evt.moveType === 'TRAILED_FAVORABLY';
-                          const isWidened = evt.moveType === 'WIDENED_RISK';
+                          const isEvtTrailed = evt.moveType === 'TRAILED_FAVORABLY';
+                          const isEvtWidened = evt.moveType === 'WIDENED_RISK';
                           return (
                             <TableRow key={idx} hover>
+                              <TableCell sx={{ fontSize: '0.75rem', fontWeight: 700, color: muiTheme.palette.text.secondary }}>
+                                {idx + 1}
+                              </TableCell>
                               <TableCell sx={{ fontSize: '0.75rem', fontFamily: `'JetBrains Mono', monospace` }}>
                                 {moment(evt.movedAt).format('DD MMM YYYY, HH:mm:ss')}
                               </TableCell>
                               <TableCell>
                                 <Chip
                                   size="small"
-                                  label={isTrailed ? 'Trailed Favorably' : isWidened ? 'Widened Risk' : 'Unchanged'}
+                                  label={isEvtTrailed ? 'Trailed Favorably' : isEvtWidened ? 'Widened Risk' : 'Unchanged'}
                                   sx={{
                                     height: 20,
                                     fontSize: '0.6875rem',
                                     fontWeight: 700,
-                                    backgroundColor: isTrailed ? muiTheme.palette.profit.bg : isWidened ? muiTheme.palette.loss.bg : 'transparent',
-                                    color: isTrailed ? muiTheme.palette.profit.main : isWidened ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
+                                    backgroundColor: isEvtTrailed ? muiTheme.palette.profit.bg : isEvtWidened ? muiTheme.palette.loss.bg : 'transparent',
+                                    color: isEvtTrailed ? muiTheme.palette.profit.main : isEvtWidened ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
                                   }}
                                 />
                               </TableCell>
@@ -1665,7 +1733,7 @@ export function TradeDetailPage() {
                                   fontSize: '0.75rem',
                                   fontWeight: 700,
                                   fontFamily: `'JetBrains Mono', monospace`,
-                                  color: isTrailed ? muiTheme.palette.profit.main : isWidened ? muiTheme.palette.loss.main : 'inherit',
+                                  color: isEvtTrailed ? muiTheme.palette.profit.main : isEvtWidened ? muiTheme.palette.loss.main : 'inherit',
                                 }}
                               >
                                 {evt.changePoints > 0 ? `+${Number(evt.changePoints).toFixed(2)}` : Number(evt.changePoints).toFixed(2)} pts ({evt.changePercent > 0 ? `+${Number(evt.changePercent).toFixed(2)}` : Number(evt.changePercent).toFixed(2)}%)
@@ -1676,6 +1744,62 @@ export function TradeDetailPage() {
                             </TableRow>
                           );
                         })}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (isTrailed || isWidenedDirect) ? (
+                  <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                    <Table size="small">
+                      <TableHead sx={{ backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)' }}>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>#</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Time</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Action Type</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Initial Stop</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Active Stop</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Points Delta</TableCell>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Order / Reason</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        <TableRow hover>
+                          <TableCell sx={{ fontSize: '0.75rem', fontWeight: 700 }}>1</TableCell>
+                          <TableCell sx={{ fontSize: '0.75rem', fontFamily: `'JetBrains Mono', monospace` }}>
+                            {moment(trade.exitTime || trade.entryTime).format('DD MMM YYYY, HH:mm:ss')}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              label={isTrailed ? 'Trailed Favorably' : 'Widened Risk'}
+                              sx={{
+                                height: 20,
+                                fontSize: '0.6875rem',
+                                fontWeight: 700,
+                                backgroundColor: isTrailed ? muiTheme.palette.profit.bg : muiTheme.palette.loss.bg,
+                                color: isTrailed ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.75rem', fontFamily: `'JetBrains Mono', monospace` }}>
+                            {Number(initialStop).toFixed(2)}
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.75rem', fontWeight: 600, fontFamily: `'JetBrains Mono', monospace` }}>
+                            {Number(finalStop).toFixed(2)}
+                          </TableCell>
+                          <TableCell
+                            sx={{
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: isTrailed ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {Math.abs(Number(finalStop) - Number(initialStop)).toFixed(2)} pts
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
+                            Active Trailed Stop Loss. Click &ldquo;Log / Edit Stop Moves&rdquo; above to record intermediate moves.
+                          </TableCell>
+                        </TableRow>
                       </TableBody>
                     </Table>
                   </TableContainer>
@@ -1708,18 +1832,123 @@ export function TradeDetailPage() {
                 <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mb: 2 }}>
                   Stop-move tracking scans your FYERS orderbook modifications to detect whether your stop loss was trailed to protect capital or widened under market pressure.
                 </Typography>
+                <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'center' }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={detectStopMovesMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
+                    onClick={() => detectStopMovesMutation.mutate(undefined)}
+                    disabled={detectStopMovesMutation.isPending}
+                    sx={{ textTransform: 'none', fontWeight: 600 }}
+                  >
+                    Scan Orderbook Stop Moves
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<TuneRoundedIcon fontSize="small" />}
+                    onClick={() => {
+                      setManualMovesList([{ stopPrice: '', reason: 'Trailed Stop' }]);
+                      setIsManualStopMovesOpen(true);
+                    }}
+                    sx={{ textTransform: 'none', fontWeight: 600 }}
+                  >
+                    Log Stop Moves Manually
+                  </Button>
+                </Box>
+              </Box>
+            )}
+
+            {/* Manual Stop Moves Dialog */}
+            <Dialog open={isManualStopMovesOpen} onClose={() => setIsManualStopMovesOpen(false)} maxWidth="sm" fullWidth>
+              <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
+                Log / Edit Stop Loss Modifications
+              </DialogTitle>
+              <DialogContent dividers>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Record the stop-loss levels you moved during this trade. Initial stop loss is anchored at ₹{initialStop != null ? Number(initialStop).toFixed(2) : '—'}.
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {manualMovesList.map((move, idx) => (
+                    <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 24 }}>
+                        #{idx + 1}
+                      </Typography>
+                      <TextField
+                        label="Stop Price (₹)"
+                        type="number"
+                        size="small"
+                        value={move.stopPrice}
+                        onChange={(e) => {
+                          const updated = [...manualMovesList];
+                          updated[idx].stopPrice = e.target.value;
+                          setManualMovesList(updated);
+                        }}
+                        sx={{ flex: 1 }}
+                      />
+                      <TextField
+                        label="Reason / Notes"
+                        size="small"
+                        value={move.reason}
+                        onChange={(e) => {
+                          const updated = [...manualMovesList];
+                          updated[idx].reason = e.target.value;
+                          setManualMovesList(updated);
+                        }}
+                        placeholder="e.g. Trailed to BE, Locked Profit"
+                        sx={{ flex: 1.5 }}
+                      />
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => {
+                          const updated = manualMovesList.filter((_, i) => i !== idx);
+                          setManualMovesList(updated);
+                        }}
+                        disabled={manualMovesList.length === 1}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
                 <Button
-                  variant="outlined"
+                  startIcon={<AddRoundedIcon />}
                   size="small"
-                  startIcon={detectStopMovesMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
-                  onClick={() => detectStopMovesMutation.mutate()}
+                  onClick={() => setManualMovesList([...manualMovesList, { stopPrice: '', reason: 'Trailed Stop' }])}
+                  sx={{ mt: 2, textTransform: 'none', fontWeight: 600 }}
+                >
+                  Add Modification Step
+                </Button>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, py: 2 }}>
+                <Button onClick={() => setIsManualStopMovesOpen(false)} sx={{ textTransform: 'none' }}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    const valid = manualMovesList
+                      .filter((m) => Number(m.stopPrice) > 0)
+                      .map((m, i) => ({
+                        stopPrice: Number(m.stopPrice),
+                        modifiedAt: moment(trade.entryTime || new Date()).add(5 * (i + 1), 'minutes').toISOString(),
+                        reason: m.reason || `Move #${i + 1}`,
+                      }));
+                    if (valid.length === 0) {
+                      toast.error('Please enter at least one valid stop price.');
+                      return;
+                    }
+                    detectStopMovesMutation.mutate(valid);
+                    setIsManualStopMovesOpen(false);
+                  }}
                   disabled={detectStopMovesMutation.isPending}
                   sx={{ textTransform: 'none', fontWeight: 600 }}
                 >
-                  Scan Orderbook Stop Moves
+                  {detectStopMovesMutation.isPending ? <CircularProgress size={16} color="inherit" /> : 'Apply Stop Moves'}
                 </Button>
-              </Box>
-            )}
+              </DialogActions>
+            </Dialog>
           </Card>
         );
       })()}

@@ -109,7 +109,7 @@ export function ChartImageViewerDialog({
   if (!currentAttachment) return null;
 
   const categoryMeta = CHART_ATTACHMENT_CATEGORIES.find((c) => c.value === currentAttachment.category);
-  const imageUrl = currentAttachment.downloadUrl || api.attachments.downloadUrl(currentAttachment.id);
+  const imageUrl = api.attachments.resolveAttachmentUrl(currentAttachment);
 
   return (
     <Dialog
@@ -352,6 +352,7 @@ export function ChartImageViewerDialog({
           component="img"
           src={imageUrl}
           alt={currentAttachment.caption || currentAttachment.originalName}
+          crossOrigin="anonymous"
           sx={{
             maxWidth: '100%',
             maxHeight: '75vh',

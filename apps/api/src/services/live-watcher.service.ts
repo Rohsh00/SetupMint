@@ -473,6 +473,7 @@ export class LiveWatcherService {
         // If the trader modified their resting SL on FYERS, dynamically update metric.stopLoss and distance
         if (slCheck.hasRestingSl && typeof slCheck.slPrice === 'number' && slCheck.slPrice > 0) {
           if (metric.stopLoss !== slCheck.slPrice) {
+            const prevStop = metric.stopLoss || trade.risk?.currentStopLoss || trade.risk?.initialStopLoss;
             metric.stopLoss = slCheck.slPrice;
             const isLong = metric.direction === 'LONG';
             const bufferPts = isLong ? (metric.currentLtp - slCheck.slPrice) : (slCheck.slPrice - metric.currentLtp);
@@ -486,11 +487,79 @@ export class LiveWatcherService {
               metric.stopThreatLevel = 'SAFE';
             }
 
-            // Also persist active currentStopLoss to trade document in DB
-            Trade.updateOne(
-              { _id: trade._id },
-              { $set: { 'risk.currentStopLoss': slCheck.slPrice } }
-            ).catch(() => {});
+            // Also persist active currentStopLoss and record stop move event in trade document in DB
+            const activeSlPrice = slCheck.slPrice;
+            if (prevStop && prevStop !== activeSlPrice) {
+              const isTrailed = isLong ? activeSlPrice > prevStop : activeSlPrice < prevStop;
+              const moveType: 'TRAILED_FAVORABLY' | 'WIDENED_RISK' = isTrailed ? 'TRAILED_FAVORABLY' : 'WIDENED_RISK';
+              const changePts = Math.abs(activeSlPrice - prevStop);
+              const changePct = prevStop > 0 ? (changePts / prevStop) * 100 : 0;
+              const initialStop = trade.risk?.initialStopLoss || prevStop;
+
+              const newEvent = {
+                previousStop: prevStop,
+                newStop: activeSlPrice,
+                changePoints: Number(changePts.toFixed(4)),
+                changePercent: Number(changePct.toFixed(2)),
+                moveType,
+                movedAt: new Date(),
+                orderId: slCheck.orderId,
+                reason: `FYERS Resting SL Order #${slCheck.orderId || ''}`,
+              };
+
+              Trade.findById(trade._id)
+                .then(async (t) => {
+                  if (!t) return;
+                  t.risk = t.risk || {};
+                  t.risk.currentStopLoss = activeSlPrice;
+                  t.psychology = t.psychology || ({} as any);
+                  t.psychology.stopLossMoved = true;
+                  if (moveType === 'WIDENED_RISK') {
+                    t.psychology.mistakes = t.psychology.mistakes || [];
+                    if (!t.psychology.mistakes.includes('STOP_MOVED')) {
+                      t.psychology.mistakes.push('STOP_MOVED');
+                    }
+                  }
+                  t.stopLossMoveEvents = t.stopLossMoveEvents || [];
+                  t.stopLossMoveEvents.push(newEvent);
+
+                  const trCount = t.stopLossMoveEvents.filter((e: any) => e.moveType === 'TRAILED_FAVORABLY').length;
+                  const widCount = t.stopLossMoveEvents.filter((e: any) => e.moveType === 'WIDENED_RISK').length;
+                  const netRiskPts = isLong
+                    ? Number((initialStop - activeSlPrice).toFixed(4))
+                    : Number((activeSlPrice - initialStop).toFixed(4));
+
+                  t.calculated = t.calculated || ({} as any);
+                  t.calculated.stopMoveSummary = {
+                    totalMoves: t.stopLossMoveEvents.length,
+                    widenedCount: widCount,
+                    trailedCount: trCount,
+                    initialStop,
+                    finalStop: activeSlPrice,
+                    netRiskChangePoints: netRiskPts,
+                    hasWidenedRisk: widCount > 0,
+                    detectedAt: new Date(),
+                  };
+                  t.auditLog = t.auditLog || [];
+                  t.auditLog.push({
+                    action: 'STOP_MOVED_DETECTED',
+                    timestamp: new Date(),
+                    changedBy: 'live-watcher',
+                    details: {
+                      previousStop: prevStop,
+                      newStop: activeSlPrice,
+                      moveType,
+                    },
+                  });
+                  await t.save();
+                })
+                .catch(() => {});
+            } else {
+              Trade.updateOne(
+                { _id: trade._id },
+                { $set: { 'risk.currentStopLoss': activeSlPrice } }
+              ).catch(() => {});
+            }
           }
         }
       } catch {

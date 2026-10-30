@@ -1288,10 +1288,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       : undefined;
 
     // Update trade in MongoDB
+    const prevStop = trade.risk?.currentStopLoss ?? initialStop;
+    const newStopPrice = Number(stopPrice);
+
     trade.risk = {
       ...(trade.risk || {}),
       initialStopLoss: initialStop,
-      currentStopLoss: Number(stopPrice),
+      currentStopLoss: newStopPrice,
       estimatedRiskAmount: initialRisk,
       plannedRiskAmount: initialRisk,
       initialStopSource: brokerResult.executedOnBroker ? 'BROKER_ORDERBOOK' : 'MANUAL',
@@ -1300,6 +1303,45 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       ...(trade.psychology || {}),
       stopLossMoved: true,
     };
+
+    if (prevStop && newStopPrice !== prevStop) {
+      const isLong = trade.direction === 'LONG';
+      const isTrailed = isLong ? newStopPrice > prevStop : newStopPrice < prevStop;
+      const moveType = isTrailed ? 'TRAILED_FAVORABLY' : 'WIDENED_RISK';
+      const changePts = Math.abs(newStopPrice - prevStop);
+      const changePct = prevStop > 0 ? (changePts / prevStop) * 100 : 0;
+
+      if (!trade.stopLossMoveEvents) trade.stopLossMoveEvents = [];
+      trade.stopLossMoveEvents.push({
+        previousStop: prevStop,
+        newStop: newStopPrice,
+        changePoints: Number(changePts.toFixed(4)),
+        changePercent: Number(changePct.toFixed(2)),
+        moveType,
+        movedAt: new Date(),
+        orderId: brokerResult?.orderId,
+        reason: brokerResult?.message || (brokerResult?.executedOnBroker ? 'FYERS Order Modified' : 'Manual SL Adjustment'),
+      });
+
+      const trailedCount = trade.stopLossMoveEvents.filter((e: any) => e.moveType === 'TRAILED_FAVORABLY').length;
+      const widenedCount = trade.stopLossMoveEvents.filter((e: any) => e.moveType === 'WIDENED_RISK').length;
+      const netRiskChangePoints = isLong
+        ? Number((initialStop - newStopPrice).toFixed(4))
+        : Number((newStopPrice - initialStop).toFixed(4));
+
+      trade.calculated = trade.calculated || ({} as any);
+      trade.calculated.stopMoveSummary = {
+        totalMoves: trade.stopLossMoveEvents.length,
+        widenedCount,
+        trailedCount,
+        initialStop,
+        finalStop: newStopPrice,
+        netRiskChangePoints,
+        hasWidenedRisk: widenedCount > 0,
+        detectedAt: new Date(),
+      };
+    }
+
     trade.auditLog.push({
       action: 'SL_MODIFIED',
       timestamp: new Date(),

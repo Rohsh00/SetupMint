@@ -31,6 +31,7 @@ import {
 } from '@tradevault/shared';
 import { ChartImageViewerDialog } from './ChartImageViewerDialog.js';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.js';
+import { api } from '../../../lib/api.js';
 
 export interface StagedAttachment {
   id: string;
@@ -353,8 +354,9 @@ export function TradeAttachmentUploader({
                     >
                       <Box
                         component="img"
-                        src={att.downloadUrl}
+                        src={api.attachments.resolveAttachmentUrl(att)}
                         alt={att.caption || att.originalName}
+                        crossOrigin="anonymous"
                         sx={{
                           width: '100%',
                           height: '100%',

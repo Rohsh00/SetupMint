@@ -12,6 +12,7 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
   let app: FastifyInstance;
   let testStorage: InMemoryStorage;
   let authCookie: string;
+  let authToken: string;
   let otherUserAuthCookie: string;
   let accountId: string;
   let tradeId: string;
@@ -43,6 +44,7 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
       },
     });
     authCookie = regRes.headers['set-cookie'] as string;
+    authToken = JSON.parse(regRes.body).data.token;
 
     // Register User 2 (to test ownership 404)
     const regRes2 = await app.inject({
@@ -223,6 +225,28 @@ describe('TradeVault Attachments & Chart Screenshot Tests (Cloud Storage Provide
       method: 'GET',
       url: `/api/v1/attachments/${attachmentId}/stream`,
       headers: { cookie: authCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.rawPayload.length).toBeGreaterThanOrEqual(validPngBuffer.length);
+  });
+
+  it('GET /api/v1/attachments/:id/download supports ?token= authentication without cookie or auth header', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/attachments/${attachmentId}/download?token=${authToken}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.rawPayload.length).toBeGreaterThanOrEqual(validPngBuffer.length);
+  });
+
+  it('GET /api/v1/attachments/:id/stream supports ?token= authentication without cookie or auth header', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/attachments/${attachmentId}/stream?token=${authToken}`,
     });
 
     expect(res.statusCode).toBe(200);

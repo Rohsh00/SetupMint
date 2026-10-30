@@ -490,8 +490,18 @@ export function TradeScreenshotGallery({
                   >
                     <Box
                       component="img"
-                      src={att.downloadUrl || api.attachments.downloadUrl(att.id)}
+                      src={api.attachments.resolveAttachmentUrl(att)}
                       alt={att.caption || att.originalName}
+                      crossOrigin="anonymous"
+                      loading="lazy"
+                      onError={(e: any) => {
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          const fallback = parent.querySelector('.snapshot-img-fallback');
+                          if (fallback) (fallback as HTMLElement).style.display = 'flex';
+                        }
+                      }}
                       sx={{
                         width: '100%',
                         height: '100%',
@@ -500,6 +510,29 @@ export function TradeScreenshotGallery({
                         '&:hover': { transform: 'scale(1.05)' },
                       }}
                     />
+
+                    {/* Graceful Fallback if image fails to load */}
+                    <Box
+                      className="snapshot-img-fallback"
+                      sx={{
+                        display: 'none',
+                        width: '100%',
+                        height: '100%',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 1,
+                        backgroundColor: '#0a0f1d',
+                        color: muiTheme.palette.text.secondary,
+                        p: 2,
+                        textAlign: 'center',
+                      }}
+                    >
+                      <CandlestickChartRounded sx={{ fontSize: 36, color: '#06b6d4', opacity: 0.8 }} />
+                      <Typography variant="caption" sx={{ fontWeight: 600, color: '#94a3b8' }}>
+                        {att.caption || `${att.timeframe || ''} Snapshot`}
+                      </Typography>
+                    </Box>
 
                     {/* Category Chip Badge */}
                     <Chip
@@ -618,7 +651,7 @@ export function TradeScreenshotGallery({
                       <Box
                         onClick={(e) => {
                           e.stopPropagation();
-                          openViewerAt(att.id);
+                          openViewerAt(att.id || (att as any)._id);
                         }}
                         sx={{
                           display: 'flex',
@@ -767,7 +800,7 @@ export function TradeScreenshotGallery({
                           <IconButton
                             size="small"
                             component="a"
-                            href={att.downloadUrl || api.attachments.downloadUrl(att.id)}
+                            href={api.attachments.resolveAttachmentUrl(att)}
                             download={att.originalName}
                             target="_blank"
                             rel="noreferrer"

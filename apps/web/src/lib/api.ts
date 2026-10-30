@@ -527,7 +527,49 @@ export const api = {
     listForTrade: (tradeId: string) => request<any[]>(`/attachments/trades/${tradeId}`),
     update: (id: string, updates: { category?: string; caption?: string; timeframe?: string }) =>
       request<any>(`/attachments/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
-    downloadUrl: (id: string) => `${BASE_URL}/attachments/${id}/download`,
+    downloadUrl: (id: string) => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('tv_token') : null;
+      const url = `${BASE_URL}/attachments/${id}/download`;
+      return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+    },
+    resolveAttachmentUrl: (
+      attOrUrl?: string | { id?: string; _id?: string; downloadUrl?: string; url?: string } | null
+    ): string => {
+      if (!attOrUrl) return '';
+
+      let rawUrl = '';
+      if (typeof attOrUrl === 'string') {
+        rawUrl = attOrUrl;
+      } else {
+        const id = attOrUrl.id || (attOrUrl as any)._id;
+        rawUrl = attOrUrl.downloadUrl || attOrUrl.url || (id ? `${BASE_URL}/attachments/${id}/download` : '');
+      }
+
+      if (!rawUrl) return '';
+
+      // Local staged blob: or data: URIs don't need token or API prefixing
+      if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+        return rawUrl;
+      }
+
+      const token = typeof window !== 'undefined' ? localStorage.getItem('tv_token') : null;
+      const tokenQuery = token ? `token=${encodeURIComponent(token)}` : '';
+
+      // Normalize relative /api/v1 paths to the configured API BASE_URL
+      let finalUrl = rawUrl;
+      if (finalUrl.startsWith('/api/v1')) {
+        finalUrl = `${BASE_URL}${finalUrl.slice('/api/v1'.length)}`;
+      } else if (finalUrl.startsWith('/') && !finalUrl.startsWith('//')) {
+        finalUrl = `${BASE_URL}${finalUrl}`;
+      }
+
+      // Append auth token query param for cross-origin media rendering (<img> tags do not send Authorization headers)
+      if (tokenQuery && !finalUrl.includes('token=')) {
+        finalUrl += (finalUrl.includes('?') ? '&' : '?') + tokenQuery;
+      }
+
+      return finalUrl;
+    },
     delete: (id: string) => request(`/attachments/${id}`, { method: 'DELETE' }),
   },
 
@@ -535,6 +577,8 @@ export const api = {
   exportImport: {
     csvUrl: (params: Record<string, any> = {}) => {
       const query = new URLSearchParams();
+      const token = typeof window !== 'undefined' ? localStorage.getItem('tv_token') : null;
+      if (token) query.set('token', token);
       for (const [key, val] of Object.entries(params)) {
         if (val) query.set(key, String(val));
       }
@@ -542,6 +586,8 @@ export const api = {
     },
     jsonUrl: (params: Record<string, any> = {}) => {
       const query = new URLSearchParams();
+      const token = typeof window !== 'undefined' ? localStorage.getItem('tv_token') : null;
+      if (token) query.set('token', token);
       for (const [key, val] of Object.entries(params)) {
         if (val) query.set(key, String(val));
       }

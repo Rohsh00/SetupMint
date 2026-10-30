@@ -93,6 +93,7 @@ export function TradeQuickSection({
   userTemplates = [],
 }: TradeQuickSectionProps) {
   const muiTheme = useTheme();
+  const isDark = muiTheme.palette.mode === 'dark';
   const [showItemizedFees, setShowItemizedFees] = useState(false);
 
   const selectedSymbol = watch('symbol') || '';
@@ -161,6 +162,14 @@ export function TradeQuickSection({
         if (entryTime) {
           setValue('session', deriveSessionFromTime(entryTime, preset.exchange, preset.marketSegment), { shouldDirty: true });
         }
+      } else if (
+        /PE$/i.test(cleanSym) ||
+        /_PE$/i.test(cleanSym) ||
+        /CE$/i.test(cleanSym) ||
+        /_CE$/i.test(cleanSym)
+      ) {
+        setValue('assetClass', 'OPTIONS', { shouldDirty: true });
+        setValue('optionType', /PE$/i.test(cleanSym) || /_PE$/i.test(cleanSym) ? 'PUT' : 'CALL', { shouldDirty: true });
       } else if (
         symUpper.startsWith('MCX:') ||
         /^(CRUDEOIL|NATGAS|NATURALGAS|GOLD|SILVER|COPPER|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(cleanSym)
@@ -331,6 +340,9 @@ export function TradeQuickSection({
             onChange={(e) => {
               const ac = e.target.value;
               setValue('assetClass', ac, { shouldDirty: true });
+              if (ac === 'OPTIONS' && !watch('optionType')) {
+                setValue('optionType', 'CALL', { shouldDirty: true });
+              }
               if (ac === 'COMMODITY' && watch('exchange') !== 'MCX') {
                 setValue('exchange', 'MCX', { shouldDirty: true });
                 setValue('marketSegment', 'MCX', { shouldDirty: true });
@@ -373,6 +385,82 @@ export function TradeQuickSection({
             slotProps={{ htmlInput: { style: { textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' } } }}
           />
         </Box>
+
+        {/* Options Specification Strip (when Asset Class is OPTIONS) */}
+        {watch('assetClass') === 'OPTIONS' && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 2,
+              p: 1.25,
+              px: 1.75,
+              borderRadius: 2,
+              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+              border: `1px solid ${muiTheme.palette.primary.main}35`,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Option Type:
+              </Typography>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={watch('optionType') || 'CALL'}
+                onChange={(_, val) => val && setValue('optionType', val, { shouldDirty: true })}
+                sx={{
+                  height: 28,
+                  '& .MuiToggleButton-root': {
+                    px: 1.5,
+                    py: 0.25,
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    '&.Mui-selected': {
+                      backgroundColor: `${muiTheme.palette.primary.main}25`,
+                      color: muiTheme.palette.primary.main,
+                      borderColor: muiTheme.palette.primary.main,
+                    },
+                  },
+                }}
+              >
+                <ToggleButton value="CALL">CE (Call)</ToggleButton>
+                <ToggleButton value="PUT">PE (Put)</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Strike Price:
+              </Typography>
+              <TextField
+                size="small"
+                type="number"
+                placeholder="e.g. 25500"
+                value={watch('strikePrice') ?? ''}
+                onChange={(e) => setValue('strikePrice', e.target.value ? Number(e.target.value) : undefined, { shouldDirty: true })}
+                slotProps={{
+                  htmlInput: {
+                    step: 'any',
+                    style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, padding: '4px 8px', width: 90 },
+                  },
+                }}
+              />
+            </Box>
+
+            <Typography variant="caption" sx={{ color: 'text.secondary', ml: 'auto', fontStyle: 'italic', fontSize: '0.72rem' }}>
+              {direction === 'SHORT' && (watch('optionType') === 'PUT' || !watch('optionType'))
+                ? '💡 Shorting PE option = Bullish (LONG) underlying market setup'
+                : direction === 'LONG' && watch('optionType') === 'PUT'
+                ? '💡 Buying PE option = Bearish (SHORT) underlying market setup'
+                : direction === 'SHORT' && watch('optionType') === 'CALL'
+                ? '💡 Shorting CE option = Bearish (SHORT) underlying market setup'
+                : '💡 Buying CE option = Bullish (LONG) underlying market setup'}
+            </Typography>
+          </Box>
+        )}
 
         {/* Quick Symbol Chips */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>

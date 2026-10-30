@@ -340,4 +340,141 @@ describe('Custom Parent Strategy & Child Setup Variants Integration Tests', () =
     expect(bucketB.closedTrades).toBe(1);
     expect(bucketB.winRate).toBe(100);
   });
+
+  it('8. Allows SHORT direction on PE option when variant expects LONG direction (bullish underlying setup)', async () => {
+    // Create dedicated strategy with expected direction LONG
+    const stratRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/strategies',
+      headers: { cookie: user1Cookie },
+      payload: {
+        name: 'Bullish Reversal Options Playbook',
+        variants: [
+          {
+            key: 'BULL-REV-LONG',
+            name: 'Bullish Reversal Long Variant',
+            expected: { direction: 'LONG' },
+          },
+        ],
+      },
+    });
+    expect(stratRes.statusCode).toBe(201);
+    const stratBody = JSON.parse(stratRes.body);
+    const stratId = stratBody.data._id || stratBody.data.id;
+
+    // Strategy variant BULL-REV-LONG expects direction: 'LONG'
+    // Trader shorts a PE option (direction: 'SHORT', optionType: 'PUT'), which is effectively a LONG underlying setup
+    const optTradeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/trades',
+      headers: { cookie: user1Cookie },
+      payload: {
+        accountId: user1AccountId,
+        symbol: 'NIFTY25500PE',
+        assetClass: 'OPTIONS',
+        optionType: 'PUT',
+        strikePrice: 25500,
+        exchange: 'NSE',
+        marketSegment: 'NSE_FNO',
+        currency: 'INR',
+        direction: 'SHORT',
+        status: 'CLOSED',
+        tradeDate: new Date().toISOString().split('T')[0],
+        entryTime: new Date(Date.now() - 3600000).toISOString(),
+        exitTime: new Date().toISOString(),
+        strategyId: stratId,
+        strategyName: 'Bullish Reversal Options Playbook',
+        setup: {
+          variantKey: 'BULL-REV-LONG',
+          variantStatus: 'CLASSIFIED',
+        },
+        executionMode: 'SIMPLE',
+        simpleExecution: {
+          entryPrice: 120,
+          exitPrice: 100,
+          quantity: 25,
+          contractMultiplier: 1,
+          fees: 20,
+        },
+      },
+    });
+
+    expect(optTradeRes.statusCode).toBe(201);
+    const body = JSON.parse(optTradeRes.body);
+    expect(body.success).toBe(true);
+    expect(body.data.setup.variantKey).toBe('BULL-REV-LONG');
+
+    // Also verify GET /trades/:id returns optionType and direction correctly
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/trades/${body.data.id}`,
+      headers: { cookie: user1Cookie },
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = JSON.parse(getRes.body);
+    expect(getBody.data.direction).toBe('SHORT');
+    expect(getBody.data.optionType).toBe('PUT');
+  });
+
+  it('9. Rejects SHORT direction on Equity trade when variant expects LONG direction', async () => {
+    // Create dedicated strategy with expected direction LONG
+    const stratRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/strategies',
+      headers: { cookie: user1Cookie },
+      payload: {
+        name: 'Equity Long Only Strategy',
+        variants: [
+          {
+            key: 'EQ-LONG-SETUP',
+            name: 'Equity Long Setup',
+            expected: { direction: 'LONG' },
+          },
+        ],
+      },
+    });
+    expect(stratRes.statusCode).toBe(201);
+    const stratBody = JSON.parse(stratRes.body);
+    const stratId = stratBody.data._id || stratBody.data.id;
+
+    // Trader shorts an Equity (direction: 'SHORT', assetClass: 'EQUITY')
+    const rejectRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/trades',
+      headers: { cookie: user1Cookie },
+      payload: {
+        accountId: user1AccountId,
+        symbol: 'TCS',
+        assetClass: 'EQUITY',
+        exchange: 'NSE',
+        marketSegment: 'NSE_EQ',
+        currency: 'INR',
+        direction: 'SHORT',
+        status: 'CLOSED',
+        tradeDate: new Date().toISOString().split('T')[0],
+        entryTime: new Date(Date.now() - 3600000).toISOString(),
+        exitTime: new Date().toISOString(),
+        strategyId: stratId,
+        strategyName: 'Equity Long Only Strategy',
+        setup: {
+          variantKey: 'EQ-LONG-SETUP',
+          variantStatus: 'CLASSIFIED',
+        },
+        executionMode: 'SIMPLE',
+        simpleExecution: {
+          entryPrice: 3500,
+          exitPrice: 3450,
+          quantity: 10,
+          contractMultiplier: 1,
+          fees: 20,
+        },
+      },
+    });
+
+    expect(rejectRes.statusCode).toBe(400);
+    const body = JSON.parse(rejectRes.body);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('DIRECTION_MISMATCH');
+    expect(body.error.message).toContain('Variant expects direction LONG, but trade direction is SHORT');
+  });
 });

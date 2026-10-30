@@ -59,6 +59,40 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     return InstrumentService.computeTradeCalculations(body);
   }
 
+  // Helper function to derive effective market setup direction (e.g. Short PE is Bullish / LONG)
+  function deriveEffectiveDirection(
+    executionDirection: string,
+    assetClass?: string,
+    optionType?: string,
+    symbol?: string
+  ): 'LONG' | 'SHORT' {
+    const cleanSymbol = (symbol || '').trim().toUpperCase();
+    const isOption =
+      assetClass === 'OPTIONS' ||
+      Boolean(optionType) ||
+      /PE$|CE$|PUT$|CALL$/i.test(cleanSymbol);
+
+    let resolvedOpt = optionType?.toUpperCase();
+    if (!resolvedOpt && isOption && cleanSymbol) {
+      if (/PE$|PUT$/i.test(cleanSymbol)) resolvedOpt = 'PUT';
+      else if (/CE$|CALL$/i.test(cleanSymbol)) resolvedOpt = 'CALL';
+    }
+
+    if (isOption && resolvedOpt) {
+      const isPut = resolvedOpt === 'PUT' || resolvedOpt === 'PE';
+      if (isPut) {
+        // Shorting a Put is Bullish (LONG) on the underlying/setup.
+        // Buying a Put is Bearish (SHORT) on the underlying/setup.
+        return executionDirection === 'SHORT' ? 'LONG' : 'SHORT';
+      } else {
+        // Long Call is Bullish (LONG), Short Call is Bearish (SHORT).
+        return executionDirection === 'LONG' ? 'LONG' : 'SHORT';
+      }
+    }
+
+    return executionDirection === 'SHORT' ? 'SHORT' : 'LONG';
+  }
+
   // Helper function to validate classification rules and compute non-blocking warnings
   async function validateTradeClassificationAndComputeWarnings(
     userId: string,
@@ -69,6 +103,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       risk?: any;
       thesis?: any;
       simpleExecution?: any;
+      assetClass?: string;
+      optionType?: string;
+      symbol?: string;
     }
   ): Promise<{ error?: { status: number; code: string; message: string }; warnings: string[] }> {
     const warnings: string[] = [];
@@ -136,16 +173,35 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         };
       }
 
-      // Direction validation: dynamic check against variant's configured expected direction
-      if (variant.expected?.direction && tradeData.direction && tradeData.direction !== variant.expected.direction) {
-        return {
-          error: {
-            status: 400,
-            code: 'DIRECTION_MISMATCH',
-            message: `Variant expects direction ${variant.expected.direction}, but trade direction is ${tradeData.direction}`,
-          },
-          warnings: [],
-        };
+      // Direction validation: dynamic check against variant's configured expected direction.
+      // In options trading:
+      // - Shorting a PE (PUT) option or buying a CE (CALL) option represents an underlying LONG (Bullish) setup.
+      // - Buying a PE (PUT) option or shorting a CE (CALL) option represents an underlying SHORT (Bearish) setup.
+      // We accept the variant if EITHER raw contract execution direction OR effective underlying setup direction matches.
+      if (variant.expected?.direction && tradeData.direction) {
+        const effectiveDirection = deriveEffectiveDirection(
+          tradeData.direction,
+          tradeData.assetClass,
+          tradeData.optionType,
+          tradeData.symbol
+        );
+        const matchesRaw = tradeData.direction === variant.expected.direction;
+        const matchesEffective = effectiveDirection === variant.expected.direction;
+
+        if (!matchesRaw && !matchesEffective) {
+          return {
+            error: {
+              status: 400,
+              code: 'DIRECTION_MISMATCH',
+              message: `Variant expects direction ${variant.expected.direction}, but trade direction is ${tradeData.direction}${
+                tradeData.optionType
+                  ? ` (${tradeData.direction} ${tradeData.optionType} is effectively ${effectiveDirection})`
+                  : ''
+              }`,
+            },
+            warnings: [],
+          };
+        }
       }
 
       // Contradicting setup attributes
@@ -515,6 +571,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       risk: body.risk,
       thesis: body.thesis,
       simpleExecution: body.simpleExecution,
+      assetClass: body.assetClass,
+      optionType: body.optionType,
+      symbol: body.symbol,
     });
 
     if (classValidation.error) {
@@ -1060,6 +1119,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       risk: mergedData.risk,
       thesis: mergedData.thesis,
       simpleExecution: mergedData.simpleExecution,
+      assetClass: mergedData.assetClass || existingTrade.assetClass,
+      optionType: mergedData.optionType || existingTrade.optionType,
+      symbol: mergedData.symbol || existingTrade.symbol,
     });
 
     if (classValidation.error) {

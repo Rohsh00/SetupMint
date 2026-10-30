@@ -45,6 +45,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import LogoutIcon from '@mui/icons-material/LogoutRounded';
 import SyncIcon from '@mui/icons-material/SyncRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
@@ -147,6 +148,32 @@ export function AppLayout() {
   const isFyersConnected = Boolean(fyersData?.isConnected);
 
   const [isSyncingFyers, setIsSyncingFyers] = useState(false);
+  const [isConnectingFyers, setIsConnectingFyers] = useState(false);
+
+  const handleQuickFyersConnect = async () => {
+    if (!isFyersConfigured) {
+      toast.info('Configure your FYERS API credentials in Settings.');
+      navigate('/settings');
+      return;
+    }
+    setIsConnectingFyers(true);
+    try {
+      const res = await api.integrations.fyersLoginUrl();
+      const url = res?.url || res?.data?.url;
+      if (url) {
+        toast.info('Opening FYERS login portal...');
+        window.location.href = url;
+      } else {
+        toast.info('Redirecting to Settings to complete FYERS setup...');
+        navigate('/settings');
+      }
+    } catch (err: any) {
+      toast.info('Redirecting to Settings to configure FYERS credentials...');
+      navigate('/settings');
+    } finally {
+      setIsConnectingFyers(false);
+    }
+  };
 
   const handleQuickFyersSync = async () => {
     if (!isFyersConnected) {
@@ -558,17 +585,12 @@ export function AppLayout() {
 
             {/* Top Bar Actions */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              {/* Quick FYERS Sync / Connect Button */}
-              {isFyersConfigured && (
-                <Tooltip
-                  title={
-                    isFyersConnected
-                      ? 'Sync trades from FYERS Tradebook now'
-                      : 'FYERS needs daily 1-click authorization'
-                  }
-                  arrow
-                >
+              {/* Dynamic FYERS Broker Sync / Connect Button */}
+              {isFyersConnected ? (
+                /* Connected: Show live Sync button */
+                <Tooltip title="FYERS Broker Connected. Click to sync today’s tradebook executions." arrow>
                   <Button
+                    id="quick-fyers-sync-btn"
                     variant="outlined"
                     size="small"
                     onClick={handleQuickFyersSync}
@@ -577,7 +599,7 @@ export function AppLayout() {
                       <SyncIcon
                         sx={{
                           fontSize: 16,
-                          color: isFyersConnected ? 'success.main' : 'warning.main',
+                          color: 'success.main',
                           animation: isSyncingFyers ? 'spin 1s linear infinite' : 'none',
                           '@keyframes spin': {
                             '0%': { transform: 'rotate(0deg)' },
@@ -589,19 +611,64 @@ export function AppLayout() {
                     sx={{
                       height: 36,
                       borderRadius: 2,
-                      borderColor: isFyersConnected ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)',
-                      color: isFyersConnected ? (isDark ? '#34d399' : '#059669') : (isDark ? '#fbbf24' : '#d97706'),
-                      backgroundColor: isDark
-                        ? isFyersConnected ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)'
-                        : isFyersConnected ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+                      borderColor: 'rgba(16, 185, 129, 0.4)',
+                      color: isDark ? '#34d399' : '#059669',
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.06)',
                       fontWeight: 700,
                       fontSize: '0.75rem',
                       textTransform: 'none',
                       px: 1.5,
                       display: { xs: 'none', sm: 'inline-flex' },
+                      '&:hover': {
+                        borderColor: 'rgba(16, 185, 129, 0.7)',
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                      },
                     }}
                   >
-                    {isSyncingFyers ? 'Syncing...' : isFyersConnected ? 'Sync FYERS' : 'Connect FYERS'}
+                    {isSyncingFyers ? 'Syncing...' : 'Sync FYERS'}
+                  </Button>
+                </Tooltip>
+              ) : (
+                /* Not Connected: Show dynamic Connect FYERS button */
+                <Tooltip
+                  title={
+                    isFyersConfigured
+                      ? 'FYERS daily session expired. Click for 1-Click Daily Auth.'
+                      : 'Connect your FYERS broker to auto-sync trades with exact executions.'
+                  }
+                  arrow
+                >
+                  <Button
+                    id="quick-fyers-connect-btn"
+                    variant="outlined"
+                    size="small"
+                    onClick={handleQuickFyersConnect}
+                    disabled={isConnectingFyers}
+                    startIcon={
+                      isConnectingFyers ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <LinkRoundedIcon sx={{ fontSize: 16 }} />
+                      )
+                    }
+                    sx={{
+                      height: 36,
+                      borderRadius: 2,
+                      borderColor: isDark ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.4)',
+                      color: isDark ? '#fbbf24' : '#d97706',
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      textTransform: 'none',
+                      px: 1.5,
+                      display: { xs: 'none', sm: 'inline-flex' },
+                      '&:hover': {
+                        borderColor: isDark ? '#fbbf24' : '#d97706',
+                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
+                      },
+                    }}
+                  >
+                    {isConnectingFyers ? 'Connecting...' : 'Connect FYERS'}
                   </Button>
                 </Tooltip>
               )}

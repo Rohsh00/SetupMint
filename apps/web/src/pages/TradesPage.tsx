@@ -44,6 +44,8 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 
@@ -88,6 +90,33 @@ export function TradesPage() {
     },
     onError: (err: any) => {
       toast.error(err.message || 'Failed to sync trades from FYERS.');
+    },
+  });
+
+  const fyersConnectMutation = useMutation({
+    mutationFn: async () => {
+      if (!isFyersConfigured) {
+        throw new Error('NOT_CONFIGURED');
+      }
+      return api.integrations.fyersLoginUrl();
+    },
+    onSuccess: (res: any) => {
+      const url = res?.url || res?.data?.url;
+      if (url) {
+        toast.info('Opening FYERS login portal...');
+        window.location.href = url;
+      } else {
+        toast.info('Redirecting to Settings to complete FYERS setup...');
+        navigate('/settings');
+      }
+    },
+    onError: (err: any) => {
+      if (err.message === 'NOT_CONFIGURED') {
+        toast.info('Configure your FYERS API credentials in Settings.');
+      } else {
+        toast.error(err.message || 'Failed to initialize FYERS login.');
+      }
+      navigate('/settings');
     },
   });
 
@@ -350,28 +379,18 @@ export function TradesPage() {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-          {/* FYERS Sync button */}
-          {isFyersConfigured && (
+          {/* Dynamic FYERS Broker Sync / Connect Button */}
+          {isFyersConnected ? (
+            /* FYERS IS CONNECTED: Show live Sync Trades button */
             <Tooltip
-              title={
-                isFyersConnected
-                  ? 'Fetch executions from FYERS broker tradebook now'
-                  : 'FYERS broker session not authenticated for today. Click to connect in Settings.'
-              }
+              title="FYERS broker session active. Click to fetch today's executed trades into your journal."
               arrow
             >
               <Button
-                variant={isFyersConnected ? 'contained' : 'outlined'}
-                color={isFyersConnected ? 'success' : 'inherit'}
+                variant="contained"
+                color="success"
                 size="small"
-                onClick={() => {
-                  if (!isFyersConnected) {
-                    toast.info('FYERS session not active. Redirecting to Settings...');
-                    navigate('/settings');
-                  } else {
-                    fyersSyncMutation.mutate();
-                  }
-                }}
+                onClick={() => fyersSyncMutation.mutate()}
                 disabled={fyersSyncMutation.isPending}
                 startIcon={
                   <SyncRoundedIcon
@@ -385,15 +404,76 @@ export function TradesPage() {
                     }}
                   />
                 }
-                sx={{ fontWeight: 700, fontSize: '0.8125rem' }}
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.8125rem',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                }}
               >
-                {fyersSyncMutation.isPending
-                  ? 'Syncing FYERS...'
-                  : isFyersConnected
-                  ? 'Sync FYERS Trades'
-                  : 'Connect FYERS'}
+                {fyersSyncMutation.isPending ? 'Syncing FYERS...' : 'Sync FYERS Trades'}
               </Button>
             </Tooltip>
+          ) : (
+            /* FYERS IS NOT CONNECTED: Show dynamic Connect FYERS & Import CSV buttons */
+            <>
+              <Tooltip
+                title={
+                  isFyersConfigured
+                    ? 'FYERS daily session expired. Click for 1-Click Daily Auth.'
+                    : 'Connect your FYERS broker to auto-sync trades with exact executions and fees.'
+                }
+                arrow
+              >
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => {
+                    if (isFyersConfigured) {
+                      fyersConnectMutation.mutate();
+                    } else {
+                      toast.info('Configure your FYERS API credentials in Settings.');
+                      navigate('/settings');
+                    }
+                  }}
+                  disabled={fyersConnectMutation.isPending}
+                  startIcon={
+                    fyersConnectMutation.isPending ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <LinkRoundedIcon fontSize="small" />
+                    )
+                  }
+                  sx={{
+                    fontWeight: 700,
+                    fontSize: '0.8125rem',
+                    borderColor: isDark ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.4)',
+                    color: isDark ? '#FBBF24' : '#D97706',
+                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
+                    '&:hover': {
+                      borderColor: isDark ? '#FBBF24' : '#D97706',
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
+                    },
+                  }}
+                >
+                  {fyersConnectMutation.isPending
+                    ? 'Connecting...'
+                    : 'Connect FYERS'}
+                </Button>
+              </Tooltip>
+
+              <Tooltip title="Import tradebook CSV from Zerodha, Angel One, FYERS, or Upstox" arrow>
+                <Button
+                  component={RouterLink}
+                  to="/reports"
+                  variant="outlined"
+                  size="small"
+                  startIcon={<UploadFileRoundedIcon fontSize="small" />}
+                  sx={{ fontWeight: 600, fontSize: '0.8125rem' }}
+                >
+                  Import CSV
+                </Button>
+              </Tooltip>
+            </>
           )}
 
           {/* Export CSV button */}

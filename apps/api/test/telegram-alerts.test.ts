@@ -26,13 +26,13 @@ describe('SetupMint Telegram Alerting Engine Integration Tests', () => {
     app = await buildApp();
     await app.ready();
 
-    // Clean up collections for test isolation
-    await TelegramUpdateAudit.deleteMany({});
+    // Clean up test data safely scoped to test fixtures
+    await TelegramUpdateAudit.deleteMany({ updateId: { $in: [101, 102, 887766, 9001, 9002, 9003, 9004, 9005, 9101, 9102] } });
     await TelegramCallbackLock.deleteMany({});
     await AlertState.deleteMany({});
     await AlertEvent.deleteMany({});
-    await Trade.deleteMany({});
-    await User.deleteMany({});
+    await Trade.deleteMany({ symbol: 'NIFTY 24500 CE' });
+    await User.deleteMany({ email: { $regex: /@tradevault\.local$/ } });
 
     // Mock fetch for Telegram Bot API calls to prevent outgoing network requests
     vi.spyOn(global, 'fetch').mockImplementation(async (url: any, init: any) => {

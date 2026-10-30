@@ -352,7 +352,7 @@ export function ChartImageViewerDialog({
           component="img"
           src={imageUrl}
           alt={currentAttachment.caption || currentAttachment.originalName}
-          crossOrigin="anonymous"
+          crossOrigin="use-credentials"
           sx={{
             maxWidth: '100%',
             maxHeight: '75vh',

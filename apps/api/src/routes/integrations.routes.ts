@@ -130,13 +130,24 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
   // Public Telegram Webhook Endpoint (Receives button clicks and two-way commands)
   app.post('/telegram/webhook', async (req, reply) => {
-    try {
-      await TelegramAlertService.processWebhookUpdate(req.body);
-      return reply.send({ ok: true });
-    } catch (err: any) {
-      req.log.warn('[TelegramWebhook] Error processing update: %s', err.message);
-      return reply.send({ ok: true }); // Always return 200 OK so Telegram doesn't retry repeatedly
+    // Verify Telegram Webhook Secret Token header
+    const presentedSecret = req.headers['x-telegram-bot-api-secret-token'];
+    const expectedSecret = TelegramAlertService.getWebhookSecretToken();
+
+    if (!presentedSecret || presentedSecret !== expectedSecret) {
+      req.log.warn('[TelegramWebhook] Unauthorized webhook request rejected: invalid secret token');
+      return reply.status(401).send({ error: 'Unauthorized webhook request' });
     }
+
+    // Return 200 OK immediately so Telegram receives instant delivery acknowledgement
+    reply.status(200).send({ ok: true });
+
+    // Process update asynchronously in background
+    setImmediate(() => {
+      TelegramAlertService.processWebhookUpdate(req.body).catch((err) => {
+        req.log.warn('[TelegramWebhook] Async update processing error: %s', err.message);
+      });
+    });
   });
 
   app.register(async (protectedApp) => {

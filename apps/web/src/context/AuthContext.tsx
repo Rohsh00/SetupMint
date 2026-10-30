@@ -33,6 +33,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function refreshUser() {
     try {
       const data = await api.auth.me();
+      if (data?.token) {
+        localStorage.setItem('tv_token', data.token);
+      }
       setUser(data.user);
       setIsOffline(false);
     } catch (err: any) {

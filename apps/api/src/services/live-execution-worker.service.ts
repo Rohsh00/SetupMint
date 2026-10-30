@@ -215,101 +215,56 @@ export class LiveExecutionWorker {
     // 1. Naked Position Check: Check if a resting SL order exists on FYERS orderbook
     if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
       if (metric.isNakedPosition) {
-        const nakedKey = `naked:${tradeId}`;
-        if (!this.executedMilestones.has(nakedKey)) {
-          this.executedMilestones.add(nakedKey);
-          TelegramAlertService.sendAlert({
-            botToken: watcherSettings.telegramBotToken,
-            chatId: watcherSettings.telegramChatId,
-            title: `⚠️ Naked Position Warning: ${metric.symbol}`,
-            body: `Open ${metric.direction} position has NO resting Stop Loss order on the exchange orderbook. Place an SL immediately to avoid uncontrolled market risk.`,
-            severity: 'CRITICAL',
-            metrics: {
-              Symbol: metric.symbol,
-              Side: metric.direction,
-              Quantity: metric.quantity,
-              Entry: `₹${metric.entryPrice}`,
-              LTP: `₹${metric.currentLtp}`,
-            },
-            buttons: [
-              [
-                { text: '🚨 Market Exit Position', callback_data: `exit:${tradeId}` },
-                { text: '🛡️ Lock True BE', callback_data: `lock_be:${tradeId}` },
-              ],
-            ],
-          }).catch(() => {});
-        }
-      }
-    }
-
-    // 2. Stop Loss Critical Threat Telegram Alert
-    if (metric.stopThreatLevel === 'CRITICAL' || metric.stopThreatLevel === 'BREACHED') {
-      const threatKey = `threat:${tradeId}:${metric.stopThreatLevel}`;
-      if (!this.executedMilestones.has(threatKey) && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-        this.executedMilestones.add(threatKey);
-        const runwayPct = typeof metric.distanceToStopPercent === 'number'
-          ? metric.distanceToStopPercent
-          : 25;
-
-        TelegramAlertService.sendAlert({
-          botToken: watcherSettings.telegramBotToken,
-          chatId: watcherSettings.telegramChatId,
-          title: `🚨 Stop Threat ${metric.stopThreatLevel}: ${metric.symbol}`,
-          body: `LTP ₹${metric.currentLtp} is within ${metric.distanceToStopPoints?.toFixed(2) || 0} pts of your Stop Loss (₹${metric.stopLoss}).`,
-          severity: 'CRITICAL',
-          metrics: {
-            Symbol: metric.symbol,
-            FloatingPnL: `₹${metric.floatingNetPnL.toFixed(2)}`,
-            CurrentStop: `₹${metric.stopLoss}`,
-            DistancePts: `${metric.distanceToStopPoints?.toFixed(2) || 0} pts`,
-          },
-          progressBar: {
-            label: 'SL Runway Remaining',
-            percent: runwayPct,
-          },
-          buttons: [
-            [
-              { text: '🚨 Emergency Market Exit', callback_data: `exit:${tradeId}` },
-              { text: '🛡️ Lock True BE', callback_data: `lock_be:${tradeId}` },
-            ],
-          ],
+        TelegramAlertService.dispatchRiskAlert(user, trade, {
+          type: 'NAKED_POSITION',
+          severity: 2,
+          metricValue: 0,
+          ltp: metric.currentLtp,
         }).catch(() => {});
       }
     }
 
-    // 3. Giveback Anti-Greed Radar Evaluation
-    if (metric.giveback && (metric.giveback.threatLevel === 'LEAKING' || metric.giveback.threatLevel === 'CRITICAL_REVERSAL')) {
-      const givebackKey = `giveback:${tradeId}`;
-      if (!this.executedMilestones.has(givebackKey)) {
-        this.executedMilestones.add(givebackKey);
+    // 2. Stop Loss Threat Telegram Alert via Pure State Machine
+    if (metric.stopThreatLevel) {
+      const runwayPct = typeof metric.distanceToStopPercent === 'number'
+        ? metric.distanceToStopPercent
+        : 25;
+      const severity = metric.stopThreatLevel === 'BREACHED'
+        ? 3
+        : metric.stopThreatLevel === 'CRITICAL'
+        ? 2
+        : metric.stopThreatLevel === 'ATTENTION'
+        ? 1
+        : 0;
 
-        if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-          TelegramAlertService.sendAlert({
-            botToken: watcherSettings.telegramBotToken,
-            chatId: watcherSettings.telegramChatId,
-            title: `⚠️ Profit Giveback Alert: ${metric.symbol}`,
-            body: `Unrealized profit retreated ${metric.giveback.givebackPercent.toFixed(1)}% from peak MFE of ₹${metric.giveback.peakFloatingNetPnL.toFixed(2)}.`,
-            severity: 'WARNING',
-            metrics: {
-              PeakMFE: `+${metric.giveback.peakUnrealizedR.toFixed(2)}R`,
-              CurrentR: `${metric.unrealizedR?.toFixed(2) || 0}R`,
-              Retreated: `₹${metric.giveback.givebackAmount.toFixed(2)}`,
-            },
-            progressBar: {
-              label: 'Profit Giveback Surrendered',
-              percent: metric.giveback.givebackPercent,
-            },
-            buttons: [
-              [
-                { text: '🏃 Close Runner Now', callback_data: `exit:${tradeId}` },
-                { text: '🛡️ Trail Stop to BE', callback_data: `lock_be:${tradeId}` },
-              ],
-            ],
-          }).catch(() => {});
-        }
+      TelegramAlertService.dispatchRiskAlert(user, trade, {
+        type: 'STOP_THREAT',
+        severity,
+        metricValue: runwayPct,
+        ltp: metric.currentLtp,
+      }).catch(() => {});
+    }
 
-        // If auto-exit is enabled on giveback leak
-        if (autoExecuteArmed && rules.givebackAutoExit?.enabled && metric.giveback.givebackPercent >= rules.givebackAutoExit.maxGivebackPercent) {
+    // 3. Giveback Anti-Greed Radar Evaluation via Pure State Machine
+    if (metric.giveback) {
+      const gbSeverity = metric.giveback.threatLevel === 'CRITICAL_REVERSAL'
+        ? 2
+        : metric.giveback.threatLevel === 'LEAKING'
+        ? 1
+        : 0;
+
+      TelegramAlertService.dispatchRiskAlert(user, trade, {
+        type: 'GIVEBACK',
+        severity: gbSeverity,
+        metricValue: metric.giveback.givebackPercent,
+        ltp: metric.currentLtp,
+      }).catch(() => {});
+
+      // If auto-exit is enabled on giveback leak
+      if (autoExecuteArmed && rules.givebackAutoExit?.enabled && metric.giveback.givebackPercent >= rules.givebackAutoExit.maxGivebackPercent) {
+        const givebackKey = `giveback_auto:${tradeId}`;
+        if (!this.executedMilestones.has(givebackKey)) {
+          this.executedMilestones.add(givebackKey);
           console.log(`[LiveExecutionWorker] Auto-exiting runner for ${metric.symbol} due to ${metric.giveback.givebackPercent}% profit giveback`);
           await FyersService.executeBrokerExit(user._id, tradeId, {
             exitQty: metric.quantity,

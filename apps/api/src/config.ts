@@ -56,6 +56,10 @@ export const config = {
   // Defaults
   defaultBaseCurrency: process.env.DEFAULT_BASE_CURRENCY || 'INR',
 
+  // Telegram Notifications
+  telegramBotToken: process.env.TELEGRAM_DEFAULT_BOT_TOKEN || process.env.BACKUP_ALERT_TELEGRAM_BOT_TOKEN || '',
+  telegramDefaultBotToken: process.env.TELEGRAM_DEFAULT_BOT_TOKEN || process.env.BACKUP_ALERT_TELEGRAM_BOT_TOKEN || '',
+
   // Off-Site Backup Configuration
   backupS3Endpoint: process.env.BACKUP_S3_ENDPOINT || process.env.S3_ENDPOINT || '',
   backupS3Bucket: process.env.BACKUP_S3_BUCKET || '',

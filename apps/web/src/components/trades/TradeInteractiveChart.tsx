@@ -1219,7 +1219,7 @@ export function TradeInteractiveChart({
                 <img
                   src={api.attachments.resolveAttachmentUrl(latestSavedSnapshot)}
                   alt={`Saved Snapshot (${latestSavedSnapshot.timeframe || 'Auto'})`}
-                  crossOrigin="anonymous"
+                  crossOrigin="use-credentials"
                   style={{ width: '100%', display: 'block' }}
                 />
               </Box>

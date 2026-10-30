@@ -257,6 +257,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     try {
       const stream = await storage.read(attachment.storedFilename);
       reply.header('Content-Type', attachment.mimeType);
+      reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
 
       // Determine downloaded filename extension to match stored mime format (e.g. .png -> .webp)
       let downloadFilename = attachment.originalName;

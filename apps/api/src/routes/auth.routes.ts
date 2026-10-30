@@ -253,6 +253,14 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
+    let sessionToken = req.cookies[SESSION_COOKIE_NAME];
+    if (!sessionToken && req.headers.authorization?.startsWith('Bearer ')) {
+      sessionToken = req.headers.authorization.slice(7);
+    }
+    if (!sessionToken && (req.query as any)?.token && typeof (req.query as any).token === 'string') {
+      sessionToken = (req.query as any).token;
+    }
+
     return reply.send({
       success: true,
       data: {
@@ -267,6 +275,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           liveWatcherSettings: user.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
           createdAt: user.createdAt,
         },
+        token: sessionToken,
       },
     });
   });

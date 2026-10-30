@@ -229,3 +229,6 @@ export function calculateTrueBreakevenPrice(params: {
     feeBufferPoints: Number(feePoints.toFixed(2)),
   };
 }
+
+export const calculateTrueBreakeven = calculateTrueBreakevenPrice;
+

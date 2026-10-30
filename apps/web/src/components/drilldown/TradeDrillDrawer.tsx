@@ -693,7 +693,7 @@ export function TradeDrillDrawer() {
                         <img
                           src={api.attachments.resolveAttachmentUrl(att)}
                           alt={att.title || att.caption || 'Chart Screenshot'}
-                          crossOrigin="anonymous"
+                          crossOrigin="use-credentials"
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
                       </Box>

@@ -6,8 +6,8 @@ This document provides the exhaustive specification for all MongoDB collections 
 
 ## 1. Schema Overview
 
-SetupMint defines 18 core Mongoose models:
-1. `User` — Trader identity, password hash, preferences, and discipline risk guardrails.
+SetupMint defines 22 core Mongoose models:
+1. `User` — Trader identity, password hash, preferences, discipline risk guardrails, and encrypted Telegram push credentials.
 2. `Session` — Stateful authentication tokens with SHA-256 token hashing, sliding renewal, absolute cap, and exact MongoDB TTL expiration (`expireAfterSeconds: 0`).
 3. `TradingAccount` — Segregated multi-broker ledgers with exact `Decimal128` balance fields.
 4. `AccountTransaction` — Capital deposits, withdrawals, transfers, and adjustments.
@@ -25,6 +25,10 @@ SetupMint defines 18 core Mongoose models:
 16. `MarketDataIntegration` — Encrypted credentials, active session tokens, and atomic daily call budget counters for market data fallback providers.
 17. `AngelOneInstrument` — Scrip master catalog for SmartAPI token resolution and fast O(1) indexed lookups.
 18. `WeeklyReview` — Synthesized trading week performance report, focus rule commitments, previous focus evaluations, and immutable frozen snapshots.
+19. `AlertState` — Stateful hysteresis alert tracking for live watcher notifications, version tracking, re-ping and snooze management.
+20. `AlertEvent` — Append-only audit ledger of every alert dispatched, trader actions taken, and execution latency.
+21. `TelegramUpdateAudit` — Deduplication ledger for incoming Telegram bot webhook updates keyed by `update_id` (24h TTL).
+22. `TelegramCallbackLock` — Distributed idempotency lock for inline button callbacks preventing double broker executions (15s TTL).
 
 ---
 
@@ -732,6 +736,86 @@ Stores weekly synthesized trading reports, focus rule commitments for the upcomi
 
 **Compound Indexes:**
 - `{ userId: 1, week: 1, accountId: 1 }` (Unique constraint)
+
+---
+
+### 2.19 AlertState Model (`AlertState.ts`)
+- **Collection Name:** `alertstates`
+- **File:** [`apps/api/src/db/models/AlertState.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/AlertState.ts)
+
+Maintains active hysteresis state snapshots for live watcher alerts to prevent spam, duplicate alerts, and handle in-place Telegram message updates.
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `User` | Owning tenant identifier |
+| `tradeId` | `ObjectId` | No | `null` | Ref: `Trade` | Target trade (null for daily portfolio losses) |
+| `type` | `String` | **Yes** | — | Enum: AlertType | Alert classification (`STOP_THREAT`, `GIVEBACK`, etc.) |
+| `state` | `String` | **Yes** | `'ACTIVE'` | Enum: `['ACTIVE', 'SNOOZED', 'CLEARED', 'RESOLVED']` | Lifecycle state of the alert |
+| `severity` | `Number` | **Yes** | `1` | Min: 0, Max: 3 | Escalation level (0=Info, 1=Attention, 2=Critical, 3=Breached) |
+| `enterCount` | `Number` | **Yes** | `1` | — | Times the threshold condition has been breached |
+| `pingCount` | `Number` | **Yes** | `0` | — | Number of persistent unacknowledged re-pings sent |
+| `firstAt` | `Date` | **Yes** | Now | — | Timestamp of initial breach entry |
+| `lastSentAt` | `Date` | **Yes** | Now | — | Timestamp of most recent alert transmission |
+| `clearedAt` | `Date` | No | — | — | Timestamp when metric recovered past clear threshold |
+| `snoozedUntil`| `Date` | No | — | — | Suppress notifications until this timestamp |
+| `resolvedAt` | `Date` | No | — | TTL Partial Index | Timestamp when trade closed or alert terminated |
+| `chatId` | `String` | No | — | — | Telegram chat recipient ID |
+| `messageId` | `Number` | No | — | — | ID of the in-place live card message in Telegram |
+| `cardVersion`| `Number` | **Yes** | `1` | — | Monotonically increasing version preventing stale callbacks |
+
+**Indexes:**
+- `{ userId: 1, tradeId: 1, type: 1 }` (Unique compound index)
+- `{ resolvedAt: 1 }` (Partial TTL index: `expireAfterSeconds: 604800` where `resolvedAt: { $exists: true }`)
+
+---
+
+### 2.20 AlertEvent Model (`AlertEvent.ts`)
+- **Collection Name:** `alertevents`
+- **File:** [`apps/api/src/db/models/AlertEvent.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/AlertEvent.ts)
+
+Append-only historical audit ledger for analytical evaluation of alert latency, trader response times, and broker action outcomes.
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `userId` | `ObjectId` | **Yes** | — | Ref: `User` | Owning tenant identifier |
+| `tradeId` | `ObjectId` | No | — | Ref: `Trade` | Target trade |
+| `type` | `String` | **Yes** | — | Enum: AlertType | Event classification |
+| `severity` | `Number` | **Yes** | — | — | Severity at time of dispatch |
+| `action` | `String` | **Yes** | — | Enum | Action performed (`SEND_NEW`, `EDIT_SILENT`, etc.) |
+| `sentAt` | `Date` | **Yes** | Now | — | Transmission timestamp |
+| `actedAt` | `Date` | No | — | — | Timestamp when trader clicked action button |
+| `actionTaken`| `String` | No | — | Enum | Action executed (`EXIT`, `LOCK_BE`, `BOOK_50`, `SNOOZE`) |
+| `latencyMs` | `Number` | No | — | — | Milliseconds from trader tap to broker execution completion |
+
+**Compound Indexes:**
+- `{ userId: 1, sentAt: -1 }`
+- `{ userId: 1, tradeId: 1 }`
+
+---
+
+### 2.21 TelegramUpdateAudit Model (`TelegramUpdateAudit.ts`)
+- **Collection Name:** `telegramupdateaudits`
+- **File:** [`apps/api/src/db/models/TelegramUpdateAudit.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/TelegramUpdateAudit.ts)
+
+Ensures exactly-once processing of incoming Telegram Bot API webhook updates.
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `updateId` | `Number` | **Yes** | — | Unique Primary Key | Telegram update ID |
+| `processedAt`| `Date` | **Yes** | Now | TTL Index | Update processing timestamp (TTL: 86400s) |
+
+---
+
+### 2.22 TelegramCallbackLock Model (`TelegramCallbackLock.ts`)
+- **Collection Name:** `telegramcallbacklocks`
+- **File:** [`apps/api/src/db/models/TelegramCallbackLock.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/db/models/TelegramCallbackLock.ts)
+
+Distributed idempotency mutex preventing double-taps on mobile inline buttons from placing duplicate broker orders.
+
+| Field Name | Type | Required | Default | Indexes / Constraints | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `lockKey` | `String` | **Yes** | — | Unique (`${tradeId}:${actionCode}`) | Composite resource lock key |
+| `createdAt` | `Date` | **Yes** | Now | TTL Index | Lock acquisition timestamp (TTL: 15s) |
 
 ---
 

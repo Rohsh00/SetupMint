@@ -25,14 +25,16 @@ export const CANONICAL_COLLECTIONS = [
   'holidaycalendars',
   'commoditymasters',
   'weeklyreviews',
+  'alertevents',
 ];
 
 /**
  * Collections explicitly excluded from backup archives:
  * - 'sessions': Ephemeral user login sessions (30-day sliding cookies), pointless to restore
  *   and containing hashed session tokens.
+ * - 'alertstates', 'telegramupdateaudits', 'telegramcallbacklocks': Ephemeral Telegram alert state and locks.
  */
-export const EXCLUDED_COLLECTIONS = ['sessions'];
+export const EXCLUDED_COLLECTIONS = ['sessions', 'alertstates', 'telegramupdateaudits', 'telegramcallbacklocks'];
 
 /**
  * Critical collections monitored for anomaly detection (suspicious drop checks).

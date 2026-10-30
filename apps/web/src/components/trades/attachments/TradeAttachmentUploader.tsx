@@ -356,7 +356,7 @@ export function TradeAttachmentUploader({
                         component="img"
                         src={api.attachments.resolveAttachmentUrl(att)}
                         alt={att.caption || att.originalName}
-                        crossOrigin="anonymous"
+                        crossOrigin="use-credentials"
                         sx={{
                           width: '100%',
                           height: '100%',

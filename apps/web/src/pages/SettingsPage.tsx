@@ -195,10 +195,13 @@ export function SettingsPage() {
   const [telegramAlertsEnabled, setTelegramAlertsEnabled] = useState(initialWatcher.telegramAlertsEnabled ?? false);
   const [telegramBotToken, setTelegramBotToken] = useState(initialWatcher.telegramBotToken ?? '');
   const [telegramChatId, setTelegramChatId] = useState(initialWatcher.telegramChatId ?? '');
+  const [slippageGuardPercent, setSlippageGuardPercent] = useState<number>(initialWatcher.slippageGuardPercent ?? 0.5);
+  const [snoozeDefaultMin, setSnoozeDefaultMin] = useState<number>(initialWatcher.snoozeDefaultMin ?? 10);
   const [hardDisciplineLockoutEnabled, setHardDisciplineLockoutEnabled] = useState(initialWatcher.hardDisciplineLockoutEnabled ?? false);
   const [hardDisciplineLockoutDurationMins, setHardDisciplineLockoutDurationMins] = useState(initialWatcher.hardDisciplineLockoutDurationMins ?? 60);
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
+  const [sendingSampleAlert, setSendingSampleAlert] = useState(false);
   const [telegramAlertEvents, setTelegramAlertEvents] = useState({
     stopThreatCritical: true,
     givebackLeaking: true,
@@ -249,6 +252,8 @@ export function SettingsPage() {
       setTelegramAlertsEnabled(s.telegramAlertsEnabled ?? false);
       setTelegramBotToken(s.telegramBotToken ?? '');
       setTelegramChatId(s.telegramChatId ?? '');
+      setSlippageGuardPercent(s.slippageGuardPercent ?? 0.5);
+      setSnoozeDefaultMin(s.snoozeDefaultMin ?? 10);
       setHardDisciplineLockoutEnabled(s.hardDisciplineLockoutEnabled ?? false);
       setHardDisciplineLockoutDurationMins(s.hardDisciplineLockoutDurationMins ?? 60);
       if (s.telegramAlertEvents) {
@@ -421,6 +426,22 @@ export function SettingsPage() {
     }
   };
 
+  const handleSendSampleAlert = async () => {
+    setSendingSampleAlert(true);
+    try {
+      const res = await api.settings.sampleTelegramAlert();
+      if (res.success) {
+        toast.success(res.message || 'Sample CRITICAL terminal card alert dispatched to Telegram!');
+      } else {
+        toast.error(res.message || 'Failed to dispatch sample alert.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error dispatching sample alert');
+    } finally {
+      setSendingSampleAlert(false);
+    }
+  };
+
   const handleWatcherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload: ILiveWatcherSettings = {
@@ -456,6 +477,8 @@ export function SettingsPage() {
       telegramBotToken,
       telegramChatId,
       telegramAlertEvents,
+      slippageGuardPercent: Number(slippageGuardPercent),
+      snoozeDefaultMin: Number(snoozeDefaultMin),
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
     };
@@ -1624,7 +1647,7 @@ export function SettingsPage() {
                                 />
                               </Grid>
                               <Grid size={{ xs: 12, md: 3 }}>
-                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                                   <Button
                                     variant="outlined"
                                     color="info"
@@ -1634,6 +1657,17 @@ export function SettingsPage() {
                                     sx={{ fontWeight: 700, flex: 1, whiteSpace: 'nowrap' }}
                                   >
                                     {testingTelegram ? 'Testing...' : 'Test Link'}
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    color="warning"
+                                    size="small"
+                                    onClick={handleSendSampleAlert}
+                                    disabled={sendingSampleAlert || !telegramBotToken || !telegramChatId}
+                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                    title="Dispatches a realistic formatted risk telemetry card to Telegram"
+                                  >
+                                    {sendingSampleAlert ? 'Sending...' : 'Sample Alert'}
                                   </Button>
                                   <Button
                                     variant="outlined"
@@ -1647,6 +1681,33 @@ export function SettingsPage() {
                                     {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
                                   </Button>
                                 </Box>
+                              </Grid>
+                            </Grid>
+
+                            <Grid container spacing={2} sx={{ mt: 1 }}>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  size="small"
+                                  label="Slippage Guard Threshold (%)"
+                                  type="number"
+                                  slotProps={{ htmlInput: { step: 0.1, min: 0.1, max: 5 } }}
+                                  value={slippageGuardPercent}
+                                  onChange={(e) => setSlippageGuardPercent(Number(e.target.value))}
+                                  helperText="Requires 2nd tap confirm if market moves beyond this % from rendered price"
+                                  fullWidth
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  size="small"
+                                  label="Default Button Snooze Duration (min)"
+                                  type="number"
+                                  slotProps={{ htmlInput: { step: 1, min: 1, max: 120 } }}
+                                  value={snoozeDefaultMin}
+                                  onChange={(e) => setSnoozeDefaultMin(Number(e.target.value))}
+                                  helperText="Minutes to suppress alerts when tapping 💤 Snooze on a live card"
+                                  fullWidth
+                                />
                               </Grid>
                             </Grid>
 

@@ -118,7 +118,17 @@ const UserSchema = new Schema<IUserDoc>(
       hardDisciplineLockoutDurationMins: { type: Number, default: 60 },
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (_doc, ret: any) => {
+        if (ret.liveWatcherSettings?.telegramBotToken) {
+          delete ret.liveWatcherSettings.telegramBotToken;
+        }
+        return ret;
+      },
+    },
+  }
 );
 
 export const User = mongoose.model<IUserDoc>('User', UserSchema);

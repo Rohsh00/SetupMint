@@ -91,7 +91,7 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 export const api = {
   // Auth & Session Management
   auth: {
-    me: () => request<{ user: any }>('/auth/me'),
+    me: () => request<{ user: any; token?: string }>('/auth/me'),
     login: (credentials: any) =>
       request<{ user: any; token: string }>('/auth/login', {
         method: 'POST',
@@ -659,6 +659,8 @@ export const api = {
       request<any>('/settings/test-telegram', { method: 'POST', body: JSON.stringify(data) }),
     registerTelegramWebhook: (data: { botToken: string; webhookUrl: string }) =>
       request<any>('/settings/register-telegram-webhook', { method: 'POST', body: JSON.stringify(data) }),
+    sampleTelegramAlert: () =>
+      request<any>('/settings/sample-alert', { method: 'POST' }),
   },
 
   // Review Queue & Mistake Detection

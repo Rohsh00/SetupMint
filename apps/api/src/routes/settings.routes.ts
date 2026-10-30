@@ -1,10 +1,21 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { DEFAULT_PATTERN_DETECTION_SETTINGS, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
 import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { BackupStatusService } from '../services/backup-status.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
+import { encryptSecret, decryptSecret } from '../services/crypto.service.js';
+
+function maskLiveWatcherSettings(settings: any) {
+  if (!settings) return DEFAULT_LIVE_WATCHER_SETTINGS;
+  const s = typeof settings.toObject === 'function' ? settings.toObject() : { ...settings };
+  if (s.telegramBotToken) {
+    s.telegramBotToken = '••••••••';
+  }
+  return s;
+}
 
 export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -26,7 +37,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         theme: user.theme,
         riskSettings: user.riskSettings,
         patternDetectionSettings: user.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
-        liveWatcherSettings: user.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
+        liveWatcherSettings: maskLiveWatcherSettings(user.liveWatcherSettings),
       },
     });
   });
@@ -98,9 +109,17 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         paperExecutionMode: liveWatcherSettings.paperExecutionMode !== undefined ? Boolean(liveWatcherSettings.paperExecutionMode) : DEFAULT_LIVE_WATCHER_SETTINGS.paperExecutionMode,
         serverSideExecutionEnabled: liveWatcherSettings.serverSideExecutionEnabled !== undefined ? Boolean(liveWatcherSettings.serverSideExecutionEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.serverSideExecutionEnabled,
         telegramAlertsEnabled: liveWatcherSettings.telegramAlertsEnabled !== undefined ? Boolean(liveWatcherSettings.telegramAlertsEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertsEnabled,
-        telegramBotToken: liveWatcherSettings.telegramBotToken !== undefined ? String(liveWatcherSettings.telegramBotToken).trim() : undefined,
+        telegramBotToken: liveWatcherSettings.telegramBotToken !== undefined
+          ? (String(liveWatcherSettings.telegramBotToken).startsWith('••') || String(liveWatcherSettings.telegramBotToken).startsWith('**')
+              ? (await User.findById(req.user!.id))?.liveWatcherSettings?.telegramBotToken
+              : (String(liveWatcherSettings.telegramBotToken).trim() ? encryptSecret(String(liveWatcherSettings.telegramBotToken).trim()) || undefined : undefined))
+          : undefined,
         telegramChatId: liveWatcherSettings.telegramChatId !== undefined ? String(liveWatcherSettings.telegramChatId).trim() : undefined,
         telegramAlertEvents: liveWatcherSettings.telegramAlertEvents || DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents,
+        slippageGuardPercent: liveWatcherSettings.slippageGuardPercent !== undefined ? Number(liveWatcherSettings.slippageGuardPercent) : 0.5,
+        snoozeDefaultMin: liveWatcherSettings.snoozeDefaultMin !== undefined ? Number(liveWatcherSettings.snoozeDefaultMin) : 10,
+        quietHours: liveWatcherSettings.quietHours || DEFAULT_LIVE_WATCHER_SETTINGS.quietHours,
+        telegramAlertPolicies: liveWatcherSettings.telegramAlertPolicies || {},
         hardDisciplineLockoutEnabled: liveWatcherSettings.hardDisciplineLockoutEnabled !== undefined ? Boolean(liveWatcherSettings.hardDisciplineLockoutEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutEnabled,
         hardDisciplineLockoutDurationMins: liveWatcherSettings.hardDisciplineLockoutDurationMins !== undefined ? Number(liveWatcherSettings.hardDisciplineLockoutDurationMins) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutDurationMins,
       };
@@ -118,7 +137,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         theme: user!.theme,
         riskSettings: user!.riskSettings,
         patternDetectionSettings: user!.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
-        liveWatcherSettings: user!.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
+        liveWatcherSettings: maskLiveWatcherSettings(user!.liveWatcherSettings),
       },
     });
   });
@@ -162,7 +181,16 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
   // Test Telegram Push Alert Connection
   app.post('/test-telegram', async (req: any, reply) => {
-    const { botToken, chatId } = req.body || {};
+    let { botToken, chatId } = req.body || {};
+    const user = await User.findById(req.user!.id);
+
+    if ((!botToken || botToken.startsWith('••') || botToken.startsWith('**')) && user?.liveWatcherSettings?.telegramBotToken) {
+      botToken = decryptSecret(user.liveWatcherSettings.telegramBotToken) || user.liveWatcherSettings.telegramBotToken;
+    }
+    if (!chatId && user?.liveWatcherSettings?.telegramChatId) {
+      chatId = user.liveWatcherSettings.telegramChatId;
+    }
+
     if (!botToken || !chatId) {
       return reply.status(400).send({
         success: false,
@@ -183,7 +211,13 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
   // Register Telegram Webhook URL for interactive buttons and two-way commands
   app.post('/register-telegram-webhook', async (req: any, reply) => {
-    const { botToken, webhookUrl } = req.body || {};
+    let { botToken, webhookUrl } = req.body || {};
+    const user = await User.findById(req.user!.id);
+
+    if ((!botToken || botToken.startsWith('••') || botToken.startsWith('**')) && user?.liveWatcherSettings?.telegramBotToken) {
+      botToken = decryptSecret(user.liveWatcherSettings.telegramBotToken) || user.liveWatcherSettings.telegramBotToken;
+    }
+
     if (!botToken || !webhookUrl) {
       return reply.status(400).send({
         success: false,
@@ -200,6 +234,52 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     return reply.send({ success: true, message: res.message });
+  });
+
+  // Send sample formatted terminal alert to Telegram
+  app.post('/sample-alert', async (req: any, reply) => {
+    const user = await User.findById(req.user!.id);
+    const settings = user?.liveWatcherSettings;
+    const botToken = settings?.telegramBotToken ? decryptSecret(settings.telegramBotToken) : null;
+    const chatId = settings?.telegramChatId;
+
+    if (!botToken || !chatId) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'NOT_CONFIGURED', message: 'Telegram Bot Token and Chat ID must be saved first' },
+      });
+    }
+
+    const sampleTrade = {
+      _id: new mongoose.Types.ObjectId(),
+      symbol: 'NIFTY 24500 CE',
+      direction: 'LONG',
+      entryPrice: 122.30,
+      quantity: 50,
+      contractMultiplier: 1,
+      assetClass: 'OPTIONS',
+      risk: {
+        initialStopLoss: 118.00,
+        currentStopLoss: 118.00,
+        plannedTarget: 130.00,
+      },
+      calculated: {
+        liveMfeSummary: { peakUnrealizedR: 0.40, peakTimestamp: new Date(Date.now() - 11 * 60000) },
+        trueBreakevenPrice: 122.95,
+      },
+    };
+
+    const sent = await TelegramAlertService.dispatchRiskAlert(user, sampleTrade, {
+      type: 'STOP_THREAT',
+      severity: 2, // CRITICAL
+      metricValue: 24, // 24% runway remaining
+      ltp: 121.40,
+    });
+
+    return reply.send({
+      success: sent,
+      message: sent ? 'Sample CRITICAL terminal card alert dispatched to Telegram!' : 'Sample alert suppressed or delivery failed',
+    });
   });
 
   // Get system statistics for settings overview

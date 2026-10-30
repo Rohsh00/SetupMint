@@ -132,8 +132,8 @@ BACKUP_ALERT_TELEGRAM_CHAT_ID=
 
 1. **Production Session Secret Validation:**
    `apps/api/src/config.ts` exports `validateConfig()` executed on startup in `buildApp()`. When `NODE_ENV === 'production'`, the server verifies `SESSION_SECRET` is set, is not the development fallback string, and contains at least 32 characters. Missing or weak secrets trigger an immediate exit (`process.exit(1)`).
-2. **Broker Token Encryption Validation:**
-   In production, `validateConfig()` also requires `TOKEN_ENCRYPTION_KEY` to be set, non-default, and at least 32 characters. It also validates that `FYERS_FUNDS_DRIFT_TOLERANCE` is non-negative.
+2. **Broker & Telegram Token Encryption Validation:**
+   In production, `validateConfig()` also requires `TOKEN_ENCRYPTION_KEY` to be set, non-default, and at least 32 characters. It encrypts FYERS/Angel One credentials and per-user Telegram bot tokens at rest using AES-256-GCM (`enc:v1:`). It also validates that `FYERS_FUNDS_DRIFT_TOLERANCE` is non-negative. Deterministic webhook secrets for Telegram Bot API verification (`x-telegram-bot-api-secret-token`) are derived from `APP_SECRET`.
 3. **MongoDB Atlas Enforced:**
    `apps/api/src/db/connection.ts` validates that `MONGODB_URI` starts with `mongodb+srv://` or contains `.mongodb.net`. If missing or invalid, the server throws immediately. On network connection failure, only the host is logged and the process terminates non-zero.
 4. **Cloudflare R2 Enforced:**

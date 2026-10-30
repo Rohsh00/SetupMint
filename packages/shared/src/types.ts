@@ -1779,6 +1779,14 @@ export interface ILiveWatcherSettings {
   };
   lastDailyLossAlertDate?: string;
   lastDailyLossWarnDate?: string;
+  slippageGuardPercent?: number; // e.g. 0.5% max price deviation before confirmation
+  snoozeDefaultMin?: number; // e.g. 10 minutes
+  quietHours?: {
+    enabled: boolean;
+    start: string; // "23:00"
+    end: string; // "07:00"
+  };
+  telegramAlertPolicies?: Record<string, any>;
   hardDisciplineLockoutEnabled: boolean;
   hardDisciplineLockoutDurationMins: number;
 }
@@ -1813,6 +1821,13 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   paperExecutionMode: false,
   serverSideExecutionEnabled: true,
   telegramAlertsEnabled: false,
+  slippageGuardPercent: 0.5,
+  snoozeDefaultMin: 10,
+  quietHours: {
+    enabled: false,
+    start: '23:00',
+    end: '07:00',
+  },
   telegramAlertEvents: {
     stopThreatCritical: true,
     givebackLeaking: true,

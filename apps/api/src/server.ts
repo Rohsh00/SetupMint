@@ -81,6 +81,14 @@ export async function buildApp() {
         'x-macaddress',
         'x-clientlocalip',
         'x-clientpublicip',
+        'telegramBotToken',
+        'req.body.telegramBotToken',
+        'botToken',
+        'req.body.botToken',
+        'x-telegram-bot-api-secret-token',
+        'req.headers["x-telegram-bot-api-secret-token"]',
+        'secret_token',
+        'req.body.secret_token',
       ],
       transport: config.isDev
         ? {
@@ -94,6 +102,7 @@ export async function buildApp() {
   // Security Headers
   await app.register(helmet, {
     contentSecurityPolicy: false, // Allows flexible dashboard assets
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
 
   // CORS (supports comma-separated origins, production domains, and local dev)

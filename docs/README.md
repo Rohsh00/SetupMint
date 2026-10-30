@@ -23,6 +23,7 @@ This directory serves as the single source of truth for traders, software engine
 | [**BUSINESS_LOGIC.md**](BUSINESS_LOGIC.md) | Domain rules governing accounts, trades, emotions, mistake tags, and trade journals. | Domain Engineers |
 | [**TRADING_CALCULATIONS.md**](TRADING_CALCULATIONS.md) | Mathematical formulas and decimal implementations (P&L, FIFO lot matching, Indian charges, risk). | Quant & Financial Eng |
 | [**BROKER_INTEGRATIONS.md**](BROKER_INTEGRATIONS.md) | Broker adapter architecture, FYERS integration model, normalized schema, and reconciliation. | Integrations |
+| [**TELEGRAM_INTEGRATION.md**](TELEGRAM_INTEGRATION.md) | Two-way Telegram bot, mobile execution callbacks (1-tap Exit, Lock BE), and real-time risk push alerts. | Integrations & Mobile |
 | [**SEED_DATA_AND_DEMO_MODE.md**](SEED_DATA_AND_DEMO_MODE.md) | The SetupMint Seed Engine: 8 demo profiles, 5 densities, PRNG determinism, and validator. | QA & Demo Ops |
 | [**AUTHENTICATION_AND_SECURITY.md**](AUTHENTICATION_AND_SECURITY.md) | HttpOnly cookies, sessions, rate limiting, Helmet, ownership enforcement, and magic bytes. | Security Engineers |
 | [**FILE_STORAGE_AND_ATTACHMENTS.md**](FILE_STORAGE_AND_ATTACHMENTS.md) | Cloudflare R2 private bucket storage, security, authenticated streaming, and chart categories. | Backend Developers |

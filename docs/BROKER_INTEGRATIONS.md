@@ -12,6 +12,7 @@ SetupMint remains local-first:
 2. Tokens are never sent to the browser, embedded in trades, logged, or returned by API routes.
 3. Broker data never directly overwrites authoritative journal balances.
 4. Broker balances create a `PENDING_REVIEW` adjustment that the trader must confirm or reject.
+5. Mobile Execution Bridge: Two-way broker executions (1-tap Market Exit, Lock True BE, Book 50%) can be dispatched directly from mobile Telegram button callbacks through encrypted user mappings. See [**`TELEGRAM_INTEGRATION.md`**](TELEGRAM_INTEGRATION.md).
 
 The live integration is disabled unless it is explicitly configured and authorized. CSV import remains available without any broker API connection.
 

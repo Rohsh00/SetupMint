@@ -613,5 +613,31 @@ This document provides a comprehensive, verified feature inventory of all module
     4. **High-Probability Expiry Scalping:** 0DTE gamma scalp targeting Open Interest walls with strict time stops.
   - **Automated Seeding CLI:** Standalone script `npx tsx apps/api/src/scripts/seed-komal-strategies.ts` creating strategies, variants, confluences, entry/exit criteria, and psychological checklists idempotently.
 
+---
+
+### Module 19: Two-Way Telegram Bot & Real-Time Risk Push Alerts
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** Traders cannot sit in front of browser charts all day. When away from the desk, high-risk events (critical stop threats, runaway givebacks, naked positions, daily loss breaches) require instantaneous audible alerts and emergency 1-tap mobile execution without needing to open or log in to a browser.
+- **Key Capabilities:**
+  - **Two-Way Interactive Telegram Webhook:** Dedicated webhook receiver (`POST /api/v1/integrations/telegram/webhook`) routing Telegram updates to `TelegramAlertService`.
+  - **Interactive Inline Buttons with Live Broker Execution:**
+    - `🚨 Market Exit` (`exit:<tradeId>`): Instantly closes the trade at market on FYERS and updates the message in-place.
+    - `🛡️ Lock True BE` (`lock_be:<tradeId>`): Trails the resting stop loss order to the exact breakeven price covering all statutory charges.
+    - `🎯 Book 50%` (`book_50:<tradeId>`): Books half the position and moves the remaining stop to breakeven.
+    - `🛑 Emergency Killswitch` (`panic_prompt` / `confirm_panic`): Two-tap fail-safe flattening all open positions on the broker.
+  - **Mobile Chat Commands:**
+    - `/pnl`: Live floating Gross/Net P&L, unrealized R-multiple, fees, realized today, and total day P&L monospace card.
+    - `/trades`: Detailed breakdown of active open trades with current LTP, distance to SL, exposure, and action buttons.
+    - `/summary`: Today's session performance digest (W/L ratio, win rate %, net P&L, harvested R).
+    - `/panic`: Emergency killswitch request.
+    - `/help`: Command documentation.
+  - **9 Configurable Alert Categories:** Selectable via Settings UI (`stopThreatCritical`, `givebackLeaking`, `ladderMilestoneReached`, `dailyLossBreached`, `nakedPositionWarning`, `tokenExpiryWarning`, `tradeOpened`, `tradeClosed`, `eodSummaryDigest`).
+  - **Audible & Monospace Layout:** Strictly audible mobile notifications (`disable_notification: false`), monospace aligned tables, and visual ASCII progress bars (`[████████░░] 80%`).
+- **Frontend & Backend Components:**
+  - Backend API: `telegram-alert.service.ts`, `integrations.routes.ts`, `settings.routes.ts`, `live-execution-worker.service.ts`.
+  - Frontend: [`SettingsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/SettingsPage.tsx) (Telegram Bot Token, Chat ID, event toggles, Test Link, and Webhook Registration).
+  - Documentation: [**`docs/TELEGRAM_INTEGRATION.md`**](file:///Users/komal/projects/Trading%20Vault/docs/TELEGRAM_INTEGRATION.md).
+
+
 
 

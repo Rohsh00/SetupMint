@@ -124,6 +124,7 @@ BACKUP_ALERT_TELEGRAM_CHAT_ID=
 | `BACKUP_MAX_DROP_PERCENT` | No | `10` | Percentage drop in records triggering `SUSPICIOUS` status. | Prevents corrupted/emptied runs from rotating good backups. |
 | `BACKUP_ALERT_TELEGRAM_BOT_TOKEN` | No | None (Disabled) | Optional Telegram bot token for failure alerts. | Only sends status on `FAILED` or `SUSPICIOUS`. |
 | `BACKUP_ALERT_TELEGRAM_CHAT_ID` | No | None (Disabled) | Optional Telegram chat ID receiving failure alerts. | Never transmits raw trading data. |
+| `TELEGRAM_DEFAULT_BOT_TOKEN` | No | None (Disabled) | Optional system-level fallback bot token for unlinked `/start` onboard replies. | Primary bot tokens are configured per-user in UI Settings. |
 
 ---
 

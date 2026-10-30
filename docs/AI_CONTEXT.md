@@ -24,6 +24,7 @@
   4. Psychology & Discipline Tracking (quantifying monetary losses from revenge trading, overtrading, moving stop losses, and position sizing violations).
   5. Quantitative Strategy Playbooks measuring real statistical win rates and profit factors.
   6. Data Portability: CSV/JSON export and interactive CSV import with auto-column mapping.
+  7. Real-Time Risk Surveillance & Two-Way Telegram Bot: Off-screen mobile push alerts, interactive inline execution buttons (1-tap Exit, Lock BE, Book 50%), and mobile chat commands (`/pnl`, `/trades`, `/summary`, `/panic`).
 
 ---
 
@@ -51,7 +52,7 @@ Trading Vault/
 │   │   ├── db/connection.ts       # Multi-stage MongoDB connection manager
 │   │   ├── db/models/             # Mongoose models (User, Trade, TradingAccount, etc.)
 │   │   ├── routes/                # 15 REST API routes (/auth, /trades, /templates, /review, etc.)
-│   │   ├── services/              # account.service.ts, fyers.service.ts, live-watcher.service.ts
+│   │   ├── services/              # account.service.ts, fyers.service.ts, live-watcher.service.ts, telegram-alert.service.ts
 │   │   ├── seed/                  # SetupMint Seed Engine (8 profiles, PRNG, validator)
 │   │   └── scripts/               # seed.ts, reset-demo.ts, validate-seed.ts, seed-komal-strategies.ts
 │   └── web/src/

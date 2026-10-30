@@ -1057,10 +1057,15 @@ The Instruments endpoint returns ONLY instruments the authenticated user has act
 ## 12. Settings & Integrations
 
 ### Settings (`/api/v1/settings`)
-- `GET /api/v1/settings/profile` — Return user profile including base currency, theme, `riskSettings`, and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides`).
-- `PUT /api/v1/settings/profile` — Update name, base currency, theme, `riskSettings` (`maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`), and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides: [{ symbol, htf, ltf, preferredStrategyId?, preferredStrategyName? }]`).
+- `GET /api/v1/settings/profile` — Return user profile including base currency, theme, `riskSettings`, `liveWatcherSettings` (including Telegram configuration), and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides`).
+- `PUT /api/v1/settings/profile` — Update name, base currency, theme, `riskSettings` (`maxDailyLoss`, `maxDailyTrades`, `maxOpenTrades`, `maxRiskPerTradePercent`, `revengeTradingMinutes`), `liveWatcherSettings` (`telegramAlertsEnabled`, `telegramBotToken`, `telegramChatId`, `telegramAlertEvents`), and `patternDetectionSettings` (`defaultHtf`, `defaultLtf`, `autoDetectOnImport`, `autoDetectMistakes`, `instrumentOverrides: [{ symbol, htf, ltf, preferredStrategyId?, preferredStrategyName? }]`).
 - `POST /api/v1/settings/change-password` — Change password (`currentPassword`, `newPassword`).
+- `POST /api/v1/settings/test-telegram` — Send rich verification test card to configured Telegram bot and chat ID (`{ botToken, chatId }`).
+- `POST /api/v1/settings/register-telegram-webhook` — Register Telegram webhook URL with Telegram Bot API (`{ botToken, webhookUrl }`).
 - `GET /api/v1/settings/system-status` — Return total trade count, account count, attachment count, database type, version, and automated backup status (`backup: { configured: boolean, lastRunAt?: string, lastSuccessAt?: string, result?: 'OK' | 'FAILED' | 'SUSPICIOUS', uploadedKey?: string, sizeBytes?: number, error?: string }`). Backup status is read from the secondary off-site bucket's `status/latest.json` through a cached (5-minute TTL) read-only service without exposing credentials or keys.
+
+### Telegram Webhook Integration (`/api/v1/integrations/telegram`)
+- `POST /api/v1/integrations/telegram/webhook` — Public webhook receiver for Telegram Bot updates. Processes inline action button callbacks (`exit:<tradeId>`, `lock_be:<tradeId>`, `book_50:<tradeId>`, `panic_prompt`, `confirm_panic`) and two-way chat commands (`/pnl`, `/trades`, `/summary`, `/panic`, `/start`, `/help`). Automatically maps `chatId` to the authenticated trader and dispatches live order modifications/exits directly to FYERS. Always returns `200 OK` `{ ok: true }` to Telegram.
 
 ### Broker Integrations (`/api/v1/integrations`)
 - `GET /api/v1/integrations/fyers/status` — Return connection status (`DISABLED`/`IDLE`), App ID, client ID, token expiry, funds sync status/error, callback `redirectUri`, and architecture capabilities. Secrets/tokens are never returned.

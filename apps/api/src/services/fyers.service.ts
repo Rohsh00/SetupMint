@@ -12,6 +12,7 @@ import {
   AccountTransaction,
   TradeCandleSnapshot,
 } from '../db/models/index.js';
+import { TelegramAlertService } from './telegram-alert.service.js';
 import {
   calculateFIFOExecution,
   calculateIndianCharges,
@@ -1553,6 +1554,20 @@ export class FyersService {
         try {
           await this.backfillSingleClosedTrade(tId, uId, { normalizedOrders });
           backfilledClosedTradesCount++;
+
+          // Send Telegram Trade Closed notification
+          const closedDoc = await Trade.findById(tId).lean();
+          if (closedDoc && closedDoc.calculated) {
+            const userDoc = await User.findById(uId).lean();
+            if (userDoc) {
+              TelegramAlertService.notifyTradeClosed(userDoc, closedDoc, {
+                netPnL: closedDoc.calculated.netPnL || 0,
+                realizedR: closedDoc.calculated.realizedRMultiple,
+                exitPrice: closedDoc.calculated.averageExitPrice || 0,
+                exitReason: 'FYERS Broker Exit',
+              }).catch(() => {});
+            }
+          }
         } catch (err: any) {
           console.warn(`[FYERS Sync] Auto-backfill failed for closed trade ${tId}:`, err?.message || err);
         }

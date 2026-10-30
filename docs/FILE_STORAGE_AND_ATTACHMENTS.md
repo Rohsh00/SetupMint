@@ -198,7 +198,7 @@ SetupMint includes an automated server-side SVG chart generator (`ChartGenerator
 
 ---
 
-## 8. Authenticated Image Streaming
+## 8. Authenticated Image Streaming & Cross-Origin Resolution
 
 Attachments are **not** served as public static assets. Instead, streaming is guarded by session authentication:
 
@@ -206,6 +206,12 @@ Attachments are **not** served as public static assets. Instead, streaming is gu
   - `GET /api/v1/attachments/:id/download`
   - `GET /api/v1/attachments/:id/stream`
 - **Ownership Check:** Queries `Attachment.findOne({ _id: req.params.id, userId: req.user.id })`. An unauthenticated request yields 401, while another user's attachment yields 404.
+- **Cross-Origin Client Resolution (`resolveAttachmentUrl`):**
+  - In production deployments where the SPA resides on a separate domain (e.g. `setupmint.onrender.com`) from the API backend (`setupmint-api.onrender.com`), standard `<img>` tags cannot transmit custom headers (`Authorization: Bearer <token>`) and cross-site cookies are blocked by modern browser privacy controls.
+  - The client utility [`api.attachments.resolveAttachmentUrl`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/lib/api.ts) automatically resolves relative `/api/v1/...` download paths to the configured `BASE_URL` and appends `?token=<rawToken>` from `localStorage.getItem('tv_token')`.
+  - Local staged blob/data URIs (`blob:`, `data:`) pass through unaltered.
+- **Backend Query Token Support (`requireAuth`):**
+  - Fastify's authentication middleware extracts the raw token from the `?token=` query parameter if neither `tv_session` cookies nor `Authorization: Bearer` headers are present, permitting secure streaming in native `<img>` elements and download anchors.
 - **Response Headers:**
   ```http
   Content-Type: image/webp

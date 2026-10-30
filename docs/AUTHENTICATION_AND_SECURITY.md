@@ -28,8 +28,12 @@ graph TD
   - When threshold is crossed, `expiresAt = Math.min(now + 90 days, absoluteExpiresAt)`, `lastUsedAt = now`, and a fresh `Set-Cookie` header is issued to the client with the updated `maxAge` and `expires`.
 - **Exact MongoDB TTL Deletion:** The Session model uses `{ expiresAt: 1 }, { expireAfterSeconds: 0 }` so MongoDB background threads purge expired sessions cleanly at `expiresAt`.
 
-### 1.2 Hashed Token Storage (`tokenHash`)
-- **Zero Raw Tokens in DB:** The database stores only the SHA-256 hex digest (`tokenHash`) of the 64-character random hex token. The raw token exists exclusively on the client in the `tv_session` HttpOnly cookie or the `Authorization: Bearer` header.
+### 1.2 Hashed Token Storage (`tokenHash`) & Multi-Channel Authentication
+- **Zero Raw Tokens in DB:** The database stores only the SHA-256 hex digest (`tokenHash`) of the 64-character random hex token. The raw token exists exclusively on the client.
+- **Triple Token Ingestion Channels (`requireAuth`):**
+  1. **`tv_session` HttpOnly Cookie:** Primary channel for same-origin browser interactions.
+  2. **`Authorization: Bearer <token>` Header:** Primary channel for decoupled cross-origin frontend hosting (e.g. `setupmint.onrender.com` SPA calling `setupmint-api.onrender.com`).
+  3. **`?token=<rawToken>` Query Parameter:** Dedicated secure fallback for streaming media, HTML `<img>` tags, and direct file export/download anchors (`/download`, `/stream`, `/export/csv`, `/export/json`) where browsers cannot transmit custom request headers.
 - **Lookup Process:** Incoming requests compute `crypto.createHash('sha256').update(rawToken).digest('hex')` and look up `{ tokenHash }`.
 - **Seamless Migration (Option A):** If a session is not found by `tokenHash`, the authentication layer falls back to querying the legacy plaintext `{ token }` field. On first access, it generates the `tokenHash`, populates `absoluteExpiresAt`, unsets the plaintext `token`, and saves the document.
 

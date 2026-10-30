@@ -947,7 +947,7 @@ Authentication is handled via stateful sessions:
 
 ### `GET /api/v1/attachments/:id/download` & `GET /api/v1/attachments/:id/stream`
 - **Purpose:** Authenticated streaming of private chart image.
-- **Auth:** **Required** (enforces tenant ownership).
+- **Auth:** **Required** (enforces tenant ownership; accepts session cookie, `Authorization: Bearer <token>`, or `?token=<rawToken>` query parameter for cross-origin browser `<img>` embedding).
 - **Responses:** `200 OK` (streams binary file with inline content-disposition; `Content-Type` matches stored format, e.g. `image/webp`), `404 NOT_FOUND`.
 
 ### `PUT /api/v1/attachments/:id`
@@ -964,14 +964,14 @@ Authentication is handled via stateful sessions:
 
 ### `GET /api/v1/export/csv`
 - **Purpose:** Stream CSV export of trades.
-- **Auth:** **Required**.
-- **Query Parameters:** `accountId`, `startDate`, `endDate`.
+- **Auth:** **Required** (accepts session cookie, `Authorization: Bearer <token>`, or `?token=<rawToken>` query parameter for direct browser anchor downloads).
+- **Query Parameters:** `accountId`, `startDate`, `endDate`, `token` (optional auth query parameter).
 - **Response:** Content-Type `text/csv`, attachment filename `tradevault-export-<date>.csv`.
 
 ### `GET /api/v1/export/json`
 - **Purpose:** Download full JSON backup of trade documents with optional date range and account filtering.
-- **Auth:** **Required**.
-- **Query Parameters:** `accountId` (optional), `startDate` (optional `YYYY-MM-DD`), `endDate` (optional `YYYY-MM-DD`). Inclusive session date filtering via `tradeDate`.
+- **Auth:** **Required** (accepts session cookie, `Authorization: Bearer <token>`, or `?token=<rawToken>` query parameter for direct browser anchor downloads).
+- **Query Parameters:** `accountId` (optional), `startDate` (optional `YYYY-MM-DD`), `endDate` (optional `YYYY-MM-DD`), `token` (optional auth query parameter). Inclusive session date filtering via `tradeDate`.
 - **Response:** Content-Type `application/json`, attachment filename `tradevault-export-<date>.json`.
 
 ### `POST /api/v1/export/import/preview`

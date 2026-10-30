@@ -10,8 +10,29 @@ import { config } from '../config.js';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-function buildFrontendRedirect(searchParams: Record<string, string>): string {
-  const base = config.webAppUrl.replace(/\/$/, '');
+function getEffectiveFyersRedirectUri(req: any): string {
+  if (process.env.FYERS_REDIRECT_URI) {
+    return process.env.FYERS_REDIRECT_URI;
+  }
+  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
+  const proto = req?.headers?.['x-forwarded-proto'] || (host?.includes('localhost') || host?.includes('127.0.0.1') ? 'http' : 'https');
+  if (host && (host.includes('onrender.com') || host.includes('setupmint-api'))) {
+    return `https://${host}/api/v1/integrations/fyers/callback`;
+  }
+  return config.fyersRedirectUri;
+}
+
+function buildFrontendRedirect(req: any, searchParams: Record<string, string>): string {
+  let base = config.webAppUrl.replace(/\/$/, '');
+  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
+  const origin = req?.headers?.origin || req?.headers?.referer;
+  
+  if (origin && (origin.includes('setupmint.onrender.com') || origin.includes('onrender.com'))) {
+    base = 'https://setupmint.onrender.com';
+  } else if (host && host.includes('onrender.com')) {
+    base = 'https://setupmint.onrender.com';
+  }
+
   const url = new URL(`${base}/settings`);
   for (const [key, value] of Object.entries(searchParams)) {
     url.searchParams.set(key, value);
@@ -39,7 +60,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     if (!code) {
       return reply.redirect(
-        buildFrontendRedirect({
+        buildFrontendRedirect(req, {
           fyers: 'error',
           message: 'No valid auth_code received from FYERS',
         })
@@ -48,7 +69,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     if (!state) {
       return reply.redirect(
-        buildFrontendRedirect({ fyers: 'error', message: 'Missing OAuth state' })
+        buildFrontendRedirect(req, { fyers: 'error', message: 'Missing OAuth state' })
       );
     }
 
@@ -62,7 +83,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
       if (!integration || !integration.appId || !integration.secretKey) {
         return reply.redirect(
-          buildFrontendRedirect({
+          buildFrontendRedirect(req, {
             fyers: 'error',
             message: 'OAuth state expired or app credentials are missing',
           })
@@ -93,11 +114,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
 
       return reply.redirect(
-        buildFrontendRedirect({ fyers: 'connected', status: 'success' })
+        buildFrontendRedirect(req, { fyers: 'connected', status: 'success' })
       );
     } catch (err: any) {
       return reply.redirect(
-        buildFrontendRedirect({
+        buildFrontendRedirect(req, {
           fyers: 'error',
           message: err.message || 'Authentication failed',
         })
@@ -140,9 +161,10 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       integration.oauthStateExpiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS);
       await integration.save();
 
+      const redirectUri = getEffectiveFyersRedirectUri(req);
       const url = FyersService.generateLoginUrl(
         integration.appId,
-        config.fyersRedirectUri,
+        redirectUri,
         state
       );
 
@@ -188,7 +210,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           fundsSyncError: integration?.fundsSyncError,
           tokenExpiresAt: tokenExpiry?.toISOString(),
           authCodeExpiresAt: tokenExpiry?.toISOString(),
-          redirectUri: config.fyersRedirectUri,
+          redirectUri: getEffectiveFyersRedirectUri(req),
           syncHistory: (integration?.syncHistory || []).slice(0, 5),
           architecture: {
             adapterVersion: 'v3-compatible (REST / Real-Time)',

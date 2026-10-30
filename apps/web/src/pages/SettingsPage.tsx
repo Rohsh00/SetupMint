@@ -688,7 +688,10 @@ export function SettingsPage() {
   const isFyersConfigured = Boolean(fyersData?.isConfigured || fyersData?.appId);
   const isFyersConnected = Boolean(fyersData?.isConnected);
   const fyersRedirectUri =
-    fyersData?.redirectUri || `${window.location.origin}/api/v1/integrations/fyers/callback`;
+    fyersData?.redirectUri ||
+    (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')
+      ? 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback'
+      : `${window.location.origin}/api/v1/integrations/fyers/callback`);
 
   useEffect(() => {
     if (fyersData?.appId) {

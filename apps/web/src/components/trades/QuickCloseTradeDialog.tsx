@@ -33,7 +33,7 @@ export interface QuickCloseTradeProps {
   onClose: () => void;
   trade: any;
   accountBroker?: string;
-  onSuccess?: () => void;
+  onSuccess?: (closedTradeData?: any) => void;
   defaultExitPrice?: number | string;
   defaultCloseRatio?: number; // e.g. 0.5 for 50% partial, 1.0 for full
 }
@@ -322,7 +322,33 @@ export function QuickCloseTradeDialog({
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
-      if (onSuccess) onSuccess();
+      if (onSuccess) {
+        if (!isPartial) {
+          const plannedRisk = trade?.risk?.plannedRiskAmount || trade?.risk?.riskBudgetAmount || null;
+          const rMultiple = plannedRisk && plannedRisk > 0 ? Number((netPnL / plannedRisk).toFixed(2)) : null;
+          const closedPayload = data?.data || {
+            ...trade,
+            status: 'CLOSED',
+            calculated: {
+              ...(trade.calculated || {}),
+              netPnL,
+              grossPnL,
+              realizedR: rMultiple,
+              totalFees: totalCosts,
+            },
+            simpleExecution: {
+              entryPrice,
+              exitPrice: numExitPrice,
+              quantity: totalOpenQuantity,
+              brokerage: autoCharges?.brokerage ?? 20,
+              taxes: autoCharges?.taxes ?? 0,
+            },
+          };
+          onSuccess(closedPayload);
+        } else {
+          onSuccess();
+        }
+      }
       onClose();
     },
     onError: (err: any) => {

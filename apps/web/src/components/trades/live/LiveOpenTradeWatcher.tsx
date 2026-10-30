@@ -6,8 +6,14 @@ import DialogActions from '@mui/material/DialogActions';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Switch from '@mui/material/Switch';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import Divider from '@mui/material/Divider';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
+import BoltRoundedIcon from '@mui/icons-material/BoltRounded';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
@@ -90,6 +96,7 @@ import { api } from '../../../lib/api.js';
 import { formatCurrency } from '../../../lib/utils.js';
 import { toast } from '../../../context/ToastContext.js';
 import { QuickCloseTradeDialog } from '../QuickCloseTradeDialog.js';
+import { TradeFlightRecorderDialog } from './TradeFlightRecorderDialog.js';
 
 export interface LiveOpenTradeWatcherProps {
   accountId?: string;
@@ -155,7 +162,11 @@ export function LiveOpenTradeWatcher({
     const saved = localStorage.getItem('tv_live_watcher_view_mode');
     return saved === 'table' ? 'table' : 'cockpit';
   });
-  const [tacticalTabs, setTacticalTabs] = useState<Record<string, 'ladder' | 'giveback'>>({});
+  const [tacticalTabs, setTacticalTabs] = useState<Record<string, 'ladder' | 'giveback' | 'greeks' | 'pulse'>>({});
+  const [controlsAnchorEl, setControlsAnchorEl] = useState<null | HTMLElement>(null);
+  const isControlsOpen = Boolean(controlsAnchorEl);
+  const [isDeRiskingAll, setIsDeRiskingAll] = useState<boolean>(false);
+  const [recapTrade, setRecapTrade] = useState<any | null>(null);
 
   const [refreshIntervalSec, setRefreshIntervalSec] = useState<number>(() => {
     const saved = localStorage.getItem('tv_live_watcher_interval');
@@ -271,6 +282,49 @@ export function LiveOpenTradeWatcher({
       newStopLoss: bePrice,
       executeBroker: true,
     });
+  };
+
+  // Master 1-Click Action: De-Risk All open positions to True Breakeven with fee cushion
+  const handleDeRiskAllPositions = async () => {
+    if (!summary?.positions || summary.positions.length === 0) return;
+    setIsDeRiskingAll(true);
+    try {
+      let securedCount = 0;
+
+      for (const pos of summary.positions) {
+        const isLong = pos.direction === 'LONG';
+        const bePrice = pos.trueBreakevenPrice ?? pos.entryPrice;
+        const isAtOrBeyondBe =
+          pos.stopLoss !== null &&
+          (isLong ? pos.stopLoss >= bePrice : pos.stopLoss <= bePrice);
+
+        if (isAtOrBeyondBe) {
+          continue;
+        }
+
+        await api.trades.liveBrokerSl(pos.tradeId, {
+          stopPrice: bePrice,
+          executeBroker: true,
+          idempotencyKey: `${pos.tradeId}_derisk_all_${Date.now()}`,
+        });
+        securedCount++;
+      }
+
+      soundEngine.playTargetHit();
+      if (securedCount > 0) {
+        toast.success(
+          `🛡️ De-Risk Complete: Secured ${securedCount} position${securedCount > 1 ? 's' : ''} to True Breakeven (+fees protected)!`
+        );
+      } else {
+        toast.info('All open positions are already at or beyond True Breakeven.');
+      }
+      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to de-risk all positions');
+    } finally {
+      setIsDeRiskingAll(false);
+    }
   };
 
   // Scaling Ladder modal state & mutation
@@ -810,13 +864,14 @@ export function LiveOpenTradeWatcher({
     }
   };
 
-  const getActiveTacticalTab = (pos: ILiveOpenTradeMetric): 'ladder' | 'giveback' => {
+  const getActiveTacticalTab = (pos: ILiveOpenTradeMetric): 'ladder' | 'giveback' | 'greeks' | 'pulse' => {
     if (tacticalTabs[pos.tradeId]) return tacticalTabs[pos.tradeId];
     if (pos.giveback?.threatLevel === 'CRITICAL_REVERSAL' || pos.giveback?.threatLevel === 'LEAKING') {
       return 'giveback';
     }
     if (pos.targetLadder) return 'ladder';
     if (pos.giveback) return 'giveback';
+    if (pos.optionsGreeks) return 'greeks';
     return 'ladder';
   };
 
@@ -851,25 +906,25 @@ export function LiveOpenTradeWatcher({
         {/* Header / Summary Bar */}
         <Box
           sx={{
-            p: { xs: 2, sm: 2.5 },
+            p: { xs: 1.5, sm: 2 },
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 2,
+            gap: 1.5,
             cursor: 'pointer',
           }}
           onClick={() => setExpanded((prev) => !prev)}
         >
-          {/* Left: Live Beacon & Title */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {/* Left: Live Pulse Dot, Title & Consolidated Status Pill */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
             <Box
               sx={{
-                width: 10,
-                height: 10,
+                width: 9,
+                height: 9,
                 borderRadius: '50%',
                 bgcolor: refreshIntervalSec > 0 ? '#10B981' : '#94A3B8',
-                boxShadow: refreshIntervalSec > 0 ? '0 0 10px #10B981' : 'none',
+                boxShadow: refreshIntervalSec > 0 ? '0 0 8px #10B981' : 'none',
                 animation:
                   refreshIntervalSec > 0
                     ? refreshIntervalSec <= 2
@@ -878,122 +933,81 @@ export function LiveOpenTradeWatcher({
                     : 'none',
                 '@keyframes pulse': {
                   '0%': { transform: 'scale(0.95)', opacity: 0.8 },
-                  '50%': { transform: 'scale(1.3)', opacity: 1 },
+                  '50%': { transform: 'scale(1.25)', opacity: 1 },
                   '100%': { transform: 'scale(0.95)', opacity: 0.8 },
                 },
                 '@keyframes pulseFast': {
                   '0%': { transform: 'scale(0.95)', opacity: 0.85 },
-                  '50%': { transform: 'scale(1.4)', opacity: 1 },
+                  '50%': { transform: 'scale(1.35)', opacity: 1 },
                   '100%': { transform: 'scale(0.95)', opacity: 0.85 },
                 },
               }}
             />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, letterSpacing: -0.2 }}>
-              Live Open Trade Watcher
+
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: -0.2, fontSize: '0.95rem' }}>
+              Live Trade Watcher
             </Typography>
 
-            <Tooltip title={providerBadge.tooltip} arrow>
+            {/* Consolidated Modern Status Badge */}
+            <Tooltip
+              title={
+                <Box sx={{ p: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, display: 'block' }}>
+                    {providerBadge.label} ({providerBadge.tooltip})
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    • Active Positions: {openTradesCount}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    • Telegram Alerts: {user?.liveWatcherSettings?.telegramAlertsEnabled ? 'ARMED' : 'OFF'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    • Server Runner: {user?.liveWatcherSettings?.serverSideExecutionEnabled ? 'ACTIVE 24/7' : 'OFF'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    • Mode: {user?.liveWatcherSettings?.paperExecutionMode ? 'PAPER SIMULATION' : 'BROKER LIVE'}
+                  </Typography>
+                </Box>
+              }
+              arrow
+            >
               <Chip
-                label={providerBadge.label}
+                label={`${summary?.provider === 'FYERS' ? '🟢 FYERS LIVE' : '⚪ SIMULATION'} · ${openTradesCount} ACTIVE`}
                 size="small"
                 sx={{
                   height: 22,
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
                   color: providerBadge.color,
                   bgcolor: providerBadge.bg,
+                  border: `1px solid ${alpha(providerBadge.color, 0.3)}`,
                   borderRadius: '6px',
                 }}
               />
             </Tooltip>
-
-            <Chip
-              label={`${openTradesCount} OPEN`}
-              size="small"
-              sx={{
-                height: 22,
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
-                borderRadius: '6px',
-              }}
-            />
-
-            {user?.liveWatcherSettings?.paperExecutionMode && (
-              <Chip
-                label="SIMULATION MODE"
-                size="small"
-                sx={{
-                  height: 22,
-                  fontSize: '0.65rem',
-                  fontWeight: 800,
-                  bgcolor: alpha('#F59E0B', 0.15),
-                  color: '#F59E0B',
-                  border: 1,
-                  borderColor: alpha('#F59E0B', 0.4),
-                  borderRadius: '6px',
-                }}
-              />
-            )}
-            {user?.liveWatcherSettings?.telegramAlertsEnabled && (
-              <Tooltip title="Telegram Off-Screen Push Alerts Active" arrow>
-                <Chip
-                  label="TELEGRAM ARMED"
-                  size="small"
-                  sx={{
-                    height: 22,
-                    fontSize: '0.65rem',
-                    fontWeight: 800,
-                    bgcolor: alpha('#0284C7', 0.15),
-                    color: '#0284C7',
-                    border: 1,
-                    borderColor: alpha('#0284C7', 0.4),
-                    borderRadius: '6px',
-                  }}
-                />
-              </Tooltip>
-            )}
-            {user?.liveWatcherSettings?.serverSideExecutionEnabled && (
-              <Tooltip title="Server-Side 24/7 Execution Worker Active" arrow>
-                <Chip
-                  label="SERVER RUNNER ON"
-                  size="small"
-                  sx={{
-                    height: 22,
-                    fontSize: '0.65rem',
-                    fontWeight: 800,
-                    bgcolor: alpha('#10B981', 0.15),
-                    color: '#10B981',
-                    border: 1,
-                    borderColor: alpha('#10B981', 0.4),
-                    borderRadius: '6px',
-                  }}
-                />
-              </Tooltip>
-            )}
           </Box>
 
-          {/* Center / Right: Aggregated Live Financials */}
+          {/* Center / Right: Aggregated Live Financials & Actions */}
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
               flexWrap: 'wrap',
-              gap: { xs: 2, md: 3 },
+              gap: { xs: 1.5, md: 2 },
               ml: 'auto',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             {openTradesCount > 0 && (
-              <>
-                {/* Total Floating Net P&L */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                {/* Total Floating Net MTM */}
                 <Box sx={{ textAlign: 'right' }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.65rem', lineHeight: 1 }}>
                     Floating Net MTM
                   </Typography>
                   <Typography
-                    variant="h6"
-                    sx={{ fontWeight: 800, color: netPnLColor, letterSpacing: -0.3, lineHeight: 1.1 }}
+                    variant="subtitle1"
+                    sx={{ fontWeight: 900, color: netPnLColor, letterSpacing: -0.3, lineHeight: 1.2 }}
                   >
                     {isNetProfit ? '+' : ''}
                     {formatCurrency(summary?.totalFloatingNetPnL ?? 0, 'INR')}
@@ -1002,85 +1016,21 @@ export function LiveOpenTradeWatcher({
 
                 {/* Portfolio Unrealized R */}
                 {summary?.portfolioUnrealizedR !== null && summary?.portfolioUnrealizedR !== undefined && (
-                  <Box sx={{ textAlign: 'right', display: { xs: 'none', sm: 'block' } }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
-                      Unrealized R
-                    </Typography>
-                    <Chip
-                      label={`${(summary.portfolioUnrealizedR >= 0 ? '+' : '')}${summary.portfolioUnrealizedR} R`}
-                      size="small"
-                      sx={{
-                        height: 24,
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        color: (summary.portfolioUnrealizedR >= 0 ? '#10B981' : '#F43F5E'),
-                        bgcolor: alpha(summary.portfolioUnrealizedR >= 0 ? '#10B981' : '#F43F5E', 0.12),
-                        borderRadius: '6px',
-                      }}
-                    />
-                  </Box>
+                  <Chip
+                    label={`${(summary.portfolioUnrealizedR >= 0 ? '+' : '')}${summary.portfolioUnrealizedR} R`}
+                    size="small"
+                    sx={{
+                      height: 24,
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      color: (summary.portfolioUnrealizedR >= 0 ? '#10B981' : '#F43F5E'),
+                      bgcolor: alpha(summary.portfolioUnrealizedR >= 0 ? '#10B981' : '#F43F5E', 0.12),
+                      borderRadius: '6px',
+                    }}
+                  />
                 )}
-
-                {/* Total Risk Capital */}
-                {summary && summary.totalRiskCapital > 0 && (
-                  <Box sx={{ textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
-                      Capital at Risk
-                    </Typography>
-                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 600 }}>
-                      {formatCurrency(summary.totalRiskCapital, 'INR')}
-                    </Typography>
-                  </Box>
-                )}
-              </>
+              </Box>
             )}
-
-            {/* Refresh Interval Selector */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Tooltip title="Set live quotes auto-refresh interval" arrow>
-                <ToggleButtonGroup
-                  value={refreshIntervalSec}
-                  exclusive
-                  onChange={handleIntervalChange}
-                  size="small"
-                  sx={{
-                    height: 28,
-                    '& .MuiToggleButton-root': {
-                      px: { xs: 0.75, sm: 1 },
-                      py: 0,
-                      fontSize: '0.68rem',
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
-                    },
-                  }}
-                >
-                  <ToggleButton value={0}>Off</ToggleButton>
-                  <ToggleButton value={1} title="1-second ultra-fast refresh">1s</ToggleButton>
-                  <ToggleButton value={2} title="2-second fast refresh">2s</ToggleButton>
-                  <ToggleButton value={5}>5s</ToggleButton>
-                  <ToggleButton value={10}>10s</ToggleButton>
-                  <ToggleButton value={30}>30s</ToggleButton>
-                </ToggleButtonGroup>
-              </Tooltip>
-
-              <Tooltip title="Refresh quotes now" arrow>
-                <IconButton
-                  size="small"
-                  onClick={handleManualRefetch}
-                  sx={{
-                    ml: 0.5,
-                    animation: isManualRefreshing ? 'spin 0.8s linear infinite' : 'none',
-                    '@keyframes spin': {
-                      '0%': { transform: 'rotate(0deg)' },
-                      '100%': { transform: 'rotate(360deg)' },
-                    },
-                  }}
-                >
-                  <RefreshRoundedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
 
             {/* View Mode Switcher: Cockpit Cards vs Compact Table */}
             {openTradesCount > 0 && (
@@ -1104,117 +1054,70 @@ export function LiveOpenTradeWatcher({
                     },
                   }}
                 >
-                  <ToggleButton value="cockpit" title="Cockpit Card View">
-                    <GridViewRoundedIcon sx={{ fontSize: 15 }} />
+                  <ToggleButton value="cockpit" title="Cockpit Cards">
+                    <GridViewRoundedIcon sx={{ fontSize: 14 }} />
                   </ToggleButton>
-                  <ToggleButton value="table" title="Compact Table View">
-                    <TableRowsRoundedIcon sx={{ fontSize: 15 }} />
+                  <ToggleButton value="table" title="Compact Table">
+                    <TableRowsRoundedIcon sx={{ fontSize: 14 }} />
                   </ToggleButton>
                 </ToggleButtonGroup>
               </Tooltip>
             )}
 
-            {/* ⏱️ MIS Auto-Square-Off Countdown */}
-            <Tooltip title={`Intraday MIS cut-off countdown (Target: 15:15 IST)${istInfo.isMisCriticalWindow ? ' ⚠️ Critical Square-Off Window!' : ''}`} arrow>
-              <Chip
-                icon={<AccessTimeRoundedIcon sx={{ fontSize: '13px !important' }} />}
-                label={istInfo.isMarketOpen ? `MIS ${istInfo.countdownStr || '00:00:00'}` : 'Market Closed'}
-                size="small"
-                sx={{
-                  height: 28,
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  bgcolor: istInfo.isMisCriticalWindow ? alpha('#EF4444', 0.15) : alpha('#3B82F6', 0.1),
-                  color: istInfo.isMisCriticalWindow ? '#EF4444' : '#3B82F6',
-                  border: `1px solid ${istInfo.isMisCriticalWindow ? alpha('#EF4444', 0.4) : alpha('#3B82F6', 0.3)}`,
-                  display: { xs: 'none', sm: 'inline-flex' },
-                }}
-              />
-            </Tooltip>
-
-            {/* ⌨️ Scalper Hotkeys Toggle */}
+            {/* Feature 5: Master De-Risk All to True BE Button */}
             {openTradesCount > 0 && (
-              <Tooltip title={scalperHotkeysEnabled ? 'Scalper Hotkeys: ARMED [B: Lock BE+Fees | Space: 50% Exit | K: Kill Switch]' : 'Enable Scalper Keyboard Shortcuts'} arrow>
-                <Chip
-                  icon={<KeyboardAltRoundedIcon sx={{ fontSize: '13px !important' }} />}
-                  label={scalperHotkeysEnabled ? 'HOTKEYS ARMED' : 'Hotkeys'}
-                  onClick={() => {
-                    const next = !scalperHotkeysEnabled;
-                    setScalperHotkeysEnabled(next);
-                    localStorage.setItem('tv_scalper_hotkeys', String(next));
-                    toast.info(next ? '⚡ Scalper Hotkeys Armed: [B] Lock BE+Fees | [Space] 50% Exit | [K] Kill Switch' : 'Scalper Hotkeys Disabled');
-                  }}
-                  size="small"
-                  sx={{
-                    height: 28,
-                    fontSize: '0.68rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    color: scalperHotkeysEnabled ? '#10B981' : 'text.secondary',
-                    bgcolor: scalperHotkeysEnabled ? alpha('#10B981', 0.15) : 'transparent',
-                    border: `1px solid ${scalperHotkeysEnabled ? alpha('#10B981', 0.4) : 'rgba(255, 255, 255, 0.1)'}`,
-                    display: { xs: 'none', md: 'inline-flex' },
-                  }}
-                />
+              <Tooltip title="Master Action: Move stop losses across all open positions to True Breakeven (+statutory fee cushion)" arrow>
+                <span>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<SecurityRoundedIcon sx={{ fontSize: 13 }} />}
+                    onClick={handleDeRiskAllPositions}
+                    disabled={isDeRiskingAll}
+                    sx={{
+                      height: 28,
+                      px: 1.2,
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      whiteSpace: 'nowrap',
+                      borderColor: '#3B82F6',
+                      color: '#3B82F6',
+                      bgcolor: alpha('#3B82F6', 0.08),
+                      borderRadius: '6px',
+                      '&:hover': {
+                        bgcolor: alpha('#3B82F6', 0.15),
+                        borderColor: '#2563EB',
+                      },
+                    }}
+                  >
+                    {isDeRiskingAll ? 'De-Risking...' : 'De-Risk All (BE)'}
+                  </Button>
+                </span>
               </Tooltip>
             )}
 
-            {/* 🔊 Audio Alerts Toggle */}
-            <Tooltip title={soundEnabled ? 'Audio Alerts: ON (Click to Mute)' : 'Audio Alerts: MUTED (Click to Enable)'} arrow>
-              <IconButton
-                size="small"
-                onClick={handleToggleSound}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  color: soundEnabled ? '#10B981' : 'text.secondary',
-                  bgcolor: soundEnabled ? alpha('#10B981', 0.1) : 'transparent',
-                  border: `1px solid ${soundEnabled ? alpha('#10B981', 0.3) : 'transparent'}`,
-                  borderRadius: 1,
-                }}
-              >
-                {soundEnabled ? <VolumeUpRoundedIcon sx={{ fontSize: 16 }} /> : <VolumeOffRoundedIcon sx={{ fontSize: 16 }} />}
-              </IconButton>
-            </Tooltip>
-
-            {/* 🔔 Desktop Web Notifications Toggle */}
-            <Tooltip title={notificationsEnabled ? 'Desktop Web Notifications: ON' : 'Enable Desktop Web Notifications'} arrow>
-              <IconButton
-                size="small"
-                onClick={handleToggleNotifications}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  color: notificationsEnabled ? '#3B82F6' : 'text.secondary',
-                  bgcolor: notificationsEnabled ? alpha('#3B82F6', 0.1) : 'transparent',
-                  border: `1px solid ${notificationsEnabled ? alpha('#3B82F6', 0.3) : 'transparent'}`,
-                  borderRadius: 1,
-                }}
-              >
-                {notificationsEnabled ? <NotificationsActiveRoundedIcon sx={{ fontSize: 16 }} /> : <NotificationsOffRoundedIcon sx={{ fontSize: 16 }} />}
-              </IconButton>
-            </Tooltip>
-
-            {/* 🚨 Emergency Panic Kill Switch */}
+            {/* Emergency Panic Kill Switch */}
             {openTradesCount > 0 && (
-              <Tooltip title="🚨 Emergency Kill Switch: Market-close all open positions on FYERS and cancel open stops" arrow>
+              <Tooltip title="🚨 Panic Kill Switch: Instantly market-close all positions on FYERS and cancel all resting stop loss orders" arrow>
                 <Button
-                  variant="outlined"
+                  variant="contained"
                   color="error"
                   size="small"
-                  startIcon={<DangerousRoundedIcon sx={{ fontSize: 15 }} />}
+                  startIcon={<DangerousRoundedIcon sx={{ fontSize: 14 }} />}
                   onClick={() => setKillSwitchOpen(true)}
                   sx={{
                     height: 28,
                     px: 1.2,
                     fontSize: '0.68rem',
-                    fontWeight: 800,
-                    borderColor: '#EF4444',
-                    color: '#EF4444',
-                    bgcolor: alpha('#EF4444', 0.08),
+                    fontWeight: 900,
+                    bgcolor: '#EF4444',
+                    color: '#FFFFFF',
+                    borderRadius: '6px',
+                    boxShadow: 'none',
                     '&:hover': {
-                      bgcolor: '#EF4444',
-                      color: '#FFFFFF',
+                      bgcolor: '#DC2626',
+                      boxShadow: 'none',
                     },
                   }}
                 >
@@ -1223,7 +1126,49 @@ export function LiveOpenTradeWatcher({
               </Tooltip>
             )}
 
-            {/* Expand / Collapse Toggle */}
+            {/* Manual Refresh Button */}
+            <Tooltip title="Refresh quotes now" arrow>
+              <IconButton
+                size="small"
+                onClick={handleManualRefetch}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  animation: isManualRefreshing ? 'spin 0.8s linear infinite' : 'none',
+                  '@keyframes spin': {
+                    '0%': { transform: 'rotate(0deg)' },
+                    '100%': { transform: 'rotate(360deg)' },
+                  },
+                }}
+              >
+                <RefreshRoundedIcon sx={{ fontSize: 17 }} />
+              </IconButton>
+            </Tooltip>
+
+            {/* Settings & Options Menu Popover Button */}
+            <Tooltip title="Live Watcher settings: auto-refresh, sound, hotkeys, notifications" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SettingsRoundedIcon sx={{ fontSize: 13 }} />}
+                endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 14 }} />}
+                onClick={(e) => setControlsAnchorEl(e.currentTarget)}
+                sx={{
+                  height: 28,
+                  px: 1,
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+                  color: 'text.secondary',
+                  borderRadius: '6px',
+                }}
+              >
+                {refreshIntervalSec > 0 ? `${refreshIntervalSec}s` : 'Off'}
+              </Button>
+            </Tooltip>
+
+            {/* Expand / Collapse Chevron */}
             <IconButton
               size="small"
               onClick={(e) => {
@@ -1235,6 +1180,127 @@ export function LiveOpenTradeWatcher({
             </IconButton>
           </Box>
         </Box>
+
+        {/* Settings & Options Dropdown Menu */}
+        <Menu
+          anchorEl={controlsAnchorEl}
+          open={isControlsOpen}
+          onClose={() => setControlsAnchorEl(null)}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: 1,
+                p: 1.5,
+                minWidth: 260,
+                borderRadius: '12px',
+                bgcolor: isDark ? '#0F172A' : '#FFFFFF',
+                border: `1px solid ${muiTheme.palette.divider}`,
+                boxShadow: isDark
+                  ? '0 10px 25px -5px rgba(0,0,0,0.5)'
+                  : '0 10px 25px -5px rgba(0,0,0,0.1)',
+              },
+            },
+          }}
+        >
+          <Typography variant="caption" sx={{ fontWeight: 800, px: 1, pb: 1, display: 'block', textTransform: 'uppercase', color: 'text.secondary' }}>
+            Quote Refresh Rate
+          </Typography>
+          <Box sx={{ px: 1, pb: 1.5 }}>
+            <ToggleButtonGroup
+              value={refreshIntervalSec}
+              exclusive
+              onChange={handleIntervalChange}
+              size="small"
+              fullWidth
+              sx={{
+                height: 26,
+                '& .MuiToggleButton-root': {
+                  px: 0.5,
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                },
+              }}
+            >
+              <ToggleButton value={0}>Off</ToggleButton>
+              <ToggleButton value={1}>1s</ToggleButton>
+              <ToggleButton value={2}>2s</ToggleButton>
+              <ToggleButton value={5}>5s</ToggleButton>
+              <ToggleButton value={10}>10s</ToggleButton>
+              <ToggleButton value={30}>30s</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
+          <Divider sx={{ my: 1 }} />
+
+          {/* Scalper Hotkeys Toggle */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                Scalper Hotkeys
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
+                [B] Lock BE · [Space] 50% · [K] Panic
+              </Typography>
+            </Box>
+            <Switch
+              size="small"
+              checked={scalperHotkeysEnabled}
+              onChange={() => {
+                const next = !scalperHotkeysEnabled;
+                setScalperHotkeysEnabled(next);
+                localStorage.setItem('tv_scalper_hotkeys', String(next));
+                toast.info(next ? '⚡ Scalper Hotkeys Armed: [B] Lock BE | [Space] 50% | [K] Kill' : 'Hotkeys Disabled');
+              }}
+            />
+          </Box>
+
+          {/* Audio Alert Chimes */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                Audio Alert Chimes
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
+                Sounds on target and stop alerts
+              </Typography>
+            </Box>
+            <Switch
+              size="small"
+              checked={soundEnabled}
+              onChange={handleToggleSound}
+            />
+          </Box>
+
+          {/* Desktop Web Notifications */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                Desktop Notifications
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
+                Push popups for execution alerts
+              </Typography>
+            </Box>
+            <Switch
+              size="small"
+              checked={notificationsEnabled}
+              onChange={handleToggleNotifications}
+            />
+          </Box>
+
+          <Divider sx={{ my: 1 }} />
+
+          {/* MIS Countdown Readout */}
+          <Box sx={{ px: 1, py: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <AccessTimeRoundedIcon sx={{ fontSize: 13 }} />
+              MIS Square-Off:
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 800, color: istInfo.isMisCriticalWindow ? '#EF4444' : 'text.primary' }}>
+              {istInfo.isMarketOpen ? `MIS ${istInfo.countdownStr || '00:00:00'}` : 'Market Closed'}
+            </Typography>
+          </Box>
+        </Menu>
 
         {/* Collapsible Open Trade Cards Grid */}
         <Collapse in={expanded}>
@@ -1905,9 +1971,9 @@ export function LiveOpenTradeWatcher({
                       <Card
                         variant="outlined"
                         sx={{
-                          p: 2,
-                          borderRadius: '14px',
-                          bgcolor: isDark ? 'rgba(15, 23, 42, 0.7)' : '#FFFFFF',
+                          p: { xs: 1.5, sm: 2 },
+                          borderRadius: '16px',
+                          bgcolor: isDark ? 'rgba(15, 23, 42, 0.75)' : '#FFFFFF',
                           borderColor: isOneToOne
                             ? alpha('#10B981', 0.5)
                             : isDark
@@ -1925,20 +1991,19 @@ export function LiveOpenTradeWatcher({
                               : isDark
                               ? 'rgba(59, 130, 246, 0.4)'
                               : 'rgba(59, 130, 246, 0.3)',
-                            boxShadow: isDark
-                              ? '0 4px 20px rgba(0, 0, 0, 0.3)'
-                              : '0 4px 16px rgba(0, 0, 0, 0.05)',
                           },
                         }}
                       >
-                        {/* 1. Header Bar: Symbol & Financial Ticker */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25, flexWrap: 'wrap', gap: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {/* 1. Master Card Header: Symbol, Direction, Lots, SL Protection Status & Financials */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                          {/* Left Identity & Protection Status */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                             <Typography
                               variant="subtitle1"
                               sx={{
-                                fontWeight: 800,
+                                fontWeight: 900,
                                 letterSpacing: -0.2,
+                                fontSize: '1.05rem',
                                 cursor: 'pointer',
                                 '&:hover': { color: '#3B82F6' },
                               }}
@@ -1971,11 +2036,66 @@ export function LiveOpenTradeWatcher({
                                 }}
                               />
                             )}
+
+                            {/* Streamlined Resting SL / Protection Status */}
+                            {pos.isNakedPosition || !pos.hasRestingBrokerSl ? (
+                              <Tooltip title="No resting Stop Loss order found on exchange! Click to arm protection." arrow>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  color="warning"
+                                  startIcon={<WarningAmberRoundedIcon sx={{ fontSize: 13 }} />}
+                                  onClick={() => {
+                                    const slToArm = pos.stopLoss ?? pos.entryPrice;
+                                    api.trades
+                                      .liveBrokerSl(pos.tradeId, {
+                                        stopPrice: slToArm,
+                                        executeBroker: true,
+                                        idempotencyKey: `${pos.tradeId}_arm_sl_${Date.now()}`,
+                                      })
+                                      .then(() => {
+                                        toast.success(`Protection SL armed on FYERS @ ₹${slToArm}`);
+                                        queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
+                                      })
+                                      .catch((err: any) => {
+                                        toast.error(err?.message || 'Failed to place resting SL order');
+                                      });
+                                  }}
+                                  sx={{
+                                    height: 20,
+                                    px: 0.9,
+                                    fontSize: '0.62rem',
+                                    fontWeight: 800,
+                                    textTransform: 'none',
+                                    borderRadius: '4px',
+                                    py: 0,
+                                  }}
+                                >
+                                  Arm SL
+                                </Button>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip title={`Resting SL order verified on exchange @ ₹${pos.restingSlPrice || pos.stopLoss}`} arrow>
+                                <Chip
+                                  icon={<CheckCircleRoundedIcon sx={{ fontSize: '11px !important', color: '#10B981' }} />}
+                                  label={`SL @ ₹${pos.restingSlPrice || pos.stopLoss}`}
+                                  size="small"
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.62rem',
+                                    fontWeight: 700,
+                                    bgcolor: alpha('#10B981', 0.12),
+                                    color: '#10B981',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              </Tooltip>
+                            )}
+
                             {customRules?.autoExecuteEnabled && (
                               <Tooltip title="Auto-Execution to FYERS Active" arrow>
                                 <Chip
-                                  icon={<FlashOnRoundedIcon sx={{ fontSize: '12px !important', color: '#10B981' }} />}
-                                  label="AUTO FYERS"
+                                  label="⚡ AUTO"
                                   size="small"
                                   sx={{
                                     height: 20,
@@ -1983,19 +2103,19 @@ export function LiveOpenTradeWatcher({
                                     fontWeight: 800,
                                     color: '#10B981',
                                     bgcolor: alpha('#10B981', 0.15),
-                                    border: '1px solid rgba(16, 185, 129, 0.3)',
                                     borderRadius: '4px',
                                   }}
                                 />
                               </Tooltip>
                             )}
+
                             {pos.stagnation?.isStagnant && (
                               <Tooltip
-                                title={`${pos.stagnation.message} • Velocity: ₹${pos.stagnation.pnlVelocityPerMinute}/min • In Trade: ${pos.stagnation.minutesOpen}m`}
+                                title={`${pos.stagnation.message} • In Trade: ${pos.stagnation.minutesOpen}m`}
                                 arrow
                               >
                                 <Chip
-                                  icon={<HourglassEmptyRoundedIcon sx={{ fontSize: '12px !important', color: '#F59E0B' }} />}
+                                  icon={<HourglassEmptyRoundedIcon sx={{ fontSize: '11px !important', color: '#F59E0B' }} />}
                                   label={pos.stagnation.stagnationThreat.replace(/_/g, ' ')}
                                   size="small"
                                   sx={{
@@ -2004,32 +2124,32 @@ export function LiveOpenTradeWatcher({
                                     fontWeight: 800,
                                     color: '#F59E0B',
                                     bgcolor: alpha('#F59E0B', 0.15),
-                                    border: '1px solid rgba(245, 158, 11, 0.3)',
                                     borderRadius: '4px',
                                   }}
                                 />
                               </Tooltip>
                             )}
+
                             <Tooltip title="Open full trade review" arrow>
                               <IconButton
                                 size="small"
                                 onClick={() => navigate(`/trades/${pos.tradeId}`)}
-                                sx={{ p: 0.5, color: 'text.secondary' }}
+                                sx={{ p: 0.25, color: 'text.secondary' }}
                               >
-                                <OpenInNewRoundedIcon sx={{ fontSize: 15 }} />
+                                <OpenInNewRoundedIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
                           </Box>
 
-                          {/* Middle Sparkline & Right Ticker: LTP & Floating Net MTM */}
+                          {/* Right: Sparkline, Monospace LTP & Floating MTM */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             {pos.sparkline && (
                               <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-                                <LiveSparkline points={pos.sparkline} isDark={isDark} width={120} height={26} />
+                                <LiveSparkline points={pos.sparkline} isDark={isDark} width={110} height={24} />
                               </Box>
                             )}
                             <Box sx={{ textAlign: 'right' }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block', lineHeight: 1 }}>
                                 LTP
                               </Typography>
                               <Typography
@@ -2040,23 +2160,25 @@ export function LiveOpenTradeWatcher({
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: 0.25,
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.85rem',
                                 }}
                               >
                                 ₹{pos.currentLtp}
                                 {pos.priceDeltaPoints >= 0 ? (
-                                  <TrendingUpRoundedIcon sx={{ fontSize: 15 }} />
+                                  <TrendingUpRoundedIcon sx={{ fontSize: 14 }} />
                                 ) : (
-                                  <TrendingDownRoundedIcon sx={{ fontSize: 15 }} />
+                                  <TrendingDownRoundedIcon sx={{ fontSize: 14 }} />
                                 )}
                               </Typography>
                             </Box>
 
                             <Box sx={{ textAlign: 'right' }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
-                                Floating MTM
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block', lineHeight: 1 }}>
+                                Floating Net MTM
                               </Typography>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: posPnLColor, lineHeight: 1.1 }}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 900, color: posPnLColor, lineHeight: 1.1, fontSize: '0.95rem' }}>
                                   {isPosProfitable ? '+' : ''}
                                   {formatCurrency(pos.floatingNetPnL, 'INR')}
                                 </Typography>
@@ -2065,8 +2187,8 @@ export function LiveOpenTradeWatcher({
                                     label={`${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR} R`}
                                     size="small"
                                     sx={{
-                                      height: 18,
-                                      fontSize: '0.62rem',
+                                      height: 20,
+                                      fontSize: '0.65rem',
                                       fontWeight: 800,
                                       color: posPnLColor,
                                       bgcolor: alpha(posPnLColor, 0.12),
@@ -2079,151 +2201,23 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
-                        {/* Exchange Resting SL Verification / Naked Position Alert */}
-                        {pos.isNakedPosition || !pos.hasRestingBrokerSl ? (
-                          <Alert
-                            severity="warning"
-                            variant="filled"
-                            icon={<WarningAmberRoundedIcon sx={{ fontSize: 18 }} />}
-                            sx={{
-                              mb: 1.5,
-                              py: 0.25,
-                              px: 1.5,
-                              borderRadius: '8px',
-                              fontSize: '0.74rem',
-                              fontWeight: 700,
-                              bgcolor: '#F59E0B',
-                              color: '#000000',
-                              '& .MuiAlert-message': { display: 'flex', alignItems: 'center', py: 0 },
-                              '& .MuiAlert-action': { pt: 0, pb: 0, mr: 0 },
-                            }}
-                            action={
-                              <Button
-                                size="small"
-                                variant="contained"
-                                sx={{
-                                  bgcolor: '#000000',
-                                  color: '#FFFFFF',
-                                  fontSize: '0.68rem',
-                                  fontWeight: 800,
-                                  px: 1.5,
-                                  py: 0.2,
-                                  borderRadius: '5px',
-                                  textTransform: 'none',
-                                  '&:hover': { bgcolor: '#1E293B' },
-                                }}
-                                onClick={() => {
-                                  const slToArm = pos.stopLoss ?? pos.entryPrice;
-                                  api.trades
-                                    .liveBrokerSl(pos.tradeId, {
-                                      stopPrice: slToArm,
-                                      executeBroker: true,
-                                      idempotencyKey: `${pos.tradeId}_arm_sl_${Date.now()}`,
-                                    })
-                                    .then(() => {
-                                      toast.success(`Protection SL armed on FYERS @ ₹${slToArm}`);
-                                      queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
-                                    })
-                                    .catch((err: any) => {
-                                      toast.error(err?.message || 'Failed to place resting SL order');
-                                    });
-                                }}
-                              >
-                                Arm Protection SL on FYERS
-                              </Button>
-                            }
-                          >
-                            ⚠️ Naked Position: No Resting SL Order Found on Exchange!
-                          </Alert>
-                        ) : (
-                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Chip
-                              icon={<CheckCircleRoundedIcon sx={{ fontSize: '12px !important', color: '#10B981' }} />}
-                              label={`Resting Exchange SL Verified @ ₹${pos.restingSlPrice || pos.stopLoss}`}
-                              size="small"
-                              sx={{
-                                height: 20,
-                                fontSize: '0.65rem',
-                                fontWeight: 700,
-                                bgcolor: alpha('#10B981', 0.12),
-                                color: '#10B981',
-                                border: '1px solid rgba(16, 185, 129, 0.3)',
-                                borderRadius: '4px',
-                              }}
-                            />
-                          </Box>
-                        )}
-
-                        {/* Historical Setup Edge Intelligence */}
-                        {pos.setupEdgeStats && (
-                          <Box
-                            sx={{
-                              mb: 1.5,
-                              p: 1,
-                              borderRadius: '8px',
-                              bgcolor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
-                              border: '1px solid',
-                              borderColor: alpha('#3B82F6', 0.2),
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              flexWrap: 'wrap',
-                              gap: 1,
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Chip
-                                label={
-                                  typeof pos.setupEdgeStats.setupName === 'string'
-                                    ? pos.setupEdgeStats.setupName
-                                    : (pos.setupEdgeStats.setupName as any)?.variantKey ||
-                                      (pos.setupEdgeStats.setupName as any)?.patternType ||
-                                      'Strategy Edge'
-                                }
-                                size="small"
-                                sx={{
-                                  height: 18,
-                                  fontSize: '0.62rem',
-                                  fontWeight: 800,
-                                  bgcolor: alpha('#3B82F6', 0.2),
-                                  color: '#3B82F6',
-                                }}
-                              />
-                              <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.7rem' }}>
-                                Edge Win Rate: <span style={{ color: '#10B981' }}>{pos.setupEdgeStats.winRate}%</span> ({pos.setupEdgeStats.totalSampleTrades} trades)
-                              </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Typography variant="caption" sx={{ fontSize: '0.68rem' }} color="text.secondary">
-                                Expectancy: <strong style={{ color: pos.setupEdgeStats.expectancyR >= 0 ? '#10B981' : '#F43F5E' }}>{pos.setupEdgeStats.expectancyR > 0 ? '+' : ''}{pos.setupEdgeStats.expectancyR}R</strong>
-                              </Typography>
-                              <Typography variant="caption" sx={{ fontSize: '0.68rem' }} color="text.secondary">
-                                Avg MFE: <strong style={{ color: '#10B981' }}>+{pos.setupEdgeStats.avgMfeR}R</strong>
-                              </Typography>
-                              <Typography variant="caption" sx={{ fontSize: '0.68rem' }} color="text.secondary">
-                                Typical MAE: <strong style={{ color: '#F43F5E' }}>-{pos.setupEdgeStats.avgMaeR}R</strong>
-                              </Typography>
-                            </Box>
-                          </Box>
-                        )}
-
-                        {/* 2. ⚡ TOP-MOUNTED INSTANT ACTION COCKPIT (Zero Scroll - Always Accessible) */}
+                        {/* 2. Top-Mounted Instant Execution Cockpit Bar */}
                         <Box
                           sx={{
                             mb: 1.5,
-                            p: 1.25,
+                            p: 1,
                             borderRadius: '10px',
                             bgcolor: isOneToOne
-                              ? alpha('#10B981', isDark ? 0.15 : 0.08)
+                              ? alpha('#10B981', isDark ? 0.12 : 0.06)
                               : isDark
                               ? 'rgba(255, 255, 255, 0.03)'
                               : 'rgba(0, 0, 0, 0.02)',
                             border: '1px solid',
                             borderColor: isOneToOne
-                              ? alpha('#10B981', 0.4)
+                              ? alpha('#10B981', 0.35)
                               : isDark
-                              ? 'rgba(255, 255, 255, 0.08)'
-                              : 'rgba(0, 0, 0, 0.08)',
+                              ? 'rgba(255, 255, 255, 0.06)'
+                              : 'rgba(0, 0, 0, 0.06)',
                             display: 'flex',
                             flexWrap: 'wrap',
                             alignItems: 'center',
@@ -2231,19 +2225,18 @@ export function LiveOpenTradeWatcher({
                             gap: 1,
                           }}
                         >
-                          {/* Left Fast Actions */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', flex: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
                             {isOneToOne && (
                               <Chip
                                 label={`🎯 1:1 MET (+${pos.unrealizedR}R)`}
                                 size="small"
                                 sx={{
                                   height: 26,
-                                  fontSize: '0.68rem',
+                                  fontSize: '0.65rem',
                                   fontWeight: 800,
                                   bgcolor: '#10B981',
                                   color: '#FFFFFF',
-                                  borderRadius: '6px',
+                                  borderRadius: '5px',
                                 }}
                               />
                             )}
@@ -2254,18 +2247,16 @@ export function LiveOpenTradeWatcher({
                               startIcon={<PieChartRoundedIcon sx={{ fontSize: 13 }} />}
                               onClick={() => handleOpenQuickClose(pos, 0.5)}
                               sx={{
-                                height: 28,
+                                height: 26,
                                 px: 1.25,
-                                fontSize: '0.72rem',
+                                fontSize: '0.7rem',
                                 fontWeight: 700,
                                 textTransform: 'none',
                                 whiteSpace: 'nowrap',
-                                minWidth: 'max-content',
-                                lineHeight: 1,
                                 bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
                                 color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
                                 '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
-                                borderRadius: '6px',
+                                borderRadius: '5px',
                                 boxShadow: 'none',
                               }}
                             >
@@ -2278,18 +2269,16 @@ export function LiveOpenTradeWatcher({
                               startIcon={<FlashOnRoundedIcon sx={{ fontSize: 13 }} />}
                               onClick={() => handleOpenQuickClose(pos, 1.0)}
                               sx={{
-                                height: 28,
+                                height: 26,
                                 px: 1.25,
-                                fontSize: '0.72rem',
+                                fontSize: '0.7rem',
                                 fontWeight: 700,
                                 textTransform: 'none',
                                 whiteSpace: 'nowrap',
-                                minWidth: 'max-content',
-                                lineHeight: 1,
                                 bgcolor: '#EF4444',
                                 color: '#FFFFFF',
                                 '&:hover': { bgcolor: '#DC2626' },
-                                borderRadius: '6px',
+                                borderRadius: '5px',
                                 boxShadow: 'none',
                               }}
                             >
@@ -2312,19 +2301,17 @@ export function LiveOpenTradeWatcher({
                                   onClick={() => handleQuickMoveToBe(pos)}
                                   disabled={isAtOrBeyondBe || updateSlMutation.isPending}
                                   sx={{
-                                    height: 28,
-                                    px: 1.25,
-                                    fontSize: '0.7rem',
+                                    height: 26,
+                                    px: 1.2,
+                                    fontSize: '0.68rem',
                                     fontWeight: 700,
                                     textTransform: 'none',
                                     whiteSpace: 'nowrap',
-                                    minWidth: 'max-content',
-                                    lineHeight: 1,
                                     borderColor: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
                                     color: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
                                     bgcolor: isAtOrBeyondBe ? alpha('#10B981', 0.08) : 'transparent',
                                     '&:hover': { bgcolor: alpha('#3B82F6', 0.1), borderColor: '#2563EB' },
-                                    borderRadius: '6px',
+                                    borderRadius: '5px',
                                   }}
                                 >
                                   {isAtOrBeyondBe ? 'BE Protected' : `Lock BE+Fees${pos.trueBreakevenPrice ? ` (₹${pos.trueBreakevenPrice.toFixed(1)})` : ''}`}
@@ -2335,56 +2322,41 @@ export function LiveOpenTradeWatcher({
                             <Button
                               size="small"
                               variant={customRules?.autoExecuteEnabled ? 'contained' : 'outlined'}
-                              startIcon={<TuneRoundedIcon sx={{ fontSize: 13 }} />}
+                              startIcon={<TuneRoundedIcon sx={{ fontSize: 12 }} />}
                               onClick={() => setCustomRulesMetric(pos)}
                               sx={{
-                                height: 28,
-                                px: 1.25,
-                                fontSize: '0.7rem',
+                                height: 26,
+                                px: 1,
+                                fontSize: '0.68rem',
                                 fontWeight: 700,
                                 textTransform: 'none',
                                 whiteSpace: 'nowrap',
-                                minWidth: 'max-content',
-                                lineHeight: 1,
                                 bgcolor: customRules?.autoExecuteEnabled ? '#10B981' : 'transparent',
-                                color: customRules?.autoExecuteEnabled
-                                  ? '#FFFFFF'
-                                  : isDark
-                                  ? '#E2E8F0'
-                                  : '#1E293B',
-                                borderColor: customRules?.autoExecuteEnabled
-                                  ? '#10B981'
-                                  : isDark
-                                  ? 'rgba(255, 255, 255, 0.15)'
-                                  : 'rgba(0, 0, 0, 0.15)',
-                                borderRadius: '6px',
-                                '&:hover': {
-                                  bgcolor: customRules?.autoExecuteEnabled ? '#059669' : alpha('#3B82F6', 0.1),
-                                  borderColor: '#3B82F6',
-                                },
+                                color: customRules?.autoExecuteEnabled ? '#FFFFFF' : 'text.secondary',
+                                borderColor: customRules?.autoExecuteEnabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                                borderRadius: '5px',
                               }}
                             >
                               {customRules?.autoExecuteEnabled ? '⚡ Auto Armed' : '⚙️ Rules'}
                             </Button>
                           </Box>
 
-                          {/* Right SL Controls */}
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                             <Button
                               size="small"
                               variant="outlined"
-                              startIcon={<ShieldRoundedIcon sx={{ fontSize: 13 }} />}
+                              startIcon={<ShieldRoundedIcon sx={{ fontSize: 12 }} />}
                               endIcon={<EditRoundedIcon sx={{ fontSize: 11 }} />}
                               onClick={() => handleOpenEditSl(pos)}
                               sx={{
-                                height: 28,
+                                height: 26,
                                 px: 1,
-                                fontSize: '0.7rem',
+                                fontSize: '0.68rem',
                                 fontWeight: 700,
                                 textTransform: 'none',
                                 borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
                                 color: isDark ? '#E2E8F0' : '#1E293B',
-                                borderRadius: '6px',
+                                borderRadius: '5px',
                                 '&:hover': { borderColor: '#3B82F6', color: '#3B82F6' },
                               }}
                             >
@@ -2406,82 +2378,10 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
-                        {/* Psychological Pulse Check-In */}
-                        <Box
-                          sx={{
-                            mb: 1.5,
-                            px: 1.25,
-                            py: 0.75,
-                            borderRadius: '8px',
-                            bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
-                            border: '1px solid',
-                            borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 1,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <span>🧠 In-Trade Pulse Check:</span>
-                          </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-                            {[
-                              { emotion: 'CALM', label: '😌 Calm', color: '#10B981' },
-                              { emotion: 'FOMO', label: '⚡ FOMO', color: '#F59E0B' },
-                              { emotion: 'HESITANT', label: '⏳ Hesitant', color: '#6366F1' },
-                              { emotion: 'GREEDY', label: '💰 Greedy', color: '#EC4899' },
-                              { emotion: 'ANXIOUS', label: '🚨 Anxious', color: '#EF4444' },
-                            ].map((item) => (
-                              <Button
-                                key={item.emotion}
-                                size="small"
-                                onClick={() => handleRecordPulse(pos.tradeId, item.emotion)}
-                                sx={{
-                                  minWidth: 'auto',
-                                  px: 1,
-                                  py: 0.25,
-                                  fontSize: '0.64rem',
-                                  fontWeight: 700,
-                                  borderRadius: '5px',
-                                  textTransform: 'none',
-                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
-                                  color: 'text.secondary',
-                                  '&:hover': {
-                                    bgcolor: alpha(item.color, 0.15),
-                                    color: item.color,
-                                  },
-                                }}
-                              >
-                                {item.label}
-                              </Button>
-                            ))}
-                          </Box>
-                        </Box>
-
-                        {/* Tactical Real-Time Range & Price Gauge */}
-                        <Box sx={{ mb: 1.5 }}>
-                          <LivePriceGauge
-                            metric={pos}
-                            onQuickTrailSl={(newSl) => {
-                              updateSlMutation.mutate({ tradeId: pos.tradeId, newStopLoss: newSl, executeBroker: true });
-                            }}
-                          />
-                        </Box>
-
-                        {/* Quantitative Options Greeks Card (when derivatives / options trade) */}
-                        {pos.optionsGreeks && (
-                          <Box sx={{ mb: 1.5 }}>
-                            <LiveOptionsGreeksCard greeks={pos.optionsGreeks} isDark={isDark} />
-                          </Box>
-                        )}
-
-                        {/* 3. Responsive 2-Column Split Body */}
+                        {/* 3. Balanced 2-Column Split: Left Vitals & Radar vs Right Tabbed Inspector */}
                         <Grid container spacing={1.5} sx={{ alignItems: 'stretch' }}>
-                          {/* Left Column: Live Vitals & Proximity */}
+                          {/* Left Column: Vitals, Price Gauge & Stop Buffer */}
                           <Grid size={{ xs: 12, md: 5.5, lg: 5.5 }}>
-                            {/* Execution & Stop Buffer Card */}
                             <Box
                               sx={{
                                 p: 1.25,
@@ -2492,272 +2392,145 @@ export function LiveOpenTradeWatcher({
                                 height: '100%',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: 1.25,
+                                gap: 1,
                               }}
                             >
-                              {/* 4-Metric Position Vitals Matrix */}
+                              {/* Integrated Live Price Gauge */}
+                              <LivePriceGauge
+                                metric={pos}
+                                onQuickTrailSl={(newSl) => {
+                                  updateSlMutation.mutate({ tradeId: pos.tradeId, newStopLoss: newSl, executeBroker: true });
+                                }}
+                              />
+
+                              {/* 2x2 Key Vitals Matrix */}
                               <Grid container spacing={1}>
-                                {/* Entry */}
                                 <Grid size={{ xs: 6 }}>
-                                  <Box
-                                    sx={{
-                                      p: 1,
-                                      borderRadius: '8px',
-                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
-                                      border: '1px solid',
-                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                    }}
-                                  >
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                  <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
                                       Entry Price
                                     </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
                                       ₹{pos.entryPrice}
                                     </Typography>
-                                    <Typography
-                                      variant="caption"
-                                      sx={{
-                                        fontSize: '0.62rem',
-                                        fontWeight: 700,
-                                        color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
-                                      }}
-                                    >
+                                    <Typography variant="caption" sx={{ fontSize: '0.6rem', fontWeight: 700, color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E' }}>
                                       {pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts ({pos.priceDeltaPercent >= 0 ? '+' : ''}{pos.priceDeltaPercent}%)
                                     </Typography>
                                   </Box>
                                 </Grid>
 
-                                {/* Current LTP */}
                                 <Grid size={{ xs: 6 }}>
-                                  <Box
-                                    sx={{
-                                      p: 1,
-                                      borderRadius: '8px',
-                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
-                                      border: '1px solid',
-                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                    }}
-                                  >
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                  <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
                                       Current LTP
                                     </Typography>
-                                    <Typography
-                                      variant="body2"
-                                      sx={{
-                                        fontWeight: 800,
-                                        color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 0.25,
-                                      }}
-                                    >
+                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem', color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E' }}>
                                       ₹{pos.currentLtp}
-                                      {pos.priceDeltaPoints >= 0 ? (
-                                        <TrendingUpRoundedIcon sx={{ fontSize: 13 }} />
-                                      ) : (
-                                        <TrendingDownRoundedIcon sx={{ fontSize: 13 }} />
-                                      )}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
                                       Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, 'INR')}
                                     </Typography>
                                   </Box>
                                 </Grid>
 
-                                {/* Capital At Risk (1R) */}
                                 <Grid size={{ xs: 6 }}>
-                                  <Box
-                                    sx={{
-                                      p: 1,
-                                      borderRadius: '8px',
-                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
-                                      border: '1px solid',
-                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                    }}
-                                  >
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                  <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
                                       Risk Capital (1R)
                                     </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, color: '#F43F5E' }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem', color: '#F43F5E' }}>
                                       {initialRiskAmount !== null ? formatCurrency(initialRiskAmount, 'INR') : '—'}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
                                       {initialRiskPts !== null ? `${initialRiskPts.toFixed(1)} pts risk` : 'No stop set'}
                                     </Typography>
                                   </Box>
                                 </Grid>
 
-                                {/* Position Notional Exposure */}
                                 <Grid size={{ xs: 6 }}>
-                                  <Box
-                                    sx={{
-                                      p: 1,
-                                      borderRadius: '8px',
-                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)',
-                                      border: '1px solid',
-                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-                                    }}
-                                  >
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
+                                  <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.025)' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>
                                       Position Value
                                     </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
                                       {formatCurrency(notionalExposure, 'INR')}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                      {multiplier > 1
-                                        ? `${pos.quantity ?? 1} lots (${((pos.quantity ?? 1) * multiplier).toLocaleString()} units) @ LTP`
-                                        : `${pos.quantity ?? 1} units @ LTP`}
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                                      {multiplier > 1 ? `${pos.quantity ?? 1} lots` : `${pos.quantity ?? 1} units`}
                                     </Typography>
                                   </Box>
                                 </Grid>
                               </Grid>
 
-                              {/* Stop Loss Safety Runway Bar */}
-                              <Box
-                                sx={{
-                                  p: 1,
-                                  borderRadius: '8px',
-                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-                                  border: '1px solid',
-                                  borderColor: threat.border,
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    <ShieldRoundedIcon sx={{ fontSize: 13, color: threat.color }} />
-                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700 }}>
-                                      Stop Loss Runway
-                                    </Typography>
-                                  </Box>
-                                  <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 800, color: threat.color }}>
+                              {/* Stop Loss Runway Progress */}
+                              <Box sx={{ p: 0.75, borderRadius: '6px', border: `1px solid ${threat.border}` }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <ShieldRoundedIcon sx={{ fontSize: 12, color: threat.color }} />
+                                    SL Runway
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 800, color: threat.color }}>
                                     {pos.distanceToStopPoints !== null
                                       ? `${pos.distanceToStopPoints > 0 ? `${pos.distanceToStopPoints} pts` : 'Breached'} (${pos.distanceToStopTicks ?? 0} ticks)`
-                                      : 'No Stop Loss Set'}
+                                      : 'No SL Set'}
                                   </Typography>
                                 </Box>
-
                                 <LinearProgress
                                   variant="determinate"
                                   value={stopSafetyPercent ?? (pos.stopLoss !== null ? 100 : 0)}
                                   sx={{
-                                    height: 5,
-                                    borderRadius: 2.5,
+                                    height: 4,
+                                    borderRadius: 2,
                                     bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                                    '& .MuiLinearProgress-bar': {
-                                      bgcolor: threat.color,
-                                      borderRadius: 2.5,
-                                    },
+                                    '& .MuiLinearProgress-bar': { bgcolor: threat.color, borderRadius: 2 },
                                   }}
                                 />
-
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                    SL: {pos.stopLoss !== null ? `₹${pos.stopLoss}` : '—'}
-                                  </Typography>
-                                  <Typography variant="caption" sx={{ fontSize: '0.62rem', fontWeight: 700, color: threat.color }}>
-                                    {threat.label} {stopSafetyPercent !== null ? `(${stopSafetyPercent.toFixed(0)}% runway)` : ''}
-                                  </Typography>
-                                </Box>
                               </Box>
 
-                              {/* Target Runway / Active Objective Bar */}
+                              {/* Target Runway */}
                               {pos.target !== null ? (
-                                <Box
-                                  sx={{
-                                    p: 1,
-                                    borderRadius: '8px',
-                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-                                    border: '1px solid',
-                                    borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
-                                  }}
-                                >
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5, color: '#3B82F6' }}>
-                                      <TrackChangesRoundedIcon sx={{ fontSize: 13 }} />
+                                <Box sx={{ p: 0.75, borderRadius: '6px', border: '1px solid', borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)' }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                                    <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, color: '#3B82F6' }}>
                                       Target: ₹{pos.target}
                                     </Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.68rem', color: '#3B82F6' }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.65rem', color: '#3B82F6' }}>
                                       {pos.targetProgressPercent !== null ? `${pos.targetProgressPercent}%` : ''}
                                     </Typography>
                                   </Box>
-
                                   <LinearProgress
                                     variant="determinate"
                                     value={Math.min(Math.max(pos.targetProgressPercent ?? 0, 0), 100)}
                                     sx={{
-                                      height: 5,
-                                      borderRadius: 2.5,
+                                      height: 4,
+                                      borderRadius: 2,
                                       bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2.5 },
+                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2 },
                                     }}
                                   />
-
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                      {pos.distanceToTargetPoints !== null ? `${Math.abs(pos.distanceToTargetPoints)} pts away` : ''}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                      {pos.distanceToTargetTicks !== null ? `${pos.distanceToTargetTicks} ticks` : ''}
-                                    </Typography>
-                                  </Box>
                                 </Box>
                               ) : nextLadderMilestone ? (
-                                <Box
-                                  sx={{
-                                    p: 1,
-                                    borderRadius: '8px',
-                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-                                    border: '1px solid',
-                                    borderColor: alpha('#3B82F6', 0.25),
-                                  }}
-                                >
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5, color: '#3B82F6' }}>
-                                      <TrackChangesRoundedIcon sx={{ fontSize: 13 }} />
-                                      Next Objective: {nextLadderMilestone.name} @ ₹{nextLadderMilestone.targetPrice}
+                                <Box sx={{ p: 0.75, borderRadius: '6px', border: '1px solid', borderColor: alpha('#3B82F6', 0.25) }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                                    <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, color: '#3B82F6' }}>
+                                      Next: {nextLadderMilestone.name} @ ₹{nextLadderMilestone.targetPrice}
                                     </Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.68rem', color: '#3B82F6' }}>
-                                      {nextLadderMilestone.progressPercent}% RUN
+                                    <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.65rem', color: '#3B82F6' }}>
+                                      {nextLadderMilestone.progressPercent}%
                                     </Typography>
                                   </Box>
-
                                   <LinearProgress
                                     variant="determinate"
                                     value={Math.min(Math.max(nextLadderMilestone.progressPercent ?? 0, 0), 100)}
                                     sx={{
-                                      height: 5,
-                                      borderRadius: 2.5,
+                                      height: 4,
+                                      borderRadius: 2,
                                       bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2.5 },
+                                      '& .MuiLinearProgress-bar': { bgcolor: '#3B82F6', borderRadius: 2 },
                                     }}
                                   />
-
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                      {nextLadderMilestone.distancePoints} pts remaining ({nextLadderMilestone.plannedExitQty} qty book)
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ fontSize: '0.62rem', fontWeight: 700, color: '#3B82F6' }}>
-                                      {nextLadderMilestone.status}
-                                    </Typography>
-                                  </Box>
                                 </Box>
-                              ) : (
-                                <Box
-                                  sx={{
-                                    p: 1,
-                                    borderRadius: '8px',
-                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-                                    border: '1px dashed',
-                                    borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                                    textAlign: 'center',
-                                  }}
-                                >
-                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                    Runner Mode • No fixed target defined
-                                  </Typography>
-                                </Box>
-                              )}
+                              ) : null}
 
                               {/* Footer Friction Summary */}
                               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 0.5, mt: 'auto' }}>
@@ -2771,22 +2544,25 @@ export function LiveOpenTradeWatcher({
                             </Box>
                           </Grid>
 
-                          {/* Right Column: Tactical Strategy Inspector (Scaling Ladder vs Giveback Meter) */}
+                          {/* Right Column: Contextual Tabbed Inspector */}
                           <Grid size={{ xs: 12, md: 6.5, lg: 6.5 }}>
                             <Box
                               sx={{
-                                p: 1,
+                                p: 1.25,
                                 borderRadius: '10px',
                                 bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
                                 border: '1px solid',
                                 borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                                height: '100%',
+                                display: 'flex',
+                                flexDirection: 'column',
                               }}
                             >
-                              {/* Sub-tab switcher */}
-                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              {/* 4-Tab Segmented Selector */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
+                                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                                   <Chip
-                                    label="🪜 SCALING LADDER"
+                                    label="🪜 LADDER"
                                     size="small"
                                     onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'ladder' }))}
                                     clickable
@@ -2801,84 +2577,187 @@ export function LiveOpenTradeWatcher({
                                     }}
                                   />
 
-                                  {pos.giveback && (
-                                    <Chip
-                                      label={`🛡️ GIVEBACK ${
-                                        pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                          ? '🚨'
-                                          : pos.giveback.threatLevel === 'LEAKING'
-                                          ? '⚠️'
-                                          : ''
-                                      }`}
-                                      size="small"
-                                      onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'giveback' }))}
-                                      clickable
-                                      sx={{
-                                        height: 22,
-                                        fontSize: '0.62rem',
-                                        fontWeight: 800,
-                                        bgcolor: activeTacticalTab === 'giveback'
-                                          ? pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                            ? alpha('#EF4444', 0.2)
-                                            : pos.giveback.threatLevel === 'LEAKING'
-                                            ? alpha('#F59E0B', 0.2)
-                                            : alpha('#10B981', 0.2)
-                                          : 'transparent',
-                                        color: activeTacticalTab === 'giveback'
-                                          ? pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                            ? '#EF4444'
-                                            : pos.giveback.threatLevel === 'LEAKING'
-                                            ? '#F59E0B'
-                                            : '#10B981'
-                                          : 'text.secondary',
-                                        border: `1px solid ${
-                                          activeTacticalTab === 'giveback'
-                                            ? alpha(
-                                                pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                                  ? '#EF4444'
-                                                  : pos.giveback.threatLevel === 'LEAKING'
-                                                  ? '#F59E0B'
-                                                  : '#10B981',
-                                                0.4
-                                              )
-                                            : 'transparent'
-                                        }`,
-                                        borderRadius: '5px',
-                                      }}
-                                    />
-                                  )}
+                                  <Chip
+                                    label={`🛡️ GIVEBACK ${
+                                      pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
+                                        ? '🚨'
+                                        : pos.giveback?.threatLevel === 'LEAKING'
+                                        ? '⚠️'
+                                        : ''
+                                    }`}
+                                    size="small"
+                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'giveback' }))}
+                                    clickable
+                                    sx={{
+                                      height: 22,
+                                      fontSize: '0.62rem',
+                                      fontWeight: 800,
+                                      bgcolor: activeTacticalTab === 'giveback'
+                                        ? pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
+                                          ? alpha('#EF4444', 0.2)
+                                          : pos.giveback?.threatLevel === 'LEAKING'
+                                          ? alpha('#F59E0B', 0.2)
+                                          : alpha('#10B981', 0.2)
+                                        : 'transparent',
+                                      color: activeTacticalTab === 'giveback'
+                                        ? pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
+                                          ? '#EF4444'
+                                          : pos.giveback?.threatLevel === 'LEAKING'
+                                          ? '#F59E0B'
+                                          : '#10B981'
+                                        : 'text.secondary',
+                                      border: `1px solid ${
+                                        activeTacticalTab === 'giveback'
+                                          ? alpha('#3B82F6', 0.4)
+                                          : 'transparent'
+                                      }`,
+                                      borderRadius: '5px',
+                                    }}
+                                  />
+
+                                  <Chip
+                                    label="📊 GREEKS & EDGE"
+                                    size="small"
+                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'greeks' }))}
+                                    clickable
+                                    sx={{
+                                      height: 22,
+                                      fontSize: '0.62rem',
+                                      fontWeight: 800,
+                                      bgcolor: activeTacticalTab === 'greeks' ? alpha('#8B5CF6', 0.2) : 'transparent',
+                                      color: activeTacticalTab === 'greeks' ? '#8B5CF6' : 'text.secondary',
+                                      border: `1px solid ${activeTacticalTab === 'greeks' ? alpha('#8B5CF6', 0.4) : 'transparent'}`,
+                                      borderRadius: '5px',
+                                    }}
+                                  />
+
+                                  <Chip
+                                    label="🧠 PULSE"
+                                    size="small"
+                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'pulse' }))}
+                                    clickable
+                                    sx={{
+                                      height: 22,
+                                      fontSize: '0.62rem',
+                                      fontWeight: 800,
+                                      bgcolor: activeTacticalTab === 'pulse' ? alpha('#EC4899', 0.2) : 'transparent',
+                                      color: activeTacticalTab === 'pulse' ? '#EC4899' : 'text.secondary',
+                                      border: `1px solid ${activeTacticalTab === 'pulse' ? alpha('#EC4899', 0.4) : 'transparent'}`,
+                                      borderRadius: '5px',
+                                    }}
+                                  />
                                 </Box>
 
                                 {activeTacticalTab === 'ladder' && (effectiveLadder || pos.targetLadder) && (
-                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
                                     1R = {(effectiveLadder || pos.targetLadder)!.initialRiskPoints.toFixed(1)} pts
                                   </Typography>
                                 )}
                               </Box>
 
-                              {/* Tab Content */}
-                              {activeTacticalTab === 'ladder' && (effectiveLadder || pos.targetLadder) ? (
-                                <LiveScalingLadder
-                                  ladder={effectiveLadder || pos.targetLadder!}
-                                  metric={{ ...pos, lotSize: effectiveLotSize }}
-                                  compact
-                                  onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
-                                  onOpenCustomRules={() => setCustomRulesMetric(pos)}
-                                />
-                              ) : pos.giveback ? (
-                                <LiveGivebackMeter
-                                  giveback={pos.giveback}
-                                  metric={pos}
-                                  compact
-                                  onLockProfit={() => handleOpenQuickClose(pos, 0.5)}
-                                />
-                              ) : (
-                                <Box sx={{ py: 2, textAlign: 'center' }}>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Set Stop Loss & Target in trade details to activate automated scaling ladder.
-                                  </Typography>
-                                </Box>
-                              )}
+                              {/* Tab Content Display */}
+                              <Box sx={{ flex: 1 }}>
+                                {activeTacticalTab === 'ladder' && (effectiveLadder || pos.targetLadder) ? (
+                                  <LiveScalingLadder
+                                    ladder={effectiveLadder || pos.targetLadder!}
+                                    metric={{ ...pos, lotSize: effectiveLotSize }}
+                                    compact
+                                    onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
+                                    onOpenCustomRules={() => setCustomRulesMetric(pos)}
+                                  />
+                                ) : activeTacticalTab === 'giveback' && pos.giveback ? (
+                                  <LiveGivebackMeter
+                                    giveback={pos.giveback}
+                                    metric={pos}
+                                    compact
+                                    onLockProfit={() => handleOpenQuickClose(pos, 0.5)}
+                                  />
+                                ) : activeTacticalTab === 'greeks' ? (
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {pos.optionsGreeks && (
+                                      <LiveOptionsGreeksCard greeks={pos.optionsGreeks} isDark={isDark} />
+                                    )}
+                                    {pos.setupEdgeStats ? (
+                                      <Box
+                                        sx={{
+                                          p: 1,
+                                          borderRadius: '8px',
+                                          bgcolor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+                                          border: '1px solid',
+                                          borderColor: alpha('#3B82F6', 0.2),
+                                        }}
+                                      >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                          <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.7rem', color: '#3B82F6' }}>
+                                            {typeof pos.setupEdgeStats.setupName === 'string'
+                                              ? pos.setupEdgeStats.setupName
+                                              : 'Setup Edge Intelligence'}
+                                          </Typography>
+                                          <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>
+                                            Win Rate: <strong style={{ color: '#10B981' }}>{pos.setupEdgeStats.winRate}%</strong> ({pos.setupEdgeStats.totalSampleTrades} trades)
+                                          </Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.65rem', color: 'text.secondary' }}>
+                                          <span>Expectancy: <strong style={{ color: pos.setupEdgeStats.expectancyR >= 0 ? '#10B981' : '#F43F5E' }}>{pos.setupEdgeStats.expectancyR > 0 ? '+' : ''}{pos.setupEdgeStats.expectancyR}R</strong></span>
+                                          <span>Avg MFE: <strong style={{ color: '#10B981' }}>+{pos.setupEdgeStats.avgMfeR}R</strong></span>
+                                          <span>Avg MAE: <strong style={{ color: '#F43F5E' }}>-{pos.setupEdgeStats.avgMaeR}R</strong></span>
+                                        </Box>
+                                      </Box>
+                                    ) : !pos.optionsGreeks ? (
+                                      <Box sx={{ py: 3, textAlign: 'center' }}>
+                                        <Typography variant="caption" color="text.secondary">
+                                          Historical setup intelligence or options greeks will populate for this contract.
+                                        </Typography>
+                                      </Box>
+                                    ) : null}
+                                  </Box>
+                                ) : activeTacticalTab === 'pulse' ? (
+                                  <Box sx={{ p: 1 }}>
+                                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, color: 'text.secondary', display: 'block', mb: 1 }}>
+                                      Select your current emotional state during this trade:
+                                    </Typography>
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
+                                      {[
+                                        { emotion: 'CALM', label: '😌 Calm & Focused', color: '#10B981' },
+                                        { emotion: 'FOMO', label: '⚡ FOMO Entered', color: '#F59E0B' },
+                                        { emotion: 'HESITANT', label: '⏳ Hesitant', color: '#6366F1' },
+                                        { emotion: 'GREEDY', label: '💰 Greedy / Overconfident', color: '#EC4899' },
+                                        { emotion: 'ANXIOUS', label: '🚨 Anxious / Stressed', color: '#EF4444' },
+                                      ].map((item) => (
+                                        <Button
+                                          key={item.emotion}
+                                          size="small"
+                                          onClick={() => handleRecordPulse(pos.tradeId, item.emotion)}
+                                          sx={{
+                                            py: 0.75,
+                                            px: 1,
+                                            fontSize: '0.68rem',
+                                            fontWeight: 700,
+                                            borderRadius: '6px',
+                                            textTransform: 'none',
+                                            bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                                            color: 'text.primary',
+                                            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'}`,
+                                            '&:hover': {
+                                              bgcolor: alpha(item.color, 0.15),
+                                              color: item.color,
+                                              borderColor: item.color,
+                                            },
+                                          }}
+                                        >
+                                          {item.label}
+                                        </Button>
+                                      ))}
+                                    </Box>
+                                  </Box>
+                                ) : (
+                                  <Box sx={{ py: 3, textAlign: 'center' }}>
+                                    <Typography variant="caption" color="text.secondary">
+                                      Set Stop Loss & Target in trade details to activate automated scaling ladder.
+                                    </Typography>
+                                  </Box>
+                                )}
+                              </Box>
                             </Box>
                           </Grid>
                         </Grid>
@@ -3203,11 +3082,14 @@ export function LiveOpenTradeWatcher({
           trade={quickCloseTrade}
           defaultExitPrice={quickCloseLtp}
           defaultCloseRatio={quickCloseRatio}
-          onSuccess={() => {
+          onSuccess={(closedTradeData?: any) => {
             queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
             queryClient.invalidateQueries({ queryKey: ['trades'] });
             queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
             if (onTradeCloseSuccess) onTradeCloseSuccess();
+            if (closedTradeData) {
+              setRecapTrade(closedTradeData);
+            }
           }}
         />
       )}
@@ -3261,6 +3143,15 @@ export function LiveOpenTradeWatcher({
             queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
             if (onTradeCloseSuccess) onTradeCloseSuccess();
           }}
+        />
+      )}
+
+      {/* 🏁 Instant Post-Trade Flight Recorder & Trade Receipt Dialog */}
+      {recapTrade && (
+        <TradeFlightRecorderDialog
+          open={Boolean(recapTrade)}
+          onClose={() => setRecapTrade(null)}
+          trade={recapTrade}
         />
       )}
     </>

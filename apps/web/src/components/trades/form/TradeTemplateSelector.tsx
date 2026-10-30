@@ -74,6 +74,7 @@ export function TradeTemplateSelector({
   const { data: templates = [], isLoading } = useQuery<ITradeTemplate[]>({
     queryKey: ['templates'],
     queryFn: () => api.templates.list(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const saveMutation = useMutation({

@@ -514,7 +514,6 @@ export function TradeQuickSection({
             lotSize={lotSize}
             contractMultiplier={Number(contractMultiplier) || 1}
             dirtyFields={dirtyFields}
-            currentValues={watch()}
             strategies={strategies}
             onApplyTemplatePatch={onApplyTemplatePatch}
             onUndoTemplate={onUndoTemplate}

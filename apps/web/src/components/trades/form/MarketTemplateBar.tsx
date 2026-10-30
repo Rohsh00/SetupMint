@@ -48,7 +48,6 @@ export interface MarketTemplateBarProps {
   lotSize?: number;
   contractMultiplier?: number;
   dirtyFields: Record<string, any>;
-  currentValues: any;
   strategies: any[];
   onApplyTemplatePatch: (patch: TemplatePatch, template: ITradeTemplate) => void;
   onUndoTemplate?: () => void;
@@ -67,7 +66,6 @@ export function MarketTemplateBar({
   lotSize = 1,
   contractMultiplier = 1,
   dirtyFields,
-  currentValues,
   strategies,
   onApplyTemplatePatch,
   onUndoTemplate,
@@ -90,7 +88,7 @@ export function MarketTemplateBar({
       assetClass,
       direction,
       entryPrice,
-      entryTime: entryTime || new Date(),
+      entryTime: entryTime ? new Date(entryTime) : undefined,
       tickSize,
       lotSize,
       contractMultiplier,

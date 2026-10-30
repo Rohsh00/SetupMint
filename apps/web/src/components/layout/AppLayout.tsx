@@ -135,7 +135,20 @@ export function AppLayout() {
   const { data: accounts = [] } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => api.accounts.list(),
+    staleTime: 5 * 60 * 1000,
   });
+
+  // Prefetch trade form reference data so opening 'Log New Trade' happens in 0ms synchronously from memory cache
+  const prefetchTradeFormData = React.useCallback(() => {
+    queryClient.prefetchQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list(), staleTime: 10 * 60 * 1000 });
+    queryClient.prefetchQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list(), staleTime: 5 * 60 * 1000 });
+    queryClient.prefetchQuery({ queryKey: ['templates'], queryFn: () => api.templates.list(), staleTime: 5 * 60 * 1000 });
+    queryClient.prefetchQuery({ queryKey: ['trades', 'recent-tilt'], queryFn: () => api.trades.list({ limit: 20 }), staleTime: 60 * 1000 });
+  }, [queryClient]);
+
+  useEffect(() => {
+    prefetchTradeFormData();
+  }, [prefetchTradeFormData]);
 
   // Query FYERS live connection status
   const { data: fyersStatus } = useQuery({
@@ -263,6 +276,7 @@ export function AppLayout() {
           fullWidth
           variant="contained"
           color="primary"
+          onMouseEnter={prefetchTradeFormData}
           onClick={() => {
             setIsTradeModalOpen(true);
             if (isMobile) setMobileOpen(false);

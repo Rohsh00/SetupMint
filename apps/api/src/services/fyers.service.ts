@@ -1293,6 +1293,26 @@ export class FyersService {
                 ? 'LOSS'
                 : 'BREAKEVEN';
 
+              // Check for modified resting Stop Loss on open positions
+              if (!fifoSummary.isFullyClosed && normalizedOrders && normalizedOrders.length > 0) {
+                const isShort = existing.direction === 'SHORT';
+                const expectedSide = isShort ? 1 : -1;
+                const restingOrder = normalizedOrders.find((o: any) => {
+                  if (o.status !== 6 && o.status !== 4) return false;
+                  if (o.side !== expectedSide) return false;
+                  const match = o.symbol === formattedSymbol || o.symbol === existing.symbol || (o.symbol && o.symbol.includes(existing.underlying));
+                  return match && (o.orderType === 4 || o.orderType === 3 || Number(o.stopPrice || 0) > 0);
+                });
+                if (restingOrder && Number(restingOrder.stopPrice || restingOrder.price) > 0) {
+                  const currentSl = Number(restingOrder.stopPrice || restingOrder.price);
+                  if (existing.risk?.currentStopLoss !== currentSl) {
+                    existing.risk = existing.risk || {};
+                    existing.risk.currentStopLoss = currentSl;
+                    existing.markModified('risk');
+                  }
+                }
+              }
+
               // If existing trade has no initial stop loss, attempt to auto-fill from orderbook
               if (!existing.risk?.initialStopLoss) {
                 this.applySLOrderMatchingToTrade(existing, normalizedOrders, {

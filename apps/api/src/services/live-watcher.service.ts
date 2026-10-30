@@ -461,7 +461,7 @@ export class LiveWatcherService {
       }
     }
 
-    // 5. Resting Stop Loss Verification (Naked Position Flagging)
+    // 5. Resting Stop Loss Verification (Naked Position Flagging) & Live SL Synchronization
     if (metric.provider === 'FYERS') {
       try {
         const slCheck = await FyersService.checkRestingStopLossOrder(userId, trade._id.toString());
@@ -469,6 +469,30 @@ export class LiveWatcherService {
         metric.isNakedPosition = !slCheck.hasRestingSl;
         metric.restingSlPrice = slCheck.slPrice;
         metric.restingSlOrderId = slCheck.orderId;
+
+        // If the trader modified their resting SL on FYERS, dynamically update metric.stopLoss and distance
+        if (slCheck.hasRestingSl && typeof slCheck.slPrice === 'number' && slCheck.slPrice > 0) {
+          if (metric.stopLoss !== slCheck.slPrice) {
+            metric.stopLoss = slCheck.slPrice;
+            const isLong = metric.direction === 'LONG';
+            const bufferPts = isLong ? (metric.currentLtp - slCheck.slPrice) : (slCheck.slPrice - metric.currentLtp);
+            metric.distanceToStopPoints = Number(bufferPts.toFixed(2));
+            const tick = metric.tickSize && metric.tickSize > 0 ? metric.tickSize : 0.05;
+            metric.distanceToStopTicks = Math.round(bufferPts / tick);
+            metric.distanceToStopPercent = metric.currentLtp > 0 ? Number(((Math.abs(bufferPts) / metric.currentLtp) * 100).toFixed(2)) : 0;
+            if (bufferPts <= 0) {
+              metric.stopThreatLevel = 'BREACHED';
+            } else {
+              metric.stopThreatLevel = 'SAFE';
+            }
+
+            // Also persist active currentStopLoss to trade document in DB
+            Trade.updateOne(
+              { _id: trade._id },
+              { $set: { 'risk.currentStopLoss': slCheck.slPrice } }
+            ).catch(() => {});
+          }
+        }
       } catch {
         metric.hasRestingBrokerSl = false;
         metric.isNakedPosition = true;

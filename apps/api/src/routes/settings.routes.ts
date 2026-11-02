@@ -122,6 +122,15 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         telegramAlertPolicies: liveWatcherSettings.telegramAlertPolicies || {},
         hardDisciplineLockoutEnabled: liveWatcherSettings.hardDisciplineLockoutEnabled !== undefined ? Boolean(liveWatcherSettings.hardDisciplineLockoutEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutEnabled,
         hardDisciplineLockoutDurationMins: liveWatcherSettings.hardDisciplineLockoutDurationMins !== undefined ? Number(liveWatcherSettings.hardDisciplineLockoutDurationMins) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutDurationMins,
+        staleDataThresholdSeconds: liveWatcherSettings.staleDataThresholdSeconds !== undefined ? Number(liveWatcherSettings.staleDataThresholdSeconds) : (DEFAULT_LIVE_WATCHER_SETTINGS.staleDataThresholdSeconds ?? 10),
+        requireHoldToConfirm: liveWatcherSettings.requireHoldToConfirm !== undefined ? Boolean(liveWatcherSettings.requireHoldToConfirm) : (DEFAULT_LIVE_WATCHER_SETTINGS.requireHoldToConfirm ?? true),
+        cardDensity: liveWatcherSettings.cardDensity || DEFAULT_LIVE_WATCHER_SETTINGS.cardDensity || 'standard',
+        sortMode: liveWatcherSettings.sortMode || DEFAULT_LIVE_WATCHER_SETTINGS.sortMode || 'urgency',
+        ladderViewMode: liveWatcherSettings.ladderViewMode || DEFAULT_LIVE_WATCHER_SETTINGS.ladderViewMode || 'classic',
+        layoutPresets: Array.isArray(liveWatcherSettings.layoutPresets)
+          ? liveWatcherSettings.layoutPresets
+          : DEFAULT_LIVE_WATCHER_SETTINGS.layoutPresets,
+        activePresetId: liveWatcherSettings.activePresetId || DEFAULT_LIVE_WATCHER_SETTINGS.activePresetId || 'positional',
       };
     }
 

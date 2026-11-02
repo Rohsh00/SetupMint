@@ -11,6 +11,13 @@ import {
   ICustomLadderRules,
   IDynamicTrailingRule,
   IGivebackAutoExitRule,
+  ILiveDataHealth,
+  LiveConnectionState,
+  NextActionHintType,
+  INextActionHint,
+  IPostTradeReviewData,
+  ISuggestedMistake,
+  INormalizedPulseCheckIn,
 } from '@tradevault/shared';
 import { calculateLinearPnL } from './pnl.js';
 import { calculateIndianCharges, calculateTrueBreakevenPrice } from './charges.js';
@@ -63,6 +70,7 @@ export interface ILiveOpenTradeCalculationParams {
     peakFloatingNetPnL?: number;
     peakUnrealizedR?: number;
   };
+  dataHealth?: ILiveDataHealth;
 }
 
 export interface ILiveOpenTradeMetric {
@@ -96,7 +104,7 @@ export interface ILiveOpenTradeMetric {
   targetProgressPercent: number | null;
   tickSize: number;
   provider: LiveQuoteProvider;
-  asOf: Date;
+  asOf: Date | string;
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
   optionsGreeks?: IPositionGreeksSummary;
@@ -108,14 +116,18 @@ export interface ILiveOpenTradeMetric {
   restingSlOrderId?: string;
   restingSlPrice?: number;
   setupEdgeStats?: {
+    setupName?: string;
+    totalSampleTrades?: number;
+    sampleSize?: number;
     winRate: number;
-    sampleSize: number;
     avgMfeR: number;
     avgMaeR: number;
     expectancyR: number;
     confidenceLevel: 'HIGH' | 'MODERATE' | 'LOW';
   };
   serverAutoExecutionArmed?: boolean;
+  dataHealth?: ILiveDataHealth;
+  nextActionHint?: INextActionHint | null;
 }
 
 export interface ILiveWatcherSummary {
@@ -130,8 +142,9 @@ export interface ILiveWatcherSummary {
   breakevenCount: number;
   positions: ILiveOpenTradeMetric[];
   provider: LiveQuoteProvider;
-  asOf: Date;
+  asOf: Date | string;
   portfolioRisk?: IPortfolioRiskResult;
+  dataHealth?: ILiveDataHealth;
 }
 
 export function calculateLiveGiveback(params: {
@@ -144,6 +157,7 @@ export function calculateLiveGiveback(params: {
     peakFloatingNetPnL?: number;
     peakUnrealizedR?: number;
   };
+  dataHealth?: ILiveDataHealth;
 }): ILiveGivebackMetric {
   const isLong = params.direction === 'LONG';
   const curNet = Number(params.floatingNetPnL.toFixed(2));
@@ -663,7 +677,7 @@ export function calculateLiveOpenTradeMetric(
       estimatedCharges,
     });
 
-    return {
+    const metric: ILiveOpenTradeMetric = {
       tradeId: params.tradeId,
       symbol: params.symbol,
       direction: params.direction,
@@ -703,7 +717,139 @@ export function calculateLiveOpenTradeMetric(
         previousPeakMfe: params.previousPeakMfe,
       }),
       targetLadder,
+      dataHealth: params.dataHealth,
     };
+
+    metric.nextActionHint = selectNextActionHint(metric);
+
+    return metric;
+}
+
+/**
+ * Deterministically selects ONE high-conviction next-action hint for an open trade.
+ * Priority hierarchy:
+ * 1. Stop loss BREACHED (Highest priority emergency exit)
+ * 2. Stop loss CRITICAL (Immediate risk mitigation)
+ * 3. CRITICAL_REVERSAL (Severe giveback from >= 1R peak)
+ * 4. Ladder Step MET (Take profit scale-out milestone)
+ * 5. PROFIT_LEAKING (35%+ giveback from peak)
+ * 6. TRADE_STAGNANT (Theta burn / time stop suggestion)
+ * Returns null if no action is triggered.
+ */
+export function selectNextActionHint(metric: ILiveOpenTradeMetric): INextActionHint | null {
+  // Priority 1: Stop Breached
+  if (metric.stopThreatLevel === 'BREACHED') {
+    return {
+      type: 'STOP_BREACHED',
+      priority: 1,
+      label: 'Stop Loss Breached',
+      description: 'LTP has breached your stop loss level. Exit immediately to prevent uncontrolled slippage.',
+      actionText: 'Market Exit 100%',
+      severity: 'error',
+      dialogType: 'CLOSE_ALL',
+      dialogPayload: {
+        suggestedExitRatio: 1.0,
+        recommendedReason: 'STOP_BREACHED',
+      },
+    };
+  }
+
+  // Priority 2: Stop Threat Critical
+  if (metric.stopThreatLevel === 'CRITICAL') {
+    const pts = metric.distanceToStopPoints !== null ? `${metric.distanceToStopPoints.toFixed(1)} pts` : 'few ticks';
+    return {
+      type: 'STOP_CRITICAL',
+      priority: 2,
+      label: 'Stop Loss Critical',
+      description: `LTP is within ${pts} of Stop Loss (${metric.stopLoss}). Cut early to save slippage or confirm broker SL.`,
+      actionText: 'Cut Position Now',
+      severity: 'error',
+      dialogType: 'CLOSE_ALL',
+      dialogPayload: {
+        suggestedExitRatio: 1.0,
+        recommendedReason: 'STOP_CRITICAL',
+      },
+    };
+  }
+
+  // Priority 3: Critical Giveback Reversal
+  if (metric.giveback?.threatLevel === 'CRITICAL_REVERSAL') {
+    const peakR = metric.giveback.peakUnrealizedR.toFixed(2);
+    const curR = (metric.unrealizedR ?? 0).toFixed(2);
+    return {
+      type: 'CRITICAL_REVERSAL',
+      priority: 3,
+      label: 'Critical Giveback Reversal',
+      description: `Peak +${peakR}R collapsed to +${curR}R. Protect capital before trade turns negative.`,
+      actionText: 'Flatten Trade Now',
+      severity: 'error',
+      dialogType: 'CLOSE_ALL',
+      dialogPayload: {
+        suggestedExitRatio: 1.0,
+        recommendedReason: 'CRITICAL_REVERSAL',
+      },
+    };
+  }
+
+  // Priority 4: Target Ladder Step Met
+  if (metric.targetLadder?.steps && metric.targetLadder.steps.length > 0) {
+    const metStep = metric.targetLadder.steps.find((s) => s.status === 'MET');
+    if (metStep) {
+      const stepKey = metStep.targetIndex === 1 ? 't1' : metStep.targetIndex === 2 ? 't2' : 't3';
+      const pctStr = `${Math.round(metStep.plannedExitRatio * 100)}%`;
+      return {
+        type: 'LADDER_STEP_MET',
+        priority: 4,
+        label: `${metStep.name} Target Met`,
+        description: `LTP reached ₹${metStep.targetPrice.toLocaleString('en-IN')}. Book ${pctStr} and ${metStep.suggestedStopLabel}.`,
+        actionText: `Execute ${metStep.name} (${pctStr})`,
+        severity: 'warning',
+        dialogType: 'PARTIAL_LADDER',
+        dialogPayload: {
+          ladderStep: stepKey,
+          suggestedExitRatio: metStep.plannedExitRatio,
+          suggestedNewStopLoss: metStep.suggestedStopLoss,
+          recommendedReason: 'LADDER_STEP_MET',
+        },
+      };
+    }
+  }
+
+  // Priority 5: Profit Leaking
+  if (metric.giveback?.threatLevel === 'LEAKING') {
+    return {
+      type: 'PROFIT_LEAKING',
+      priority: 5,
+      label: `Profit Leaking (-${metric.giveback.givebackPercent}%)`,
+      description: `Gave back ₹${metric.giveback.givebackAmount.toLocaleString('en-IN')} (${metric.giveback.givebackPercent}%) from +${metric.giveback.peakUnrealizedR.toFixed(2)}R peak. Lock profit!`,
+      actionText: 'Book 50% Partial',
+      severity: 'warning',
+      dialogType: 'CLOSE_ALL',
+      dialogPayload: {
+        suggestedExitRatio: 0.5,
+        recommendedReason: 'PROFIT_LEAKING',
+      },
+    };
+  }
+
+  // Priority 6: Stagnation
+  if (metric.stagnation && (metric.stagnation.isStagnant || metric.stagnation.timeStopSuggested)) {
+    return {
+      type: 'TRADE_STAGNANT',
+      priority: 6,
+      label: 'Trade Stagnant (Time Decay)',
+      description: metric.stagnation.message || `No momentum for ${metric.stagnation.minutesSincePeakMfe} mins. Free capital for higher-velocity setups.`,
+      actionText: 'Review Time Exit',
+      severity: 'info',
+      dialogType: 'CLOSE_ALL',
+      dialogPayload: {
+        suggestedExitRatio: 1.0,
+        recommendedReason: 'TRADE_STAGNANT',
+      },
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -711,7 +857,8 @@ export function calculateLiveOpenTradeMetric(
  */
 export function calculateLiveWatcherSummary(
   positions: ILiveOpenTradeMetric[],
-  asOf: Date = new Date()
+  asOf: Date = new Date(),
+  dataHealth?: ILiveDataHealth
 ): ILiveWatcherSummary {
   let totalGross = new Decimal(0);
   let totalCharges = new Decimal(0);
@@ -787,6 +934,7 @@ export function calculateLiveWatcherSummary(
     provider,
     asOf,
     portfolioRisk,
+    dataHealth,
   };
 }
 
@@ -930,6 +1078,427 @@ export function evaluateGivebackAutoExit(params: {
   return {
     shouldExit: false,
     reason: `Giveback ${giveback.givebackPercent.toFixed(1)}% within acceptable threshold (${maxGivebackPercent}%)`,
+  };
+}
+
+export interface IEvaluateDataHealthParams {
+  provider: LiveQuoteProvider;
+  lastTickAt?: Date | number | string | null;
+  asOf?: Date | number | string;
+  isMarketOpen?: boolean;
+  staleThresholdSeconds?: number;
+  tokenExpiresAt?: Date | number | string | null;
+  hasActiveBrokerConnection?: boolean;
+}
+
+/**
+ * Pure evaluation of data freshness, token expiration, and broker order execution eligibility.
+ */
+export function evaluateDataHealth(params: IEvaluateDataHealthParams): ILiveDataHealth {
+  const asOfTime = params.asOf ? new Date(params.asOf) : new Date();
+  const nowMs = asOfTime.getTime();
+
+  // 1. Token expiration check
+  let isTokenExpired = false;
+  let tokenRemainingSeconds: number | undefined;
+  let tokenExpiresDate: Date | undefined;
+
+  if (params.tokenExpiresAt) {
+    tokenExpiresDate = new Date(params.tokenExpiresAt);
+    if (!isNaN(tokenExpiresDate.getTime())) {
+      const diffSec = Math.floor((tokenExpiresDate.getTime() - nowMs) / 1000);
+      tokenRemainingSeconds = Math.max(0, diffSec);
+      isTokenExpired = diffSec <= 0;
+    }
+  }
+
+  // 2. Tick Age calculation
+  let tickAgeMs = 0;
+  let lastTickDate: Date | undefined;
+  if (params.lastTickAt) {
+    lastTickDate = new Date(params.lastTickAt);
+    if (!isNaN(lastTickDate.getTime())) {
+      tickAgeMs = Math.max(0, nowMs - lastTickDate.getTime());
+    }
+  }
+
+  const thresholdSec = params.staleThresholdSeconds ?? 10;
+  const thresholdMs = thresholdSec * 1000;
+  const isMarketOpen = params.isMarketOpen !== false;
+
+  // 3. Connection State resolution
+  let connectionState: LiveConnectionState = 'LIVE';
+  let isStale = false;
+
+  if (params.provider === 'SIMULATED') {
+    connectionState = isMarketOpen ? 'LIVE' : 'MARKET_CLOSED';
+    isStale = false;
+  } else {
+    // FYERS / Real Broker
+    if (params.hasActiveBrokerConnection === false || isTokenExpired) {
+      connectionState = 'DISCONNECTED';
+      isStale = true;
+    } else if (!isMarketOpen) {
+      connectionState = 'MARKET_CLOSED';
+      isStale = false;
+    } else if (tickAgeMs > thresholdMs) {
+      connectionState = 'STALE';
+      isStale = true;
+    } else if (tickAgeMs > 3000) {
+      connectionState = 'DELAYED';
+      isStale = false;
+    } else {
+      connectionState = 'LIVE';
+      isStale = false;
+    }
+  }
+
+  // 4. Broker Execution Blocked Reason
+  let brokerExecutionBlockedReason: string | null = null;
+  if (params.provider === 'SIMULATED') {
+    brokerExecutionBlockedReason = 'Broker execution blocked: Simulated demo quotes active (Journal mode only)';
+  } else if (isTokenExpired) {
+    brokerExecutionBlockedReason = 'Broker execution blocked: FYERS broker session token has expired';
+  } else if (connectionState === 'DISCONNECTED') {
+    brokerExecutionBlockedReason = 'Broker execution blocked: Broker connection is disconnected';
+  } else if (isStale) {
+    brokerExecutionBlockedReason = `Broker execution blocked: Quote feed is stale (${(tickAgeMs / 1000).toFixed(1)}s old > ${thresholdSec}s threshold)`;
+  }
+
+  const tickAgeSeconds = Number((tickAgeMs / 1000).toFixed(1));
+  const canExecuteBroker = brokerExecutionBlockedReason === null;
+
+  let tokenCountdownStr: string | null = null;
+  let tokenRemainingMinutes: number | null = null;
+  let tokenRemainingMs: number | null = null;
+  if (tokenRemainingSeconds !== undefined) {
+    tokenRemainingMs = tokenRemainingSeconds * 1000;
+    tokenRemainingMinutes = Math.floor(tokenRemainingSeconds / 60);
+    const hrs = Math.floor(tokenRemainingSeconds / 3600);
+    const mins = Math.floor((tokenRemainingSeconds % 3600) / 60);
+    tokenCountdownStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  }
+
+  return {
+    provider: params.provider,
+    connectionState,
+    lastTickAt: lastTickDate ? lastTickDate.toISOString() : null,
+    tickAgeMs,
+    tickAgeSeconds,
+    isStale,
+    staleThresholdSeconds: thresholdSec,
+    tokenExpiresAt: tokenExpiresDate ? tokenExpiresDate.toISOString() : null,
+    tokenRemainingMs,
+    tokenRemainingMinutes,
+    tokenRemainingSeconds,
+    tokenCountdownStr,
+    isTokenExpired,
+    isMarketOpen,
+    canExecuteBroker,
+    brokerExecutionBlockedReason,
+  };
+}
+
+export interface IPreFlightExecutionPreviewParams {
+  entryPrice: number | string | Decimal;
+  currentLtp: number | string | Decimal;
+  totalOpenQuantity: number | string | Decimal;
+  exitQuantity: number | string | Decimal;
+  direction: Direction;
+  contractMultiplier?: number | string | Decimal;
+  lotSize?: number | string | Decimal;
+  initialStopLoss?: number | string | Decimal | null;
+  currentStopLoss?: number | string | Decimal | null;
+  newStopLoss?: number | string | Decimal | null;
+  initialRiskAmount?: number | string | Decimal | null;
+  assetClass?: AssetClass;
+  marketSegment?: MarketSegment;
+  slippageGuardPercent?: number; // default 0.5%
+  referencePrice?: number | string | Decimal;
+}
+
+export interface IPreFlightExecutionPreviewResult {
+  exitQuantity: number;
+  exitLots: number;
+  remainingQuantity: number;
+  remainingLots: number;
+  isFullClose: boolean;
+  estimatedFillPrice: number;
+  priceDeltaPoints: number;
+  grossPnL: number;
+  estimatedCharges: number;
+  netPnL: number;
+  realizedR: number | null;
+  initialRiskAmount: number | null;
+  newStopLevel: number | null;
+  isSlippageWarning: boolean;
+  slippagePercent: number;
+  slippageMessage?: string;
+}
+
+/**
+ * Computes exact pre-flight financial outcome preview for closing or scaling out of a live position
+ * using 30-digit Decimal.js precision and statutory Indian regulatory charges.
+ */
+export function calculatePreFlightExecutionPreview(
+  params: IPreFlightExecutionPreviewParams
+): IPreFlightExecutionPreviewResult {
+  const dEntry = new Decimal(params.entryPrice);
+  const dLtp = new Decimal(params.currentLtp);
+  const dTotalQty = new Decimal(params.totalOpenQuantity);
+  const dExitQty = new Decimal(params.exitQuantity);
+  const dMultiplier = new Decimal(params.contractMultiplier ?? 1);
+  const dLotSize = new Decimal(params.lotSize ?? 1);
+
+  if (dExitQty.isNegative() || dExitQty.isZero()) {
+    throw new Error('Exit quantity must be greater than zero');
+  }
+
+  const clampedExitQty = Decimal.min(dExitQty, dTotalQty);
+  const remainingQty = Decimal.max(new Decimal(0), dTotalQty.minus(clampedExitQty));
+  const isFullClose = remainingQty.isZero();
+
+  const isLong = params.direction === 'LONG';
+  const priceDelta = isLong ? dLtp.minus(dEntry) : dEntry.minus(dLtp);
+  const grossPnL = priceDelta.times(clampedExitQty).times(dMultiplier);
+
+  const charges = calculateIndianCharges({
+    assetClass: params.assetClass || 'EQUITY',
+    marketSegment: params.marketSegment || 'NSE_EQ',
+    entryPrice: dEntry,
+    exitPrice: dLtp,
+    quantity: clampedExitQty,
+    contractMultiplier: dMultiplier,
+  });
+
+  const netPnL = grossPnL.minus(charges.totalCostsDecimal);
+
+  // Initial risk budget calculation for proportional realized R
+  let dInitialRiskBudget: Decimal | null = null;
+  if (params.initialRiskAmount !== undefined && params.initialRiskAmount !== null) {
+    const rawRisk = new Decimal(params.initialRiskAmount);
+    if (rawRisk.greaterThan(0)) {
+      dInitialRiskBudget = dTotalQty.greaterThan(0)
+        ? rawRisk.times(clampedExitQty).dividedBy(dTotalQty)
+        : rawRisk;
+    }
+  } else if (params.initialStopLoss !== undefined && params.initialStopLoss !== null) {
+    const dInitStop = new Decimal(params.initialStopLoss);
+    const stopDistance = dEntry.minus(dInitStop).abs();
+    if (stopDistance.greaterThan(0)) {
+      dInitialRiskBudget = stopDistance.times(clampedExitQty).times(dMultiplier);
+    }
+  }
+
+  let realizedR: number | null = null;
+  if (dInitialRiskBudget && dInitialRiskBudget.greaterThan(0)) {
+    realizedR = Number(netPnL.dividedBy(dInitialRiskBudget).toFixed(2));
+  }
+
+  // Slippage check
+  let isSlippageWarning = false;
+  let slippagePercent = 0;
+  let slippageMessage: string | undefined;
+
+  if (params.referencePrice !== undefined && params.referencePrice !== null) {
+    const dRef = new Decimal(params.referencePrice);
+    if (dRef.greaterThan(0)) {
+      const dev = dLtp.minus(dRef).abs().dividedBy(dRef).times(100);
+      slippagePercent = Number(dev.toFixed(2));
+      const guard = params.slippageGuardPercent ?? 0.5;
+      if (slippagePercent > guard) {
+        isSlippageWarning = true;
+        slippageMessage = `Price shifted ${slippagePercent}% (from ₹${dRef.toFixed(2)} to ₹${dLtp.toFixed(2)}), exceeding ${guard}% slippage guard`;
+      }
+    }
+  }
+
+  const exitLots = dLotSize.greaterThan(1)
+    ? Math.max(1, Math.round(clampedExitQty.dividedBy(dLotSize).toNumber()))
+    : clampedExitQty.toNumber();
+  const remainingLots = dLotSize.greaterThan(1)
+    ? Math.max(0, Math.floor(remainingQty.dividedBy(dLotSize).toNumber()))
+    : remainingQty.toNumber();
+
+  return {
+    exitQuantity: clampedExitQty.toNumber(),
+    exitLots,
+    remainingQuantity: remainingQty.toNumber(),
+    remainingLots,
+    isFullClose,
+    estimatedFillPrice: Number(dLtp.toFixed(2)),
+    priceDeltaPoints: Number(priceDelta.toFixed(2)),
+    grossPnL: Number(grossPnL.toFixed(2)),
+    estimatedCharges: charges.totalCosts,
+    netPnL: Number(netPnL.toFixed(2)),
+    realizedR,
+    initialRiskAmount: dInitialRiskBudget ? Number(dInitialRiskBudget.toFixed(2)) : null,
+    newStopLevel: params.newStopLoss ? Number(new Decimal(params.newStopLoss).toFixed(2)) : null,
+    isSlippageWarning,
+    slippagePercent,
+    slippageMessage,
+  };
+}
+
+/**
+ * Computes deterministic post-trade review metrics, MFE capture efficiency,
+ * surrendered giveback, execution quality grade, algorithmic mistake suggestions,
+ * and normalized in-trade emotional pulse checkpoints.
+ * All math strictly computed with Decimal.js for financial accuracy.
+ */
+export function generatePostTradeReviewSummary(params: {
+  netPnL: number | Decimal;
+  grossPnL: number | Decimal;
+  realizedR?: number | null;
+  peakMfePnl?: number | null;
+  peakMfeR?: number | null;
+  maeR?: number | null;
+  stopLossMoved?: boolean;
+  plannedRiskAmount?: number | null;
+  durationMinutes?: number | null;
+  auditLog?: Array<{
+    action?: string;
+    event?: string;
+    timestamp?: Date | string;
+    details?: any;
+  }>;
+  existingMistakes?: string[];
+}): IPostTradeReviewData {
+  const dNet = new Decimal(params.netPnL);
+  const dPeakMfe = params.peakMfePnl !== undefined && params.peakMfePnl !== null
+    ? new Decimal(params.peakMfePnl)
+    : dNet;
+
+  let mfeCaptureEfficiency = 100;
+  let dSurrenderedPnl = new Decimal(0);
+  let surrenderedGivebackPercent = 0;
+
+  if (dPeakMfe.greaterThan(0)) {
+    dSurrenderedPnl = Decimal.max(0, dPeakMfe.minus(dNet));
+    if (dNet.greaterThan(0)) {
+      mfeCaptureEfficiency = Number(
+        Decimal.min(100, Decimal.max(0, dNet.dividedBy(dPeakMfe).times(100))).toFixed(1)
+      );
+      surrenderedGivebackPercent = Number(
+        Decimal.min(100, Decimal.max(0, dSurrenderedPnl.dividedBy(dPeakMfe).times(100))).toFixed(1)
+      );
+    } else {
+      // Trade achieved positive MFE but closed at scratch or loss
+      mfeCaptureEfficiency = 0;
+      surrenderedGivebackPercent = 100;
+    }
+  } else {
+    mfeCaptureEfficiency = dNet.greaterThanOrEqualTo(0) ? 100 : 0;
+    surrenderedGivebackPercent = 0;
+  }
+
+  // Determine Execution Quality Grade & Reason
+  let executionGrade: 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D' | 'F' = 'B';
+  let gradeReason = '';
+
+  const mistakes = params.existingMistakes || [];
+  const isSevereDiscipline = mistakes.includes('REVENGE_TRADING') || mistakes.includes('OVERTRADING');
+
+  if (isSevereDiscipline) {
+    executionGrade = 'F';
+    gradeReason = 'Severe discipline violation (Revenge trading / Overtrading)';
+  } else if (params.stopLossMoved) {
+    executionGrade = 'D';
+    gradeReason = 'Rule broken: Stop loss moved or widened during trade';
+  } else if (dNet.greaterThanOrEqualTo(0)) {
+    if (mfeCaptureEfficiency >= 75) {
+      executionGrade = 'A+';
+      gradeReason = 'Elite execution: Captured ≥75% of peak MFE move';
+    } else if (mfeCaptureEfficiency >= 50) {
+      executionGrade = 'A';
+      gradeReason = 'Target met: Solid partial scaling & profit lock';
+    } else {
+      executionGrade = 'B';
+      gradeReason = 'Sub-optimal harvest: Surrendered >50% of peak MFE profit';
+    }
+  } else {
+    // Loss
+    if (params.realizedR !== null && params.realizedR !== undefined && params.realizedR >= -1.1) {
+      executionGrade = 'B+';
+      gradeReason = 'Planned loss: Respected initial 1R stop loss budget cleanly';
+    } else {
+      executionGrade = 'C';
+      gradeReason = 'Excessive heat: Loss exceeded planned 1R risk budget';
+    }
+  }
+
+  // Algorithmic Mistake Suggestions
+  const suggestedMistakes: ISuggestedMistake[] = [];
+
+  if (surrenderedGivebackPercent >= 50 && (params.peakMfeR ?? 0) >= 1.0) {
+    suggestedMistakes.push({
+      id: 'GAVE_BACK_PROFIT',
+      label: 'Gave Back Profit',
+      description: `Surrendered ₹${dSurrenderedPnl.toFixed(0)} (${surrenderedGivebackPercent}%) of peak floating profit`,
+      severity: 'warning',
+    });
+  }
+
+  if (params.stopLossMoved) {
+    suggestedMistakes.push({
+      id: 'WIDENED_STOP_LOSS',
+      label: 'Widened Stop Loss',
+      description: 'Stop loss was widened during active trade execution',
+      severity: 'error',
+    });
+  }
+
+  if (params.realizedR !== null && params.realizedR !== undefined && params.realizedR < -1.25) {
+    suggestedMistakes.push({
+      id: 'EXCESSIVE_RISK',
+      label: 'Loss Beyond 1R Budget',
+      description: `Loss reached ${params.realizedR}R (exceeded planned 1R risk boundary)`,
+      severity: 'error',
+    });
+  }
+
+  if (params.durationMinutes !== undefined && params.durationMinutes !== null && params.durationMinutes < 3 && dNet.isNegative()) {
+    suggestedMistakes.push({
+      id: 'IMPULSIVE_EXIT',
+      label: 'Impulsive Exit',
+      description: 'Exited within <3 minutes at a loss before thesis could play out',
+      severity: 'warning',
+    });
+  }
+
+  // Extract & normalize in-trade pulse checkpoints from auditLog
+  const pulseCheckIns: INormalizedPulseCheckIn[] = [];
+  if (params.auditLog && Array.isArray(params.auditLog)) {
+    for (const entry of params.auditLog) {
+      if (entry.action === 'LIVE_PULSE_CHECK' || entry.event === 'LIVE_PULSE_CHECK') {
+        pulseCheckIns.push({
+          timestamp: entry.timestamp ? new Date(entry.timestamp).toISOString() : new Date().toISOString(),
+          emotion: entry.details?.emotion || 'CALM',
+          notes: entry.details?.notes || '',
+          currentLtp: entry.details?.currentLtp,
+          floatingNetPnL: entry.details?.floatingNetPnL,
+          unrealizedR: entry.details?.unrealizedR,
+        });
+      }
+    }
+  }
+
+  // Sort pulse check-ins chronologically
+  pulseCheckIns.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  const lastPulseEmotion = pulseCheckIns.length > 0
+    ? pulseCheckIns[pulseCheckIns.length - 1].emotion
+    : undefined;
+
+  return {
+    mfeCaptureEfficiency,
+    surrenderedGivebackPnl: Number(dSurrenderedPnl.toFixed(2)),
+    surrenderedGivebackPercent,
+    executionGrade,
+    gradeReason,
+    suggestedMistakes,
+    pulseCheckIns,
+    lastPulseEmotion,
   };
 }
 

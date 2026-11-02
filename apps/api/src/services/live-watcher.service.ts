@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
-import { Trade, Instrument, BrokerIntegration } from '../db/models/index.js';
+import { Trade, Instrument, BrokerIntegration, User } from '../db/models/index.js';
 import { FyersService } from './fyers.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
 import {
@@ -8,6 +8,7 @@ import {
   calculateLiveWatcherSummary,
   calculatePositionGreeks,
   evaluateTradeStagnation,
+  evaluateDataHealth,
   ILiveOpenTradeMetric,
   ILiveWatcherSummary,
   LiveQuoteProvider,
@@ -207,7 +208,50 @@ export class LiveWatcherService {
       .lean();
 
     if (!openTrades || openTrades.length === 0) {
-      return calculateLiveWatcherSummary([]);
+      const [brokerIntegration, userDoc] = await Promise.all([
+        BrokerIntegration.findOne({
+          userId: uId,
+          broker: 'FYERS',
+          status: 'CONNECTED',
+        }).lean(),
+        User.findById(uId).select('liveWatcherSettings').lean(),
+      ]);
+
+      const tokenExpiresAt = brokerIntegration?.tokenExpiresAt;
+      const isTokenExpired = Boolean(tokenExpiresAt && new Date(tokenExpiresAt) <= new Date());
+      const hasActiveBroker = Boolean(
+        brokerIntegration &&
+        brokerIntegration.accessToken &&
+        !isTokenExpired
+      );
+      const staleThresholdSec = userDoc?.liveWatcherSettings?.staleDataThresholdSeconds ?? 10;
+
+      const now = new Date();
+      const istOffsetMs = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(now.getTime() + istOffsetMs);
+      const dayOfWeek = istDate.getUTCDay();
+      const totalMinutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+      const isNseMarketOpen =
+        dayOfWeek >= 1 &&
+        dayOfWeek <= 5 &&
+        totalMinutes >= 9 * 60 + 15 &&
+        totalMinutes <= 15 * 60 + 30;
+
+      const emptyHealth = evaluateDataHealth({
+        provider: hasActiveBroker ? 'FYERS' : 'SIMULATED',
+        lastTickAt: hasActiveBroker ? new Date() : null,
+        asOf: new Date(),
+        isMarketOpen: isNseMarketOpen,
+        staleThresholdSeconds: staleThresholdSec,
+        tokenExpiresAt,
+        hasActiveBrokerConnection: hasActiveBroker,
+      });
+
+      return {
+        ...calculateLiveWatcherSummary([]),
+        provider: hasActiveBroker ? 'FYERS' : 'SIMULATED',
+        dataHealth: emptyHealth,
+      };
     }
 
     // 1. Fetch user instrument specs for tickSize and contract multipliers
@@ -252,20 +296,36 @@ export class LiveWatcherService {
       console.warn(`[LiveWatcherService] Could not fetch FYERS quotes: ${err.message}`);
     }
 
-    // Verify whether the trader has a connected FYERS integration
-    const brokerIntegration = await BrokerIntegration.findOne({
-      userId: uId,
-      broker: 'FYERS',
-      status: 'CONNECTED',
-    }).lean();
+    // Verify whether the trader has a connected FYERS integration and user settings
+    const [brokerIntegration, userDoc] = await Promise.all([
+      BrokerIntegration.findOne({
+        userId: uId,
+        broker: 'FYERS',
+        status: 'CONNECTED',
+      }).lean(),
+      User.findById(uId).select('liveWatcherSettings').lean(),
+    ]);
+
+    const tokenExpiresAt = brokerIntegration?.tokenExpiresAt;
+    const isTokenExpired = Boolean(tokenExpiresAt && new Date(tokenExpiresAt) <= new Date());
     const hasActiveBroker = Boolean(
       brokerIntegration &&
       brokerIntegration.accessToken &&
-      (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
+      !isTokenExpired
     );
+    const staleThresholdSec = userDoc?.liveWatcherSettings?.staleDataThresholdSeconds ?? 10;
+
+    // Determine if Indian Equity/Derivatives market is currently open (09:15 to 15:30 IST Mon-Fri)
+    const nowUtc = Date.now();
+    const istOffsetMs = 5.5 * 3600 * 1000;
+    const istDate = new Date(nowUtc + istOffsetMs);
+    const istDay = istDate.getUTCDay(); // 0 = Sun, 6 = Sat
+    const istMinutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+    const isNseMarketOpen = istDay >= 1 && istDay <= 5 && istMinutes >= (9 * 60 + 15) && istMinutes <= (15 * 60 + 30);
 
     // 4. Calculate metrics for each open trade
     const positions: ILiveOpenTradeMetric[] = [];
+    let latestQuoteTimestamp: Date | null = null;
 
     for (const trade of openTrades) {
       const tradeId = trade._id.toString();
@@ -280,21 +340,45 @@ export class LiveWatcherService {
           (fyersSym && fyersSym.includes(':') ? fyersQuotes.get(fyersSym.split(':')[1]) : undefined);
       }
       let provider: LiveQuoteProvider = 'FYERS';
+      let quoteTimestamp: Date | null = null;
 
       let currentLtp: number;
       if (quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
         currentLtp = quote.ltp;
         provider = 'FYERS';
+        quoteTimestamp = quote.timestamp
+          ? new Date(quote.timestamp)
+          : quote.last_traded_time
+          ? new Date(quote.last_traded_time * 1000)
+          : new Date();
       } else if (hasActiveBroker) {
         // Connected broker invariant: Never oscillate simulated prices on real trades.
         // Fall back to recorded peak LTP or entry price to preserve financial integrity.
         currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
         provider = 'FYERS';
+        quoteTimestamp = trade.calculated?.liveMfeSummary?.peakTimestamp
+          ? new Date(trade.calculated.liveMfeSummary.peakTimestamp)
+          : (trade.entryTime ? new Date(trade.entryTime) : new Date(Date.now() - 30000));
       } else {
         // Pure offline sandbox mode only
         currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
         provider = 'SIMULATED';
+        quoteTimestamp = new Date();
       }
+
+      if (quoteTimestamp && (!latestQuoteTimestamp || quoteTimestamp > latestQuoteTimestamp)) {
+        latestQuoteTimestamp = quoteTimestamp;
+      }
+
+      const tradeDataHealth = evaluateDataHealth({
+        provider,
+        lastTickAt: quoteTimestamp,
+        asOf: new Date(),
+        isMarketOpen: isNseMarketOpen,
+        staleThresholdSeconds: staleThresholdSec,
+        tokenExpiresAt,
+        hasActiveBrokerConnection: hasActiveBroker,
+      });
 
       const metric = calculateLiveOpenTradeMetric({
         tradeId,
@@ -314,6 +398,7 @@ export class LiveWatcherService {
         marketSegment: trade.marketSegment,
         provider,
         previousPeakMfe: trade.calculated?.liveMfeSummary,
+        dataHealth: tradeDataHealth,
       });
 
       // Asynchronously persist new peak MFE to DB if new high reached
@@ -339,7 +424,25 @@ export class LiveWatcherService {
       positions.push(metric);
     }
 
-    return calculateLiveWatcherSummary(positions);
+    const summaryProvider: LiveQuoteProvider = positions.length === 0
+      ? 'SIMULATED'
+      : positions.every((p) => p.provider === 'FYERS')
+      ? 'FYERS'
+      : positions.some((p) => p.provider === 'FYERS')
+      ? 'FYERS'
+      : 'SIMULATED';
+
+    const globalDataHealth = evaluateDataHealth({
+      provider: summaryProvider,
+      lastTickAt: latestQuoteTimestamp,
+      asOf: new Date(),
+      isMarketOpen: isNseMarketOpen,
+      staleThresholdSeconds: staleThresholdSec,
+      tokenExpiresAt,
+      hasActiveBrokerConnection: hasActiveBroker,
+    });
+
+    return calculateLiveWatcherSummary(positions, new Date(), globalDataHealth);
   }
 
   private static setupStatsCache = new Map<string, any>();

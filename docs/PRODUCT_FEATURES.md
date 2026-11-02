@@ -578,12 +578,74 @@ This document provides a comprehensive, verified feature inventory of all module
     - **Server-Sent Events (SSE) Streaming (`GET /trades/live/stream`):**
       - Dedicated SSE endpoint providing low-overhead server-pushed updates for active positions without polling overhead.
     - **Live Profit Giveback Meter & Leak Alerts (`LiveGivebackMeter.tsx`):** Real-time gauge monitoring peak floating MTM vs current MTM, displaying ₹/R giveback, retention percentage, and threat alert levels (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`).
+    - **Data Health & Freshness Guard System (`evaluateDataHealth` & `ILiveDataHealth`):**
+      - Continuous per-position and global connection health monitoring tracking `provider` (`FYERS` | `SIMULATED`), `connectionState` (`LIVE` | `DELAYED` | `STALE` | `DISCONNECTED` | `MARKET_CLOSED`), `tickAgeSeconds`, `isTokenExpired`, and `tokenCountdownStr`.
+      - **Stale Quote Guard:** Cards and dense table rows automatically dim, display warning outlines, and render `STALE (Xs)` badges when tick age exceeds user-configured threshold (`staleDataThresholdSeconds`, default 10s).
+      - **Broker Execution Safety Interlock:** Blocks real broker orders (`POST /broker-exit`, `POST /broker-sl`, `POST /broker-ladder-step` return `400 BROKER_EXECUTION_BLOCKED`) whenever feed is simulated, token is expired, or data is stale. Journal-only recording actions remain safely enabled.
+    - **Hold-to-Confirm Mis-Click Shield (`HoldToConfirmButton.tsx`):**
+      - Tactile ~600ms hold requirement with animated radial and linear SVG progress ring for market orders (`Close 100%`, `Book 50%`, Panic Kill Switch).
+      - Touch, mouse, and keyboard space/enter accessible with instant cancellation on pointer release.
+    - **Pre-Flight Financial Outcome Preview Panel (`calculatePreFlightExecutionPreview`):**
+      - Pure Decimal.js engine function previewing lot-aware exit units, runner remaining lots, gross P&L, auto statutory charges, net realized P&L, and realized R-multiple before order transmission.
+      - Dynamic slippage warning alert if execution price drifts $> 0.5\%$ from rendered quote.
+    - **Order Execution Lifecycle Stepper:**
+      - Visual 3-step progress track (`Sending` -> `Exchange Ack (Working)` -> `Filled / Rejected`) displaying FYERS `orderId`, traded fill price, and exchange rejection messages with double-submission prevention locks.
     - **Active FYERS Live Order Execution:** 1-click True Breakeven lock, lot-aware partial exits, live trailing stop modification, and full market close with automatic pending SL orderbook cancellation.
+    - **Three-Tier Card Density Hierarchy (`cardDensity`: `'glance'` | `'standard'` | `'deep'`):**
+      - `Glance`: Ultra-compact, 1-glance footprint rendering symbol, side, net floating P&L with % return, unrealized R, current LTP, entry price, SL distance runway, and hold-to-confirm quick market actions.
+      - `Standard`: Adds tactical price section (Classic Gauge or Unified Vertical Ladder) and Giveback Radar tabs.
+      - `Deep`: Adds Options Greeks card, Stagnation radar & P&L velocity, Sparkline MFE/MAE timeline, and pulse check-in history.
+      - Persisted per user in DB (`user.liveWatcherSettings.cardDensity`) and `localStorage` fallback.
+    - **Deterministic Urgency vs Entry-Time Sorting (`sortMode`: `'urgency'` | `'entryTime'`):**
+      - Priority sort sequence: `BREACHED` (1) > `CRITICAL` (2) > `CRITICAL_REVERSAL` / `LEAKING` (3) > `ATTENTION` / `WATCH` (4) > `SAFE` (5), with proximity to SL as secondary tie-breaker.
+      - Automatically surfaces the most threatened, high-urgency positions to the top of the screen.
+    - **Auto-Expansion with 60-Second Manual Collapse Immunity:**
+      - High-threat positions (`BREACHED`, `CRITICAL`, `CRITICAL_REVERSAL`, `LEAKING`) auto-expand to ensure safety alerts are never overlooked.
+      - Trader manual collapse is strictly respected for 60 seconds to avoid fighting user intent.
+    - **Next-Action Deterministic Hint Strip (`selectNextActionHint` & `INextActionHint`):**
+      - Pure financial engine evaluation recommending ONE single highest-priority operational step: Stop Breached Exit > Stop Critical Cut > Reversal Flatten > Ladder Step Met Scale Out > Profit Leaking Book 50% > Stagnation Review.
+      - Single-click opens the matching pre-filled confirmation dialog with pre-flight risk preview (never executes blindly).
+    - **Unified Vertical Price Ladder (`LiveUnifiedPriceLadder.tsx`):**
+      - Depth of Market (DOM) style vertical price ladder displaying all key levels from highest to lowest: Targets (T1/T2/T3), Peak MFE watermark, Live LTP (pulsing indicator), True Breakeven (with statutory fee cushion), Fill Entry price, Trailed Stop Loss, and Anchored Initial Stop Loss.
+      - Supports 1-click execution for met steps and 1-click True Breakeven locking directly on ladder rungs with a toggle between Classic Gauge and Vertical Ladder.
+    - **Pinned Portfolio Risk & Discipline Strip (`LivePortfolioRiskBanner.tsx`):**
+      - Real-time progress bar tracking day floating loss vs `maxDailyLoss` with dedicated 75% warning and 100% circuit breaker markers.
+      - Total open risk capital across positions vs `maxRiskPerTradePercent`.
+      - Open trades count vs `maxOpenTrades` cap.
+      - Trades today count vs `maxDailyTrades` discipline cap.
+    - **Tab Title & Dynamic Favicon Alert Badges:**
+      - Throttled real-time updates (2.5–3s) reflecting critical trade counts and floating Net P&L (e.g. `🚨 2 CRITICAL | -₹3,200 | SetupMint`).
+      - Dynamic SVG favicon with alert state badge dots (🔴 Red on critical stop threat, 🟢 Green on positive floating P&L, 🟡 Amber on active trades) that safely restores original title and icon on unmount.
+    - **In-App Threat Alert Center (`LiveAlertCenterDialog.tsx`):**
+      - Multi-channel synchronized threat alert management connected directly to MongoDB `AlertState`.
+      - Shows active, snoozed, and cleared alerts with severity badges, trade direction, and metric telemetry.
+      - Quick-snooze actions (`15m`, `30m`, `1h`) concurrently silence Telegram notifications; manual clears propagate across all devices.
+    - **Watcher Layout Presets (`IWatcherLayoutPreset`):**
+      - Built-in configurations: "⚡ Scalping" (1s refresh, Glance density, Vertical Ladder, Hotkeys ON), "📐 Positional" (30s refresh, Standard density, Classic Gauge, Hotkeys OFF), and "🔬 Deep Analytics" (5s refresh, Deep density, Vertical Ladder, Hotkeys ON).
+      - Allows saving customized layout views to user database profile with 1-click switcher and `[P]` cycle hotkey.
+    - **Interactive Hotkey Cheat Sheet & Key Hints (`HotkeyCheatSheetDialog.tsx`):**
+      - Modal overlay accessible via `?` or header action detailing all rapid execution and view navigation shortcuts.
+      - Visible key hint badges displayed directly on buttons (`[B]` Lock BE, `[Space]` Book 50%, `[K]` Panic Kill Switch).
+    - **Pop-Out Mini Watcher Companion (Document Picture-in-Picture API):**
+      - Opens an always-on-top native floating Picture-in-Picture window containing the Glance density trade monitor, next-action triggers, and live MTM via `createPortal`.
+      - Graceful fallback to standalone popup window for browsers without Document PiP support.
+    - **Accessibility & Cognitive Ergonomics:**
+      - Screen-reader `aria-live="assertive"` regions announce critical/breached stop threats immediately; `aria-live="polite"` announces target executions.
+      - Monospace tabular numerals (`font-variant-numeric: tabular-nums`) across all prices and P&L readouts preventing layout jitter.
+      - Colorblind-safe iconography (🔴 `[!]`, 🟡 `[▲]`, 🟢 `[✓]`, 🛡️ `BE`) alongside colors.
+    - **Post-Trade Feedback Loop & Flight Recorder Quick-Review (`TradeFlightRecorderDialog.tsx` & `generatePostTradeReviewSummary`):**
+      - Automatic post-trade debrief modal offered immediately upon full position close or requested from trade row actions.
+      - Pure financial engine calculations in `@tradevault/financial-engine` evaluate MFE capture efficiency, surrendered giveback P&L, execution quality grade (A+ through F with plain-English reasons), and algorithmic mistake suggestions (`SURRENDERED_PROFIT`, `STOP_LOSS_WIDENED`, `FOMO_CHASE`, `HELD_INTO_REVERSAL`).
+      - Pre-fills trader emotional state from the last recorded in-trade pulse check-in, rule adherence confirmation, reflection notes, ASCII trade receipt generation to clipboard, and seamless 1-click navigation into the full Trade Journal.
+    - **Intra-Trade MTM Sparkline with Emotional Pulse Checkpoints (`LiveSparkline.tsx` & `TradeDetailPage.tsx`):**
+      - Plots the full chronological trade trajectory with peak MFE, lowest MAE, entry, and exit points.
+      - Renders interactive emotion-coded pulse nodes (Calm, Confident, Anxious, FOMO, Greedy) along the MTM curve with hover tooltips displaying exact P&L, R, and trader notes.
+      - Displays an In-Trade Emotional Pulse History timeline and identified tactical mistakes under the Psychology & Discipline Audit.
 - **Frontend & Backend Components:**
-  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider`, `GivebackThreatLevel`, `ILiveGivebackMetric`, `TargetLadderStepStatus`, `ILiveTargetLadderStep`, `ILiveTargetLadder`, `ICustomLadderRuleStep`, `ICustomLadderRules`, `IOptionsGreeksResult`, `IPositionGreeksSummary`, `ITradeStagnationMetric`, `IPortfolioRiskResult` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
-  - Engine: `live-watcher.ts`, `charges.ts`, `options-greeks.ts`, `stagnation.ts`, `portfolio-risk.ts` in [`packages/financial-engine/src/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/).
-  - Backend API: `live-watcher.service.ts`, `fyers.service.ts`, `POST /trades/:id/broker-sl`, `POST /trades/:id/broker-exit`, `POST /trades/:id/broker-ladder-step`, `POST /trades/:id/live-pulse`, `GET /trades/live/watcher`, `GET /trades/:id/live`, `GET /trades/live/stream`.
-  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`LiveOptionsGreeksCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOptionsGreeksCard.tsx), [`LivePortfolioRiskBanner.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LivePortfolioRiskBanner.tsx), [`LiveSparkline.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveSparkline.tsx), [`LivePriceGauge.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LivePriceGauge.tsx), [`LiveCustomRulesDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveCustomRulesDialog.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
+  - Shared: `ILiveQuote`, `ILiveOpenTradeMetric`, `ILiveWatcherSummary`, `StopThreatLevel`, `LiveQuoteProvider`, `GivebackThreatLevel`, `ILiveGivebackMetric`, `TargetLadderStepStatus`, `ILiveTargetLadderStep`, `ILiveTargetLadder`, `ICustomLadderRuleStep`, `ICustomLadderRules`, `IOptionsGreeksResult`, `IPositionGreeksSummary`, `ITradeStagnationMetric`, `IPortfolioRiskResult`, `CardDensityLevel`, `LiveWatcherSortMode`, `LadderViewMode`, `INextActionHint`, `IWatcherLayoutPreset`, `ILiveAlertState`, `ISuggestedMistake`, `INormalizedPulseCheckIn`, `IPostTradeReviewData` in [`packages/shared/src/types.ts`](file:///Users/komal/projects/Trading%20Vault/packages/shared/src/types.ts).
+  - Engine: `live-watcher.ts` (`selectNextActionHint`, `evaluateDataHealth`, `calculatePreFlightExecutionPreview`, `generatePostTradeReviewSummary`), `charges.ts`, `options-greeks.ts`, `stagnation.ts`, `portfolio-risk.ts` in [`packages/financial-engine/src/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/).
+  - Backend API: `live-watcher.service.ts`, `fyers.service.ts`, `settings.routes.ts`, `trade.routes.ts`, `GET /trades/live/alerts`, `POST /trades/live/alerts/:id/snooze`, `POST /trades/live/alerts/:id/clear`, `POST /trades/:id/broker-sl`, `POST /trades/:id/broker-exit`, `POST /trades/:id/broker-ladder-step`, `POST /trades/:id/live-pulse`, `GET /trades/live/watcher`, `GET /trades/:id/live`, `GET /trades/live/stream`.
+  - Frontend: [`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx), [`TradeFlightRecorderDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/TradeFlightRecorderDialog.tsx), [`LiveAlertCenterDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveAlertCenterDialog.tsx), [`HotkeyCheatSheetDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/HotkeyCheatSheetDialog.tsx), [`LiveUnifiedPriceLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveUnifiedPriceLadder.tsx), [`LiveOptionsGreeksCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOptionsGreeksCard.tsx), [`LivePortfolioRiskBanner.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LivePortfolioRiskBanner.tsx), [`HoldToConfirmButton.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/HoldToConfirmButton.tsx), [`LiveSparkline.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveSparkline.tsx), [`LivePriceGauge.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LivePriceGauge.tsx), [`LiveCustomRulesDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveCustomRulesDialog.tsx), [`LiveScalingLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveScalingLadder.tsx), [`LiveGivebackMeter.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveGivebackMeter.tsx), [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx), [`QuickCloseTradeDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/QuickCloseTradeDialog.tsx).
 
 ---
 

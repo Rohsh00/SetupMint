@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -9,6 +9,7 @@ import Button from '@mui/material/Button';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Alert from '@mui/material/Alert';
+import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -21,11 +22,12 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import DangerousRoundedIcon from '@mui/icons-material/DangerousRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
-import { ILiveOpenTradeMetric, ILiveWatcherSummary } from '@tradevault/shared';
+import { ILiveWatcherSummary, ILiveDataHealth } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
 import { formatCurrency } from '../../../lib/utils.js';
+import { HoldToConfirmButton } from './HoldToConfirmButton.js';
 
 export interface PanicKillSwitchDialogProps {
   open: boolean;
@@ -43,15 +45,30 @@ export function PanicKillSwitchDialog({
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
-  const [executeBroker, setExecuteBroker] = useState<boolean>(true);
+  const dataHealth: ILiveDataHealth | undefined = summary?.dataHealth;
+  const isBrokerBlocked = dataHealth ? !dataHealth.canExecuteBroker : false;
+  const blockReason = dataHealth?.brokerExecutionBlockedReason;
+
+  const [executeBroker, setExecuteBroker] = useState<boolean>(() => !isBrokerBlocked);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [progressMap, setProgressMap] = useState<Record<string, 'PENDING' | 'DONE' | 'ERROR'>>({});
+
+  useEffect(() => {
+    if (open) {
+      if (isBrokerBlocked) {
+        setExecuteBroker(false);
+      } else {
+        setExecuteBroker(true);
+      }
+    }
+  }, [open, isBrokerBlocked]);
 
   const positions = summary?.positions || [];
   const openCount = positions.length;
   const netMtm = summary?.totalFloatingNetPnL ?? 0;
 
   const handleExecuteKillSwitch = async () => {
+    if (isExecuting) return;
     setIsExecuting(true);
     soundEngine.playKillSwitch();
 
@@ -70,7 +87,7 @@ export function PanicKillSwitchDialog({
           quantity: pos.quantity,
           exitPrice: pos.currentLtp,
           isFullClose: true,
-          executeBroker,
+          executeBroker: isBrokerBlocked ? false : executeBroker,
         });
         setProgressMap((prev) => ({ ...prev, [pos.tradeId]: 'DONE' }));
         successCount++;
@@ -83,7 +100,7 @@ export function PanicKillSwitchDialog({
 
     notificationService.sendNotification('🚨 Kill Switch Completed', {
       body: `Closed ${successCount} of ${positions.length} open positions ${
-        executeBroker ? 'on FYERS & Journal' : 'in Journal'
+        executeBroker && !isBrokerBlocked ? 'on FYERS & Journal' : 'in Journal'
       }.`,
     });
 
@@ -141,8 +158,19 @@ export function PanicKillSwitchDialog({
           }}
         >
           <strong>High-Urgency Action:</strong> This will place MARKET orders to close all{' '}
-          <strong>{openCount}</strong> active positions simultaneously.
+          <strong>{openCount}</strong> active positions simultaneously. Requires hold-to-confirm to prevent accidental triggers.
         </Alert>
+
+        {/* Data Freshness Warning / Guard Banner */}
+        {isBrokerBlocked && (
+          <Alert
+            severity="warning"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 20 }} />}
+            sx={{ mb: 2, borderRadius: 2, fontSize: '0.78rem' }}
+          >
+            <strong>Live Broker Square-Off Blocked:</strong> {blockReason || 'Data feed is simulated or FYERS broker session is expired.'} Positions will be squared off in SetupMint journal only.
+          </Alert>
+        )}
 
         {/* Portfolio Summary Card */}
         <Box
@@ -255,37 +283,52 @@ export function PanicKillSwitchDialog({
         >
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-              {executeBroker ? '⚡ Execute Live on FYERS' : 'Journal Only (No Broker Orders)'}
+              {isBrokerBlocked
+                ? 'Journal Only (Broker Execution Blocked)'
+                : executeBroker
+                ? '⚡ Execute Live on FYERS'
+                : 'Journal Only (No Broker Orders)'}
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              {executeBroker
+              {isBrokerBlocked
+                ? blockReason || 'Simulated or expired connection.'
+                : executeBroker
                 ? 'Dispatches market close orders directly to FYERS exchange API'
                 : 'Closes trades in SetupMint journal records without sending broker orders'}
             </Typography>
           </Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={executeBroker}
-                onChange={(e) => setExecuteBroker(e.target.checked)}
-                color="error"
-                disabled={isExecuting}
+          <Tooltip title={isBrokerBlocked ? (blockReason || 'Broker execution blocked') : ''} arrow>
+            <span>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={executeBroker}
+                    onChange={(e) => setExecuteBroker(e.target.checked)}
+                    color="error"
+                    disabled={isExecuting || isBrokerBlocked}
+                  />
+                }
+                label=""
               />
-            }
-            label=""
-          />
+            </span>
+          </Tooltip>
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+      <DialogActions sx={{ px: 3, pb: 2.5, gap: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Button onClick={onClose} disabled={isExecuting} color="inherit">
           Cancel
         </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={handleExecuteKillSwitch}
+
+        <HoldToConfirmButton
+          holdDurationMs={600}
+          onConfirm={handleExecuteKillSwitch}
           disabled={isExecuting || openCount === 0}
+          disabledReason={openCount === 0 ? 'No open positions to close' : undefined}
+          color="error"
+          variant="contained"
+          holdingText="FLATTENING ALL IN"
+          completedText="ALL POSITIONS FLATTENED"
           startIcon={isExecuting ? <CircularProgress size={18} color="inherit" /> : <DangerousRoundedIcon />}
           sx={{
             fontWeight: 800,
@@ -295,8 +338,12 @@ export function PanicKillSwitchDialog({
             '&:hover': { bgcolor: '#B91C1C' },
           }}
         >
-          {isExecuting ? 'FLATTENING POSITIONS...' : 'FLATTEN ALL POSITIONS NOW'}
-        </Button>
+          {isExecuting
+            ? 'FLATTENING POSITIONS...'
+            : executeBroker && !isBrokerBlocked
+            ? '⚡ HOLD TO FLATTEN ALL ON FYERS'
+            : 'HOLD TO FLATTEN IN JOURNAL'}
+        </HoldToConfirmButton>
       </DialogActions>
     </Dialog>
   );

@@ -364,4 +364,76 @@ describe('Live Open Trade Watcher API Integration Tests', () => {
     expect(res.headers['cache-control']).toBe('no-cache, no-transform');
     expect(res.body).toContain('data:');
   });
+
+  it('evaluates dataHealth and blocks broker order execution when broker token is missing/expired', async () => {
+    // 1. Verify GET /live/watcher returns dataHealth
+    const summaryRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/trades/live/watcher',
+      headers: { cookie: `tv_session=${authCookie}` },
+    });
+
+    expect(summaryRes.statusCode).toBe(200);
+    const summaryBody = JSON.parse(summaryRes.body);
+    expect(summaryBody.success).toBe(true);
+    expect(summaryBody.data.dataHealth).toBeDefined();
+    expect(summaryBody.data.dataHealth.provider).toBeDefined();
+    expect(summaryBody.data.dataHealth.connectionState).toBeDefined();
+
+    // 2. Create an open trade for testing execution guards
+    const guardTrade = await Trade.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: new mongoose.Types.ObjectId(accountId),
+      symbol: 'RELIANCE',
+      direction: 'LONG',
+      status: 'OPEN',
+      executionMode: 'SIMPLE',
+      assetClass: 'EQUITY',
+      exchange: 'NSE',
+      marketSegment: 'NSE_EQ',
+      tradeDate: new Date(),
+      currency: 'INR',
+      entryTime: new Date(),
+      simpleExecution: {
+        entryPrice: 2500,
+        quantity: 10,
+      },
+    });
+
+    // 3. Attempt live broker exit when broker token is not active / expired
+    // User A currently has no active FYERS broker integration token in this test
+    const exitRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/trades/${guardTrade._id}/broker-exit`,
+      headers: { cookie: `tv_session=${authCookie}` },
+      payload: {
+        quantity: 10,
+        exitPrice: 2550,
+        isFullClose: true,
+        executeBroker: true,
+      },
+    });
+
+    expect(exitRes.statusCode).toBe(400);
+    const exitBody = JSON.parse(exitRes.body);
+    expect(exitBody.error.code).toBe('BROKER_EXECUTION_BLOCKED');
+    expect(exitBody.error.message.toLowerCase()).toContain('broker execution blocked');
+
+    // 4. Verify tenant isolation: User B cannot call broker-exit on User A's trade
+    const userBExitRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/trades/${guardTrade._id}/broker-exit`,
+      headers: { cookie: `tv_session=${userBAuthCookie}` },
+      payload: {
+        quantity: 10,
+        exitPrice: 2550,
+        isFullClose: true,
+        executeBroker: false,
+      },
+    });
+
+    expect(userBExitRes.statusCode).toBe(404);
+
+    await Trade.findByIdAndDelete(guardTrade._id);
+  });
 });

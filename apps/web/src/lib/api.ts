@@ -4,6 +4,7 @@ import type {
   IEquityCurvesResponse,
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
+  ILiveAlertState,
   IWeeklyReview,
   IWeeklyReviewSnapshot,
   IFocusRule,
@@ -268,6 +269,17 @@ export const api = {
       const query = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
       return request<ILiveWatcherSummary>(`/trades/live/watcher${query}`);
     },
+    getLiveAlerts: () =>
+      request<ILiveAlertState[]>('/trades/live/alerts'),
+    snoozeLiveAlert: (id: string, durationMinutes?: number) =>
+      request<{ id: string; state: string; snoozedUntil: string }>(`/trades/live/alerts/${id}/snooze`, {
+        method: 'POST',
+        body: JSON.stringify({ durationMinutes }),
+      }),
+    clearLiveAlert: (id: string) =>
+      request<{ id: string; state: string; clearedAt: string }>(`/trades/live/alerts/${id}/clear`, {
+        method: 'POST',
+      }),
     getLiveMetric: (id: string) =>
       request<ILiveOpenTradeMetric>(`/trades/${id}/live`),
     recordLivePulse: (id: string, emotion: string, notes?: string) =>

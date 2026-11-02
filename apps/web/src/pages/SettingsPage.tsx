@@ -198,6 +198,8 @@ export function SettingsPage() {
   const [telegramChatId, setTelegramChatId] = useState(initialWatcher.telegramChatId ?? '');
   const [slippageGuardPercent, setSlippageGuardPercent] = useState<number>(initialWatcher.slippageGuardPercent ?? 0.5);
   const [snoozeDefaultMin, setSnoozeDefaultMin] = useState<number>(initialWatcher.snoozeDefaultMin ?? 10);
+  const [staleDataThresholdSeconds, setStaleDataThresholdSeconds] = useState<number>(initialWatcher.staleDataThresholdSeconds ?? 10);
+  const [requireHoldToConfirm, setRequireHoldToConfirm] = useState<boolean>(initialWatcher.requireHoldToConfirm ?? true);
   const [hardDisciplineLockoutEnabled, setHardDisciplineLockoutEnabled] = useState(initialWatcher.hardDisciplineLockoutEnabled ?? false);
   const [hardDisciplineLockoutDurationMins, setHardDisciplineLockoutDurationMins] = useState(initialWatcher.hardDisciplineLockoutDurationMins ?? 60);
   const [testingTelegram, setTestingTelegram] = useState(false);
@@ -255,6 +257,8 @@ export function SettingsPage() {
       setTelegramChatId(s.telegramChatId ?? '');
       setSlippageGuardPercent(s.slippageGuardPercent ?? 0.5);
       setSnoozeDefaultMin(s.snoozeDefaultMin ?? 10);
+      setStaleDataThresholdSeconds(s.staleDataThresholdSeconds ?? 10);
+      setRequireHoldToConfirm(s.requireHoldToConfirm ?? true);
       setHardDisciplineLockoutEnabled(s.hardDisciplineLockoutEnabled ?? false);
       setHardDisciplineLockoutDurationMins(s.hardDisciplineLockoutDurationMins ?? 60);
       if (s.telegramAlertEvents) {
@@ -363,6 +367,8 @@ export function SettingsPage() {
     setTelegramAlertsEnabled(d.telegramAlertsEnabled ?? false);
     setTelegramBotToken(d.telegramBotToken ?? '');
     setTelegramChatId(d.telegramChatId ?? '');
+    setStaleDataThresholdSeconds(d.staleDataThresholdSeconds ?? 10);
+    setRequireHoldToConfirm(d.requireHoldToConfirm ?? true);
     setHardDisciplineLockoutEnabled(d.hardDisciplineLockoutEnabled ?? false);
     setHardDisciplineLockoutDurationMins(d.hardDisciplineLockoutDurationMins ?? 60);
     setTelegramAlertEvents({
@@ -480,6 +486,8 @@ export function SettingsPage() {
       telegramAlertEvents,
       slippageGuardPercent: Number(slippageGuardPercent),
       snoozeDefaultMin: Number(snoozeDefaultMin),
+      staleDataThresholdSeconds: Number(staleDataThresholdSeconds),
+      requireHoldToConfirm,
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
     };
@@ -1709,6 +1717,50 @@ export function SettingsPage() {
                                   helperText="Minutes to suppress alerts when tapping 💤 Snooze on a live card"
                                   fullWidth
                                 />
+                              </Grid>
+                            </Grid>
+
+                            <Grid container spacing={2} sx={{ mt: 1 }}>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  size="small"
+                                  label="Stale Quote Threshold (seconds)"
+                                  type="number"
+                                  slotProps={{ htmlInput: { step: 1, min: 2, max: 120 } }}
+                                  value={staleDataThresholdSeconds}
+                                  onChange={(e) => setStaleDataThresholdSeconds(Number(e.target.value))}
+                                  helperText="If market feed is older than this threshold, live broker execution is blocked"
+                                  fullWidth
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <Box
+                                  sx={{
+                                    p: 1.5,
+                                    borderRadius: 2,
+                                    border: '1px solid',
+                                    borderColor: requireHoldToConfirm ? 'rgba(16, 185, 129, 0.4)' : 'divider',
+                                    bgcolor: requireHoldToConfirm ? alpha('#10B981', 0.05) : 'transparent',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <Box>
+                                    <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
+                                      Hold-to-Confirm Exits (~600ms)
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block' }}>
+                                      Prevents costly mis-clicks on market exits and panic kill switch
+                                    </Typography>
+                                  </Box>
+                                  <Switch
+                                    size="small"
+                                    color="success"
+                                    checked={requireHoldToConfirm}
+                                    onChange={(e) => setRequireHoldToConfirm(e.target.checked)}
+                                  />
+                                </Box>
                               </Grid>
                             </Grid>
 

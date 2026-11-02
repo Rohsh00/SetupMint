@@ -1691,6 +1691,123 @@ export interface ILiveGivebackMetric {
 
 export type TargetLadderStepStatus = 'PENDING' | 'IN_PROGRESS' | 'MET' | 'EXECUTED';
 
+export type CardDensityLevel = 'glance' | 'standard' | 'deep';
+export type LiveWatcherSortMode = 'urgency' | 'entryTime';
+export type LadderViewMode = 'classic' | 'vertical';
+
+export interface IWatcherLayoutPreset {
+  id: string;
+  name: string;
+  refreshIntervalSec: number;
+  cardDensity: CardDensityLevel;
+  ladderViewMode: LadderViewMode;
+  sortMode: LiveWatcherSortMode;
+  scalperHotkeysEnabled: boolean;
+  isBuiltIn?: boolean;
+}
+
+export const DEFAULT_WATCHER_LAYOUT_PRESETS: IWatcherLayoutPreset[] = [
+  {
+    id: 'scalping',
+    name: 'Scalping',
+    refreshIntervalSec: 1,
+    cardDensity: 'glance',
+    ladderViewMode: 'vertical',
+    sortMode: 'urgency',
+    scalperHotkeysEnabled: true,
+    isBuiltIn: true,
+  },
+  {
+    id: 'positional',
+    name: 'Positional',
+    refreshIntervalSec: 30,
+    cardDensity: 'standard',
+    ladderViewMode: 'classic',
+    sortMode: 'urgency',
+    scalperHotkeysEnabled: false,
+    isBuiltIn: true,
+  },
+  {
+    id: 'deep_analytics',
+    name: 'Deep Analytics',
+    refreshIntervalSec: 5,
+    cardDensity: 'deep',
+    ladderViewMode: 'vertical',
+    sortMode: 'urgency',
+    scalperHotkeysEnabled: true,
+    isBuiltIn: true,
+  },
+];
+
+export interface ILiveAlertState {
+  id: string;
+  type: string;
+  state: 'ACTIVE' | 'SNOOZED' | 'CLEARED' | 'RESOLVED';
+  severity: number;
+  enterCount: number;
+  pingCount: number;
+  tradeId?: string;
+  symbol?: string;
+  direction?: 'LONG' | 'SHORT';
+  snoozedUntil?: string | null;
+  clearedAt?: string | null;
+  lastMetricValue?: string;
+  firstAt: string;
+  lastSentAt: string;
+  updatedAt: string;
+}
+
+export type NextActionHintType =
+  | 'STOP_BREACHED'
+  | 'STOP_CRITICAL'
+  | 'CRITICAL_REVERSAL'
+  | 'LADDER_STEP_MET'
+  | 'PROFIT_LEAKING'
+  | 'TRADE_STAGNANT';
+
+export interface INextActionHint {
+  type: NextActionHintType;
+  priority: number; // 1 (highest) to 6
+  label: string;
+  description: string;
+  actionText: string;
+  severity: 'error' | 'warning' | 'info';
+  dialogType: 'CLOSE_ALL' | 'PARTIAL_LADDER' | 'CUSTOM_RULES' | 'TRAIL_STOP';
+  dialogPayload?: {
+    ladderStep?: 't1' | 't2' | 't3';
+    suggestedExitRatio?: number; // e.g. 1.0 or 0.5
+    suggestedNewStopLoss?: number;
+    recommendedReason?: string;
+  };
+}
+
+export interface ISuggestedMistake {
+  id: string;
+  label: string;
+  description: string;
+  severity: 'warning' | 'error';
+}
+
+export interface INormalizedPulseCheckIn {
+  timestamp: string;
+  emotion: string;
+  notes?: string;
+  currentLtp?: number;
+  floatingNetPnL?: number;
+  unrealizedR?: number;
+}
+
+export interface IPostTradeReviewData {
+  mfeCaptureEfficiency: number; // 0 to 100%
+  surrenderedGivebackPnl: number; // Peak MFE PnL - Net PnL (clamped >= 0)
+  surrenderedGivebackPercent: number; // 0 to 100%
+  executionGrade: 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D' | 'F';
+  gradeReason: string;
+  suggestedMistakes: ISuggestedMistake[];
+  pulseCheckIns: INormalizedPulseCheckIn[];
+  lastPulseEmotion?: string;
+}
+
 export interface ICustomLadderRuleStep {
   enabled?: boolean;
   isFreeRunner?: boolean;
@@ -1789,6 +1906,13 @@ export interface ILiveWatcherSettings {
   telegramAlertPolicies?: Record<string, any>;
   hardDisciplineLockoutEnabled: boolean;
   hardDisciplineLockoutDurationMins: number;
+  staleDataThresholdSeconds?: number;
+  requireHoldToConfirm?: boolean;
+  cardDensity?: CardDensityLevel;
+  sortMode?: LiveWatcherSortMode;
+  ladderViewMode?: LadderViewMode;
+  layoutPresets?: IWatcherLayoutPreset[];
+  activePresetId?: string;
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
@@ -1841,6 +1965,13 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   },
   hardDisciplineLockoutEnabled: false,
   hardDisciplineLockoutDurationMins: 60,
+  staleDataThresholdSeconds: 10,
+  requireHoldToConfirm: true,
+  cardDensity: 'standard',
+  sortMode: 'urgency',
+  ladderViewMode: 'classic',
+  layoutPresets: DEFAULT_WATCHER_LAYOUT_PRESETS,
+  activePresetId: 'positional',
 };
 
 export function createLadderRulesFromSettings(
@@ -1990,6 +2121,27 @@ export interface IPortfolioRiskResult {
   }>;
 }
 
+export type LiveConnectionState = 'LIVE' | 'DELAYED' | 'STALE' | 'DISCONNECTED' | 'MARKET_CLOSED';
+
+export interface ILiveDataHealth {
+  provider: LiveQuoteProvider;
+  connectionState: LiveConnectionState;
+  lastTickAt?: string | Date | null;
+  tickAgeMs: number;
+  tickAgeSeconds: number;
+  isStale: boolean;
+  staleThresholdSeconds: number;
+  isTokenExpired: boolean;
+  tokenExpiresAt?: string | Date | null;
+  tokenRemainingMs?: number | null;
+  tokenRemainingMinutes?: number | null;
+  tokenRemainingSeconds?: number;
+  tokenCountdownStr?: string | null;
+  isMarketOpen?: boolean;
+  canExecuteBroker: boolean;
+  brokerExecutionBlockedReason?: string | null;
+}
+
 export interface ILiveOpenTradeMetric {
   tradeId: string;
   symbol: string;
@@ -2042,6 +2194,8 @@ export interface ILiveOpenTradeMetric {
     confidenceLevel: 'HIGH' | 'MODERATE' | 'LOW';
   };
   serverAutoExecutionArmed?: boolean;
+  dataHealth?: ILiveDataHealth;
+  nextActionHint?: INextActionHint | null;
 }
 
 export interface ILiveWatcherSummary {
@@ -2058,6 +2212,7 @@ export interface ILiveWatcherSummary {
   provider: LiveQuoteProvider;
   asOf: string | Date;
   portfolioRisk?: IPortfolioRiskResult;
+  dataHealth?: ILiveDataHealth;
 }
 
 // ==========================================

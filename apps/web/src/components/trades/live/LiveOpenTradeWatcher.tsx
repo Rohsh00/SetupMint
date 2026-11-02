@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -36,6 +37,7 @@ import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Badge from '@mui/material/Badge';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 
 // Icons
@@ -58,6 +60,11 @@ import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import ViewHeadlineRoundedIcon from '@mui/icons-material/ViewHeadlineRounded';
+import ViewDayRoundedIcon from '@mui/icons-material/ViewDayRounded';
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import SwapVertRoundedIcon from '@mui/icons-material/SwapVertRounded';
+import LinearScaleRoundedIcon from '@mui/icons-material/LinearScaleRounded';
 
 import VolumeUpRoundedIcon from '@mui/icons-material/VolumeUpRounded';
 import VolumeOffRoundedIcon from '@mui/icons-material/VolumeOffRounded';
@@ -66,9 +73,12 @@ import NotificationsOffRoundedIcon from '@mui/icons-material/NotificationsOffRou
 import DangerousRoundedIcon from '@mui/icons-material/DangerousRounded';
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 import KeyboardAltRoundedIcon from '@mui/icons-material/KeyboardAltRounded';
+import PictureInPictureRoundedIcon from '@mui/icons-material/PictureInPictureRounded';
+import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded';
 
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
+import { LiveUnifiedPriceLadder } from './LiveUnifiedPriceLadder.js';
 import { ExecuteLadderStepDialog } from './ExecuteLadderStepDialog.js';
 import { LiveCustomRulesDialog } from './LiveCustomRulesDialog.js';
 import { LivePriceGauge } from './LivePriceGauge.js';
@@ -76,6 +86,8 @@ import { LiveSparkline } from './LiveSparkline.js';
 import { LiveOptionsGreeksCard } from './LiveOptionsGreeksCard.js';
 import { LivePortfolioRiskBanner } from './LivePortfolioRiskBanner.js';
 import { PanicKillSwitchDialog } from './PanicKillSwitchDialog.js';
+import { LiveAlertCenterDialog } from './LiveAlertCenterDialog.js';
+import { HotkeyCheatSheetDialog } from './HotkeyCheatSheetDialog.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
 import { useAuth } from '../../../context/AuthContext.js';
@@ -85,12 +97,21 @@ import {
   ILiveTargetLadderStep,
   ICustomLadderRules,
   StopThreatLevel,
+  ILiveDataHealth,
+  CardDensityLevel,
+  LiveWatcherSortMode,
+  LadderViewMode,
+  INextActionHint,
+  IWatcherLayoutPreset,
+  DEFAULT_WATCHER_LAYOUT_PRESETS,
+  ILiveAlertState,
   createLadderRulesFromSettings,
 } from '@tradevault/shared';
 import {
   calculateTargetLadder,
   calculateDynamicTrailingStop,
   evaluateGivebackAutoExit,
+  selectNextActionHint,
 } from '@tradevault/financial-engine';
 import { api } from '../../../lib/api.js';
 import { formatCurrency } from '../../../lib/utils.js';
@@ -168,6 +189,25 @@ export function LiveOpenTradeWatcher({
   const [isDeRiskingAll, setIsDeRiskingAll] = useState<boolean>(false);
   const [recapTrade, setRecapTrade] = useState<any | null>(null);
 
+  const [cardDensity, setCardDensity] = useState<CardDensityLevel>(() => {
+    const saved = localStorage.getItem('tv_live_watcher_card_density');
+    return (saved === 'glance' || saved === 'deep' ? saved : user?.liveWatcherSettings?.cardDensity ?? 'standard') as CardDensityLevel;
+  });
+
+  const [sortMode, setSortMode] = useState<LiveWatcherSortMode>(() => {
+    const saved = localStorage.getItem('tv_live_watcher_sort_mode');
+    return (saved === 'entryTime' ? 'entryTime' : user?.liveWatcherSettings?.sortMode ?? 'urgency') as LiveWatcherSortMode;
+  });
+
+  const [ladderViewMode, setLadderViewMode] = useState<LadderViewMode>(() => {
+    const saved = localStorage.getItem('tv_live_watcher_ladder_view');
+    return (saved === 'vertical' ? 'vertical' : user?.liveWatcherSettings?.ladderViewMode ?? 'classic') as LadderViewMode;
+  });
+
+  // Per-card manual collapse state and 60-second immunity tracker
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({});
+  const manualCollapseTimestamps = useRef<Record<string, number>>({});
+
   const [refreshIntervalSec, setRefreshIntervalSec] = useState<number>(() => {
     const saved = localStorage.getItem('tv_live_watcher_interval');
     return saved !== null ? Number(saved) : (user?.liveWatcherSettings?.defaultRefreshIntervalSec ?? 5);
@@ -197,6 +237,47 @@ export function LiveOpenTradeWatcher({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // 3.1 Tab Title & Favicon throttling
+  const originalTitleRef = useRef<string>(typeof document !== 'undefined' ? document.title : 'SetupMint — Quantitative Trading Journal');
+  const originalFaviconRef = useRef<string>('');
+  const lastTitleUpdateRef = useRef<number>(0);
+
+  // 3.2 In-App Threat Alert Center State & Query
+  const [alertCenterOpen, setAlertCenterOpen] = useState<boolean>(false);
+  const { data: liveAlerts = [] } = useQuery<ILiveAlertState[]>({
+    queryKey: ['live-alerts-summary'],
+    queryFn: () => api.trades.getLiveAlerts(),
+    refetchInterval: 10000,
+  });
+  const activeAlertsCount = liveAlerts.filter((a) => a.state === 'ACTIVE').length;
+  const urgentAlertsCount = liveAlerts.filter((a) => a.state === 'ACTIVE' && a.severity >= 2).length;
+
+  // 3.3 Watcher Layout Presets State
+  const layoutPresets: IWatcherLayoutPreset[] = useMemo(() => {
+    return user?.liveWatcherSettings?.layoutPresets && user.liveWatcherSettings.layoutPresets.length > 0
+      ? user.liveWatcherSettings.layoutPresets
+      : DEFAULT_WATCHER_LAYOUT_PRESETS;
+  }, [user?.liveWatcherSettings?.layoutPresets]);
+
+  const [activePresetId, setActivePresetId] = useState<string>(() => {
+    return user?.liveWatcherSettings?.activePresetId || 'positional';
+  });
+  const [presetMenuAnchor, setPresetMenuAnchor] = useState<null | HTMLElement>(null);
+  const [savePresetDialogOpen, setSavePresetDialogOpen] = useState<boolean>(false);
+  const [newPresetName, setNewPresetName] = useState<string>('');
+
+  // 3.4 Hotkeys Cheat Sheet State
+  const [cheatSheetOpen, setCheatSheetOpen] = useState<boolean>(false);
+
+  // 3.5 Pop-Out Mini Watcher (Picture-in-Picture) State
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+  const [isPipActive, setIsPipActive] = useState<boolean>(false);
+
+  // 3.6 Screen Reader Announcements State
+  const [assertiveAnnouncement, setAssertiveAnnouncement] = useState<string>('');
+  const [politeAnnouncement, setPoliteAnnouncement] = useState<string>('');
+  const lastThreatAnnouncedRef = useRef<Record<string, StopThreatLevel>>({});
 
   const handleToggleSound = () => {
     const next = !soundEnabled;
@@ -277,17 +358,22 @@ export function LiveOpenTradeWatcher({
   const handleQuickMoveToBe = (metric: ILiveOpenTradeMetric) => {
     // True Breakeven covers estimated broker & statutory fees so Net P&L = 0
     const bePrice = metric.trueBreakevenPrice ?? metric.entryPrice;
+    const canBroker = metric.dataHealth ? metric.dataHealth.canExecuteBroker : (summary?.dataHealth?.canExecuteBroker ?? true);
     updateSlMutation.mutate({
       tradeId: metric.tradeId,
       newStopLoss: bePrice,
-      executeBroker: true,
+      executeBroker: canBroker,
     });
+    if (!canBroker) {
+      toast.info(`Updated SL in Journal only (Broker order guarded: ${metric.dataHealth?.brokerExecutionBlockedReason || 'Simulated/Stale'})`);
+    }
   };
 
   // Master 1-Click Action: De-Risk All open positions to True Breakeven with fee cushion
   const handleDeRiskAllPositions = async () => {
     if (!summary?.positions || summary.positions.length === 0) return;
     setIsDeRiskingAll(true);
+    const canBroker = summary?.dataHealth?.canExecuteBroker ?? true;
     try {
       let securedCount = 0;
 
@@ -304,7 +390,7 @@ export function LiveOpenTradeWatcher({
 
         await api.trades.liveBrokerSl(pos.tradeId, {
           stopPrice: bePrice,
-          executeBroker: true,
+          executeBroker: canBroker,
           idempotencyKey: `${pos.tradeId}_derisk_all_${Date.now()}`,
         });
         securedCount++;
@@ -313,7 +399,7 @@ export function LiveOpenTradeWatcher({
       soundEngine.playTargetHit();
       if (securedCount > 0) {
         toast.success(
-          `🛡️ De-Risk Complete: Secured ${securedCount} position${securedCount > 1 ? 's' : ''} to True Breakeven (+fees protected)!`
+          `🛡️ De-Risk Complete: Secured ${securedCount} position${securedCount > 1 ? 's' : ''} to True Breakeven (+fees protected)${canBroker ? ' on FYERS' : ' in Journal'}!`
         );
       } else {
         toast.info('All open positions are already at or beyond True Breakeven.');
@@ -374,6 +460,17 @@ export function LiveOpenTradeWatcher({
       return user?.liveWatcherSettings?.scalperHotkeysEnabled ?? false;
     } catch {
       return user?.liveWatcherSettings?.scalperHotkeysEnabled ?? false;
+    }
+  });
+
+  // Hold-to-Confirm Safety State (requires ~600ms hold on market exits)
+  const [requireHoldToConfirm, setRequireHoldToConfirm] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('tv_require_hold_confirm');
+      if (saved !== null) return saved === 'true';
+      return user?.liveWatcherSettings?.requireHoldToConfirm ?? true;
+    } catch {
+      return user?.liveWatcherSettings?.requireHoldToConfirm ?? true;
     }
   });
 
@@ -475,12 +572,179 @@ export function LiveOpenTradeWatcher({
     refetchOnWindowFocus: true,
   });
 
+  // Deterministic Urgency vs Entry-Time Sort
+  const sortedPositions = useMemo(() => {
+    if (!summary?.positions || summary.positions.length === 0) return [];
+    if (sortMode === 'entryTime') return summary.positions;
+
+    return [...summary.positions].sort((a, b) => {
+      const getRank = (p: ILiveOpenTradeMetric) => {
+        if (p.stopThreatLevel === 'BREACHED') return 1;
+        if (p.stopThreatLevel === 'CRITICAL') return 2;
+        if (p.giveback?.threatLevel === 'CRITICAL_REVERSAL' || p.giveback?.threatLevel === 'LEAKING') return 3;
+        if (p.stopThreatLevel === 'ATTENTION' || p.giveback?.threatLevel === 'WATCH') return 4;
+        return 5;
+      };
+
+      const rankA = getRank(a);
+      const rankB = getRank(b);
+      if (rankA !== rankB) return rankA - rankB;
+
+      // Tie break: distance to stop loss in points (closest to SL floats to top)
+      const distA = a.distanceToStopPoints ?? Infinity;
+      const distB = b.distanceToStopPoints ?? Infinity;
+      return distA - distB;
+    });
+  }, [summary?.positions, sortMode]);
+
+  // Card manual collapse toggle with 60s immunity tracking
+  const handleToggleCardCollapse = (tradeId: string) => {
+    setCollapsedCards((prev) => {
+      const willCollapse = !prev[tradeId];
+      if (willCollapse) {
+        manualCollapseTimestamps.current[tradeId] = Date.now();
+      } else {
+        delete manualCollapseTimestamps.current[tradeId];
+      }
+      return { ...prev, [tradeId]: willCollapse };
+    });
+  };
+
+  // Auto-expand high threat trades unless manually collapsed by user within 60s
+  useEffect(() => {
+    if (!summary?.positions || summary.positions.length === 0) return;
+
+    const now = Date.now();
+    setCollapsedCards((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      for (const pos of summary.positions) {
+        const isUrgent =
+          pos.stopThreatLevel === 'BREACHED' ||
+          pos.stopThreatLevel === 'CRITICAL' ||
+          pos.giveback?.threatLevel === 'CRITICAL_REVERSAL' ||
+          pos.giveback?.threatLevel === 'LEAKING';
+
+        if (isUrgent && next[pos.tradeId]) {
+          const manualTime = manualCollapseTimestamps.current[pos.tradeId] || 0;
+          if (now - manualTime > 60000) {
+            next[pos.tradeId] = false;
+            changed = true;
+          }
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [summary?.positions]);
+
+  // Handle clicking next-action hint button: opens pre-filled dialog (never auto-submits)
+  const handleExecuteHint = (pos: ILiveOpenTradeMetric, hint: INextActionHint) => {
+    if (hint.dialogType === 'CLOSE_ALL') {
+      handleOpenQuickClose(pos, hint.dialogPayload?.suggestedExitRatio ?? 1.0);
+    } else if (hint.dialogType === 'PARTIAL_LADDER') {
+      const customRules = getEffectiveRules(pos.tradeId, pos.lotSize);
+      const effectiveLotSize =
+        customRules?.lotSize ||
+        pos.lotSize ||
+        (pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1);
+      const estCharges = (pos.feeBufferPoints || 0) * (pos.quantity || 1) * (pos.contractMultiplier || 1);
+
+      const effectiveLadder =
+        customRules && pos.targetLadder
+          ? calculateTargetLadder({
+              entryPrice: pos.entryPrice,
+              currentLtp: pos.currentLtp,
+              direction: pos.direction,
+              quantity: pos.quantity,
+              contractMultiplier: pos.contractMultiplier,
+              stopLoss: pos.stopLoss,
+              plannedTarget: pos.target,
+              tickSize: pos.tickSize,
+              lotSize: effectiveLotSize,
+              customRules,
+              estimatedCharges: estCharges,
+            })
+          : pos.targetLadder;
+
+      const targetIdx = hint.dialogPayload?.ladderStep === 't1' ? 1 : hint.dialogPayload?.ladderStep === 't2' ? 2 : 3;
+      const step = effectiveLadder?.steps.find((s) => s.targetIndex === targetIdx) || effectiveLadder?.steps[0];
+      if (step) {
+        setSelectedLadderStep({ metric: pos, step });
+      } else {
+        handleOpenQuickClose(pos, hint.dialogPayload?.suggestedExitRatio ?? 0.5);
+      }
+    } else if (hint.dialogType === 'CUSTOM_RULES') {
+      setCustomRulesMetric(pos);
+    }
+  };
+
   // Global Scalper Keyboard Hotkeys Listener
   useEffect(() => {
-    if (!scalperHotkeysEnabled || !summary?.positions?.length) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      if (e.key === '?') {
+        e.preventDefault();
+        setCheatSheetOpen((prev) => !prev);
+        return;
+      }
+
+      if (e.key === '1') {
+        e.preventDefault();
+        setCardDensity('glance');
+        localStorage.setItem('tv_live_watcher_card_density', 'glance');
+        api.settings.updateProfile({ liveWatcherSettings: { cardDensity: 'glance' } }).catch(() => {});
+        toast.info('Switched to Glance Density');
+        return;
+      }
+      if (e.key === '2') {
+        e.preventDefault();
+        setCardDensity('standard');
+        localStorage.setItem('tv_live_watcher_card_density', 'standard');
+        api.settings.updateProfile({ liveWatcherSettings: { cardDensity: 'standard' } }).catch(() => {});
+        toast.info('Switched to Standard Density');
+        return;
+      }
+      if (e.key === '3') {
+        e.preventDefault();
+        setCardDensity('deep');
+        localStorage.setItem('tv_live_watcher_card_density', 'deep');
+        api.settings.updateProfile({ liveWatcherSettings: { cardDensity: 'deep' } }).catch(() => {});
+        toast.info('Switched to Deep Density');
+        return;
+      }
+
+      if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        const next = ladderViewMode === 'vertical' ? 'classic' : 'vertical';
+        setLadderViewMode(next);
+        localStorage.setItem('tv_live_watcher_ladder_view', next);
+        api.settings.updateProfile({ liveWatcherSettings: { ladderViewMode: next } }).catch(() => {});
+        toast.info(`Switched to ${next === 'vertical' ? 'Vertical Ladder' : 'Classic Gauge'}`);
+        return;
+      }
+
+      if (e.key === 'u' || e.key === 'U') {
+        e.preventDefault();
+        const next = sortMode === 'urgency' ? 'entryTime' : 'urgency';
+        setSortMode(next);
+        localStorage.setItem('tv_live_watcher_sort_mode', next);
+        api.settings.updateProfile({ liveWatcherSettings: { sortMode: next } }).catch(() => {});
+        toast.info(`Sorting by: ${next === 'urgency' ? 'Urgency' : 'Entry Time'}`);
+        return;
+      }
+
+      if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        const curIdx = layoutPresets.findIndex((p) => p.id === activePresetId);
+        const nextPreset = layoutPresets[(curIdx + 1) % layoutPresets.length];
+        if (nextPreset) applyLayoutPreset(nextPreset);
+        return;
+      }
+
+      if (!scalperHotkeysEnabled || !summary?.positions?.length) return;
 
       const topPos = summary.positions[0];
       if (!topPos) return;
@@ -502,7 +766,185 @@ export function LiveOpenTradeWatcher({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [scalperHotkeysEnabled, summary?.positions]);
+  }, [scalperHotkeysEnabled, summary?.positions, ladderViewMode, sortMode, activePresetId, layoutPresets]);
+
+  // Layout Presets Application
+  const applyLayoutPreset = (preset: IWatcherLayoutPreset) => {
+    setActivePresetId(preset.id);
+    setCardDensity(preset.cardDensity);
+    setLadderViewMode(preset.ladderViewMode);
+    setSortMode(preset.sortMode);
+    setRefreshIntervalSec(preset.refreshIntervalSec);
+    setScalperHotkeysEnabled(preset.scalperHotkeysEnabled);
+
+    localStorage.setItem('tv_live_watcher_card_density', preset.cardDensity);
+    localStorage.setItem('tv_live_watcher_ladder_view', preset.ladderViewMode);
+    localStorage.setItem('tv_live_watcher_sort_mode', preset.sortMode);
+    localStorage.setItem('tv_live_watcher_interval', String(preset.refreshIntervalSec));
+    localStorage.setItem('tv_scalper_hotkeys', String(preset.scalperHotkeysEnabled));
+
+    api.settings.updateProfile({
+      liveWatcherSettings: {
+        activePresetId: preset.id,
+        cardDensity: preset.cardDensity,
+        ladderViewMode: preset.ladderViewMode,
+        sortMode: preset.sortMode,
+        defaultRefreshIntervalSec: preset.refreshIntervalSec,
+        scalperHotkeysEnabled: preset.scalperHotkeysEnabled,
+      },
+    }).catch(() => {});
+
+    toast.info(`Applied layout preset: "${preset.name}" (${preset.cardDensity}, ${preset.refreshIntervalSec}s refresh)`);
+  };
+
+  const handleSaveCustomPreset = async () => {
+    if (!newPresetName.trim()) return;
+    const newPreset: IWatcherLayoutPreset = {
+      id: `custom_${Date.now()}`,
+      name: newPresetName.trim(),
+      refreshIntervalSec,
+      cardDensity,
+      ladderViewMode,
+      sortMode,
+      scalperHotkeysEnabled,
+      isBuiltIn: false,
+    };
+
+    const updatedPresets = [...layoutPresets, newPreset];
+    try {
+      await api.settings.updateProfile({
+        liveWatcherSettings: {
+          layoutPresets: updatedPresets,
+          activePresetId: newPreset.id,
+        },
+      });
+      setActivePresetId(newPreset.id);
+      setSavePresetDialogOpen(false);
+      setNewPresetName('');
+      toast.success(`Preset "${newPreset.name}" saved successfully`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save layout preset');
+    }
+  };
+
+  // Pop-Out Picture-in-Picture Handler
+  const toggleDocumentPiP = async () => {
+    if (isPipActive && pipWindow) {
+      pipWindow.close();
+      setPipWindow(null);
+      setIsPipActive(false);
+      return;
+    }
+
+    if (typeof window !== 'undefined' && 'documentPictureInPicture' in window) {
+      try {
+        const pip = await (window as any).documentPictureInPicture.requestWindow({
+          width: 440,
+          height: 600,
+        });
+
+        document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+          pip.document.head.appendChild(node.cloneNode(true));
+        });
+        pip.document.body.style.margin = '0';
+        pip.document.body.style.backgroundColor = '#0b0f19';
+        pip.document.body.style.color = '#ffffff';
+
+        pip.addEventListener('pagehide', () => {
+          setIsPipActive(false);
+          setPipWindow(null);
+        });
+
+        setPipWindow(pip);
+        setIsPipActive(true);
+        toast.success('Mini Watcher popped out into Picture-in-Picture');
+      } catch (err: any) {
+        toast.error('Could not open Picture-in-Picture: ' + err.message);
+      }
+    } else {
+      window.open(
+        window.location.href,
+        'SetupMintMiniWatcher',
+        'width=440,height=620,menubar=no,toolbar=no,location=no,status=no'
+      );
+      toast.info('Opened mini watcher in standalone popup window');
+    }
+  };
+
+  // 3.1 Tab Title & Favicon throttling
+  useEffect(() => {
+    const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+    if (link) {
+      originalFaviconRef.current = link.href;
+    }
+
+    return () => {
+      document.title = originalTitleRef.current;
+      const fLink: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+      if (fLink && originalFaviconRef.current) {
+        fLink.href = originalFaviconRef.current;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const now = Date.now();
+    const delay = Math.max(0, 2500 - (now - lastTitleUpdateRef.current));
+
+    const timeoutId = setTimeout(() => {
+      lastTitleUpdateRef.current = Date.now();
+      const openCount = summary?.openTradesCount ?? 0;
+
+      if (!summary || openCount === 0) {
+        document.title = originalTitleRef.current;
+        const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+        if (link && originalFaviconRef.current) {
+          link.href = originalFaviconRef.current;
+        }
+        return;
+      }
+
+      const criticalCount = summary.positions.filter(
+        (p) => p.stopThreatLevel === 'CRITICAL' || p.stopThreatLevel === 'BREACHED'
+      ).length;
+
+      const netPnL = summary.totalFloatingNetPnL ?? 0;
+      const pnlPrefix = netPnL >= 0 ? '+₹' : '-₹';
+      const absPnL = Math.abs(netPnL).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+      const pnlStr = `${pnlPrefix}${absPnL}`;
+
+      if (criticalCount > 0) {
+        document.title = `🚨 ${criticalCount} CRITICAL | ${pnlStr} | SetupMint`;
+      } else {
+        document.title = `${pnlStr} (${openCount} Pos) | SetupMint`;
+      }
+
+      const link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+      if (link) {
+        const dotColor = criticalCount > 0 ? '#ef4444' : netPnL >= 0 ? '#10b981' : '#f59e0b';
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#0f172a"/><circle cx="16" cy="16" r="8" fill="${dotColor}"/><circle cx="16" cy="16" r="12" fill="none" stroke="${dotColor}" stroke-width="2"/></svg>`;
+        link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+      }
+    }, delay);
+
+    return () => clearTimeout(timeoutId);
+  }, [summary]);
+
+  // 3.6 Screen Reader Announcements
+  useEffect(() => {
+    if (!summary?.positions) return;
+    for (const pos of summary.positions) {
+      const prev = lastThreatAnnouncedRef.current[pos.tradeId];
+      if (prev !== pos.stopThreatLevel) {
+        lastThreatAnnouncedRef.current[pos.tradeId] = pos.stopThreatLevel;
+        if (pos.stopThreatLevel === 'CRITICAL' || pos.stopThreatLevel === 'BREACHED') {
+          setAssertiveAnnouncement(`URGENT: ${pos.symbol} stop threat level reached ${pos.stopThreatLevel}. Distance to stop is ${pos.distanceToStopPoints ?? 0} pts.`);
+        } else if (pos.stopThreatLevel === 'SAFE') {
+          setPoliteAnnouncement(`${pos.symbol} stop threat returned to safe.`);
+        }
+      }
+    }
+  }, [summary?.positions]);
 
   // Auto-Execution Engine: triggers partial exit & SL trail when targets met on armed trades
   useEffect(() => {
@@ -812,40 +1254,97 @@ export function LiveOpenTradeWatcher({
     }
   };
 
-  const getProviderBadge = (provider?: string) => {
-    switch (provider) {
-      case 'FYERS':
-        return {
-          label: 'FYERS LIVE',
-          color: '#10B981',
-          bg: alpha('#10B981', 0.12),
-          tooltip: 'Real-time quotes fetched live from your FYERS API session',
-        };
-      case 'ANGEL_ONE':
-        return {
-          label: 'ANGEL ONE LIVE',
-          color: '#0EA5E9',
-          bg: alpha('#0EA5E9', 0.12),
-          tooltip: 'Real-time quotes fetched live from Angel One SmartAPI',
-        };
-      case 'SIMULATED':
-      default:
-        return {
-          label: 'SIMULATED TICK',
-          color: '#F59E0B',
-          bg: alpha('#F59E0B', 0.12),
-          tooltip: 'Market closed or broker session not active. Displaying realistic simulated ticks for demonstration.',
-        };
+  const getDataHealthBadge = (health?: ILiveDataHealth, provider?: string) => {
+    if (!health) {
+      return {
+        label: provider === 'FYERS' ? 'FYERS LIVE' : 'SIMULATION',
+        sublabel: '',
+        color: provider === 'FYERS' ? '#10B981' : '#F59E0B',
+        bg: alpha(provider === 'FYERS' ? '#10B981' : '#F59E0B', 0.12),
+        tooltip: 'Waiting for live connection data...',
+        isSimulated: provider !== 'FYERS',
+        isStale: false,
+        canExecuteBroker: provider === 'FYERS',
+      };
     }
+
+    if (health.provider === 'SIMULATED') {
+      return {
+        label: '⚪ SIMULATION FEED',
+        sublabel: 'JOURNAL ONLY',
+        color: '#F59E0B',
+        bg: alpha('#F59E0B', 0.12),
+        tooltip: health.brokerExecutionBlockedReason || 'Demo simulation quotes. Broker execution disabled.',
+        isSimulated: true,
+        isStale: false,
+        canExecuteBroker: false,
+      };
+    }
+
+    if (health.connectionState === 'STALE') {
+      return {
+        label: `⚠️ STALE DATA (${health.tickAgeSeconds}s)`,
+        sublabel: 'EXECUTION PAUSED',
+        color: '#EF4444',
+        bg: alpha('#EF4444', 0.12),
+        tooltip: `Quote feed age (${health.tickAgeSeconds}s) exceeds threshold (${health.staleThresholdSeconds}s). Broker orders disabled to protect against stale fills.`,
+        isSimulated: false,
+        isStale: true,
+        canExecuteBroker: false,
+      };
+    }
+
+    if (health.connectionState === 'DISCONNECTED') {
+      return {
+        label: '🔴 DISCONNECTED',
+        sublabel: 'NO QUOTES',
+        color: '#EF4444',
+        bg: alpha('#EF4444', 0.12),
+        tooltip: 'No active quote stream received. Broker execution disabled.',
+        isSimulated: false,
+        isStale: true,
+        canExecuteBroker: false,
+      };
+    }
+
+    if (health.connectionState === 'MARKET_CLOSED') {
+      return {
+        label: '🌙 MARKET CLOSED',
+        sublabel: 'FYERS FEED',
+        color: '#64748B',
+        bg: alpha('#64748B', 0.12),
+        tooltip: 'NSE session closed. Quotes frozen at market close.',
+        isSimulated: false,
+        isStale: false,
+        canExecuteBroker: false,
+      };
+    }
+
+    const latencyLabel = health.tickAgeSeconds < 1 ? '<1s' : `${health.tickAgeSeconds}s`;
+    return {
+      label: `🟢 FYERS LIVE (${latencyLabel})`,
+      sublabel: health.tokenCountdownStr ? `Token: ${health.tokenCountdownStr}` : 'CONNECTED',
+      color: '#10B981',
+      bg: alpha('#10B981', 0.12),
+      tooltip: `Active exchange quote feed (${latencyLabel} tick latency). Token: ${health.tokenCountdownStr || 'Valid'}.`,
+      isSimulated: false,
+      isStale: false,
+      canExecuteBroker: health.canExecuteBroker,
+    };
   };
 
-  const providerBadge = getProviderBadge(summary?.provider);
+  const healthBadge = getDataHealthBadge(summary?.dataHealth, summary?.provider);
 
   const handleOpenQuickClose = async (metric: ILiveOpenTradeMetric, ratio: number = 1.0) => {
     setQuickCloseRatio(ratio);
+    const health = metric.dataHealth || summary?.dataHealth;
     try {
       const fullTrade = await api.trades.get(metric.tradeId);
-      setQuickCloseTrade(fullTrade);
+      setQuickCloseTrade({
+        ...fullTrade,
+        dataHealth: health,
+        currentLtp: metric.currentLtp,
+      });
       setQuickCloseLtp(metric.currentLtp);
     } catch {
       // Fallback trade object
@@ -859,6 +1358,8 @@ export function LiveOpenTradeWatcher({
           contractMultiplier: metric.contractMultiplier,
         },
         quantity: metric.quantity,
+        dataHealth: health,
+        currentLtp: metric.currentLtp,
       });
       setQuickCloseLtp(metric.currentLtp);
     }
@@ -948,42 +1449,63 @@ export function LiveOpenTradeWatcher({
               Live Trade Watcher
             </Typography>
 
-            {/* Consolidated Modern Status Badge */}
+            {/* Consolidated Modern Data Health & Provider Status Badges */}
             <Tooltip
               title={
                 <Box sx={{ p: 0.5 }}>
                   <Typography variant="caption" sx={{ fontWeight: 800, display: 'block' }}>
-                    {providerBadge.label} ({providerBadge.tooltip})
+                    {healthBadge.label} — {healthBadge.tooltip}
                   </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    • Provider: {summary?.dataHealth?.provider || summary?.provider || 'SIMULATED'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    • Connection: {summary?.dataHealth?.connectionState || 'UNKNOWN'}
+                  </Typography>
+                  {summary?.dataHealth?.tokenCountdownStr && (
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                      • Broker Session: {summary.dataHealth.isTokenExpired ? 'EXPIRED' : `${summary.dataHealth.tokenCountdownStr} remaining`}
+                    </Typography>
+                  )}
                   <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
                     • Active Positions: {openTradesCount}
                   </Typography>
                   <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                    • Telegram Alerts: {user?.liveWatcherSettings?.telegramAlertsEnabled ? 'ARMED' : 'OFF'}
-                  </Typography>
-                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                    • Server Runner: {user?.liveWatcherSettings?.serverSideExecutionEnabled ? 'ACTIVE 24/7' : 'OFF'}
-                  </Typography>
-                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                    • Mode: {user?.liveWatcherSettings?.paperExecutionMode ? 'PAPER SIMULATION' : 'BROKER LIVE'}
+                    • Broker Execution: {healthBadge.canExecuteBroker ? 'ACTIVE & READY' : `BLOCKED (${summary?.dataHealth?.brokerExecutionBlockedReason || 'Simulation / Stale'})`}
                   </Typography>
                 </Box>
               }
               arrow
             >
-              <Chip
-                label={`${summary?.provider === 'FYERS' ? '🟢 FYERS LIVE' : '⚪ SIMULATION'} · ${openTradesCount} ACTIVE`}
-                size="small"
-                sx={{
-                  height: 22,
-                  fontSize: '0.66rem',
-                  fontWeight: 800,
-                  color: providerBadge.color,
-                  bgcolor: providerBadge.bg,
-                  border: `1px solid ${alpha(providerBadge.color, 0.3)}`,
-                  borderRadius: '6px',
-                }}
-              />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Chip
+                  label={healthBadge.label}
+                  size="small"
+                  sx={{
+                    height: 22,
+                    fontSize: '0.66rem',
+                    fontWeight: 800,
+                    color: healthBadge.color,
+                    bgcolor: healthBadge.bg,
+                    border: `1px solid ${alpha(healthBadge.color, 0.35)}`,
+                    borderRadius: '6px',
+                  }}
+                />
+                {summary?.dataHealth?.provider === 'FYERS' && summary?.dataHealth?.tokenCountdownStr && (
+                  <Chip
+                    label={summary.dataHealth.isTokenExpired ? '⚠️ Token Expired' : `🔑 ${summary.dataHealth.tokenCountdownStr}`}
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.6rem',
+                      fontWeight: 700,
+                      color: summary.dataHealth.isTokenExpired ? '#EF4444' : '#64748B',
+                      bgcolor: summary.dataHealth.isTokenExpired ? alpha('#EF4444', 0.12) : alpha('#64748B', 0.08),
+                      borderRadius: '4px',
+                    }}
+                  />
+                )}
+              </Box>
             </Tooltip>
           </Box>
 
@@ -1064,6 +1586,128 @@ export function LiveOpenTradeWatcher({
               </Tooltip>
             )}
 
+            {/* Density Switcher: Glance (⚡) | Standard (📊) | Deep (🔬) */}
+            {openTradesCount > 0 && viewMode === 'cockpit' && (
+              <Tooltip title="Card Density: Glance (compact) | Standard | Deep (analytics & Greeks)" arrow>
+                <ToggleButtonGroup
+                  value={cardDensity}
+                  exclusive
+                  onChange={(_, newDensity) => {
+                    if (newDensity) {
+                      setCardDensity(newDensity);
+                      localStorage.setItem('tv_live_watcher_card_density', newDensity);
+                      api.settings.updateProfile({
+                        liveWatcherSettings: { cardDensity: newDensity },
+                      }).catch(() => {});
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    height: 28,
+                    '& .MuiToggleButton-root': {
+                      px: 0.9,
+                      py: 0,
+                      fontSize: '0.66rem',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                    },
+                  }}
+                >
+                  <ToggleButton value="glance" title="Glance (Compact)">
+                    <ViewHeadlineRoundedIcon sx={{ fontSize: 13, mr: 0.4 }} />
+                    Glance
+                  </ToggleButton>
+                  <ToggleButton value="standard" title="Standard">
+                    <ViewDayRoundedIcon sx={{ fontSize: 13, mr: 0.4 }} />
+                    Standard
+                  </ToggleButton>
+                  <ToggleButton value="deep" title="Deep (Greeks & Radar)">
+                    <LayersRoundedIcon sx={{ fontSize: 13, mr: 0.4 }} />
+                    Deep
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Tooltip>
+            )}
+
+            {/* Sort Mode Switcher: Urgency vs Entry Time */}
+            {openTradesCount > 1 && (
+              <Tooltip title="Sort trades by Urgency (Threat & Proximity to SL) or Entry Time" arrow>
+                <ToggleButtonGroup
+                  value={sortMode}
+                  exclusive
+                  onChange={(_, newSort) => {
+                    if (newSort) {
+                      setSortMode(newSort);
+                      localStorage.setItem('tv_live_watcher_sort_mode', newSort);
+                      api.settings.updateProfile({
+                        liveWatcherSettings: { sortMode: newSort },
+                      }).catch(() => {});
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    height: 28,
+                    '& .MuiToggleButton-root': {
+                      px: 0.9,
+                      py: 0,
+                      fontSize: '0.66rem',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                    },
+                  }}
+                >
+                  <ToggleButton value="urgency" title="Sort by Urgency">
+                    <SwapVertRoundedIcon sx={{ fontSize: 13, mr: 0.4 }} />
+                    Urgency
+                  </ToggleButton>
+                  <ToggleButton value="entryTime" title="Sort by Entry Time">
+                    <AccessTimeRoundedIcon sx={{ fontSize: 13, mr: 0.4 }} />
+                    Time
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Tooltip>
+            )}
+
+            {/* Unified Ladder View Mode Switcher */}
+            {openTradesCount > 0 && viewMode === 'cockpit' && cardDensity !== 'glance' && (
+              <Tooltip title="Toggle Tactical Price View: Classic Gauge vs Vertical Ladder" arrow>
+                <ToggleButtonGroup
+                  value={ladderViewMode}
+                  exclusive
+                  onChange={(_, newMode) => {
+                    if (newMode) {
+                      setLadderViewMode(newMode);
+                      localStorage.setItem('tv_live_watcher_ladder_view', newMode);
+                      api.settings.updateProfile({
+                        liveWatcherSettings: { ladderViewMode: newMode },
+                      }).catch(() => {});
+                    }
+                  }}
+                  size="small"
+                  sx={{
+                    height: 28,
+                    '& .MuiToggleButton-root': {
+                      px: 0.8,
+                      py: 0,
+                      fontSize: '0.66rem',
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.12)',
+                    },
+                  }}
+                >
+                  <ToggleButton value="classic" title="Classic Tactical Range Gauge">
+                    Classic
+                  </ToggleButton>
+                  <ToggleButton value="vertical" title="Vertical Unified Price Ladder">
+                    Ladder
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Tooltip>
+            )}
+
             {/* Feature 5: Master De-Risk All to True BE Button */}
             {openTradesCount > 0 && (
               <Tooltip title="Master Action: Move stop losses across all open positions to True Breakeven (+statutory fee cushion)" arrow>
@@ -1099,7 +1743,7 @@ export function LiveOpenTradeWatcher({
 
             {/* Emergency Panic Kill Switch */}
             {openTradesCount > 0 && (
-              <Tooltip title="🚨 Panic Kill Switch: Instantly market-close all positions on FYERS and cancel all resting stop loss orders" arrow>
+              <Tooltip title="🚨 Panic Kill Switch [K]: Instantly market-close all positions on FYERS and cancel all resting stop loss orders" arrow>
                 <Button
                   variant="contained"
                   color="error"
@@ -1121,10 +1765,100 @@ export function LiveOpenTradeWatcher({
                     },
                   }}
                 >
-                  KILL SWITCH
+                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                    <span>KILL SWITCH</span>
+                    <Box
+                      component="span"
+                      sx={{
+                        fontSize: '0.58rem',
+                        fontWeight: 800,
+                        opacity: 0.9,
+                        bgcolor: 'rgba(0,0,0,0.25)',
+                        px: 0.5,
+                        py: 0.1,
+                        borderRadius: '3px',
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      [K]
+                    </Box>
+                  </Box>
                 </Button>
               </Tooltip>
             )}
+
+            {/* In-App Threat Alert Center Bell Badge */}
+            <Tooltip title={`Threat Alert Center (${activeAlertsCount} active, Telegram synced)`} arrow>
+              <IconButton
+                size="small"
+                onClick={() => setAlertCenterOpen(true)}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  color: urgentAlertsCount > 0 ? '#ef4444' : activeAlertsCount > 0 ? '#f59e0b' : 'inherit',
+                }}
+              >
+                <Badge badgeContent={activeAlertsCount} color="error" max={9}>
+                  <NotificationsActiveRoundedIcon sx={{ fontSize: 16 }} />
+                </Badge>
+              </IconButton>
+            </Tooltip>
+
+            {/* Layout Preset Picker Button */}
+            <Tooltip title="Watcher Layout Presets: Scalping (1s), Positional (30s), Deep Analytics (5s) [P]" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={(e) => setPresetMenuAnchor(e.currentTarget)}
+                endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 13 }} />}
+                sx={{
+                  height: 28,
+                  px: 1,
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+                  borderRadius: '6px',
+                }}
+              >
+                {layoutPresets.find((p) => p.id === activePresetId)?.name || 'Preset'}
+              </Button>
+            </Tooltip>
+
+            {/* Hotkeys Cheat Sheet Button */}
+            <Tooltip title="Keyboard Shortcuts Cheat Sheet [?]" arrow>
+              <IconButton
+                size="small"
+                onClick={() => setCheatSheetOpen(true)}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+                  borderRadius: '6px',
+                }}
+              >
+                <KeyboardAltRoundedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+
+            {/* Pop-Out Picture-in-Picture Button */}
+            <Tooltip title="Pop-Out Mini Watcher (Picture-in-Picture always-on-top window)" arrow>
+              <IconButton
+                size="small"
+                onClick={toggleDocumentPiP}
+                sx={{
+                  width: 28,
+                  height: 28,
+                  color: isPipActive ? 'primary.main' : 'inherit',
+                  border: '1px solid',
+                  borderColor: isPipActive ? 'primary.main' : isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+                  borderRadius: '6px',
+                }}
+              >
+                <PictureInPictureRoundedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
 
             {/* Manual Refresh Button */}
             <Tooltip title="Refresh quotes now" arrow>
@@ -1254,6 +1988,28 @@ export function LiveOpenTradeWatcher({
             />
           </Box>
 
+          {/* Hold-to-Confirm Exits (~600ms) */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                Hold-to-Confirm Exits
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
+                ~600ms press ring to prevent mis-clicks
+              </Typography>
+            </Box>
+            <Switch
+              size="small"
+              checked={requireHoldToConfirm}
+              onChange={() => {
+                const next = !requireHoldToConfirm;
+                setRequireHoldToConfirm(next);
+                localStorage.setItem('tv_require_hold_confirm', String(next));
+                toast.info(next ? '🛡️ Hold-to-Confirm Armed (600ms safety ring)' : 'Hold-to-Confirm Disabled');
+              }}
+            />
+          </Box>
+
           {/* Audio Alert Chimes */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
             <Box>
@@ -1302,8 +2058,144 @@ export function LiveOpenTradeWatcher({
           </Box>
         </Menu>
 
+        {/* Layout Presets Dropdown Menu */}
+        <Menu
+          anchorEl={presetMenuAnchor}
+          open={Boolean(presetMenuAnchor)}
+          onClose={() => setPresetMenuAnchor(null)}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: 1,
+                p: 1,
+                minWidth: 240,
+                borderRadius: '12px',
+                bgcolor: isDark ? '#0F172A' : '#FFFFFF',
+                border: `1px solid ${muiTheme.palette.divider}`,
+                boxShadow: isDark
+                  ? '0 10px 25px -5px rgba(0,0,0,0.5)'
+                  : '0 10px 25px -5px rgba(0,0,0,0.1)',
+              },
+            },
+          }}
+        >
+          <Typography variant="caption" sx={{ fontWeight: 800, px: 1, pb: 0.5, display: 'block', textTransform: 'uppercase', color: 'text.secondary', fontSize: '0.65rem' }}>
+            Watcher Layout Presets [P]
+          </Typography>
+          {layoutPresets.map((preset) => {
+            const isSelected = preset.id === activePresetId;
+            return (
+              <MenuItem
+                key={preset.id}
+                onClick={() => {
+                  applyLayoutPreset(preset);
+                  setPresetMenuAnchor(null);
+                }}
+                selected={isSelected}
+                sx={{
+                  borderRadius: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  py: 0.75,
+                  fontSize: '0.8rem',
+                  fontWeight: isSelected ? 800 : 500,
+                }}
+              >
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: isSelected ? 800 : 600, fontSize: '0.8rem' }}>
+                    {preset.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem', display: 'block' }}>
+                    {preset.cardDensity.toUpperCase()} · {preset.refreshIntervalSec}s · {preset.ladderViewMode === 'vertical' ? 'Ladder' : 'Gauge'}
+                  </Typography>
+                </Box>
+                {isSelected && <CheckCircleRoundedIcon sx={{ fontSize: 16, color: '#10b981' }} />}
+              </MenuItem>
+            );
+          })}
+          <Divider sx={{ my: 1 }} />
+          <MenuItem
+            onClick={() => {
+              setPresetMenuAnchor(null);
+              setNewPresetName('');
+              setSavePresetDialogOpen(true);
+            }}
+            sx={{ borderRadius: 1, py: 0.75, fontSize: '0.78rem', fontWeight: 700, color: 'primary.main' }}
+          >
+            + Save Current View as Preset
+          </MenuItem>
+        </Menu>
+
         {/* Collapsible Open Trade Cards Grid */}
         <Collapse in={expanded}>
+          {/* Data Health & Provider Mode Notice */}
+          {summary?.dataHealth?.provider === 'SIMULATED' && (
+            <Box
+              sx={{
+                px: 2,
+                py: 1.2,
+                mx: 2,
+                mt: 1.5,
+                borderRadius: 2,
+                bgcolor: alpha('#F59E0B', 0.08),
+                border: `1px solid ${alpha('#F59E0B', 0.25)}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.25,
+              }}
+            >
+              <WarningAmberRoundedIcon sx={{ color: '#F59E0B', fontSize: 18 }} />
+              <Typography variant="caption" sx={{ fontWeight: 600, color: isDark ? '#FDE68A' : '#92400E' }}>
+                <strong>Simulation Mode Active:</strong> Quotes are simulated for testing & strategy design. Real broker order execution is safely disabled. All actions update SetupMint journal records only.
+              </Typography>
+            </Box>
+          )}
+
+          {summary?.dataHealth?.isStale && (
+            <Box
+              sx={{
+                px: 2,
+                py: 1.2,
+                mx: 2,
+                mt: 1.5,
+                borderRadius: 2,
+                bgcolor: alpha('#EF4444', 0.08),
+                border: `1px solid ${alpha('#EF4444', 0.3)}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.25,
+              }}
+            >
+              <ErrorOutlineRoundedIcon sx={{ color: '#EF4444', fontSize: 18 }} />
+              <Typography variant="caption" sx={{ fontWeight: 600, color: isDark ? '#FCA5A5' : '#991B1B' }}>
+                <strong>Stale Market Quotes ({summary.dataHealth.tickAgeSeconds}s old):</strong> Market feed has exceeded your {summary.dataHealth.staleThresholdSeconds}s safety threshold. Live broker execution is paused to protect against slippage on stale prices.
+              </Typography>
+            </Box>
+          )}
+
+          {summary?.dataHealth?.isTokenExpired && (
+            <Box
+              sx={{
+                px: 2,
+                py: 1.2,
+                mx: 2,
+                mt: 1.5,
+                borderRadius: 2,
+                bgcolor: alpha('#EF4444', 0.08),
+                border: `1px solid ${alpha('#EF4444', 0.3)}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.25,
+              }}
+            >
+              <WarningAmberRoundedIcon sx={{ color: '#EF4444', fontSize: 18 }} />
+              <Typography variant="caption" sx={{ fontWeight: 600, color: isDark ? '#FCA5A5' : '#991B1B' }}>
+                <strong>FYERS Session Expired:</strong> Your broker access token has expired. Live broker execution is disabled. Reconnect your broker in Settings to restore live order routing.
+              </Typography>
+            </Box>
+          )}
+
           {/* Daily Floating Loss Circuit Breaker Warning */}
           {summary && summary.totalFloatingNetPnL !== undefined && summary.totalFloatingNetPnL <= -maxDailyLoss && (
             <Box
@@ -1370,7 +2262,12 @@ export function LiveOpenTradeWatcher({
               <>
                 {summary?.portfolioRisk && summary.positions.length > 0 && (
                   <Box sx={{ pt: 2 }}>
-                    <LivePortfolioRiskBanner risk={summary.portfolioRisk} isDark={isDark} />
+                    <LivePortfolioRiskBanner
+                      risk={summary.portfolioRisk}
+                      isDark={isDark}
+                      riskSettings={user?.riskSettings}
+                      summary={summary}
+                    />
                   </Box>
                 )}
                 {viewMode === 'table' ? (
@@ -1402,7 +2299,7 @@ export function LiveOpenTradeWatcher({
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {summary?.positions.map((pos) => {
+                    {sortedPositions.map((pos) => {
                       const isLong = pos.direction === 'LONG';
                       const threat = getThreatBadge(pos.stopThreatLevel);
                       const isPosProfitable = pos.floatingNetPnL >= 0;
@@ -1451,7 +2348,10 @@ export function LiveOpenTradeWatcher({
                               borderBottom: '1px solid',
                               borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
                             },
-                            bgcolor: isOneToOne
+                            opacity: pos.dataHealth?.isStale ? 0.8 : 1,
+                            bgcolor: pos.dataHealth?.isStale
+                              ? alpha('#EF4444', isDark ? 0.08 : 0.04)
+                              : isOneToOne
                               ? alpha('#10B981', isDark ? 0.05 : 0.03)
                               : 'transparent',
                           }}
@@ -1492,6 +2392,37 @@ export function LiveOpenTradeWatcher({
                                     fontSize: '0.62rem',
                                     fontWeight: 700,
                                     bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              )}
+                              {pos.dataHealth?.isStale && (
+                                <Tooltip title={`Stale quote (${pos.dataHealth.tickAgeSeconds}s old). Broker execution guarded.`} arrow>
+                                  <Chip
+                                    label={`STALE ${pos.dataHealth.tickAgeSeconds}s`}
+                                    size="small"
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.55rem',
+                                      fontWeight: 800,
+                                      color: '#EF4444',
+                                      bgcolor: alpha('#EF4444', 0.15),
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      borderRadius: '4px',
+                                    }}
+                                  />
+                                </Tooltip>
+                              )}
+                              {pos.dataHealth?.provider === 'SIMULATED' && !pos.dataHealth?.isStale && (
+                                <Chip
+                                  label="SIM"
+                                  size="small"
+                                  sx={{
+                                    height: 18,
+                                    fontSize: '0.55rem',
+                                    fontWeight: 800,
+                                    color: '#F59E0B',
+                                    bgcolor: alpha('#F59E0B', 0.12),
                                     borderRadius: '4px',
                                   }}
                                 />
@@ -1776,48 +2707,70 @@ export function LiveOpenTradeWatcher({
                           {/* Quick Cockpit Actions */}
                           <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.75, flexWrap: 'nowrap' }}>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={() => handleOpenQuickClose(pos, 0.5)}
-                                sx={{
-                                  height: 26,
-                                  px: 1.25,
-                                  fontSize: '0.68rem',
-                                  fontWeight: 700,
-                                  textTransform: 'none',
-                                  whiteSpace: 'nowrap',
-                                  minWidth: 'max-content',
-                                  lineHeight: 1,
-                                  borderRadius: '5px',
-                                  borderColor: '#10B981',
-                                  color: '#10B981',
-                                  '&:hover': { bgcolor: alpha('#10B981', 0.1) },
-                                }}
+                              <Tooltip
+                                title={
+                                  pos.dataHealth && !pos.dataHealth.canExecuteBroker
+                                    ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
+                                    : 'Book 50% partial profit at current LTP'
+                                }
+                                arrow
                               >
-                                Book 50%
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="contained"
-                                onClick={() => handleOpenQuickClose(pos, 1.0)}
-                                sx={{
-                                  height: 26,
-                                  px: 1.25,
-                                  fontSize: '0.68rem',
-                                  fontWeight: 700,
-                                  textTransform: 'none',
-                                  whiteSpace: 'nowrap',
-                                  minWidth: 'max-content',
-                                  lineHeight: 1,
-                                  borderRadius: '5px',
-                                  bgcolor: '#EF4444',
-                                  color: '#FFFFFF',
-                                  '&:hover': { bgcolor: '#DC2626' },
-                                }}
+                                <span>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => handleOpenQuickClose(pos, 0.5)}
+                                    sx={{
+                                      height: 26,
+                                      px: 1.25,
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      textTransform: 'none',
+                                      whiteSpace: 'nowrap',
+                                      minWidth: 'max-content',
+                                      lineHeight: 1,
+                                      borderRadius: '5px',
+                                      borderColor: '#10B981',
+                                      color: '#10B981',
+                                      '&:hover': { bgcolor: alpha('#10B981', 0.1) },
+                                    }}
+                                  >
+                                    Book 50%
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                              <Tooltip
+                                title={
+                                  pos.dataHealth && !pos.dataHealth.canExecuteBroker
+                                    ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
+                                    : 'Close 100% full position at current LTP'
+                                }
+                                arrow
                               >
-                                Close 100%
-                              </Button>
+                                <span>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    onClick={() => handleOpenQuickClose(pos, 1.0)}
+                                    sx={{
+                                      height: 26,
+                                      px: 1.25,
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      textTransform: 'none',
+                                      whiteSpace: 'nowrap',
+                                      minWidth: 'max-content',
+                                      lineHeight: 1,
+                                      borderRadius: '5px',
+                                      bgcolor: '#EF4444',
+                                      color: '#FFFFFF',
+                                      '&:hover': { bgcolor: '#DC2626' },
+                                    }}
+                                  >
+                                    Close 100%
+                                  </Button>
+                                </span>
+                              </Tooltip>
                               <Tooltip
                                 title={
                                   pos.trueBreakevenPrice
@@ -1907,7 +2860,7 @@ export function LiveOpenTradeWatcher({
             ) : (
               /* OPTION A COCKPIT CARDS: Split 2-Column Wide Cards with Top-Mounted Quick Action Cockpit */
               <Grid container spacing={2} sx={{ pt: 2 }}>
-                {summary?.positions.map((pos) => {
+                {sortedPositions.map((pos) => {
                   const isLong = pos.direction === 'LONG';
                   const threat = getThreatBadge(pos.stopThreatLevel);
                   const isPosProfitable = pos.floatingNetPnL >= 0;
@@ -1916,6 +2869,11 @@ export function LiveOpenTradeWatcher({
                   const isAtOrBeyondBe =
                     pos.stopLoss !== null &&
                     (isLong ? pos.stopLoss >= pos.entryPrice : pos.stopLoss <= pos.entryPrice);
+
+                  const isGlance = cardDensity === 'glance';
+                  const isDeep = cardDensity === 'deep';
+                  const isCardCollapsed = Boolean(collapsedCards[pos.tradeId]);
+                  const nextHint = pos.nextActionHint ?? selectNextActionHint(pos);
 
                   const customRules = getEffectiveRules(pos.tradeId, pos.lotSize);
                   const effectiveLotSize =
@@ -1966,15 +2924,28 @@ export function LiveOpenTradeWatcher({
                     effectiveLadder?.steps.find((s) => s.status === 'PENDING') ||
                     effectiveLadder?.steps[0];
 
+                  const isStale = pos.dataHealth?.isStale;
+                  const isSimulated = pos.dataHealth?.provider === 'SIMULATED';
+
                   return (
-                    <Grid size={{ xs: 12, lg: openTradesCount === 1 ? 12 : 6 }} key={pos.tradeId}>
+                    <Grid
+                      size={{
+                        xs: 12,
+                        md: isGlance ? 6 : isDeep ? 12 : openTradesCount === 1 ? 12 : 6,
+                        lg: isGlance ? 4 : isDeep ? 12 : openTradesCount === 1 ? 12 : 6,
+                      }}
+                      key={pos.tradeId}
+                    >
                       <Card
                         variant="outlined"
                         sx={{
                           p: { xs: 1.5, sm: 2 },
                           borderRadius: '16px',
                           bgcolor: isDark ? 'rgba(15, 23, 42, 0.75)' : '#FFFFFF',
-                          borderColor: isOneToOne
+                          opacity: isStale ? 0.8 : 1,
+                          borderColor: isStale
+                            ? alpha('#EF4444', 0.6)
+                            : isOneToOne
                             ? alpha('#10B981', 0.5)
                             : isDark
                             ? 'rgba(255, 255, 255, 0.08)'
@@ -1984,9 +2955,14 @@ export function LiveOpenTradeWatcher({
                               ? '0 0 20px rgba(16, 185, 129, 0.15)'
                               : '0 4px 20px rgba(16, 185, 129, 0.12)'
                             : 'none',
-                          transition: 'border-color 0.2s, box-shadow 0.2s',
+                          transition: 'border-color 0.2s, box-shadow 0.2s, opacity 0.2s',
+                          '@media (prefers-reduced-motion: reduce)': {
+                            transition: 'none',
+                          },
                           '&:hover': {
-                            borderColor: isOneToOne
+                            borderColor: isStale
+                              ? '#EF4444'
+                              : isOneToOne
                               ? '#10B981'
                               : isDark
                               ? 'rgba(59, 130, 246, 0.4)'
@@ -2031,7 +3007,39 @@ export function LiveOpenTradeWatcher({
                                   height: 20,
                                   fontSize: '0.65rem',
                                   fontWeight: 700,
-                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
+                                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+                                  borderRadius: '4px',
+                                }}
+                              />
+                            )}
+                            {isStale && (
+                              <Tooltip title={`Quote feed is stale (${pos.dataHealth?.tickAgeSeconds}s old). Broker execution guarded.`} arrow>
+                                <Chip
+                                  label={`⚠️ STALE (${pos.dataHealth?.tickAgeSeconds}s)`}
+                                  size="small"
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.62rem',
+                                    fontWeight: 800,
+                                    bgcolor: alpha('#EF4444', 0.15),
+                                    color: '#EF4444',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                              </Tooltip>
+                            )}
+                            {isSimulated && !isStale && (
+                              <Chip
+                                label="SIMULATED"
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  fontSize: '0.6rem',
+                                  fontWeight: 800,
+                                  bgcolor: alpha('#F59E0B', 0.12),
+                                  color: '#F59E0B',
+                                  border: '1px solid rgba(245, 158, 11, 0.3)',
                                   borderRadius: '4px',
                                 }}
                               />
@@ -2139,6 +3147,16 @@ export function LiveOpenTradeWatcher({
                                 <OpenInNewRoundedIcon sx={{ fontSize: 14 }} />
                               </IconButton>
                             </Tooltip>
+
+                            <Tooltip title={isCardCollapsed ? 'Expand Card' : 'Collapse Card'} arrow>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleToggleCardCollapse(pos.tradeId)}
+                                sx={{ p: 0.25, color: 'text.secondary' }}
+                              >
+                                {isCardCollapsed ? <ExpandMoreRoundedIcon sx={{ fontSize: 16 }} /> : <ExpandLessRoundedIcon sx={{ fontSize: 16 }} />}
+                              </IconButton>
+                            </Tooltip>
                           </Box>
 
                           {/* Right: Sparkline, Monospace LTP & Floating MTM */}
@@ -2201,6 +3219,91 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
+                        {/* Next-Action Deterministic Action Hint Strip */}
+                        {nextHint && (
+                          <Box
+                            sx={{
+                              mb: 1.5,
+                              p: 1.1,
+                              borderRadius: '8px',
+                              bgcolor:
+                                nextHint.severity === 'error'
+                                  ? alpha('#EF4444', isDark ? 0.16 : 0.08)
+                                  : nextHint.severity === 'warning'
+                                  ? alpha('#F59E0B', isDark ? 0.16 : 0.08)
+                                  : alpha('#3B82F6', isDark ? 0.16 : 0.08),
+                              border: '1px solid',
+                              borderColor:
+                                nextHint.severity === 'error'
+                                  ? alpha('#EF4444', 0.45)
+                                  : nextHint.severity === 'warning'
+                                  ? alpha('#F59E0B', 0.45)
+                                  : alpha('#3B82F6', 0.45),
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: 1,
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 220 }}>
+                              <Chip
+                                label={nextHint.label}
+                                size="small"
+                                sx={{
+                                  height: 22,
+                                  fontSize: '0.65rem',
+                                  fontWeight: 900,
+                                  bgcolor:
+                                    nextHint.severity === 'error'
+                                      ? '#EF4444'
+                                      : nextHint.severity === 'warning'
+                                      ? '#F59E0B'
+                                      : '#3B82F6',
+                                  color: '#FFFFFF',
+                                  borderRadius: '5px',
+                                }}
+                              />
+                              <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary', fontWeight: 600 }}>
+                                {nextHint.description}
+                              </Typography>
+                            </Box>
+
+                            <Button
+                              size="small"
+                              variant="contained"
+                              onClick={() => handleExecuteHint(pos, nextHint)}
+                              sx={{
+                                height: 26,
+                                px: 1.5,
+                                fontSize: '0.68rem',
+                                fontWeight: 900,
+                                textTransform: 'none',
+                                borderRadius: '5px',
+                                whiteSpace: 'nowrap',
+                                bgcolor:
+                                  nextHint.severity === 'error'
+                                    ? '#EF4444'
+                                    : nextHint.severity === 'warning'
+                                    ? '#F59E0B'
+                                    : '#3B82F6',
+                                color: '#FFFFFF',
+                                '&:hover': {
+                                  bgcolor:
+                                    nextHint.severity === 'error'
+                                      ? '#DC2626'
+                                      : nextHint.severity === 'warning'
+                                      ? '#D97706'
+                                      : '#2563EB',
+                                },
+                              }}
+                            >
+                              {nextHint.actionText}
+                            </Button>
+                          </Box>
+                        )}
+
                         {/* 2. Top-Mounted Instant Execution Cockpit Bar */}
                         <Box
                           sx={{
@@ -2241,49 +3344,71 @@ export function LiveOpenTradeWatcher({
                               />
                             )}
 
-                            <Button
-                              size="small"
-                              variant="contained"
-                              startIcon={<PieChartRoundedIcon sx={{ fontSize: 13 }} />}
-                              onClick={() => handleOpenQuickClose(pos, 0.5)}
-                              sx={{
-                                height: 26,
-                                px: 1.25,
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                                textTransform: 'none',
-                                whiteSpace: 'nowrap',
-                                bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
-                                color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
-                                '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
-                                borderRadius: '5px',
-                                boxShadow: 'none',
-                              }}
+                            <Tooltip
+                              title={
+                                pos.dataHealth && !pos.dataHealth.canExecuteBroker
+                                  ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
+                                  : 'Book 50% partial profit at current LTP'
+                              }
+                              arrow
                             >
-                              Book 50%
-                            </Button>
+                              <span>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  startIcon={<PieChartRoundedIcon sx={{ fontSize: 13 }} />}
+                                  onClick={() => handleOpenQuickClose(pos, 0.5)}
+                                  sx={{
+                                    height: 26,
+                                    px: 1.25,
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    whiteSpace: 'nowrap',
+                                    bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
+                                    color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
+                                    '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
+                                    borderRadius: '5px',
+                                    boxShadow: 'none',
+                                  }}
+                                >
+                                  Book 50%
+                                </Button>
+                              </span>
+                            </Tooltip>
 
-                            <Button
-                              size="small"
-                              variant="contained"
-                              startIcon={<FlashOnRoundedIcon sx={{ fontSize: 13 }} />}
-                              onClick={() => handleOpenQuickClose(pos, 1.0)}
-                              sx={{
-                                height: 26,
-                                px: 1.25,
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                                textTransform: 'none',
-                                whiteSpace: 'nowrap',
-                                bgcolor: '#EF4444',
-                                color: '#FFFFFF',
-                                '&:hover': { bgcolor: '#DC2626' },
-                                borderRadius: '5px',
-                                boxShadow: 'none',
-                              }}
+                            <Tooltip
+                              title={
+                                pos.dataHealth && !pos.dataHealth.canExecuteBroker
+                                  ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
+                                  : 'Flatten full 100% position at current LTP'
+                              }
+                              arrow
                             >
-                              Close 100% @ LTP
-                            </Button>
+                              <span>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  startIcon={<FlashOnRoundedIcon sx={{ fontSize: 13 }} />}
+                                  onClick={() => handleOpenQuickClose(pos, 1.0)}
+                                  sx={{
+                                    height: 26,
+                                    px: 1.25,
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    whiteSpace: 'nowrap',
+                                    bgcolor: '#EF4444',
+                                    color: '#FFFFFF',
+                                    '&:hover': { bgcolor: '#DC2626' },
+                                    borderRadius: '5px',
+                                    boxShadow: 'none',
+                                  }}
+                                >
+                                  Close 100% @ LTP
+                                </Button>
+                              </span>
+                            </Tooltip>
 
                             <Tooltip
                               title={
@@ -2378,30 +3503,84 @@ export function LiveOpenTradeWatcher({
                           </Box>
                         </Box>
 
-                        {/* 3. Balanced 2-Column Split: Left Vitals & Radar vs Right Tabbed Inspector */}
-                        <Grid container spacing={1.5} sx={{ alignItems: 'stretch' }}>
-                          {/* Left Column: Vitals, Price Gauge & Stop Buffer */}
-                          <Grid size={{ xs: 12, md: 5.5, lg: 5.5 }}>
-                            <Box
-                              sx={{
-                                p: 1.25,
-                                borderRadius: '10px',
-                                bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
-                                border: '1px solid',
-                                borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
-                                height: '100%',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 1,
-                              }}
-                            >
-                              {/* Integrated Live Price Gauge */}
-                              <LivePriceGauge
-                                metric={pos}
-                                onQuickTrailSl={(newSl) => {
-                                  updateSlMutation.mutate({ tradeId: pos.tradeId, newStopLoss: newSl, executeBroker: true });
+                        {/* 3. Density-Aware Presentation: Glance Strip vs 2-Column Detailed Inspector */}
+                        {isGlance ? (
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              px: 1.25,
+                              py: 0.8,
+                              borderRadius: '8px',
+                              bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+                              border: `1px solid ${threat.border}`,
+                              flexWrap: 'wrap',
+                              gap: 1,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <ShieldRoundedIcon sx={{ fontSize: 14, color: threat.color }} />
+                              <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem' }}>
+                                SL: ₹{pos.stopLoss ?? 'None'}
+                              </Typography>
+                              <Chip
+                                label={threat.label}
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.6rem',
+                                  fontWeight: 800,
+                                  bgcolor: threat.bg,
+                                  color: threat.color,
+                                  borderRadius: '4px',
                                 }}
                               />
+                            </Box>
+
+                            <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.74rem', color: threat.color }}>
+                              {pos.distanceToStopPoints !== null
+                                ? `${pos.distanceToStopPoints.toFixed(1)} pts away (${pos.distanceToStopTicks ?? 0} ticks)`
+                                : 'No stop loss'}
+                            </Typography>
+                          </Box>
+                        ) : (
+                          <Collapse in={!isCardCollapsed}>
+                            {/* 3. Balanced 2-Column Split: Left Vitals & Radar vs Right Tabbed Inspector */}
+                            <Grid container spacing={1.5} sx={{ alignItems: 'stretch' }}>
+                              {/* Left Column: Vitals, Price Gauge & Stop Buffer */}
+                              <Grid size={{ xs: 12, md: 5.5, lg: 5.5 }}>
+                                {ladderViewMode === 'vertical' ? (
+                                  <LiveUnifiedPriceLadder
+                                    ladder={effectiveLadder}
+                                    metric={pos}
+                                    onExecuteStep={(step) => setSelectedLadderStep({ step, metric: pos })}
+                                    onOpenCustomRules={() => setCustomRulesMetric(pos)}
+                                    onQuickTrailSl={(newSl) => {
+                                      updateSlMutation.mutate({ tradeId: pos.tradeId, newStopLoss: newSl, executeBroker: true });
+                                    }}
+                                  />
+                                ) : (
+                                  <Box
+                                    sx={{
+                                      p: 1.25,
+                                      borderRadius: '10px',
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+                                      border: '1px solid',
+                                      borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                                      height: '100%',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 1,
+                                    }}
+                                  >
+                                    {/* Integrated Live Price Gauge */}
+                                    <LivePriceGauge
+                                      metric={pos}
+                                      onQuickTrailSl={(newSl) => {
+                                        updateSlMutation.mutate({ tradeId: pos.tradeId, newStopLoss: newSl, executeBroker: true });
+                                      }}
+                                    />
 
                               {/* 2x2 Key Vitals Matrix */}
                               <Grid container spacing={1}>
@@ -2542,7 +3721,8 @@ export function LiveOpenTradeWatcher({
                                 </Typography>
                               </Box>
                             </Box>
-                          </Grid>
+                          )}
+                        </Grid>
 
                           {/* Right Column: Contextual Tabbed Inspector */}
                           <Grid size={{ xs: 12, md: 6.5, lg: 6.5 }}>
@@ -2761,8 +3941,10 @@ export function LiveOpenTradeWatcher({
                             </Box>
                           </Grid>
                         </Grid>
-                      </Card>
-                    </Grid>
+                      </Collapse>
+                    )}
+                  </Card>
+                </Grid>
                   );
                 })}
               </Grid>
@@ -3082,6 +4264,7 @@ export function LiveOpenTradeWatcher({
           trade={quickCloseTrade}
           defaultExitPrice={quickCloseLtp}
           defaultCloseRatio={quickCloseRatio}
+          dataHealth={quickCloseTrade?.dataHealth || summary?.dataHealth}
           onSuccess={(closedTradeData?: any) => {
             queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
             queryClient.invalidateQueries({ queryKey: ['trades'] });
@@ -3102,6 +4285,7 @@ export function LiveOpenTradeWatcher({
           isLoading={executeLadderMutation.isPending}
           step={selectedLadderStep.step}
           metric={selectedLadderStep.metric}
+          dataHealth={selectedLadderStep.metric?.dataHealth || summary?.dataHealth}
           onConfirm={(payload) => {
             executeLadderMutation.mutate({
               tradeId: selectedLadderStep.metric.tradeId,
@@ -3154,6 +4338,212 @@ export function LiveOpenTradeWatcher({
           trade={recapTrade}
         />
       )}
+
+      {/* 💾 Save Custom Layout Preset Dialog */}
+      <Dialog
+        open={savePresetDialogOpen}
+        onClose={() => setSavePresetDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: { borderRadius: 2.5, p: 1 },
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, fontSize: '1rem', pb: 1 }}>
+          Save Custom Layout Preset
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 2 }}>
+            Save your current view configuration (Density: <b>{cardDensity.toUpperCase()}</b>, Refresh: <b>{refreshIntervalSec}s</b>, Tactical: <b>{ladderViewMode.toUpperCase()}</b>, Hotkeys: <b>{scalperHotkeysEnabled ? 'ON' : 'OFF'}</b>) as a quick-switch layout.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Preset Name"
+            placeholder="e.g. F&O Fast Scalper"
+            value={newPresetName}
+            onChange={(e) => setNewPresetName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSaveCustomPreset();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setSavePresetDialogOpen(false)} size="small" sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveCustomPreset}
+            variant="contained"
+            size="small"
+            disabled={!newPresetName.trim()}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
+          >
+            Save Preset
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🔔 In-App Threat Alert Center Dialog */}
+      <LiveAlertCenterDialog
+        open={alertCenterOpen}
+        onClose={() => setAlertCenterOpen(false)}
+      />
+
+      {/* ⌨️ Hotkeys Cheat Sheet Overlay */}
+      <HotkeyCheatSheetDialog
+        open={cheatSheetOpen}
+        onClose={() => setCheatSheetOpen(false)}
+      />
+
+      {/* 🪟 Document Picture-in-Picture Mini Watcher Companion */}
+      {isPipActive && pipWindow && createPortal(
+        <Box sx={{ p: 2, bgcolor: '#0b0f19', color: '#f8fafc', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, pb: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#f8fafc', fontSize: '0.85rem' }}>
+                SetupMint Live Mini
+              </Typography>
+              <Chip
+                label={`${openTradesCount} Pos`}
+                size="small"
+                sx={{ height: 18, fontSize: '0.62rem', fontWeight: 800, bgcolor: 'rgba(255,255,255,0.12)', color: '#ffffff' }}
+              />
+            </Box>
+            <Typography
+              variant="caption"
+              sx={{
+                fontFamily: 'monospace',
+                fontWeight: 800,
+                fontSize: '0.85rem',
+                fontVariantNumeric: 'tabular-nums',
+                color: (summary?.totalFloatingNetPnL ?? 0) >= 0 ? '#10b981' : '#ef4444',
+              }}
+            >
+              {(summary?.totalFloatingNetPnL ?? 0) >= 0 ? '+' : ''}
+              {formatCurrency(summary?.totalFloatingNetPnL ?? 0)}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+            {sortedPositions.map((pos) => {
+              const isLong = pos.direction === 'LONG';
+              const pnl = pos.floatingNetPnL;
+              const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444';
+              const hint = pos.nextActionHint ?? selectNextActionHint(pos);
+
+              return (
+                <Card
+                  key={pos.tradeId}
+                  sx={{
+                    p: 1.25,
+                    bgcolor: 'rgba(30, 41, 59, 0.75)',
+                    border: '1px solid',
+                    borderColor:
+                      pos.stopThreatLevel === 'CRITICAL' || pos.stopThreatLevel === 'BREACHED'
+                        ? 'rgba(239, 68, 68, 0.6)'
+                        : 'rgba(255, 255, 255, 0.08)',
+                    borderRadius: 1.5,
+                    color: '#ffffff',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.85rem', color: '#ffffff' }}>
+                        {pos.symbol}
+                      </Typography>
+                      <Chip
+                        label={pos.direction}
+                        size="small"
+                        sx={{
+                          height: 16,
+                          fontSize: '0.6rem',
+                          fontWeight: 800,
+                          bgcolor: isLong ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: isLong ? '#10b981' : '#ef4444',
+                        }}
+                      />
+                    </Box>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontWeight: 800,
+                        color: pnlColor,
+                        fontSize: '0.85rem',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {pnl >= 0 ? '+' : ''}{formatCurrency(pnl)}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.75 }}>
+                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums', fontSize: '0.72rem' }}>
+                      LTP ₹{pos.currentLtp.toFixed(2)} · {pos.unrealizedR !== null ? `${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR.toFixed(2)}R` : '—'}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontVariantNumeric: 'tabular-nums',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        color:
+                          pos.stopThreatLevel === 'CRITICAL' || pos.stopThreatLevel === 'BREACHED'
+                            ? '#ef4444'
+                            : 'rgba(255,255,255,0.7)',
+                      }}
+                    >
+                      SL: ₹{pos.stopLoss !== null ? pos.stopLoss.toFixed(2) : 'None'} ({pos.distanceToStopPoints !== null ? `${pos.distanceToStopPoints.toFixed(1)} pts` : '—'})
+                    </Typography>
+                  </Box>
+
+                  {hint && (
+                    <Box sx={{ mt: 0.75 }}>
+                      <Button
+                        size="small"
+                        fullWidth
+                        variant="outlined"
+                        onClick={() => {
+                          handleExecuteHint(pos, hint);
+                          window.focus();
+                        }}
+                        sx={{
+                          height: 22,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          borderColor: hint.severity === 'error' ? 'rgba(239,68,68,0.5)' : 'rgba(59,130,246,0.5)',
+                          color: hint.severity === 'error' ? '#ef4444' : '#60a5fa',
+                          bgcolor: hint.severity === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(59,130,246,0.08)',
+                        }}
+                      >
+                        ⚡ {hint.actionText}
+                      </Button>
+                    </Box>
+                  )}
+                </Card>
+              );
+            })}
+          </Box>
+        </Box>,
+        pipWindow.document.body
+      )}
+
+      {/* ♿ Accessibility Screen-Reader Live Regions */}
+      <div className="sr-only" aria-live="assertive" role="alert">
+        {assertiveAnnouncement}
+      </div>
+      <div className="sr-only" aria-live="polite">
+        {politeAnnouncement}
+      </div>
     </>
   );
 }

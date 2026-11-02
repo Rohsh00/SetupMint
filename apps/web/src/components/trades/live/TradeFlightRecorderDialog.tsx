@@ -33,6 +33,7 @@ import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 import { api } from '../../../lib/api.js';
 import { toast } from '../../../context/ToastContext.js';
 import { formatCurrency } from '../../../lib/utils.js';
+import { generatePostTradeReviewSummary } from '@tradevault/financial-engine';
 
 export interface TradeFlightRecorderDialogProps {
   open: boolean;
@@ -44,14 +45,6 @@ export function TradeFlightRecorderDialog({ open, onClose, trade }: TradeFlightR
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
-
-  // Psychology audit state
-  const [selectedEmotion, setSelectedEmotion] = useState<string>(trade?.psychology?.emotionalState || 'CALM');
-  const [selectedDiscipline, setSelectedDiscipline] = useState<string>(
-    trade?.psychology?.ruleAdherence === 'BROKE_RULES' ? 'BROKE_RULES' : 'FOLLOWED_PLAN'
-  );
-  const [auditNotes, setAuditNotes] = useState<string>(trade?.psychology?.reflectionNotes || '');
-  const [isSavingAudit, setIsSavingAudit] = useState(false);
 
   // Extract financial & execution metrics
   const symbol = trade?.symbol || 'UNKNOWN';
@@ -86,70 +79,84 @@ export function TradeFlightRecorderDialog({ open, onClose, trade }: TradeFlightR
   const peakMfeR = trade?.calculated?.liveMfeSummary?.peakUnrealizedR ?? trade?.calculated?.excursion?.mfeR ?? realizedR;
   const maeR = trade?.calculated?.excursion?.maeR ?? null;
 
-  // Efficiency calculation: Net PnL / Peak MFE
-  const mfeCaptureEfficiency = useMemo(() => {
-    if (peakMfePnl > 0 && netPnL > 0) {
-      return Math.min(100, Math.max(0, Math.round((netPnL / peakMfePnl) * 100)));
-    }
-    if (peakMfePnl > 0 && netPnL <= 0) {
-      return 0; // round-tripped into a loss
-    }
-    return 100;
-  }, [peakMfePnl, netPnL]);
-
   // Duration computation
-  const durationStr = useMemo(() => {
+  const durationMinutes = useMemo(() => {
     const entryTime = trade?.entryTime || trade?.tradeDate;
     const exitTime = trade?.exitTime || new Date();
-    if (!entryTime) return '—';
+    if (!entryTime) return undefined;
     const ms = new Date(exitTime).getTime() - new Date(entryTime).getTime();
-    if (ms <= 0) return '< 1m';
-    const mins = Math.floor(ms / (60 * 1000));
-    const hours = Math.floor(mins / 60);
-    const remMins = mins % 60;
-    if (hours > 0) return `${hours}h ${remMins}m`;
-    return `${mins}m`;
+    return ms > 0 ? Math.floor(ms / (60 * 1000)) : 0;
   }, [trade?.entryTime, trade?.tradeDate, trade?.exitTime]);
 
-  // Execution Quality Grade Algorithm
+  const durationStr = useMemo(() => {
+    if (durationMinutes === undefined) return '—';
+    if (durationMinutes <= 0) return '< 1m';
+    const hours = Math.floor(durationMinutes / 60);
+    const remMins = durationMinutes % 60;
+    if (hours > 0) return `${hours}h ${remMins}m`;
+    return `${durationMinutes}m`;
+  }, [durationMinutes]);
+
+  // Pure Financial Engine Post-Trade Review Evaluation
+  const reviewData = useMemo(() => {
+    return generatePostTradeReviewSummary({
+      netPnL,
+      grossPnL,
+      realizedR,
+      peakMfePnl,
+      peakMfeR,
+      maeR,
+      stopLossMoved: Boolean(trade?.psychology?.stopLossMoved),
+      plannedRiskAmount: trade?.risk?.plannedRiskAmount,
+      durationMinutes,
+      auditLog: trade?.auditLog,
+      existingMistakes: trade?.psychology?.mistakes,
+    });
+  }, [netPnL, grossPnL, realizedR, peakMfePnl, peakMfeR, maeR, trade?.psychology, trade?.risk, durationMinutes, trade?.auditLog]);
+
+  const mfeCaptureEfficiency = reviewData.mfeCaptureEfficiency;
+
+  // Psychology audit state: pre-filled from last in-trade emotional pulse
+  const [selectedEmotion, setSelectedEmotion] = useState<string>(
+    trade?.psychology?.emotionalState || reviewData.lastPulseEmotion || 'CALM'
+  );
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string>(
+    trade?.psychology?.ruleAdherence === 'BROKE_RULES' ? 'BROKE_RULES' : 'FOLLOWED_PLAN'
+  );
+  const [selectedMistakes, setSelectedMistakes] = useState<string[]>(
+    trade?.psychology?.mistakes || []
+  );
+  const [auditNotes, setAuditNotes] = useState<string>(trade?.psychology?.reflectionNotes || '');
+  const [isSavingAudit, setIsSavingAudit] = useState(false);
+
+  // Execution Quality Grade Algorithm from Engine
   const gradeInfo = useMemo(() => {
-    const stopLossMoved = trade?.psychology?.stopLossMoved || false;
-    const mistakes = trade?.psychology?.mistakes || [];
-    const isRevenge = mistakes.includes('REVENGE_TRADING') || mistakes.includes('OVERTRADING');
+    const grade = reviewData.executionGrade;
+    const label = reviewData.gradeReason;
+    if (grade === 'A+' || grade === 'A') {
+      return { grade, label, color: '#10B981', bg: alpha('#10B981', 0.15) };
+    }
+    if (grade === 'B+' || grade === 'B') {
+      return { grade, label, color: '#3B82F6', bg: alpha('#3B82F6', 0.15) };
+    }
+    if (grade === 'C') {
+      return { grade, label, color: '#F59E0B', bg: alpha('#F59E0B', 0.15) };
+    }
+    return { grade, label, color: '#EF4444', bg: alpha('#EF4444', 0.15) };
+  }, [reviewData]);
 
-    if (isRevenge) {
-      return { grade: 'F', label: 'Discipline Violation (Revenge/Overtrading)', color: '#EF4444', bg: alpha('#EF4444', 0.15) };
-    }
-    if (stopLossMoved) {
-      return { grade: 'D', label: 'Rule Broken: Stop Loss Widened', color: '#F97316', bg: alpha('#F97316', 0.15) };
-    }
-    if (isProfitable) {
-      if (mfeCaptureEfficiency >= 75) {
-        return { grade: 'A+', label: 'Elite Execution: Harvested >75% MFE', color: '#10B981', bg: alpha('#10B981', 0.15) };
-      }
-      if (mfeCaptureEfficiency >= 50) {
-        return { grade: 'A', label: 'Target Met: Solid Profit Lock', color: '#10B981', bg: alpha('#10B981', 0.15) };
-      }
-      return { grade: 'B', label: 'Sub-Optimal: High Giveback from High', color: '#F59E0B', bg: alpha('#F59E0B', 0.15) };
-    } else {
-      // Loss
-      if (realizedR !== null && realizedR >= -1.1) {
-        return { grade: 'B+', label: 'Planned Loss: Respected 1R Stop Loss', color: '#3B82F6', bg: alpha('#3B82F6', 0.15) };
-      }
-      return { grade: 'C-', label: 'Excessive Heat / Slipped Risk Limit', color: '#EF4444', bg: alpha('#EF4444', 0.15) };
-    }
-  }, [isProfitable, mfeCaptureEfficiency, realizedR, trade?.psychology]);
-
-  // Save 5-second post-trade audit
+  // Save post-trade audit
   const handleSaveAudit = async () => {
     if (!trade?._id && !trade?.id) return;
     setIsSavingAudit(true);
     try {
       const tradeId = trade._id || trade.id;
-      const updatedMistakes = [...(trade.psychology?.mistakes || [])];
-      if (selectedDiscipline === 'BROKE_RULES' && !updatedMistakes.includes('BROKE_RULES')) {
-        updatedMistakes.push('BROKE_RULES');
-      }
+      const combinedMistakes = Array.from(
+        new Set([
+          ...selectedMistakes,
+          ...(selectedDiscipline === 'BROKE_RULES' ? ['BROKE_RULES'] : []),
+        ])
+      );
 
       await api.trades.update(tradeId, {
         psychology: {
@@ -157,10 +164,10 @@ export function TradeFlightRecorderDialog({ open, onClose, trade }: TradeFlightR
           emotionalState: selectedEmotion,
           ruleAdherence: selectedDiscipline === 'FOLLOWED_PLAN' ? 'FOLLOWED_PLAN' : 'BROKE_RULES',
           reflectionNotes: auditNotes,
-          mistakes: updatedMistakes,
+          mistakes: combinedMistakes,
         },
       });
-      toast.success('🧠 Trade debrief & psychology recorded successfully!');
+      toast.success('🧠 Trade debrief & psychology recorded in journal!');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to record trade debrief');
     } finally {
@@ -403,9 +410,14 @@ Verified by SetupMint Private Journal`;
               <Typography variant="h6" sx={{ fontWeight: 800, color: mfeCaptureEfficiency >= 60 ? '#10B981' : '#F59E0B' }}>
                 {mfeCaptureEfficiency}%
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.64rem' }}>
-                Peak was +₹{peakMfePnl.toFixed(0)} ({peakMfeR !== null ? `+${peakMfeR}R` : '—'})
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.64rem', display: 'block' }}>
+                Peak: +₹{peakMfePnl.toFixed(0)} ({peakMfeR !== null ? `+${peakMfeR}R` : '—'})
               </Typography>
+              {reviewData.surrenderedGivebackPnl > 0 && (
+                <Typography variant="caption" sx={{ fontSize: '0.62rem', color: '#F59E0B', fontWeight: 700, display: 'block' }}>
+                  Giveback: -₹{reviewData.surrenderedGivebackPnl.toFixed(0)} ({reviewData.surrenderedGivebackPercent}%)
+                </Typography>
+              )}
             </Box>
           </Grid>
 
@@ -433,6 +445,112 @@ Verified by SetupMint Private Journal`;
             </Box>
           </Grid>
         </Grid>
+
+        {/* In-Trade Emotional Journey (Pulse Checkpoints) */}
+        {reviewData.pulseCheckIns.length > 0 && (
+          <Box
+            sx={{
+              p: 1.5,
+              mb: 2,
+              borderRadius: '10px',
+              bgcolor: isDark ? 'rgba(59, 130, 246, 0.05)' : 'rgba(59, 130, 246, 0.03)',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 0.3, color: '#3B82F6', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <PsychologyRoundedIcon sx={{ fontSize: 14 }} />
+                In-Trade Emotional Journey ({reviewData.pulseCheckIns.length} Checkpoints)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.64rem' }}>
+                Chronological Timeline
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, overflowX: 'auto', pb: 0.5 }}>
+              {reviewData.pulseCheckIns.map((pulse, pIdx) => {
+                const timeStr = new Date(pulse.timestamp).toLocaleTimeString('en-IN', {
+                  timeZone: 'Asia/Kolkata',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                const isCalm = pulse.emotion === 'CALM';
+                const isAnxious = pulse.emotion === 'ANXIOUS';
+                const chipColor = isCalm ? '#10B981' : isAnxious ? '#EF4444' : '#F59E0B';
+
+                return (
+                  <React.Fragment key={pIdx}>
+                    {pIdx > 0 && (
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                        &rarr;
+                      </Typography>
+                    )}
+                    <Tooltip title={pulse.notes ? `Note: "${pulse.notes}"` : 'No notes'} arrow>
+                      <Chip
+                        size="small"
+                        label={`${timeStr}: ${pulse.emotion} (${pulse.unrealizedR !== undefined ? `${pulse.unrealizedR >= 0 ? '+' : ''}${pulse.unrealizedR.toFixed(1)}R` : ''})`}
+                        sx={{
+                          height: 22,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          fontFamily: 'monospace',
+                          bgcolor: alpha(chipColor, 0.12),
+                          color: chipColor,
+                          border: `1px solid ${alpha(chipColor, 0.3)}`,
+                        }}
+                      />
+                    </Tooltip>
+                  </React.Fragment>
+                );
+              })}
+            </Box>
+          </Box>
+        )}
+
+        {/* Algorithmic Mistake Suggestions */}
+        {reviewData.suggestedMistakes.length > 0 && (
+          <Box
+            sx={{
+              p: 1.5,
+              mb: 2,
+              borderRadius: '10px',
+              bgcolor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.03)',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.18)',
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 0.3, color: '#EF4444', display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+              ⚠️ Algorithmic Mistake Suggestions (Click to Tag):
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+              {reviewData.suggestedMistakes.map((mistake) => {
+                const isTagged = selectedMistakes.includes(mistake.id);
+                return (
+                  <Tooltip key={mistake.id} title={mistake.description} arrow>
+                    <Chip
+                      label={`${isTagged ? '✓ ' : '+ '}${mistake.label}`}
+                      clickable
+                      size="small"
+                      onClick={() => {
+                        setSelectedMistakes((prev) =>
+                          isTagged ? prev.filter((m) => m !== mistake.id) : [...prev, mistake.id]
+                        );
+                      }}
+                      sx={{
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
+                        bgcolor: isTagged ? alpha('#EF4444', 0.2) : 'transparent',
+                        border: '1px solid',
+                        borderColor: isTagged ? '#EF4444' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                        color: isTagged ? '#EF4444' : 'text.primary',
+                      }}
+                    />
+                  </Tooltip>
+                );
+              })}
+            </Box>
+          </Box>
+        )}
 
         {/* 3. 5-Second Emotional & Discipline Audit */}
         <Box
@@ -591,17 +709,23 @@ Verified by SetupMint Private Journal`;
             size="small"
             variant="text"
             endIcon={<OpenInNewRoundedIcon sx={{ fontSize: 13 }} />}
-            onClick={() => {
+            onClick={async () => {
+              await handleSaveAudit();
               onClose();
               navigate(`/trades/${trade._id || trade.id}`);
             }}
+            disabled={isSavingAudit}
             sx={{
               fontSize: '0.72rem',
+              fontWeight: 700,
               textTransform: 'none',
               color: 'text.secondary',
+              '&:hover': {
+                color: 'primary.main',
+              },
             }}
           >
-            Full Review
+            Review in Journal
           </Button>
         </Box>
       </DialogActions>

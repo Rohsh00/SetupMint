@@ -33,6 +33,8 @@ import {
   BrokerIntegration,
   MarketDataIntegration,
   TradeCandleSnapshot,
+  AlertState,
+  AlertEvent,
 } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -894,6 +896,134 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
   });
 
+  // GET /live/alerts - Real-time active, snoozed, and recent alert states for the current user
+  app.get('/live/alerts', async (req: any, reply) => {
+    try {
+      const alerts = await AlertState.find({
+        userId: req.user!.id,
+        state: { $in: ['ACTIVE', 'SNOOZED', 'CLEARED'] },
+      })
+        .populate('tradeId', 'symbol direction')
+        .sort({ severity: -1, updatedAt: -1 })
+        .limit(50);
+
+      const formatted = alerts.map((a: any) => ({
+        id: a._id.toString(),
+        type: a.type,
+        state: a.state,
+        severity: a.severity,
+        enterCount: a.enterCount,
+        pingCount: a.pingCount,
+        tradeId: a.tradeId?._id?.toString() || a.tradeId?.toString(),
+        symbol: a.tradeId?.symbol,
+        direction: a.tradeId?.direction,
+        snoozedUntil: a.snoozedUntil ? a.snoozedUntil.toISOString() : null,
+        clearedAt: a.clearedAt ? a.clearedAt.toISOString() : null,
+        lastMetricValue: a.lastMetricValue,
+        firstAt: a.firstAt ? a.firstAt.toISOString() : a.createdAt.toISOString(),
+        lastSentAt: a.lastSentAt ? a.lastSentAt.toISOString() : a.createdAt.toISOString(),
+        updatedAt: a.updatedAt.toISOString(),
+      }));
+
+      return reply.send({
+        success: true,
+        data: formatted,
+      });
+    } catch (err: any) {
+      req.log.error('Failed to get live alerts: %s', err.message);
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'GET_ALERTS_FAILED', message: err.message },
+      });
+    }
+  });
+
+  // POST /live/alerts/:id/snooze - Snoozes an active alert state across web and Telegram channels
+  app.post('/live/alerts/:id/snooze', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const alert = await AlertState.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!alert) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ALERT_NOT_FOUND', message: 'Alert state not found' },
+      });
+    }
+
+    const durationMinutes = Number(req.body?.durationMinutes) || 15;
+    const snoozedUntil = new Date(Date.now() + durationMinutes * 60 * 1000);
+
+    alert.state = 'SNOOZED';
+    alert.snoozedUntil = snoozedUntil;
+    alert.snoozedSeverity = alert.severity;
+    alert.cardVersion += 1;
+    await alert.save();
+
+    try {
+      await AlertEvent.create({
+        userId: req.user!.id,
+        tradeId: alert.tradeId,
+        type: alert.type,
+        severity: alert.severity,
+        action: 'SNOOZE',
+        enterCount: alert.enterCount,
+        sentAt: alert.lastSentAt || new Date(),
+        actedAt: new Date(),
+        actionTaken: `WEB_SNOOZE_${durationMinutes}M`,
+      });
+    } catch (e: any) {
+      req.log.warn('Failed to record AlertEvent for snooze: %s', e.message);
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        id: alert._id.toString(),
+        state: alert.state,
+        snoozedUntil: alert.snoozedUntil.toISOString(),
+      },
+    });
+  });
+
+  // POST /live/alerts/:id/clear - Clears an alert state across web and Telegram channels
+  app.post('/live/alerts/:id/clear', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const alert = await AlertState.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!alert) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ALERT_NOT_FOUND', message: 'Alert state not found' },
+      });
+    }
+
+    alert.state = 'CLEARED';
+    alert.clearedAt = new Date();
+    alert.cardVersion += 1;
+    await alert.save();
+
+    try {
+      await AlertEvent.create({
+        userId: req.user!.id,
+        tradeId: alert.tradeId,
+        type: alert.type,
+        severity: alert.severity,
+        action: 'CLEAR',
+        enterCount: alert.enterCount,
+        sentAt: alert.lastSentAt || new Date(),
+        actedAt: new Date(),
+        actionTaken: 'WEB_CLEAR',
+      });
+    } catch (e: any) {
+      req.log.warn('Failed to record AlertEvent for clear: %s', e.message);
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        id: alert._id.toString(),
+        state: alert.state,
+        clearedAt: alert.clearedAt.toISOString(),
+      },
+    });
+  });
+
   // POST /:id/live-pulse - Records real-time in-trade emotional checkpoint into auditLog
   app.post('/:id/live-pulse', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
@@ -1318,6 +1448,21 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     let brokerResult: any = { executedOnBroker: false, action: 'JOURNAL_ONLY', message: 'Updated in SetupMint journal' };
 
     if (executeBroker) {
+      const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
+      const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
+      if (!integration || !integration.accessToken || isExpired) {
+        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'BROKER_EXECUTION_BLOCKED',
+            message: isExpired
+              ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
+              : 'Live broker execution blocked: FYERS broker is not connected.',
+          },
+        });
+      }
+
       try {
         brokerResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(stopPrice));
       } catch (err: any) {
@@ -1468,6 +1613,21 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     let brokerResult: any = { executedOnBroker: false, message: 'Updated in SetupMint journal' };
 
     if (executeBroker) {
+      const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
+      const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
+      if (!integration || !integration.accessToken || isExpired) {
+        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'BROKER_EXECUTION_BLOCKED',
+            message: isExpired
+              ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
+              : 'Live broker execution blocked: FYERS broker is not connected.',
+          },
+        });
+      }
+
       try {
         brokerResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
           exitQty,
@@ -1636,6 +1796,21 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // 1. If executing on broker, perform exit and SL adjustments
     if (executeBroker) {
+      const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
+      const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
+      if (!integration || !integration.accessToken || isExpired) {
+        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'BROKER_EXECUTION_BLOCKED',
+            message: isExpired
+              ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
+              : 'Live broker execution blocked: FYERS broker is not connected.',
+          },
+        });
+      }
+
       // a. Partial or full exit order
       if (requestedExitQty > 0) {
         try {

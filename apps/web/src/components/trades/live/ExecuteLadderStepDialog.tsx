@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -10,12 +10,22 @@ import TextField from '@mui/material/TextField';
 import Switch from '@mui/material/Switch';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
+import Alert from '@mui/material/Alert';
+import Tooltip from '@mui/material/Tooltip';
+import CircularProgress from '@mui/material/CircularProgress';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import PieChartRoundedIcon from '@mui/icons-material/PieChartRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
-import { ILiveTargetLadderStep, ILiveOpenTradeMetric } from '@tradevault/shared';
+import { ILiveTargetLadderStep, ILiveOpenTradeMetric, ILiveDataHealth } from '@tradevault/shared';
+import {
+  calculatePreFlightExecutionPreview,
+  IPreFlightExecutionPreviewResult,
+} from '@tradevault/financial-engine';
+import { formatCurrency } from '../../../lib/utils.js';
+import { HoldToConfirmButton } from './HoldToConfirmButton.js';
 
 interface ExecuteLadderStepDialogProps {
   open: boolean;
@@ -30,6 +40,7 @@ interface ExecuteLadderStepDialogProps {
   isLoading: boolean;
   step: ILiveTargetLadderStep | null;
   metric: ILiveOpenTradeMetric | null;
+  dataHealth?: ILiveDataHealth;
 }
 
 export function ExecuteLadderStepDialog({
@@ -39,37 +50,75 @@ export function ExecuteLadderStepDialog({
   isLoading,
   step,
   metric,
+  dataHealth,
 }: ExecuteLadderStepDialogProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
   const [exitQty, setExitQty] = useState<number>(1);
   const [newStopLoss, setNewStopLoss] = useState<number>(0);
-  const [executeBroker, setExecuteBroker] = useState<boolean>(true);
+
+  // Data health check
+  const effectiveDataHealth: ILiveDataHealth | undefined = dataHealth || metric?.dataHealth;
+  const isBrokerExecutionBlocked = effectiveDataHealth ? !effectiveDataHealth.canExecuteBroker : false;
+  const brokerBlockReason = effectiveDataHealth?.brokerExecutionBlockedReason;
+
+  const [executeBroker, setExecuteBroker] = useState<boolean>(() => !isBrokerExecutionBlocked);
 
   useEffect(() => {
     if (step) {
       setExitQty(step.plannedExitQty);
       setNewStopLoss(step.suggestedStopLoss);
+      if (isBrokerExecutionBlocked) {
+        setExecuteBroker(false);
+      } else {
+        setExecuteBroker(true);
+      }
     }
-  }, [step]);
+  }, [step, isBrokerExecutionBlocked]);
 
-  if (!step || !metric) return null;
-
-  const totalOpenQty = metric.quantity || 1;
-  const isLong = metric.direction === 'LONG';
-  const lotSize = step.lotSize ?? metric.lotSize ?? 1;
+  const totalOpenQty = metric?.quantity || 1;
+  const lotSize = step?.lotSize ?? metric?.lotSize ?? 1;
   const isLotBased = lotSize > 1;
   const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQty / lotSize)) : totalOpenQty;
   const selectedLots = isLotBased ? Math.max(1, Math.round(exitQty / lotSize)) : exitQty;
 
+  // Pre-flight calculation
+  const preFlightPreview: IPreFlightExecutionPreviewResult | null = useMemo(() => {
+    if (!metric || !step || exitQty <= 0) return null;
+    try {
+      return calculatePreFlightExecutionPreview({
+        entryPrice: metric.entryPrice,
+        currentLtp: metric.currentLtp,
+        totalOpenQuantity: totalOpenQty,
+        exitQuantity: exitQty,
+        direction: metric.direction as any,
+        lotSize,
+        contractMultiplier: metric.contractMultiplier || 1,
+        newStopLoss: newStopLoss > 0 ? newStopLoss : null,
+        initialRiskAmount: metric.initialRiskAmount,
+        initialStopLoss: (metric as any).initialStopLoss ?? metric.stopLoss,
+        currentStopLoss: metric.stopLoss,
+        assetClass: (metric as any).assetClass || 'EQUITY',
+        marketSegment: (metric as any).marketSegment || 'NSE_EQ',
+        referencePrice: step.targetPrice,
+        slippageGuardPercent: 0.5,
+      });
+    } catch {
+      return null;
+    }
+  }, [metric, step, exitQty, newStopLoss, totalOpenQty, lotSize]);
+
+  if (!step || !metric) return null;
+
   const handleExecute = () => {
+    if (isLoading) return;
     onConfirm({
       targetIndex: step.targetIndex,
       label: step.name,
       exitQty: Number(exitQty),
       newStopLoss: Number(newStopLoss) > 0 ? Number(newStopLoss) : undefined,
-      executeBroker,
+      executeBroker: isBrokerExecutionBlocked ? false : executeBroker,
     });
   };
 
@@ -77,7 +126,7 @@ export function ExecuteLadderStepDialog({
     <Dialog
       open={open}
       onClose={isLoading ? undefined : onClose}
-      maxWidth="xs"
+      maxWidth="sm"
       fullWidth
       slotProps={{
         paper: {
@@ -119,31 +168,52 @@ export function ExecuteLadderStepDialog({
         </IconButton>
       </DialogTitle>
 
-      <DialogContent dividers sx={{ p: 2.5 }}>
+      <DialogContent dividers sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
         {/* Step Summary Banner */}
         <Box
           sx={{
-            mb: 2,
             p: 1.5,
             borderRadius: '10px',
             bgcolor: alpha('#10B981', 0.08),
             border: '1px solid',
             borderColor: alpha('#10B981', 0.25),
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           }}
         >
-          <Typography variant="caption" sx={{ fontWeight: 800, color: '#10B981', display: 'block', mb: 0.5 }}>
-            TARGET OBJECTIVE
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-            Target Price: <strong>₹{step.targetPrice}</strong> (+{step.targetR}R)
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Current LTP: ₹{metric.currentLtp} ({step.distancePoints > 0 ? `${step.distancePoints} pts away` : 'Target reached!'})
-          </Typography>
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 800, color: '#10B981', display: 'block' }}>
+              TARGET OBJECTIVE
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              Target: ₹{step.targetPrice} (+{step.targetR}R)
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Current LTP: ₹{metric.currentLtp} ({step.distancePoints > 0 ? `${step.distancePoints} pts away` : 'Target reached!'})
+            </Typography>
+          </Box>
+          <Chip
+            label={step.status}
+            size="small"
+            color={step.status === 'MET' ? 'success' : 'default'}
+            sx={{ fontWeight: 800, fontSize: '0.65rem' }}
+          />
         </Box>
 
+        {/* Data Freshness Warning / Guard Banner */}
+        {isBrokerExecutionBlocked && (
+          <Alert
+            severity="warning"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 18 }} />}
+            sx={{ py: 0.5, borderRadius: 2, fontSize: '0.75rem' }}
+          >
+            <strong>Broker Execution Guard:</strong> {brokerBlockReason || 'Market data is not real-time or broker token expired.'} Ladder execution will apply in SetupMint journal only.
+          </Alert>
+        )}
+
         {/* Action 1: Book Partial Profit */}
-        <Box sx={{ mb: 2 }}>
+        <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75 }}>
             <PieChartRoundedIcon sx={{ fontSize: 16, color: '#3B82F6' }} />
             <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.82rem' }}>
@@ -155,6 +225,7 @@ export function ExecuteLadderStepDialog({
             fullWidth
             size="small"
             type="number"
+            disabled={isLoading}
             label={isLotBased ? `Quantity to Close (Lot Size: ${lotSize} units)` : 'Quantity to Close (Units)'}
             value={exitQty}
             onChange={(e) => {
@@ -169,17 +240,16 @@ export function ExecuteLadderStepDialog({
             slotProps={{
               htmlInput: { min: isLotBased ? lotSize : 1, max: totalOpenQty, step: isLotBased ? lotSize : 1 },
             }}
-            sx={{ mb: 0.5 }}
           />
 
           {isLotBased && totalLots > 1 && (
-            <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5 }}>
+            <Box sx={{ display: 'flex', gap: 0.75, mt: 1 }}>
               {Array.from({ length: Math.min(totalLots, 4) }, (_, i) => i + 1).map((lots) => (
                 <Chip
                   key={lots}
                   label={`${lots} Lot${lots === 1 ? '' : 's'} (${lots * lotSize})`}
                   size="small"
-                  clickable
+                  clickable={!isLoading}
                   onClick={() => setExitQty(lots * lotSize)}
                   sx={{
                     height: 22,
@@ -197,7 +267,7 @@ export function ExecuteLadderStepDialog({
         </Box>
 
         {/* Action 2: Trail Stop Loss to protect gains */}
-        <Box sx={{ mb: 2 }}>
+        <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75 }}>
             <ShieldRoundedIcon sx={{ fontSize: 16, color: '#10B981' }} />
             <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.82rem' }}>
@@ -209,13 +279,76 @@ export function ExecuteLadderStepDialog({
             fullWidth
             size="small"
             type="number"
+            disabled={isLoading}
             label="New Trailed Stop Loss"
             value={newStopLoss}
             onChange={(e) => setNewStopLoss(Number(e.target.value))}
             helperText={step.suggestedStopLabel}
-            sx={{ mb: 0.5 }}
           />
         </Box>
+
+        {/* Pre-Flight Preview Card */}
+        {preFlightPreview && (
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: '10px',
+              bgcolor: isDark ? alpha('#1E293B', 0.5) : alpha('#F1F5F9', 0.8),
+              border: '1px solid',
+              borderColor: muiTheme.palette.divider,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+            }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary' }}>
+                PRE-FLIGHT OUTCOME PREVIEW
+              </Typography>
+              {preFlightPreview.realizedR !== null && (
+                <Chip
+                  label={`+${preFlightPreview.realizedR}R Realized`}
+                  size="small"
+                  sx={{
+                    height: 18,
+                    fontSize: '0.62rem',
+                    fontWeight: 800,
+                    bgcolor: alpha('#10B981', 0.15),
+                    color: '#10B981',
+                  }}
+                />
+              )}
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+              <span style={{ color: muiTheme.palette.text.secondary }}>Estimated Net P&L:</span>
+              <strong style={{ color: preFlightPreview.netPnL >= 0 ? '#10B981' : '#EF4444', fontFamily: `'JetBrains Mono', monospace` }}>
+                {formatCurrency(preFlightPreview.netPnL)}
+              </strong>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+              <span style={{ color: muiTheme.palette.text.secondary }}>Statutory Charges (Auto):</span>
+              <span style={{ fontFamily: `'JetBrains Mono', monospace` }}>{formatCurrency(preFlightPreview.estimatedCharges)}</span>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+              <span style={{ color: muiTheme.palette.text.secondary }}>Remaining Runner:</span>
+              <strong style={{ color: '#3B82F6', fontFamily: `'JetBrains Mono', monospace` }}>
+                {preFlightPreview.remainingQuantity} Qty ({preFlightPreview.remainingLots} Lots)
+              </strong>
+            </Box>
+
+            {newStopLoss > 0 && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', pt: 0.5, borderTop: `1px dashed ${muiTheme.palette.divider}` }}>
+                <span style={{ color: muiTheme.palette.text.secondary }}>New Trailed SL:</span>
+                <strong style={{ color: '#10B981', fontFamily: `'JetBrains Mono', monospace` }}>
+                  ₹{newStopLoss.toFixed(2)} ({step.suggestedStopLabel || 'Locked'})
+                </strong>
+              </Box>
+            )}
+          </Box>
+        )}
 
         {/* Live Broker Execution Toggle */}
         <Box
@@ -259,39 +392,76 @@ export function ExecuteLadderStepDialog({
               />
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
-              {executeBroker
+              {isBrokerExecutionBlocked
+                ? brokerBlockReason || 'Broker execution is unavailable'
+                : executeBroker
                 ? 'Submits real market exit and trails SL on FYERS orderbook'
                 : 'Simulates ladder step in SetupMint without broker order'}
             </Typography>
           </Box>
-          <Switch
-            checked={executeBroker}
-            onChange={(e) => setExecuteBroker(e.target.checked)}
-            color="success"
-            size="small"
-          />
+          <Tooltip title={isBrokerExecutionBlocked ? (brokerBlockReason || 'Broker execution blocked') : ''} arrow>
+            <span>
+              <Switch
+                checked={executeBroker}
+                disabled={isBrokerExecutionBlocked || isLoading}
+                onChange={(e) => setExecuteBroker(e.target.checked)}
+                color="success"
+                size="small"
+              />
+            </span>
+          </Tooltip>
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ p: 2, gap: 1 }}>
+      <DialogActions sx={{ p: 2, gap: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Button variant="outlined" onClick={onClose} disabled={isLoading} sx={{ borderRadius: '8px', textTransform: 'none' }}>
           Cancel
         </Button>
-        <Button
-          variant="contained"
-          onClick={handleExecute}
-          disabled={isLoading || exitQty <= 0}
-          startIcon={<FlashOnRoundedIcon />}
-          sx={{
-            borderRadius: '8px',
-            textTransform: 'none',
-            bgcolor: '#10B981',
-            fontWeight: 800,
-            '&:hover': { bgcolor: '#059669' },
-          }}
-        >
-          {isLoading ? 'Executing...' : `Execute ${step.name}`}
-        </Button>
+
+        {executeBroker ? (
+          <HoldToConfirmButton
+            holdDurationMs={600}
+            onConfirm={handleExecute}
+            disabled={isLoading || exitQty <= 0}
+            disabledReason={
+              exitQty <= 0
+                ? 'Quantity must be greater than 0'
+                : isBrokerExecutionBlocked
+                ? brokerBlockReason || 'Broker execution blocked'
+                : undefined
+            }
+            color="success"
+            variant="contained"
+            holdingText="Executing in"
+            completedText="Ladder Dispatched!"
+            startIcon={isLoading ? <CircularProgress size={16} color="inherit" /> : <FlashOnRoundedIcon />}
+            sx={{
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 800,
+              px: 2.5,
+              py: 0.9,
+            }}
+          >
+            {isLoading ? 'Executing...' : `⚡ Hold to Execute ${step.name}`}
+          </HoldToConfirmButton>
+        ) : (
+          <Button
+            variant="contained"
+            onClick={handleExecute}
+            disabled={isLoading || exitQty <= 0}
+            startIcon={isLoading ? <CircularProgress size={16} color="inherit" /> : <FlashOnRoundedIcon />}
+            sx={{
+              borderRadius: '8px',
+              textTransform: 'none',
+              bgcolor: '#10B981',
+              fontWeight: 800,
+              '&:hover': { bgcolor: '#059669' },
+            }}
+          >
+            {isLoading ? 'Executing...' : `Execute ${step.name} in Journal`}
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

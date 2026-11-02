@@ -669,6 +669,76 @@ Authentication is handled via stateful sessions:
     }
     ```
 
+### `GET /api/v1/trades/live/alerts`
+- **Purpose:** Fetches active, snoozed, and recently resolved threat alert states for the authenticated user, populated with trade symbol and direction. Syncs bidirectionally with the Telegram alerting daemon.
+- **Auth:** **Required** (enforces tenant isolation `{ userId: req.user.id }`).
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": [
+        {
+          "id": "6724a1b2c3d4e5f6a7b8c9d0",
+          "type": "STOP_THREAT",
+          "state": "ACTIVE",
+          "severity": 3,
+          "enterCount": 2,
+          "pingCount": 1,
+          "tradeId": "6724a1b2c3d4e5f6a7b8c9d1",
+          "symbol": "NIFTY24OCT25000CE",
+          "direction": "LONG",
+          "snoozedUntil": null,
+          "clearedAt": null,
+          "lastMetricValue": "LTP ₹135 vs SL ₹130",
+          "firstAt": "2026-10-31T09:45:00.000Z",
+          "lastSentAt": "2026-10-31T09:46:30.000Z",
+          "updatedAt": "2026-10-31T09:46:30.000Z"
+        }
+      ]
+    }
+    ```
+
+### `POST /api/v1/trades/live/alerts/:id/snooze`
+- **Purpose:** Snoozes an active alert state across both Web and Telegram channels for `durationMinutes` (default 15 mins). Modifies MongoDB `AlertState` so background Telegram notification daemon silences alerts until escalation or timer expiration, and records an audit `AlertEvent`.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Request Body:**
+  ```json
+  {
+    "durationMinutes": 15
+  }
+  ```
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "id": "6724a1b2c3d4e5f6a7b8c9d0",
+        "state": "SNOOZED",
+        "snoozedUntil": "2026-10-31T10:01:30.000Z"
+      }
+    }
+    ```
+  - `404 ALERT_NOT_FOUND`: If alert state does not exist or belongs to another user.
+
+### `POST /api/v1/trades/live/alerts/:id/clear`
+- **Purpose:** Manually resolves and clears an alert state across both Web and Telegram channels. Sets `state: 'CLEARED'` and logs an audit `AlertEvent`.
+- **Auth:** **Required** (enforces tenant isolation).
+- **Responses:**
+  - `200 OK`:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "id": "6724a1b2c3d4e5f6a7b8c9d0",
+        "state": "CLEARED",
+        "clearedAt": "2026-10-31T09:48:00.000Z"
+      }
+    }
+    ```
+  - `404 ALERT_NOT_FOUND`: If alert state does not exist or belongs to another user.
+
 ### `POST /api/v1/trades/drilldown`
 - **Purpose:** Universal trade drill-down resolver endpoint. Accepts a `DrillDescriptor` (`kind: 'TRADE' | 'TRADES' | 'FILTER'`) and returns matching trade documents with strict tenant isolation, server-side pagination, and Decimal.js aggregate reconciliation.
 - **Auth:** **Required** (enforces tenant isolation).

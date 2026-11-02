@@ -4,6 +4,18 @@ import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
 import { alpha } from '@mui/material/styles';
 
+export interface LiveSparklinePulseCheck {
+  timestamp: number | string | Date;
+  emotion: string;
+  notes?: string;
+  currentLtp?: number;
+  floatingNetPnL?: number;
+  unrealizedR?: number;
+  pnl?: number;
+  r?: number;
+  price?: number;
+}
+
 export interface LiveSparklineProps {
   points?: Array<{
     timestamp: number;
@@ -13,6 +25,7 @@ export interface LiveSparklineProps {
     isPeakMfe?: boolean;
     isLowestMae?: boolean;
   }>;
+  pulseCheckIns?: LiveSparklinePulseCheck[];
   width?: number;
   height?: number;
   isDark?: boolean;
@@ -20,6 +33,7 @@ export interface LiveSparklineProps {
 
 export function LiveSparkline({
   points = [],
+  pulseCheckIns = [],
   width = 160,
   height = 36,
   isDark = true,
@@ -59,6 +73,34 @@ export function LiveSparkline({
   const peakPt = coords.find((p) => p.isPeakMfe);
   const maePt = coords.find((p) => p.isLowestMae);
 
+  // Map in-trade pulse check-ins to coordinates along the trajectory
+  const pulseCoords = (pulseCheckIns || []).map((pulse) => {
+    const pulseTime = new Date(pulse.timestamp).getTime();
+    let closestCoord = coords[0];
+    let minDiff = Math.abs((coords[0]?.timestamp ?? 0) - pulseTime);
+
+    for (const c of coords) {
+      const diff = Math.abs((c.timestamp ?? 0) - pulseTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestCoord = c;
+      }
+    }
+
+    const emotionColor =
+      pulse.emotion === 'CALM' ? '#10B981' :
+      pulse.emotion === 'ANXIOUS' ? '#EF4444' :
+      pulse.emotion === 'FOMO' ? '#F59E0B' :
+      pulse.emotion === 'GREEDY' ? '#EC4899' : '#3B82F6';
+
+    return {
+      ...pulse,
+      x: closestCoord?.x ?? 0,
+      y: closestCoord?.y ?? height / 2,
+      color: emotionColor,
+    };
+  });
+
   return (
     <Tooltip
       title={
@@ -75,6 +117,15 @@ export function LiveSparkline({
             <Typography variant="caption" sx={{ display: 'block', color: '#EF4444' }}>
               Max Adverse: ₹{maePt.pnl.toFixed(2)} ({maePt.r.toFixed(2)}R)
             </Typography>
+          )}
+          {pulseCoords.length > 0 && (
+            <Box sx={{ mt: 0.5, pt: 0.5, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              {pulseCoords.map((p, idx) => (
+                <Typography key={idx} variant="caption" sx={{ display: 'block', color: p.color, fontSize: '0.68rem', fontWeight: 700 }}>
+                  🧠 {p.emotion} {p.notes ? `("${p.notes}")` : ''} @ ₹{(p.floatingNetPnL ?? p.pnl ?? 0).toFixed(0)} ({p.unrealizedR !== undefined ? `${p.unrealizedR >= 0 ? '+' : ''}${p.unrealizedR.toFixed(1)}R` : ''})
+                </Typography>
+              ))}
+            </Box>
           )}
         </Box>
       }
@@ -136,6 +187,26 @@ export function LiveSparkline({
               strokeWidth="1"
             />
           )}
+
+          {/* In-Trade Emotional Pulse Check-In Markers */}
+          {pulseCoords.map((pulse, pIdx) => (
+            <g key={`pulse-${pIdx}`}>
+              <circle
+                cx={pulse.x}
+                cy={pulse.y}
+                r="4"
+                fill={pulse.color}
+                stroke={isDark ? '#0F172A' : '#FFFFFF'}
+                strokeWidth="1.5"
+              />
+              <circle
+                cx={pulse.x}
+                cy={pulse.y}
+                r="1.5"
+                fill="#FFFFFF"
+              />
+            </g>
+          ))}
 
           {/* Current Live Head Pulse */}
           <circle

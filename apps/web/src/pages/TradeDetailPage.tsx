@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
@@ -65,6 +65,7 @@ import { TradeInteractiveChart } from '../components/trades/TradeInteractiveChar
 import { GenerateExecutionChartsPanel } from '../components/trades/GenerateExecutionChartsPanel.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 import { HelpHint } from '../components/help/index.js';
+import { LiveSparkline, LiveSparklinePulseCheck } from '../components/trades/live/LiveSparkline.js';
 
 export function TradeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -223,6 +224,109 @@ export function TradeDetailPage() {
       toast.error(msg);
     },
   });
+
+  // Extract pulse check-ins recorded from Live Watcher
+  const pulseCheckIns = useMemo<LiveSparklinePulseCheck[]>(() => {
+    if (!trade?.auditLog || !Array.isArray(trade.auditLog)) return [];
+    return trade.auditLog
+      .filter((log: any) => log.action === 'LIVE_PULSE_CHECK' && log.details)
+      .map((log: any) => ({
+        timestamp: new Date(log.timestamp || log.createdAt).getTime(),
+        emotion: log.details.emotion || 'CALM',
+        notes: log.details.notes || '',
+        currentLtp: log.details.currentLtp,
+        floatingNetPnL: log.details.floatingNetPnL,
+        unrealizedR: log.details.unrealizedR,
+        pnl: log.details.floatingNetPnL,
+        r: log.details.unrealizedR,
+        price: log.details.currentLtp,
+      }))
+      .sort((a: any, b: any) => Number(a.timestamp) - Number(b.timestamp));
+  }, [trade?.auditLog]);
+
+  // Construct intra-trade MTM trajectory points for sparkline
+  const trajectoryPoints = useMemo(() => {
+    const liveMetricObj = (liveMetric as any)?.data || liveMetric;
+    if (liveMetricObj?.sparkline && liveMetricObj.sparkline.length >= 2) {
+      return liveMetricObj.sparkline;
+    }
+
+    if (!trade) return [];
+
+    const entryTimeMs = trade.entryTime
+      ? new Date(trade.entryTime).getTime()
+      : trade.tradeDate
+      ? new Date(trade.tradeDate).getTime()
+      : 0;
+    const exitTimeMs = trade.exitTime
+      ? new Date(trade.exitTime).getTime()
+      : entryTimeMs > 0 ? entryTimeMs + 60 * 60 * 1000 : 0;
+    const entryPrice = trade.simpleExecution?.entryPrice || trade.entryPrice || 0;
+    const exitPrice = trade.simpleExecution?.exitPrice || trade.exitPrice || entryPrice;
+    const netPnL = trade.netPnL || trade.calculated?.netPnL || 0;
+    const realizedR = trade.realizedR || trade.calculated?.realizedR || 0;
+
+    const exc = trade.calculated?.excursion;
+    const liveMfe = trade.calculated?.liveMfeSummary;
+
+    if (!entryTimeMs || (!exc && !liveMfe && pulseCheckIns.length === 0)) {
+      return [];
+    }
+
+    const duration = Math.max(exitTimeMs - entryTimeMs, 60000);
+    const pts: Array<{ timestamp: number; pnl: number; r: number; price: number; isLowestMae?: boolean; isPeakMfe?: boolean }> = [
+      { timestamp: entryTimeMs, pnl: 0, r: 0, price: entryPrice },
+    ];
+
+    if (exc?.maeAmount != null && exc.maeAmount > 0) {
+      const maeTime = exc.timeToMaeMinutes != null
+        ? entryTimeMs + exc.timeToMaeMinutes * 60000
+        : entryTimeMs + Math.round(duration * 0.25);
+      pts.push({
+        timestamp: maeTime,
+        pnl: -Math.abs(exc.maeAmount),
+        r: -(exc.maeR || 0),
+        price: trade.direction === 'LONG' ? entryPrice - (exc.maePoints || 0) : entryPrice + (exc.maePoints || 0),
+        isLowestMae: true,
+      });
+    }
+
+    pulseCheckIns.forEach((chk) => {
+      pts.push({
+        timestamp: Number(chk.timestamp),
+        pnl: chk.floatingNetPnL ?? chk.pnl ?? 0,
+        r: chk.unrealizedR ?? chk.r ?? 0,
+        price: chk.currentLtp ?? chk.price ?? entryPrice,
+      });
+    });
+
+    const peakPnl = liveMfe?.peakFloatingNetPnL ?? exc?.mfeAmount;
+    if (peakPnl != null && peakPnl > 0) {
+      const peakTime = liveMfe?.peakTimestamp
+        ? new Date(liveMfe.peakTimestamp).getTime()
+        : exc?.timeToMfeMinutes != null
+        ? entryTimeMs + exc.timeToMfeMinutes * 60000
+        : entryTimeMs + Math.round(duration * 0.7);
+      pts.push({
+        timestamp: peakTime,
+        pnl: peakPnl,
+        r: liveMfe?.peakUnrealizedR ?? exc?.mfeR ?? 0,
+        price: liveMfe?.peakLtp ?? (trade.direction === 'LONG' ? entryPrice + (exc?.mfePoints || 0) : entryPrice - (exc?.mfePoints || 0)),
+        isPeakMfe: true,
+      });
+    }
+
+    if (trade.status === 'CLOSED') {
+      pts.push({
+        timestamp: exitTimeMs,
+        pnl: netPnL,
+        r: realizedR,
+        price: exitPrice,
+      });
+    }
+
+    return pts.sort((a, b) => a.timestamp - b.timestamp);
+  }, [liveMetric, trade, pulseCheckIns]);
 
   if (isLoading) {
     return (
@@ -1381,6 +1485,62 @@ export function TradeDetailPage() {
                 </Button>
               </Box>
             )}
+
+            {/* Intra-Trade MTM & Excursion Trajectory with Emotional Pulse Checkpoints */}
+            {trajectoryPoints.length >= 2 && (
+              <Box
+                sx={{
+                  mt: 2.5,
+                  p: 2,
+                  borderRadius: 2,
+                  border: `1px solid ${muiTheme.palette.divider}`,
+                  backgroundColor: isDark ? 'rgba(15, 23, 42, 0.4)' : '#F8FAFC',
+                }}
+              >
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    mb: 1.5,
+                    flexWrap: 'wrap',
+                    gap: 1,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TimelineRoundedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.8125rem' }}>
+                      Intra-Trade MTM & Excursion Trajectory
+                    </Typography>
+                    {pulseCheckIns.length > 0 && (
+                      <Chip
+                        label={`${pulseCheckIns.length} In-Trade Pulse${pulseCheckIns.length > 1 ? 's' : ''}`}
+                        size="small"
+                        sx={{
+                          height: 20,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          bgcolor: alpha('#8B5CF6', 0.15),
+                          color: '#8B5CF6',
+                        }}
+                      />
+                    )}
+                  </Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
+                    Interactive telemetry • Hover markers to view emotional state and P&L at each checkpoint
+                  </Typography>
+                </Box>
+                <Box sx={{ width: '100%', overflowX: 'auto', py: 0.5 }}>
+                  <LiveSparkline
+                    points={trajectoryPoints}
+                    pulseCheckIns={pulseCheckIns}
+                    width={560}
+                    height={60}
+                    isDark={isDark}
+                  />
+                </Box>
+              </Box>
+            )}
           </Card>
         );
       })()}
@@ -2031,6 +2191,125 @@ export function TradeDetailPage() {
             <Typography variant="body2" sx={{ color: muiTheme.palette.text.primary, lineHeight: 1.6 }}>
               {trade.psychology.notes}
             </Typography>
+          </Box>
+        )}
+
+        {/* Identified Tactical Mistakes & Execution Leaks */}
+        {trade.psychology?.mistakes && trade.psychology.mistakes.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.75 }}>
+              Identified Tactical Mistakes & Execution Leaks:
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {trade.psychology.mistakes.map((m: string) => (
+                <Chip
+                  key={m}
+                  label={m.replace(/_/g, ' ')}
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  sx={{ fontSize: '0.6875rem', fontWeight: 700 }}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {/* In-Trade Emotional Pulse History Timeline */}
+        {pulseCheckIns.length > 0 && (
+          <Box sx={{ mt: 2.5 }}>
+            <Typography
+              variant="subtitle2"
+              sx={{
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+                mb: 1.5,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}
+            >
+              <PsychologyIcon fontSize="small" sx={{ color: '#8B5CF6' }} />
+              In-Trade Emotional Pulse History (Live Watcher)
+            </Typography>
+            <Grid container spacing={1.5}>
+              {pulseCheckIns.map((chk, i) => {
+                const emoColors: Record<string, string> = {
+                  CALM: '#10B981',
+                  CONFIDENT: '#3B82F6',
+                  ANXIOUS: '#EF4444',
+                  FOMO: '#F59E0B',
+                  GREEDY: '#EC4899',
+                };
+                const color = emoColors[chk.emotion] || '#8B5CF6';
+                const timeStr = new Date(chk.timestamp).toLocaleTimeString('en-IN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: true,
+                });
+
+                return (
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key={i}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        border: `1px solid ${alpha(color, 0.3)}`,
+                        bgcolor: isDark ? alpha(color, 0.05) : alpha(color, 0.03),
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Chip
+                          label={chk.emotion}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.65rem',
+                            fontWeight: 800,
+                            bgcolor: alpha(color, 0.15),
+                            color: color,
+                            border: `1px solid ${alpha(color, 0.3)}`,
+                          }}
+                        />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+                          {timeStr}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, my: 0.5 }}>
+                        {chk.floatingNetPnL !== undefined && (
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: 'monospace',
+                              color: chk.floatingNetPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {chk.floatingNetPnL >= 0 ? '+' : ''}₹{chk.floatingNetPnL.toLocaleString('en-IN')}
+                          </Typography>
+                        )}
+                        {chk.unrealizedR !== undefined && (
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace' }}>
+                            ({chk.unrealizedR >= 0 ? '+' : ''}{chk.unrealizedR}R)
+                          </Typography>
+                        )}
+                        {chk.currentLtp !== undefined && (
+                          <Typography variant="caption" sx={{ color: 'text.secondary', ml: 'auto', fontFamily: 'monospace' }}>
+                            LTP ₹{chk.currentLtp}
+                          </Typography>
+                        )}
+                      </Box>
+                      {chk.notes && (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic', display: 'block', mt: 0.5 }}>
+                          "{chk.notes}"
+                        </Typography>
+                      )}
+                    </Box>
+                  </Grid>
+                );
+              })}
+            </Grid>
           </Box>
         )}
       </Card>

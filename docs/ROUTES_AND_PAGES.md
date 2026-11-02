@@ -102,19 +102,22 @@ This document details all routes and pages discovered in the **SetupMint** front
 - **Page Component:** [`TradesPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradesPage.tsx)
 - **Purpose:** Searchable, filterable ledger of all trades with live open trade monitoring, pagination, bulk operations, quick close, and full audit logs.
 - **Main Components:**
-  - **Live Open Trade Watcher Banner ([`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx)):** Mounted above the filter bar when open positions exist; provides `Off`, `1s`, `2s`, `5s`, `10s`, `30s` auto-refresh intervals, dual-view mode switcher (`Cockpit Cards` vs `Compact Table View`), aggregate floating Net MTM, portfolio unrealized R, top-mounted instant execution cockpit (`Close 100% @ LTP`, `Book 50%`, `Lock BE`, `Adjust SL`), split 2-column cards, tactical strategy sub-tabs (`🪜 Scaling Ladder` vs `🛡️ Giveback Radar`), and [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx).
+  - **Live Open Trade Watcher Banner ([`LiveOpenTradeWatcher.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveOpenTradeWatcher.tsx)):** Mounted above the filter bar when open positions exist; provides `Off`, `1s`, `2s`, `5s`, `10s`, `30s` auto-refresh intervals, dual-view mode switcher (`Cockpit Cards` vs `Compact Table View`), 3-tier card density selector (`Glance`, `Standard`, `Deep`), deterministic sort mode switcher (`Urgency` threat-proximity vs `Entry Time`), unified tactical price view toggle (`Classic Gauge` vs `Vertical Ladder`), aggregate floating Net MTM, portfolio unrealized R, next-action deterministic hint strip with pre-filled execution dialog triggers, 60-second manual collapse immunity, pinned portfolio risk & discipline strip, top-mounted instant execution cockpit (`Close 100% @ LTP`, `Book 50%`, `Lock BE`, `Adjust SL`), split 2-column cards, tactical strategy sub-tabs (`🪜 Scaling Ladder` vs `🛡️ Giveback Radar`), and [`ExecuteLadderStepDialog.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/ExecuteLadderStepDialog.tsx).
   - Filter Toolbar: Search input (symbol/title/notes), Direction filter (Long/Short), Outcome filter (Win/Loss/Breakeven/Open), Asset Class filter, Status filter.
   - Master Table: Date, Symbol, Direction, Asset Class, Quantity, Entry Price, Exit Price, Net P&L, Realized R, Discipline Score, Attachments Count, Action buttons (Quick Close, View Details, Duplicate, Delete).
   - Bulk Actions Toolbar: Select all checkbox, Bulk Tagging button, Bulk Delete button.
   - Pagination Controls: Page size selector (25, 50, 100), previous/next page navigation.
-  - Modals: `TradeFormModal`, `QuickCloseTradeDialog` (compact exit dialog for OPEN/PLANNED trades supporting 50% partial or 100% full close with optional live FYERS broker execution), `ExecuteLadderStepDialog`, `ConfirmDialog` for single delete and bulk delete, Bulk Tag dialog.
+  - Modals: `TradeFormModal`, `QuickCloseTradeDialog` (compact exit dialog for OPEN/PLANNED trades supporting 50% partial or 100% full close with optional live FYERS broker execution), `ExecuteLadderStepDialog`, `LiveAlertCenterDialog` (multi-channel synchronized threat alert management), `HotkeyCheatSheetDialog` (rapid keyboard shortcuts overlay), `ConfirmDialog` for single delete and bulk delete, Bulk Tag dialog.
 - **Available Actions:** Search, filter, paginate, sort by column, monitor live MTM & giveback, execute scaling ladder steps, adjust stop loss on FYERS, quick close position (partial or full), open trade detail, open edit modal, duplicate trade, delete trade, bulk tag, bulk delete.
 - **API Calls:**
   - `GET /api/v1/trades?page=...&limit=...&search=...&direction=...&outcome=...`
-  - `GET /api/v1/trades/live/watcher?accountId=...`
-  - `POST /api/v1/trades/:id/broker-sl`
-  - `POST /api/v1/trades/:id/broker-exit`
-  - `POST /api/v1/trades/:id/broker-ladder-step`
+  - `GET /api/v1/trades/live/watcher?accountId=...` (includes `dataHealth`: connection state, tick age, token countdown, broker execution availability)
+  - `GET /api/v1/trades/live/alerts` (active, snoozed, and cleared threat alerts synced with Telegram)
+  - `POST /api/v1/trades/live/alerts/:id/snooze` (snooze threat alert and Telegram notifications)
+  - `POST /api/v1/trades/live/alerts/:id/clear` (clear threat alert across all channels)
+  - `POST /api/v1/trades/:id/broker-sl` (guarded: returns `400 BROKER_EXECUTION_BLOCKED` when feed is disconnected or token expired)
+  - `POST /api/v1/trades/:id/broker-exit` (guarded: returns `400 BROKER_EXECUTION_BLOCKED` when feed is simulated, disconnected, token expired, or quotes stale)
+  - `POST /api/v1/trades/:id/broker-ladder-step` (guarded: returns `400 BROKER_EXECUTION_BLOCKED` when broker token is inactive)
   - `PUT /api/v1/trades/:id` (Quick Close: exit price, exit time, optional exit fees)
   - `POST /api/v1/trades/:id/duplicate`
   - `DELETE /api/v1/trades/:id`

@@ -609,6 +609,17 @@ export const patternDetectionSettingsSchema = z.object({
   excursionSettings: excursionSettingsSchema.optional(),
 });
 
+export const watcherLayoutPresetSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  refreshIntervalSec: z.coerce.number().min(1).max(60),
+  cardDensity: z.enum(['glance', 'standard', 'deep']),
+  ladderViewMode: z.enum(['classic', 'vertical']),
+  sortMode: z.enum(['urgency', 'entryTime']),
+  scalperHotkeysEnabled: z.boolean(),
+  isBuiltIn: z.boolean().optional(),
+});
+
 export const liveWatcherSettingsSchema = z.object({
   defaultAutoExecute: z.boolean().optional(),
   defaultTargetMode: z.enum(['T1_ONLY', 'T1_FREE_RUNNER', 'TWO_TARGETS_RUNNER', 'CLASSIC_THREE']).optional(),
@@ -654,6 +665,13 @@ export const liveWatcherSettingsSchema = z.object({
   }).optional(),
   hardDisciplineLockoutEnabled: z.boolean().optional(),
   hardDisciplineLockoutDurationMins: z.coerce.number().int().positive().optional(),
+  staleDataThresholdSeconds: z.coerce.number().int().min(2).max(120).optional(),
+  requireHoldToConfirm: z.boolean().optional(),
+  cardDensity: z.enum(['glance', 'standard', 'deep']).optional(),
+  sortMode: z.enum(['urgency', 'entryTime']).optional(),
+  ladderViewMode: z.enum(['classic', 'vertical']).optional(),
+  layoutPresets: z.array(watcherLayoutPresetSchema).optional(),
+  activePresetId: z.string().optional(),
 });
 
 export const updateProfileSchema = z.object({

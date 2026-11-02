@@ -207,4 +207,77 @@ Implemented in [`apps/web/src/context/ToastContext.tsx`](file:///Users/komal/pro
 - **Query Key Integration:**
   - Changing the date range updates `startDate` and `endDate`, which are incorporated into TanStack Query keys across all consumption views (Dashboard, Trades, Analytics, Strategies, Reports, Instruments), triggering clean surgical refetches without invalidating unrelated caches.
 
+---
+
+## 10. Execution Safety & Live Watcher Components
+
+### 1. `HoldToConfirmButton.tsx` ([`apps/web/src/components/trades/live/HoldToConfirmButton.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/HoldToConfirmButton.tsx))
+- **Role:** High-urgency execution button requiring continuous pressing and holding (~600ms default) before firing live broker market exits or panic square-offs.
+- **Visual Design & Tactile Feedback:**
+  - **Animated Circular Progress Ring:** Radial SVG spinner (`CircularProgress`) fills proportionally with elapsed hold duration.
+  - **Linear Track Inset:** Subtle gradient overlay tracking left-to-right fill progress across the button surface.
+  - **Press Spring Scale:** Subtly scales down (`scale(0.97)`) on pointer down, providing physical haptic sensation.
+  - **Safety Cancellation:** Instant progress reset if pointer leaves the button, pointer cancels, or release occurs before 100%.
+  - **Keyboard Accessibility:** Supports Space and Enter keydown hold-to-confirm with keyup cancellation.
+  - **Disabled Reason Tooltips:** Surfaces descriptive tooltip explanations whenever execution is guarded or invalid.
+
+### 2. Execution Dialogs with Pre-Flight Preview & Order Stepper
+- **`QuickCloseTradeDialog.tsx` & `ExecuteLadderStepDialog.tsx`:**
+  - **Pre-Flight Preview Panel:** Real-time computation of net realized P&L, lot-aware exit quantities, runner remaining lots, and resulting R-multiple before order transmission using `@tradevault/financial-engine`.
+  - **Slippage Guard Banner:** Alerts traders if the execution price drifts beyond `slippageGuardPercent` from the rendered price.
+  - **3-Stage Order Execution Stepper:** Stepper tracking `Sending` -> `Exchange Ack (Working)` -> `Filled` / `Rejected`, displaying FYERS order ID and fill price.
+  - **Double-Submission Prevention:** In-flight submission lock preventing duplicate API requests or rapid double-taps.
+
+### 3. `LiveUnifiedPriceLadder.tsx` ([`apps/web/src/components/trades/live/LiveUnifiedPriceLadder.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/live/LiveUnifiedPriceLadder.tsx))
+- **Role:** Depth of Market (DOM) style vertical price ladder combining price gauge spatial intuition with multi-target scaling execution.
+- **Visual Structure & Price Tiers:**
+  - Strict descending vertical order from highest price at top to lowest price at bottom.
+  - Targets (T3, T2, T1) with planned exit percentages, progress status chips, and 1-click execution buttons for met steps.
+  - Peak MFE high-watermark amber marker with giveback distance.
+  - Pulsing Live LTP marker with monospace price readout and point/R distance from entry.
+  - True Breakeven tier with explicit statutory fee cushion points indicated and 1-click "Lock True BE" button.
+  - Fill Entry price and active Stop Loss tier with threat badges.
+  - Reduced-motion support disabling pulse and transition animations when `@media (prefers-reduced-motion: reduce)` is active.
+
+### 4. `LivePortfolioRiskBanner.tsx` (Pinned Portfolio Risk & Discipline Strip)
+- **Role:** High-visibility banner pinned above the open positions grid showing real-time portfolio-level risk and discipline limits.
+- **Metrics Tracked:**
+  - **Day Floating Loss Progress:** Visual progress bar tracking current floating loss against `maxDailyLoss`, featuring dedicated 75% amber warning marker and 100% crimson red circuit breaker marker.
+  - **Total Open Risk Capital:** Aggregate initial risk capital committed across all open trades relative to user account risk profile.
+  - **Open Positions Cap:** Current open trades count compared against `maxOpenTrades`, showing "CAP REACHED" badge upon saturation.
+  - **Trades Today Limit:** Daily closed + open trades count compared against `maxDailyTrades`.
+  - Preserves portfolio directional delta sensitivity, options theta decay bleed, and conflicting position alerts.
+
+### 5. Three-Tier Density Hierarchy & Urgency Sort in `LiveOpenTradeWatcher.tsx`
+- **Glance Mode:** High-density, compact card layout showing only instrument, direction, LTP, net floating P&L, unrealized R, next-action hint strip, SL runway, and hold-to-confirm quick market actions.
+- **Standard Mode:** Adds tactical price section (`Classic Gauge` or `Vertical Ladder` toggle) and tactical strategy inspector tabs (`🪜 Scaling Ladder` vs `🛡️ Giveback Radar`).
+- **Deep Mode:** Full analytics layout incorporating Black-Scholes Options Greeks, holding efficiency & stagnation radar, high-res sparkline trajectory, and psychological pulse timeline.
+- **Deterministic Urgency Sort:** Prioritizes positions by threat level (`BREACHED` > `CRITICAL` > `CRITICAL_REVERSAL` / `LEAKING` > `ATTENTION` / `WATCH` > `SAFE`) with proximity to stop loss as tie-breaker.
+- **Auto-Expansion with 60-Second Manual Collapse Immunity:** Critical trades automatically expand and float to top, while user manual collapse is respected for 60 seconds.
+
+### 6. Attention Management & Multi-Channel Alert Sync
+- **Tab Title & Favicon Badges:** Real-time throttled (2.5–3s) browser tab title reflection (`🚨 2 CRITICAL | -₹3,200 | SetupMint`). Dynamically renders alert status dots in SVG `<link rel="icon">` (🔴 Red for critical stop breach threats, 🟢 Green for positive MTM, 🟡 Amber for active trades) and cleanly restores original title and icon on unmount.
+- **`LiveAlertCenterDialog.tsx` (In-App Threat Alert Center):** Interactive telemetry drawer synchronized bidirectionally with MongoDB `AlertState` and the background Telegram alert daemon. Shows active, snoozed, and resolved alerts with severity indicators. Snoozing from web suppresses Telegram pushes; clearing resolves alerts across all connected clients.
+- **Watcher Layout Presets (`IWatcherLayoutPreset`):** Rapid workspace layout switcher for "⚡ Scalping" (1s refresh, Glance density, Vertical Ladder, Hotkeys armed), "📐 Positional" (30s refresh, Standard density, Classic Gauge, Hotkeys disabled), and "🔬 Deep Analytics" (5s refresh, Deep density, Vertical Ladder). Traders can save and persist custom view profiles directly to their user settings in MongoDB.
+- **`HotkeyCheatSheetDialog.tsx` (Rapid Execution Overlay):** Comprehensive cheat sheet triggered by `?` or header action explaining `B` (Lock BE), `Space` (Book 50%), `K` (Kill Switch), `1-3` (Densities), `V` (Ladder toggle), `U` (Urgency sort), and `P` (Cycle preset). All action buttons display visible hotkey badges (`[B]`, `[Space]`, `[K]`).
+
+### 7. Cognitive Ergonomics, Pop-Out Mini Watcher & Accessibility
+- **Document Picture-in-Picture Mini Watcher:** Spawns an always-on-top floating PiP window running the Glance mode live monitor via React `createPortal`. Keeps critical risk metrics, floating P&L, and next-action triggers visible even when viewing charting software or external brokers. Gracefully falls back to standalone popup for unsupported browsers.
+- **Accessibility & Monospace Readouts:** Monospace tabular numerals (`font-variant-numeric: tabular-nums`, `font-family: monospace`) applied across all live prices and P&L readouts to prevent horizontal jitter during tick updates.
+- **Aria-Live Threat Announcements:** Hidden screen-reader live regions (`aria-live="assertive"` for critical stop breaches, `aria-live="polite"` for target step fills) provide non-visual situational awareness for visually impaired traders.
+- **Colorblind-Safe Design:** All threat alerts and status pills couple colors with distinct geometric shapes and symbols (🔴 `[!]`, 🟡 `[▲]`, 🟢 `[✓]`, 🛡️ `BE`). Reduced-motion styles (`@media (prefers-reduced-motion: reduce)`) tone down flash transitions.
+
+### 8. Post-Trade Feedback Loop & Psychological Trajectory (`TradeFlightRecorderDialog.tsx` & `LiveSparkline.tsx`)
+- **`TradeFlightRecorderDialog.tsx` (Flight Recorder & Trade Receipt):**
+  - **Automated Execution Grading:** Computed purely in `@tradevault/financial-engine` via `generatePostTradeReviewSummary`. Assigns grades $A+$ through $F$ based on MFE capture efficiency, profit retention, and stop discipline.
+  - **Surrendered Giveback Telemetry:** Displays exact surrendered monetary giveback (₹) and percentage of peak unrealized profit lost before exit.
+  - **Algorithmic Mistake Tags:** Detects execution flaws (`SURRENDERED_PROFIT`, `STOP_LOSS_WIDENED`, `FOMO_CHASE`, `HELD_INTO_REVERSAL`) with interactive 1-click toggling to enrich the trade's permanent journal record.
+  - **Psychology Capture:** Automatically pre-fills emotional state from the last recorded in-trade pulse check-in, rule adherence switch, reflection note, and clipboard receipt copy.
+  - **Journal Integration:** Persists debrief directly into trade psychology in MongoDB and routes directly to the detailed trade review.
+- **MTM Trajectory Sparkline with Emotional Pulse Checkpoints (`LiveSparkline.tsx` & `TradeDetailPage.tsx`):**
+  - Interactive SVG curve rendering the chronological MTM excursion with peak MFE, lowest MAE, entry, and exit points.
+  - Renders emotion-coded pulse nodes (Calm `#10B981`, Confident `#3B82F6`, Anxious `#EF4444`, FOMO `#F59E0B`, Greedy `#EC4899`) plotted along the trajectory curve with rich tooltips.
+  - Displays the in-trade emotional pulse history timeline and identified tactical mistake chips directly in the Psychology & Discipline Audit section of [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx).
+
+
 

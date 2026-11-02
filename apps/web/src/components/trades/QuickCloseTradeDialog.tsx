@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -16,17 +16,33 @@ import {
   Tooltip,
   IconButton,
   Switch,
+  Stepper,
+  Step,
+  StepLabel,
 } from '@mui/material';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
+import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { IndianChargesCalculator, ChargesBreakdown } from '@tradevault/financial-engine';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import CancelRoundedIcon from '@mui/icons-material/CancelRounded';
+import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
+import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
+import {
+  IndianChargesCalculator,
+  ChargesBreakdown,
+  calculatePreFlightExecutionPreview,
+  IPreFlightExecutionPreviewResult,
+} from '@tradevault/financial-engine';
+import { ILiveDataHealth } from '@tradevault/shared';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
 import { formatCurrency, currentLocalIsoDateTime } from '../../lib/utils.js';
+import { HoldToConfirmButton } from './live/HoldToConfirmButton.js';
 
 export interface QuickCloseTradeProps {
   open: boolean;
@@ -36,7 +52,10 @@ export interface QuickCloseTradeProps {
   onSuccess?: (closedTradeData?: any) => void;
   defaultExitPrice?: number | string;
   defaultCloseRatio?: number; // e.g. 0.5 for 50% partial, 1.0 for full
+  dataHealth?: ILiveDataHealth;
 }
+
+export type OrderExecutionStage = 'IDLE' | 'SENDING' | 'WORKING' | 'FILLED' | 'REJECTED';
 
 export function QuickCloseTradeDialog({
   open,
@@ -46,6 +65,7 @@ export function QuickCloseTradeDialog({
   onSuccess,
   defaultExitPrice,
   defaultCloseRatio = 1.0,
+  dataHealth,
 }: QuickCloseTradeProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -93,6 +113,11 @@ export function QuickCloseTradeDialog({
   const isLotBased = lotSize > 1;
   const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQuantity / lotSize)) : totalOpenQuantity;
 
+  // Data health & provider guard check
+  const effectiveDataHealth: ILiveDataHealth | undefined = dataHealth || trade?.dataHealth;
+  const isBrokerExecutionBlocked = effectiveDataHealth ? !effectiveDataHealth.canExecuteBroker : false;
+  const brokerBlockReason = effectiveDataHealth?.brokerExecutionBlockedReason;
+
   // State
   const [exitMode, setExitMode] = useState<'PARTIAL_50' | 'FULL' | 'CUSTOM'>(() => {
     if (defaultCloseRatio === 0.5) {
@@ -113,7 +138,20 @@ export function QuickCloseTradeDialog({
   const [manualFeesOverride, setManualFeesOverride] = useState(false);
   const [customExitFees, setCustomExitFees] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [executeOnBroker, setExecuteOnBroker] = useState<boolean>(true);
+  const [executeOnBroker, setExecuteOnBroker] = useState<boolean>(() => !isBrokerExecutionBlocked);
+
+  // Stepper & order state
+  const [orderStage, setOrderStage] = useState<OrderExecutionStage>('IDLE');
+  const [brokerResultDetails, setBrokerResultDetails] = useState<{
+    orderId?: string;
+    tradedPrice?: number;
+    tradedQty?: number;
+    orderStatus?: string;
+    message?: string;
+  } | null>(null);
+
+  // Double-submission lock
+  const isSubmittingRef = useRef(false);
 
   // Determine actual quantity being closed
   const selectedCloseQty = useMemo(() => {
@@ -142,11 +180,16 @@ export function QuickCloseTradeDialog({
   useEffect(() => {
     if (open && trade) {
       setErrorMessage(null);
+      setOrderStage('IDLE');
+      setBrokerResultDetails(null);
+      isSubmittingRef.current = false;
       setManualFeesOverride(false);
       setCustomExitFees('');
       const initialPrice =
         defaultExitPrice !== undefined && defaultExitPrice !== null && defaultExitPrice !== ''
           ? String(defaultExitPrice)
+          : trade?.currentLtp
+          ? String(trade.currentLtp)
           : trade?.simpleExecution?.exitPrice
           ? String(trade.simpleExecution.exitPrice)
           : '';
@@ -157,11 +200,59 @@ export function QuickCloseTradeDialog({
 
       // Default exit time to current local time in ISO format for datetime-local
       setExitTime(currentLocalIsoDateTime());
+
+      // If broker execution is blocked, force journal only
+      if (isBrokerExecutionBlocked) {
+        setExecuteOnBroker(false);
+      } else {
+        setExecuteOnBroker(true);
+      }
     }
-  }, [open, trade, defaultExitPrice, defaultCloseRatio, totalOpenQuantity]);
+  }, [open, trade, defaultExitPrice, defaultCloseRatio, totalOpenQuantity, isBrokerExecutionBlocked]);
 
   const numExitPrice = parseFloat(exitPrice);
   const isPriceValid = !isNaN(numExitPrice) && numExitPrice > 0;
+
+  // Reference price for slippage detection
+  const referencePrice = trade?.currentLtp || trade?.calculated?.currentLtp || entryPrice;
+
+  // Pre-flight execution preview calculated via @tradevault/financial-engine Decimal.js
+  const preFlightPreview: IPreFlightExecutionPreviewResult | null = useMemo(() => {
+    if (!isPriceValid || entryPrice <= 0 || selectedCloseQty <= 0) return null;
+    try {
+      return calculatePreFlightExecutionPreview({
+        entryPrice,
+        currentLtp: numExitPrice,
+        totalOpenQuantity,
+        exitQuantity: selectedCloseQty,
+        direction: direction as any,
+        lotSize,
+        contractMultiplier,
+        initialRiskAmount: trade?.risk?.plannedRiskAmount || trade?.risk?.riskBudgetAmount,
+        initialStopLoss: trade?.risk?.initialStopLoss,
+        currentStopLoss: trade?.risk?.currentStopLoss,
+        assetClass: assetClass as any,
+        marketSegment: marketSegment as any,
+        referencePrice,
+        slippageGuardPercent: 0.5,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    isPriceValid,
+    entryPrice,
+    numExitPrice,
+    totalOpenQuantity,
+    selectedCloseQty,
+    direction,
+    lotSize,
+    contractMultiplier,
+    trade,
+    assetClass,
+    marketSegment,
+    referencePrice,
+  ]);
 
   // Auto compute charges using @tradevault/financial-engine for the selected close quantity
   const autoCharges: ChargesBreakdown | null = useMemo(() => {
@@ -183,192 +274,228 @@ export function QuickCloseTradeDialog({
   }, [isPriceValid, entryPrice, numExitPrice, selectedCloseQty, contractMultiplier, accountBroker, marketSegment, assetClass]);
 
   // Live P&L computation on closed quantity
-  const { grossPnL, totalCosts, netPnL } = useMemo(() => {
-    if (!isPriceValid || entryPrice <= 0 || selectedCloseQty <= 0) {
-      return { grossPnL: 0, totalCosts: 0, netPnL: 0 };
+  const { grossPnL, totalCosts, netPnL, realizedR } = useMemo(() => {
+    if (!preFlightPreview) {
+      return { grossPnL: 0, totalCosts: 0, netPnL: 0, realizedR: null };
     }
-    const rawGross = direction === 'LONG'
-      ? (numExitPrice - entryPrice) * selectedCloseQty * contractMultiplier
-      : (entryPrice - numExitPrice) * selectedCloseQty * contractMultiplier;
-
-    let costs = 0;
+    let costs = preFlightPreview.estimatedCharges;
     if (manualFeesOverride) {
       costs = parseFloat(customExitFees) || 0;
     } else if (autoCharges) {
       costs = autoCharges.totalCosts;
-    } else {
-      costs = (trade?.simpleExecution?.brokerage || 0) +
-        (trade?.simpleExecution?.exchangeFees || 0) +
-        (trade?.simpleExecution?.taxes || 0);
     }
-
-    const net = rawGross - costs;
+    const net = preFlightPreview.grossPnL - costs;
     return {
-      grossPnL: Number(rawGross.toFixed(2)),
+      grossPnL: preFlightPreview.grossPnL,
       totalCosts: Number(costs.toFixed(2)),
       netPnL: Number(net.toFixed(2)),
+      realizedR: preFlightPreview.realizedR,
     };
-  }, [isPriceValid, entryPrice, numExitPrice, selectedCloseQty, contractMultiplier, direction, manualFeesOverride, customExitFees, autoCharges, trade]);
+  }, [preFlightPreview, manualFeesOverride, customExitFees, autoCharges]);
 
   // Mutation to close the trade (partial or full)
   const closeMutation = useMutation({
     mutationFn: async () => {
+      if (isSubmittingRef.current) throw new Error('Order execution is already in flight.');
       if (!isPriceValid) throw new Error('Please enter a valid positive exit price.');
       if (!exitTime) throw new Error('Please specify an exit timestamp.');
       if (selectedCloseQty <= 0 || selectedCloseQty > totalOpenQuantity) {
         throw new Error(`Close quantity must be between 1 and ${totalOpenQuantity}.`);
       }
 
-      if (executeOnBroker) {
-        return api.trades.liveBrokerExit(trade.id || trade._id, {
-          quantity: selectedCloseQty,
-          exitPrice: numExitPrice,
-          isFullClose: !isPartial,
-          executeBroker: true,
-          idempotencyKey: `${trade.id || trade._id}_exit_${Date.now()}`,
-        });
-      }
+      isSubmittingRef.current = true;
+      setOrderStage('SENDING');
 
-      const exitIso = new Date(exitTime).toISOString();
+      // Progress stepper to WORKING state after slight delay
+      const workingTimer = setTimeout(() => {
+        setOrderStage((prev) => (prev === 'SENDING' ? 'WORKING' : prev));
+      }, 350);
 
-      const feesToSave = manualFeesOverride && customExitFees !== ''
-        ? {
-            otherFees: parseFloat(customExitFees) || 0,
-          }
-        : autoCharges
-        ? {
-            brokerage: autoCharges.brokerage,
-            exchangeFees: autoCharges.exchangeFees,
-            regulatoryFees: autoCharges.regulatoryFees,
-            taxes: autoCharges.taxes,
-            otherFees: 0,
-          }
-        : {};
-
-      if (isPartial) {
-        // Advanced multi-fill execution for partial exit
-        let updatedFills: any[] = [];
-        if (trade.fills && Array.isArray(trade.fills) && trade.fills.length > 0) {
-          updatedFills = [
-            ...trade.fills,
-            {
-              fillId: `fill-exit-${Date.now()}`,
-              type: 'EXIT',
-              price: numExitPrice,
-              quantity: selectedCloseQty,
-              timestamp: exitIso,
-              brokerage: autoCharges?.brokerage ?? 20,
-              exchangeFee: autoCharges?.exchangeFees ?? 0,
-              taxes: autoCharges?.taxes ?? 0,
-              notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
-            },
-          ];
-        } else {
-          // Transition SIMPLE mode trade to ADVANCED mode with original entry and new partial exit
-          const entryTimeStr = trade.entryTime ? new Date(trade.entryTime).toISOString() : exitIso;
-          updatedFills = [
-            {
-              fillId: `fill-entry-${trade.id || trade._id}`,
-              type: 'ENTRY',
-              price: entryPrice,
-              quantity: totalOpenQuantity,
-              timestamp: entryTimeStr,
-              brokerage: 20,
-              exchangeFee: 0,
-              taxes: 0,
-              notes: 'Initial position entry',
-            },
-            {
-              fillId: `fill-exit-${Date.now()}`,
-              type: 'EXIT',
-              price: numExitPrice,
-              quantity: selectedCloseQty,
-              timestamp: exitIso,
-              brokerage: autoCharges?.brokerage ?? 20,
-              exchangeFee: autoCharges?.exchangeFees ?? 0,
-              taxes: autoCharges?.taxes ?? 0,
-              notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
-            },
-          ];
+      try {
+        if (executeOnBroker) {
+          const res = await api.trades.liveBrokerExit(trade.id || trade._id, {
+            quantity: selectedCloseQty,
+            exitPrice: numExitPrice,
+            isFullClose: !isPartial,
+            executeBroker: true,
+            idempotencyKey: `${trade.id || trade._id}_exit_${Date.now()}`,
+          });
+          clearTimeout(workingTimer);
+          return res;
         }
 
-        return api.trades.update(trade.id || trade._id, {
-          executionMode: 'ADVANCED',
-          status: 'OPEN',
-          fills: updatedFills,
-        });
-      } else {
-        // 100% Full close
-        return api.trades.update(trade.id || trade._id, {
-          status: 'CLOSED',
-          exitTime: exitIso,
-          simpleExecution: {
-            exitPrice: numExitPrice,
-            ...feesToSave,
-          },
-        });
+        const exitIso = new Date(exitTime).toISOString();
+        const feesToSave = manualFeesOverride && customExitFees !== ''
+          ? { otherFees: parseFloat(customExitFees) || 0 }
+          : autoCharges
+          ? {
+              brokerage: autoCharges.brokerage,
+              exchangeFees: autoCharges.exchangeFees,
+              regulatoryFees: autoCharges.regulatoryFees,
+              taxes: autoCharges.taxes,
+              otherFees: 0,
+            }
+          : {};
+
+        if (isPartial) {
+          let updatedFills: any[] = [];
+          if (trade.fills && Array.isArray(trade.fills) && trade.fills.length > 0) {
+            updatedFills = [
+              ...trade.fills,
+              {
+                fillId: `fill-exit-${Date.now()}`,
+                type: 'EXIT',
+                price: numExitPrice,
+                quantity: selectedCloseQty,
+                timestamp: exitIso,
+                brokerage: autoCharges?.brokerage ?? 20,
+                exchangeFee: autoCharges?.exchangeFees ?? 0,
+                taxes: autoCharges?.taxes ?? 0,
+                notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
+              },
+            ];
+          } else {
+            const entryTimeStr = trade.entryTime ? new Date(trade.entryTime).toISOString() : exitIso;
+            updatedFills = [
+              {
+                fillId: `fill-entry-${trade.id || trade._id}`,
+                type: 'ENTRY',
+                price: entryPrice,
+                quantity: totalOpenQuantity,
+                timestamp: entryTimeStr,
+                brokerage: 20,
+                exchangeFee: 0,
+                taxes: 0,
+                notes: 'Initial position entry',
+              },
+              {
+                fillId: `fill-exit-${Date.now()}`,
+                type: 'EXIT',
+                price: numExitPrice,
+                quantity: selectedCloseQty,
+                timestamp: exitIso,
+                brokerage: autoCharges?.brokerage ?? 20,
+                exchangeFee: autoCharges?.exchangeFees ?? 0,
+                taxes: autoCharges?.taxes ?? 0,
+                notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
+              },
+            ];
+          }
+
+          const res = await api.trades.update(trade.id || trade._id, {
+            executionMode: 'ADVANCED',
+            status: 'OPEN',
+            fills: updatedFills,
+          });
+          clearTimeout(workingTimer);
+          return res;
+        } else {
+          const res = await api.trades.update(trade.id || trade._id, {
+            status: 'CLOSED',
+            exitTime: exitIso,
+            simpleExecution: {
+              exitPrice: numExitPrice,
+              ...feesToSave,
+            },
+          });
+          clearTimeout(workingTimer);
+          return res;
+        }
+      } catch (err: any) {
+        clearTimeout(workingTimer);
+        isSubmittingRef.current = false;
+        throw err;
       }
     },
     onSuccess: (data: any) => {
-      if (data?.brokerResult?.executedOnBroker) {
-        toast.success(`🟢 FYERS Live: ${data.brokerResult.message || `Exit executed for ${selectedCloseQty} qty`}`);
+      isSubmittingRef.current = false;
+      const bRes = data?.brokerResult;
+      setBrokerResultDetails(bRes || null);
+
+      if (bRes && bRes.orderStatus === 'REJECTED') {
+        setOrderStage('REJECTED');
+        setErrorMessage(bRes.message || 'Broker order was rejected by exchange.');
+        return;
+      }
+
+      setOrderStage('FILLED');
+
+      if (bRes?.executedOnBroker) {
+        toast.success(`🟢 FYERS Live: ${bRes.message || `Exit executed for ${selectedCloseQty} qty`}`);
       } else if (isPartial) {
         toast.success(`Partial exit of ${selectedCloseQty} qty @ ₹${numExitPrice} executed (+₹${netPnL} locked). Remaining: ${remainingQty} qty.`);
       } else {
         toast.success(`Trade ${trade.symbol} closed successfully.`);
       }
+
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['trade', trade.id || trade._id] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
-      if (onSuccess) {
-        if (!isPartial) {
-          const plannedRisk = trade?.risk?.plannedRiskAmount || trade?.risk?.riskBudgetAmount || null;
-          const rMultiple = plannedRisk && plannedRisk > 0 ? Number((netPnL / plannedRisk).toFixed(2)) : null;
-          const closedPayload = data?.data || {
-            ...trade,
-            status: 'CLOSED',
-            calculated: {
-              ...(trade.calculated || {}),
-              netPnL,
-              grossPnL,
-              realizedR: rMultiple,
-              totalFees: totalCosts,
-            },
-            simpleExecution: {
-              entryPrice,
-              exitPrice: numExitPrice,
-              quantity: totalOpenQuantity,
-              brokerage: autoCharges?.brokerage ?? 20,
-              taxes: autoCharges?.taxes ?? 0,
-            },
-          };
-          onSuccess(closedPayload);
-        } else {
-          onSuccess();
+
+      // Auto close dialog after brief delay on success so user sees filled state
+      setTimeout(() => {
+        if (onSuccess) {
+          if (!isPartial) {
+            const plannedRisk = trade?.risk?.plannedRiskAmount || trade?.risk?.riskBudgetAmount || null;
+            const rMult = plannedRisk && plannedRisk > 0 ? Number((netPnL / plannedRisk).toFixed(2)) : null;
+            const closedPayload = data?.data || {
+              ...trade,
+              status: 'CLOSED',
+              calculated: {
+                ...(trade.calculated || {}),
+                netPnL,
+                grossPnL,
+                realizedR: rMult,
+                totalFees: totalCosts,
+              },
+              simpleExecution: {
+                entryPrice,
+                exitPrice: numExitPrice,
+                quantity: totalOpenQuantity,
+                brokerage: autoCharges?.brokerage ?? 20,
+                taxes: autoCharges?.taxes ?? 0,
+              },
+            };
+            onSuccess(closedPayload);
+          } else {
+            onSuccess();
+          }
         }
-      }
-      onClose();
+        onClose();
+      }, 1200);
     },
     onError: (err: any) => {
+      isSubmittingRef.current = false;
+      setOrderStage('REJECTED');
       setErrorMessage(err.message || 'Failed to close trade position.');
     },
   });
 
   if (!trade) return null;
 
+  // Active step index for MUI Stepper
+  const activeStep =
+    orderStage === 'SENDING'
+      ? 0
+      : orderStage === 'WORKING'
+      ? 1
+      : orderStage === 'FILLED' || orderStage === 'REJECTED'
+      ? 2
+      : -1;
+
   return (
     <Dialog
       open={open}
-      onClose={onClose}
-      maxWidth="xs"
+      onClose={orderStage === 'SENDING' || orderStage === 'WORKING' ? undefined : onClose}
+      maxWidth="sm"
       fullWidth
       slotProps={{
         paper: {
           sx: {
             borderRadius: 3,
-            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : '#FFFFFF',
+            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.98)' : '#FFFFFF',
             backdropFilter: 'blur(16px)',
             border: `1px solid ${muiTheme.palette.divider}`,
             boxShadow: isDark
@@ -393,15 +520,180 @@ export function QuickCloseTradeDialog({
             {isPartial ? 'Book Partial Profit' : 'Close Trade Position'}
           </Typography>
         </Box>
-        <IconButton size="small" onClick={onClose} sx={{ color: muiTheme.palette.text.secondary }}>
+        <IconButton
+          size="small"
+          onClick={onClose}
+          disabled={orderStage === 'SENDING' || orderStage === 'WORKING'}
+          sx={{ color: muiTheme.palette.text.secondary }}
+        >
           <CloseRoundedIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
 
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 2.5 }}>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2.5 }}>
         {errorMessage && (
           <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ borderRadius: 2 }}>
             {errorMessage}
+          </Alert>
+        )}
+
+        {/* Order Status Stepper (Active during and after execution) */}
+        {orderStage !== 'IDLE' && (
+          <Card
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 2,
+              bgcolor: orderStage === 'FILLED'
+                ? alpha('#10B981', 0.08)
+                : orderStage === 'REJECTED'
+                ? alpha('#EF4444', 0.08)
+                : alpha('#3B82F6', 0.08),
+              borderColor: orderStage === 'FILLED'
+                ? alpha('#10B981', 0.4)
+                : orderStage === 'REJECTED'
+                ? alpha('#EF4444', 0.4)
+                : alpha('#3B82F6', 0.4),
+            }}
+          >
+            <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 1.5 }}>
+              <Step>
+                <StepLabel
+                  icon={
+                    <Box
+                      sx={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        bgcolor: activeStep >= 0 ? '#3B82F6' : 'text.disabled',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {activeStep > 0 ? '✓' : '1'}
+                    </Box>
+                  }
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                    Sending
+                  </Typography>
+                </StepLabel>
+              </Step>
+              <Step>
+                <StepLabel
+                  icon={
+                    <Box
+                      sx={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        bgcolor:
+                          activeStep > 1
+                            ? '#3B82F6'
+                            : activeStep === 1
+                            ? '#F59E0B'
+                            : 'text.disabled',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {activeStep > 1 ? '✓' : '2'}
+                    </Box>
+                  }
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                    Exchange Ack
+                  </Typography>
+                </StepLabel>
+              </Step>
+              <Step>
+                <StepLabel
+                  icon={
+                    <Box
+                      sx={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        bgcolor:
+                          orderStage === 'FILLED'
+                            ? '#10B981'
+                            : orderStage === 'REJECTED'
+                            ? '#EF4444'
+                            : 'text.disabled',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {orderStage === 'FILLED' ? '✓' : orderStage === 'REJECTED' ? '✕' : '3'}
+                    </Box>
+                  }
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                    {orderStage === 'REJECTED' ? 'Rejected' : 'Filled'}
+                  </Typography>
+                </StepLabel>
+              </Step>
+            </Stepper>
+
+            <Box sx={{ textAlign: 'center', mt: 1 }}>
+              {orderStage === 'SENDING' && (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                  <CircularProgress size={14} />
+                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                    Transmitting market order to FYERS API gateway...
+                  </Typography>
+                </Box>
+              )}
+              {orderStage === 'WORKING' && (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                  <SyncRoundedIcon sx={{ fontSize: 16, animation: 'spin 1s linear infinite' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: '#F59E0B' }}>
+                    Order working on exchange orderbook — awaiting execution fill...
+                  </Typography>
+                </Box>
+              )}
+              {orderStage === 'FILLED' && (
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 800, color: '#10B981' }}>
+                    🟢 Order Filled Successfully
+                  </Typography>
+                  {brokerResultDetails?.orderId && (
+                    <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: 'text.secondary', display: 'block' }}>
+                      FYERS Order ID: <strong>{brokerResultDetails.orderId}</strong>
+                      {brokerResultDetails.tradedPrice ? ` @ ₹${brokerResultDetails.tradedPrice}` : ''}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+              {orderStage === 'REJECTED' && (
+                <Typography variant="body2" sx={{ fontWeight: 800, color: '#EF4444' }}>
+                  🚨 Order Rejected: {brokerResultDetails?.message || errorMessage || 'Exchange rejected the order.'}
+                </Typography>
+              )}
+            </Box>
+          </Card>
+        )}
+
+        {/* Data Freshness Warning / Guard Banner */}
+        {isBrokerExecutionBlocked && (
+          <Alert
+            severity="warning"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 20 }} />}
+            sx={{ borderRadius: 2, fontSize: '0.78rem' }}
+          >
+            <strong>Live Broker Execution Disabled:</strong> {brokerBlockReason || 'Market data is not real-time or broker token expired.'} Actions will record in SetupMint journal only.
           </Alert>
         )}
 
@@ -449,7 +741,7 @@ export function QuickCloseTradeDialog({
 
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
             <span>Entry: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>₹{entryPrice}</strong></span>
-            <span>Total Position: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{totalOpenQuantity} Qty</strong></span>
+            <span>Position: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{totalOpenQuantity} Qty{isLotBased ? ` (${totalLots} Lots)` : ''}</strong></span>
             <span>Account: <strong>{trade.accountName || 'Trading Account'}</strong></span>
           </Box>
         </Card>
@@ -596,12 +888,12 @@ export function QuickCloseTradeDialog({
             }}
           >
             <Typography variant="caption" sx={{ fontWeight: 700 }}>
-              Closing: <span style={{ color: muiTheme.palette.primary.main }}>{selectedCloseQty} Qty</span>
+              Closing: <span style={{ color: muiTheme.palette.primary.main }}>{selectedCloseQty} Qty{isLotBased ? ` (${preFlightPreview?.exitLots || 1} Lots)` : ''}</span>
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               Runner Remaining:{' '}
               <strong style={{ color: remainingQty > 0 ? (isDark ? '#34D399' : '#059669') : 'inherit' }}>
-                {remainingQty} Qty
+                {remainingQty} Qty{isLotBased ? ` (${preFlightPreview?.remainingLots || 0} Lots)` : ''}
               </strong>
             </Typography>
           </Box>
@@ -641,27 +933,35 @@ export function QuickCloseTradeDialog({
                 Live Broker Order (FYERS API v3)
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
-                {executeOnBroker
+                {isBrokerExecutionBlocked
+                  ? brokerBlockReason || 'Broker execution is unavailable'
+                  : executeOnBroker
                   ? `Places a real market exit order for ${selectedCloseQty} qty directly with FYERS exchange gateway`
                   : 'Record in SetupMint journal only without placing exchange order'}
               </Typography>
             </Box>
           </Box>
-          <Switch
-            checked={executeOnBroker}
-            onChange={(e) => setExecuteOnBroker(e.target.checked)}
-            color="success"
-            size="small"
-          />
+          <Tooltip title={isBrokerExecutionBlocked ? (brokerBlockReason || 'Broker execution blocked') : ''} arrow>
+            <span>
+              <Switch
+                checked={executeOnBroker}
+                disabled={isBrokerExecutionBlocked || orderStage !== 'IDLE'}
+                onChange={(e) => setExecuteOnBroker(e.target.checked)}
+                color="success"
+                size="small"
+              />
+            </span>
+          </Tooltip>
         </Box>
 
         {/* Exit Price Input */}
         <TextField
-          label="Exit Price"
+          label="Estimated Exit Fill Price"
           type="number"
           required
           autoFocus
           value={exitPrice}
+          disabled={orderStage !== 'IDLE'}
           onChange={(e) => setExitPrice(e.target.value)}
           placeholder={`e.g. ${entryPrice}`}
           slotProps={{
@@ -670,14 +970,26 @@ export function QuickCloseTradeDialog({
               sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
             },
           }}
-          helperText="Execution price at which the position was closed"
+          helperText="Reference price for financial outcome preview & market order"
         />
+
+        {/* Slippage Warning Alert if deviation detected */}
+        {preFlightPreview?.isSlippageWarning && (
+          <Alert
+            severity="warning"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 18 }} />}
+            sx={{ py: 0.5, borderRadius: 2, fontSize: '0.75rem' }}
+          >
+            <strong>Slippage Alert:</strong> {preFlightPreview.slippageMessage}
+          </Alert>
+        )}
 
         {/* Exit Timestamp Input */}
         <TextField
           label="Exit Date & Time"
           type="datetime-local"
           required
+          disabled={orderStage !== 'IDLE'}
           value={exitTime}
           onChange={(e) => setExitTime(e.target.value)}
           slotProps={{
@@ -694,7 +1006,7 @@ export function QuickCloseTradeDialog({
                 Statutory Charges & Fees
               </Typography>
               <Chip
-                label={manualFeesOverride ? 'MANUAL' : 'AUTO'}
+                label={manualFeesOverride ? 'MANUAL' : 'AUTO (SEBI/GST)'}
                 size="small"
                 color={manualFeesOverride ? 'warning' : 'primary'}
                 sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 800 }}
@@ -749,7 +1061,7 @@ export function QuickCloseTradeDialog({
           )}
         </Box>
 
-        {/* Live Calculation Preview Banner */}
+        {/* Pre-Flight Financial Outcome Preview Banner */}
         <Card
           variant="outlined"
           sx={{
@@ -767,8 +1079,27 @@ export function QuickCloseTradeDialog({
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+              PRE-FLIGHT OUTCOME PREVIEW
+            </Typography>
+            {realizedR !== null && (
+              <Chip
+                label={realizedR >= 0 ? `+${realizedR}R Realized` : `${realizedR}R`}
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '0.625rem',
+                  fontWeight: 800,
+                  bgcolor: realizedR >= 0 ? alpha('#10B981', 0.2) : alpha('#EF4444', 0.2),
+                  color: realizedR >= 0 ? '#10B981' : '#EF4444',
+                }}
+              />
+            )}
+          </Box>
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Gross P&L
+              Gross P&L ({selectedCloseQty} Qty @ ₹{numExitPrice || 0})
             </Typography>
             <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
               {isPriceValid ? formatCurrency(grossPnL) : '—'}
@@ -776,7 +1107,7 @@ export function QuickCloseTradeDialog({
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Total Costs & Taxes
+              Total Costs & Taxes (STT, Stamp, Exchange, GST)
             </Typography>
             <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary }}>
               {isPriceValid ? formatCurrency(totalCosts) : '—'}
@@ -793,7 +1124,7 @@ export function QuickCloseTradeDialog({
             }}
           >
             <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-              Net Realized P&L
+              Estimated Net Realized P&L
             </Typography>
             <Typography
               variant="h6"
@@ -813,28 +1144,62 @@ export function QuickCloseTradeDialog({
         </Card>
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
-        <Button onClick={onClose} disabled={closeMutation.isPending} sx={{ fontWeight: 600 }}>
+      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Button
+          onClick={onClose}
+          disabled={orderStage === 'SENDING' || orderStage === 'WORKING'}
+          sx={{ fontWeight: 600 }}
+        >
           Cancel
         </Button>
-        <Button
-          variant="contained"
-          color={isPartial ? 'success' : 'primary'}
-          onClick={() => closeMutation.mutate()}
-          disabled={!isPriceValid || closeMutation.isPending}
-          startIcon={closeMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <CheckCircleRoundedIcon />}
-          sx={{ fontWeight: 700, borderRadius: 2 }}
-        >
-          {closeMutation.isPending
-            ? 'Transmitting Order...'
-            : executeOnBroker
-            ? isPartial
-              ? `⚡ Execute 50% Live Exit (${selectedCloseQty} Qty)`
-              : `⚡ Execute Live Close (${selectedCloseQty} Qty)`
-            : isPartial
-            ? `Book ${selectedCloseQty} Qty Partial Exit`
-            : `Close Full Position (${selectedCloseQty} Qty)`}
-        </Button>
+
+        {executeOnBroker ? (
+          <HoldToConfirmButton
+            holdDurationMs={600}
+            onConfirm={() => closeMutation.mutate()}
+            disabled={!isPriceValid || orderStage !== 'IDLE'}
+            disabledReason={
+              !isPriceValid
+                ? 'Please specify a valid exit price'
+                : isBrokerExecutionBlocked
+                ? brokerBlockReason || 'Broker execution is blocked'
+                : orderStage !== 'IDLE'
+                ? 'Order is currently processing'
+                : undefined
+            }
+            color={isPartial ? 'success' : 'error'}
+            variant="contained"
+            holdingText="Transmitting in"
+            completedText="Order Dispatched!"
+            startIcon={orderStage === 'SENDING' ? <CircularProgress size={16} color="inherit" /> : <FlashOnRoundedIcon />}
+            sx={{ fontWeight: 700, borderRadius: 2, px: 2.5, py: 0.9 }}
+          >
+            {orderStage === 'SENDING'
+              ? 'Sending Order...'
+              : orderStage === 'WORKING'
+              ? 'Working on Gateway...'
+              : orderStage === 'FILLED'
+              ? 'Order Filled'
+              : isPartial
+              ? `⚡ Hold to Exit 50% (${selectedCloseQty} Qty)`
+              : `⚡ Hold to Close 100% (${selectedCloseQty} Qty)`}
+          </HoldToConfirmButton>
+        ) : (
+          <Button
+            variant="contained"
+            color={isPartial ? 'success' : 'primary'}
+            onClick={() => closeMutation.mutate()}
+            disabled={!isPriceValid || orderStage !== 'IDLE'}
+            startIcon={orderStage === 'SENDING' ? <CircularProgress size={16} color="inherit" /> : <CheckCircleRoundedIcon />}
+            sx={{ fontWeight: 700, borderRadius: 2 }}
+          >
+            {orderStage === 'SENDING'
+              ? 'Saving Journal...'
+              : isPartial
+              ? `Book ${selectedCloseQty} Qty in Journal`
+              : `Close Full Position (${selectedCloseQty} Qty)`}
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

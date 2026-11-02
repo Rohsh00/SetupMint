@@ -116,6 +116,27 @@ const UserSchema = new Schema<IUserDoc>(
       telegramAlertEvents: { type: Object, default: DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents },
       hardDisciplineLockoutEnabled: { type: Boolean, default: false },
       hardDisciplineLockoutDurationMins: { type: Number, default: 60 },
+      staleDataThresholdSeconds: { type: Number, default: 10 },
+      requireHoldToConfirm: { type: Boolean, default: true },
+      cardDensity: { type: String, enum: ['glance', 'standard', 'deep'], default: 'standard' },
+      sortMode: { type: String, enum: ['urgency', 'entryTime'], default: 'urgency' },
+      ladderViewMode: { type: String, enum: ['classic', 'vertical'], default: 'classic' },
+      layoutPresets: {
+        type: [
+          {
+            id: { type: String, required: true },
+            name: { type: String, required: true },
+            refreshIntervalSec: { type: Number, required: true },
+            cardDensity: { type: String, enum: ['glance', 'standard', 'deep'], required: true },
+            ladderViewMode: { type: String, enum: ['classic', 'vertical'], required: true },
+            sortMode: { type: String, enum: ['urgency', 'entryTime'], required: true },
+            scalperHotkeysEnabled: { type: Boolean, required: true },
+            isBuiltIn: { type: Boolean, default: false },
+          },
+        ],
+        default: DEFAULT_LIVE_WATCHER_SETTINGS.layoutPresets,
+      },
+      activePresetId: { type: String, default: 'positional' },
     },
   },
   {

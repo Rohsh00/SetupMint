@@ -34,6 +34,7 @@ import { holidayRoutes } from './routes/holiday.routes.js';
 import { HolidayService } from './services/holiday.service.js';
 import { InstrumentClassifier } from './services/instrument-classifier.service.js';
 import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
+import { TelegramPollingService } from './services/telegram-polling.service.js';
 
 export async function buildApp() {
   // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
@@ -276,8 +277,9 @@ if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.
 
       const app = await buildApp();
 
-      // Start server-side execution worker daemon
+      // Start server-side execution worker and telegram polling daemons
       LiveExecutionWorker.start();
+      await TelegramPollingService.start();
 
       await app.listen({ port: config.port, host: config.host });
       console.log(`\n======================================================`);
@@ -288,6 +290,7 @@ if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.
       const shutdown = async () => {
         console.log('\nShutting down SetupMint gracefully...');
         LiveExecutionWorker.stop();
+        TelegramPollingService.stop();
         await app.close();
         await disconnectDatabase();
         process.exit(0);

@@ -6,6 +6,7 @@ import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/i
 import { requireAuth } from '../middleware/auth.js';
 import { BackupStatusService } from '../services/backup-status.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
+import { TelegramPollingService } from '../services/telegram-polling.service.js';
 import { encryptSecret, decryptSecret } from '../services/crypto.service.js';
 
 function maskLiveWatcherSettings(settings: any) {
@@ -136,6 +137,18 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     const user = await User.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
 
+    // Synchronize background long-polling for Telegram bot updates
+    if (user?.liveWatcherSettings?.telegramBotToken) {
+      const activeBotToken = decryptSecret(user.liveWatcherSettings.telegramBotToken);
+      if (activeBotToken) {
+        if (user.liveWatcherSettings.telegramAlertsEnabled !== false) {
+          TelegramPollingService.startPollingForBot(activeBotToken);
+        } else {
+          TelegramPollingService.stopPollingForBot(activeBotToken);
+        }
+      }
+    }
+
     return reply.send({
       success: true,
       data: {
@@ -225,7 +238,22 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       });
     }
 
-    return reply.send({ success: true, message: res.message });
+    // Auto-save the verified botToken and chatId immediately so callbacks and buttons can resolve the user
+    if (user) {
+      const encrypted = encryptSecret(botToken);
+      await User.findByIdAndUpdate(user._id, {
+        $set: {
+          'liveWatcherSettings.telegramBotToken': encrypted,
+          'liveWatcherSettings.telegramChatId': String(chatId).trim(),
+          'liveWatcherSettings.telegramAlertsEnabled': true,
+        },
+      });
+    }
+
+    // Start long-polling listener so interactive buttons respond immediately without requiring a public HTTPS webhook
+    TelegramPollingService.startPollingForBot(botToken);
+
+    return reply.send({ success: true, message: res.message, saved: true });
   });
 
   // Register Telegram Webhook URL for interactive buttons and two-way commands
@@ -261,6 +289,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         error: { code: 'WEBHOOK_FAILED', message: res.message },
       });
     }
+
+    // Since webhook is successfully registered with Telegram, pause local long polling
+    TelegramPollingService.stopPollingForBot(botToken);
 
     return reply.send({ success: true, message: res.message });
   });

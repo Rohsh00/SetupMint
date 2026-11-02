@@ -395,7 +395,9 @@ export function SettingsPage() {
     try {
       const res = await api.settings.testTelegram({ botToken: telegramBotToken, chatId: telegramChatId });
       if (res.success) {
-        toast.success(res.message || 'Telegram test message delivered successfully!');
+        setTelegramAlertsEnabled(true);
+        refreshUser();
+        toast.success(res.message || 'Telegram test message delivered successfully! Interactive buttons armed.');
       } else {
         toast.error(res.error?.message || 'Failed to send test message to Telegram.');
       }

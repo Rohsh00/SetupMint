@@ -583,9 +583,9 @@ export class TelegramAlertService {
   }
 
   /**
-   * Handles incoming Webhook updates from Telegram (button clicks and commands).
+   * Handles incoming Webhook or Long-Polling updates from Telegram (button clicks and commands).
    */
-  static async processWebhookUpdate(update: any): Promise<void> {
+  static async processWebhookUpdate(update: any, knownBotToken?: string): Promise<void> {
     if (!update) return;
 
     // Deduplicate by update_id via unique index on TelegramUpdateAudit
@@ -607,35 +607,69 @@ export class TelegramAlertService {
 
     // 1. Handle Inline Button Clicks (callback_query)
     if (update.callback_query) {
-      await this.handleCallbackQuery(update.callback_query);
+      await this.handleCallbackQuery(update.callback_query, knownBotToken);
       return;
     }
 
     // 2. Handle Text Commands (message)
     if (update.message?.text) {
-      await this.handleTextMessage(update.message);
+      await this.handleTextMessage(update.message, knownBotToken);
     }
   }
 
   /**
    * Handles button callback queries with full idempotency, cardVersion matching, and slippage guard.
    */
-  private static async handleCallbackQuery(cq: any): Promise<void> {
+  private static async handleCallbackQuery(cq: any, knownBotToken?: string): Promise<void> {
     const chatId = cq.message?.chat?.id || cq.from?.id;
+    const fromId = cq.from?.id;
     const data: string = cq.data || '';
     const messageId = cq.message?.message_id;
 
-    // a. Resolve user from chatId
-    const user = await User.findOne({
-      'liveWatcherSettings.telegramChatId': String(chatId),
+    // a. Resolve user from chatId or fromId
+    let user = await User.findOne({
+      $or: [
+        { 'liveWatcherSettings.telegramChatId': String(chatId) },
+        ...(fromId ? [{ 'liveWatcherSettings.telegramChatId': String(fromId) }] : []),
+      ],
     });
 
-    if (!user) {
-      return;
+    // If still not resolved but knownBotToken was provided, find user by bot token
+    let botToken: string | undefined = knownBotToken;
+    if (!user && knownBotToken) {
+      const allUsers = await User.find({
+        'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
+      });
+      for (const u of allUsers) {
+        const uToken = decryptSecret(u.liveWatcherSettings?.telegramBotToken);
+        if (uToken === knownBotToken) {
+          user = u;
+          if (u.liveWatcherSettings && !u.liveWatcherSettings.telegramChatId && chatId) {
+            u.liveWatcherSettings.telegramChatId = String(chatId);
+            u.liveWatcherSettings.telegramAlertsEnabled = true;
+            await u.save();
+          }
+          break;
+        }
+      }
     }
 
-    const rawToken = user?.liveWatcherSettings?.telegramBotToken;
-    let botToken = rawToken ? decryptSecret(rawToken) || rawToken : null;
+    if (!botToken && user) {
+      const rawToken = user?.liveWatcherSettings?.telegramBotToken;
+      botToken = rawToken ? (decryptSecret(rawToken) || rawToken) : undefined;
+    }
+
+    if (!user) {
+      if (botToken) {
+        await this.answerCallbackQuery(
+          botToken,
+          cq.id,
+          '⚠️ Chat not linked. Click "Save Execution Settings" in SetupMint to activate.',
+          true
+        );
+      }
+      return;
+    }
 
     // Fast-path for global commands
     if (data === 'cmd_pnl') {
@@ -938,20 +972,43 @@ export class TelegramAlertService {
   /**
    * Handles text commands sent to the Telegram bot.
    */
-  private static async handleTextMessage(msg: any): Promise<void> {
+  private static async handleTextMessage(msg: any, knownBotToken?: string): Promise<void> {
     const chatId = msg.chat?.id;
+    const fromId = msg.from?.id;
     const text: string = (msg.text || '').trim();
     const [rawCmd, ...args] = text.split(/\s+/);
     const command = rawCmd.toLowerCase();
 
     // Check if user is linked
-    const user = await User.findOne({
-      'liveWatcherSettings.telegramChatId': String(chatId),
+    let user = await User.findOne({
+      $or: [
+        { 'liveWatcherSettings.telegramChatId': String(chatId) },
+        ...(fromId ? [{ 'liveWatcherSettings.telegramChatId': String(fromId) }] : []),
+      ],
     });
+
+    let botToken: string | undefined = knownBotToken;
+    if (!user && knownBotToken) {
+      const candidates = await User.find({
+        'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
+      });
+      for (const cand of candidates) {
+        const dec = decryptSecret(cand.liveWatcherSettings?.telegramBotToken);
+        if (dec === knownBotToken) {
+          user = cand;
+          if (cand.liveWatcherSettings && !cand.liveWatcherSettings.telegramChatId && chatId) {
+            cand.liveWatcherSettings.telegramChatId = String(chatId);
+            cand.liveWatcherSettings.telegramAlertsEnabled = true;
+            await cand.save();
+          }
+          break;
+        }
+      }
+    }
 
     if (!user) {
       // Respond with unlinked guide
-      const fallbackToken = config.telegramBotToken;
+      const fallbackToken = knownBotToken || config.telegramBotToken;
       if (fallbackToken) {
         await this.sendMessage(
           fallbackToken,
@@ -962,14 +1019,16 @@ export class TelegramAlertService {
           `1. Open SetupMint in your browser\n` +
           `2. Go to <b>Settings > Live Watcher > Telegram Off-Screen Push Alerts</b>\n` +
           `3. Paste your Chat ID (<code>${chatId}</code>) and your Bot Token\n` +
-          `4. Click <b>Test Connection</b> & <b>Save Settings</b>.`
+          `4. Click <b>Test Connection</b> & <b>Save Execution Settings</b>.`
         );
       }
       return;
     }
 
-    const rawToken = user.liveWatcherSettings?.telegramBotToken;
-    const botToken = decryptSecret(rawToken) || rawToken;
+    if (!botToken) {
+      const rawToken = user.liveWatcherSettings?.telegramBotToken;
+      botToken = rawToken ? (decryptSecret(rawToken) || rawToken) : undefined;
+    }
     if (!botToken) return;
 
     switch (command) {

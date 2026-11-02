@@ -257,7 +257,12 @@ export async function buildApp() {
 }
 
 // Start server if executed directly
-if (process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.js')) {
+if (
+  process.argv[1]?.endsWith('server.ts') ||
+  process.argv[1]?.endsWith('server.js') ||
+  Boolean(process.env.pm_id) ||
+  Boolean(process.env.PM2_HOME)
+) {
   async function start() {
     try {
       await connectDatabase();

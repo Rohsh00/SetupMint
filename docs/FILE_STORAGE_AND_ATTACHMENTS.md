@@ -22,10 +22,10 @@ SetupMint implements **100% cloud-only object storage** for chart screenshot att
 
 ## 2. Supported Formats & Upload Specifications
 
-- **Accepted MIME Types:** `image/png`, `image/jpeg`, `image/webp` (and synthetic demo charts in `image/svg+xml`).
+- **Accepted MIME Types:** `image/png`, `image/jpeg`, `image/webp` (and synthetic demo charts in `image/svg+xml`), as well as voice reflections (`audio/ogg`, `audio/mpeg`, `audio/mp4`).
 - **Maximum File Size:** Configured via `MAX_FILE_SIZE_MB` in `.env` (default: **10 MB**).
 - **Maximum Screenshots per Trade:** **12 images**.
-- **Key Pattern:** Enforced by `assertValidKey()` allowing only `<uuid>.(png|jpe?g|webp|svg)` and synthetic demo charts. Path traversal (`..`, `/`, `\`) is strictly rejected.
+- **Key Pattern:** Enforced by `assertValidKey()` allowing `<uuid>.(png|jpe?g|webp|svg|oga|ogg|mp3|wav|m4a|aac)`, synthetic demo charts (`demo_chart_*.svg`), and voice reflection recordings (`voice_<tradeId>_<timestamp>_<rand>.<ext>`). Path traversal (`..`, `/`, `\`) is strictly rejected.
 - **Client Capture Modes:**
   - Multi-file drag-and-drop onto [`TradeAttachmentUploader`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/trades/attachments/TradeAttachmentUploader.tsx).
   - Direct clipboard paste (`Ctrl+V` / `Cmd+V`) from system screenshot tools (e.g. macOS `Cmd+Ctrl+Shift+4`).

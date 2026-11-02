@@ -36,6 +36,8 @@ import {
   CandlestickChartRounded,
   WarningAmberRounded,
   RefreshRounded,
+  MicRounded,
+  GraphicEqRounded,
 } from '@mui/icons-material';
 import {
   AttachmentCategory,
@@ -210,10 +212,22 @@ export function TradeScreenshotGallery({
     '1D': 6,
   };
 
+  const isAudioAttachment = (att: IAttachment): boolean => {
+    return Boolean(
+      att.mimeType?.startsWith('audio/') ||
+      att.originalName?.match(/\.(oga|ogg|mp3|wav|m4a|aac)$/i) ||
+      att.caption?.includes('Voice Reflection') ||
+      att.description?.includes('Voice Reflection')
+    );
+  };
+
+  const voiceNotesCount = attachments.filter(isAudioAttachment).length;
+
   // Filter attachments based on category tab and sort AUTO_CHARTs by timeframe order (1m to 1D)
   const filteredAttachments = [...attachments]
     .filter((att) => {
       if (activeCategoryFilter === 'ALL') return true;
+      if (activeCategoryFilter === 'VOICE') return isAudioAttachment(att);
       return att.category === activeCategoryFilter;
     })
     .sort((a, b) => {
@@ -488,6 +502,18 @@ export function TradeScreenshotGallery({
               value="ALL"
               label={`All (${attachments.length})`}
             />
+            {voiceNotesCount > 0 && (
+              <Tab
+                value="VOICE"
+                icon={<MicRounded sx={{ fontSize: 14 }} />}
+                iconPosition="start"
+                label={`Voice Notes (${voiceNotesCount})`}
+                sx={{
+                  color: '#c084fc !important',
+                  fontWeight: 800,
+                }}
+              />
+            )}
             {CHART_ATTACHMENT_CATEGORIES.map((cat) => {
               const count = attachments.filter((a) => a.category === cat.value).length;
               if (count === 0) return null;
@@ -529,170 +555,236 @@ export function TradeScreenshotGallery({
                     },
                   }}
                 >
-                  {/* Thumbnail Image Container */}
-                  <Box
-                    onClick={() => {
-                      openInteractiveChart(
-                        att.timeframe || (att.chartMeta as any)?.resolution || '5'
-                      );
-                    }}
-                    sx={{
-                      position: 'relative',
-                      height: 190,
-                      backgroundColor: '#030712',
-                      cursor: 'pointer',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <SnapshotThumbnail
-                      attachment={att}
-                      alt={att.caption || att.originalName}
-                      textColor={muiTheme.palette.text.secondary}
-                    />
-
-                    {/* Category Chip Badge */}
-                    <Chip
-                      icon={
-                        att.category === 'AUTO_CHART' ? (
-                          <ElectricBoltRounded sx={{ fontSize: 13, color: '#06b6d4 !important' }} />
-                        ) : undefined
-                      }
-                      label={att.category === 'AUTO_CHART' ? 'Auto Chart' : catMeta?.label || att.category}
-                      size="small"
-                      sx={{
-                        position: 'absolute',
-                        top: 10,
-                        left: 10,
-                        fontWeight: 700,
-                        fontSize: '0.6875rem',
-                        backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(8, 51, 68, 0.92)' : 'rgba(0, 0, 0, 0.8)',
-                        color: catMeta?.badgeColor || '#fff',
-                        backdropFilter: 'blur(6px)',
-                        border: `1px solid ${catMeta?.badgeColor ? `${catMeta.badgeColor}88` : 'rgba(255,255,255,0.2)'}`,
-                      }}
-                    />
-
-                    {/* Timeframe Badge */}
-                    {(att.timeframe || att.chartMeta?.resolution) && (
-                      <Tooltip
-                        title={
-                          att.chartMeta
-                            ? `Padding: ${att.chartMeta.appliedBefore ?? att.chartMeta.paddingBefore} pre / ${att.chartMeta.appliedAfter ?? att.chartMeta.paddingAfter} post`
-                            : ''
-                        }
-                      >
-                        <Chip
-                          icon={<AccessTimeRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
-                          label={att.timeframe || att.chartMeta?.resolution}
-                          size="small"
-                          sx={{
-                            position: 'absolute',
-                            top: 10,
-                            right: 10,
-                            fontWeight: 700,
-                            fontSize: '0.6875rem',
-                            backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(6, 182, 212, 0.85)' : 'rgba(0, 0, 0, 0.75)',
-                            color: '#fff',
-                            backdropFilter: 'blur(6px)',
-                          }}
-                        />
-                      </Tooltip>
-                    )}
-
-                    {/* Stale Badge on Image Thumbnail */}
-                    {att.category === 'AUTO_CHART' && att.chartMeta?.isStale && (
-                      <Chip
-                        icon={<WarningAmberRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
-                        label="Stale Snapshot"
-                        size="small"
-                        color="warning"
-                        sx={{
-                          position: 'absolute',
-                          bottom: 10,
-                          left: 10,
-                          fontWeight: 700,
-                          fontSize: '0.6875rem',
-                          backdropFilter: 'blur(6px)',
-                          boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)',
-                        }}
-                      />
-                    )}
-
-                    {/* Hover Overlay with Action Buttons */}
+                  {/* Thumbnail Image Container OR Audio Player */}
+                  {isAudioAttachment(att) ? (
                     <Box
                       sx={{
-                        position: 'absolute',
-                        inset: 0,
-                        backgroundColor: 'rgba(0, 0, 0, 0.45)',
-                        opacity: 0,
-                        transition: 'opacity 0.2s',
+                        position: 'relative',
+                        height: 190,
+                        background: isDark
+                          ? 'linear-gradient(135deg, rgba(88, 28, 135, 0.35) 0%, rgba(15, 23, 42, 0.95) 100%)'
+                          : 'linear-gradient(135deg, rgba(243, 232, 255, 0.9) 0%, rgba(255, 255, 255, 0.95) 100%)',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 1,
-                        p: 1.5,
-                        '&:hover': { opacity: 1 },
+                        p: 2,
+                        borderBottom: `1px solid ${muiTheme.palette.divider}`,
                       }}
                     >
-                      <Box
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
-                        }}
+                      <Chip
+                        icon={<MicRounded sx={{ fontSize: 13, color: '#c084fc !important' }} />}
+                        label="Voice Reflection"
+                        size="small"
                         sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 0.75,
-                          backgroundColor: 'rgba(6, 182, 212, 0.95)',
-                          color: '#fff',
-                          px: 2,
-                          py: 0.75,
-                          borderRadius: 2,
-                          fontSize: '0.75rem',
-                          fontWeight: 800,
-                          backdropFilter: 'blur(4px)',
-                          boxShadow: '0 4px 12px rgba(6, 182, 212, 0.4)',
-                          transition: 'all 0.15s ease',
-                          '&:hover': {
-                            backgroundColor: '#0891b2',
-                            transform: 'scale(1.03)',
-                          },
+                          position: 'absolute',
+                          top: 10,
+                          left: 10,
+                          fontWeight: 700,
+                          fontSize: '0.6875rem',
+                          backgroundColor: isDark ? 'rgba(88, 28, 135, 0.85)' : 'rgba(233, 213, 255, 0.9)',
+                          color: isDark ? '#e9d5ff' : '#6b21a8',
+                          backdropFilter: 'blur(6px)',
+                          border: '1px solid rgba(192, 132, 252, 0.3)',
                         }}
-                      >
-                        <ShowChartRounded sx={{ fontSize: 16 }} />
-                        Interactive Real Chart
-                      </Box>
+                      />
 
                       <Box
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openViewerAt(att.id || (att as any)._id);
-                        }}
                         sx={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 0.75,
-                          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-                          color: '#e2e8f0',
-                          px: 1.75,
-                          py: 0.5,
-                          borderRadius: 2,
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          backdropFilter: 'blur(4px)',
-                          transition: 'all 0.15s ease',
-                          '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.9)',
-                            transform: 'scale(1.03)',
-                          },
+                          justifyContent: 'center',
+                          width: 48,
+                          height: 48,
+                          borderRadius: '50%',
+                          backgroundColor: isDark ? 'rgba(168, 85, 247, 0.18)' : 'rgba(168, 85, 247, 0.12)',
+                          border: '1px solid rgba(168, 85, 247, 0.35)',
+                          mb: 1.5,
+                          mt: 1.5,
+                          boxShadow: '0 4px 14px rgba(168, 85, 247, 0.25)',
                         }}
                       >
-                        <VisibilityRounded sx={{ fontSize: 14 }} />
-                        View Full Screen
+                        <GraphicEqRounded sx={{ fontSize: 26, color: '#c084fc' }} />
+                      </Box>
+
+                      <Box sx={{ width: '100%', px: 1 }}>
+                        <audio
+                          controls
+                          src={api.attachments.resolveAttachmentUrl(att)}
+                          style={{
+                            width: '100%',
+                            height: 36,
+                            borderRadius: 18,
+                            outline: 'none',
+                          }}
+                        />
                       </Box>
                     </Box>
-                  </Box>
+                  ) : (
+                    <Box
+                      onClick={() => {
+                        openInteractiveChart(
+                          att.timeframe || (att.chartMeta as any)?.resolution || '5'
+                        );
+                      }}
+                      sx={{
+                        position: 'relative',
+                        height: 190,
+                        backgroundColor: '#030712',
+                        cursor: 'pointer',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <SnapshotThumbnail
+                        attachment={att}
+                        alt={att.caption || att.originalName}
+                        textColor={muiTheme.palette.text.secondary}
+                      />
+
+                      {/* Category Chip Badge */}
+                      <Chip
+                        icon={
+                          att.category === 'AUTO_CHART' ? (
+                            <ElectricBoltRounded sx={{ fontSize: 13, color: '#06b6d4 !important' }} />
+                          ) : undefined
+                        }
+                        label={att.category === 'AUTO_CHART' ? 'Auto Chart' : catMeta?.label || att.category}
+                        size="small"
+                        sx={{
+                          position: 'absolute',
+                          top: 10,
+                          left: 10,
+                          fontWeight: 700,
+                          fontSize: '0.6875rem',
+                          backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(8, 51, 68, 0.92)' : 'rgba(0, 0, 0, 0.8)',
+                          color: catMeta?.badgeColor || '#fff',
+                          backdropFilter: 'blur(6px)',
+                          border: `1px solid ${catMeta?.badgeColor ? `${catMeta.badgeColor}88` : 'rgba(255,255,255,0.2)'}`,
+                        }}
+                      />
+
+                      {/* Timeframe Badge */}
+                      {(att.timeframe || att.chartMeta?.resolution) && (
+                        <Tooltip
+                          title={
+                            att.chartMeta
+                              ? `Padding: ${att.chartMeta.appliedBefore ?? att.chartMeta.paddingBefore} pre / ${att.chartMeta.appliedAfter ?? att.chartMeta.paddingAfter} post`
+                              : ''
+                          }
+                        >
+                          <Chip
+                            icon={<AccessTimeRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
+                            label={att.timeframe || att.chartMeta?.resolution}
+                            size="small"
+                            sx={{
+                              position: 'absolute',
+                              top: 10,
+                              right: 10,
+                              fontWeight: 700,
+                              fontSize: '0.6875rem',
+                              backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(6, 182, 212, 0.85)' : 'rgba(0, 0, 0, 0.75)',
+                              color: '#fff',
+                              backdropFilter: 'blur(6px)',
+                            }}
+                          />
+                        </Tooltip>
+                      )}
+
+                      {/* Stale Badge on Image Thumbnail */}
+                      {att.category === 'AUTO_CHART' && att.chartMeta?.isStale && (
+                        <Chip
+                          icon={<WarningAmberRounded sx={{ fontSize: 13, color: '#fff !important' }} />}
+                          label="Stale Snapshot"
+                          size="small"
+                          color="warning"
+                          sx={{
+                            position: 'absolute',
+                            bottom: 10,
+                            left: 10,
+                            fontWeight: 700,
+                            fontSize: '0.6875rem',
+                            backdropFilter: 'blur(6px)',
+                            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)',
+                          }}
+                        />
+                      )}
+
+                      {/* Hover Overlay with Action Buttons */}
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          inset: 0,
+                          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                          opacity: 0,
+                          transition: 'opacity 0.2s',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 1,
+                          p: 1.5,
+                          '&:hover': { opacity: 1 },
+                        }}
+                      >
+                        <Box
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
+                          }}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.75,
+                            backgroundColor: 'rgba(6, 182, 212, 0.95)',
+                            color: '#fff',
+                            px: 2,
+                            py: 0.75,
+                            borderRadius: 2,
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                            backdropFilter: 'blur(4px)',
+                            boxShadow: '0 4px 12px rgba(6, 182, 212, 0.4)',
+                            transition: 'all 0.15s ease',
+                            '&:hover': {
+                              backgroundColor: '#0891b2',
+                              transform: 'scale(1.03)',
+                            },
+                          }}
+                        >
+                          <ShowChartRounded sx={{ fontSize: 16 }} />
+                          Interactive Real Chart
+                        </Box>
+
+                        <Box
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openViewerAt(att.id || (att as any)._id);
+                          }}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.75,
+                            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                            color: '#e2e8f0',
+                            px: 1.75,
+                            py: 0.5,
+                            borderRadius: 2,
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            backdropFilter: 'blur(4px)',
+                            transition: 'all 0.15s ease',
+                            '&:hover': {
+                              backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                              transform: 'scale(1.03)',
+                            },
+                          }}
+                        >
+                          <VisibilityRounded sx={{ fontSize: 14 }} />
+                          View Full Screen
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
 
                   {/* Card Content & Caption */}
                   <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
@@ -762,7 +854,9 @@ export function TradeScreenshotGallery({
                             color: muiTheme.palette.text.secondary,
                           }}
                         >
-                          {(att.sizeBytes / 1024 / 1024).toFixed(2)} MB
+                          {att.sizeBytes < 1024 * 1024
+                            ? `${(att.sizeBytes / 1024).toFixed(1)} KB`
+                            : `${(att.sizeBytes / 1024 / 1024).toFixed(2)} MB`}
                         </Typography>
 
                         {att.category === 'AUTO_CHART' && att.chartMeta?.isStale && !readOnly && (
@@ -796,21 +890,23 @@ export function TradeScreenshotGallery({
                       </Box>
 
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <Tooltip title="Open in Real Interactive TradingView Chart">
-                          <IconButton
-                            size="small"
-                            sx={{
-                              color: '#06b6d4',
-                              '&:hover': { backgroundColor: 'rgba(6, 182, 212, 0.15)' },
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
-                            }}
-                          >
-                            <CandlestickChartRounded fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                        {!isAudioAttachment(att) && (
+                          <Tooltip title="Open in Real Interactive TradingView Chart">
+                            <IconButton
+                              size="small"
+                              sx={{
+                                color: '#06b6d4',
+                                '&:hover': { backgroundColor: 'rgba(6, 182, 212, 0.15)' },
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openInteractiveChart(att.timeframe || att.chartMeta?.resolution || '5');
+                              }}
+                            >
+                              <CandlestickChartRounded fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
 
                         <Tooltip title="Download Original">
                           <IconButton

@@ -15,6 +15,7 @@
 
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import path from 'node:path';
 import Decimal from 'decimal.js';
 import {
   evaluateAlert,
@@ -31,11 +32,13 @@ import {
 import {
   User,
   Trade,
+  Attachment,
   AlertState,
   AlertEvent,
   TelegramUpdateAudit,
   TelegramCallbackLock,
 } from '../db/models/index.js';
+import { getStorage } from '../storage/index.js';
 import { config } from '../config.js';
 import { decryptSecret } from './crypto.service.js';
 import { FyersService } from './fyers.service.js';
@@ -614,6 +617,13 @@ export class TelegramAlertService {
     // 2. Handle Text Commands (message)
     if (update.message?.text) {
       await this.handleTextMessage(update.message, knownBotToken);
+      return;
+    }
+
+    // 3. Handle Voice & Audio Reflections (voice note / audio)
+    if (update.message?.voice || update.message?.audio) {
+      await this.handleVoiceMessage(update.message, knownBotToken);
+      return;
     }
   }
 
@@ -1090,6 +1100,235 @@ export class TelegramAlertService {
           chatId,
           `❓ Unknown command: <code>${command}</code>. Type <b>/help</b> for available commands.`
         );
+    }
+  }
+
+  /**
+   * Handles incoming voice notes and audio messages sent to the Telegram bot.
+   * Downloads the audio from Telegram servers, stores it in Cloudflare R2,
+   * creates an Attachment, links it to the appropriate trade, and replies with confirmation.
+   */
+  private static async handleVoiceMessage(msg: any, knownBotToken?: string): Promise<void> {
+    const chatId = msg.chat?.id;
+    const fromId = msg.from?.id;
+    const voice = msg.voice || msg.audio;
+    if (!voice || !voice.file_id) return;
+
+    // 1. Resolve user from chatId or fromId
+    let user = await User.findOne({
+      $or: [
+        { 'liveWatcherSettings.telegramChatId': String(chatId) },
+        ...(fromId ? [{ 'liveWatcherSettings.telegramChatId': String(fromId) }] : []),
+      ],
+    });
+
+    let botToken: string | undefined = knownBotToken;
+    if (!user && knownBotToken) {
+      const candidates = await User.find({
+        'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
+      });
+      for (const cand of candidates) {
+        const dec = decryptSecret(cand.liveWatcherSettings?.telegramBotToken);
+        if (dec === knownBotToken) {
+          user = cand;
+          if (cand.liveWatcherSettings && !cand.liveWatcherSettings.telegramChatId && chatId) {
+            cand.liveWatcherSettings.telegramChatId = String(chatId);
+            cand.liveWatcherSettings.telegramAlertsEnabled = true;
+            await cand.save();
+          }
+          break;
+        }
+      }
+    }
+
+    if (!user) {
+      const fallbackToken = knownBotToken || config.telegramBotToken;
+      if (fallbackToken) {
+        await this.sendMessage(
+          fallbackToken,
+          chatId,
+          `👋 <b>SetupMint Terminal Bot</b>\n\n` +
+          `Your Telegram Chat ID is: <code>${chatId}</code>\n\n` +
+          `Please configure your Chat ID in SetupMint Settings to record trade voice reflections.`
+        );
+      }
+      return;
+    }
+
+    if (!botToken) {
+      const rawToken = user.liveWatcherSettings?.telegramBotToken;
+      botToken = rawToken ? (decryptSecret(rawToken) || rawToken) : undefined;
+    }
+    if (!botToken) return;
+
+    try {
+      // 2. Resolve Target Trade
+      let targetTrade: any = null;
+
+      // Method A: Check if this voice note is a direct reply to a trade alert
+      const replyMsg = msg.reply_to_message;
+      if (replyMsg) {
+        // Inspect inline button callback_data: x:<tradeId>:<action>
+        const inlineKeyboard = replyMsg.reply_markup?.inline_keyboard || [];
+        for (const row of inlineKeyboard) {
+          for (const btn of row) {
+            const cb: string = btn.callback_data || '';
+            if (cb.startsWith('x:')) {
+              const parts = cb.split(':');
+              const tId = parts[1];
+              if (tId && mongoose.isValidObjectId(tId)) {
+                targetTrade = await Trade.findOne({ _id: tId, userId: user._id });
+                if (targetTrade) break;
+              }
+            }
+          }
+          if (targetTrade) break;
+        }
+
+        // If not in buttons, check reply text for 24-character ObjectId or symbol
+        if (!targetTrade && replyMsg.text) {
+          const matchId = replyMsg.text.match(/[0-9a-fA-F]{24}/);
+          if (matchId && matchId[0]) {
+            targetTrade = await Trade.findOne({ _id: matchId[0], userId: user._id });
+          }
+        }
+      }
+
+      // Method B: If not a reply, look for currently active OPEN trade
+      if (!targetTrade) {
+        targetTrade = await Trade.findOne({ userId: user._id, status: 'OPEN' }).sort({ entryTime: -1 });
+      }
+
+      // Method C: If no OPEN trade, look for trade closed within last 4 hours
+      if (!targetTrade) {
+        const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+        targetTrade = await Trade.findOne({
+          userId: user._id,
+          status: 'CLOSED',
+          exitTime: { $gte: fourHoursAgo },
+        }).sort({ exitTime: -1 });
+      }
+
+      // Method D: Fallback to the latest trade overall
+      if (!targetTrade) {
+        targetTrade = await Trade.findOne({ userId: user._id }).sort({ exitTime: -1, entryTime: -1 });
+      }
+
+      // 3. Download the audio file from Telegram Bot API
+      const fileId = voice.file_id;
+      const getFileRes = await fetch(
+        `${this.TELEGRAM_API_BASE}/bot${botToken}/getFile?file_id=${encodeURIComponent(fileId)}`
+      );
+      const getFileJson = (await getFileRes.json()) as any;
+      if (!getFileJson.ok || !getFileJson.result?.file_path) {
+        throw new Error(getFileJson.description || 'Failed to retrieve voice file path from Telegram');
+      }
+
+      const filePath = getFileJson.result.file_path;
+      const fileDownloadUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+      const audioRes = await fetch(fileDownloadUrl);
+      if (!audioRes.ok) {
+        throw new Error(`Failed to download audio from Telegram: HTTP ${audioRes.status}`);
+      }
+      const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+
+      // 4. Validate file size (max configured MB)
+      const maxBytes = (config.maxFileSizeMb || 10) * 1024 * 1024;
+      if (audioBuffer.length > maxBytes) {
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `⚠️ Voice reflection exceeds maximum size of ${config.maxFileSizeMb}MB.`
+        );
+        return;
+      }
+
+      // 5. Store in Cloudflare R2 via storage provider
+      const ext = path.extname(filePath) || (msg.voice ? '.oga' : '.mp3');
+      const safeFilename = `voice_${targetTrade ? targetTrade._id.toString() : user._id.toString()}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`;
+      const mimeType = voice.mime_type || (ext === '.oga' ? 'audio/ogg' : 'audio/mpeg');
+
+      const storage = getStorage();
+      await storage.save(safeFilename, audioBuffer, mimeType);
+
+      // 6. Create Attachment Document in MongoDB
+      const duration = voice.duration || 0;
+      const durationText = duration > 0 ? `${duration}s` : 'Audio';
+      const attachment = await Attachment.create({
+        userId: user._id,
+        tradeId: targetTrade?._id,
+        originalName: `voice-reflection-${Date.now()}${ext}`,
+        storedFilename: safeFilename,
+        mimeType: mimeType,
+        sizeBytes: audioBuffer.length,
+        category: 'REVIEW',
+        description: `🎙️ Voice Reflection (${durationText}) recorded via Telegram`,
+      });
+
+      // 7. Link to Trade
+      if (targetTrade) {
+        targetTrade.screenshotIds.push(attachment._id);
+        const timeIST = new Date().toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const noteText = `[${timeIST} IST] 🎙️ Voice Note (${durationText}) recorded via Telegram.`;
+        if (!targetTrade.psychology) {
+          targetTrade.psychology = {} as any;
+        }
+        const existingNotes = targetTrade.psychology.notes || '';
+        targetTrade.psychology.notes = existingNotes ? `${existingNotes}\n${noteText}` : noteText;
+
+        targetTrade.auditLog.push({
+          action: 'VOICE_REFLECTION_ATTACHED',
+          timestamp: new Date(),
+          details: {
+            attachmentId: attachment._id.toString(),
+            duration,
+            sizeBytes: audioBuffer.length,
+          },
+          changedBy: 'telegram',
+        });
+        await targetTrade.save();
+      }
+
+      // 8. Reply with Rich Telegram Confirmation
+      const sizeKb = Math.round(audioBuffer.length / 1024);
+      if (targetTrade) {
+        const pnlStr =
+          targetTrade.calculated?.netPnL !== undefined
+            ? ` • Net PnL: ${targetTrade.calculated.netPnL >= 0 ? '+' : ''}₹${targetTrade.calculated.netPnL.toLocaleString('en-IN')}`
+            : '';
+
+        const replyHtml =
+          `🎙️ <b>Voice Reflection Attached!</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `📌 <b>Trade:</b> ${targetTrade.symbol} (${targetTrade.direction}${pnlStr})\n` +
+          `⏱️ <b>Duration:</b> ${durationText} • <b>Size:</b> ${sizeKb} KB\n\n` +
+          `💾 <i>Saved to Cloudflare R2 & linked to your trade review gallery in SetupMint.</i>`;
+
+        const buttons: ITelegramInlineButton[][] = [
+          [
+            { text: '🔗 View in SetupMint', url: `${config.webAppUrl}/trades/${targetTrade._id}` },
+            { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+          ],
+        ];
+
+        await this.sendMessage(botToken, chatId, replyHtml, buttons);
+      } else {
+        const replyHtml =
+          `🎙️ <b>Voice Reflection Saved!</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `⏱️ <b>Duration:</b> ${durationText} • <b>Size:</b> ${sizeKb} KB\n\n` +
+          `💾 <i>Saved to your Cloudflare R2 storage vault.</i>\n\n` +
+          `💡 <i>Tip: Reply directly to any trade alert message on Telegram to attach your voice note to that exact trade!</i>`;
+
+        await this.sendMessage(botToken, chatId, replyHtml);
+      }
+    } catch (err: any) {
+      console.error('[TelegramAlertService] handleVoiceMessage error:', err);
+      await this.sendMessage(botToken, chatId, `❌ Failed to save voice reflection: ${err.message}`);
     }
   }
 

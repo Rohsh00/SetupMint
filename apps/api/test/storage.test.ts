@@ -12,11 +12,16 @@ describe('Storage Layer Unit Tests (Cloud Only)', () => {
       expect(() => assertValidKey('12345678-1234-1234-1234-123456789abc.jpeg')).not.toThrow();
       expect(() => assertValidKey('12345678-1234-1234-1234-123456789abc.webp')).not.toThrow();
       expect(() => assertValidKey('12345678-1234-1234-1234-123456789abc.svg')).not.toThrow();
+      expect(() => assertValidKey('12345678-1234-1234-1234-123456789abc.oga')).not.toThrow();
+      expect(() => assertValidKey('12345678-1234-1234-1234-123456789abc.mp3')).not.toThrow();
     });
 
-    it('accepts synthetic demo chart filenames', () => {
+    it('accepts synthetic demo chart filenames and voice note reflections', () => {
       expect(() =>
         assertValidKey('demo_chart_6ad487c932f848f59f1bdbeb_setup_1792313289395.svg')
+      ).not.toThrow();
+      expect(() =>
+        assertValidKey('voice_6ae876800a61f8a6ce0ca599_1793619584074_c1572743.oga')
       ).not.toThrow();
     });
 

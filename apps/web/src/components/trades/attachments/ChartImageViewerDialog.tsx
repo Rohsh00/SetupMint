@@ -22,6 +22,7 @@ import {
   AccessTimeRounded,
   LayersRounded,
   ShowChartRounded,
+  MicRounded,
 } from '@mui/icons-material';
 import { IAttachment, CHART_ATTACHMENT_CATEGORIES } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
@@ -110,6 +111,12 @@ export function ChartImageViewerDialog({
 
   const categoryMeta = CHART_ATTACHMENT_CATEGORIES.find((c) => c.value === currentAttachment.category);
   const imageUrl = api.attachments.resolveAttachmentUrl(currentAttachment);
+  const isAudio = Boolean(
+    currentAttachment.mimeType?.startsWith('audio/') ||
+    currentAttachment.originalName?.match(/\.(oga|ogg|mp3|wav|m4a|aac)$/i) ||
+    currentAttachment.caption?.includes('Voice Reflection') ||
+    currentAttachment.description?.includes('Voice Reflection')
+  );
 
   return (
     <Dialog
@@ -198,48 +205,50 @@ export function ChartImageViewerDialog({
         {/* Right Controls: Zoom, Download, Delete, Close */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {/* Zoom Controls */}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
-              borderRadius: 2,
-              px: 0.5,
-              border: `1px solid ${muiTheme.palette.divider}`,
-            }}
-          >
-            <Tooltip title="Zoom Out (-)">
-              <IconButton size="small" onClick={handleZoomOut} disabled={zoomLevel <= 0.5}>
-                <ZoomOutRounded fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Typography
-              variant="caption"
+          {!isAudio && (
+            <Box
               sx={{
-                px: 1,
-                fontFamily: `'JetBrains Mono', monospace`,
-                fontWeight: 600,
-                fontSize: '0.75rem',
+                display: 'flex',
+                alignItems: 'center',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+                borderRadius: 2,
+                px: 0.5,
+                border: `1px solid ${muiTheme.palette.divider}`,
               }}
             >
-              {Math.round(zoomLevel * 100)}%
-            </Typography>
-            <Tooltip title="Zoom In (+)">
-              <IconButton size="small" onClick={handleZoomIn} disabled={zoomLevel >= 3.0}>
-                <ZoomInRounded fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            {zoomLevel !== 1 && (
-              <Tooltip title="Reset Zoom">
-                <IconButton size="small" onClick={handleResetZoom}>
-                  <RestartAltRounded fontSize="small" />
+              <Tooltip title="Zoom Out (-)">
+                <IconButton size="small" onClick={handleZoomOut} disabled={zoomLevel <= 0.5}>
+                  <ZoomOutRounded fontSize="small" />
                 </IconButton>
               </Tooltip>
-            )}
-          </Box>
+              <Typography
+                variant="caption"
+                sx={{
+                  px: 1,
+                  fontFamily: `'JetBrains Mono', monospace`,
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                }}
+              >
+                {Math.round(zoomLevel * 100)}%
+              </Typography>
+              <Tooltip title="Zoom In (+)">
+                <IconButton size="small" onClick={handleZoomIn} disabled={zoomLevel >= 3.0}>
+                  <ZoomInRounded fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              {zoomLevel !== 1 && (
+                <Tooltip title="Reset Zoom">
+                  <IconButton size="small" onClick={handleResetZoom}>
+                    <RestartAltRounded fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          )}
 
           {/* Open in Interactive TradingView Chart */}
-          {onOpenInteractive && (
+          {onOpenInteractive && !isAudio && (
             <Tooltip title="Switch to Real Interactive TradingView Chart (with zoom & candle panning)">
               <Button
                 variant="contained"
@@ -347,23 +356,79 @@ export function ChartImageViewerDialog({
           </IconButton>
         )}
 
-        {/* The Scaled Image */}
-        <Box
-          component="img"
-          src={imageUrl}
-          alt={currentAttachment.caption || currentAttachment.originalName}
-          crossOrigin="use-credentials"
-          sx={{
-            maxWidth: '100%',
-            maxHeight: '75vh',
-            objectFit: 'contain',
-            borderRadius: 1.5,
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: 'center center',
-            transition: 'transform 0.15s ease-out',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
-          }}
-        />
+        {/* The Scaled Image or Voice Reflection Player */}
+        {isAudio ? (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              p: 5,
+              borderRadius: 3,
+              backgroundColor: isDark ? 'rgba(30, 27, 75, 0.45)' : 'rgba(243, 232, 255, 0.7)',
+              border: '1px solid rgba(168, 85, 247, 0.35)',
+              maxWidth: 520,
+              width: '90%',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 72,
+                height: 72,
+                borderRadius: '50%',
+                backgroundColor: isDark ? 'rgba(168, 85, 247, 0.2)' : 'rgba(168, 85, 247, 0.15)',
+                border: '1px solid rgba(168, 85, 247, 0.4)',
+                mb: 3,
+                boxShadow: '0 8px 24px rgba(168, 85, 247, 0.3)',
+              }}
+            >
+              <MicRounded sx={{ fontSize: 38, color: '#c084fc' }} />
+            </Box>
+
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, color: isDark ? '#f3e8ff' : '#581c87' }}>
+              Voice Reflection Recording
+            </Typography>
+
+            {currentAttachment.description && (
+              <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary, mb: 3, textAlign: 'center' }}>
+                "{currentAttachment.description}"
+              </Typography>
+            )}
+
+            <audio
+              controls
+              src={imageUrl}
+              style={{
+                width: '100%',
+                height: 42,
+                borderRadius: 21,
+                outline: 'none',
+              }}
+            />
+          </Box>
+        ) : (
+          <Box
+            component="img"
+            src={imageUrl}
+            alt={currentAttachment.caption || currentAttachment.originalName}
+            crossOrigin="use-credentials"
+            sx={{
+              maxWidth: '100%',
+              maxHeight: '75vh',
+              objectFit: 'contain',
+              borderRadius: 1.5,
+              transform: `scale(${zoomLevel})`,
+              transformOrigin: 'center center',
+              transition: 'transform 0.15s ease-out',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
+            }}
+          />
+        )}
 
         {/* Next Button */}
         {attachments.length > 1 && (

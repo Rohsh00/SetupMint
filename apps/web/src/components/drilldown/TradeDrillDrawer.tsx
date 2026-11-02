@@ -37,6 +37,7 @@ import CollectionsRoundedIcon from '@mui/icons-material/CollectionsRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
+import MicRoundedIcon from '@mui/icons-material/MicRounded';
 
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 import { api } from '../../lib/api.js';
@@ -673,31 +674,54 @@ export function TradeDrillDrawer() {
                     <CollectionsRoundedIcon fontSize="small" color="primary" /> Screenshots ({activeTrade.attachments.length})
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1.5, overflowX: 'auto', pb: 1 }}>
-                    {activeTrade.attachments.map((att: any, idx: number) => (
-                      <Box
-                        key={att.id || idx}
-                        onClick={() => setScreenshotViewerTrade({ attachments: activeTrade.attachments, index: idx, symbol: activeTrade.symbol })}
-                        sx={{
-                          width: 120,
-                          height: 80,
-                          borderRadius: 1.5,
-                          overflow: 'hidden',
-                          border: 1,
-                          borderColor: 'divider',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                          '&:hover': { opacity: 0.85, transform: 'scale(1.02)' },
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <img
-                          src={api.attachments.resolveAttachmentUrl(att)}
-                          alt={att.title || att.caption || 'Chart Screenshot'}
-                          crossOrigin="use-credentials"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                      </Box>
-                    ))}
+                    {activeTrade.attachments.map((att: any, idx: number) => {
+                      const isAudio = Boolean(
+                        att.mimeType?.startsWith('audio/') ||
+                        att.originalName?.match(/\.(oga|ogg|mp3|wav|m4a|aac)$/i) ||
+                        att.caption?.includes('Voice Reflection') ||
+                        att.description?.includes('Voice Reflection')
+                      );
+
+                      return (
+                        <Box
+                          key={att.id || idx}
+                          onClick={() => setScreenshotViewerTrade({ attachments: activeTrade.attachments, index: idx, symbol: activeTrade.symbol })}
+                          sx={{
+                            width: 120,
+                            height: 80,
+                            borderRadius: 1.5,
+                            overflow: 'hidden',
+                            border: 1,
+                            borderColor: isAudio ? 'rgba(168, 85, 247, 0.4)' : 'divider',
+                            backgroundColor: isAudio ? (isDark ? 'rgba(88, 28, 135, 0.25)' : 'rgba(243, 232, 255, 0.8)') : '#030712',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            '&:hover': { opacity: 0.85, transform: 'scale(1.02)' },
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {isAudio ? (
+                            <>
+                              <MicRoundedIcon sx={{ fontSize: 26, color: '#a855f7', mb: 0.5 }} />
+                              <Typography variant="caption" sx={{ fontSize: '0.625rem', fontWeight: 700, color: '#a855f7' }}>
+                                Voice Note
+                              </Typography>
+                            </>
+                          ) : (
+                            <img
+                              src={api.attachments.resolveAttachmentUrl(att)}
+                              alt={att.title || att.caption || 'Chart Screenshot'}
+                              crossOrigin="use-credentials"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          )}
+                        </Box>
+                      );
+                    })}
                   </Box>
                 </Paper>
               )}

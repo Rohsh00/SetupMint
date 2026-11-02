@@ -91,7 +91,15 @@ export class TelegramAlertService {
    */
   static async testConnection(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const realToken = decryptSecret(botToken) || botToken;
+      let realToken: string;
+      try {
+        realToken = decryptSecret(botToken) || botToken;
+      } catch (e: any) {
+        return {
+          success: false,
+          message: 'Unable to decrypt Telegram Bot Token (encryption key mismatch). Please re-enter your Bot Token in Settings and save.',
+        };
+      }
       const text =
         `🔔 <b>SetupMint Alert Link Verified</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -123,7 +131,15 @@ export class TelegramAlertService {
    */
   static async setWebhook(botToken: string, webhookUrl: string): Promise<{ success: boolean; message: string }> {
     try {
-      const realToken = decryptSecret(botToken) || botToken;
+      let realToken: string;
+      try {
+        realToken = decryptSecret(botToken) || botToken;
+      } catch (e: any) {
+        return {
+          success: false,
+          message: 'Unable to decrypt Telegram Bot Token (encryption key mismatch). Please re-enter your Bot Token in Settings and save.',
+        };
+      }
       const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/setWebhook`;
       const secretToken = this.getWebhookSecretToken();
 

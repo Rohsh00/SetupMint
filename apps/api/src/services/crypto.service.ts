@@ -5,8 +5,9 @@ const ALGORITHM = 'aes-256-gcm';
 const PREFIX = 'enc:v1:';
 const IV_LENGTH = 12;
 
-function getKey(): Buffer {
-  return crypto.createHash('sha256').update(config.tokenEncryptionKey, 'utf8').digest();
+function getKey(customKey?: string): Buffer {
+  const secret = customKey || config.tokenEncryptionKey || 'tradevault-dev-token-encryption-key-change-me';
+  return crypto.createHash('sha256').update(secret, 'utf8').digest();
 }
 
 export function isEncryptedSecret(value: string | null | undefined): boolean {
@@ -35,18 +36,37 @@ export function decryptSecret(value: string | null | undefined): string | null {
     throw new Error('Malformed encrypted secret');
   }
 
-  const decipher = crypto.createDecipheriv(
-    ALGORITHM,
-    getKey(),
-    Buffer.from(ivB64, 'base64')
-  );
-  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(dataB64, 'base64')),
-    decipher.final(),
-  ]);
+  const iv = Buffer.from(ivB64, 'base64');
+  const tag = Buffer.from(tagB64, 'base64');
+  const data = Buffer.from(dataB64, 'base64');
 
-  return decrypted.toString('utf8');
+  // Candidate encryption keys (current configured key, common dev defaults, session secret)
+  const candidateKeys = [
+    config.tokenEncryptionKey,
+    'supersecret-setupmint-token-encryption-key-change-me-32chars',
+    'tradevault-dev-token-encryption-key-change-me',
+    config.sessionSecret,
+  ].filter(Boolean) as string[];
+
+  const uniqueCandidateKeys = Array.from(new Set(candidateKeys));
+
+  for (const candidate of uniqueCandidateKeys) {
+    try {
+      const decipher = crypto.createDecipheriv(ALGORITHM, getKey(candidate), iv);
+      decipher.setAuthTag(tag);
+      const decrypted = Buffer.concat([
+        decipher.update(data),
+        decipher.final(),
+      ]);
+      return decrypted.toString('utf8');
+    } catch {
+      // Try next candidate key
+    }
+  }
+
+  throw new Error(
+    'Unable to authenticate encrypted secret (encryption key mismatch or invalid token). Please re-enter your secret credentials.'
+  );
 }
 
 export function hashOAuthState(state: string): string {

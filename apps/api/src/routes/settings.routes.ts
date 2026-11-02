@@ -194,7 +194,17 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const user = await User.findById(req.user!.id);
 
     if ((!botToken || botToken.startsWith('••') || botToken.startsWith('**')) && user?.liveWatcherSettings?.telegramBotToken) {
-      botToken = decryptSecret(user.liveWatcherSettings.telegramBotToken) || user.liveWatcherSettings.telegramBotToken;
+      try {
+        botToken = decryptSecret(user.liveWatcherSettings.telegramBotToken) || user.liveWatcherSettings.telegramBotToken;
+      } catch (err: any) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'TELEGRAM_FAILED',
+            message: 'Unable to decrypt stored Telegram Bot Token (encryption key mismatch). Please re-enter your Bot Token and save settings.',
+          },
+        });
+      }
     }
     if (!chatId && user?.liveWatcherSettings?.telegramChatId) {
       chatId = user.liveWatcherSettings.telegramChatId;
@@ -224,7 +234,17 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const user = await User.findById(req.user!.id);
 
     if ((!botToken || botToken.startsWith('••') || botToken.startsWith('**')) && user?.liveWatcherSettings?.telegramBotToken) {
-      botToken = decryptSecret(user.liveWatcherSettings.telegramBotToken) || user.liveWatcherSettings.telegramBotToken;
+      try {
+        botToken = decryptSecret(user.liveWatcherSettings.telegramBotToken) || user.liveWatcherSettings.telegramBotToken;
+      } catch (err: any) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'TELEGRAM_FAILED',
+            message: 'Unable to decrypt stored Telegram Bot Token (encryption key mismatch). Please re-enter your Bot Token and save settings.',
+          },
+        });
+      }
     }
 
     if (!botToken || !webhookUrl) {

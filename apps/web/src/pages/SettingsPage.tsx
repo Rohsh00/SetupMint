@@ -710,6 +710,7 @@ export function SettingsPage() {
   const [fyersAppId, setFyersAppId] = useState('');
   const [fyersSecretKey, setFyersSecretKey] = useState('');
   const [showSecretKey, setShowSecretKey] = useState(false);
+  const [fyersAutoSync, setFyersAutoSync] = useState(true);
   const [fyersSuccess, setFyersSuccess] = useState(false);
   const [fyersError, setFyersError] = useState<string | null>(null);
 
@@ -731,6 +732,9 @@ export function SettingsPage() {
     if (fyersData?.appId) {
       setFyersAppId(fyersData.appId);
     }
+    if (typeof fyersData?.autoSyncEnabled === 'boolean') {
+      setFyersAutoSync(fyersData.autoSyncEnabled);
+    }
     const params = new URLSearchParams(window.location.search);
     if (params.get('fyers') === 'connected') {
       toast.success('FYERS broker account successfully connected! Today\'s trades synced.');
@@ -747,7 +751,7 @@ export function SettingsPage() {
   }, [fyersData, queryClient]);
 
   const fyersConfigMutation = useMutation({
-    mutationFn: (payload: { appId: string; secretKey?: string }) =>
+    mutationFn: (payload: { appId: string; secretKey?: string; autoSyncEnabled?: boolean }) =>
       api.integrations.fyersConfig(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fyers-status'] });
@@ -2495,6 +2499,42 @@ export function SettingsPage() {
                 </Grid>
               </Grid>
 
+              {/* Real-Time Background Auto-Sync Switch */}
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: isDark ? 'rgba(34, 197, 94, 0.04)' : 'rgba(34, 197, 94, 0.05)',
+                  border: '1px solid',
+                  borderColor: fyersAutoSync ? (isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.35)') : 'divider',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 2,
+                }}
+              >
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    ⚡ Real-Time Automated Trade & SL Sync
+                    {fyersAutoSync && isFyersConnected && (
+                      <Chip size="small" color="success" label="ACTIVE (15s Cadence)" sx={{ fontSize: '0.65rem', fontWeight: 800, height: 20 }} />
+                    )}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                    Automatically detects new trades and Stop Loss exits every 15s during market hours, with instant triggers on SL breaches. Zero manual clicking required.
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={fyersAutoSync}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setFyersAutoSync(val);
+                    fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey, autoSyncEnabled: val });
+                  }}
+                  color="success"
+                />
+              </Box>
+
               {/* Collapsible Developer Details (Cleaned up from old waste box) */}
               <Box>
                 <Button
@@ -2555,7 +2595,7 @@ export function SettingsPage() {
                   variant="outlined"
                   color="inherit"
                   disabled={fyersConfigMutation.isPending || !fyersAppId}
-                  onClick={() => fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey })}
+                  onClick={() => fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey, autoSyncEnabled: fyersAutoSync })}
                   sx={{ fontWeight: 600 }}
                 >
                   {fyersConfigMutation.isPending ? 'Saving...' : 'Save Credentials'}

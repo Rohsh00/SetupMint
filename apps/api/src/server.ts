@@ -34,6 +34,7 @@ import { holidayRoutes } from './routes/holiday.routes.js';
 import { HolidayService } from './services/holiday.service.js';
 import { InstrumentClassifier } from './services/instrument-classifier.service.js';
 import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
+import { BrokerAutoSyncWorker } from './services/broker-auto-sync.service.js';
 import { TelegramPollingService } from './services/telegram-polling.service.js';
 
 export async function buildApp() {
@@ -282,8 +283,9 @@ if (
 
       const app = await buildApp();
 
-      // Start server-side execution worker and telegram polling daemons
+      // Start server-side execution worker, broker auto-sync, and telegram polling daemons
       LiveExecutionWorker.start();
+      BrokerAutoSyncWorker.start();
       await TelegramPollingService.start();
 
       await app.listen({ port: config.port, host: config.host });
@@ -295,6 +297,7 @@ if (
       const shutdown = async () => {
         console.log('\nShutting down SetupMint gracefully...');
         LiveExecutionWorker.stop();
+        BrokerAutoSyncWorker.stop();
         TelegramPollingService.stop();
         await app.close();
         await disconnectDatabase();

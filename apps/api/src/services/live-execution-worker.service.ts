@@ -3,6 +3,7 @@ import { User, Trade, BrokerIntegration } from '../db/models/index.js';
 import { FyersService } from './fyers.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
+import { BrokerAutoSyncWorker } from './broker-auto-sync.service.js';
 import {
   calculateTargetLadder,
   evaluateGivebackAutoExit,
@@ -243,6 +244,11 @@ export class LiveExecutionWorker {
         metricValue: runwayPct,
         ltp: metric.currentLtp,
       }).catch(() => {});
+
+      // If stop loss is critically threatened or breached, trigger an immediate broker sync to catch broker order fills instantly
+      if (metric.stopThreatLevel === 'BREACHED' || metric.stopThreatLevel === 'CRITICAL') {
+        BrokerAutoSyncWorker.triggerImmediateSync(user._id.toString()).catch(() => {});
+      }
     }
 
     // 3. Giveback Anti-Greed Radar Evaluation via Pure State Machine

@@ -1190,6 +1190,61 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
   });
 
+  // Get custom ladder rules for a trade
+  app.get('/:id/ladder-rules', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id }).lean();
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    return reply.send({
+      success: true,
+      data: (trade as any).customLadderRules || null,
+    });
+  });
+
+  // Save/Update custom ladder rules for an individual trade
+  app.put('/:id/ladder-rules', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    const rules = req.body;
+    if (!rules || typeof rules !== 'object') {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_RULES', message: 'Invalid ladder rules payload' },
+      });
+    }
+
+    trade.customLadderRules = rules;
+    trade.auditLog.push({
+      action: 'CUSTOM_LADDER_RULES_UPDATED',
+      timestamp: new Date(),
+      changedBy: 'user',
+      details: {
+        targetMode: rules.targetMode,
+        autoExecuteEnabled: rules.autoExecuteEnabled,
+        t1R: rules.t1?.targetR,
+        t2R: rules.t2?.targetR,
+      },
+    });
+
+    await trade.save();
+
+    return reply.send({
+      success: true,
+      data: trade.customLadderRules,
+    });
+  });
+
   // Update trade
   app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const existingTrade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });

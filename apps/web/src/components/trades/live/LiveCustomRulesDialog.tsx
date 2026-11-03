@@ -35,6 +35,8 @@ import {
   ICustomLadderRules,
   ICustomLadderRuleStep,
   ILiveWatcherSettings,
+  DEFAULT_LADDER_STRATEGY_PRESETS,
+  ILadderStrategyPreset,
 } from '@tradevault/shared';
 import { formatCurrency } from '../../../lib/utils.js';
 
@@ -99,14 +101,16 @@ export function LiveCustomRulesDialog({
   // Intraday MIS Square-Off Guard
   const [misSquareOffEnabled, setMisSquareOffEnabled] = useState<boolean>(false);
 
-  // Load existing rules from localStorage on open
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+
+  // Load existing rules from trade metric (cloud DB) or localStorage fallback on open
   useEffect(() => {
     if (metric && open) {
       const savedKey = `tv_live_rules_${metric.tradeId}`;
       const saved = localStorage.getItem(savedKey);
-      if (saved) {
+      const parsed = metric.customLadderRules || (saved ? (() => { try { return JSON.parse(saved); } catch { return null; } })() : null);
+      if (parsed) {
         try {
-          const parsed = JSON.parse(saved) as ICustomLadderRules;
           if (parsed.lotSize) setLotSize(parsed.lotSize);
           setAutoExecute(Boolean(parsed.autoExecuteEnabled));
           if (parsed.targetMode) {
@@ -276,6 +280,40 @@ export function LiveCustomRulesDialog({
     }
   };
 
+  const handleApplyStrategyProfile = (preset: ILadderStrategyPreset) => {
+    setActivePresetId(preset.id);
+    setTargetMode((preset.rules.targetMode as TargetPlanningPreset) || 'TWO_TARGETS_RUNNER');
+    if (preset.rules.t1) {
+      setT1R(preset.rules.t1.targetR ?? 1.0);
+      setT1Ratio(preset.rules.t1.exitRatio ?? 0.5);
+      setT1TrailAction((preset.rules.t1.trailAction as any) ?? 'TRUE_BE_WITH_FEES');
+      if (preset.rules.t1.trailPoints) setT1TrailPoints(preset.rules.t1.trailPoints);
+    }
+    if (preset.rules.t2) {
+      setT2Enabled(preset.rules.t2.enabled !== false);
+      setT2R(preset.rules.t2.targetR ?? 2.0);
+      setT2Ratio(preset.rules.t2.exitRatio ?? 0.25);
+      setT2TrailAction((preset.rules.t2.trailAction as any) ?? 'TRAIL_T1');
+      if (preset.rules.t2.trailPoints) setT2TrailPoints(preset.rules.t2.trailPoints);
+    } else {
+      setT2Enabled(false);
+    }
+    if (preset.rules.t3) {
+      setIsFreeRunner(Boolean(preset.rules.t3.isFreeRunner));
+      setT3R(preset.rules.t3.targetR ?? 3.0);
+    }
+    if (preset.rules.dynamicTrailing) {
+      setDynamicTrailingEnabled(Boolean(preset.rules.dynamicTrailing.enabled));
+      if (preset.rules.dynamicTrailing.triggerR) setDynamicTriggerR(preset.rules.dynamicTrailing.triggerR);
+      if (preset.rules.dynamicTrailing.trailStepR) setDynamicStepR(preset.rules.dynamicTrailing.trailStepR);
+    }
+    if (preset.rules.givebackAutoExit) {
+      setGivebackAutoExitEnabled(Boolean(preset.rules.givebackAutoExit.enabled));
+      if (preset.rules.givebackAutoExit.minPeakR) setGivebackMinPeakR(preset.rules.givebackAutoExit.minPeakR);
+      if (preset.rules.givebackAutoExit.maxGivebackPercent) setGivebackMaxPercent(preset.rules.givebackAutoExit.maxGivebackPercent);
+    }
+  };
+
   const handleSave = () => {
     const rules: ICustomLadderRules = {
       tradeId: metric.tradeId,
@@ -376,6 +414,60 @@ export function LiveCustomRulesDialog({
       </DialogTitle>
 
       <DialogContent sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {/* 1-Click Strategy Execution Profiles */}
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'text.secondary' }}>
+              ⚡ 1-Click Strategy Profiles
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.68rem', color: '#10B981', fontWeight: 700 }}>
+              Auto-fills R multiples & trailing rules
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
+            {DEFAULT_LADDER_STRATEGY_PRESETS.map((preset) => {
+              const isSelected = activePresetId === preset.id;
+              return (
+                <Button
+                  key={preset.id}
+                  size="small"
+                  variant={isSelected ? 'contained' : 'outlined'}
+                  onClick={() => handleApplyStrategyProfile(preset)}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    textTransform: 'none',
+                    py: 0.75,
+                    px: 1.25,
+                    borderRadius: '8px',
+                    bgcolor: isSelected ? alpha('#10B981', 0.2) : 'transparent',
+                    borderColor: isSelected ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+                    color: isSelected ? '#10B981' : 'text.primary',
+                    '&:hover': {
+                      bgcolor: alpha('#10B981', 0.1),
+                      borderColor: '#10B981',
+                    },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.74rem' }}>{preset.name}</Typography>
+                    {preset.badge && (
+                      <Typography sx={{ fontSize: '0.62rem', px: 0.5, py: 0.1, borderRadius: '4px', bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)', color: 'text.secondary', fontWeight: 700 }}>
+                        {preset.badge}
+                      </Typography>
+                    )}
+                  </Box>
+                  <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', mt: 0.25, lineHeight: 1.2 }}>
+                    {preset.description}
+                  </Typography>
+                </Button>
+              );
+            })}
+          </Box>
+        </Box>
+
         {/* Quick Strategy Presets */}
         <Box>
           <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'text.secondary', display: 'block', mb: 1 }}>

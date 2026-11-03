@@ -399,6 +399,7 @@ export class LiveWatcherService {
         provider,
         previousPeakMfe: trade.calculated?.liveMfeSummary,
         dataHealth: tradeDataHealth,
+        customRules: trade.customLadderRules,
       });
 
       // Asynchronously persist new peak MFE to DB if new high reached
@@ -767,6 +768,7 @@ export class LiveWatcherService {
       marketSegment: trade.marketSegment,
       provider,
       previousPeakMfe: trade.calculated?.liveMfeSummary,
+      customRules: trade.customLadderRules,
     });
 
     const prevPeak = trade.calculated?.liveMfeSummary?.peakFloatingNetPnL ?? -Infinity;

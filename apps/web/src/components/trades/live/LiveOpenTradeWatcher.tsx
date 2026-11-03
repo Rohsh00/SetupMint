@@ -431,15 +431,23 @@ export function LiveOpenTradeWatcher({
 
   const [customRulesMetric, setCustomRulesMetric] = useState<ILiveOpenTradeMetric | null>(null);
 
-  const handleSaveTradeRules = (tradeId: string, rules: ICustomLadderRules) => {
+  const handleSaveTradeRules = async (tradeId: string, rules: ICustomLadderRules) => {
     setTradeRulesMap((prev) => {
       const next = { ...prev, [tradeId]: rules };
       localStorage.setItem('tv_trade_custom_rules_map', JSON.stringify(next));
       return next;
     });
+
+    try {
+      await api.trades.updateLadderRules(tradeId, rules);
+    } catch (err: any) {
+      console.warn('Failed to sync ladder rules to server:', err?.message);
+    }
+
     toast.success(
       `Saved custom ladder rules${rules.autoExecuteEnabled ? ' (⚡ Auto-Execution to FYERS Armed)' : ''}!`
     );
+    queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
   };
 
   const getEffectiveRules = React.useCallback(
@@ -571,6 +579,27 @@ export function LiveOpenTradeWatcher({
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+
+  // Sync server-persisted customLadderRules into local tradeRulesMap
+  useEffect(() => {
+    if (summary?.positions) {
+      setTradeRulesMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const pos of summary.positions) {
+          if (pos.customLadderRules && !next[pos.tradeId]) {
+            next[pos.tradeId] = pos.customLadderRules;
+            changed = true;
+          }
+        }
+        if (changed) {
+          localStorage.setItem('tv_trade_custom_rules_map', JSON.stringify(next));
+          return next;
+        }
+        return prev;
+      });
+    }
+  }, [summary?.positions]);
 
   // Deterministic Urgency vs Entry-Time Sort
   const sortedPositions = useMemo(() => {

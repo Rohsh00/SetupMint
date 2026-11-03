@@ -373,6 +373,7 @@ export const createTradeSchema = z.object({
     }),
 
   setup: tradeSetupSchema.optional(),
+  customLadderRules: z.record(z.string(), z.any()).optional(),
   screenshotIds: z.array(z.string()).default([]),
 });
 

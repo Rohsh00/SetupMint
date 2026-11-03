@@ -226,7 +226,8 @@ export class LiveExecutionWorker {
     if (metric.provider === 'SIMULATED') return;
 
     const watcherSettings = user.liveWatcherSettings;
-    const rules = createLadderRulesFromSettings(watcherSettings, tradeId, metric.lotSize);
+    const rules = (trade.customLadderRules as any) || createLadderRulesFromSettings(watcherSettings, tradeId, metric.lotSize);
+    const effectiveAutoExecute = autoExecuteArmed || Boolean(rules.autoExecuteEnabled);
 
     // 1. Naked Position Check: Check if a resting SL order exists on FYERS orderbook
     if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
@@ -282,7 +283,7 @@ export class LiveExecutionWorker {
       }).catch(() => {});
 
       // If auto-exit is enabled on giveback leak
-      if (autoExecuteArmed && rules.givebackAutoExit?.enabled && metric.giveback.givebackPercent >= rules.givebackAutoExit.maxGivebackPercent) {
+      if (effectiveAutoExecute && rules.givebackAutoExit?.enabled && metric.giveback.givebackPercent >= rules.givebackAutoExit.maxGivebackPercent) {
         const givebackKey = `giveback_auto:${tradeId}`;
         if (!this.executedMilestones.has(givebackKey)) {
           this.executedMilestones.add(givebackKey);
@@ -320,7 +321,7 @@ export class LiveExecutionWorker {
       const triggerKey = `ladder:${tradeId}:step${step.targetIndex}`;
       if (this.executedMilestones.has(triggerKey)) continue;
 
-      if (!autoExecuteArmed) {
+      if (!effectiveAutoExecute) {
         // Just dispatch Telegram alert if enabled
         this.executedMilestones.add(triggerKey);
         if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {

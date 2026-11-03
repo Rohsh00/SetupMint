@@ -9,6 +9,7 @@ import {
   TradeStatus,
   TradingSession,
   ITradeSetup,
+  ICustomLadderRules,
 } from '@tradevault/shared';
 
 export interface ITradeDoc extends Document {
@@ -199,6 +200,7 @@ export interface ITradeDoc extends Document {
     orderType?: number;
     reason?: string;
   }>;
+  customLadderRules?: ICustomLadderRules;
   screenshotIds: mongoose.Types.ObjectId[];
   auditLog: Array<{
     action: string;
@@ -506,6 +508,7 @@ const TradeSchema = new Schema<ITradeDoc>(
     ],
 
     screenshotIds: [{ type: Schema.Types.ObjectId, ref: 'Attachment' }],
+    customLadderRules: { type: Schema.Types.Mixed },
     auditLog: [
       {
         action: { type: String, required: true },

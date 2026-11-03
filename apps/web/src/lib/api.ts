@@ -4,6 +4,7 @@ import type {
   IEquityCurvesResponse,
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
+  ICustomLadderRules,
   ILiveAlertState,
   IWeeklyReview,
   IWeeklyReviewSnapshot,
@@ -282,6 +283,13 @@ export const api = {
       }),
     getLiveMetric: (id: string) =>
       request<ILiveOpenTradeMetric>(`/trades/${id}/live`),
+    getLadderRules: (id: string) =>
+      request<ICustomLadderRules | null>(`/trades/${id}/ladder-rules`),
+    updateLadderRules: (id: string, rules: ICustomLadderRules) =>
+      request<ICustomLadderRules>(`/trades/${id}/ladder-rules`, {
+        method: 'PUT',
+        body: JSON.stringify(rules),
+      }),
     recordLivePulse: (id: string, emotion: string, notes?: string) =>
       request<any>(`/trades/${id}/live-pulse`, {
         method: 'POST',

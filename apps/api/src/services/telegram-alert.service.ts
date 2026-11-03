@@ -561,6 +561,19 @@ export class TelegramAlertService {
       ];
     }
 
+    if (type === 'LADDER') {
+      return [
+        [
+          { text: '🎯 Scale Out T1', callback_data: `x:${tradeId}:L1:${cardVersion}:${roundLtp}` },
+          { text: '🛡️ Lock True BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` },
+        ],
+        [
+          { text: `🚨 Market Exit`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
+          { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
+        ],
+      ];
+    }
+
     if (type === 'NAKED_POSITION') {
       return [
         [
@@ -931,6 +944,96 @@ export class TelegramAlertService {
           severity: alertState?.severity || 2,
           action: 'SEND_NEW',
           actionTaken: 'BOOK_50',
+          latencyMs: Date.now() - startTime,
+          sentAt: alertState?.lastSentAt || new Date(),
+          actedAt: new Date(),
+        });
+        return;
+      }
+
+      if (actionCode === 'L1' || actionCode === 'L2') {
+        const stepNum = actionCode === 'L1' ? 1 : 2;
+        const openQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1;
+        const rules = (trade.customLadderRules as any) || {};
+        const stepRule = stepNum === 1 ? rules.t1 : rules.t2;
+        const exitRatio = stepRule?.exitRatio ?? (stepNum === 1 ? 0.5 : 0.25);
+        const exitQty = Math.max(1, Math.floor(openQty * exitRatio));
+
+        // Determine new trailed stop loss
+        let newStopLoss: number | undefined;
+        const isLong = trade.direction === 'LONG';
+        const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0);
+        const trueBePrice = (trade.calculated as any)?.trueBreakevenPrice || entryPrice;
+        const initialSl = trade.risk?.initialStopLoss ?? trade.risk?.currentStopLoss ?? 0;
+        const riskPoints = Math.abs(entryPrice - initialSl);
+
+        if (stepNum === 1) {
+          const trailAction = stepRule?.trailAction || 'TRUE_BE_WITH_FEES';
+          if (trailAction === 'TRUE_BE_WITH_FEES') newStopLoss = trueBePrice;
+          else if (trailAction === 'NOMINAL_BE') newStopLoss = entryPrice;
+          else if (trailAction === 'CUSTOM_POINTS') {
+            const pts = stepRule?.trailPoints || 10;
+            newStopLoss = isLong ? entryPrice + pts : entryPrice - pts;
+          }
+        } else if (stepNum === 2) {
+          const trailAction = stepRule?.trailAction || 'TRAIL_T1';
+          if (trailAction === 'TRAIL_T1') {
+            const t1R = rules.t1?.targetR ?? 1.0;
+            newStopLoss = isLong ? entryPrice + (riskPoints * t1R) : entryPrice - (riskPoints * t1R);
+          } else {
+            newStopLoss = trueBePrice;
+          }
+        }
+
+        const res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
+          exitQty,
+          isFullClose: exitQty >= openQty,
+        });
+
+        if (newStopLoss && newStopLoss > 0) {
+          trade.risk = {
+            ...(trade.risk || {}),
+            initialStopLoss: trade.risk?.initialStopLoss || entryPrice,
+            currentStopLoss: Number(newStopLoss.toFixed(2)),
+          };
+          try {
+            await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), Number(newStopLoss.toFixed(2)));
+          } catch {
+            // Broker SL placement fallback
+          }
+        }
+
+        const updateText =
+          (cq.message?.text || '') +
+          `\n\n<b>[🎯 TARGET T${stepNum} SCALED OUT VIA TELEGRAM]</b>\n` +
+          `Qty Closed: ${exitQty} • Traded: ₹${res.tradedPrice || currentLtp}\n` +
+          `Stop Trailed: ${newStopLoss ? `₹${newStopLoss.toFixed(2)}` : 'Unchanged'}`;
+
+        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+
+        trade.auditLog.push({
+          action: `TELEGRAM_SCALE_OUT_T${stepNum}`,
+          timestamp: new Date(),
+          details: {
+            text: `Executed Target T${stepNum} scale-out (${exitQty} qty) via Telegram button`,
+            newStopLoss: newStopLoss ? Number(newStopLoss.toFixed(2)) : undefined,
+          },
+          changedBy: 'telegram',
+        });
+        await trade.save();
+
+        if (alertState) {
+          alertState.cardVersion += 1;
+          await alertState.save();
+        }
+
+        await AlertEvent.create({
+          userId: user._id,
+          tradeId: trade._id,
+          type: (alertState?.type as AlertType) || 'LADDER',
+          severity: alertState?.severity || 1,
+          action: 'SEND_NEW',
+          actionTaken: `SCALE_OUT_T${stepNum}`,
           latencyMs: Date.now() - startTime,
           sentAt: alertState?.lastSentAt || new Date(),
           actedAt: new Date(),

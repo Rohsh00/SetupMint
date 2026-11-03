@@ -108,6 +108,7 @@ export interface ILiveOpenTradeMetric {
   asOf: Date | string;
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
+  customLadderRules?: ICustomLadderRules;
   optionsGreeks?: IPositionGreeksSummary;
   stagnation?: ITradeStagnationMetric;
   underlying?: string;
@@ -729,6 +730,7 @@ export function calculateLiveOpenTradeMetric(
         previousPeakMfe: params.previousPeakMfe,
       }),
       targetLadder,
+      customLadderRules: params.customRules,
       dataHealth: params.dataHealth,
     };
 

@@ -731,6 +731,7 @@ export interface ITrade {
   attachments?: IAttachment[];
   setup?: ITradeSetup;
   stopLossMoveEvents?: IStopLossMoveEvent[];
+  customLadderRules?: ICustomLadderRules;
   auditLog: IAuditEntry[];
 
   createdAt: string;
@@ -2024,6 +2025,146 @@ export function createLadderRulesFromSettings(
   };
 }
 
+export interface ILadderStrategyPreset {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+  badge?: string;
+  rules: Omit<ICustomLadderRules, 'tradeId' | 'lotSize' | 'updatedAt'>;
+}
+
+export const DEFAULT_LADDER_STRATEGY_PRESETS: ILadderStrategyPreset[] = [
+  {
+    id: 'SCALP_1R',
+    name: '⚡ Quick Scalp (1R)',
+    description: '100% exit at +1.0R with nominal breakeven locking',
+    badge: '1R Complete',
+    rules: {
+      targetMode: 'T1_ONLY',
+      autoExecuteEnabled: false,
+      t1: {
+        targetR: 1.0,
+        exitRatio: 1.0,
+        trailAction: 'NOMINAL_BE',
+      },
+      dynamicTrailing: { enabled: false, triggerR: 1.5, trailType: 'STEP_R' },
+      givebackAutoExit: { enabled: false, minPeakR: 1.0, maxGivebackPercent: 30 },
+    },
+  },
+  {
+    id: 'MOMENTUM_RUNNER',
+    name: '🚀 Momentum Runner',
+    description: 'Scale 50% @ +1.2R with True BE (fees protected), 25% @ +2.5R, and let 25% run',
+    badge: '1.2R / 2.5R / Runner',
+    rules: {
+      targetMode: 'TWO_TARGETS_RUNNER',
+      autoExecuteEnabled: false,
+      t1: {
+        targetR: 1.2,
+        exitRatio: 0.5,
+        trailAction: 'TRUE_BE_WITH_FEES',
+        trailPoints: 15,
+      },
+      t2: {
+        enabled: true,
+        targetR: 2.5,
+        exitRatio: 0.25,
+        trailAction: 'TRAIL_T1',
+        trailPoints: 30,
+      },
+      t3: {
+        enabled: true,
+        isFreeRunner: true,
+        targetR: 0,
+        exitRatio: 1.0,
+        trailAction: 'NONE',
+      },
+      dynamicTrailing: {
+        enabled: true,
+        triggerR: 2.0,
+        trailType: 'STEP_R',
+        trailStepR: 0.5,
+      },
+      givebackAutoExit: {
+        enabled: true,
+        minPeakR: 1.5,
+        maxGivebackPercent: 35,
+      },
+    },
+  },
+  {
+    id: 'CLASSIC_CONSERVATIVE',
+    name: '🎯 Conservative 1:2:3',
+    description: 'Even 33% scaling at 1R, 2R, and 3R with progressive stop trailing',
+    badge: '1R / 2R / 3R',
+    rules: {
+      targetMode: 'CLASSIC_THREE',
+      autoExecuteEnabled: false,
+      t1: {
+        targetR: 1.0,
+        exitRatio: 0.33,
+        trailAction: 'TRUE_BE_WITH_FEES',
+      },
+      t2: {
+        enabled: true,
+        targetR: 2.0,
+        exitRatio: 0.33,
+        trailAction: 'TRAIL_T1',
+      },
+      t3: {
+        enabled: true,
+        isFreeRunner: false,
+        targetR: 3.0,
+        exitRatio: 1.0,
+        trailAction: 'NONE',
+      },
+      dynamicTrailing: { enabled: false, triggerR: 1.5, trailType: 'STEP_R' },
+      givebackAutoExit: { enabled: true, minPeakR: 2.0, maxGivebackPercent: 40 },
+    },
+  },
+  {
+    id: 'EXPIRY_HERO_ZERO',
+    name: '🔥 Expiry Hero-Zero',
+    description: 'Aggressive 50% scale at +2.0R with tight 35% giveback protection',
+    badge: '2R / 4R / High Vol',
+    rules: {
+      targetMode: 'TWO_TARGETS_RUNNER',
+      autoExecuteEnabled: false,
+      t1: {
+        targetR: 2.0,
+        exitRatio: 0.5,
+        trailAction: 'TRUE_BE_WITH_FEES',
+        trailPoints: 20,
+      },
+      t2: {
+        enabled: true,
+        targetR: 4.0,
+        exitRatio: 0.25,
+        trailAction: 'TRAIL_T1',
+      },
+      t3: {
+        enabled: true,
+        isFreeRunner: true,
+        targetR: 0,
+        exitRatio: 1.0,
+        trailAction: 'NONE',
+      },
+      dynamicTrailing: {
+        enabled: true,
+        triggerR: 2.5,
+        trailType: 'STEP_R',
+        trailStepR: 1.0,
+      },
+      givebackAutoExit: {
+        enabled: true,
+        minPeakR: 2.0,
+        maxGivebackPercent: 35,
+      },
+    },
+  },
+];
+
 export interface ILiveTargetLadderStep {
   targetIndex: number; // 1, 2, 3
   name: string; // 'T1 (+1.0R)', 'T2 (+2.0R)', 'Runner (+3.0R)'
@@ -2177,6 +2318,7 @@ export interface ILiveOpenTradeMetric {
   asOf: string | Date;
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
+  customLadderRules?: ICustomLadderRules;
   optionsGreeks?: IPositionGreeksSummary;
   stagnation?: ITradeStagnationMetric;
   underlying?: string;

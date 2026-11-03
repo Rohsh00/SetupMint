@@ -17,15 +17,13 @@ import {
   Divider,
   useTheme,
 } from '@mui/material';
-import {
-  AddRounded,
-  DeleteOutlineRounded,
-  CallReceivedRounded,
-  CallMadeRounded,
-  LayersRounded,
-  CheckCircleRounded,
-  WarningAmberRounded,
-} from '@mui/icons-material';
+import AddRounded from '@mui/icons-material/AddRounded';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import CallReceivedRounded from '@mui/icons-material/CallReceivedRounded';
+import CallMadeRounded from '@mui/icons-material/CallMadeRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
 import { calculateFIFOExecution } from '@tradevault/financial-engine';
 import { formatCurrency, toLocalIsoDateTime, currentLocalIsoDateTime } from '../../../lib/utils.js';
 import { HelpHint } from '../../help/index.js';

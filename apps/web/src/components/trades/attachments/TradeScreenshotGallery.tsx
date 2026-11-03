@@ -20,25 +20,23 @@ import {
   Alert,
   useTheme,
 } from '@mui/material';
-import {
-  CollectionsRounded,
-  CloudUploadRounded,
-  VisibilityRounded,
-  DeleteOutlineRounded,
-  FileDownloadRounded,
-  AddPhotoAlternateRounded,
-  AccessTimeRounded,
-  CloseRounded,
-  CheckCircleRounded,
-  PhotoCameraRounded,
-  ElectricBoltRounded,
-  ShowChartRounded,
-  CandlestickChartRounded,
-  WarningAmberRounded,
-  RefreshRounded,
-  MicRounded,
-  GraphicEqRounded,
-} from '@mui/icons-material';
+import CollectionsRounded from '@mui/icons-material/CollectionsRounded';
+import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
+import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import FileDownloadRounded from '@mui/icons-material/FileDownloadRounded';
+import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
+import AccessTimeRounded from '@mui/icons-material/AccessTimeRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import PhotoCameraRounded from '@mui/icons-material/PhotoCameraRounded';
+import ElectricBoltRounded from '@mui/icons-material/ElectricBoltRounded';
+import ShowChartRounded from '@mui/icons-material/ShowChartRounded';
+import CandlestickChartRounded from '@mui/icons-material/CandlestickChartRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import RefreshRounded from '@mui/icons-material/RefreshRounded';
+import MicRounded from '@mui/icons-material/MicRounded';
+import GraphicEqRounded from '@mui/icons-material/GraphicEqRounded';
 import {
   AttachmentCategory,
   CHART_ATTACHMENT_CATEGORIES,

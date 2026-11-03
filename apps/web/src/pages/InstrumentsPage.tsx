@@ -28,16 +28,14 @@ import {
   Checkbox,
   CircularProgress,
 } from '@mui/material';
-import {
-  AddRounded,
-  SearchRounded,
-  DeleteOutlineRounded,
-  CloseRounded,
-  TuneRounded,
-  EditRounded,
-  WarningAmberRounded,
-  LayersClearRounded,
-} from '@mui/icons-material';
+import AddRounded from '@mui/icons-material/AddRounded';
+import SearchRounded from '@mui/icons-material/SearchRounded';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import EditRounded from '@mui/icons-material/EditRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import LayersClearRounded from '@mui/icons-material/LayersClearRounded';
 import { ASSET_CLASSES, MARKET_SEGMENTS } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';

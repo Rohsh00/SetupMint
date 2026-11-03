@@ -22,17 +22,15 @@ import {
   InputLabel,
   Select,
 } from '@mui/material';
-import {
-  AutoAwesomeRounded,
-  BookmarkAddRounded,
-  DeleteOutlineRounded,
-  RestartAltRounded,
-  LayersRounded,
-  CloseRounded,
-  CheckRounded,
-  StarRounded,
-  StarBorderRounded,
-} from '@mui/icons-material';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import BookmarkAddRounded from '@mui/icons-material/BookmarkAddRounded';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import RestartAltRounded from '@mui/icons-material/RestartAltRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import CheckRounded from '@mui/icons-material/CheckRounded';
+import StarRounded from '@mui/icons-material/StarRounded';
+import StarBorderRounded from '@mui/icons-material/StarBorderRounded';
 import { ITradeTemplate, TemplateGroup, SlRuleType, AssetClass } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
 import { toast } from '../../../context/ToastContext.js';

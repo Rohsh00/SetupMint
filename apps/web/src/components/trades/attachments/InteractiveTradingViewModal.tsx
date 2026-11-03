@@ -13,18 +13,16 @@ import {
   useTheme,
   Alert,
 } from '@mui/material';
-import {
-  CloseRounded,
-  FullscreenRounded,
-  FullscreenExitRounded,
-  ZoomOutMapRounded,
-  TrackChangesRounded,
-  RefreshRounded,
-  ShowChartRounded,
-  TrendingUpRounded,
-  TrendingDownRounded,
-  LayersRounded,
-} from '@mui/icons-material';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import FullscreenRounded from '@mui/icons-material/FullscreenRounded';
+import FullscreenExitRounded from '@mui/icons-material/FullscreenExitRounded';
+import ZoomOutMapRounded from '@mui/icons-material/ZoomOutMapRounded';
+import TrackChangesRounded from '@mui/icons-material/TrackChangesRounded';
+import RefreshRounded from '@mui/icons-material/RefreshRounded';
+import ShowChartRounded from '@mui/icons-material/ShowChartRounded';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRounded from '@mui/icons-material/TrendingDownRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
 import {
   createChart,
   CandlestickSeries,

@@ -22,19 +22,17 @@ import {
   AccordionSummary,
   AccordionDetails,
 } from '@mui/material';
-import {
-  CloseRounded,
-  BoltRounded,
-  MenuBookRounded,
-  LayersRounded,
-  CheckCircleRounded,
-  WarningAmberRounded,
-  ExpandMoreRounded,
-  PsychologyRounded,
-  ReceiptLongRounded,
-  SwapHorizRounded,
-  CollectionsRounded,
-} from '@mui/icons-material';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import BoltRounded from '@mui/icons-material/BoltRounded';
+import MenuBookRounded from '@mui/icons-material/MenuBookRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import PsychologyRounded from '@mui/icons-material/PsychologyRounded';
+import ReceiptLongRounded from '@mui/icons-material/ReceiptLongRounded';
+import SwapHorizRounded from '@mui/icons-material/SwapHorizRounded';
+import CollectionsRounded from '@mui/icons-material/CollectionsRounded';
 import {
   IAttachment,
   ITradeTemplate,

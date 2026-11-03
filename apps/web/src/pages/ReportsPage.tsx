@@ -25,21 +25,19 @@ import {
   ToggleButton,
   ToggleButtonGroup,
 } from '@mui/material';
-import {
-  DownloadRounded,
-  UploadFileRounded,
-  TableChartRounded,
-  DataObjectRounded,
-  StorageRounded,
-  CheckCircleRounded,
-  ArrowForwardRounded,
-  CloudUploadRounded,
-  UndoRounded,
-  AutoAwesomeRounded,
-  HistoryRounded,
-  WarningAmberRounded,
-  ContentPasteRounded,
-} from '@mui/icons-material';
+import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
+import TableChartRounded from '@mui/icons-material/TableChartRounded';
+import DataObjectRounded from '@mui/icons-material/DataObjectRounded';
+import StorageRounded from '@mui/icons-material/StorageRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
+import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
+import UndoRounded from '@mui/icons-material/UndoRounded';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import HistoryRounded from '@mui/icons-material/HistoryRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import ContentPasteRounded from '@mui/icons-material/ContentPasteRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';

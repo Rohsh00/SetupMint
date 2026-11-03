@@ -23,24 +23,22 @@ import {
   useTheme,
   Alert,
 } from '@mui/material';
-import {
-  AccountBalanceWalletRounded,
-  AddRounded,
-  SouthWestRounded,
-  NorthEastRounded,
-  PaidRounded,
-  SyncRounded,
-  CloseRounded,
-  BusinessRounded,
-  TrendingUpRounded,
-  LinkRounded,
-  LinkOffRounded,
-  FactCheckRounded,
-  CloudSyncRounded,
-  CheckCircleRounded,
-  CancelRounded,
-  WarningAmberRounded,
-} from '@mui/icons-material';
+import AccountBalanceWalletRounded from '@mui/icons-material/AccountBalanceWalletRounded';
+import AddRounded from '@mui/icons-material/AddRounded';
+import SouthWestRounded from '@mui/icons-material/SouthWestRounded';
+import NorthEastRounded from '@mui/icons-material/NorthEastRounded';
+import PaidRounded from '@mui/icons-material/PaidRounded';
+import SyncRounded from '@mui/icons-material/SyncRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import BusinessRounded from '@mui/icons-material/BusinessRounded';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import LinkRounded from '@mui/icons-material/LinkRounded';
+import LinkOffRounded from '@mui/icons-material/LinkOffRounded';
+import FactCheckRounded from '@mui/icons-material/FactCheckRounded';
+import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import CancelRounded from '@mui/icons-material/CancelRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency } from '../lib/utils.js';

@@ -23,18 +23,16 @@ import {
   Divider,
   useTheme,
 } from '@mui/material';
-import {
-  ElectricBoltRounded,
-  AccessTimeRounded,
-  CheckCircleRounded,
-  CancelRounded,
-  WarningAmberRounded,
-  SyncRounded,
-  TuneRounded,
-  InfoOutlined,
-  LayersRounded,
-  ShowChartRounded,
-} from '@mui/icons-material';
+import ElectricBoltRounded from '@mui/icons-material/ElectricBoltRounded';
+import AccessTimeRounded from '@mui/icons-material/AccessTimeRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import CancelRounded from '@mui/icons-material/CancelRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import SyncRounded from '@mui/icons-material/SyncRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import ShowChartRounded from '@mui/icons-material/ShowChartRounded';
 import {
   CHART_RESOLUTIONS,
   CHART_RESOLUTION_LABELS,

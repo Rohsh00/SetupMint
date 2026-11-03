@@ -20,24 +20,22 @@ import {
   Button,
   InputAdornment,
 } from '@mui/material';
-import {
-  TrendingUpRounded,
-  TrendingDownRounded,
-  PsychologyRounded,
-  CheckCircleRounded,
-  WarningAmberRounded,
-  AutoAwesomeRounded,
-  MenuBookRounded,
-  ExpandMoreRounded,
-  CheckRounded,
-  CloseRounded,
-  SearchRounded,
-  ClearRounded,
-  WaterDropRounded,
-  ViewDayRounded,
-  AccountTreeRounded,
-  TimelineRounded,
-} from '@mui/icons-material';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRounded from '@mui/icons-material/TrendingDownRounded';
+import PsychologyRounded from '@mui/icons-material/PsychologyRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import MenuBookRounded from '@mui/icons-material/MenuBookRounded';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import CheckRounded from '@mui/icons-material/CheckRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import SearchRounded from '@mui/icons-material/SearchRounded';
+import ClearRounded from '@mui/icons-material/ClearRounded';
+import WaterDropRounded from '@mui/icons-material/WaterDropRounded';
+import ViewDayRounded from '@mui/icons-material/ViewDayRounded';
+import AccountTreeRounded from '@mui/icons-material/AccountTreeRounded';
+import TimelineRounded from '@mui/icons-material/TimelineRounded';
 import {
   CONFLUENCES,
   CONFLUENCE_LABEL_MAP,

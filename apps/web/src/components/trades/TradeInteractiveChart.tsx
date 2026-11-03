@@ -15,20 +15,18 @@ import {
   useTheme,
   Collapse,
 } from '@mui/material';
-import {
-  ZoomOutMapRounded,
-  FullscreenRounded,
-  FullscreenExitRounded,
-  RefreshRounded,
-  TuneRounded,
-  CandlestickChartRounded,
-  LayersRounded,
-  TrendingUpRounded,
-  TrendingDownRounded,
-  WarningAmberRounded,
-  AutoAwesomeRounded,
-  ImageRounded,
-} from '@mui/icons-material';
+import ZoomOutMapRounded from '@mui/icons-material/ZoomOutMapRounded';
+import FullscreenRounded from '@mui/icons-material/FullscreenRounded';
+import FullscreenExitRounded from '@mui/icons-material/FullscreenExitRounded';
+import RefreshRounded from '@mui/icons-material/RefreshRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import CandlestickChartRounded from '@mui/icons-material/CandlestickChartRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRounded from '@mui/icons-material/TrendingDownRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import ImageRounded from '@mui/icons-material/ImageRounded';
 import {
   createChart,
   CandlestickSeries,

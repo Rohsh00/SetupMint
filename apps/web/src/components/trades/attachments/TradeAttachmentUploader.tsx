@@ -13,16 +13,14 @@ import {
   Tooltip,
   useTheme,
 } from '@mui/material';
-import {
-  CloudUploadRounded,
-  DeleteOutlineRounded,
-  VisibilityRounded,
-  CollectionsRounded,
-  AddPhotoAlternateRounded,
-  CheckCircleRounded,
-  AccessTimeRounded,
-  InfoOutlined,
-} from '@mui/icons-material';
+import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
+import CollectionsRounded from '@mui/icons-material/CollectionsRounded';
+import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import AccessTimeRounded from '@mui/icons-material/AccessTimeRounded';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import {
   AttachmentCategory,
   CHART_ATTACHMENT_CATEGORIES,

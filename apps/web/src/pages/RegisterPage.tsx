@@ -12,9 +12,7 @@ import {
   Link,
   useTheme,
 } from '@mui/material';
-import {
-  ArrowForwardRounded,
-} from '@mui/icons-material';
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
 import { useAuth } from '../context/AuthContext.js';
 import { SetupMintLogo } from '../components/brand/SetupMintLogo.js';
 import { toast } from '../context/ToastContext.js';

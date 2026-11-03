@@ -16,17 +16,15 @@ import {
   Tabs,
   Tab,
 } from '@mui/material';
-import {
-  AutoAwesomeRounded,
-  LayersRounded,
-  CheckRounded,
-  CloseRounded,
-  RotateLeftRounded,
-  InfoOutlined,
-  CheckCircleOutlineRounded,
-  KeyboardReturnRounded,
-  TuneRounded,
-} from '@mui/icons-material';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import CheckRounded from '@mui/icons-material/CheckRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import RotateLeftRounded from '@mui/icons-material/RotateLeftRounded';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
+import CheckCircleOutlineRounded from '@mui/icons-material/CheckCircleOutlineRounded';
+import KeyboardReturnRounded from '@mui/icons-material/KeyboardReturnRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
 import {
   ITradeTemplate,
   BUILT_IN_TEMPLATES,

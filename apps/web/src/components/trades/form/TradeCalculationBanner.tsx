@@ -9,14 +9,12 @@ import {
   Divider,
   useTheme,
 } from '@mui/material';
-import {
-  TrendingUpRounded,
-  TrendingDownRounded,
-  RemoveCircleOutlineRounded,
-  HourglassEmptyRounded,
-  WarningAmberRounded,
-  ShieldRounded,
-} from '@mui/icons-material';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRounded from '@mui/icons-material/TrendingDownRounded';
+import RemoveCircleOutlineRounded from '@mui/icons-material/RemoveCircleOutlineRounded';
+import HourglassEmptyRounded from '@mui/icons-material/HourglassEmptyRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import { TradeOutcome } from '@tradevault/shared';
 import { formatCurrency, formatR } from '../../../lib/utils.js';
 import { HelpHint } from '../../help/index.js';

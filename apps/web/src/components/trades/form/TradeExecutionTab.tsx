@@ -1,6 +1,7 @@
 import React from 'react';
 import { UseFormRegister, UseFormWatch, UseFieldArrayReturn } from 'react-hook-form';
-import { Plus, Trash2, Sliders } from 'lucide-react';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { formatCurrency, currentLocalIsoDateTime } from '../../../lib/utils.js';
 import { HelpHint } from '../../help/index.js';
 
@@ -211,7 +212,7 @@ export function TradeExecutionTab({
                 onClick={() => handleAddFill('ENTRY')}
                 className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-medium hover:bg-emerald-600/30"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <AddRoundedIcon sx={{ fontSize: 14 }} />
                 <span>Add Entry Fill</span>
               </button>
               <button
@@ -219,7 +220,7 @@ export function TradeExecutionTab({
                 onClick={() => handleAddFill('EXIT')}
                 className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-600/20 text-rose-400 border border-rose-500/30 text-xs font-medium hover:bg-rose-600/30"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <AddRoundedIcon sx={{ fontSize: 14 }} />
                 <span>Add Exit Fill</span>
               </button>
             </div>
@@ -296,7 +297,7 @@ export function TradeExecutionTab({
                             className="p-1 text-muted-foreground hover:text-rose-400"
                             aria-label="Remove fill"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
                           </button>
                         </td>
                       </tr>

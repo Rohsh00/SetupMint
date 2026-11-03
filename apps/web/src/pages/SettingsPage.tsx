@@ -34,52 +34,50 @@ import {
   useTheme as useMuiTheme,
   alpha,
 } from '@mui/material';
-import {
-  SettingsRounded,
-  PersonRounded,
-  LockRounded,
-  StorageRounded,
-  KeyRounded,
-  DarkModeRounded,
-  LightModeRounded,
-  SettingsBrightnessRounded,
-  CheckCircleRounded,
-  ShieldRounded,
-  LogoutRounded,
-  LaptopRounded,
-  PhoneAndroidRounded,
-  SyncRounded,
-  LinkRounded,
-  LinkOffRounded,
-  VisibilityRounded,
-  VisibilityOffRounded,
-  CloudDoneRounded,
-  ContentCopyRounded,
-  TimelineRounded,
-  AddRounded,
-  DeleteRounded,
-  EditRounded,
-  AutoAwesomeRounded,
-  TuneRounded,
-  LayersRounded,
-  FlashOnRounded,
-  TrackChangesRounded,
-  SpeedRounded,
-  VolumeUpRounded,
-  VolumeOffRounded,
-  KeyboardAltRounded,
-  AccessTimeRounded,
-  WarningAmberRounded,
-  TrendingUpRounded,
-  ExpandMoreRounded,
-  ExpandLessRounded,
-  CheckRounded,
-  NotificationsActiveRounded,
-  SendRounded,
-  ScienceRounded,
-  CloudSyncRounded,
-  LockClockRounded,
-} from '@mui/icons-material';
+import SettingsRounded from '@mui/icons-material/SettingsRounded';
+import PersonRounded from '@mui/icons-material/PersonRounded';
+import LockRounded from '@mui/icons-material/LockRounded';
+import StorageRounded from '@mui/icons-material/StorageRounded';
+import KeyRounded from '@mui/icons-material/KeyRounded';
+import DarkModeRounded from '@mui/icons-material/DarkModeRounded';
+import LightModeRounded from '@mui/icons-material/LightModeRounded';
+import SettingsBrightnessRounded from '@mui/icons-material/SettingsBrightnessRounded';
+import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
+import ShieldRounded from '@mui/icons-material/ShieldRounded';
+import LogoutRounded from '@mui/icons-material/LogoutRounded';
+import LaptopRounded from '@mui/icons-material/LaptopRounded';
+import PhoneAndroidRounded from '@mui/icons-material/PhoneAndroidRounded';
+import SyncRounded from '@mui/icons-material/SyncRounded';
+import LinkRounded from '@mui/icons-material/LinkRounded';
+import LinkOffRounded from '@mui/icons-material/LinkOffRounded';
+import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
+import VisibilityOffRounded from '@mui/icons-material/VisibilityOffRounded';
+import CloudDoneRounded from '@mui/icons-material/CloudDoneRounded';
+import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
+import TimelineRounded from '@mui/icons-material/TimelineRounded';
+import AddRounded from '@mui/icons-material/AddRounded';
+import DeleteRounded from '@mui/icons-material/DeleteRounded';
+import EditRounded from '@mui/icons-material/EditRounded';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import FlashOnRounded from '@mui/icons-material/FlashOnRounded';
+import TrackChangesRounded from '@mui/icons-material/TrackChangesRounded';
+import SpeedRounded from '@mui/icons-material/SpeedRounded';
+import VolumeUpRounded from '@mui/icons-material/VolumeUpRounded';
+import VolumeOffRounded from '@mui/icons-material/VolumeOffRounded';
+import KeyboardAltRounded from '@mui/icons-material/KeyboardAltRounded';
+import AccessTimeRounded from '@mui/icons-material/AccessTimeRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded';
+import CheckRounded from '@mui/icons-material/CheckRounded';
+import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
+import SendRounded from '@mui/icons-material/SendRounded';
+import ScienceRounded from '@mui/icons-material/ScienceRounded';
+import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
+import LockClockRounded from '@mui/icons-material/LockClockRounded';
 import {
   IInstrumentDetectionSetting,
   DEFAULT_PATTERN_DETECTION_SETTINGS,

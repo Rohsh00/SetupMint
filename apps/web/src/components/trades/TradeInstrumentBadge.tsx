@@ -13,14 +13,12 @@ import {
   SxProps,
   Theme,
 } from '@mui/material';
-import {
-  CollectionsRounded as CollectionsIcon,
-  TuneRounded as TuneIcon,
-  SearchRounded as SearchIcon,
-  CalculateRounded as CalculateIcon,
-  InfoOutlined as InfoIcon,
-  TrendingUpRounded as TrendingUpIcon,
-} from '@mui/icons-material';
+import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
+import TuneIcon from '@mui/icons-material/TuneRounded';
+import SearchIcon from '@mui/icons-material/SearchRounded';
+import CalculateIcon from '@mui/icons-material/CalculateRounded';
+import InfoIcon from '@mui/icons-material/InfoOutlined';
+import TrendingUpIcon from '@mui/icons-material/TrendingUpRounded';
 
 export interface TradeInstrumentData {
   id?: string;

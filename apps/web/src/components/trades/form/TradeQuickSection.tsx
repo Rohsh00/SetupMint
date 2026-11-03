@@ -16,22 +16,20 @@ import {
   CircularProgress,
   useTheme,
 } from '@mui/material';
-import {
-  TrendingUpRounded,
-  TrendingDownRounded,
-  AddRounded,
-  RemoveRounded,
-  TuneRounded,
-  AttachMoneyRounded,
-  SecurityRounded,
-  SpeedRounded,
-  ExpandMoreRounded,
-  ExpandLessRounded,
-  LocalOfferRounded,
-  RotateLeftRounded,
-  InfoOutlined,
-  AccountTreeRounded,
-} from '@mui/icons-material';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRounded from '@mui/icons-material/TrendingDownRounded';
+import AddRounded from '@mui/icons-material/AddRounded';
+import RemoveRounded from '@mui/icons-material/RemoveRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import AttachMoneyRounded from '@mui/icons-material/AttachMoneyRounded';
+import SecurityRounded from '@mui/icons-material/SecurityRounded';
+import SpeedRounded from '@mui/icons-material/SpeedRounded';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded';
+import LocalOfferRounded from '@mui/icons-material/LocalOfferRounded';
+import RotateLeftRounded from '@mui/icons-material/RotateLeftRounded';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
+import AccountTreeRounded from '@mui/icons-material/AccountTreeRounded';
 import {
   ASSET_CLASSES,
   MARKET_SEGMENTS,

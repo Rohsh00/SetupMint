@@ -10,20 +10,18 @@ import {
   useTheme,
   Button,
 } from '@mui/material';
-import {
-  CloseRounded,
-  ChevronLeftRounded,
-  ChevronRightRounded,
-  ZoomInRounded,
-  ZoomOutRounded,
-  RestartAltRounded,
-  FileDownloadRounded,
-  DeleteOutlineRounded,
-  AccessTimeRounded,
-  LayersRounded,
-  ShowChartRounded,
-  MicRounded,
-} from '@mui/icons-material';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import ChevronLeftRounded from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded';
+import ZoomInRounded from '@mui/icons-material/ZoomInRounded';
+import ZoomOutRounded from '@mui/icons-material/ZoomOutRounded';
+import RestartAltRounded from '@mui/icons-material/RestartAltRounded';
+import FileDownloadRounded from '@mui/icons-material/FileDownloadRounded';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
+import AccessTimeRounded from '@mui/icons-material/AccessTimeRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import ShowChartRounded from '@mui/icons-material/ShowChartRounded';
+import MicRounded from '@mui/icons-material/MicRounded';
 import { IAttachment, CHART_ATTACHMENT_CATEGORIES } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.js';

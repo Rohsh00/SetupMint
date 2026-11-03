@@ -33,6 +33,8 @@ services:
         sync: false
       - key: S3_REGION
         value: auto
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=460
 
   - type: static
     name: setupmint-web
@@ -46,4 +48,6 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://setupmint-api.onrender.com
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=2048
 

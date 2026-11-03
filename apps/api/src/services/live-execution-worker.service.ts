@@ -177,6 +177,21 @@ export class LiveExecutionWorker {
         }
       }
 
+      // Post-market 15:35 PM EOD Performance Digest (Mon-Fri)
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && hours === 15 && minutes >= 35 && minutes <= 40) {
+        const eodKey = `eod_digest:${user._id}:${nowIST.toDateString()}`;
+        if (
+          !this.executedMilestones.has(eodKey) &&
+          watcherSettings?.telegramAlertsEnabled &&
+          watcherSettings?.telegramBotToken &&
+          watcherSettings?.telegramChatId &&
+          watcherSettings?.telegramAlertEvents?.eodSummaryDigest !== false
+        ) {
+          this.executedMilestones.add(eodKey);
+          TelegramAlertService.sendEodDigest(user).catch(() => {});
+        }
+      }
+
       // Find open trades for this user
       const openTrades = await Trade.find({
         userId: user._id,

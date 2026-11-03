@@ -1828,4 +1828,94 @@ export class TelegramAlertService {
       { upsert: true }
     );
   }
+
+  /**
+   * Automatically dispatches an End of Day (EOD) Performance Digest to the trader's Telegram at 15:35 IST.
+   */
+  static async sendEodDigest(user: any): Promise<void> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
+    if (settings.telegramAlertEvents && settings.telegramAlertEvents.eodSummaryDigest === false) return;
+
+    let botToken = settings.telegramBotToken;
+    botToken = decryptSecret(botToken) || botToken;
+    const chatId = settings.telegramChatId;
+
+    // Calculate start of current day in IST (Asia/Kolkata)
+    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const istYear = nowIST.getFullYear();
+    const istMonth = nowIST.getMonth();
+    const istDate = nowIST.getDate();
+    const istOffsetMs = 5.5 * 60 * 60 * 1000;
+    const startOfIstDay = new Date(Date.UTC(istYear, istMonth, istDate, 0, 0, 0) - istOffsetMs);
+
+    const trades = await Trade.find({
+      userId: user._id,
+      status: 'CLOSED',
+      exitTime: { $gte: startOfIstDay },
+    }).lean();
+
+    const count = trades.length;
+    if (count === 0) {
+      const text =
+        `🌅 <b>Market Close — Daily Session Digest</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `No closed trades recorded today (${nowIST.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium' })}).\n\n` +
+        `<i>Patience is discipline. Zero trades means zero capital risked outside your setups.</i>`;
+      await this.sendMessage(botToken, chatId, text);
+      return;
+    }
+
+    const wins = trades.filter((t) => (t.calculated?.netPnL || 0) > 0);
+    const losses = trades.filter((t) => (t.calculated?.netPnL || 0) < 0);
+    const winRate = Number(((wins.length / count) * 100).toFixed(1));
+    const totalCosts = trades.reduce((acc, t) => acc + (t.calculated?.totalCosts || 0), 0);
+    const netPnL = trades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
+    const netR = trades.reduce((acc, t) => acc + (t.calculated?.realizedRMultiple || 0), 0);
+
+    let bestWin: any = null;
+    let worstLoss: any = null;
+    for (const t of trades) {
+      const pnl = t.calculated?.netPnL || 0;
+      if (pnl > 0 && (!bestWin || pnl > (bestWin.calculated?.netPnL || 0))) {
+        bestWin = t;
+      }
+      if (pnl < 0 && (!worstLoss || pnl < (worstLoss.calculated?.netPnL || 0))) {
+        worstLoss = t;
+      }
+    }
+
+    const pnlSign = netPnL >= 0 ? '+' : '';
+    const rSign = netR >= 0 ? '+' : '';
+
+    let text =
+      `📊 <b>EOD Trading Performance Digest</b>\n` +
+      `📅 <i>${nowIST.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })}</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Net P&L      : ${pnlSign}₹${netPnL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+      `Win Rate     : ${winRate}% (${wins.length}W / ${losses.length}L)\n` +
+      `Total Trades : ${count}\n` +
+      `Harvested R  : ${rSign}${netR.toFixed(2)}R\n` +
+      `Broker Costs : -₹${totalCosts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+      `</pre>\n`;
+
+    if (bestWin) {
+      text += `🏆 <b>Best Win:</b> ${bestWin.symbol} (+₹${(bestWin.calculated?.netPnL || 0).toLocaleString('en-IN')})\n`;
+    }
+    if (worstLoss) {
+      text += `🛑 <b>Max Loss:</b> ${worstLoss.symbol} (-₹${Math.abs(worstLoss.calculated?.netPnL || 0).toLocaleString('en-IN')})\n`;
+    }
+
+    text += `\n💾 <i>All excursion analytics and SVG chart snapshots are archived in SetupMint Pro.</i>`;
+
+    const buttons = [
+      [
+        { text: '📈 Open Analytics', url: `${config.webAppUrl}/analytics` },
+        { text: '📑 View Trades', url: `${config.webAppUrl}/trades` },
+      ],
+    ];
+
+    await this.sendMessage(botToken, chatId, text, buttons);
+  }
 }

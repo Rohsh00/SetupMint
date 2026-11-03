@@ -329,4 +329,52 @@ describe('SetupMint Telegram Alerting Engine Integration Tests', () => {
     const jsonRep = userInstance?.toJSON();
     expect(jsonRep?.liveWatcherSettings?.telegramBotToken).toBeUndefined();
   });
+
+  it('10. Dispatches EOD performance digest with win rate, net PnL and metrics', async () => {
+    const sentMessages: any[] = [];
+    vi.spyOn(TelegramAlertService as any, 'sendMessage').mockImplementation(
+      async (botToken: string, chatId: string | number, text: string, replyMarkup?: any) => {
+        sentMessages.push({ botToken, chatId, text, replyMarkup });
+        return { ok: true, result: { message_id: 8888 } };
+      }
+    );
+
+    // Create a closed trade for today
+    await Trade.create({
+      userId: userA._id,
+      accountId: new mongoose.Types.ObjectId(),
+      exchange: 'NSE',
+      marketSegment: 'NSE_FNO',
+      symbol: 'NIFTY 24600 CE',
+      assetClass: 'OPTIONS',
+      direction: 'LONG',
+      status: 'CLOSED',
+      quantity: 50,
+      tradeDate: '2026-11-03',
+      entryTime: new Date(),
+      exitTime: new Date(),
+      calculated: {
+        openQuantity: 0,
+        closedQuantity: 50,
+        averageEntryPrice: 100,
+        averageExitPrice: 130,
+        grossPnL: 1500,
+        totalCosts: 50,
+        netPnL: 1450,
+        realizedRMultiple: 2.5,
+        outcome: 'WIN',
+      },
+      screenshotIds: [],
+      auditLog: [],
+    });
+
+    await TelegramAlertService.sendEodDigest(userA);
+
+    expect(sentMessages.length).toBeGreaterThan(0);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('EOD Trading Performance Digest');
+    expect(lastMsg.text).toContain('1,450');
+    expect(lastMsg.text).toContain('100%');
+    expect(lastMsg.replyMarkup).toBeDefined();
+  });
 });

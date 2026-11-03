@@ -1159,17 +1159,21 @@ export class FyersService {
 
           // Calculate Indian Statutory Charges with FYERS Flat ₹20 Brokerage
           const charges = calculateIndianCharges({
+            direction: grp.direction,
             assetClass,
             marketSegment,
             entryPrice: avgEntry,
             exitPrice: avgExit,
-            quantity: totalTradeQty,
+            quantity: closedQty > 0 ? closedQty : totalTradeQty,
             contractMultiplier: multiplier,
             broker: 'FYERS',
           });
 
           const grossPnL = fifoSummary.realizedGrossPnL.toNumber();
-          const netPnL = grossPnL - charges.totalCosts;
+          const totalCosts = fifoSummary.totalCosts.greaterThan(0)
+            ? fifoSummary.totalCosts.toNumber()
+            : charges.totalCosts;
+          const netPnL = Number(new Decimal(grossPnL).minus(totalCosts).toFixed(2));
           const lastExitFill = grp.fills.filter((f) => f.type === 'EXIT').slice(-1)[0];
           const exitTime = lastExitFill ? lastExitFill.timestamp : undefined;
 

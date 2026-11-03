@@ -1652,6 +1652,16 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       : resolvedExitPrice;
     const slippagePoints = brokerResult.executedOnBroker ? (effectiveExitPrice - resolvedExitPrice) : 0;
 
+    const exitLegCharges = calculateIndianCharges({
+      direction: trade.direction,
+      assetClass: trade.assetClass,
+      marketSegment: trade.marketSegment,
+      entryPrice: effectiveExitPrice,
+      quantity: exitQty,
+      contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+      isSingleLeg: true,
+    });
+
     // Update trade record in MongoDB
     if (isReallyFullClose) {
       if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
@@ -1661,9 +1671,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           price: effectiveExitPrice,
           quantity: exitQty,
           timestamp: new Date(),
-          brokerage: 20,
-          exchangeFee: 0,
-          taxes: 0,
+          brokerage: exitLegCharges.brokerage,
+          exchangeFee: exitLegCharges.exchangeFees,
+          taxes: exitLegCharges.taxes,
           notes: brokerResult.executedOnBroker ? `FYERS execution (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
         });
       } else {
@@ -1707,9 +1717,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         price: effectiveExitPrice,
         quantity: exitQty,
         timestamp: new Date(),
-        brokerage: 20,
-        exchangeFee: 0,
-        taxes: 0,
+        brokerage: exitLegCharges.brokerage,
+        exchangeFee: exitLegCharges.exchangeFees,
+        taxes: exitLegCharges.taxes,
         notes: brokerResult.executedOnBroker ? `FYERS partial exit (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
       });
       trade.status = 'OPEN';
@@ -1855,6 +1865,16 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // 2. Record partial exit fills in MongoDB
     if (requestedExitQty > 0) {
+      const exitLegCharges = calculateIndianCharges({
+        direction: trade.direction,
+        assetClass: trade.assetClass,
+        marketSegment: trade.marketSegment,
+        entryPrice: effectiveExitPrice,
+        quantity: requestedExitQty,
+        contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+        isSingleLeg: true,
+      });
+
       if (isFullClose) {
         if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
           trade.fills.push({
@@ -1863,9 +1883,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             price: effectiveExitPrice,
             quantity: requestedExitQty,
             timestamp: new Date(),
-            brokerage: 20,
-            exchangeFee: 0,
-            taxes: 0,
+            brokerage: exitLegCharges.brokerage,
+            exchangeFee: exitLegCharges.exchangeFees,
+            taxes: exitLegCharges.taxes,
             notes: `${label}: Full exit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
           });
         } else {
@@ -1907,9 +1927,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           price: effectiveExitPrice,
           quantity: requestedExitQty,
           timestamp: new Date(),
-          brokerage: 20,
-          exchangeFee: 0,
-          taxes: 0,
+          brokerage: exitLegCharges.brokerage,
+          exchangeFee: exitLegCharges.exchangeFees,
+          taxes: exitLegCharges.taxes,
           notes: `${label}: Partial profit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
         });
         trade.status = 'OPEN';

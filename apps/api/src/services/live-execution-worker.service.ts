@@ -302,6 +302,8 @@ export class LiveExecutionWorker {
       direction: metric.direction,
       quantity: metric.quantity,
       contractMultiplier: metric.contractMultiplier,
+      initialStopLoss: metric.initialStopLoss,
+      initialRiskAmount: metric.initialRiskAmount,
       stopLoss: metric.stopLoss,
       plannedTarget: metric.target,
       tickSize: metric.tickSize,

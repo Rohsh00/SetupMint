@@ -13,11 +13,11 @@ SetupMint uses **Vitest v3** (`vitest 3.0.6`) across the monorepo:
 
 ---
 
-## 2. Test Suite Inventory (717 Passing Tests across 63 Suites)
+## 2. Test Suite Inventory (769 Passing Tests across 71 Suites)
 
-The repository contains **717 fully automated tests** spanning Telegram bot alerts, state machine hysteresis, callback idempotency, webhook secret token verification, token encryption at rest, scheduled encrypted off-site backups, retention rotation, anomaly detection, BSON EJSON round-tripping, custom date range filters & Indian FY presets, weekly reviews and focus rule synthesis, parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), MFE reach funnels and round-trip loss prevention, live open trade watcher floating MTM & stop threat detection, live profit giveback meters, multi-target scaling ladders, live FYERS broker execution, multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
+The repository contains **769 fully automated tests across 71 test suites** (379 tests across 33 suites in `@tradevault/financial-engine`, plus 390 tests across 38 suites in `apps/api`) spanning Telegram bot alerts, state machine hysteresis, callback idempotency, webhook secret token verification, token encryption at rest, scheduled encrypted off-site backups, retention rotation, anomaly detection, BSON EJSON round-tripping, custom date range filters & Indian FY presets, weekly reviews and focus rule synthesis, parent strategy / child setup variant analytics, mathematical calculations, regulatory fee structures, session derivations, excursion analytics (MAE/MFE/Exit Efficiency), MFE reach funnels and round-trip loss prevention, live open trade watcher floating MTM & stop threat detection, live profit giveback meters, multi-target scaling ladders, live FYERS broker execution, multi-panel equity curves, underwater drawdown recovery durations, cumulative R-multiples, deterministic Monte Carlo expectancy cones, risk and tilt event markers, universal drilldown resolvers, aggregate reconciliation, mistake detection rules, discipline scoring, market setup template resolution, dynamic ranking, multi-timeframe candle execution charts, permanent auto-chart snapshots, staleness tracking, NSE 2026 holiday/expiry shifts, REST endpoints, quick close mutations, smart CSV imports with FIFO grouping, review queues, batch undo, cloud file uploads, server-side lossless image optimization, persistent sliding sessions, SHA-256 token hashing, device management, seed generation, and regression scenarios.
 
-### A. Financial Engine Unit Tests (353 Tests across 30 Suites)
+### A. Financial Engine Unit Tests (379 Tests across 33 Suites)
 Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -37,7 +37,7 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `risk.test.ts` | 6 tests | Position size formula, lot rounding down to lot size step, stop distance validation, planned R:R, realized R-multiple. |
 | `metrics.test.ts` | 2 tests | Comprehensive dashboard metrics: win rate, profit factor (including zero-loss 999.99 handling), peak-to-trough drawdowns, consecutive win/loss streaks. |
 | `currency.test.ts` | 3 tests | Identical currency pass-through, explicit conversion rates, rejection of silent 1:1 conversions when rate is missing. |
-| `charges.test.ts` | 6 tests | Indian statutory charges across segments (NSE_EQ, NSE_FNO futures, NSE_FNO options, MCX commodities), flat brokerage (₹20/leg, ₹0 Finvasia, custom), STT/CTT, SEBI, GST, stamp duty. |
+| `charges.test.ts` | 8 tests | Indian statutory charges across segments (NSE_EQ, NSE_FNO futures, NSE_FNO options, MCX commodities), flat brokerage (₹20/leg, ₹0 Finvasia, custom), broker name normalization ('ANGEL ONE', 'ANGEL_ONE'), direction-aware short statutory charges (STT on entry sell, Stamp Duty on exit buy), single-leg open short charges, SEBI, GST. |
 | `session.test.ts` | 5 tests | Automatic session derivation: NSE market hours (09:15-15:30 IST), MCX evening session, foreign exchanges (New York / London), weekends & Crypto off-hours. |
 | `stop-move.test.ts` | 7 tests | Trailing vs risk-widening stop modifications, point and amount deltas, and automated `STOP_MOVED` mistake tagging. |
 | `mistakes.test.ts` | 15 tests | Pure Decimal.js detection for revenge trading (time window + loss + position size), overtrading daily threshold & concurrent open positions, position sizing violations against equity, daily loss breach evaluation, daily session summary prefill, rule-based discipline rating (1 to 5), excursion-evidence rules (`STOP_TOO_TIGHT`, `PREMATURE_EXIT`, `BREAKEVEN_TOO_EARLY`), and advisory liquidity/level checks. |
@@ -47,10 +47,10 @@ Located in [`packages/financial-engine/test/`](file:///Users/komal/projects/Trad
 | `tilt.test.ts` | 8 tests | Tilt / emotional state detection heuristics. |
 | `variant-analytics.test.ts` | 9 tests | Per-variant performance buckets, UNCLASSIFIED / NOT_APPLICABLE / ORPHANED system buckets, profit factor states, R-multiple coverage, sample size warnings, parent-vs-bucket invariant reconciliation, and dynamic `suggestTradeVariant` scoring. |
 | `excursion.test.ts` | 30 tests | Pure Decimal.js 30-digit precision calculation of MAE/MFE points, amounts, R multiples, candle lifecycle overlap filtering, Exit Efficiency, stop hit & post-stop reversal detection, time-to-MFE/MAE, diagnostic flags, and MFE Reach Funnel (0.5R, 1.0R, 1.5R, 2.0R, 2.5R, 3.0R reach percentages, win conversion rates, round-trip loss rates, and surrendered R/₹ quantification). |
-| `live-watcher.test.ts` | 9 tests | Live floating gross/net P&L calculation, tick distance to stop loss, stop threat levels (`SAFE`, `ATTENTION`, `CRITICAL`, `BREACHED`), Live Profit Giveback meter calculations (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`), and Multi-Target Scaling Ladder steps (T1 +1.0R, T2 +2.0R, T3 Runner). |
+| `live-watcher.test.ts` | 19 tests | Live floating gross/net P&L calculation, tick distance to stop loss, stop threat levels (`SAFE`, `ATTENTION`, `CRITICAL`, `BREACHED`), Live Profit Giveback meter calculations (`SAFE`, `WATCH`, `LEAKING`, `CRITICAL_REVERSAL`), Multi-Target Scaling Ladder steps (T1 +1.0R, T2 +2.0R, T3 Runner), and strict initialStopLoss anchoring regression test preventing premature MET triggers when stops are trailed. |
 | `what-if.test.ts` | 17 tests | Candle-replay stop and target simulation grid, empirical stop/target prefill suggestions, and trade outcome counterfactuals. |
 
-### B. Backend API & Integration Tests (364 Tests across 33 Suites)
+### B. Backend API & Integration Tests (390 Tests across 38 Suites)
 Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/api/test/):
 
 | Test File | Tests | Critical Assertions Covered |
@@ -69,7 +69,7 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 | `attachment.test.ts` | 15 tests | Multipart upload, binary magic-bytes signature verification (PNG/JPEG/WebP), rejection of disguised binary files, server-side lossless optimization, matching stored WebP/PNG extension and stream Content-Type, 12-image cap enforcement, authenticated streaming via session cookies and direct ?token= query parameter without headers, cloud storage cleanup upon deletion. |
 | `template.test.ts` | 12 tests | Authentication enforcement, 25 built-in templates listing with stats, custom template creation & uniqueness, update, built-in protection (`BUILT_IN_READ_ONLY`), strict tenant isolation between users, trade linking to `templateId`, trade query filtering by `templateId`, favorite toggling, usage incrementation. |
 | `strategy-variants.test.ts` | 8 tests | Custom parent strategy with arbitrary child variants (no static keys), tenant isolation, trade logging with `strategyId` + `setup.variantKey` and `CLASSIFIED` audit entry, `409 VARIANT_IN_USE` deletion protection, archiving via `isActive: false`, bulk classification, `GET /strategies/:id/analytics` buckets and invariant check, idempotent starter pack insertion. |
-| `instrument.test.ts` | 18 tests | User-owned instruments, on-demand creation, preview/apply-to-trades cascades, `INSTRUMENT_IN_USE` protection. |
+| `instrument.test.ts` | 20 tests | User-owned instruments, on-demand creation, preview/apply-to-trades cascades, `INSTRUMENT_IN_USE` protection, and explicitAdjustments positive/negative P&L invariant tests. |
 | `seed-engine.test.ts` | 8 tests | Deterministic seeding via Mulberry32 PRNG, 15 strategy playbooks, idempotency verification, account balance consistency, seed validation engine including Check 11 Excursion Invariants. |
 | `connection.test.ts` | 8 tests | Cloud-only Atlas URI validation, masking credentials in logs, rejection of local/memory addresses, fail-fast behavior. |
 | `storage.test.ts` | 13 tests | Cloudflare R2 bucket connection, signed uploads, streaming download, key formatting, object deletion. |
@@ -88,13 +88,13 @@ Located in [`apps/api/test/`](file:///Users/komal/projects/Trading%20Vault/apps/
 ## 3. Running Test Commands
 
 ```bash
-# 1. Run all test suites across the monorepo (431 tests)
+# 1. Run all test suites across the monorepo (769 tests across 71 suites)
 npm run test
 
-# 2. Run only financial engine mathematical unit tests (178 tests)
+# 2. Run only financial engine mathematical unit tests (379 tests across 33 suites)
 npm run test:engine
 
-# 3. Run only backend API, attachment, session, broker, ledger, and regression tests (253 tests)
+# 3. Run only backend API, attachment, session, broker, ledger, and regression tests (390 tests across 38 suites)
 #    Tip: if the in-memory replica set reports a port conflict, run sequentially:
 #    npx vitest run --no-file-parallelism   (inside apps/api)
 npm run test:api

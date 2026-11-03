@@ -260,23 +260,23 @@ export function calculateDashboardMetrics(
   }
 
   const closedCount = closedTrades.length;
-  const winRate = closedCount > 0 ? (winCount / closedCount) * 100 : 0;
-  const lossRate = closedCount > 0 ? (lossCount / closedCount) * 100 : 0;
+  const winRate = closedCount > 0 ? Number(((winCount / closedCount) * 100).toFixed(2)) : 0;
+  const lossRate = closedCount > 0 ? Number(((lossCount / closedCount) * 100).toFixed(2)) : 0;
 
-  const avgWinningTrade = winCount > 0 ? sumWinningPnL.dividedBy(winCount).toNumber() : 0;
-  const avgLosingTrade = lossCount > 0 ? sumLosingPnL.dividedBy(lossCount).toNumber() : 0;
+  const avgWinningTrade = winCount > 0 ? Number(sumWinningPnL.dividedBy(winCount).toFixed(2)) : 0;
+  const avgLosingTrade = lossCount > 0 ? Number(sumLosingPnL.dividedBy(lossCount).toFixed(2)) : 0;
 
   let profitFactor = 0;
   if (sumLosingPnL.isZero()) {
     profitFactor = sumWinningPnL.greaterThan(0) ? 999.99 : 0;
   } else {
-    profitFactor = sumWinningPnL.dividedBy(sumLosingPnL).toNumber();
+    profitFactor = Number(sumWinningPnL.dividedBy(sumLosingPnL).toFixed(2));
   }
 
-  const expectancy = closedCount > 0 ? totalNetPnL.dividedBy(closedCount).toNumber() : 0;
-  const avgRealizedR = rCount > 0 ? sumRealizedR.dividedBy(rCount).toNumber() : 0;
+  const expectancy = closedCount > 0 ? Number(totalNetPnL.dividedBy(closedCount).toFixed(2)) : 0;
+  const avgRealizedR = rCount > 0 ? Number(sumRealizedR.dividedBy(rCount).toFixed(2)) : 0;
   const avgHoldingTimeMinutes = holdingCount > 0 ? Math.round(sumHoldingMinutes / holdingCount) : 0;
-  const ruleAdherencePercent = closedCount > 0 ? (rulesFollowedCount / closedCount) * 100 : 100;
+  const ruleAdherencePercent = closedCount > 0 ? Number(((rulesFollowedCount / closedCount) * 100).toFixed(2)) : 100;
 
   // Best & worst days
   let bestTradingDay: { date: string; netPnL: number } | undefined;

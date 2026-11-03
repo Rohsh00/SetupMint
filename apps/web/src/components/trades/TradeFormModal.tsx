@@ -652,17 +652,17 @@ function TradeFormModalContent({
           (Number(watchedSimple?.exchangeFees) || 0) +
           (Number(watchedSimple?.regulatoryFees) || 0) +
           (Number(watchedSimple?.taxes) || 0) +
-          (Number(watchedSimple?.otherFees) || 0) +
-          (Number(watchedSimple?.explicitAdjustments) || 0)
+          (Number(watchedSimple?.otherFees) || 0)
         ).toFixed(2)
       );
+      const explicitAdj = Number(watchedSimple?.explicitAdjustments) || 0;
 
       liveCosts = fifoCosts > 0 ? fifoCosts : simpleCosts;
       if (liveCosts === 0 && isAutoFees) {
         const auto = computeAutoCharges();
         if (auto) liveCosts = auto.totalCosts;
       }
-      liveNet = Number((liveGross - liveCosts).toFixed(2));
+      liveNet = Number((liveGross - liveCosts + explicitAdj).toFixed(2));
       liveOutcome = watchedStatus === 'OPEN' ? 'OPEN' : liveNet > 0 ? 'WIN' : liveNet < 0 ? 'LOSS' : 'BREAKEVEN';
       positionExposure = Number(fifo.weightedAvgEntryPrice.toFixed(2)) * fifo.closedQuantity.plus(fifo.openQuantity).toNumber() * multiplier;
     } catch {

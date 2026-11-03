@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import Decimal from 'decimal.js';
 import {
   getPresetSpec,
   TradeOutcome,
@@ -295,11 +296,12 @@ export class InstrumentService {
               (body.simpleExecution.exchangeFees || 0) +
               (body.simpleExecution.regulatoryFees || 0) +
               (body.simpleExecution.taxes || 0) +
-              (body.simpleExecution.otherFees || 0) +
-              (body.simpleExecution.explicitAdjustments || 0)
+              (body.simpleExecution.otherFees || 0)
             ).toFixed(2)
           )
         : 0;
+
+      const adjustments = body.simpleExecution?.explicitAdjustments ?? 0;
 
       if (fifoCosts > 0) {
         totalCosts = fifoCosts;
@@ -307,6 +309,7 @@ export class InstrumentService {
         totalCosts = simpleCosts;
       } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
         const autoCharges = calculateIndianCharges({
+          direction: body.direction,
           assetClass: body.assetClass,
           marketSegment: body.marketSegment,
           entryPrice: avgEntry,
@@ -326,7 +329,12 @@ export class InstrumentService {
         totalCosts = 0;
       }
 
-      netPnL = Number((grossPnL - totalCosts).toFixed(2));
+      netPnL = Number(
+        new Decimal(grossPnL)
+          .minus(totalCosts)
+          .plus(adjustments)
+          .toFixed(2)
+      );
       if (body.status !== 'OPEN') {
         if (netPnL > 0) outcome = 'WIN';
         else if (netPnL < 0) outcome = 'LOSS';

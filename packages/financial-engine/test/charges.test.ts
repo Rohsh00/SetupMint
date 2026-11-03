@@ -148,6 +148,91 @@ describe('Financial Engine - Indian Statutory Charges Calculator', () => {
       brokerFlatFeePerLeg: 20,
     });
     expect(openLegCharges.brokerage).toBe(20.00);
+
+    // Broker normalization: 'ANGEL ONE', 'ANGEL_ONE', 'angel one' should all match ANGELONE
+    const angel1 = calculateIndianCharges({
+      assetClass: 'EQUITY',
+      marketSegment: 'NSE_EQ',
+      entryPrice: 1000,
+      quantity: 10,
+      broker: 'ANGEL ONE',
+    });
+    expect(angel1.brokerage).toBe(40.00);
+
+    const angel2 = calculateIndianCharges({
+      assetClass: 'EQUITY',
+      marketSegment: 'NSE_EQ',
+      entryPrice: 1000,
+      quantity: 10,
+      broker: 'angel_one',
+    });
+    expect(angel2.brokerage).toBe(40.00);
+  });
+
+  it('correctly calculates SHORT trade statutory charges with STT on entry sell and Stamp Duty on exit buy', () => {
+    // 1 lot NIFTY Option (25 qty) SHORT: Sell @ 200, Buy to cover @ 20
+    // Direction = 'SHORT'
+    // Entry Turnover (SELL side) = 200 * 25 = 5,000
+    // Exit Turnover (BUY side) = 20 * 25 = 500
+    // Total Turnover = 5,500
+    // Brokerage = ₹40.00 (2 legs @ ₹20)
+    // Exchange fees = 5500 * 0.00035 = 1.925 -> 1.93
+    // SEBI fee = 5500 * 0.000001 = 0.0055
+    // Stamp duty (charged on BUY side, exit) = 500 * 0.00003 = 0.015 -> 0.02
+    // STT (charged on SELL side, entry) = 5000 * 0.001 = 5.00
+    // GST = (40 + 1.925 + 0.0055) * 0.18 = 41.9305 * 0.18 = 7.54749 -> 7.55
+    // Regulatory fees = SEBI (0.0055) + Stamp Duty (0.015) = 0.0205 -> 0.02
+    // Taxes = STT (5.00) + GST (7.55) = 12.55
+    // Total costs = 40 + 1.93 + 0.02 + 12.55 = 54.50
+    const shortCharges = calculateIndianCharges({
+      direction: 'SHORT',
+      assetClass: 'OPTIONS',
+      marketSegment: 'NSE_FNO',
+      entryPrice: 200,
+      exitPrice: 20,
+      quantity: 25,
+      contractMultiplier: 1,
+    });
+
+    expect(shortCharges.brokerage).toBe(40.00);
+    expect(shortCharges.exchangeFees).toBe(1.93);
+    expect(shortCharges.stampDuty).toBe(0.02);
+    expect(shortCharges.sttCtt).toBe(5.00);
+    expect(shortCharges.gst).toBe(7.55);
+    expect(shortCharges.regulatoryFees).toBe(0.02);
+    expect(shortCharges.taxes).toBe(12.55);
+    expect(shortCharges.totalCosts).toBe(54.50);
+  });
+
+  it('correctly calculates single-leg open SHORT position charges (STT on entry sell, zero Stamp Duty)', () => {
+    // Open SHORT leg: Sell @ 200, Qty 25
+    // Entry Turnover (SELL side) = 5,000
+    // Buy turnover = 0 (no exit buy yet)
+    // Brokerage = ₹20.00 (1 leg)
+    // Exchange fees = 5000 * 0.00035 = 1.75
+    // SEBI fee = 5000 * 0.000001 = 0.005
+    // Stamp duty = 0 * 0.00003 = 0.00
+    // STT = 5000 * 0.001 = 5.00
+    // GST = (20 + 1.75 + 0.005) * 0.18 = 21.755 * 0.18 = 3.9159 -> 3.92
+    // Regulatory = SEBI (0.005) + Stamp (0) = 0.01
+    // Taxes = STT (5.00) + GST (3.92) = 8.92
+    // Total costs = 20 + 1.75 + 0.01 + 8.92 = 30.68
+    const openShort = calculateIndianCharges({
+      direction: 'SHORT',
+      assetClass: 'OPTIONS',
+      marketSegment: 'NSE_FNO',
+      entryPrice: 200,
+      quantity: 25,
+      contractMultiplier: 1,
+      isSingleLeg: true,
+    });
+
+    expect(openShort.brokerage).toBe(20.00);
+    expect(openShort.exchangeFees).toBe(1.75);
+    expect(openShort.stampDuty).toBe(0.00);
+    expect(openShort.sttCtt).toBe(5.00);
+    expect(openShort.gst).toBe(3.92);
+    expect(openShort.totalCosts).toBe(30.68);
   });
 
   it('rejects negative quantity', () => {

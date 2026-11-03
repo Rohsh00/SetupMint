@@ -430,4 +430,66 @@ describe('Instrument Service & API Specifications Tests', () => {
       expect(liveResult.totalRetained).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe('9. computeTradeCalculations & explicitAdjustments Invariants', () => {
+    it('accurately adds positive explicitAdjustments to netPnL and excludes it from totalCosts', () => {
+      // Long trade: Entry 200, Exit 300, Qty 10
+      // Gross P&L = (300 - 200) * 10 = 1000.00
+      // Brokerage: 40.00, Exchange: 10.00, Taxes: 10.00 -> Total Costs = 60.00
+      // Explicit adjustments = +150.00 (e.g. broker dividend / rebate)
+      // Net P&L = 1000.00 - 60.00 + 150.00 = 1090.00
+      const calc = InstrumentService.computeTradeCalculations({
+        direction: 'LONG',
+        status: 'CLOSED',
+        executionMode: 'SIMPLE',
+        assetClass: 'EQUITY',
+        marketSegment: 'NSE_EQ',
+        simpleExecution: {
+          entryPrice: 200,
+          exitPrice: 300,
+          quantity: 10,
+          contractMultiplier: 1,
+          brokerage: 40,
+          exchangeFees: 10,
+          regulatoryFees: 0,
+          taxes: 10,
+          otherFees: 0,
+          explicitAdjustments: 150,
+        },
+      });
+
+      expect(calc.grossPnL).toBe(1000.00);
+      expect(calc.totalCosts).toBe(60.00); // Must NOT include 150 in costs
+      expect(calc.netPnL).toBe(1090.00); // 1000 - 60 + 150
+      expect(calc.outcome).toBe('WIN');
+    });
+
+    it('accurately subtracts negative explicitAdjustments from netPnL', () => {
+      // Gross P&L = 1000.00, Costs = 60.00, explicitAdjustments = -50.00 (penalty / debit)
+      // Net P&L = 1000.00 - 60.00 + (-50.00) = 890.00
+      const calc = InstrumentService.computeTradeCalculations({
+        direction: 'LONG',
+        status: 'CLOSED',
+        executionMode: 'SIMPLE',
+        assetClass: 'EQUITY',
+        marketSegment: 'NSE_EQ',
+        simpleExecution: {
+          entryPrice: 200,
+          exitPrice: 300,
+          quantity: 10,
+          contractMultiplier: 1,
+          brokerage: 40,
+          exchangeFees: 10,
+          regulatoryFees: 0,
+          taxes: 10,
+          otherFees: 0,
+          explicitAdjustments: -50,
+        },
+      });
+
+      expect(calc.grossPnL).toBe(1000.00);
+      expect(calc.totalCosts).toBe(60.00);
+      expect(calc.netPnL).toBe(890.00); // 1000 - 60 - 50
+    });
+  });
 });

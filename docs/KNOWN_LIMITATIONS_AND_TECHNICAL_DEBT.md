@@ -39,7 +39,7 @@ This document records confirmed limitations, incomplete features, architectural 
 | Item | Location | Description | Priority |
 | :--- | :--- | :--- | :--- |
 | **Legacy Namespace References** | Monorepo package naming (`@tradevault/*`) | Packages are named `@tradevault/api`, `@tradevault/web`, `@tradevault/financial-engine`, and `@tradevault/shared` while user-facing branding is **SetupMint Pro**. Maintain alias `StratumLogo` -> `SetupMintLogo`. | Low |
-| **E2E Automated Browser Tests** | `apps/web` | The application has 668 passing Vitest tests covering API, backup pipeline, and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
+| **E2E Automated Browser Tests** | `apps/web` | The application has 769 passing Vitest tests (379 financial engine + 390 API) covering API, backup pipeline, and mathematical calculations, but lacks headless Playwright/Cypress end-to-end browser test suites. | Medium |
 | **Mobile Drawer Gesture Polish** | `AppLayout.tsx` | Mobile navigation uses an off-canvas drawer; edge swipe gesture support on iOS Safari could be improved. | Low |
 | **Atlas Free Tier Backup Discipline (Resolved)** | `scripts/backup-scheduled.js` | MongoDB Atlas M0 lacks native cloud snapshots. Resolved via unattended nightly AES-256-GCM encrypted off-site backups with retention, anomaly detection, and in-memory restore testing (`npm run backup:scheduled` via macOS `launchd` or `cron`). | Resolved |
 

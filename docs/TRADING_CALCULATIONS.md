@@ -89,8 +89,15 @@ $$\bar{P}_{\text{exit}} = \frac{\sum (P_j \times Q_j)}{\sum Q_j} \quad \text{for
 SetupMint models exact Indian market statutory charges using Decimal.js based on official SEBI, exchange, and broker fee schedules:
 
 ### Formulas:
-$$\text{Buy Turnover} = P_{\text{entry}} \times Q \times M$$
-$$\text{Sell Turnover} = P_{\text{exit}} \times Q \times M$$
+Turnover is strictly direction-aware to ensure STT/CTT and Stamp Duty attach to the legally correct execution leg:
+- For **LONG** positions (entry is BUY, exit is SELL):
+  $$\text{Buy Turnover} = P_{\text{entry}} \times Q \times M \quad (\text{Stamp Duty incurred on entry buy})$$
+  $$\text{Sell Turnover} = \begin{cases} 0 & \text{if open single-leg} \\ P_{\text{exit}} \times Q \times M & \text{if closed (STT/CTT incurred on exit sell)} \\ P_{\text{entry}} \times Q \times M & \text{if open round-trip estimate} \end{cases}$$
+
+- For **SHORT** positions (entry is SELL, exit is BUY):
+  $$\text{Sell Turnover} = P_{\text{entry}} \times Q \times M \quad (\text{STT/CTT incurred on entry sell})$$
+  $$\text{Buy Turnover} = \begin{cases} 0 & \text{if open single-leg} \\ P_{\text{exit}} \times Q \times M & \text{if closed (Stamp Duty incurred on exit buy)} \\ P_{\text{entry}} \times Q \times M & \text{if open round-trip estimate} \end{cases}$$
+
 $$\text{Total Turnover} = \text{Buy Turnover} + \text{Sell Turnover}$$
 
 | Fee Component | Market Segment | Rate Formula |
@@ -701,7 +708,7 @@ $$\text{Net P&L} = \sum_{t \in \text{Trades}} t.\text{netPnL}$$
 $$\text{Gross P&L} = \sum_{t \in \text{Trades}} t.\text{grossPnL}$$
 $$\text{Total Costs} = \sum_{t \in \text{Trades}} t.\text{totalCosts}$$
 $$\text{Win Rate} = \frac{n_{\text{win}}}{n_{\text{closed}}} \times 100$$
-$$\text{Profit Factor} = \begin{cases} 999.99 & \text{if } |\sum \text{Losses}| = 0 \text{ and } \sum \text{Wins} > 0 \\ 0.00 & \text{if } \sum \text{Wins} = 0 \\ \frac{\sum \text{Gross Wins}}{|\sum \text{Gross Losses}|} & \text{otherwise} \end{cases}$$
+$$\text{Profit Factor} = \begin{cases} 999.99 & \text{if } |\sum \text{Losses}| = 0 \text{ and } \sum \text{Wins} > 0 \\ 0.00 & \text{if } \sum \text{Wins} = 0 \\ \frac{\sum \text{Net Wins}}{|\sum \text{Net Losses}|} & \text{otherwise} \end{cases}$$
 $$\text{Expectancy} = \frac{\text{Net P&L}}{n_{\text{closed}}}$$
 $$\text{Avg Realized R} = \begin{cases} \frac{\sum R}{n_{R}} & \text{if } n_{R} > 0 \\ 0.00 & \text{otherwise} \end{cases}$$
 $$\text{R Coverage \%} = \frac{n_{R}}{n_{\text{closed}}} \times 100$$
@@ -755,8 +762,11 @@ In the subsequent week, `evaluateFocusRule(prevFocusRule, thisWeekTrades)` check
 [`packages/financial-engine/src/live-watcher.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/live-watcher.ts) (`calculateTargetLadder`)
 
 ### 15.1 Initial Risk Points Determination
-The unit of initial risk in points ($\Delta P_{\text{risk}}$) is derived using pure Decimal.js:
-$$\Delta P_{\text{risk}} = \begin{cases} |P_{\text{entry}} - P_{\text{stopLoss}}| & \text{if stopLoss is defined} \\ \frac{\text{initialRiskAmount}}{Q \times M} & \text{if initialRiskAmount is defined} \\ 0 & \text{otherwise} \end{cases}$$
+The unit of initial 1R risk in points ($\Delta P_{\text{risk}}$) is strictly anchored to the trade's initial risk metrics using pure Decimal.js:
+$$\Delta P_{\text{risk}} = \begin{cases} |P_{\text{entry}} - P_{\text{initialStopLoss}}| & \text{if initialStopLoss is defined and } P_{\text{initialStopLoss}} \neq P_{\text{entry}} \\ \frac{\text{initialRiskAmount}}{Q \times M} & \text{if initialRiskAmount is defined} \\ |P_{\text{entry}} - P_{\text{stopLoss}}| & \text{if active stopLoss is defined (fallback)} \\ 0 & \text{otherwise} \end{cases}$$
+
+> [!IMPORTANT]
+> Anchoring $\Delta P_{\text{risk}}$ to `initialStopLoss` is a critical mathematical invariant. When a trader trails their active `stopLoss` to Breakeven or locks in profit, $\Delta P_{\text{risk}}$ remains invariant at true 1R. Active trailing never shrinks ladder target prices, preventing premature `'MET'` status flags and unintended scale-outs.
 
 If $\Delta P_{\text{risk}} = 0$ or $Q \le 0$, the scaling ladder is safely omitted (`undefined`).
 

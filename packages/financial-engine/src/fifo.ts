@@ -59,9 +59,10 @@ export function calculateFIFOExecution(
   for (const fill of sortedFills) {
     const fillPrice = new Decimal(fill.price);
     const fillQty = new Decimal(fill.quantity);
-    const fillFee = new Decimal(
-      (fill.fee ?? 0) + (fill.brokerage ?? 0) + (fill.exchangeFee ?? 0) + (fill.taxes ?? 0)
-    );
+    const fillFee = new Decimal(fill.fee ?? 0)
+      .plus(fill.brokerage ?? 0)
+      .plus(fill.exchangeFee ?? 0)
+      .plus(fill.taxes ?? 0);
     totalCosts = totalCosts.plus(fillFee);
 
     if (fill.type === 'ENTRY') {

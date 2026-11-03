@@ -92,6 +92,7 @@ export interface ILiveOpenTradeMetric {
   estimatedCharges: number;
   floatingNetPnL: number;
   initialRiskAmount: number | null;
+  initialStopLoss?: number | null;
   unrealizedR: number | null;
   stopLoss: number | null;
   target: number | null;
@@ -218,6 +219,7 @@ export function calculateTargetLadder(params: {
   contractMultiplier?: Decimal | number;
   lotSize?: Decimal | number;
   initialRiskAmount?: Decimal | number | null;
+  initialStopLoss?: Decimal | number | null;
   stopLoss: Decimal | number | null;
   plannedTarget?: Decimal | number | null;
   tickSize?: Decimal | number;
@@ -244,6 +246,9 @@ export function calculateTargetLadder(params: {
     ? (params.tickSize instanceof Decimal ? params.tickSize : new Decimal(params.tickSize))
     : new Decimal(0.05);
 
+  const dInitialStopLoss = params.initialStopLoss !== null && params.initialStopLoss !== undefined
+    ? (params.initialStopLoss instanceof Decimal ? params.initialStopLoss : new Decimal(params.initialStopLoss))
+    : null;
   const dStopLoss = params.stopLoss !== null && params.stopLoss !== undefined
     ? (params.stopLoss instanceof Decimal ? params.stopLoss : new Decimal(params.stopLoss))
     : null;
@@ -254,12 +259,16 @@ export function calculateTargetLadder(params: {
     ? (params.initialRiskAmount instanceof Decimal ? params.initialRiskAmount : new Decimal(params.initialRiskAmount))
     : null;
 
-  // Determine initial risk in price points
+  // Determine initial risk in price points.
+  // CRITICAL INVARIANT: 1R is anchored to initialStopLoss or initialRiskAmount.
+  // Trailed / current stopLoss must ONLY be used as a last-resort fallback if initial metrics are missing.
   let riskPoints = new Decimal(0);
-  if (dStopLoss) {
-    riskPoints = dEntry.minus(dStopLoss).abs();
+  if (dInitialStopLoss && !dEntry.minus(dInitialStopLoss).isZero()) {
+    riskPoints = dEntry.minus(dInitialStopLoss).abs();
   } else if (dInitialRiskAmount && totalQty > 0 && dMult.greaterThan(0)) {
     riskPoints = dInitialRiskAmount.dividedBy(dQty.times(dMult));
+  } else if (dStopLoss) {
+    riskPoints = dEntry.minus(dStopLoss).abs();
   }
 
   if (riskPoints.isZero() || totalQty <= 0) {
@@ -536,6 +545,7 @@ export function calculateLiveOpenTradeMetric(
   let estimatedCharges = new Decimal(0);
   try {
     const charges = calculateIndianCharges({
+      direction: params.direction,
       assetClass: params.assetClass || 'EQUITY',
       marketSegment: params.marketSegment || 'NSE_EQ',
       entryPrice: dEntry,
@@ -670,6 +680,7 @@ export function calculateLiveOpenTradeMetric(
       contractMultiplier: dMultiplier,
       lotSize: dLotSize,
       initialRiskAmount,
+      initialStopLoss: params.initialStopLoss !== undefined && params.initialStopLoss !== null ? new Decimal(params.initialStopLoss) : null,
       stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? new Decimal(params.stopLoss) : null,
       plannedTarget: params.target !== undefined && params.target !== null ? new Decimal(params.target) : null,
       tickSize: dTick,
@@ -696,6 +707,7 @@ export function calculateLiveOpenTradeMetric(
       estimatedCharges: Number(estimatedCharges.toFixed(2)),
       floatingNetPnL: Number(floatingNetPnL.toFixed(2)),
       initialRiskAmount: initialRiskAmount ? Number(initialRiskAmount.toFixed(2)) : null,
+      initialStopLoss: params.initialStopLoss !== undefined && params.initialStopLoss !== null ? Number(new Decimal(params.initialStopLoss).toFixed(2)) : null,
       unrealizedR,
       stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? Number(new Decimal(params.stopLoss).toFixed(2)) : null,
       target: params.target !== undefined && params.target !== null ? Number(new Decimal(params.target).toFixed(2)) : null,
@@ -1263,6 +1275,7 @@ export function calculatePreFlightExecutionPreview(
   const grossPnL = priceDelta.times(clampedExitQty).times(dMultiplier);
 
   const charges = calculateIndianCharges({
+    direction: params.direction,
     assetClass: params.assetClass || 'EQUITY',
     marketSegment: params.marketSegment || 'NSE_EQ',
     entryPrice: dEntry,

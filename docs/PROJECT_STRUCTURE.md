@@ -76,7 +76,7 @@ Pure, deterministic mathematical calculation library:
 - [`packages/financial-engine/src/mistakes.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/mistakes.ts): Rule-based mistake detection (`detectMistakeSuggestions`, `checkDailyLossBreach`, `calculateDailySessionSummary`) evaluating revenge trading, overtrading, sizing violations, daily loss limits, and discipline rating scoring.
 - [`packages/financial-engine/src/templates.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/templates.ts): Dynamic template resolution (`resolveTemplate`), context-aware ranking (`rankTemplates`), tick rounding (`roundToTick`), and NSE 2026 expiry date calculation (`isNiftyWeeklyExpiry`, `isNseMonthlyExpiry`, `isExpiryDay`).
 - [`packages/financial-engine/src/weekly-review.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/weekly-review.ts): Pure deterministic weekly review synthesis (`buildWeeklyReview`) with reconciled metrics, mistake rankings, Empirical-Bayes shrunk expectancy setup rankings ($k=10$), objective focus rule suggestions, and focus rule evaluation (`evaluateFocusRule`).
-- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (319 tests across 28 test suites, including `weekly-review.test.ts` (17 tests) and `date-range.test.ts` (28 tests)).
+- [`packages/financial-engine/test/`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/test/): Comprehensive Vitest test suite (379 tests across 33 test suites, including `weekly-review.test.ts` (17 tests), `date-range.test.ts` (28 tests), `charges.test.ts` (8 tests), and `live-watcher.test.ts` (19 tests)).
 
 ---
 
@@ -149,7 +149,7 @@ apps/api/
 │       ├── backfill-account-transactions.ts # Account and broker data backfill script
 │       ├── seed-komal-strategies.ts # Seeds 4 core institutional strategy playbooks with variants
 │       └── clean.ts               # Clean script
-└── test/                          # Vitest API and Seed Engine integration test suites (349 tests across 32 suites)
+└── test/                          # Vitest API and Seed Engine integration test suites (390 tests across 38 suites)
     ├── account-backfill.test.ts   # Account and broker data backfill migration tests
     ├── api.test.ts                # Fastify endpoint integration tests
     ├── attachment.test.ts         # Attachment upload, magic bytes, and stream tests

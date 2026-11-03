@@ -80,9 +80,9 @@ All commands are executed from the repository root:
 | :--- | :--- |
 | `npm run dev` | Runs Fastify backend and Vite frontend concurrently with live reloading. |
 | `npm run build` | Compiles `@tradevault/shared`, `@tradevault/financial-engine`, backend API, and frontend bundle. |
-| `npm run test` | Executes all Vitest test suites (668 tests: 319 financial engine + 349 API). |
-| `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (319 tests). |
-| `npm run test:api` | Runs Fastify API integration, regression, storage, backup pipeline, and attachment test suites (349 tests). |
+| `npm run test` | Executes all Vitest test suites (769 tests: 379 financial engine + 390 API). |
+| `npm run test:engine` | Runs standalone mathematical unit tests for `@tradevault/financial-engine` (379 tests across 33 suites). |
+| `npm run test:api` | Runs Fastify API integration, regression, storage, backup pipeline, and attachment test suites (390 tests across 38 suites). |
 | `npm run typecheck` | Validates TypeScript types across all 4 packages (`shared`, `financial-engine`, `api`, `web`). |
 | `npm run migrate:cloud` | Runs one-time migration of local data to Atlas and R2 (`--dry-run` default). |
 | `npm run db:seed` | Populates Atlas and R2 with default active-trader demo profile. |

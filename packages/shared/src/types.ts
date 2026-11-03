@@ -2161,6 +2161,7 @@ export interface ILiveOpenTradeMetric {
   estimatedCharges: number;
   floatingNetPnL: number;
   initialRiskAmount: number | null;
+  initialStopLoss?: number | null;
   unrealizedR: number | null;
   stopLoss: number | null;
   target: number | null;

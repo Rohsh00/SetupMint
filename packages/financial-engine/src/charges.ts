@@ -1,10 +1,11 @@
 import Decimal from 'decimal.js';
-import { AssetClass, MarketSegment } from '@tradevault/shared';
+import { AssetClass, MarketSegment, Direction } from '@tradevault/shared';
 
 // Ensure 30-digit precision with banker's rounding (ROUND_HALF_UP)
 Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface CalculateChargesParams {
+  direction?: Direction | 'LONG' | 'SHORT' | string;
   assetClass: AssetClass;
   marketSegment?: MarketSegment;
   entryPrice: number | string | Decimal;
@@ -36,6 +37,10 @@ export interface ChargesBreakdown {
 /**
  * Calculates Indian regulatory charges, brokerage, STT/CTT, stamp duty, SEBI turnover fees, and GST
  * using Decimal.js with 30-digit precision.
+ * Accurately aligns buy vs. sell turnover with position direction:
+ * - In India, STT/CTT is charged on SELL turnover, and Stamp Duty is charged on BUY turnover.
+ * - LONG: entry is BUY (incurs Stamp Duty), exit is SELL (incurs STT/CTT).
+ * - SHORT: entry is SELL (incurs STT/CTT), exit is BUY (incurs Stamp Duty).
  */
 export function calculateIndianCharges(params: CalculateChargesParams): ChargesBreakdown {
   const dEntry = new Decimal(params.entryPrice || 0);
@@ -46,20 +51,44 @@ export function calculateIndianCharges(params: CalculateChargesParams): ChargesB
     throw new Error('Quantity cannot be negative');
   }
 
-  const buyTurnover = dEntry.times(dQty).times(dMultiplier);
+  const entryTurnover = dEntry.times(dQty).times(dMultiplier);
+  const isShort = params.direction === 'SHORT';
 
+  let buyTurnover: Decimal;
   let sellTurnover: Decimal;
   let isClosed = false;
 
   if (params.exitPrice !== undefined && params.exitPrice !== null && params.exitPrice !== '') {
     const dExit = new Decimal(params.exitPrice);
-    sellTurnover = dExit.times(dQty).times(dMultiplier);
+    const exitTurnover = dExit.times(dQty).times(dMultiplier);
     isClosed = true;
+
+    if (isShort) {
+      // SHORT: Entry is SELL, Exit is BUY
+      sellTurnover = entryTurnover;
+      buyTurnover = exitTurnover;
+    } else {
+      // LONG: Entry is BUY, Exit is SELL
+      buyTurnover = entryTurnover;
+      sellTurnover = exitTurnover;
+    }
   } else {
-    // If open / single leg and not explicitly closing, estimate round-trip with entry price
-    // unless isSingleLeg is explicitly true
-    sellTurnover = params.isSingleLeg ? new Decimal(0) : buyTurnover;
-    isClosed = !params.isSingleLeg;
+    // If open / single leg and not explicitly closing
+    if (params.isSingleLeg) {
+      isClosed = false;
+      if (isShort) {
+        sellTurnover = entryTurnover;
+        buyTurnover = new Decimal(0);
+      } else {
+        buyTurnover = entryTurnover;
+        sellTurnover = new Decimal(0);
+      }
+    } else {
+      // Estimate round-trip with entry price
+      isClosed = true;
+      buyTurnover = entryTurnover;
+      sellTurnover = entryTurnover;
+    }
   }
 
   const totalTurnover = buyTurnover.plus(sellTurnover);
@@ -69,10 +98,10 @@ export function calculateIndianCharges(params: CalculateChargesParams): ChargesB
   if (params.brokerFlatFeePerLeg !== undefined) {
     legFee = new Decimal(params.brokerFlatFeePerLeg);
   } else if (params.broker) {
-    const brokerUpper = params.broker.toUpperCase();
-    if (brokerUpper === 'FINVASIA') {
+    const brokerNorm = params.broker.toUpperCase().replace(/[\s_-]/g, '');
+    if (brokerNorm === 'FINVASIA') {
       legFee = new Decimal(0);
-    } else if (brokerUpper === 'ZERODHA' || brokerUpper === 'FYERS' || brokerUpper === 'ANGELONE' || brokerUpper === 'UPSTOX') {
+    } else if (brokerNorm === 'ZERODHA' || brokerNorm === 'FYERS' || brokerNorm === 'ANGELONE' || brokerNorm === 'UPSTOX') {
       legFee = new Decimal(20);
     }
   }
@@ -164,9 +193,11 @@ export class IndianChargesCalculator {
     quantity: number | string | Decimal,
     contractMultiplier: number | string | Decimal = 1,
     brokerFlatFeePerLeg: number | string | Decimal = 20,
-    broker?: string
+    broker?: string,
+    direction?: Direction | 'LONG' | 'SHORT' | string
   ): ChargesBreakdown {
     return calculateIndianCharges({
+      direction,
       assetClass,
       marketSegment,
       entryPrice,

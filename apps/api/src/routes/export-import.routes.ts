@@ -1319,15 +1319,19 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const segmentVal = mapping.segment ? row[mapping.segment] : row['Segment'] || row['segment'];
           const { assetClass, marketSegment } = deriveInstrumentMeta(symbolVal, segmentVal);
           const exchange = marketSegment === 'MCX' ? 'MCX' : symbolVal.startsWith('SENSEX') || symbolVal.startsWith('BANKEX') ? 'BSE' : 'NSE';
+          const session = deriveSessionFromTime(tradeDate, exchange, marketSegment);
+          const inst = await getOrEnsureInstrument(symbolVal, { assetClass, exchange, marketSegment });
+          const multiplier = 1; // In broker tradebook CSVs, exported traded price * qty already equals turnover
 
           // Auto-calculate statutory charges via financial engine
           const charges = calculateIndianCharges({
+            direction: direction as any,
             assetClass,
             marketSegment,
             entryPrice,
             exitPrice: exitPrice > 0 ? exitPrice : undefined,
             quantity,
-            contractMultiplier: 1,
+            contractMultiplier: multiplier,
             broker: account.broker,
           });
 
@@ -1335,7 +1339,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             entryPrice,
             exitPrice: exitPrice > 0 ? exitPrice : undefined,
             quantity,
-            contractMultiplier: 1,
+            contractMultiplier: multiplier,
             brokerage: charges.brokerage,
             exchangeFees: charges.exchangeFees,
             regulatoryFees: charges.regulatoryFees,
@@ -1343,9 +1347,6 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             otherFees: 0,
             explicitAdjustments: 0,
           });
-
-          const session = deriveSessionFromTime(tradeDate, exchange, marketSegment);
-          const inst = await getOrEnsureInstrument(symbolVal, { assetClass, exchange, marketSegment });
 
           let strategyId: any = undefined;
           let strategyName: string | undefined = undefined;
@@ -1399,7 +1400,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               entryPrice,
               exitPrice: exitPrice > 0 ? exitPrice : undefined,
               quantity,
-              contractMultiplier: 1,
+              contractMultiplier: multiplier,
               brokerage: charges.brokerage,
               exchangeFees: charges.exchangeFees,
               regulatoryFees: charges.regulatoryFees,
@@ -1555,6 +1556,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
         const finalizeTrade = async (group: ActiveTradeGroup) => {
           try {
+            const session = deriveSessionFromTime(group.entryTime, exchange, marketSegment);
+            const inst = await getOrEnsureInstrument(symbol, { assetClass, exchange, marketSegment });
+            const multiplier = 1; // In broker tradebook CSVs, exported traded price * qty already equals turnover
+
             const fifoSummary = calculateFIFOExecution(
               group.direction,
               group.fills.map((f) => ({
@@ -1564,7 +1569,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 quantity: f.quantity,
                 timestamp: f.timestamp.toISOString(),
               })),
-              1
+              multiplier
             );
 
             const tradeDate = group.entryTime;
@@ -1596,25 +1601,26 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               .reduce((sum, f) => sum + f.quantity, 0);
 
             const charges = calculateIndianCharges({
+              direction: group.direction,
               assetClass,
               marketSegment,
               entryPrice: avgEntry,
               exitPrice: avgExit,
               quantity: totalTradeQty,
-              contractMultiplier: 1,
+              contractMultiplier: multiplier,
               broker: account.broker,
             });
 
             const grossPnL = fifoSummary.realizedGrossPnL.toNumber();
-            const totalCosts = charges.totalCosts;
-            const netPnL = grossPnL - totalCosts;
+            const totalCosts = fifoSummary.totalCosts.greaterThan(0)
+              ? fifoSummary.totalCosts.toNumber()
+              : charges.totalCosts;
+            const netPnL = Number(new Decimal(grossPnL).minus(totalCosts).toFixed(2));
 
             const lastExitFill = group.fills
               .filter((f) => f.type === 'EXIT')
               .slice(-1)[0];
             const exitTime = lastExitFill ? lastExitFill.timestamp : undefined;
-            const session = deriveSessionFromTime(group.entryTime, exchange, marketSegment);
-            const inst = await getOrEnsureInstrument(symbol, { assetClass, exchange, marketSegment });
 
             const createdTrade = await Trade.create({
               userId: req.user!.id,
@@ -1637,7 +1643,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               importBatchId,
               executionMode: 'ADVANCED',
               simpleExecution: {
-                contractMultiplier: 1,
+                contractMultiplier: multiplier,
                 entryPrice: avgEntry,
                 exitPrice: avgExit,
                 quantity: totalTradeQty,

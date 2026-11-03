@@ -432,6 +432,62 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(step2.plannedExitQty).toBe(65);
       expect(step2.suggestedStopLabel).toContain('Open Trail');
     });
+
+    it('REGRESSION: anchors target ladder to initialStopLoss when stopLoss is trailed to Breakeven or into profit (prevents premature MET trigger)', () => {
+      // Long trade entered at 100 with initialStopLoss = 90 (1R risk = 10 pts)
+      // T1 target (+1.0R) = 110
+      // T2 target (+2.0R) = 120
+      // The trader trails stopLoss to 99.50 (near BE) while LTP is only 101 (+0.1R).
+      // Under the old bug: riskPoints shrank to 100 - 99.50 = 0.50 pts.
+      // T1 became 100.50 and T2 became 101.00, causing LTP 101 to falsely trigger BOTH as 'MET'!
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'anchor-regression-test',
+        symbol: 'NIFTY',
+        direction: 'LONG',
+        entryPrice: 100,
+        currentLtp: 101, // Only 1 point into profit!
+        quantity: 50,
+        contractMultiplier: 1,
+        initialStopLoss: 90, // Initial 10 pts risk
+        stopLoss: 99.50, // Active trailed stop loss at near-breakeven
+      });
+
+      expect(metric.targetLadder).toBeDefined();
+      const ladder = metric.targetLadder!;
+
+      // 1R risk points must remain 10 (anchored to initialStopLoss 90), NOT 0.50!
+      expect(ladder.initialRiskPoints).toBe(10);
+
+      // T1 must remain anchored at 110 (+1.0R)
+      const t1 = ladder.steps[0];
+      expect(t1.name).toBe('T1 (+1.0R)');
+      expect(t1.targetPrice).toBe(110);
+      expect(t1.status).toBe('IN_PROGRESS'); // Crucial: must NOT be 'MET'
+      expect(t1.isActionable).toBe(false);
+
+      // T2 must remain anchored at 120 (+2.0R)
+      const t2 = ladder.steps[1];
+      expect(t2.name).toBe('T2 (+2.0R)');
+      expect(t2.targetPrice).toBe(120);
+      expect(t2.status).toBe('IN_PROGRESS'); // Crucial: must NOT be 'MET'
+
+      // When LTP actually reaches 110, T1 becomes MET
+      const metricAtT1 = calculateLiveOpenTradeMetric({
+        tradeId: 'anchor-regression-test',
+        symbol: 'NIFTY',
+        direction: 'LONG',
+        entryPrice: 100,
+        currentLtp: 110,
+        quantity: 50,
+        contractMultiplier: 1,
+        initialStopLoss: 90,
+        stopLoss: 99.50,
+      });
+
+      expect(metricAtT1.targetLadder!.steps[0].status).toBe('MET');
+      expect(metricAtT1.targetLadder!.steps[0].isActionable).toBe(true);
+      expect(metricAtT1.targetLadder!.steps[1].status).toBe('IN_PROGRESS');
+    });
   });
 
   describe('calculateDynamicTrailingStop', () => {

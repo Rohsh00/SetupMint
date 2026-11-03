@@ -18,6 +18,10 @@ function getEffectiveFyersRedirectUri(req: any): string {
   if (host && (host.includes('onrender.com') || host.includes('setupmint-api'))) {
     return 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback';
   }
+  if (host) {
+    const proto = req?.headers?.['x-forwarded-proto'] || 'http';
+    return `${proto}://${host}/api/v1/integrations/fyers/callback`;
+  }
   if (process.env.NODE_ENV === 'production') {
     return 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback';
   }
@@ -33,6 +37,9 @@ function buildFrontendRedirect(req: any, searchParams: Record<string, string>): 
     base = 'https://setupmint.onrender.com';
   } else if (host && host.includes('onrender.com')) {
     base = 'https://setupmint.onrender.com';
+  } else if (host) {
+    const proto = req?.headers?.['x-forwarded-proto'] || 'http';
+    base = `${proto}://${host}`;
   }
 
   const url = new URL(`${base}/settings`);

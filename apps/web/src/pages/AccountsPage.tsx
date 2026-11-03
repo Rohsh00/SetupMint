@@ -39,10 +39,12 @@ import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import CancelRounded from '@mui/icons-material/CancelRounded';
 import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency } from '../lib/utils.js';
 import { HelpHint } from '../components/help/index.js';
+import { PropFirmAccountCard } from '../components/accounts/PropFirmAccountCard.js';
 
 export function AccountsPage() {
   const muiTheme = useTheme();
@@ -67,6 +69,65 @@ export function AccountsPage() {
   const [accountType, setAccountType] = useState('EQUITY');
   const [baseCurrency, setBaseCurrency] = useState('INR');
   const [initialBalance, setInitialBalance] = useState<number>(100000);
+
+  // Prop firm form state
+  const [propPreset, setPropPreset] = useState<'THE5ERS_SUMMER' | 'THE5ERS_HIGH_STAKES' | 'FTMO_STANDARD' | 'CUSTOM'>('THE5ERS_SUMMER');
+  const [propFirmName, setPropFirmName] = useState<'THE5ERS' | 'FTMO' | 'FUNDED_NEXT' | 'APEX' | 'TOPSTEP' | 'CUSTOM'>('THE5ERS');
+  const [propPlanName, setPropPlanName] = useState('Summer Plan 10/5 ($149)');
+  const [propPhase, setPropPhase] = useState<'PHASE_1' | 'PHASE_2' | 'FUNDED'>('PHASE_1');
+  const [propTargetPercent, setPropTargetPercent] = useState<number>(10);
+  const [propDailyLossPercent, setPropDailyLossPercent] = useState<number>(3);
+  const [propMaxLossPercent, setPropMaxLossPercent] = useState<number>(10);
+  const [propMaxLossFloor, setPropMaxLossFloor] = useState<number>(90000);
+
+  const applyThe5ersSummerPlan = () => {
+    setName('The5ers $100K Summer Plan');
+    setBroker('The5ers (MT5)');
+    setAccountType('PROP_FIRM');
+    setBaseCurrency('USD');
+    setInitialBalance(100000);
+    setPropPreset('THE5ERS_SUMMER');
+    setPropFirmName('THE5ERS');
+    setPropPlanName('Summer Plan 10/5 ($149)');
+    setPropPhase('PHASE_1');
+    setPropTargetPercent(10);
+    setPropDailyLossPercent(3);
+    setPropMaxLossPercent(10);
+    setPropMaxLossFloor(90000);
+  };
+
+  const handlePropPresetChange = (preset: 'THE5ERS_SUMMER' | 'THE5ERS_HIGH_STAKES' | 'FTMO_STANDARD' | 'CUSTOM') => {
+    setPropPreset(preset);
+    if (preset === 'THE5ERS_SUMMER') {
+      applyThe5ersSummerPlan();
+    } else if (preset === 'THE5ERS_HIGH_STAKES') {
+      setName('The5ers $100K High Stakes');
+      setBroker('The5ers (MT5)');
+      setAccountType('PROP_FIRM');
+      setBaseCurrency('USD');
+      setInitialBalance(100000);
+      setPropFirmName('THE5ERS');
+      setPropPlanName('High Stakes 8/5');
+      setPropPhase('PHASE_1');
+      setPropTargetPercent(8);
+      setPropDailyLossPercent(5);
+      setPropMaxLossPercent(10);
+      setPropMaxLossFloor(90000);
+    } else if (preset === 'FTMO_STANDARD') {
+      setName('FTMO $100K Challenge');
+      setBroker('FTMO');
+      setAccountType('PROP_FIRM');
+      setBaseCurrency('USD');
+      setInitialBalance(100000);
+      setPropFirmName('FTMO');
+      setPropPlanName('Standard 10/5');
+      setPropPhase('PHASE_1');
+      setPropTargetPercent(10);
+      setPropDailyLossPercent(5);
+      setPropMaxLossPercent(10);
+      setPropMaxLossFloor(90000);
+    }
+  };
 
   // Transaction state
   const [txType, setTxType] = useState<'DEPOSIT' | 'WITHDRAWAL'>('DEPOSIT');
@@ -233,6 +294,28 @@ export function AccountsPage() {
       toast.warning('Please enter an account name.');
       return;
     }
+
+    const propFirmConfig =
+      accountType === 'PROP_FIRM'
+        ? {
+            enabled: true,
+            firm: propFirmName,
+            planName: propPlanName,
+            phase: propPhase,
+            initialBalance: Number(initialBalance) || 100000,
+            targetProfitPercent: Number(propTargetPercent),
+            dailyLossLimitPercent: Number(propDailyLossPercent),
+            dailyLossReference: 'MAX_BALANCE_EQUITY_EOD' as const,
+            maxLossLimitPercent: Number(propMaxLossPercent),
+            maxLossType: 'STATIC_FROM_INITIAL' as const,
+            maxLossFloor: Number(propMaxLossFloor) || (Number(initialBalance) || 100000) * 0.9,
+            minTradingDays: 0,
+            newsTradingAllowed: true,
+            weekendHoldingAllowed: true,
+            status: 'ACTIVE' as const,
+          }
+        : undefined;
+
     createAccountMutation.mutate({
       name,
       broker,
@@ -240,6 +323,7 @@ export function AccountsPage() {
       accountType,
       baseCurrency,
       initialBalance: Number(initialBalance) || 0,
+      propFirmConfig,
     });
   };
 
@@ -290,15 +374,29 @@ export function AccountsPage() {
           </Typography>
         </Box>
 
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddRounded />}
-          onClick={() => setIsAddAccountModalOpen(true)}
-          sx={{ fontWeight: 600, px: 2.5 }}
-        >
-          Add Trading Account
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+          <Button
+            variant="outlined"
+            color="primary"
+            startIcon={<ShieldRounded />}
+            onClick={() => {
+              applyThe5ersSummerPlan();
+              setIsAddAccountModalOpen(true);
+            }}
+            sx={{ fontWeight: 600 }}
+          >
+            Add The5ers Challenge ($149)
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddRounded />}
+            onClick={() => setIsAddAccountModalOpen(true)}
+            sx={{ fontWeight: 600, px: 2.5 }}
+          >
+            Add Trading Account
+          </Button>
+        </Box>
       </Box>
 
       {/* Portfolio Totals Strip */}
@@ -578,6 +676,10 @@ export function AccountsPage() {
                         )}
                       </Box>
                     )}
+
+                    {(acc.accountType === 'PROP_FIRM' || acc.propFirmConfig?.enabled) && (
+                      <PropFirmAccountCard account={acc} />
+                    )}
                   </CardContent>
 
                   <Divider sx={{ my: 0.5 }} />
@@ -753,7 +855,13 @@ export function AccountsPage() {
                 size="small"
                 fullWidth
                 value={accountType}
-                onChange={(e) => setAccountType(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAccountType(val);
+                  if (val === 'PROP_FIRM') {
+                    applyThe5ersSummerPlan();
+                  }
+                }}
               >
                 <MenuItem value="EQUITY">Equity</MenuItem>
                 <MenuItem value="FUTURES_OPTIONS">Futures & Options</MenuItem>
@@ -786,9 +894,106 @@ export function AccountsPage() {
               required
               fullWidth
               value={initialBalance}
-              onChange={(e) => setInitialBalance(Number(e.target.value))}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setInitialBalance(val);
+                if (accountType === 'PROP_FIRM' && propPreset === 'THE5ERS_SUMMER') {
+                  setPropMaxLossFloor(val * 0.9);
+                }
+              }}
               slotProps={{ htmlInput: { min: 0, step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
             />
+
+            {accountType === 'PROP_FIRM' && (
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor:
+                    muiTheme.palette.mode === 'dark'
+                      ? 'rgba(99, 102, 241, 0.05)'
+                      : 'rgba(99, 102, 241, 0.03)',
+                  border: 1,
+                  borderColor: 'primary.main',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.5,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ShieldRounded sx={{ color: 'primary.main', fontSize: 20 }} />
+                    Prop Firm Challenge Configuration
+                  </Typography>
+                  <Chip
+                    label="The5ers Supported"
+                    size="small"
+                    color="primary"
+                    sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }}
+                  />
+                </Box>
+
+                <TextField
+                  select
+                  label="Challenge Program Preset"
+                  size="small"
+                  fullWidth
+                  value={propPreset}
+                  onChange={(e) => handlePropPresetChange(e.target.value as any)}
+                >
+                  <MenuItem value="THE5ERS_SUMMER">🌟 The5ers — Summer Plan ($149 / $100K 10/5)</MenuItem>
+                  <MenuItem value="THE5ERS_HIGH_STAKES">The5ers — High Stakes (8/5)</MenuItem>
+                  <MenuItem value="FTMO_STANDARD">FTMO — Standard (10/5)</MenuItem>
+                  <MenuItem value="CUSTOM">Custom Prop Plan</MenuItem>
+                </TextField>
+
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                  <TextField
+                    label="Starting Phase"
+                    select
+                    size="small"
+                    value={propPhase}
+                    onChange={(e) => setPropPhase(e.target.value as any)}
+                  >
+                    <MenuItem value="PHASE_1">Phase 1 (10% Target)</MenuItem>
+                    <MenuItem value="PHASE_2">Phase 2 (5% Target)</MenuItem>
+                    <MenuItem value="FUNDED">Funded Master</MenuItem>
+                  </TextField>
+
+                  <TextField
+                    label="Target Profit %"
+                    type="number"
+                    size="small"
+                    value={propTargetPercent}
+                    onChange={(e) => setPropTargetPercent(Number(e.target.value))}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                  <TextField
+                    label="Daily Loss Limit %"
+                    type="number"
+                    size="small"
+                    value={propDailyLossPercent}
+                    onChange={(e) => setPropDailyLossPercent(Number(e.target.value))}
+                    helperText="Higher of EOD balance or equity"
+                  />
+
+                  <TextField
+                    label="Static Max Loss Floor ($)"
+                    type="number"
+                    size="small"
+                    value={propMaxLossFloor}
+                    onChange={(e) => setPropMaxLossFloor(Number(e.target.value))}
+                    helperText="Fixed floor ($90,000 on $100K)"
+                  />
+                </Box>
+
+                <Alert severity="info" sx={{ py: 0.5, fontSize: '0.75rem' }}>
+                  <strong>The5ers Summer Plan ($149):</strong> 2-Step evaluation on $100,000 account. Phase 1 Target: +$10,000 (10%). Daily loss limit is 3% ($3,000) based on higher of EOD equity or balance. Static floor: $90,000. Weekend & overnight holding allowed.
+                </Alert>
+              </Box>
+            )}
           </DialogContent>
 
           <DialogActions sx={{ px: 3, pb: 2.5 }}>

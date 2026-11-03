@@ -161,6 +161,13 @@ export const api = {
       request<any>(`/accounts/${accountId}/transactions/${txId}/reject`, {
         method: 'POST',
       }),
+    propHealth: (id: string) =>
+      request<{ success: boolean; data: any }>(`/accounts/${id}/prop-health`),
+    propAdvancePhase: (id: string) =>
+      request<{ success: boolean; data: any; message: string }>(
+        `/accounts/${id}/prop-advance-phase`,
+        { method: 'POST' }
+      ),
   },
 
   // Instruments

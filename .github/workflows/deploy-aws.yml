@@ -1,0 +1,109 @@
+name: Build & Auto-Deploy to AWS (1GB Instance)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: # Allows manual trigger anytime from GitHub UI
+
+concurrency:
+  group: deploy-aws-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build (GitHub 7GB Runner) & Deploy to AWS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js LTS (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      - name: Typecheck Monorepo (Shared, Engine, API, Web)
+        run: npm run typecheck
+
+      - name: Run Financial Calculation Tests
+        run: npm run test:engine
+
+      - name: Build Production Bundles
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ secrets.VITE_API_URL || '' }}
+
+      - name: Package Pre-Built Distribution (Zero RAM usage on 1GB AWS)
+        run: |
+          tar -czf setupmint-release.tar.gz \
+            package.json \
+            package-lock.json \
+            packages/shared/package.json \
+            packages/shared/dist \
+            packages/financial-engine/package.json \
+            packages/financial-engine/dist \
+            apps/api/package.json \
+            apps/api/dist \
+            apps/web/package.json \
+            apps/web/dist
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: setupmint-release
+          path: setupmint-release.tar.gz
+          retention-days: 7
+
+      - name: Deploy to AWS 1GB Server via SSH
+        if: env.AWS_HOST != '' && env.AWS_SSH_KEY != ''
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER || 'ubuntu' }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          port: ${{ secrets.AWS_PORT || 22 }}
+          envs: GITHUB_SHA
+          script: |
+            set -e
+            APP_DIR="${{ secrets.AWS_APP_DIR || '/var/www/setupmint' }}"
+            echo "🚀 Deploying SetupMint commit $GITHUB_SHA to AWS at $APP_DIR..."
+
+            # Ensure application directory exists
+            sudo mkdir -p $APP_DIR
+            sudo chown -R $USER:$USER $APP_DIR
+            cd $APP_DIR
+
+            # If git repo is cloned on server, pull latest source
+            if [ -d ".git" ]; then
+              git fetch origin main || git fetch origin master
+              git reset --hard HEAD
+              git pull
+            fi
+
+            # Install runtime production dependencies only (no devDependencies, uses <100MB RAM)
+            npm ci --omit=dev
+
+            # Build packages directly or ensure compiled dist
+            npm run build:api
+            npm run build:web
+
+            # Reload PM2 process with zero downtime
+            if command -v pm2 &> /dev/null; then
+              pm2 reload setupmint-api || pm2 start apps/api/dist/server.js --name "setupmint-api" --time
+              pm2 save
+            fi
+
+            echo "✅ SetupMint deployment completed successfully on AWS!"
+        env:
+          AWS_HOST: ${{ secrets.AWS_HOST }}
+          AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
+

@@ -250,6 +250,79 @@ export interface IUser {
   updatedAt: string;
 }
 
+export type PropFirmName =
+  | 'THE5ERS'
+  | 'FTMO'
+  | 'FUNDED_NEXT'
+  | 'APEX'
+  | 'TOPSTEP'
+  | 'CUSTOM';
+
+export type PropPhase = 'PHASE_1' | 'PHASE_2' | 'FUNDED';
+
+export type DailyLossReferenceType =
+  | 'MAX_BALANCE_EQUITY_EOD'
+  | 'STARTING_BALANCE'
+  | 'STARTING_EQUITY';
+
+export type MaxLossType =
+  | 'STATIC_FROM_INITIAL'
+  | 'TRAILING_EOD'
+  | 'TRAILING_INTRADAY_HIGH';
+
+export type PropThreatLevel = 'SAFE' | 'CAUTION' | 'CRITICAL' | 'BREACHED';
+
+export interface IPropFirmConfig {
+  enabled: boolean;
+  firm: PropFirmName;
+  planName: string;
+  phase: PropPhase;
+  initialBalance: number;
+  targetProfitPercent: number; // e.g., 10 for Phase 1, 5 for Phase 2
+  dailyLossLimitPercent: number; // e.g., 3 for The5ers Summer Plan
+  dailyLossReference: DailyLossReferenceType;
+  maxLossLimitPercent: number; // e.g., 10 for The5ers
+  maxLossType: MaxLossType;
+  maxLossFloor?: number; // Precomputed or custom static floor (e.g. 90000)
+  minTradingDays?: number;
+  newsTradingAllowed?: boolean;
+  weekendHoldingAllowed?: boolean;
+  currentPhaseStartedAt?: string;
+  status?: 'ACTIVE' | 'PASSED' | 'BREACHED';
+}
+
+export interface IPropFirmHealthSummary {
+  accountId: string;
+  firm: PropFirmName;
+  planName: string;
+  phase: PropPhase;
+  initialBalance: number;
+  currentBalance: number;
+  unrealizedPnL: number;
+  currentEquity: number;
+  targetProfitPercent: number;
+  targetProfitAmount: number;
+  targetEquity: number;
+  profitMadeInPhase: number;
+  targetRemaining: number;
+  targetProgressPercent: number;
+  targetReached: boolean;
+  dailyLossReference: number;
+  dailyLossLimitAmount: number;
+  dailyLossFloor: number;
+  todayLossSoFar: number;
+  dailyBufferRemaining: number;
+  dailyBufferPercent: number;
+  dailyLossBreached: boolean;
+  maxLossFloor: number;
+  maxLossBufferRemaining: number;
+  maxLossBufferPercent: number;
+  maxLossBreached: boolean;
+  threatLevel: PropThreatLevel;
+  statusReason: string;
+  canAdvancePhase: boolean;
+}
+
 export interface ITradingAccount {
   id: string;
   userId: string;
@@ -283,6 +356,7 @@ export interface ITradingAccount {
     maxRiskPerTradePercent?: number;
     maxOpenTrades?: number;
   };
+  propFirmConfig?: IPropFirmConfig;
   notes?: string;
   createdAt: string;
   updatedAt: string;

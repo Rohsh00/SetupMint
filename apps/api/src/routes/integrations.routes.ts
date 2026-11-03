@@ -15,15 +15,9 @@ function getEffectiveFyersRedirectUri(req: any): string {
     return process.env.FYERS_REDIRECT_URI;
   }
   const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
-  if (host && (host.includes('onrender.com') || host.includes('setupmint-api'))) {
-    return 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback';
-  }
   if (host) {
     const proto = req?.headers?.['x-forwarded-proto'] || 'http';
     return `${proto}://${host}/api/v1/integrations/fyers/callback`;
-  }
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://setupmint-api.onrender.com/api/v1/integrations/fyers/callback';
   }
   return config.fyersRedirectUri;
 }
@@ -31,13 +25,7 @@ function getEffectiveFyersRedirectUri(req: any): string {
 function buildFrontendRedirect(req: any, searchParams: Record<string, string>): string {
   let base = config.webAppUrl.replace(/\/$/, '');
   const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host;
-  const origin = req?.headers?.origin || req?.headers?.referer;
-  
-  if (origin && (origin.includes('setupmint.onrender.com') || origin.includes('onrender.com'))) {
-    base = 'https://setupmint.onrender.com';
-  } else if (host && host.includes('onrender.com')) {
-    base = 'https://setupmint.onrender.com';
-  } else if (host) {
+  if (host) {
     const proto = req?.headers?.['x-forwarded-proto'] || 'http';
     base = `${proto}://${host}`;
   }

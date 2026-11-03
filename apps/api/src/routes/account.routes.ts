@@ -3,6 +3,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
 import { accountTransactionSchema, createAccountSchema } from '@tradevault/shared';
+import { evaluatePropFirmHealth } from '@tradevault/financial-engine';
 import {
   AccountTransaction,
   BrokerFundsSnapshot,
@@ -122,6 +123,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         brokerLink: acc.brokerLink,
         status: acc.status,
         riskRules: acc.riskRules,
+        propFirmConfig: acc.propFirmConfig,
         notes: acc.notes,
         createdAt: acc.createdAt.toISOString(),
         updatedAt: acc.updatedAt.toISOString(),
@@ -145,8 +147,17 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       });
     }
 
-    const { name, broker, accountNumber, accountType, baseCurrency, initialBalance, riskRules, notes } =
-      parseResult.data;
+    const {
+      name,
+      broker,
+      accountNumber,
+      accountType,
+      baseCurrency,
+      initialBalance,
+      riskRules,
+      propFirmConfig,
+      notes,
+    } = parseResult.data;
 
     const existing = await TradingAccount.findOne({ userId: req.user!.id, name });
     if (existing) {
@@ -172,6 +183,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       totalWithdrawals: mongoose.Types.Decimal128.fromString('0.00'),
       status: 'ACTIVE',
       riskRules,
+      propFirmConfig,
       notes,
     });
 
@@ -185,6 +197,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         baseCurrency: account.baseCurrency,
         initialBalance,
         currentBalance: initialBalance,
+        propFirmConfig: account.propFirmConfig,
       },
     });
   });
@@ -232,6 +245,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         brokerLink: account.brokerLink,
         status: account.status,
         riskRules: account.riskRules,
+        propFirmConfig: account.propFirmConfig,
         notes: account.notes,
         tradeCount,
         createdAt: account.createdAt.toISOString(),
@@ -263,6 +277,155 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     }
 
     return reply.send({ success: true, data: account });
+  });
+
+  // Get Prop Firm health & distance-to-breach summary
+  app.get('/:id/prop-health', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({
+      _id: req.params.id,
+      userId: req.user!.id,
+    });
+
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    if (!account.propFirmConfig || !account.propFirmConfig.enabled) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'NOT_A_PROP_ACCOUNT',
+          message: 'This account is not configured with a Prop Firm Challenge plan',
+        },
+      });
+    }
+
+    // Determine today date boundary in UTC (00:00:00)
+    const now = new Date();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+
+    // Fetch closed trades for this account to compute previous day EOD
+    const closedTrades = await Trade.find({
+      accountId: account._id,
+      userId: req.user!.id,
+      status: 'CLOSED',
+    }).select('calculated.netPnL exitTime entryTime').sort({ exitTime: 1 });
+
+    const initialBalNum = Number(account.initialBalance.toString());
+    let profitBeforeToday = new Decimal(0);
+    for (const trade of closedTrades) {
+      if (trade.exitTime && new Date(trade.exitTime) < startOfToday) {
+        profitBeforeToday = profitBeforeToday.plus(trade.calculated?.netPnL || 0);
+      }
+    }
+    const previousDayEodBalance = new Decimal(initialBalNum).plus(profitBeforeToday).toNumber();
+    const previousDayEodEquity = previousDayEodBalance;
+
+    // Check open trades for floating unrealized P&L
+    const openTrades = await Trade.find({
+      accountId: account._id,
+      userId: req.user!.id,
+      status: 'OPEN',
+    }).select('unrealizedPnL calculated');
+
+    let openUnrealizedPnL = 0;
+    for (const t of openTrades) {
+      if ((t as any).unrealizedPnL != null) {
+        openUnrealizedPnL += Number((t as any).unrealizedPnL.toString() || 0);
+      }
+    }
+
+    const currentBalanceNum = Number(account.currentBalance?.toString() || initialBalNum);
+
+    const health = evaluatePropFirmHealth({
+      accountId: account._id.toString(),
+      config: account.propFirmConfig,
+      currentBalance: currentBalanceNum,
+      unrealizedPnL: openUnrealizedPnL,
+      previousDayEodBalance,
+      previousDayEodEquity,
+    });
+
+    return reply.send({
+      success: true,
+      data: health,
+    });
+  });
+
+  // Advance Phase (Phase 1 -> Phase 2 -> Funded)
+  app.post('/:id/prop-advance-phase', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({
+      _id: req.params.id,
+      userId: req.user!.id,
+    });
+
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    if (!account.propFirmConfig || !account.propFirmConfig.enabled) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'NOT_A_PROP_ACCOUNT', message: 'This account is not a Prop Firm Challenge account' },
+      });
+    }
+
+    const initialBalNum = Number(account.initialBalance.toString());
+    const currentBalNum = Number(account.currentBalance?.toString() || initialBalNum);
+
+    const health = evaluatePropFirmHealth({
+      accountId: account._id.toString(),
+      config: account.propFirmConfig,
+      currentBalance: currentBalNum,
+      unrealizedPnL: 0,
+    });
+
+    if (!health.canAdvancePhase) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'PHASE_CRITERIA_NOT_MET',
+          message: 'Cannot advance phase: profit target has not been reached or risk rules were breached.',
+        },
+      });
+    }
+
+    const cfg = account.propFirmConfig;
+    if (cfg.phase === 'PHASE_1') {
+      cfg.phase = 'PHASE_2';
+      cfg.targetProfitPercent = 5; // Phase 2 target is 5% ($5,000)
+      cfg.currentPhaseStartedAt = new Date().toISOString();
+    } else if (cfg.phase === 'PHASE_2') {
+      cfg.phase = 'FUNDED';
+      cfg.targetProfitPercent = 0;
+      cfg.status = 'PASSED';
+      cfg.currentPhaseStartedAt = new Date().toISOString();
+    }
+
+    account.markModified('propFirmConfig');
+    await account.save();
+
+    const updatedHealth = evaluatePropFirmHealth({
+      accountId: account._id.toString(),
+      config: account.propFirmConfig,
+      currentBalance: currentBalNum,
+      unrealizedPnL: 0,
+    });
+
+    return reply.send({
+      success: true,
+      data: updatedHealth,
+      message:
+        cfg.phase === 'FUNDED'
+          ? 'Congratulations! You have completed Phase 2 and passed The5ers evaluation to become a Funded Trader!'
+          : 'Congratulations! You have completed Phase 1 and advanced to Phase 2!',
+    });
   });
 
   // Delete account (or archive)

@@ -207,7 +207,7 @@ Attachments are **not** served as public static assets. Instead, streaming is gu
   - `GET /api/v1/attachments/:id/stream`
 - **Ownership Check:** Queries `Attachment.findOne({ _id: req.params.id, userId: req.user.id })`. An unauthenticated request yields 401, while another user's attachment yields 404.
 - **Cross-Origin Client Resolution (`resolveAttachmentUrl`):**
-  - In production deployments where the SPA resides on a separate domain (e.g. `setupmint.onrender.com`) from the API backend (`setupmint-api.onrender.com`), standard `<img>` tags cannot transmit custom headers (`Authorization: Bearer <token>`) and cross-site cookies are blocked by modern browser privacy controls.
+  - In production deployments where the SPA resides on a separate domain (e.g. `app.setupmint.com`) from the API backend (`api.setupmint.com`), standard `<img>` tags cannot transmit custom headers (`Authorization: Bearer <token>`) and cross-site cookies are blocked by modern browser privacy controls.
   - The client utility [`api.attachments.resolveAttachmentUrl`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/lib/api.ts) automatically resolves relative `/api/v1/...` download paths to the configured `BASE_URL` and appends `?token=<rawToken>` from `localStorage.getItem('tv_token')`.
   - Local staged blob/data URIs (`blob:`, `data:`) pass through unaltered.
 - **Backend Query Token Support (`requireAuth`):**

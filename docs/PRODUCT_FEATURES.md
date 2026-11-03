@@ -700,6 +700,25 @@ This document provides a comprehensive, verified feature inventory of all module
   - Frontend: [`SettingsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/SettingsPage.tsx) (Telegram Bot Token, Chat ID, event toggles, Test Link, and Webhook Registration).
   - Documentation: [**`docs/TELEGRAM_INTEGRATION.md`**](file:///Users/komal/projects/Trading%20Vault/docs/TELEGRAM_INTEGRATION.md).
 
+---
+
+### Module 20: Funded Prop Firm & Capital Challenge Suite (The5ers Summer Plan)
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** Prop firm evaluation challenges enforce strict daily loss limits and maximum drawdown rules that, if breached by even a single dollar or intraday spike, instantly disqualify the trader's account. Traders lack real-time distance-to-breach gauges and rule tracking tailored to their exact firm.
+- **Key Capabilities:**
+  - **The5ers Summer Plan ($149 / $100K 10/5 Evaluation Preset):**
+    - Pre-configured parameters for The5ers Summer Plan: 10% Phase 1 profit target ($10,000), 5% Phase 2 profit target ($5,000), 3% Daily Loss Limit ($3,000), and 10% Static Maximum Loss ($90,000 fixed floor).
+    - **Higher-of-EOD Balance or Equity Daily Loss Engine:** Implements The5ers' exact calculation rule where daily loss is evaluated from `max(previousDayEodBalance, previousDayEodEquity)`.
+    - **Static Max Loss Floor:** Rigid $90,000 hard equity floor monitoring to prevent liquidation.
+    - **Live Buffer Meters:** Real-time distance-to-breach readouts for both daily loss and max overall loss with threat level indicators (`SAFE`, `CAUTION`, `CRITICAL`, `BREACHED`).
+    - **Phase Advancement Workflow:** Evaluates criteria and enables 1-click advancement from Phase 1 to Phase 2, and from Phase 2 to Funded Master.
+- **Frontend & Backend Components:**
+  - Engine: [`packages/financial-engine/src/prop-firm.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/prop-firm.ts) (`evaluatePropFirmHealth`, `getThe5ersSummerPlanPreset`).
+  - Shared: `IPropFirmConfig`, `IPropFirmHealthSummary`, `propFirmConfigSchema` in [`packages/shared`](file:///Users/komal/projects/Trading%20Vault/packages/shared).
+  - API Routes: `GET /api/v1/accounts/:id/prop-health`, `POST /api/v1/accounts/:id/prop-advance-phase` in [`account.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/account.routes.ts).
+  - Frontend: [`PropFirmAccountCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/accounts/PropFirmAccountCard.tsx) mounted on [`AccountsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AccountsPage.tsx) with 1-click "Add The5ers Challenge ($149)" setup.
+
+
 
 
 

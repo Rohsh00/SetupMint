@@ -13,6 +13,25 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const propFirmConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  firm: z.enum(['THE5ERS', 'FTMO', 'FUNDED_NEXT', 'APEX', 'TOPSTEP', 'CUSTOM']).default('THE5ERS'),
+  planName: z.string().min(1, 'Plan name is required'),
+  phase: z.enum(['PHASE_1', 'PHASE_2', 'FUNDED']).default('PHASE_1'),
+  initialBalance: z.number().positive('Initial balance must be positive'),
+  targetProfitPercent: z.number().nonnegative(),
+  dailyLossLimitPercent: z.number().positive(),
+  dailyLossReference: z.enum(['MAX_BALANCE_EQUITY_EOD', 'STARTING_BALANCE', 'STARTING_EQUITY']).default('MAX_BALANCE_EQUITY_EOD'),
+  maxLossLimitPercent: z.number().positive(),
+  maxLossType: z.enum(['STATIC_FROM_INITIAL', 'TRAILING_EOD', 'TRAILING_INTRADAY_HIGH']).default('STATIC_FROM_INITIAL'),
+  maxLossFloor: z.number().optional(),
+  minTradingDays: z.number().optional().default(0),
+  newsTradingAllowed: z.boolean().optional().default(true),
+  weekendHoldingAllowed: z.boolean().optional().default(true),
+  currentPhaseStartedAt: z.string().optional(),
+  status: z.enum(['ACTIVE', 'PASSED', 'BREACHED']).optional().default('ACTIVE'),
+});
+
 export const createAccountSchema = z.object({
   name: z.string().min(1, 'Account name is required'),
   broker: z.string().min(1, 'Broker name is required'),
@@ -36,6 +55,7 @@ export const createAccountSchema = z.object({
       maxOpenTrades: z.number().optional(),
     })
     .optional(),
+  propFirmConfig: propFirmConfigSchema.optional(),
   notes: z.string().optional(),
 });
 

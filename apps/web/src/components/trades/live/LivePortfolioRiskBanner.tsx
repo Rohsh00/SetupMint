@@ -61,6 +61,13 @@ export function LivePortfolioRiskBanner({
   const netFloating = summary?.totalFloatingNetPnL ?? 0;
   const totalRiskCapital = summary?.totalRiskCapital ?? 0;
 
+  const isUsd =
+    isPropMode ||
+    Boolean(summary?.positions?.length && summary.positions.every((p: any) => p.currency === 'USD'));
+  const activeCurrency = isUsd ? 'USD' : 'INR';
+  const currSym = isUsd ? '$' : '₹';
+  const numLocale = isUsd ? 'en-US' : 'en-IN';
+
   const currentLoss = netFloating < 0 ? Math.abs(netFloating) : 0;
   const dayLossPercent = Math.min(100, maxDailyLoss > 0 ? (currentLoss / maxDailyLoss) * 100 : 0);
   const isLossWarning = dayLossPercent >= 75 && dayLossPercent < 100;
@@ -116,16 +123,16 @@ export function LivePortfolioRiskBanner({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
               <Tooltip title="Total options time decay bleed across all open derivative contracts" arrow>
                 <Typography variant="caption" sx={{ fontWeight: 700, color: '#F59E0B' }}>
-                  🔥 Theta Burn: -₹{totalThetaBurnPerHour.toFixed(0)}/hr (-₹{totalDailyThetaBurn.toFixed(0)}/day)
+                  🔥 Theta Burn: -{currSym}{totalThetaBurnPerHour.toFixed(0)}/hr (-{currSym}{totalDailyThetaBurn.toFixed(0)}/day)
                 </Typography>
               </Tooltip>
               <HelpHint hintKey="portfolio.thetaBurn" />
             </Box>
           )}
 
-          <Tooltip title="Net Rupee P&L impact across all positions per 1% directional index move" arrow>
+          <Tooltip title="Net P&L impact across all positions per 1% directional move" arrow>
             <Typography variant="caption" sx={{ fontWeight: 800, color: biasColor }}>
-              Net Delta: {netDirectionalDelta >= 0 ? `+₹${netDirectionalDelta.toFixed(0)}` : `-₹${Math.abs(netDirectionalDelta).toFixed(0)}`}
+              Net Delta: {netDirectionalDelta >= 0 ? `+${currSym}${netDirectionalDelta.toFixed(0)}` : `-${currSym}${Math.abs(netDirectionalDelta).toFixed(0)}`}
             </Typography>
           </Tooltip>
         </Box>
@@ -156,9 +163,10 @@ export function LivePortfolioRiskBanner({
                 fontWeight: 800,
                 fontSize: '0.7rem',
                 color: lossBarColor,
+                whiteSpace: 'nowrap',
               }}
             >
-              ₹{currentLoss.toLocaleString('en-IN', { maximumFractionDigits: 0 })} / ₹{maxDailyLoss.toLocaleString('en-IN')} ({dayLossPercent.toFixed(0)}%)
+              {currSym}{currentLoss.toLocaleString(numLocale, { maximumFractionDigits: 0 })} / {currSym}{maxDailyLoss.toLocaleString(numLocale, { maximumFractionDigits: 0 })} ({dayLossPercent.toFixed(0)}%)
             </Typography>
           </Box>
 
@@ -211,9 +219,9 @@ export function LivePortfolioRiskBanner({
           <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: 'text.secondary' }}>
             Total Open Risk Capital
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.74rem', color: '#38BDF8' }}>
-              {formatCurrency(totalRiskCapital, 'INR')}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+            <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.74rem', color: '#38BDF8', whiteSpace: 'nowrap' }}>
+              {formatCurrency(totalRiskCapital, activeCurrency)}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.64rem' }}>
               (Max {maxRiskPerTrade}%/trade)

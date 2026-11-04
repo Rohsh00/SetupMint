@@ -196,11 +196,12 @@ export function LiveOpenTradeWatcher({
   const propDailyLossLimit = useMemo(() => {
     if (!isPropMode || propOverviewList.length === 0) return undefined;
     const firstProp = propOverviewList[0];
-    const dailyEval =
-      firstProp.health?.rules?.dailyLoss ||
-      firstProp.health?.rules?.DAILY_LOSS ||
-      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS' || e.ruleKey === 'dailyLoss');
-    return dailyEval?.limit ?? firstProp.health?.dailyLossLimitAmount;
+    return (
+      firstProp.health?.dailyLossLimitAmount ??
+      firstProp.dailyLossBuffer ??
+      firstProp.health?.dailyBufferRemaining ??
+      5000
+    );
   }, [isPropMode, propOverviewList]);
 
   const propRemainingBuffer = useMemo(() => {
@@ -3020,8 +3021,8 @@ export function LiveOpenTradeWatcher({
                     <Grid
                       size={{
                         xs: 12,
-                        md: isGlance ? 6 : isDeep ? 12 : openTradesCount === 1 ? 12 : 6,
-                        lg: isGlance ? 4 : isDeep ? 12 : openTradesCount === 1 ? 12 : 6,
+                        md: isDeep || openTradesCount === 1 ? 12 : 6,
+                        lg: isDeep || openTradesCount === 1 ? 12 : openTradesCount === 2 ? 6 : isGlance ? 4 : 6,
                       }}
                       key={pos.tradeId}
                     >
@@ -3172,10 +3173,10 @@ export function LiveOpenTradeWatcher({
                                 </Button>
                               </Tooltip>
                             ) : (
-                              <Tooltip title={`Resting SL order verified on exchange @ ₹${pos.restingSlPrice || pos.stopLoss}`} arrow>
+                              <Tooltip title={`Resting SL order verified on exchange @ ${currSym}${pos.restingSlPrice || pos.stopLoss}`} arrow>
                                 <Chip
                                   icon={<CheckCircleRoundedIcon sx={{ fontSize: '11px !important', color: '#10B981' }} />}
-                                  label={`SL @ ₹${pos.restingSlPrice || pos.stopLoss}`}
+                                  label={`SL @ ${currSym}${pos.restingSlPrice || pos.stopLoss}`}
                                   size="small"
                                   sx={{
                                     height: 20,
@@ -3226,14 +3227,17 @@ export function LiveOpenTradeWatcher({
                                 />
                               </Tooltip>
                             )}
+                          </Box>
 
+                          {/* Top-Right Quick Expand / Open Trade Detail Controls */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
                             <Tooltip title="Open full trade review" arrow>
                               <IconButton
                                 size="small"
                                 onClick={() => navigate(`/trades/${pos.tradeId}`)}
-                                sx={{ p: 0.25, color: 'text.secondary' }}
+                                sx={{ p: 0.35, color: 'text.secondary' }}
                               >
-                                <OpenInNewRoundedIcon sx={{ fontSize: 14 }} />
+                                <OpenInNewRoundedIcon sx={{ fontSize: 15 }} />
                               </IconButton>
                             </Tooltip>
 
@@ -3241,70 +3245,152 @@ export function LiveOpenTradeWatcher({
                               <IconButton
                                 size="small"
                                 onClick={() => handleToggleCardCollapse(pos.tradeId)}
-                                sx={{ p: 0.25, color: 'text.secondary' }}
+                                sx={{ p: 0.35, color: 'text.secondary' }}
                               >
-                                {isCardCollapsed ? <ExpandMoreRoundedIcon sx={{ fontSize: 16 }} /> : <ExpandLessRoundedIcon sx={{ fontSize: 16 }} />}
+                                {isCardCollapsed ? <ExpandMoreRoundedIcon sx={{ fontSize: 17 }} /> : <ExpandLessRoundedIcon sx={{ fontSize: 17 }} />}
                               </IconButton>
                             </Tooltip>
                           </Box>
+                        </Box>
 
-                          {/* Right: Sparkline, Monospace LTP & Floating MTM */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {/* 1B. Responsive Full-Width Live Price, Floating Net MTM & Running Cost Strip */}
+                        <Box
+                          sx={{
+                            mb: 1.5,
+                            p: 1.25,
+                            borderRadius: '10px',
+                            bgcolor: isPosProfitable
+                              ? alpha('#10B981', isDark ? 0.08 : 0.05)
+                              : alpha('#F43F5E', isDark ? 0.08 : 0.05),
+                            border: '1px solid',
+                            borderColor: isPosProfitable
+                              ? alpha('#10B981', 0.22)
+                              : alpha('#F43F5E', 0.22),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: 1.5,
+                          }}
+                        >
+                          {/* Left: LTP, Entry Price Delta & Sparkline */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', display: 'block', lineHeight: 1.1 }}>
+                                Live LTP · Entry {currSym}{pos.entryPrice}
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.25 }}>
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: 900,
+                                    color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 0.25,
+                                    fontFamily: `'JetBrains Mono', monospace`,
+                                    fontSize: '0.95rem',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {currSym}{pos.currentLtp}
+                                  {pos.priceDeltaPoints >= 0 ? (
+                                    <TrendingUpRoundedIcon sx={{ fontSize: 15 }} />
+                                  ) : (
+                                    <TrendingDownRoundedIcon sx={{ fontSize: 15 }} />
+                                  )}
+                                </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontFamily: `'JetBrains Mono', monospace`,
+                                    fontSize: '0.68rem',
+                                    fontWeight: 700,
+                                    color: 'text.secondary',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
+                                </Typography>
+                              </Box>
+                            </Box>
+
                             {pos.sparkline && (
                               <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
-                                <LiveSparkline points={pos.sparkline} isDark={isDark} width={110} height={24} />
+                                <LiveSparkline points={pos.sparkline} isDark={isDark} width={84} height={24} />
                               </Box>
                             )}
-                            <Box sx={{ textAlign: 'right' }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block', lineHeight: 1 }}>
-                                LTP
-                              </Typography>
+                          </Box>
+
+                          {/* Right: Floating Net MTM, R-Multiple Pill & Running Cost (Fee/Swap) */}
+                          <Box sx={{ textAlign: 'right', ml: 'auto', minWidth: 150 }}>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{
+                                fontSize: '0.62rem',
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                display: 'block',
+                                lineHeight: 1.1,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Floating Net MTM
+                            </Typography>
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'flex-end',
+                                gap: 0.75,
+                                mt: 0.25,
+                                flexWrap: 'nowrap',
+                              }}
+                            >
                               <Typography
-                                variant="body2"
+                                variant="subtitle1"
                                 sx={{
-                                  fontWeight: 800,
-                                  color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 0.25,
-                                  fontFamily: 'monospace',
-                                  fontSize: '0.85rem',
+                                  fontWeight: 900,
+                                  color: posPnLColor,
+                                  lineHeight: 1.15,
+                                  fontSize: '1.05rem',
+                                  fontFamily: `'JetBrains Mono', monospace`,
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
-                                {currSym}{pos.currentLtp}
-                                {pos.priceDeltaPoints >= 0 ? (
-                                  <TrendingUpRoundedIcon sx={{ fontSize: 14 }} />
-                                ) : (
-                                  <TrendingDownRoundedIcon sx={{ fontSize: 14 }} />
-                                )}
+                                {isPosProfitable ? '+' : ''}
+                                {formatCurrency(pos.floatingNetPnL, (pos as any).currency || watcherCurrency)}
                               </Typography>
+                              {pos.unrealizedR !== null && (
+                                <Chip
+                                  label={`${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR} R`}
+                                  size="small"
+                                  sx={{
+                                    height: 20,
+                                    fontSize: '0.66rem',
+                                    fontWeight: 800,
+                                    color: posPnLColor,
+                                    bgcolor: alpha(posPnLColor, 0.15),
+                                    borderRadius: '4px',
+                                    flexShrink: 0,
+                                  }}
+                                />
+                              )}
                             </Box>
-
-                            <Box sx={{ textAlign: 'right' }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block', lineHeight: 1 }}>
-                                Floating Net MTM
-                              </Typography>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <Typography variant="subtitle1" sx={{ fontWeight: 900, color: posPnLColor, lineHeight: 1.1, fontSize: '0.95rem' }}>
-                                  {isPosProfitable ? '+' : ''}
-                                  {formatCurrency(pos.floatingNetPnL, (pos as any).currency || watcherCurrency)}
-                                </Typography>
-                                {pos.unrealizedR !== null && (
-                                  <Chip
-                                    label={`${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR} R`}
-                                    size="small"
-                                    sx={{
-                                      height: 20,
-                                      fontSize: '0.65rem',
-                                      fontWeight: 800,
-                                      color: posPnLColor,
-                                      bgcolor: alpha(posPnLColor, 0.12),
-                                      borderRadius: '4px',
-                                    }}
-                                  />
-                                )}
-                              </Box>
-                            </Box>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{
+                                fontSize: '0.64rem',
+                                fontFamily: `'JetBrains Mono', monospace`,
+                                display: 'block',
+                                mt: 0.2,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, (pos as any).currency || watcherCurrency)} · Cost: -{formatCurrency(pos.estimatedCharges ?? 0, (pos as any).currency || watcherCurrency)}
+                            </Typography>
                           </Box>
                         </Box>
 
@@ -3502,8 +3588,8 @@ export function LiveOpenTradeWatcher({
                             <Tooltip
                               title={
                                 pos.trueBreakevenPrice
-                                  ? `Lock True Breakeven @ ₹${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
-                                  : `Lock Breakeven @ ₹${pos.entryPrice}`
+                                  ? `Lock True Breakeven @ ${currSym}${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
+                                  : `Lock Breakeven @ ${currSym}${pos.entryPrice}`
                               }
                               arrow
                             >
@@ -3528,7 +3614,7 @@ export function LiveOpenTradeWatcher({
                                     borderRadius: '5px',
                                   }}
                                 >
-                                  {isAtOrBeyondBe ? 'BE Protected' : `Lock BE+Fees${pos.trueBreakevenPrice ? ` (₹${pos.trueBreakevenPrice.toFixed(1)})` : ''}`}
+                                  {isAtOrBeyondBe ? 'BE Protected' : `Lock BE+Fees${pos.trueBreakevenPrice ? ` (${currSym}${pos.trueBreakevenPrice.toFixed(1)})` : ''}`}
                                 </Button>
                               </span>
                             </Tooltip>
@@ -3574,7 +3660,7 @@ export function LiveOpenTradeWatcher({
                                 '&:hover': { borderColor: '#3B82F6', color: '#3B82F6' },
                               }}
                             >
-                              SL: {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'Set'}
+                              SL: {pos.stopLoss !== null ? `${currSym}${pos.stopLoss}` : 'Set'}
                             </Button>
                             <Chip
                               label={threat.label}
@@ -3611,7 +3697,7 @@ export function LiveOpenTradeWatcher({
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <ShieldRoundedIcon sx={{ fontSize: 14, color: threat.color }} />
                               <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem' }}>
-                                SL: ₹{pos.stopLoss ?? 'None'}
+                                SL: {currSym}{pos.stopLoss ?? 'None'}
                               </Typography>
                               <Chip
                                 label={threat.label}
@@ -3760,7 +3846,7 @@ export function LiveOpenTradeWatcher({
                                 <Box sx={{ p: 0.75, borderRadius: '6px', border: '1px solid', borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)' }}>
                                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
                                     <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, color: '#3B82F6' }}>
-                                      Target: ₹{pos.target}
+                                      Target: {currSym}{pos.target}
                                     </Typography>
                                     <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.65rem', color: '#3B82F6' }}>
                                       {pos.targetProgressPercent !== null ? `${pos.targetProgressPercent}%` : ''}
@@ -3781,7 +3867,7 @@ export function LiveOpenTradeWatcher({
                                 <Box sx={{ p: 0.75, borderRadius: '6px', border: '1px solid', borderColor: alpha('#3B82F6', 0.25) }}>
                                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
                                     <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 700, color: '#3B82F6' }}>
-                                      Next: {nextLadderMilestone.name} @ ₹{nextLadderMilestone.targetPrice}
+                                      Next: {nextLadderMilestone.name} @ {currSym}{nextLadderMilestone.targetPrice}
                                     </Typography>
                                     <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.65rem', color: '#3B82F6' }}>
                                       {nextLadderMilestone.progressPercent}%
@@ -3803,7 +3889,7 @@ export function LiveOpenTradeWatcher({
                               {/* Footer Friction Summary */}
                               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 0.5, mt: 'auto' }}>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
-                                  Est. Charges: ~{formatCurrency(pos.estimatedCharges ?? 0, 'INR')}
+                                  Est. Charges: ~{formatCurrency(pos.estimatedCharges ?? 0, (pos as any).currency || watcherCurrency)}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem' }}>
                                   Contract: {pos.quantity} units
@@ -4103,7 +4189,7 @@ export function LiveOpenTradeWatcher({
                   Entry Price
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                  ₹{editSlMetric.entryPrice}
+                  {currSym}{editSlMetric.entryPrice}
                 </Typography>
               </Box>
 
@@ -4112,7 +4198,7 @@ export function LiveOpenTradeWatcher({
                   Current LTP
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 800, color: '#3B82F6' }}>
-                  ₹{editSlMetric.currentLtp}
+                  {currSym}{editSlMetric.currentLtp}
                 </Typography>
               </Box>
             </Box>
@@ -4124,7 +4210,7 @@ export function LiveOpenTradeWatcher({
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2 }}>
               {editSlMetric.trueBreakevenPrice && (
                 <Chip
-                  label={`True BE (₹${editSlMetric.trueBreakevenPrice}) [Fees Protected]`}
+                  label={`True BE (${currSym}${editSlMetric.trueBreakevenPrice}) [Fees Protected]`}
                   size="small"
                   onClick={() => setTargetSlPrice(String(editSlMetric.trueBreakevenPrice))}
                   clickable
@@ -4138,7 +4224,7 @@ export function LiveOpenTradeWatcher({
                 />
               )}
               <Chip
-                label={`Nominal BE (₹${editSlMetric.entryPrice})`}
+                label={`Nominal BE (${currSym}${editSlMetric.entryPrice})`}
                 size="small"
                 onClick={() => setTargetSlPrice(String(editSlMetric.entryPrice))}
                 clickable
@@ -4152,7 +4238,7 @@ export function LiveOpenTradeWatcher({
               />
               {editSlMetric.direction === 'LONG' && editSlMetric.currentLtp > editSlMetric.entryPrice && (
                 <Chip
-                  label={`Trail 5 pts below LTP (₹${Number((editSlMetric.currentLtp - 5).toFixed(2))})`}
+                  label={`Trail 5 pts below LTP (${currSym}${Number((editSlMetric.currentLtp - 5).toFixed(2))})`}
                   size="small"
                   onClick={() => setTargetSlPrice(String(Number((editSlMetric.currentLtp - 5).toFixed(2))))}
                   clickable
@@ -4166,7 +4252,7 @@ export function LiveOpenTradeWatcher({
               )}
               {editSlMetric.direction === 'SHORT' && editSlMetric.currentLtp < editSlMetric.entryPrice && (
                 <Chip
-                  label={`Trail 5 pts above LTP (₹${Number((editSlMetric.currentLtp + 5).toFixed(2))})`}
+                  label={`Trail 5 pts above LTP (${currSym}${Number((editSlMetric.currentLtp + 5).toFixed(2))})`}
                   size="small"
                   onClick={() => setTargetSlPrice(String(Number((editSlMetric.currentLtp + 5).toFixed(2))))}
                   clickable
@@ -4190,11 +4276,11 @@ export function LiveOpenTradeWatcher({
               onChange={(e) => setTargetSlPrice(e.target.value)}
               slotProps={{
                 input: {
-                  startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+                  startAdornment: <InputAdornment position="start">{currSym}</InputAdornment>,
                   inputProps: { step: 'any' },
                 },
               }}
-              helperText={`Current SL: ${editSlMetric.stopLoss !== null ? `₹${editSlMetric.stopLoss}` : 'Not set'}`}
+              helperText={`Current SL: ${editSlMetric.stopLoss !== null ? `${currSym}${editSlMetric.stopLoss}` : 'Not set'}`}
               sx={{ mb: 1.5 }}
             />
 
@@ -4256,7 +4342,7 @@ export function LiveOpenTradeWatcher({
                 return (
                   <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#EF4444', 0.12), border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                     <Typography variant="caption" sx={{ color: '#EF4444', fontWeight: 700, display: 'block' }}>
-                      ⚠️ Warning: SL is {isLong ? 'at or above' : 'at or below'} current LTP (₹{editSlMetric.currentLtp}). Order will trigger instantly!
+                      ⚠️ Warning: SL is {isLong ? 'at or above' : 'at or below'} current LTP ({currSym}{editSlMetric.currentLtp}). Order will trigger instantly!
                     </Typography>
                   </Box>
                 );
@@ -4267,7 +4353,7 @@ export function LiveOpenTradeWatcher({
                 return (
                   <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#10B981', 0.12), border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                     <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700, display: 'block' }}>
-                      🛡️ True Breakeven: Capital & Fees Protected (covers ₹{(editSlMetric.feeBufferPoints || 0).toFixed(2)} pts brokerage & govt taxes)
+                      🛡️ True Breakeven: Capital & Fees Protected (covers {currSym}{(editSlMetric.feeBufferPoints || 0).toFixed(2)} pts brokerage & govt taxes)
                     </Typography>
                   </Box>
                 );
@@ -4277,7 +4363,7 @@ export function LiveOpenTradeWatcher({
                 return (
                   <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#10B981', 0.12), border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                     <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700, display: 'block' }}>
-                      🔒 Profit Protected: Locks in +₹{riskPerUnit.toFixed(2)} / unit (~{formatCurrency(totalRiskAmount, 'INR')})
+                      🔒 Profit Protected: Locks in +{currSym}{riskPerUnit.toFixed(2)} / unit (~{formatCurrency(totalRiskAmount, watcherCurrency)})
                     </Typography>
                   </Box>
                 );
@@ -4287,7 +4373,7 @@ export function LiveOpenTradeWatcher({
                 return (
                   <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#3B82F6', 0.12), border: '1px solid rgba(59, 130, 246, 0.3)' }}>
                     <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 700, display: 'block' }}>
-                      🛡️ Breakeven: Capital Protected (₹0 loss if stopped out)
+                      🛡️ Breakeven: Capital Protected ({currSym}0 loss if stopped out)
                     </Typography>
                   </Box>
                 );
@@ -4296,7 +4382,7 @@ export function LiveOpenTradeWatcher({
               return (
                 <Box sx={{ p: 1.25, borderRadius: '8px', bgcolor: alpha('#F59E0B', 0.12), border: '1px solid rgba(245, 158, 11, 0.3)' }}>
                   <Typography variant="caption" sx={{ color: '#F59E0B', fontWeight: 700, display: 'block' }}>
-                    🔻 Downside Risk: -₹{riskPerUnit.toFixed(2)} / unit (~{formatCurrency(totalRiskAmount, 'INR')})
+                    🔻 Downside Risk: -{currSym}{riskPerUnit.toFixed(2)} / unit (~{formatCurrency(totalRiskAmount, watcherCurrency)})
                   </Typography>
                 </Box>
               );

@@ -324,10 +324,11 @@ describe('SetupMint Telegram Alerting Engine Integration Tests', () => {
     expect(isEncryptedSecret(dbToken)).toBe(true);
     expect(dbToken?.startsWith('enc:v1:')).toBe(true);
 
-    // Verify User.toJSON() completely strips telegramBotToken
+    // Verify User.toJSON() masks telegramBotToken with bullets so raw secret is never leaked
     const userInstance = await User.findById(userA._id);
     const jsonRep = userInstance?.toJSON();
-    expect(jsonRep?.liveWatcherSettings?.telegramBotToken).toBeUndefined();
+    expect(jsonRep?.liveWatcherSettings?.telegramBotToken).toBe('••••••••');
+    expect(jsonRep?.liveWatcherSettings?.telegramBotToken).not.toBe(dbToken);
   });
 
   it('10. Dispatches EOD performance digest with win rate, net PnL and metrics', async () => {

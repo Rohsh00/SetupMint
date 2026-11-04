@@ -53,6 +53,146 @@ import { IdempotencyService } from '../services/idempotency.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { User } from '../db/models/index.js';
 
+/**
+ * Deterministic, multi-field trade sorting criteria builder.
+ * Resolves top-level and nested paths with robust chronological tie-breaking.
+ */
+export function resolveTradeSortCriteria(
+  sortBy: string = 'tradeDate',
+  sortOrder: 'asc' | 'desc' = 'desc'
+): Record<string, 1 | -1> {
+  const dir: 1 | -1 = sortOrder === 'asc' ? 1 : -1;
+
+  // Date / Time: sort by true execution entryTime primary, tradeDate secondary, tie-break by _id
+  if (sortBy === 'tradeDate' || sortBy === 'date' || sortBy === 'entryTime') {
+    return {
+      entryTime: dir,
+      tradeDate: dir,
+      createdAt: dir,
+      _id: dir,
+    };
+  }
+
+  if (sortBy === 'exitTime') {
+    return {
+      exitTime: dir,
+      entryTime: dir,
+      _id: dir,
+    };
+  }
+
+  if (sortBy === 'calculated.netPnL' || sortBy === 'netPnL' || sortBy === 'pnl') {
+    return {
+      'calculated.netPnL': dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (
+    sortBy === 'calculated.realizedRMultiple' ||
+    sortBy === 'realizedRMultiple' ||
+    sortBy === 'rMultiple' ||
+    sortBy === 'rMult'
+  ) {
+    return {
+      'calculated.realizedRMultiple': dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (
+    sortBy === 'entryPrice' ||
+    sortBy === 'simpleExecution.entryPrice' ||
+    sortBy === 'entry'
+  ) {
+    return {
+      'simpleExecution.entryPrice': dir,
+      'calculated.averageEntryPrice': dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (
+    sortBy === 'exitPrice' ||
+    sortBy === 'simpleExecution.exitPrice' ||
+    sortBy === 'exit'
+  ) {
+    return {
+      'simpleExecution.exitPrice': dir,
+      'calculated.averageExitPrice': dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (
+    sortBy === 'quantity' ||
+    sortBy === 'simpleExecution.quantity' ||
+    sortBy === 'qty'
+  ) {
+    return {
+      'simpleExecution.quantity': dir,
+      'calculated.closedQuantity': dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (
+    sortBy === 'fees' ||
+    sortBy === 'totalCosts' ||
+    sortBy === 'calculated.totalCosts' ||
+    sortBy === 'brokerage'
+  ) {
+    return {
+      'calculated.totalCosts': dir,
+      'simpleExecution.brokerage': dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (sortBy === 'symbol') {
+    return {
+      symbol: dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (sortBy === 'direction' || sortBy === 'side') {
+    return {
+      direction: dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (sortBy === 'status') {
+    return {
+      status: dir,
+      entryTime: -1,
+      _id: -1,
+    };
+  }
+
+  if (sortBy === 'createdAt') {
+    return {
+      createdAt: dir,
+      _id: dir,
+    };
+  }
+
+  return {
+    [sortBy]: dir,
+    entryTime: -1,
+    _id: -1,
+  };
+}
+
 export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   app.addHook('preHandler', requireAuth);
@@ -399,9 +539,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const totalPages = Math.ceil(totalCount / limit);
     const skip = (page - 1) * limit;
 
-    const sortMap: Record<string, 1 | -1> = {
-      [sortBy]: sortOrder === 'asc' ? 1 : -1,
-    };
+    const sortMap = resolveTradeSortCriteria(sortBy, sortOrder);
 
     const trades = await Trade.find(filter)
       .sort(sortMap)
@@ -438,9 +576,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const { descriptor, page, limit, sortBy, sortOrder } = parseResult.data;
     const userId = req.user!.id;
-    const sortMap: Record<string, 1 | -1> = {
-      [sortBy]: sortOrder === 'asc' ? 1 : -1,
-    };
+    const sortMap = resolveTradeSortCriteria(sortBy, sortOrder);
     const skip = (page - 1) * limit;
 
     let filter: mongoose.FilterQuery<any>;

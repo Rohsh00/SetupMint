@@ -523,6 +523,8 @@ const TradeSchema = new Schema<ITradeDoc>(
 
 TradeSchema.index({ userId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, accountId: 1, tradeDate: -1 });
+TradeSchema.index({ userId: 1, entryTime: -1 });
+TradeSchema.index({ userId: 1, accountId: 1, entryTime: -1 });
 TradeSchema.index({ userId: 1, 'calculated.netPnL': -1 });
 TradeSchema.index({ userId: 1, templateId: 1 });
 TradeSchema.index({ userId: 1, strategyId: 1, 'setup.variantKey': 1, tradeDate: -1 });

@@ -15,6 +15,7 @@ import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import TableSortLabel from '@mui/material/TableSortLabel';
 import Paper from '@mui/material/Paper';
 import Chip from '@mui/material/Chip';
 import Checkbox from '@mui/material/Checkbox';
@@ -92,6 +93,20 @@ export function TradesPage() {
   const [variantFilter, setVariantFilter] = useState('');
   const [sortBy, setSortBy] = useState('tradeDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      if (field === 'symbol' || field === 'direction') {
+        setSortOrder('asc');
+      } else {
+        setSortOrder('desc');
+      }
+    }
+    setPage(1);
+  };
 
   // Selection state for bulk operations
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -516,7 +531,7 @@ export function TradesPage() {
           )}
 
           {/* Sort By */}
-          <FormControl size="small" sx={{ minWidth: 180 }}>
+          <FormControl size="small" sx={{ minWidth: 190 }}>
             <Select
               value={`${sortBy}:${sortOrder}`}
               onChange={(e) => {
@@ -530,7 +545,34 @@ export function TradesPage() {
               <MenuItem value="tradeDate:asc">Date (Oldest First)</MenuItem>
               <MenuItem value="calculated.netPnL:desc">Highest Profit</MenuItem>
               <MenuItem value="calculated.netPnL:asc">Largest Loss</MenuItem>
+              <MenuItem value="calculated.realizedRMultiple:desc">Highest R-Multiple</MenuItem>
+              <MenuItem value="calculated.realizedRMultiple:asc">Lowest R-Multiple</MenuItem>
               <MenuItem value="symbol:asc">Symbol (A-Z)</MenuItem>
+              <MenuItem value="symbol:desc">Symbol (Z-A)</MenuItem>
+              <MenuItem value="entryPrice:desc">Entry Price (High-Low)</MenuItem>
+              <MenuItem value="entryPrice:asc">Entry Price (Low-High)</MenuItem>
+              <MenuItem value="quantity:desc">Quantity (High-Low)</MenuItem>
+              <MenuItem value="fees:desc">Highest Fees</MenuItem>
+              <MenuItem value="status:asc">Status</MenuItem>
+              {![
+                'tradeDate:desc',
+                'tradeDate:asc',
+                'calculated.netPnL:desc',
+                'calculated.netPnL:asc',
+                'calculated.realizedRMultiple:desc',
+                'calculated.realizedRMultiple:asc',
+                'symbol:asc',
+                'symbol:desc',
+                'entryPrice:desc',
+                'entryPrice:asc',
+                'quantity:desc',
+                'fees:desc',
+                'status:asc',
+              ].includes(`${sortBy}:${sortOrder}`) && (
+                <MenuItem value={`${sortBy}:${sortOrder}`}>
+                  Sort: {sortBy} ({sortOrder.toUpperCase()})
+                </MenuItem>
+              )}
             </Select>
           </FormControl>
 
@@ -633,21 +675,100 @@ export function TradesPage() {
                     onChange={toggleSelectAll}
                   />
                 </TableCell>
-                <TableCell>Date</TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={sortBy === 'tradeDate' || sortBy === 'entryTime'}
+                    direction={sortBy === 'tradeDate' || sortBy === 'entryTime' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('tradeDate')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Date / Time
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell>Account</TableCell>
-                <TableCell>Symbol</TableCell>
-                <TableCell>Side</TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={sortBy === 'symbol'}
+                    direction={sortBy === 'symbol' ? sortOrder : 'asc'}
+                    onClick={() => handleSort('symbol')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Symbol
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={sortBy === 'direction'}
+                    direction={sortBy === 'direction' ? sortOrder : 'asc'}
+                    onClick={() => handleSort('direction')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Side
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell>Setup</TableCell>
-                <TableCell align="right">Entry</TableCell>
-                <TableCell align="right">Exit</TableCell>
-                <TableCell align="right">Qty</TableCell>
-                <TableCell align="right">Fees</TableCell>
-                <TableCell align="right">Net P&L</TableCell>
                 <TableCell align="right">
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                    R-Mult
-                    <HelpHint hintKey="metric.rMultiple" />
-                  </Box>
+                  <TableSortLabel
+                    active={sortBy === 'entryPrice'}
+                    direction={sortBy === 'entryPrice' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('entryPrice')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Entry
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell align="right">
+                  <TableSortLabel
+                    active={sortBy === 'exitPrice'}
+                    direction={sortBy === 'exitPrice' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('exitPrice')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Exit
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell align="right">
+                  <TableSortLabel
+                    active={sortBy === 'quantity'}
+                    direction={sortBy === 'quantity' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('quantity')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Qty
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell align="right">
+                  <TableSortLabel
+                    active={sortBy === 'fees'}
+                    direction={sortBy === 'fees' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('fees')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Fees
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell align="right">
+                  <TableSortLabel
+                    active={sortBy === 'calculated.netPnL'}
+                    direction={sortBy === 'calculated.netPnL' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('calculated.netPnL')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Net P&L
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell align="right">
+                  <TableSortLabel
+                    active={sortBy === 'calculated.realizedRMultiple'}
+                    direction={sortBy === 'calculated.realizedRMultiple' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('calculated.realizedRMultiple')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                      R-Mult
+                      <HelpHint hintKey="metric.rMultiple" />
+                    </Box>
+                  </TableSortLabel>
                 </TableCell>
                 <TableCell align="center">
                   <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
@@ -655,7 +776,16 @@ export function TradesPage() {
                     <HelpHint hintKey="journal.disciplineScore" />
                   </Box>
                 </TableCell>
-                <TableCell align="center">Status</TableCell>
+                <TableCell align="center">
+                  <TableSortLabel
+                    active={sortBy === 'status'}
+                    direction={sortBy === 'status' ? sortOrder : 'desc'}
+                    onClick={() => handleSort('status')}
+                    sx={{ fontWeight: 700 }}
+                  >
+                    Status
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -735,7 +865,38 @@ export function TradesPage() {
                         />
                       </TableCell>
                       <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, whiteSpace: 'nowrap' }}>
-                        {t.tradeDate}
+                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                              color: muiTheme.palette.text.primary,
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            {t.tradeDate}
+                          </Typography>
+                          {t.entryTime && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontFamily: `'JetBrains Mono', monospace`,
+                                fontSize: '0.68rem',
+                                color: muiTheme.palette.text.secondary,
+                                lineHeight: 1.1,
+                                mt: 0.25,
+                              }}
+                            >
+                              {new Date(t.entryTime).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true,
+                              })}
+                            </Typography>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell sx={{ color: muiTheme.palette.text.secondary, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.accountName}>
                         {t.accountName}

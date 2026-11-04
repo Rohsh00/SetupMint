@@ -702,21 +702,34 @@ This document provides a comprehensive, verified feature inventory of all module
 
 ---
 
-### Module 20: Funded Prop Firm & Capital Challenge Suite (The5ers Summer Plan)
+### Module 20: Funded Prop Firm & Capital Challenge Suite & Global Scope Filter
 - **Status:** **COMPLETE & VERIFIED**
-- **Problem Solved:** Prop firm evaluation challenges enforce strict daily loss limits and maximum drawdown rules that, if breached by even a single dollar or intraday spike, instantly disqualify the trader's account. Traders lack real-time distance-to-breach gauges and rule tracking tailored to their exact firm.
+- **Problem Solved:** Prop firm evaluation challenges enforce strict, firm-specific daily loss limits, trailing drawdown floors, consistency meters, news trading windows, and weekend holding rules. If breached by even a single dollar or intraday spike, accounts are permanently disqualified. Traders need data-driven multi-firm rule evaluation, live distance-to-breach gauges, and a global scope filter that isolates the entire platform to evaluation accounts.
 - **Key Capabilities:**
-  - **The5ers Summer Plan ($149 / $100K 10/5 Evaluation Preset):**
-    - Pre-configured parameters for The5ers Summer Plan: 10% Phase 1 profit target ($10,000), 5% Phase 2 profit target ($5,000), 3% Daily Loss Limit ($3,000), and 10% Static Maximum Loss ($90,000 fixed floor).
-    - **Higher-of-EOD Balance or Equity Daily Loss Engine:** Implements The5ers' exact calculation rule where daily loss is evaluated from `max(previousDayEodBalance, previousDayEodEquity)`.
-    - **Static Max Loss Floor:** Rigid $90,000 hard equity floor monitoring to prevent liquidation.
-    - **Live Buffer Meters:** Real-time distance-to-breach readouts for both daily loss and max overall loss with threat level indicators (`SAFE`, `CAUTION`, `CRITICAL`, `BREACHED`).
-    - **Phase Advancement Workflow:** Evaluates criteria and enables 1-click advancement from Phase 1 to Phase 2, and from Phase 2 to Funded Master.
+  - **Data-Driven Firm Preset Registry (`IPropFirmRuleSet`):**
+    - Fully typed presets for **The5ers** (Summer Plan $149 10/5, High Stakes 8/5, Bootcamp, Hyper Growth), **FTMO** (Standard 10/5, Aggressive), **FundedNext** (Stellar 2-Step), **Funding Pips** (2-Step), **Apex Trader Funding** (50K Evaluation trailing intraday), **Topstep** (50K Combine EOD trailing), and **Custom Prop Plan**.
+    - Marked with `rulesVerifiedAt` dates and official `sourceUrl` links.
+  - **Global Scope Filter (`AccountScope`):**
+    - Top header selector allows switching into **Prop Mode** (`scope=PROP_FIRM&firm=...`), persisted in URL search parameters.
+    - Resolves server-side across all 15 API route groups via `resolveAccountScope` with strict tenant isolation and archived filtering.
+  - **Pure 30-Digit Decimal.js Rule Evaluator (`evaluatePropFirmHealth`):**
+    - Supports all daily loss baselines (`START_OF_DAY_BALANCE`, `START_OF_DAY_EQUITY`, `HIGHER_OF_BALANCE_EQUITY`, `PREVIOUS_EOD_EQUITY`) with timezone reset boundaries.
+    - Evaluates static, trailing intraday, trailing EOD, and breakeven lock drawdown floors.
+    - Evaluates consistency rules (best-day profit percentage cap), min trading days, time limits, weekend holding, news windows, missing stop loss, and lot caps.
+  - **Sticky Permanent Breach Invariant:**
+    - Permanent transition to `status: 'FAILED'` with `breachedAt` and `breachedRule`. Never silently recovered by later positive P&L.
+  - **Prop Mode Dedicated UI/UX:**
+    - Top **Prop Challenge Panel** on Dashboard displaying phase, profit target progress bar, daily loss buffer, max loss buffer, min days, days left, consistency meter, and reset countdown.
+    - Click-to-drilldown on any metric directly opens `TradeDrillDrawer` for contributory trades.
+    - Multi-panel equity curves with horizontal reference lines for target, max loss floor, and daily loss floor.
+    - Risk calculator position capping to `min(plannedRisk, dailyBuffer, maxLossBuffer, perTradeCap)`.
+    - Trade form pre-entry advisory warnings for news window, weekend hold, missing SL, and lot cap.
+    - Colorblind-safe icons, tabular numerals (`fontVariantNumeric: 'tabular-nums'`), and `aria-live="assertive"` for breach status.
 - **Frontend & Backend Components:**
-  - Engine: [`packages/financial-engine/src/prop-firm.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/prop-firm.ts) (`evaluatePropFirmHealth`, `getThe5ersSummerPlanPreset`).
-  - Shared: `IPropFirmConfig`, `IPropFirmHealthSummary`, `propFirmConfigSchema` in [`packages/shared`](file:///Users/komal/projects/Trading%20Vault/packages/shared).
-  - API Routes: `GET /api/v1/accounts/:id/prop-health`, `POST /api/v1/accounts/:id/prop-advance-phase` in [`account.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/account.routes.ts).
-  - Frontend: [`PropFirmAccountCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/accounts/PropFirmAccountCard.tsx) mounted on [`AccountsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AccountsPage.tsx) with 1-click "Add The5ers Challenge ($149)" setup.
+  - Engine: [`packages/financial-engine/src/prop-firm.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/prop-firm.ts), [`prop-firm-presets.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/prop-firm-presets.ts).
+  - Shared: `AccountScope`, `IPropFirmRuleSet`, `IPropFirmHealthSummary`, `IPropRuleEvaluation` in [`packages/shared`](file:///Users/komal/projects/Trading%20Vault/packages/shared).
+  - API Routes: `GET /api/v1/accounts/prop-presets`, `GET /api/v1/accounts/prop-overview`, `GET /:id/prop-health`, `POST /:id/prop-advance-phase` in [`account.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/account.routes.ts).
+  - Frontend Context & Components: [`AccountScopeContext.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/context/AccountScopeContext.tsx), [`PropChallengePanel.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/dashboard/PropChallengePanel.tsx), [`PropFirmAccountCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/accounts/PropFirmAccountCard.tsx), [`AppLayout.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/AppLayout.tsx), [`AccountsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AccountsPage.tsx).
 
 
 

@@ -209,7 +209,8 @@ export class InstrumentService {
    */
   static async getTradedSummary(
     userId: string | mongoose.Types.ObjectId,
-    dateRange?: IDateRange
+    dateRange?: IDateRange,
+    accountIds?: mongoose.Types.ObjectId[]
   ): Promise<Map<string, TradedSummaryItem>> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
@@ -217,6 +218,11 @@ export class InstrumentService {
       userId: uId,
       instrumentId: { $exists: true, $ne: null },
     };
+    if (accountIds && accountIds.length > 0) {
+      matchCriteria.accountId = { $in: accountIds };
+    } else if (accountIds && accountIds.length === 0) {
+      matchCriteria.accountId = { $in: [] };
+    }
     const dateClause = buildDateRangeClause(dateRange);
     if (dateClause.tradeDate) {
       matchCriteria.tradeDate = dateClause.tradeDate;

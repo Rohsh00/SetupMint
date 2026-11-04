@@ -1,5 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { AccountStatus, AccountType, IPropFirmConfig } from '@tradevault/shared';
+import { AccountStatus, AccountType, IPropFirmAccountData, IPropFirmConfig } from '@tradevault/shared';
 
 export interface ITradingAccountDoc extends Document {
   userId: mongoose.Types.ObjectId;
@@ -26,6 +26,7 @@ export interface ITradingAccountDoc extends Document {
     maxOpenTrades?: number;
   };
   propFirmConfig?: IPropFirmConfig;
+  propFirm?: IPropFirmAccountData;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -137,6 +138,22 @@ const TradingAccountSchema = new Schema<ITradingAccountDoc>(
         enum: ['ACTIVE', 'PASSED', 'BREACHED'],
         default: 'ACTIVE',
       },
+    },
+    propFirm: {
+      firmKey: { type: String, trim: true },
+      planKey: { type: String, trim: true },
+      phase: { type: String, default: 'PHASE_1' },
+      ruleSetOverrides: { type: Schema.Types.Mixed },
+      phaseStartedAt: { type: String },
+      startingBalance: { type: Number },
+      status: {
+        type: String,
+        enum: ['ACTIVE', 'PASSED', 'FAILED'],
+        default: 'ACTIVE',
+      },
+      breachedAt: { type: String },
+      breachedRule: { type: String },
+      breachReason: { type: String },
     },
     notes: { type: String },
   },

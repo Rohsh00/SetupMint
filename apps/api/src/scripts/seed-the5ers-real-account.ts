@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import mongoose from 'mongoose';
 import { connectDatabase, disconnectDatabase } from '../db/connection.js';
-import { User, TradingAccount, Instrument, Trade } from '../db/models/index.js';
+import { User, TradingAccount, AccountTransaction, Instrument, Trade } from '../db/models/index.js';
 import { AccountService } from '../services/account.service.js';
 import { getThe5ersSummerPlanPreset, evaluatePropFirmHealth } from '@tradevault/financial-engine';
 
@@ -32,6 +32,15 @@ async function main() {
   const propConfig = getThe5ersSummerPlanPreset(100000, 'PHASE_1');
   propConfig.currentPhaseStartedAt = '2026-10-31';
 
+  const propFirmSubdoc = {
+    firmKey: 'THE5ERS',
+    planKey: 'SUMMER_100K',
+    phase: 'PHASE_1' as const,
+    phaseStartedAt: '2026-10-31',
+    startingBalance: 100000,
+    status: 'ACTIVE' as const,
+  };
+
   if (!account) {
     console.log('[Account] Creating new The5ers trading account...');
     account = await TradingAccount.create({
@@ -49,6 +58,7 @@ async function main() {
       totalAdjustments: mongoose.Types.Decimal128.fromString('0.00'),
       status: 'ACTIVE',
       propFirmConfig: propConfig,
+      propFirm: propFirmSubdoc,
       notes: 'The5ers Summer Plan $149 (Account #25436, Login: Roko1999)',
     });
   } else {
@@ -59,11 +69,38 @@ async function main() {
     account.baseCurrency = 'USD';
     account.initialBalance = mongoose.Types.Decimal128.fromString('100000.00');
     account.propFirmConfig = propConfig;
+    account.propFirm = propFirmSubdoc;
+    account.markModified('propFirm');
+    account.markModified('propFirmConfig');
     account.notes = 'The5ers Summer Plan $149 (Account #25436, Login: Roko1999)';
     account.status = 'ACTIVE';
     await account.save();
   }
   console.log(`[Account] Configured: ${account.name} (Prop Firm: ${account.propFirmConfig?.planName})`);
+
+  // Remove any duplicate manual DEPOSIT transactions on the prop firm account (initialBalance already reflects $100K)
+  const deletedDeposits = await AccountTransaction.deleteMany({
+    userId: user._id,
+    accountId: account._id,
+    type: 'DEPOSIT',
+  });
+  if (deletedDeposits.deletedCount > 0) {
+    console.log(`[Transactions] Removed ${deletedDeposits.deletedCount} duplicate deposit transaction(s) from prop account.`);
+  }
+
+  // Clean up any empty default propFirm subdocuments on non-prop accounts
+  await TradingAccount.updateMany(
+    {
+      accountType: { $ne: 'PROP_FIRM' },
+      'propFirmConfig.enabled': { $ne: true },
+      $or: [
+        { 'propFirm.firmKey': { $exists: false } },
+        { 'propFirm.firmKey': null },
+        { 'propFirm.firmKey': '' },
+      ],
+    },
+    { $unset: { propFirm: 1 } }
+  );
 
   // 2. Ensure Instruments exist for komal@gmail.com
   let xauusd = await Instrument.findOne({ userId: user._id, symbol: 'XAUUSD' });

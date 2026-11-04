@@ -648,6 +648,22 @@ $$\text{Drawdown}_i = H_i - E_i$$
 
 ---
 
+### 12.6 Multi-Account Scope Aggregation & Multi-Currency Handling
+**Code Location:** [`apps/api/src/routes/dashboard.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/dashboard.routes.ts)
+
+When scoping across multiple accounts (e.g. `scope=PROP_FIRM` or `scope=ALL`):
+1. **Opening Equity Aggregation:** Each matched account's opening equity is calculated independently via Section 12.5 and summed to form the unified baseline $E_{\text{opening}}^{\text{combined}} = \sum_a E_{\text{opening}}^{(a)}$. High-water marks are computed on the combined equity sequence without contaminating individual account balances.
+2. **Multi-Currency Safety Invariant:** Accounts with differing base currencies (e.g. USD and INR) are **never summed silently**. If multiple currencies are present in the active scope:
+   - `hasMultipleCurrencies = true`
+   - Returns exact per-currency breakdown: `currencyBreakdown: [{ currency: 'USD', startingEquity: 200000 }, { currency: 'INR', startingEquity: 500000 }]`
+   - Client UI renders an explicit multi-currency notice banner.
+3. **Prop Reference Lines:** Under prop firm scope, provides dynamic chart horizontal reference lines:
+   - `profitTarget = startingEquity + targetProfitAmount`
+   - `maxLossFloor = max(0, startingEquity - maxLossAmount)` (or trailing peak floor)
+   - `dailyLossFloor = startingEquity - dailyLossLimitAmount`
+
+---
+
 ## 13. Date Range Normalization & Indian Financial Year Calculations
 
 ### Code Location:
@@ -852,6 +868,51 @@ When a trader trails their stop loss (via 1-click breakeven lock, scaling ladder
    $$R = \frac{\text{Net Realized or Floating P&L}}{\text{Initial Risk Budget (₹)}}$$
    *Trailing a stop loss to breakeven or into profit does NOT shrink the risk denominator to zero or artificially inflate R-multiples to infinity.*
 5. A favorable trail event is appended to `trade.stopLossMoveEvents` with `moveType: 'TRAILED_FAVORABLY'` and recorded in `trade.auditLog`.
+
+---
+
+## 19. Prop Firm Evaluation & Firm-Specific Rule Engine
+
+### Code Location:
+[`packages/financial-engine/src/prop-firm.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/prop-firm.ts), [`packages/financial-engine/src/prop-firm-presets.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/prop-firm-presets.ts)
+
+Evaluates compliance across 10+ prop firm challenge constraints using pure 30-digit `Decimal.js` calculations (`ROUND_HALF_UP`).
+
+### 19.1 Daily Loss Calculation & Reference Baselines
+The daily loss threshold is computed against firm-specific baselines:
+1. `START_OF_DAY_BALANCE`:
+   $$\text{Baseline} = B_{\text{SOD}}$$
+2. `START_OF_DAY_EQUITY`:
+   $$\text{Baseline} = E_{\text{SOD}} = B_{\text{SOD}} + \text{UnrealizedPnL}_{\text{SOD}}$$
+3. `HIGHER_OF_BALANCE_EQUITY` (The5ers Summer/High Stakes):
+   $$\text{Baseline} = \max(B_{\text{prev EOD}}, E_{\text{prev EOD}})$$
+4. `PREVIOUS_EOD_EQUITY` (FTMO):
+   $$\text{Baseline} = E_{\text{prev EOD}}$$
+
+$$\text{Daily Floor} = \text{Baseline} \times (1 - \text{DailyLossLimit\%})$$
+$$\text{Daily Buffer Remaining} = E_{\text{current}} - \text{Daily Floor}$$
+
+### 19.2 Maximum Drawdown Floor Types
+1. **`STATIC`:**
+   $$\text{Floor} = B_{\text{initial}} \times (1 - \text{MaxLossLimit\%})$$
+2. **`TRAILING_INTRADAY` (Apex / Topstep):**
+   $$\text{Floor} = \max(B_{\text{initial}} \times (1 - \text{Limit\%}), E_{\text{peak}} - \text{MaxLossAmount})$$
+3. **`TRAILING_EOD`:**
+   Updates floor only at day-close boundary based on end-of-day peak balance or equity.
+4. **`TRAILING_UNTIL_BREAKEVEN_THEN_LOCK`:**
+   Floor trails behind peak equity until floor reaches $B_{\text{initial}}$, at which point the floor locks permanently at $B_{\text{initial}}$.
+
+### 19.3 Consistency Rule (Best-Day Cap)
+$$\text{BestDay\%} = \begin{cases} \frac{\max_{d} (\text{NetPnL}_d)}{\sum \text{NetPnL}} \times 100 & \text{if } \sum \text{NetPnL} > 0 \\ 0 & \text{otherwise} \end{cases}$$
+If $\text{BestDay\%} > \text{MaxAllowed\%}$, status is flagged `CAUTION` or `BREACHED` depending on firm policy until additional profit is generated.
+
+### 19.4 Sticky Permanent Breach Invariant
+Once any hard rule condition evaluates to `BREACHED` ($\text{DailyBufferRemaining} \le 0$ or $\text{MaxBufferRemaining} \le 0$):
+$$\text{Account.status} \leftarrow \text{'FAILED'}$$
+$$\text{Account.breachedAt} \leftarrow \text{ISO Timestamp}$$
+$$\text{Account.breachedRule} \leftarrow \text{RuleKey}$$
+*Subsequent positive P&L or market reversals CANNOT restore the account to active status.*
+
 
 
 

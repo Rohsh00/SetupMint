@@ -4,6 +4,9 @@ import {
   getThe5ersSummerPlanPreset,
   getThe5ersHighStakesPreset,
   getFtmoStandardPreset,
+  getPropFirmPreset,
+  listPropFirmPresets,
+  mergeRuleSetWithOverrides,
 } from '../src/prop-firm.js';
 
 describe('The5ers Prop Firm Summer Plan ($149) Financial Engine', () => {
@@ -173,6 +176,186 @@ describe('The5ers Prop Firm Summer Plan ($149) Financial Engine', () => {
     const ftmo = getFtmoStandardPreset(100000, 'PHASE_1');
     expect(ftmo.firm).toBe('FTMO');
     expect(ftmo.dailyLossReference).toBe('STARTING_BALANCE');
+  });
+
+  describe('Comprehensive Multi-Firm Rule Engine & Presets', () => {
+    it('provides verified presets with verifiedAt and sourceUrl for all supported firms', () => {
+      const presets = [
+        getPropFirmPreset('THE5ERS', 'SUMMER_100K'),
+        getPropFirmPreset('THE5ERS', 'HIGH_STAKES_100K'),
+        getPropFirmPreset('FTMO', 'STANDARD_100K'),
+        getPropFirmPreset('FUNDED_NEXT', 'STELLAR_2STEP_100K'),
+        getPropFirmPreset('FUNDING_PIPS', '2STEP_100K'),
+        getPropFirmPreset('APEX', '50K_EVALUATION'),
+        getPropFirmPreset('TOPSTEP', '50K_COMBINE'),
+      ];
+
+      for (const preset of presets) {
+        expect(preset).toBeDefined();
+        expect(preset?.rulesVerifiedAt).toBeDefined();
+        expect(preset?.sourceUrl).toMatch(/^https?:\/\//);
+        expect(preset?.phases.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('enforces exact boundary case: exactly at daily loss limit (buffer = 0 is BREACHED)', () => {
+      const ruleSet = getPropFirmPreset('THE5ERS', 'SUMMER_100K')!;
+      // $100K starting, 3% limit -> floor is exactly $97,000
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 100000, currentBalance: 97000 },
+        [],
+        { startOfDayBalance: 100000, previousDayEodBalance: 100000, previousDayEodEquity: 100000 },
+        ruleSet
+      );
+
+      expect(health.dailyBufferRemaining).toBe(0);
+      expect(health.dailyLossBreached).toBe(true);
+      expect(health.threatLevel).toBe('BREACHED');
+      expect(health.rules?.dailyLoss?.status).toBe('BREACHED');
+    });
+
+    it('evaluates Apex intraday trailing drawdown high-water mark', () => {
+      const ruleSet = getPropFirmPreset('APEX', '50K_EVALUATION')!;
+      // Apex: no daily loss limit, $50K size, 5% trailing drawdown ($2,500 trailing from intraday high)
+      expect(ruleSet.dailyLoss).toBeUndefined();
+
+      // Account grew from $50K to peak $53,000, then pulled back to $51,000
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 50000, currentBalance: 51000 },
+        [],
+        { peakEquity: 53000 },
+        ruleSet
+      );
+
+      // Floor trails behind peak: $53,000 - $2,500 = $50,500
+      expect(health.maxLossFloor).toBe(50500);
+      expect(health.maxLossBufferRemaining).toBe(500); // $51,000 - $50,500
+      expect(health.maxLossBreached).toBe(false);
+      expect(health.rules?.dailyLoss?.status).toBe('NOT_CONFIGURED');
+      expect(health.rules?.maxLoss?.status).toBe('CRITICAL'); // buffer down to 20%
+    });
+
+    it('evaluates Topstep trailing EOD max loss locking at initial balance', () => {
+      const ruleSet = getPropFirmPreset('TOPSTEP', '50K_COMBINE')!;
+      // $50K initial balance, 4% max loss ($2,000 limit). Floor trails until $50K breakeven then locks.
+      // Account peak grew to $54,000. Trail floor without lock = $52,000. But with INITIAL_BALANCE lock rule, floor locks at $50,000.
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 50000, currentBalance: 52500 },
+        [],
+        { peakEquity: 54000, previousDayEodEquity: 54000 },
+        ruleSet
+      );
+
+      expect(health.maxLossFloor).toBe(50000); // Locked at starting balance!
+      expect(health.maxLossBufferRemaining).toBe(2500);
+      expect(health.maxLossBreached).toBe(false);
+    });
+
+    it('detects consistency rule violation when single day dominates total profit', () => {
+      const ruleSet = getPropFirmPreset('APEX', '50K_EVALUATION')!;
+      // 30% max consistency rule on Apex
+      const trades = [
+        { tradeDate: '2026-10-01', calculated: { netPnL: 2500 } }, // Day 1: $2,500
+        { tradeDate: '2026-10-02', calculated: { netPnL: 500 } },  // Day 2: $500
+      ]; // Total profit: $3,000. Best day ($2,500) = 83.33% of total (> 30% cap)
+
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 50000, currentBalance: 53000 },
+        trades,
+        {},
+        ruleSet
+      );
+
+      expect(health.rules?.consistency?.status).toBe('BREACHED');
+      expect(health.threatLevel).toBe('BREACHED');
+      expect(health.status).toBe('FAILED');
+    });
+
+    it('handles consistency rule safely with zero profit (no division by zero)', () => {
+      const ruleSet = getPropFirmPreset('TOPSTEP', '50K_COMBINE')!;
+      const trades = [
+        { tradeDate: '2026-10-01', calculated: { netPnL: -200 } },
+      ];
+
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 50000, currentBalance: 49800 },
+        trades,
+        {},
+        ruleSet
+      );
+
+      expect(health.rules?.consistency?.status).toBe('SAFE');
+      expect(health.rules?.consistency?.used).toBe(0);
+    });
+
+    it('detects weekend holding violation when firm bans holding over weekend', () => {
+      const ruleSet = getPropFirmPreset('FTMO', 'STANDARD_100K')!;
+      expect(ruleSet.holdWeekend).toBe(false);
+
+      const trades = [
+        { isWeekendHold: true, calculated: { netPnL: 100 } },
+      ];
+
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 100000, currentBalance: 100100 },
+        trades,
+        {},
+        ruleSet
+      );
+
+      expect(health.rules?.holdWeekend?.status).toBe('BREACHED');
+      expect(health.threatLevel).toBe('BREACHED');
+      expect(health.status).toBe('FAILED');
+    });
+
+    it('detects missing stop loss violation on mandatory stop loss accounts', () => {
+      const ruleSet = getPropFirmPreset('THE5ERS', 'HIGH_STAKES_100K')!;
+      expect(ruleSet.mandatoryStopLoss).toBe(true);
+
+      const trades = [
+        { status: 'CLOSED', calculated: { netPnL: 200 } }, // No risk.initialStopLoss
+      ];
+
+      const health = evaluatePropFirmHealth(
+        { initialBalance: 100000, currentBalance: 100200 },
+        trades,
+        {},
+        ruleSet
+      );
+
+      expect(health.rules?.mandatoryStopLoss?.status).toBe('BREACHED');
+      expect(health.threatLevel).toBe('BREACHED');
+    });
+
+    it('enforces sticky breach invariant: a previously breached account never silently recovers with new profit', () => {
+      const ruleSet = getPropFirmPreset('THE5ERS', 'SUMMER_100K')!;
+
+      // Account was previously breached, but balance is now $150,000
+      const health = evaluatePropFirmHealth(
+        {
+          initialBalance: 100000,
+          currentBalance: 150000,
+          propFirm: {
+            firmKey: 'THE5ERS',
+            planKey: 'SUMMER_100K',
+            phase: 'PHASE_1',
+            status: 'FAILED',
+            breachedAt: '2026-10-01T10:00:00.000Z',
+            breachedRule: 'dailyLoss',
+            breachReason: 'Daily loss limit breached on Oct 1',
+          },
+        },
+        [],
+        { startOfDayBalance: 150000, previousDayEodBalance: 150000, previousDayEodEquity: 150000 },
+        ruleSet
+      );
+
+      expect(health.threatLevel).toBe('BREACHED');
+      expect(health.status).toBe('FAILED');
+      expect(health.breachedAt).toBe('2026-10-01T10:00:00.000Z');
+      expect(health.breachedRule).toBe('dailyLoss');
+      expect(health.canAdvancePhase).toBe(false);
+    });
   });
 });
 

@@ -13,6 +13,7 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
 import FormControl from '@mui/material/FormControl';
+import ListSubheader from '@mui/material/ListSubheader';
 import Avatar from '@mui/material/Avatar';
 import Divider from '@mui/material/Divider';
 import Chip from '@mui/material/Chip';
@@ -50,6 +51,7 @@ import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
 import { TradeDrillDrawer } from '../drilldown/TradeDrillDrawer.js';
@@ -74,9 +76,21 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+
+  const {
+    scope,
+    isPropMode,
+    selectedScopeValue,
+    setScopeValue,
+    selectedAccountId,
+    accounts,
+    propAccounts,
+    personalAccounts,
+    demoAccounts,
+    propFirms,
+  } = useAccountScope();
 
   // Global Keyboard Shortcuts (Cmd+K palette, N for new trade)
   useEffect(() => {
@@ -119,6 +133,9 @@ export function AppLayout() {
     setIsLoggingOut(true);
     try {
       await logout();
+      try {
+        sessionStorage.removeItem('setupmint_account_scope');
+      } catch {}
       queryClient.clear();
       toast.success('Logged out successfully.');
       navigate('/login', { replace: true });
@@ -131,12 +148,7 @@ export function AppLayout() {
     }
   };
 
-  // Fetch user accounts for global account switcher
-  const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: () => api.accounts.list(),
-    staleTime: 5 * 60 * 1000,
-  });
+
 
   // Prefetch trade form reference data so opening 'Log New Trade' happens in 0ms synchronously from memory cache
   const prefetchTradeFormData = React.useCallback(() => {
@@ -223,6 +235,18 @@ export function AppLayout() {
   ];
 
   const currentDrawerWidth = sidebarCollapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
+
+  // Preserve global scope and date range query params when switching pages via Sidebar
+  const preservedSearch = React.useMemo(() => {
+    const currentParams = new URLSearchParams(location.search);
+    const kept = new URLSearchParams();
+    for (const key of ['scope', 'firm', 'firmKey', 'type', 'accountType', 'account', 'accountId', 'range', 'from', 'to']) {
+      const val = currentParams.get(key);
+      if (val) kept.set(key, val);
+    }
+    const str = kept.toString();
+    return str ? `?${str}` : '';
+  }, [location.search]);
 
   const drawerContent = (
     <Box
@@ -312,7 +336,7 @@ export function AppLayout() {
             <ListItem key={item.to} disablePadding sx={{ mb: 0.5 }}>
               <ListItemButton
                 component={NavLink}
-                to={item.to}
+                to={{ pathname: item.to, search: preservedSearch }}
                 onClick={() => {
                   if (isMobile) setMobileOpen(false);
                 }}
@@ -574,26 +598,63 @@ export function AppLayout() {
                 </Typography>
                 <FormControl size="small">
                   <Select
-                    value={selectedAccountId}
-                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    value={selectedScopeValue}
+                    onChange={(e) => setScopeValue(e.target.value)}
                     sx={{
                       height: 36,
                       fontSize: '0.8125rem',
                       fontWeight: 600,
                       backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(255, 255, 255, 0.9)',
                       borderRadius: 2,
+                      minWidth: { xs: 140, sm: 200 },
                     }}
                   >
                     <MenuItem value="ALL">
                       <em>All Accounts (Consolidated)</em>
                     </MenuItem>
+                    {personalAccounts.length > 0 && (
+                      <MenuItem value="TYPE:LIVE">
+                        💼 Live / Personal Accounts
+                      </MenuItem>
+                    )}
+                    <MenuItem value="PROP_FIRM:ALL">
+                      🏆 Prop Firm Accounts (All)
+                    </MenuItem>
+                    {propFirms.map((firm) => (
+                      <MenuItem key={firm} value={`PROP_FIRM:${firm}`} sx={{ pl: 3.5, fontSize: '0.8rem' }}>
+                        ↳ Firm: {firm.toUpperCase()}
+                      </MenuItem>
+                    ))}
+                    {demoAccounts.length > 0 && (
+                      <MenuItem value="TYPE:DEMO">
+                        🧪 Demo / Paper Accounts
+                      </MenuItem>
+                    )}
+                    <Divider sx={{ my: 0.5 }} />
+                    <ListSubheader sx={{ lineHeight: '24px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                      Individual Accounts
+                    </ListSubheader>
                     {accounts.map((acc: any) => (
-                      <MenuItem key={acc.id} value={acc.id}>
+                      <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
                         {acc.name} ({acc.broker} • {acc.baseCurrency})
                       </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
+                {isPropMode && (
+                  <Chip
+                    size="small"
+                    label="PROP MODE"
+                    color="secondary"
+                    variant="filled"
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: '0.6875rem',
+                      letterSpacing: '0.05em',
+                      height: 24,
+                    }}
+                  />
+                )}
               </Box>
             </Box>
 
@@ -896,7 +957,7 @@ export function AppLayout() {
             p: { xs: 2, sm: 3, md: 4 },
           }}
         >
-          <Outlet context={{ selectedAccountId }} />
+          <Outlet context={{ selectedAccountId, scope, isPropMode }} />
         </Box>
       </Box>
 

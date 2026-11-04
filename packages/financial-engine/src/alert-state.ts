@@ -22,7 +22,12 @@ export type AlertType =
   | 'TOKEN_EXPIRY'
   | 'TRADE_OPENED'
   | 'TRADE_CLOSED'
-  | 'EOD_SUMMARY';
+  | 'EOD_SUMMARY'
+  | 'PROP_DAILY_LOSS'
+  | 'PROP_MAX_LOSS'
+  | 'PROP_CONSISTENCY'
+  | 'PROP_NEWS_WINDOW'
+  | 'PROP_WEEKEND_HOLD';
 
 export type AlertLifecycle = 'ACTIVE' | 'SNOOZED' | 'CLEARED' | 'RESOLVED';
 
@@ -183,7 +188,73 @@ export const DEFAULT_ALERT_POLICIES: Record<AlertType, AlertPolicy> = {
     snoozeDefaultMs: 0,
     isAudibleDefault: false,
   },
+  PROP_DAILY_LOSS: {
+    type: 'PROP_DAILY_LOSS',
+    enterThreshold: new Decimal('75'), // 75% of daily loss buffer used
+    clearThreshold: new Decimal('65'),
+    minRearmMs: 300000,
+    minEditIntervalMs: 10000,
+    maxRepings: 3,
+    repingIntervalsMs: [300000, 600000, 600000],
+    snoozeDefaultMs: 1800000,
+    isAudibleDefault: true,
+  },
+  PROP_MAX_LOSS: {
+    type: 'PROP_MAX_LOSS',
+    enterThreshold: new Decimal('75'), // 75% of max loss buffer used
+    clearThreshold: new Decimal('65'),
+    minRearmMs: 300000,
+    minEditIntervalMs: 10000,
+    maxRepings: 3,
+    repingIntervalsMs: [300000, 600000, 600000],
+    snoozeDefaultMs: 1800000,
+    isAudibleDefault: true,
+  },
+  PROP_CONSISTENCY: {
+    type: 'PROP_CONSISTENCY',
+    enterThreshold: new Decimal('75'), // 75% of allowed single-day limit
+    clearThreshold: new Decimal('65'),
+    minRearmMs: 300000,
+    minEditIntervalMs: 10000,
+    maxRepings: 2,
+    repingIntervalsMs: [300000, 600000],
+    snoozeDefaultMs: 1800000,
+    isAudibleDefault: true,
+  },
+  PROP_NEWS_WINDOW: {
+    type: 'PROP_NEWS_WINDOW',
+    enterThreshold: new Decimal('1'),
+    clearThreshold: new Decimal('0'),
+    minRearmMs: 300000,
+    minEditIntervalMs: 10000,
+    maxRepings: 1,
+    repingIntervalsMs: [300000],
+    snoozeDefaultMs: 600000,
+    isAudibleDefault: true,
+  },
+  PROP_WEEKEND_HOLD: {
+    type: 'PROP_WEEKEND_HOLD',
+    enterThreshold: new Decimal('1'),
+    clearThreshold: new Decimal('0'),
+    minRearmMs: 300000,
+    minEditIntervalMs: 10000,
+    maxRepings: 1,
+    repingIntervalsMs: [300000],
+    snoozeDefaultMs: 600000,
+    isAudibleDefault: true,
+  },
 };
+
+/**
+ * Calculates severity for prop firm rules: 75% (WARNING=1), 90% (CRITICAL=2), 100% (BREACHED=3).
+ */
+export function calculatePropAlertSeverity(usedPercent: Decimal.Value): AlertSeverityLevel {
+  const dUsed = new Decimal(usedPercent);
+  if (dUsed.gte(100)) return 3; // BREACHED
+  if (dUsed.gte(90)) return 2;  // CRITICAL
+  if (dUsed.gte(75)) return 1;  // WARNING
+  return 0;                     // INFO
+}
 
 /**
  * Determines whether the alert condition is currently in breach territory.

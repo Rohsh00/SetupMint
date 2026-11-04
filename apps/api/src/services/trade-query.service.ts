@@ -23,7 +23,7 @@ const WEEKDAY_TO_MONGO_DAY: Record<string, number> = {
  * Enforces strict tenant isolation by always injecting { userId }.
  */
 export function buildTradeMongooseFilter(
-  filterInput: Partial<ExtendedTradeFilter> = {},
+  filterInput: (Partial<ExtendedTradeFilter> & { accountIds?: Array<string | mongoose.Types.ObjectId> }) = {},
   userId: string | mongoose.Types.ObjectId
 ): mongoose.FilterQuery<any> {
   const filter: mongoose.FilterQuery<any> = {
@@ -32,6 +32,7 @@ export function buildTradeMongooseFilter(
 
   const {
     accountId,
+    accountIds,
     symbol,
     assetClass,
     direction,
@@ -64,7 +65,13 @@ export function buildTradeMongooseFilter(
     weekday,
   } = filterInput;
 
-  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
+  if (Array.isArray(accountIds)) {
+    filter.accountId = {
+      $in: accountIds
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id)),
+    };
+  } else if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
     filter.accountId = new mongoose.Types.ObjectId(accountId);
   }
   if (symbol) {

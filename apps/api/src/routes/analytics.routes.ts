@@ -12,6 +12,7 @@ import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { computeWhatIf, WhatIfScopeTooLargeError } from '../services/what-if.service.js';
 import { calculateExcursionAggregates, ITradeForExcursionAnalytics } from '@tradevault/financial-engine';
+import { AccountScopeService } from '../services/account-scope.service.js';
 
 export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -31,8 +32,10 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       });
     }
 
-    const filter: any = { userId: req.user!.id, status: 'CLOSED' };
-    if (accountId) filter.accountId = accountId;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -151,12 +154,15 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const { accountId, strategyId, variantKey, startDate, endDate, session, customMfeSteps, funnelMode } = parsed.data;
 
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
     const baseFilter: any = {
       userId: req.user!.id,
       status: 'CLOSED',
+      accountId: { $in: accountIds },
     };
 
-    if (accountId) baseFilter.accountId = accountId;
     if (strategyId) baseFilter.strategyId = strategyId;
     if (variantKey) baseFilter['setup.variantKey'] = variantKey;
     if (session) baseFilter.session = session;

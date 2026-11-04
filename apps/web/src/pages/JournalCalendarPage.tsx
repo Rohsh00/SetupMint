@@ -49,10 +49,12 @@ import { formatCurrency } from '../lib/utils.js';
 import { MISTAKE_TAGS } from '@tradevault/shared';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function JournalCalendarPage() {
   const { openDrill } = useTradeDrilldown();
+  const { queryParams, isPropMode, scopeLabel } = useAccountScope();
   const queryClient = useQueryClient();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -68,6 +70,11 @@ export function JournalCalendarPage() {
 
   const ymString = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
+  const effectiveScopeParams =
+    selectedAccountId !== 'ALL'
+      ? { ...queryParams, accountId: selectedAccountId }
+      : queryParams;
+
   const { data: accountsData } = useQuery({
     queryKey: ['accounts-list'],
     queryFn: () => api.accounts.list(),
@@ -75,13 +82,13 @@ export function JournalCalendarPage() {
   const accounts = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.accounts || [];
 
   const { data: calendarData, isLoading } = useQuery({
-    queryKey: ['journal-calendar', ymString, selectedAccountId],
-    queryFn: () => api.journal.calendar(ymString, selectedAccountId),
+    queryKey: ['journal-calendar', ymString, effectiveScopeParams],
+    queryFn: () => api.journal.calendar(ymString, effectiveScopeParams),
   });
 
   const { data: dayDetails, isLoading: isDayLoading } = useQuery({
-    queryKey: ['journal-day', selectedDate],
-    queryFn: () => api.journal.getDay(selectedDate!),
+    queryKey: ['journal-day', selectedDate, effectiveScopeParams],
+    queryFn: () => api.journal.getDay(selectedDate!, effectiveScopeParams),
     enabled: !!selectedDate,
   });
 
@@ -423,6 +430,103 @@ export function JournalCalendarPage() {
         </Box>
       </Box>
 
+      {/* Prop Mode Monthly Consistency & Daily Rule Compliance Banner */}
+      {isPropMode && (
+        <Card
+          sx={{
+            p: 2,
+            borderRadius: 2.5,
+            border: `1px solid ${isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.25)'}`,
+            background: isDark
+              ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(15, 23, 42, 0.85) 100%)'
+              : 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, #FFFFFF 100%)',
+          }}
+        >
+          {(() => {
+            const bestDayPnL = days.reduce((max: number, d: any) => Math.max(max, d.netPnL || 0), 0);
+            const worstDayPnL = days.reduce((min: number, d: any) => Math.min(min, d.netPnL || 0), 0);
+            const consistencyShare =
+              totalMonthlyNet > 0 && bestDayPnL > 0
+                ? Number(((bestDayPnL / totalMonthlyNet) * 100).toFixed(1))
+                : 0;
+            return (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Chip
+                      label="PROP MODE JOURNAL"
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: '0.65rem',
+                        fontWeight: 800,
+                        bgcolor: 'rgba(99, 102, 241, 0.15)',
+                        color: isDark ? '#A5B4FC' : '#4338CA',
+                      }}
+                    />
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      {scopeLabel} — Monthly Consistency &amp; Session Audit
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600 }}>
+                      Best Day Consistency Share
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontVariantNumeric: 'tabular-nums',
+                        color: consistencyShare > 50 ? 'warning.main' : 'success.main',
+                      }}
+                    >
+                      {consistencyShare.toFixed(1)}% ({formatCurrency(bestDayPnL)})
+                    </Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600 }}>
+                      Worst Session Drawdown
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontVariantNumeric: 'tabular-nums',
+                        color: worstDayPnL < 0 ? 'error.main' : 'text.primary',
+                      }}
+                    >
+                      {formatCurrency(worstDayPnL)}
+                    </Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600 }}>
+                      Active Trading Days
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {tradingDaysCount} days
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            );
+          })()}
+        </Card>
+      )}
+
       {/* Monthly Summary Strip with Cumulative Sparkline */}
       <Card sx={{ p: 2.5 }}>
         <Grid container spacing={2.5} sx={{ alignItems: 'center' }}>
@@ -461,9 +565,9 @@ export function JournalCalendarPage() {
                   openDrill({
                     kind: 'FILTER',
                     filter: {
+                      ...(effectiveScopeParams as any),
                       startDate: start,
                       endDate: end,
-                      accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
                     },
                     label: `Trades for ${ymString}`,
                   });
@@ -830,8 +934,8 @@ export function JournalCalendarPage() {
                               openDrill({
                                 kind: 'FILTER',
                                 filter: {
+                                  ...(effectiveScopeParams as any),
                                   date: dayItem.date,
-                                  accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
                                 },
                                 label: `Trades on ${dayItem.date}`,
                               });
@@ -866,9 +970,9 @@ export function JournalCalendarPage() {
                       openDrill({
                         kind: 'FILTER',
                         filter: {
+                          ...(effectiveScopeParams as any),
                           startDate: week.summary.firstDate,
                           endDate: week.summary.lastDate,
-                          accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
                         },
                         label: `Trades for Week ${week.weekNumber} (${week.summary.firstDate} to ${week.summary.lastDate})`,
                       });

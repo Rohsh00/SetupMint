@@ -4,6 +4,7 @@ import { calculateDailySessionSummary } from '@tradevault/financial-engine';
 import { DailyJournal, Trade, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 
 export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -20,14 +21,15 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const startOfMonth = new Date(year, month - 1, 1);
     const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
 
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
     // Aggregate trades by day
     const tradeFilter: any = {
       userId: req.user!.id,
       tradeDate: { $gte: startOfMonth, $lte: endOfMonth },
+      accountId: { $in: accountIds },
     };
-    if (accountId && accountId !== 'ALL') {
-      tradeFilter.accountId = accountId;
-    }
 
     const trades = await Trade.find(tradeFilter);
 
@@ -109,9 +111,13 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
 
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
     const trades = await Trade.find({
       userId: req.user!.id,
       tradeDate: { $gte: startOfDay, $lte: endOfDay },
+      accountId: { $in: accountIds },
     }).sort({ entryTime: 1 });
 
     const totalNetPnL = trades.reduce((sum, t) => sum + (t.calculated?.netPnL || 0), 0);

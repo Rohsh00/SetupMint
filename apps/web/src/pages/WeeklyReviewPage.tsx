@@ -63,6 +63,7 @@ import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR, formatDate } from '../lib/utils.js';
 import { toast } from '../context/ToastContext.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { HelpHint } from '../components/help/index.js';
 
@@ -110,8 +111,8 @@ export function WeeklyReviewPage() {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
-  // Outlet context for account switcher
-  const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>() || { selectedAccountId: 'ALL' };
+  // Global Account Scope
+  const { queryParams, isPropMode, scopeLabel } = useAccountScope();
 
   // URL Query Param '?week=YYYY-Www'
   const [searchParams, setSearchParams] = useSearchParams();
@@ -148,12 +149,8 @@ export function WeeklyReviewPage() {
 
   // TanStack Query
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['weekly-review', currentWeek, selectedAccountId],
-    queryFn: () =>
-      api.review.getWeekly(
-        currentWeek,
-        selectedAccountId !== 'ALL' ? selectedAccountId : undefined
-      ),
+    queryKey: ['weekly-review', currentWeek, queryParams],
+    queryFn: () => api.review.getWeekly(currentWeek, queryParams),
   });
 
   const review: IWeeklyReview | null = data?.review || null;
@@ -196,12 +193,16 @@ export function WeeklyReviewPage() {
   // Week Navigation Handlers
   const handlePrevWeek = () => {
     const prev = getAdjacentIsoWeek(currentWeek, -1);
-    setSearchParams({ week: prev });
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('week', prev);
+    setSearchParams(nextParams);
   };
 
   const handleNextWeek = () => {
     const next = getAdjacentIsoWeek(currentWeek, 1);
-    setSearchParams({ week: next });
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('week', next);
+    setSearchParams(nextParams);
   };
 
   // Save Mutation
@@ -218,11 +219,7 @@ export function WeeklyReviewPage() {
         status: targetStatus,
         followedLastRule: overrideFollowed,
       };
-      return api.review.saveWeekly(
-        currentWeek,
-        payload,
-        selectedAccountId !== 'ALL' ? selectedAccountId : undefined
-      );
+      return api.review.saveWeekly(currentWeek, payload, queryParams);
     },
     onSuccess: (_, targetStatus) => {
       queryClient.invalidateQueries({ queryKey: ['weekly-review', currentWeek] });
@@ -408,6 +405,85 @@ export function WeeklyReviewPage() {
         </Alert>
       )}
 
+      {/* PROP MODE WEEKLY COMPLIANCE BANNER */}
+      {isPropMode && (() => {
+        const breachDaysCount = riskEvents.dailyLossBreaches.length;
+        const activeWeekdays = sessionsAndWeekdays.byWeekday.filter((w) => w.tradesCount > 0);
+        const bestDayProfit = activeWeekdays.reduce((max, w) => Math.max(max, w.netPnL), 0);
+        const bestDayConsistencyShare =
+          weekSummary.netPnL > 0 && bestDayProfit > 0
+            ? Number(((bestDayProfit / weekSummary.netPnL) * 100).toFixed(1))
+            : 0;
+        return (
+          <Card
+            variant="outlined"
+            sx={{
+              p: 2,
+              borderRadius: 3,
+              borderColor: 'rgba(139, 92, 246, 0.35)',
+              backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 2,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Chip
+                label="PROP MODE WEEKLY AUDIT"
+                size="small"
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '0.7rem',
+                  bgcolor: 'rgba(139, 92, 246, 0.2)',
+                  color: '#A78BFA',
+                }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Scope: <strong>{scopeLabel}</strong> • Weekly prop rule compliance &amp; consistency check
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700 }}>
+                  DAILY LOSS BREACHES
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ fontWeight: 800, fontFamily: 'monospace', color: breachDaysCount > 0 ? 'error.main' : 'success.main' }}
+                >
+                  {breachDaysCount} {breachDaysCount === 1 ? 'Day' : 'Days'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700 }}>
+                  BEST DAY CONSISTENCY SHARE
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 800,
+                    fontFamily: 'monospace',
+                    color: bestDayConsistencyShare > 40 ? 'warning.main' : 'success.main',
+                  }}
+                >
+                  {weekSummary.netPnL > 0 ? `${bestDayConsistencyShare}% of weekly profit` : 'N/A (No net profit)'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700 }}>
+                  ACTIVE TRADING DAYS
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
+                  {activeWeekdays.length} / 5 Days
+                </Typography>
+              </Box>
+            </Box>
+          </Card>
+        );
+      })()}
+
       {/* 2. KPI STRIP WITH DELTAS VS PREVIOUS WEEK */}
       <Grid container spacing={2}>
         {/* Net P&L */}
@@ -417,7 +493,7 @@ export function WeeklyReviewPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
+                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
                 label: `Week ${currentWeek} All Closed Trades`,
               })
             }
@@ -479,7 +555,7 @@ export function WeeklyReviewPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { startDate: dateRange.startDate, endDate: dateRange.endDate, outcome: 'WIN' },
+                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, outcome: 'WIN' },
                 label: `Week ${currentWeek} Winning Trades`,
               })
             }
@@ -533,7 +609,7 @@ export function WeeklyReviewPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
+                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
                 label: `Week ${currentWeek} Closed Trades`,
               })
             }
@@ -587,7 +663,7 @@ export function WeeklyReviewPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
+                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
                 label: `Week ${currentWeek} Closed Trades`,
               })
             }
@@ -1203,7 +1279,7 @@ export function WeeklyReviewPage() {
                 onClick={() =>
                   openDrill({
                     kind: 'FILTER',
-                    filter: { date: d.date, status: 'CLOSED' },
+                    filter: { ...(queryParams as any), date: d.date, status: 'CLOSED' },
                     label: `${d.date} Trades`,
                   })
                 }

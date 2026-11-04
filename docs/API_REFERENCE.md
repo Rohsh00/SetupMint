@@ -47,6 +47,19 @@ Authentication is handled via stateful sessions:
   Authorization: Bearer <session-token-hex>
   ```
 
+### Global Account Scope Contract (`AccountScope`)
+Every reporting, aggregation, chart, watcher, and trade endpoint accepts unified Account Scope parameters. The backend resolver `resolveAccountScope(userId, scope)` guarantees strict tenant isolation, ownership verification, and exclusion of archived accounts unless requested:
+
+| Parameter | Type | Default | Description |
+|:---|:---|:---|:---|
+| `scope` | String | `ALL` | Scope filter mode: `ALL`, `ACCOUNT`, `TYPE`, or `PROP_FIRM`. |
+| `accountId` | String (ObjectId) | `undefined` | Scopes exclusively to a single owned account. |
+| `accountType` | String | `undefined` | Filter by `EQUITY`, `FUTURES_OPTIONS`, `COMMODITY`, `FOREX`, `CRYPTO`, or `PROP_FIRM`. |
+| `firmKey` | String | `undefined` | When `scope=PROP_FIRM`, filters by firm (`THE5ERS`, `FTMO`, `FUNDEDNEXT`, `FUNDING_PIPS`, `APEX`, `TOPSTEP`, `CUSTOM`). |
+| `includeArchived` | Boolean | `false` | Whether to include archived trading accounts. |
+
+Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET /trades/live/watcher`, `GET /trades/live/alerts`, `GET /dashboard/stats`, `GET /dashboard/equity-curves`, `GET /analytics/psychology`, `GET /analytics/excursion`, `POST /analytics/what-if`, `GET /journal/calendar`, `GET /journal/:date`, `GET /review/queue`, `GET /review/prefill/:date`, `GET /review/weekly`, `GET /strategies`, `GET /instruments`, `GET /export/csv`, `GET /export/json`, `GET /templates`, Telegram commands `/pnl`, `/trades`, `/summary`, `/alerts`.
+
 ---
 
 ## 2. Health & System Endpoints
@@ -248,6 +261,26 @@ Authentication is handled via stateful sessions:
 - **Purpose:** Force authoritative balance recalculation from all closed trades and confirmed cash transactions.
 - **Auth:** **Required**.
 - **Responses:** `200 OK` with recalculated `AccountBalanceSummary`.
+
+### `GET /api/v1/accounts/prop-presets`
+- **Purpose:** Fetch the registry of firm-verified Prop Firm rule set presets (The5ers Summer/High Stakes, FTMO Standard, FundedNext Stellar, Funding Pips, Apex, Topstep, Custom Plan).
+- **Auth:** **Required**.
+- **Response:** Array of `IPropFirmRuleSet` objects, including `firmKey`, `planKey`, `displayName`, `rulesVerifiedAt`, `sourceUrl`, `phases`, `dailyLoss`, `maxLoss`, `consistencyRule`, and allowed behaviors.
+
+### `GET /api/v1/accounts/prop-overview`
+- **Purpose:** Retrieve an aggregated prop challenge dashboard overview across all user prop accounts with current phase, profit progress, buffers, and nearest breach metrics.
+- **Auth:** **Required**.
+- **Response:** Array of `{ account, health, nearestBreach }` objects.
+
+### `GET /api/v1/accounts/:id/prop-health`
+- **Purpose:** Evaluate real-time prop firm compliance and buffer health for an account using pure 30-digit `Decimal.js` calculations. Detects sticky rule breaches and updates `TradingAccount.propFirm.status = 'FAILED'`.
+- **Auth:** **Required**.
+- **Response:** `IPropFirmHealthSummary` with `dailyBufferRemaining`, `maxLossBufferRemaining`, `targetProgressPercent`, `threatLevel`, `canAdvancePhase`, `ruleEvaluations`, and sticky breach info (`breachedAt`, `breachedRule`).
+
+### `POST /api/v1/accounts/:id/prop-advance-phase`
+- **Purpose:** Advance a prop challenge account to the next evaluation phase or claim funded status once criteria are met (Phase 1 -> Phase 2 -> Funded).
+- **Auth:** **Required**.
+- **Responses:** `200 OK` on advance; `400 PHASE_CRITERIA_NOT_MET` if profit target or minimum trading days are not satisfied.
 
 ---
 

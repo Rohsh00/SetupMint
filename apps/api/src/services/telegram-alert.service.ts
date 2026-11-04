@@ -43,6 +43,7 @@ import { config } from '../config.js';
 import { decryptSecret } from './crypto.service.js';
 import { FyersService } from './fyers.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
+import { AccountScopeService } from './account-scope.service.js';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -1164,19 +1165,19 @@ export class TelegramAlertService {
         break;
 
       case '/pnl':
-        await this.handlePnlCommand(user, botToken, chatId);
+        await this.handlePnlCommand(user, botToken, chatId, args[0]);
         break;
 
       case '/trades':
-        await this.handleTradesCommand(user, botToken, chatId);
+        await this.handleTradesCommand(user, botToken, chatId, args[0]);
         break;
 
       case '/summary':
-        await this.handleSummaryCommand(user, botToken, chatId);
+        await this.handleSummaryCommand(user, botToken, chatId, args[0]);
         break;
 
       case '/alerts':
-        await this.handleAlertsListCommand(user, botToken, chatId);
+        await this.handleAlertsListCommand(user, botToken, chatId, args[0]);
         break;
 
       case '/snooze':
@@ -1438,8 +1439,11 @@ export class TelegramAlertService {
   /**
    * Generates live PnL report card for /pnl command.
    */
-  private static async handlePnlCommand(user: any, botToken: string | null | undefined, chatId: string | number): Promise<void> {
-    const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString());
+  private static async handlePnlCommand(user: any, botToken: string | null | undefined, chatId: string | number, scopeArg?: string): Promise<void> {
+    const isProp = scopeArg?.toLowerCase().includes('prop');
+    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
+    const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
     const openCount = summary.positions.length;
 
     const startOfDay = new Date();
@@ -1448,6 +1452,7 @@ export class TelegramAlertService {
       userId: user._id,
       status: 'CLOSED',
       exitTime: { $gte: startOfDay },
+      accountId: { $in: accountIds },
     }).lean();
 
     const realizedPnL = todayTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
@@ -1483,8 +1488,11 @@ export class TelegramAlertService {
   /**
    * Generates interactive open positions list for /trades command.
    */
-  private static async handleTradesCommand(user: any, botToken: string | null | undefined, chatId: string | number): Promise<void> {
-    const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString());
+  private static async handleTradesCommand(user: any, botToken: string | null | undefined, chatId: string | number, scopeArg?: string): Promise<void> {
+    const isProp = scopeArg?.toLowerCase().includes('prop');
+    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
+    const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
     if (summary.positions.length === 0) {
       await this.sendMessage(
         botToken,
@@ -1529,11 +1537,22 @@ export class TelegramAlertService {
   /**
    * Lists active and snoozed alert states for /alerts command.
    */
-  private static async handleAlertsListCommand(user: any, botToken: string, chatId: string | number): Promise<void> {
-    const alerts = await AlertState.find({
+  private static async handleAlertsListCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
+    const isProp = scopeArg?.toLowerCase().includes('prop');
+    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
+    const tradesInScope = await Trade.find({ userId: user._id, accountId: { $in: accountIds } }).select('_id');
+    const tradeIds = tradesInScope.map((t) => t._id);
+
+    const alertFilter: any = {
       userId: user._id,
       state: { $in: ['ACTIVE', 'SNOOZED'] },
-    }).lean();
+    };
+    if (isProp) {
+      alertFilter.tradeId = { $in: tradeIds };
+    }
+
+    const alerts = await AlertState.find(alertFilter).lean();
 
     if (alerts.length === 0) {
       await this.sendMessage(botToken, chatId, `✅ <b>No Active Alerts</b>\n\nAll risk states are cleared and healthy.`);
@@ -1645,7 +1664,10 @@ export class TelegramAlertService {
   /**
    * Generates summary statistics for /summary command.
    */
-  private static async handleSummaryCommand(user: any, botToken: string, chatId: string | number): Promise<void> {
+  private static async handleSummaryCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
+    const isProp = scopeArg?.toLowerCase().includes('prop');
+    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -1653,6 +1675,7 @@ export class TelegramAlertService {
       userId: user._id,
       status: 'CLOSED',
       exitTime: { $gte: startOfDay },
+      accountId: { $in: accountIds },
     }).lean();
 
     const count = trades.length;

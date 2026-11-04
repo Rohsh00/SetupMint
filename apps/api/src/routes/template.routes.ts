@@ -8,19 +8,27 @@ import {
 } from '@tradevault/shared';
 import { TradeTemplate, Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 
 export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
   // Helper to aggregate trade performance stats for a user by templateId
-  async function getTemplateStatsMap(userId: string) {
+  async function getTemplateStatsMap(userId: string, accountIds?: mongoose.Types.ObjectId[]) {
+    const matchCriteria: any = {
+      userId: new (Trade.base.Types.ObjectId as any)(userId),
+      templateId: { $exists: true, $ne: null },
+      status: 'CLOSED',
+    };
+    if (accountIds && accountIds.length > 0) {
+      matchCriteria.accountId = { $in: accountIds };
+    } else if (accountIds && accountIds.length === 0) {
+      matchCriteria.accountId = { $in: [] };
+    }
+
     const statsAgg = await Trade.aggregate([
       {
-        $match: {
-          userId: new (Trade.base.Types.ObjectId as any)(userId),
-          templateId: { $exists: true, $ne: null },
-          status: 'CLOSED',
-        },
+        $match: matchCriteria,
       },
       {
         $group: {
@@ -110,7 +118,9 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   // GET /api/v1/templates - list all user and built-in templates with stats
   app.get('/', async (req, reply) => {
     const userId = req.user!.id;
-    const statsMap = await getTemplateStatsMap(userId);
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
+    const statsMap = await getTemplateStatsMap(userId, accountIds);
 
     // Fetch user templates
     const userTemplates = await TradeTemplate.find({ userId }).sort({

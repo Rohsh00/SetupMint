@@ -22,6 +22,8 @@ import {
   Tooltip,
   useTheme,
   Alert,
+  Collapse,
+  Link,
 } from '@mui/material';
 import AccountBalanceWalletRounded from '@mui/icons-material/AccountBalanceWalletRounded';
 import AddRounded from '@mui/icons-material/AddRounded';
@@ -40,15 +42,20 @@ import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import CancelRounded from '@mui/icons-material/CancelRounded';
 import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
+import OpenInNewRounded from '@mui/icons-material/OpenInNewRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import HelpOutlineRounded from '@mui/icons-material/HelpOutlineRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency } from '../lib/utils.js';
 import { HelpHint } from '../components/help/index.js';
 import { PropFirmAccountCard } from '../components/accounts/PropFirmAccountCard.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 
 export function AccountsPage() {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
+  const { scope, selectedAccountId } = useAccountScope();
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [selectedAccountForTx, setSelectedAccountForTx] = useState<any>(null);
@@ -71,62 +78,73 @@ export function AccountsPage() {
   const [initialBalance, setInitialBalance] = useState<number>(100000);
 
   // Prop firm form state
-  const [propPreset, setPropPreset] = useState<'THE5ERS_SUMMER' | 'THE5ERS_HIGH_STAKES' | 'FTMO_STANDARD' | 'CUSTOM'>('THE5ERS_SUMMER');
-  const [propFirmName, setPropFirmName] = useState<'THE5ERS' | 'FTMO' | 'FUNDED_NEXT' | 'APEX' | 'TOPSTEP' | 'CUSTOM'>('THE5ERS');
+  const [selectedPresetKey, setSelectedPresetKey] = useState<string>('THE5ERS_SUMMER');
+  const [propFirmName, setPropFirmName] = useState<string>('THE5ERS');
   const [propPlanName, setPropPlanName] = useState('Summer Plan 10/5 ($149)');
-  const [propPhase, setPropPhase] = useState<'PHASE_1' | 'PHASE_2' | 'FUNDED'>('PHASE_1');
+  const [propPhase, setPropPhase] = useState<string>('PHASE_1');
   const [propTargetPercent, setPropTargetPercent] = useState<number>(10);
   const [propDailyLossPercent, setPropDailyLossPercent] = useState<number>(3);
   const [propMaxLossPercent, setPropMaxLossPercent] = useState<number>(10);
   const [propMaxLossFloor, setPropMaxLossFloor] = useState<number>(90000);
 
-  const applyThe5ersSummerPlan = () => {
-    setName('The5ers $100K Summer Plan');
-    setBroker('The5ers (MT5)');
-    setAccountType('PROP_FIRM');
-    setBaseCurrency('USD');
-    setInitialBalance(100000);
-    setPropPreset('THE5ERS_SUMMER');
-    setPropFirmName('THE5ERS');
-    setPropPlanName('Summer Plan 10/5 ($149)');
-    setPropPhase('PHASE_1');
-    setPropTargetPercent(10);
-    setPropDailyLossPercent(3);
-    setPropMaxLossPercent(10);
-    setPropMaxLossFloor(90000);
+  // Prop firm rule overrides
+  const [showOverrides, setShowOverrides] = useState<boolean>(false);
+  const [overrideMinDays, setOverrideMinDays] = useState<number | ''>('');
+  const [overrideHoldWeekend, setOverrideHoldWeekend] = useState<'DEFAULT' | 'YES' | 'NO'>('DEFAULT');
+  const [overrideNewsTrading, setOverrideNewsTrading] = useState<'DEFAULT' | 'RESTRICTED' | 'ALLOWED'>('DEFAULT');
+  const [overrideMandatorySL, setOverrideMandatorySL] = useState<'DEFAULT' | 'YES' | 'NO'>('DEFAULT');
+  const [overrideMaxLots, setOverrideMaxLots] = useState<number | ''>('');
+  const [overrideMaxRiskPct, setOverrideMaxRiskPct] = useState<number | ''>('');
+
+  const { data: propPresetsRes } = useQuery({
+    queryKey: ['prop-presets'],
+    queryFn: () => api.accounts.propPresets(),
+  });
+  const propPresets: any[] = (propPresetsRes as any)?.data || (propPresetsRes as any) || [];
+
+  const activePreset = propPresets.find((p: any) => p.planKey === selectedPresetKey) || {
+    firmKey: 'THE5ERS',
+    planKey: 'THE5ERS_SUMMER',
+    displayName: 'The5ers — Summer Plan ($149 / $100K 10/5)',
+    currency: 'USD',
+    accountSize: 100000,
+    rulesVerifiedAt: '2025-06-01',
+    sourceUrl: 'https://the5ers.com/summer-plan',
+    phases: [
+      { phase: 'PHASE_1', profitTargetPct: 10, minTradingDays: 0 },
+      { phase: 'PHASE_2', profitTargetPct: 5, minTradingDays: 0 },
+    ],
+    dailyLoss: { limitPct: 3, basis: 'HIGHER_OF_BALANCE_EQUITY' },
+    maxLoss: { type: 'STATIC', limitPct: 10 },
+    holdOvernightAllowed: true,
+    holdWeekendAllowed: true,
   };
 
-  const handlePropPresetChange = (preset: 'THE5ERS_SUMMER' | 'THE5ERS_HIGH_STAKES' | 'FTMO_STANDARD' | 'CUSTOM') => {
-    setPropPreset(preset);
-    if (preset === 'THE5ERS_SUMMER') {
-      applyThe5ersSummerPlan();
-    } else if (preset === 'THE5ERS_HIGH_STAKES') {
-      setName('The5ers $100K High Stakes');
-      setBroker('The5ers (MT5)');
+  const handlePropPresetChange = (presetKey: string) => {
+    setSelectedPresetKey(presetKey);
+    const p = propPresets.find((item: any) => item.planKey === presetKey);
+    if (p) {
+      setName(p.displayName || `${p.firmKey} Account`);
+      setBroker(p.firmKey === 'THE5ERS' ? 'The5ers' : p.firmKey);
       setAccountType('PROP_FIRM');
-      setBaseCurrency('USD');
-      setInitialBalance(100000);
-      setPropFirmName('THE5ERS');
-      setPropPlanName('High Stakes 8/5');
-      setPropPhase('PHASE_1');
-      setPropTargetPercent(8);
-      setPropDailyLossPercent(5);
-      setPropMaxLossPercent(10);
-      setPropMaxLossFloor(90000);
-    } else if (preset === 'FTMO_STANDARD') {
-      setName('FTMO $100K Challenge');
-      setBroker('FTMO');
-      setAccountType('PROP_FIRM');
-      setBaseCurrency('USD');
-      setInitialBalance(100000);
-      setPropFirmName('FTMO');
-      setPropPlanName('Standard 10/5');
-      setPropPhase('PHASE_1');
-      setPropTargetPercent(10);
-      setPropDailyLossPercent(5);
-      setPropMaxLossPercent(10);
-      setPropMaxLossFloor(90000);
+      setBaseCurrency(p.currency || 'USD');
+      const size = Number(p.accountSize) || 100000;
+      setInitialBalance(size);
+      setPropFirmName(p.firmKey);
+      setPropPlanName(p.displayName);
+      const phase1 = p.phases?.[0];
+      setPropPhase(phase1?.phase || 'PHASE_1');
+      setPropTargetPercent(phase1?.profitTargetPct ?? 10);
+      const dailyPct = p.dailyLoss?.limitPct ?? 5;
+      setPropDailyLossPercent(dailyPct);
+      const maxPct = p.maxLoss?.limitPct ?? 10;
+      setPropMaxLossPercent(maxPct);
+      setPropMaxLossFloor(size * (1 - maxPct / 100));
     }
+  };
+
+  const applyDefaultPropPlan = () => {
+    handlePropPresetChange(selectedPresetKey || 'THE5ERS_SUMMER');
   };
 
   // Transaction state
@@ -295,23 +313,61 @@ export function AccountsPage() {
       return;
     }
 
+    const ruleSetOverrides: Record<string, any> = {};
+    if (activePreset?.dailyLoss?.limitPct !== propDailyLossPercent) {
+      ruleSetOverrides.dailyLoss = { limitPct: propDailyLossPercent };
+    }
+    if (activePreset?.maxLoss?.limitPct !== propMaxLossPercent) {
+      ruleSetOverrides.maxLoss = { limitPct: propMaxLossPercent };
+    }
+    if (overrideMinDays !== '') {
+      ruleSetOverrides.minTradingDays = Number(overrideMinDays);
+    }
+    if (overrideHoldWeekend !== 'DEFAULT') {
+      ruleSetOverrides.holdWeekendAllowed = overrideHoldWeekend === 'YES';
+    }
+    if (overrideNewsTrading !== 'DEFAULT') {
+      ruleSetOverrides.newsTradingRestriction = overrideNewsTrading === 'RESTRICTED';
+    }
+    if (overrideMandatorySL !== 'DEFAULT') {
+      ruleSetOverrides.mandatoryStopLoss = overrideMandatorySL === 'YES';
+    }
+    if (overrideMaxLots !== '') {
+      ruleSetOverrides.maxLotsOrContracts = Number(overrideMaxLots);
+    }
+    if (overrideMaxRiskPct !== '') {
+      ruleSetOverrides.maxRiskPerTradePct = Number(overrideMaxRiskPct);
+    }
+
+    const propFirm =
+      accountType === 'PROP_FIRM'
+        ? {
+            firmKey: activePreset?.firmKey || propFirmName,
+            planKey: activePreset?.planKey || selectedPresetKey,
+            phase: propPhase,
+            startingBalance: Number(initialBalance) || 100000,
+            status: 'ACTIVE' as const,
+            ruleSetOverrides: Object.keys(ruleSetOverrides).length > 0 ? ruleSetOverrides : undefined,
+          }
+        : undefined;
+
     const propFirmConfig =
       accountType === 'PROP_FIRM'
         ? {
             enabled: true,
-            firm: propFirmName,
-            planName: propPlanName,
-            phase: propPhase,
+            firm: activePreset?.firmKey || propFirmName,
+            planName: activePreset?.displayName || propPlanName,
+            phase: propPhase as any,
             initialBalance: Number(initialBalance) || 100000,
             targetProfitPercent: Number(propTargetPercent),
             dailyLossLimitPercent: Number(propDailyLossPercent),
-            dailyLossReference: 'MAX_BALANCE_EQUITY_EOD' as const,
+            dailyLossReference: 'STARTING_BALANCE' as const,
             maxLossLimitPercent: Number(propMaxLossPercent),
             maxLossType: 'STATIC_FROM_INITIAL' as const,
             maxLossFloor: Number(propMaxLossFloor) || (Number(initialBalance) || 100000) * 0.9,
-            minTradingDays: 0,
-            newsTradingAllowed: true,
-            weekendHoldingAllowed: true,
+            minTradingDays: Number(overrideMinDays) || 0,
+            newsTradingAllowed: overrideNewsTrading !== 'RESTRICTED',
+            weekendHoldingAllowed: overrideHoldWeekend !== 'NO',
             status: 'ACTIVE' as const,
           }
         : undefined;
@@ -323,6 +379,7 @@ export function AccountsPage() {
       accountType,
       baseCurrency,
       initialBalance: Number(initialBalance) || 0,
+      propFirm,
       propFirmConfig,
     });
   };
@@ -349,8 +406,64 @@ export function AccountsPage() {
     });
   };
 
-  const totalConsolidatedEquity = accounts.reduce((sum: number, a: any) => sum + (a.currentBalance || 0), 0);
-  const totalConsolidatedPnL = accounts.reduce((sum: number, a: any) => sum + (a.realizedPnL || 0), 0);
+  const displayedAccounts = React.useMemo(() => {
+    if (selectedAccountId && selectedAccountId !== 'ALL') {
+      return accounts.filter((a: any) => a.id === selectedAccountId || a._id === selectedAccountId);
+    }
+    if (scope.mode === 'PROP_FIRM') {
+      return accounts.filter((a: any) => {
+        const isProp =
+          a.accountType === 'PROP_FIRM' ||
+          Boolean(a.propFirm?.firmKey) ||
+          Boolean(a.propFirmConfig?.enabled);
+        if (!isProp) return false;
+        if (scope.firmKey && scope.firmKey !== 'ALL') {
+          const fk = (a.propFirm?.firmKey || a.propFirmConfig?.firm || '').toLowerCase();
+          return fk === scope.firmKey.toLowerCase();
+        }
+        return true;
+      });
+    }
+    if (scope.mode === 'TYPE') {
+      if (scope.accountType === 'DEMO') {
+        return accounts.filter((a: any) => a.accountType === 'DEMO' || a.accountType === 'SIMULATED');
+      }
+      return accounts.filter(
+        (a: any) =>
+          a.accountType !== 'PROP_FIRM' &&
+          a.accountType !== 'DEMO' &&
+          a.accountType !== 'SIMULATED' &&
+          !a.propFirm?.firmKey &&
+          !a.propFirmConfig?.enabled
+      );
+    }
+    return accounts;
+  }, [accounts, scope.mode, scope.firmKey, scope.accountType, selectedAccountId]);
+
+  const currencyTotals = React.useMemo(() => {
+    const map = new Map<string, { equity: number; pnl: number }>();
+    for (const a of displayedAccounts) {
+      const curr = a.baseCurrency || 'INR';
+      const entry = map.get(curr) || { equity: 0, pnl: 0 };
+      entry.equity += a.currentBalance || 0;
+      entry.pnl += a.realizedPnL || 0;
+      map.set(curr, entry);
+    }
+    return Array.from(map.entries());
+  }, [displayedAccounts]);
+
+  const totalConsolidatedEquityStr =
+    currencyTotals.length === 0
+      ? formatCurrency(0)
+      : currencyTotals.map(([curr, t]) => formatCurrency(t.equity, curr)).join(' • ');
+
+  const totalConsolidatedPnLStr =
+    currencyTotals.length === 0
+      ? formatCurrency(0)
+      : currencyTotals.map(([curr, t]) => formatCurrency(t.pnl, curr)).join(' • ');
+
+  const isOverallPnlPositive =
+    currencyTotals.length === 0 || currencyTotals.every(([, t]) => t.pnl >= 0);
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -380,12 +493,12 @@ export function AccountsPage() {
             color="primary"
             startIcon={<ShieldRounded />}
             onClick={() => {
-              applyThe5ersSummerPlan();
+              applyDefaultPropPlan();
               setIsAddAccountModalOpen(true);
             }}
             sx={{ fontWeight: 600 }}
           >
-            Add The5ers Challenge ($149)
+            Add Prop Firm Challenge
           </Button>
           <Button
             variant="contained"
@@ -407,8 +520,8 @@ export function AccountsPage() {
               <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, display: 'block', mb: 0.5 }}>
                 Consolidated Portfolio Equity
               </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: '"JetBrains Mono", monospace' }}>
-                {formatCurrency(totalConsolidatedEquity)}
+              <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: '"JetBrains Mono", monospace', fontSize: currencyTotals.length > 1 ? '1.35rem' : undefined }}>
+                {totalConsolidatedEquityStr}
               </Typography>
             </CardContent>
           </Card>
@@ -424,10 +537,11 @@ export function AccountsPage() {
                 sx={{
                   fontWeight: 800,
                   fontFamily: '"JetBrains Mono", monospace',
-                  color: totalConsolidatedPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                  fontSize: currencyTotals.length > 1 ? '1.35rem' : undefined,
+                  color: isOverallPnlPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
                 }}
               >
-                {formatCurrency(totalConsolidatedPnL)}
+                {totalConsolidatedPnLStr}
               </Typography>
             </CardContent>
           </Card>
@@ -439,7 +553,7 @@ export function AccountsPage() {
                 Active Broker Accounts
               </Typography>
               <Typography variant="h4" sx={{ fontWeight: 800, fontFamily: '"JetBrains Mono", monospace' }}>
-                {accounts.length}
+                {displayedAccounts.length}
               </Typography>
             </CardContent>
           </Card>
@@ -455,7 +569,7 @@ export function AccountsPage() {
             </Box>
           </Grid>
         ) : (
-          accounts.map((acc: any) => {
+          displayedAccounts.map((acc: any) => {
             const isProfitable = (acc.realizedPnL || 0) >= 0;
 
             return (
@@ -859,7 +973,7 @@ export function AccountsPage() {
                   const val = e.target.value;
                   setAccountType(val);
                   if (val === 'PROP_FIRM') {
-                    applyThe5ersSummerPlan();
+                    applyDefaultPropPlan();
                   }
                 }}
               >
@@ -897,8 +1011,8 @@ export function AccountsPage() {
               onChange={(e) => {
                 const val = Number(e.target.value);
                 setInitialBalance(val);
-                if (accountType === 'PROP_FIRM' && propPreset === 'THE5ERS_SUMMER') {
-                  setPropMaxLossFloor(val * 0.9);
+                if (accountType === 'PROP_FIRM') {
+                  setPropMaxLossFloor(val * (1 - propMaxLossPercent / 100));
                 }
               }}
               slotProps={{ htmlInput: { min: 0, step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
@@ -926,38 +1040,122 @@ export function AccountsPage() {
                     Prop Firm Challenge Configuration
                   </Typography>
                   <Chip
-                    label="The5ers Supported"
+                    label={activePreset?.firmKey || 'PROP FIRM'}
                     size="small"
                     color="primary"
                     sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }}
                   />
                 </Box>
 
+                {/* Preset selector */}
                 <TextField
                   select
-                  label="Challenge Program Preset"
+                  label="Prop Firm Plan Preset *"
                   size="small"
                   fullWidth
-                  value={propPreset}
-                  onChange={(e) => handlePropPresetChange(e.target.value as any)}
+                  value={selectedPresetKey}
+                  onChange={(e) => handlePropPresetChange(e.target.value)}
                 >
-                  <MenuItem value="THE5ERS_SUMMER">🌟 The5ers — Summer Plan ($149 / $100K 10/5)</MenuItem>
-                  <MenuItem value="THE5ERS_HIGH_STAKES">The5ers — High Stakes (8/5)</MenuItem>
-                  <MenuItem value="FTMO_STANDARD">FTMO — Standard (10/5)</MenuItem>
-                  <MenuItem value="CUSTOM">Custom Prop Plan</MenuItem>
+                  {propPresets.length > 0 ? (
+                    propPresets.map((preset: any) => (
+                      <MenuItem key={preset.planKey} value={preset.planKey}>
+                        {preset.displayName} ({preset.currency || 'USD'} {Number(preset.accountSize).toLocaleString()})
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <>
+                      <MenuItem value="THE5ERS_SUMMER">The5ers — Summer Plan ($149 / $100K 10/5)</MenuItem>
+                      <MenuItem value="THE5ERS_HIGH_STAKES">The5ers — High Stakes (8/5)</MenuItem>
+                      <MenuItem value="FTMO_STANDARD_100K">FTMO — Standard (10/5)</MenuItem>
+                      <MenuItem value="CUSTOM_PROP_PLAN">Custom Prop Plan</MenuItem>
+                    </>
+                  )}
                 </TextField>
 
+                {/* Preset verification date & official rules URL */}
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                  {activePreset?.rulesVerifiedAt ? (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
+                      Rules last verified: <strong>{activePreset.rulesVerifiedAt}</strong>
+                    </Typography>
+                  ) : (
+                    <Typography variant="caption" sx={{ color: 'warning.main', fontSize: '0.7rem' }}>
+                      Verification date not specified
+                    </Typography>
+                  )}
+                  {activePreset?.sourceUrl && (
+                    <Link
+                      href={activePreset.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        color: 'primary.main',
+                        textDecoration: 'none',
+                        '&:hover': { textDecoration: 'underline' },
+                      }}
+                    >
+                      Official Firm Rules <OpenInNewRounded sx={{ fontSize: 12 }} />
+                    </Link>
+                  )}
+                </Box>
+
+                {/* Check for NOT CONFIGURED rules in this preset */}
+                {(() => {
+                  const missing: string[] = [];
+                  if (activePreset?.newsTradingRestriction === undefined) missing.push('News Trading Window');
+                  if (activePreset?.holdWeekendAllowed === undefined) missing.push('Weekend Holding');
+                  if (activePreset?.holdOvernightAllowed === undefined) missing.push('Overnight Holding');
+                  if (activePreset?.mandatoryStopLoss === undefined) missing.push('Mandatory Stop Loss');
+                  if (missing.length > 0) {
+                    return (
+                      <Alert severity="info" icon={<HelpOutlineRounded />} sx={{ py: 0.25, fontSize: '0.725rem' }}>
+                        Rule not configured in this preset: <strong>{missing.join(', ')}</strong>. You can configure custom overrides below.
+                      </Alert>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Phase Selection and Profit Target */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
                   <TextField
                     label="Starting Phase"
                     select
                     size="small"
                     value={propPhase}
-                    onChange={(e) => setPropPhase(e.target.value as any)}
+                    onChange={(e) => {
+                      const newPhase = e.target.value;
+                      setPropPhase(newPhase);
+                      const phaseObj = activePreset?.phases?.find((p: any) => p.phase === newPhase);
+                      if (phaseObj?.profitTargetPct != null) {
+                        setPropTargetPercent(phaseObj.profitTargetPct);
+                      }
+                    }}
                   >
-                    <MenuItem value="PHASE_1">Phase 1 (10% Target)</MenuItem>
-                    <MenuItem value="PHASE_2">Phase 2 (5% Target)</MenuItem>
-                    <MenuItem value="FUNDED">Funded Master</MenuItem>
+                    {activePreset?.phases && activePreset.phases.length > 0 ? (
+                      activePreset.phases.map((ph: any) => (
+                        <MenuItem key={ph.phase} value={ph.phase}>
+                          {ph.phase === 'PHASE_1'
+                            ? `Phase 1 (${ph.profitTargetPct}% Target)`
+                            : ph.phase === 'PHASE_2'
+                            ? `Phase 2 (${ph.profitTargetPct}% Target)`
+                            : ph.phase === 'PHASE_3'
+                            ? `Phase 3 (${ph.profitTargetPct}% Target)`
+                            : 'Funded Master'}
+                        </MenuItem>
+                      ))
+                    ) : (
+                      <>
+                        <MenuItem value="PHASE_1">Phase 1 (10% Target)</MenuItem>
+                        <MenuItem value="PHASE_2">Phase 2 (5% Target)</MenuItem>
+                        <MenuItem value="FUNDED">Funded Master</MenuItem>
+                      </>
+                    )}
                   </TextField>
 
                   <TextField
@@ -969,6 +1167,7 @@ export function AccountsPage() {
                   />
                 </Box>
 
+                {/* Daily Loss & Max Loss Floors */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
                   <TextField
                     label="Daily Loss Limit %"
@@ -976,22 +1175,110 @@ export function AccountsPage() {
                     size="small"
                     value={propDailyLossPercent}
                     onChange={(e) => setPropDailyLossPercent(Number(e.target.value))}
-                    helperText="Higher of EOD balance or equity"
+                    helperText={
+                      activePreset?.dailyLoss?.basis
+                        ? `Basis: ${activePreset.dailyLoss.basis}`
+                        : 'Higher of EOD balance or equity'
+                    }
                   />
 
                   <TextField
-                    label="Static Max Loss Floor ($)"
+                    label="Static / Trailing Max Loss Floor"
                     type="number"
                     size="small"
                     value={propMaxLossFloor}
                     onChange={(e) => setPropMaxLossFloor(Number(e.target.value))}
-                    helperText="Fixed floor ($90,000 on $100K)"
+                    helperText={
+                      activePreset?.maxLoss?.type
+                        ? `Type: ${activePreset.maxLoss.type} (${propMaxLossPercent}%)`
+                        : `Fixed floor (${propMaxLossPercent}%)`
+                    }
                   />
                 </Box>
 
-                <Alert severity="info" sx={{ py: 0.5, fontSize: '0.75rem' }}>
-                  <strong>The5ers Summer Plan ($149):</strong> 2-Step evaluation on $100,000 account. Phase 1 Target: +$10,000 (10%). Daily loss limit is 3% ($3,000) based on higher of EOD equity or balance. Static floor: $90,000. Weekend & overnight holding allowed.
-                </Alert>
+                {/* Overrides Collapsible Section */}
+                <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
+                  <Button
+                    size="small"
+                    startIcon={<TuneRounded />}
+                    onClick={() => setShowOverrides(!showOverrides)}
+                    sx={{ fontSize: '0.725rem', fontWeight: 600, textTransform: 'none', px: 0 }}
+                  >
+                    {showOverrides ? 'Hide Custom Rule Overrides' : 'Configure Custom Rule Overrides'}
+                  </Button>
+
+                  <Collapse in={showOverrides}>
+                    <Box sx={{ pt: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                        <TextField
+                          label="Min Trading Days Override"
+                          type="number"
+                          size="small"
+                          placeholder={String(activePreset?.phases?.[0]?.minTradingDays ?? 0)}
+                          value={overrideMinDays}
+                          onChange={(e) => setOverrideMinDays(e.target.value === '' ? '' : Number(e.target.value))}
+                          helperText="0 = no minimum required"
+                        />
+                        <TextField
+                          select
+                          label="Weekend Holding Override"
+                          size="small"
+                          value={overrideHoldWeekend}
+                          onChange={(e) => setOverrideHoldWeekend(e.target.value as any)}
+                        >
+                          <MenuItem value="DEFAULT">Preset Default ({activePreset?.holdWeekendAllowed ? 'Allowed' : 'Prohibited'})</MenuItem>
+                          <MenuItem value="YES">Permitted (Allowed)</MenuItem>
+                          <MenuItem value="NO">Banned (Prohibited)</MenuItem>
+                        </TextField>
+                      </Box>
+
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                        <TextField
+                          select
+                          label="News Trading Override"
+                          size="small"
+                          value={overrideNewsTrading}
+                          onChange={(e) => setOverrideNewsTrading(e.target.value as any)}
+                        >
+                          <MenuItem value="DEFAULT">Preset Default ({activePreset?.newsTradingRestriction ? 'Restricted' : 'Allowed'})</MenuItem>
+                          <MenuItem value="ALLOWED">Allowed</MenuItem>
+                          <MenuItem value="RESTRICTED">Restricted (± Window)</MenuItem>
+                        </TextField>
+
+                        <TextField
+                          select
+                          label="Mandatory Stop Loss Override"
+                          size="small"
+                          value={overrideMandatorySL}
+                          onChange={(e) => setOverrideMandatorySL(e.target.value as any)}
+                        >
+                          <MenuItem value="DEFAULT">Preset Default ({activePreset?.mandatoryStopLoss ? 'Required' : 'Not Required'})</MenuItem>
+                          <MenuItem value="YES">Required on every trade</MenuItem>
+                          <MenuItem value="NO">Not required</MenuItem>
+                        </TextField>
+                      </Box>
+
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                        <TextField
+                          label="Max Lot / Contract Cap Override"
+                          type="number"
+                          size="small"
+                          placeholder={activePreset?.maxLotsOrContracts ? String(activePreset.maxLotsOrContracts) : 'None'}
+                          value={overrideMaxLots}
+                          onChange={(e) => setOverrideMaxLots(e.target.value === '' ? '' : Number(e.target.value))}
+                        />
+                        <TextField
+                          label="Max Risk Per Trade % Override"
+                          type="number"
+                          size="small"
+                          placeholder={activePreset?.maxRiskPerTradePct ? String(activePreset.maxRiskPerTradePct) : 'None'}
+                          value={overrideMaxRiskPct}
+                          onChange={(e) => setOverrideMaxRiskPct(e.target.value === '' ? '' : Number(e.target.value))}
+                        />
+                      </Box>
+                    </Box>
+                  </Collapse>
+                </Box>
               </Box>
             )}
           </DialogContent>

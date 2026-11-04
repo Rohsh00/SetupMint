@@ -472,6 +472,56 @@ function TradeFormModalContent({
     return accounts.find((a: any) => a.id === watchedAccountId);
   }, [accounts, watchedAccountId]);
 
+  // Advisory Prop Firm Rules Verification
+  const propAdvisories = useMemo(() => {
+    if (!selectedAccount) return [];
+    const isProp =
+      selectedAccount.accountType === 'PROP_FIRM' ||
+      Boolean(selectedAccount.propFirm?.firmKey) ||
+      Boolean(selectedAccount.propFirmConfig?.enabled);
+    if (!isProp) return [];
+
+    const warnings: string[] = [];
+    const overrides = selectedAccount.propFirm?.ruleSetOverrides;
+    const rules = selectedAccount.propFirmConfig?.rules;
+
+    // 1. Mandatory Stop Loss
+    const slRequired = overrides?.mandatoryStopLoss ?? rules?.stopLossRequired;
+    const hasSl = Boolean(watchedRisk?.initialStopLoss && Number(watchedRisk.initialStopLoss) > 0);
+    if (slRequired && !hasSl) {
+      warnings.push('Mandatory Stop Loss: This prop firm requires an active stop loss. Missing SL will breach challenge rules.');
+    }
+
+    // 2. Weekend Holding
+    const weekendAllowed = overrides?.holdWeekend ?? rules?.holdOverWeekend;
+    if (weekendAllowed === false && watchedStatus === 'OPEN') {
+      const now = new Date();
+      if (now.getDay() === 5 || now.getDay() === 6 || now.getDay() === 0) {
+        warnings.push('Weekend Holding Ban: Holding open positions over the weekend is strictly prohibited.');
+      }
+    }
+
+    // 3. Overnight Holding
+    const overnightAllowed = overrides?.holdOvernight;
+    if (overnightAllowed === false && watchedStatus === 'OPEN') {
+      warnings.push('Overnight Holding Ban: Intraday-only rule active. All positions must be closed before market close.');
+    }
+
+    // 4. Lot Cap
+    const lotCap = overrides?.maxLotsOrContracts;
+    if (lotCap && (watchedSimple?.quantity || 1) > lotCap) {
+      warnings.push(`Lot Cap Exceeded: Trade size (${watchedSimple?.quantity} units) exceeds the firm limit of ${lotCap} contracts/lots.`);
+    }
+
+    // 5. News Trading
+    const newsRestricted = overrides?.newsTradingRestriction;
+    if (newsRestricted) {
+      warnings.push('News Trading Embargo: Economic calendar restrictions active (no trading within embargo window).');
+    }
+
+    return warnings;
+  }, [selectedAccount, watchedRisk, watchedSimple, watchedStatus]);
+
   // Selected strategy for rules and confluences
   const selectedStrategy = useMemo(() => {
     if (!watchedStrategyId) return null;
@@ -1473,6 +1523,34 @@ function TradeFormModalContent({
               </Alert>
             )}
 
+            {/* Advisory Prop Firm Rules Warnings */}
+            {propAdvisories.length > 0 && (
+              <Alert
+                severity="warning"
+                icon={<WarningAmberRounded />}
+                sx={{
+                  border: `1px solid ${muiTheme.palette.warning.main}`,
+                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.08)',
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Prop Firm Rule Advisory Warnings ({propAdvisories.length})
+                </Typography>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+                  {propAdvisories.map((w, idx) => (
+                    <li key={idx}>
+                      <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                        {w}
+                      </Typography>
+                    </li>
+                  ))}
+                </ul>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'text.secondary', fontSize: '0.625rem' }}>
+                  Non-blocking advisory warning. Ensure execution aligns with your evaluation rules.
+                </Typography>
+              </Alert>
+            )}
+
             {/* Advisory Continuous Tilt Alert */}
             {tiltResult && (tiltResult.level === 'HIGH_TILT' || tiltResult.level === 'SEVERE_TILT') && (
               <Alert
@@ -1510,6 +1588,34 @@ function TradeFormModalContent({
                 </Box>
                 <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'text.secondary', fontSize: '0.625rem' }}>
                   Non-blocking advisory alert. Does not prevent trade logging or diagnose psychology.
+                </Typography>
+              </Alert>
+            )}
+
+            {/* Advisory Prop Firm Rules Warnings */}
+            {propAdvisories.length > 0 && (
+              <Alert
+                severity="warning"
+                icon={<WarningAmberRounded />}
+                sx={{
+                  border: `1px solid ${muiTheme.palette.warning.main}`,
+                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.08)',
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Prop Firm Rule Advisory Warnings ({propAdvisories.length})
+                </Typography>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+                  {propAdvisories.map((w, idx) => (
+                    <li key={idx}>
+                      <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                        {w}
+                      </Typography>
+                    </li>
+                  ))}
+                </ul>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontStyle: 'italic', color: 'text.secondary', fontSize: '0.625rem' }}>
+                  Non-blocking advisory warning. Ensure execution aligns with your evaluation rules.
                 </Typography>
               </Alert>
             )}

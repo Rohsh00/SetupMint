@@ -90,7 +90,16 @@ export type HelpKey =
   // Live Portfolio & Options Greeks Keys
   | 'portfolio.directionalDelta'
   | 'portfolio.thetaBurn'
-  | 'options.greeks';
+  | 'options.greeks'
+
+  // Prop Firm Terms
+  | 'prop.dailyLoss'
+  | 'prop.maxLoss'
+  | 'prop.consistencyRule'
+  | 'prop.newsTrading'
+  | 'prop.weekendHold'
+  | 'prop.scopeFilter'
+  | 'prop.stickyBreach';
 
 export interface IHelpEntry {
   title: string;
@@ -744,5 +753,72 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     example: 'A NIFTY Call with Delta 0.50 gains ₹25 for every 1-point rise in NIFTY index (lot size 50).',
     seeAlso: ['portfolio.directionalDelta', 'portfolio.thetaBurn'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#options-greeks',
+  },
+
+  // --------------------------------------------------------------------------
+  // PROP FIRM EVALUATION & SCOPE FILTER
+  // --------------------------------------------------------------------------
+  'prop.dailyLoss': {
+    title: 'Prop Firm Daily Loss Limit & Reference Baseline',
+    summary: 'The maximum permissible equity drawdown allowed within a single trading day before challenge termination.',
+    details: 'Calculated using exact firm rules: Start-of-day balance, Start-of-day equity, higher of balance and equity, or previous EOD equity. Resets at firm-specific timezone boundary (e.g., 17:00 EST for US firms or midnight CE(S)T). Includes floating unrealized losses where enforced by the firm.',
+    formula: 'Daily Buffer = Current Equity - (Daily Loss Reference * (1 - Daily Loss %))',
+    example: 'On a $100K account with 3% daily limit referencing $102K EOD balance: floor is $98,940 ($3,060 buffer).',
+    seeAlso: ['prop.maxLoss', 'prop.stickyBreach'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#prop-firm-calculations',
+  },
+
+  'prop.maxLoss': {
+    title: 'Prop Firm Maximum Loss Floor (Static & Trailing)',
+    summary: 'The hard equity floor below which an account is permanently breached and disqualified.',
+    details: 'Can be static from initial balance (e.g. 10% floor at $90,000 on a $100K account), trailing intraday, trailing end-of-day against peak equity, or trailing until breakeven where the floor permanently locks at starting balance.',
+    formula: 'Static: Initial * (1 - Limit %); Trailing: Peak Equity * (1 - Limit %)',
+    example: 'With a trailing drawdown locked at breakeven ($100K), your floor will never drop below $100,000 once profits exceed the buffer.',
+    seeAlso: ['prop.dailyLoss', 'prop.stickyBreach'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#prop-firm-calculations',
+  },
+
+  'prop.consistencyRule': {
+    title: 'Prop Firm Consistency Rule (Best-Day Cap)',
+    summary: 'Restricts single-day profit spikes from exceeding a maximum fraction (e.g., 30% or 50%) of total evaluation profit.',
+    details: 'Enforces repeatable edge over gamble-style windfalls. If a single trading day accounts for more than the permitted percentage of total profit, additional trading days or profit must be generated to pass evaluation.',
+    formula: 'Best Day % = (Max Daily Net Profit / Total Net Profit) * 100',
+    example: 'If total profit is $10,000 and your best day made $6,000 (60%), a 50% consistency rule is breached until total profits reach $12,000.',
+    seeAlso: ['prop.dailyLoss', 'prop.maxLoss'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#prop-firm-calculations',
+  },
+
+  'prop.newsTrading': {
+    title: 'Prop Firm News Trading Window Restriction',
+    summary: 'Prohibits opening or closing positions within a specified time buffer (e.g., ±2 to ±5 minutes) of high-impact macroeconomic news releases.',
+    details: 'Protects the firm from execution slippage during CPI, NFP, and FOMC rate decisions. Violations can trigger challenge failure or profit deduction on news-window trades.',
+    example: 'US CPI released at 08:30 EST: trades between 08:28 and 08:32 EST are flagged as news window violations.',
+    seeAlso: ['prop.weekendHold', 'prop.dailyLoss'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#prop-firm-calculations',
+  },
+
+  'prop.weekendHold': {
+    title: 'Prop Firm Weekend & Overnight Holding Restriction',
+    summary: 'Rule dictating whether positions may remain open across market closes and weekends.',
+    details: 'Some swing accounts allow weekend holding, while standard/express evaluation challenges require all trades to be flat prior to Friday market close to prevent weekend gap risk.',
+    example: 'Accounts prohibiting weekend holding require full liquidation before Friday 16:55 EST.',
+    seeAlso: ['prop.newsTrading', 'prop.maxLoss'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#prop-firm-calculations',
+  },
+
+  'prop.scopeFilter': {
+    title: 'Global Prop Firm Scope Filter',
+    summary: 'Global application view isolating metrics, trades, charts, and risk guardrails strictly to prop firm accounts.',
+    details: 'When activated in the top header switcher, all 15 API route groups, dashboard stats, live watchers, risk calculators, and journal reviews filter exclusively to prop challenge accounts with firm-specific rules applied.',
+    seeAlso: ['prop.dailyLoss', 'prop.maxLoss', 'prop.stickyBreach'],
+    docsAnchor: 'docs/API_REFERENCE.md#account-scope-contract',
+  },
+
+  'prop.stickyBreach': {
+    title: 'Sticky Permanent Breach Invariant',
+    summary: 'An immutable rule violation status that locks an account into FAILED state permanently.',
+    details: 'Once an account equity breaches a daily or max loss floor, the account transitions to FAILED with breachedAt timestamp and breachedRule identifier. Later positive P&L or market reversals cannot silently restore active status.',
+    seeAlso: ['prop.dailyLoss', 'prop.maxLoss'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#prop-firm-calculations',
   },
 };

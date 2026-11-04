@@ -250,27 +250,140 @@ export interface IUser {
   updatedAt: string;
 }
 
+export type AccountScopeMode = 'ALL' | 'ACCOUNT' | 'TYPE' | 'PROP_FIRM';
+
+export interface AccountScope {
+  mode: AccountScopeMode;
+  accountId?: string;
+  accountType?: AccountType;
+  firmKey?: string;
+  includeArchived?: boolean;
+}
+
 export type PropFirmName =
   | 'THE5ERS'
   | 'FTMO'
   | 'FUNDED_NEXT'
+  | 'FUNDING_PIPS'
   | 'APEX'
   | 'TOPSTEP'
-  | 'CUSTOM';
+  | 'CUSTOM'
+  | string;
 
-export type PropPhase = 'PHASE_1' | 'PHASE_2' | 'FUNDED';
+export type PropPhase = 'PHASE_1' | 'PHASE_2' | 'FUNDED' | string;
 
 export type DailyLossReferenceType =
   | 'MAX_BALANCE_EQUITY_EOD'
   | 'STARTING_BALANCE'
   | 'STARTING_EQUITY';
 
+export type DailyLossBasis =
+  | 'START_OF_DAY_BALANCE'
+  | 'START_OF_DAY_EQUITY'
+  | 'HIGHER_OF_BALANCE_EQUITY'
+  | 'PREVIOUS_EOD_EQUITY';
+
 export type MaxLossType =
-  | 'STATIC_FROM_INITIAL'
+  | 'STATIC'
+  | 'TRAILING_INTRADAY'
   | 'TRAILING_EOD'
+  | 'TRAILING_UNTIL_BREAKEVEN_THEN_LOCK'
+  | 'STATIC_FROM_INITIAL'
   | 'TRAILING_INTRADAY_HIGH';
 
+export type FloorLockRule = 'INITIAL_BALANCE' | 'BREAKEVEN' | 'TRAILS_ALWAYS';
+
 export type PropThreatLevel = 'SAFE' | 'CAUTION' | 'CRITICAL' | 'BREACHED';
+
+export type PropRuleStatus =
+  | 'SAFE'
+  | 'CAUTION'
+  | 'CRITICAL'
+  | 'BREACHED'
+  | 'NOT_APPLICABLE'
+  | 'NOT_CONFIGURED';
+
+export interface IPropFirmPhaseRule {
+  phase: PropPhase;
+  name?: string;
+  profitTargetPct?: number;
+  minTradingDays?: number;
+  maxCalendarDays?: number;
+}
+
+export interface IPropFirmDailyLossRule {
+  limitPct: number;
+  basis: DailyLossBasis;
+  resetTimezone: string; // e.g. 'America/New_York', 'Europe/Prague', 'UTC', 'Asia/Kolkata'
+  resetTime: string; // e.g. '17:00', '00:00'
+  includesFloating: boolean;
+}
+
+export interface IPropFirmMaxLossRule {
+  type: MaxLossType;
+  limitPct: number;
+  floorLockRule?: FloorLockRule;
+}
+
+export interface IPropFirmConsistencyRule {
+  type: 'BEST_DAY_PCT_OF_TOTAL' | 'NONE';
+  maxPct?: number; // e.g. 50
+}
+
+export interface IPropFirmPayoutRules {
+  minDays?: number;
+  minProfit?: number;
+  firstPayoutDays?: number;
+}
+
+export interface IPropFirmRuleSet {
+  firmKey: string;
+  planKey: string;
+  displayName: string;
+  currency: string;
+  accountSize: number;
+  phases: IPropFirmPhaseRule[];
+  dailyLoss?: IPropFirmDailyLossRule;
+  maxLoss?: IPropFirmMaxLossRule;
+  consistencyRule?: IPropFirmConsistencyRule;
+  holdOvernight?: boolean;
+  holdWeekend?: boolean;
+  newsTradingRestriction?: boolean;
+  newsWindowMinutes?: number;
+  maxLotsOrContracts?: number;
+  mandatoryStopLoss?: boolean;
+  maxRiskPerTradePct?: number;
+  copyTradingAllowed?: boolean;
+  profitSplit?: number;
+  payoutRules?: IPropFirmPayoutRules;
+  rulesVerifiedAt?: string;
+  sourceUrl?: string;
+}
+
+export interface IPropFirmAccountData {
+  firmKey: string;
+  planKey: string;
+  phase: PropPhase;
+  ruleSetOverrides?: Record<string, any>;
+  phaseStartedAt?: string;
+  startingBalance?: number;
+  status?: 'ACTIVE' | 'PASSED' | 'FAILED';
+  breachedAt?: string;
+  breachedRule?: string;
+  breachReason?: string;
+}
+
+export interface IPropRuleEvaluation {
+  ruleKey: string;
+  ruleName: string;
+  status: PropRuleStatus;
+  used?: number;
+  limit?: number;
+  remaining?: number;
+  distanceToBreach?: number;
+  resetsAt?: string;
+  details?: string;
+}
 
 export interface IPropFirmConfig {
   enabled: boolean;
@@ -294,12 +407,20 @@ export interface IPropFirmConfig {
 export interface IPropFirmHealthSummary {
   accountId: string;
   firm: PropFirmName;
+  firmKey?: string;
   planName: string;
+  planKey?: string;
+  rulesVerifiedAt?: string;
+  sourceUrl?: string;
   phase: PropPhase;
+  status?: 'ACTIVE' | 'PASSED' | 'FAILED';
+  breachedAt?: string;
+  breachedRule?: string;
   initialBalance: number;
   currentBalance: number;
   unrealizedPnL: number;
   currentEquity: number;
+  highWaterMark?: number;
   targetProfitPercent: number;
   targetProfitAmount: number;
   targetEquity: number;
@@ -321,6 +442,12 @@ export interface IPropFirmHealthSummary {
   threatLevel: PropThreatLevel;
   statusReason: string;
   canAdvancePhase: boolean;
+  rules?: Record<string, IPropRuleEvaluation>;
+  nearestBreach?: {
+    ruleKey: string;
+    distanceToBreach: number;
+    bufferPercent: number;
+  };
 }
 
 export interface ITradingAccount {
@@ -357,6 +484,7 @@ export interface ITradingAccount {
     maxOpenTrades?: number;
   };
   propFirmConfig?: IPropFirmConfig;
+  propFirm?: IPropFirmAccountData;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -1728,6 +1856,14 @@ export interface IEquityCurvesResponse {
     }>;
   };
   startingEquity: number;
+  propReferenceLines?: {
+    maxLossFloor?: number;
+    profitTarget?: number;
+    dailyLossFloor?: number;
+    startingBalance?: number;
+  };
+  currencyBreakdown?: Record<string, number>;
+  hasMultipleCurrencies?: boolean;
 }
 
 // ==========================================

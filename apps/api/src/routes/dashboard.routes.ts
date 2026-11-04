@@ -8,6 +8,8 @@ import {
   calculateDailyEventMarkers,
   calculateMonteCarloBands,
   validateStrategyEdge,
+  getPropFirmPreset,
+  mergeRuleSetWithOverrides,
 } from '@tradevault/financial-engine';
 import {
   dateRangeSchema,
@@ -16,29 +18,51 @@ import {
 } from '@tradevault/shared';
 import { Trade, TradingAccount, AccountTransaction, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
+
+interface StartingEquityResult {
+  startingEquity: number;
+  currencies: string[];
+  hasMultipleCurrencies: boolean;
+  currencyBreakdown: Record<string, number>;
+}
 
 async function computeStartingEquity(
   userId: string | mongoose.Types.ObjectId,
-  accountId?: string,
+  accountIds?: mongoose.Types.ObjectId[],
   startUtc?: Date
-): Promise<number> {
+): Promise<StartingEquityResult> {
   const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
-  let initialBalance = new Decimal(0);
+  let accounts: any[] = [];
 
-  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
-    const acc = await TradingAccount.findOne({ _id: accountId, userId: uId });
-    if (acc) initialBalance = new Decimal(acc.initialBalance.toString());
+  if (accountIds && accountIds.length > 0) {
+    accounts = await TradingAccount.find({ _id: { $in: accountIds }, userId: uId });
+  } else if (accountIds && accountIds.length === 0) {
+    accounts = [];
   } else {
-    const accounts = await TradingAccount.find({ userId: uId });
-    initialBalance = accounts.reduce(
-      (sum, a) => sum.plus(new Decimal(a.initialBalance.toString())),
-      new Decimal(0)
-    );
+    accounts = await TradingAccount.find({ userId: uId, status: 'ACTIVE' });
+  }
+
+  const currencyBreakdown: Record<string, number> = {};
+  const currencies = Array.from(new Set(accounts.map((a) => (a.currency || 'USD').toUpperCase())));
+  const hasMultipleCurrencies = currencies.length > 1;
+
+  let initialBalance = new Decimal(0);
+  for (const acc of accounts) {
+    const c = (acc.currency || 'USD').toUpperCase();
+    const bal = new Decimal((acc.initialBalance || 0).toString());
+    currencyBreakdown[c] = (currencyBreakdown[c] || 0) + bal.toNumber();
+    initialBalance = initialBalance.plus(bal);
   }
 
   // If no startUtc, starting equity is initial balance
   if (!startUtc) {
-    return initialBalance.toNumber();
+    return {
+      startingEquity: initialBalance.toNumber(),
+      currencies,
+      hasMultipleCurrencies,
+      currencyBreakdown,
+    };
   }
 
   // Aggregate closed trades P&L strictly before startUtc
@@ -47,8 +71,8 @@ async function computeStartingEquity(
     status: 'CLOSED',
     tradeDate: { $lt: startUtc },
   };
-  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
-    tradeMatch.accountId = new mongoose.Types.ObjectId(accountId);
+  if (accountIds) {
+    tradeMatch.accountId = { $in: accountIds };
   }
 
   const priorTradesAgg = await Trade.aggregate([
@@ -63,8 +87,8 @@ async function computeStartingEquity(
     date: { $lt: startUtc },
     $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
   };
-  if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
-    txMatch.accountId = new mongoose.Types.ObjectId(accountId);
+  if (accountIds) {
+    txMatch.accountId = { $in: accountIds };
   }
 
   const priorTxAgg = await AccountTransaction.aggregate([
@@ -87,19 +111,26 @@ async function computeStartingEquity(
     }
   }
 
-  return initialBalance
+  const startingEquity = initialBalance
     .plus(priorPnL)
     .plus(priorDeposits)
     .minus(priorWithdrawals)
     .plus(priorAdjustments)
     .toNumber();
+
+  return {
+    startingEquity,
+    currencies,
+    hasMultipleCurrencies,
+    currencyBreakdown,
+  };
 }
 
 export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
   app.get('/stats', async (req: any, reply) => {
-    const { startDate, endDate, accountId, assetClass, strategyId, direction, session } = req.query;
+    const { startDate, endDate, assetClass, strategyId, direction, session } = req.query;
 
     const dateRangeResult = dateRangeSchema.safeParse({
       startDate: req.query.startDate,
@@ -116,9 +147,12 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       });
     }
 
-    const filter: any = { userId: req.user!.id };
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
-    if (accountId) filter.accountId = accountId;
+    const filter: any = { userId: req.user!.id };
+    filter.accountId = { $in: accountIds };
+
     if (assetClass) filter.assetClass = assetClass;
     if (strategyId) filter.strategyId = strategyId;
     if (direction) filter.direction = direction;
@@ -131,7 +165,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     }
 
     // Determine starting equity: initial balance + all closed P&L and cash flows BEFORE startDate
-    const startingEquity = await computeStartingEquity(req.user!.id, accountId, startUtc);
+    const equityResult = await computeStartingEquity(req.user!.id, accountIds, startUtc);
+    const startingEquity = equityResult.startingEquity;
 
     const trades = await Trade.find(filter)
       .sort({ tradeDate: 1 })
@@ -162,7 +197,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const stats = calculateDashboardMetrics(formattedTrades, startingEquity);
 
-    return reply.send({ success: true, data: stats });
+    return reply.send({
+      success: true,
+      data: {
+        ...stats,
+        hasMultipleCurrencies: equityResult.hasMultipleCurrencies,
+        currencyBreakdown: equityResult.currencyBreakdown,
+      },
+    });
   });
 
   // Multi-panel performance view endpoint: underwater, cumulative R, per-strategy overlays, cone, markers
@@ -170,7 +212,6 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const {
       startDate,
       endDate,
-      accountId,
       assetClass,
       strategyId,
       direction,
@@ -193,8 +234,12 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       });
     }
 
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
     const filter: any = { userId: req.user!.id };
-    if (accountId) filter.accountId = accountId;
+    filter.accountId = { $in: accountIds };
+
     if (assetClass) filter.assetClass = assetClass;
     if (strategyId) filter.strategyId = strategyId;
     if (direction) filter.direction = direction;
@@ -207,7 +252,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     }
 
     // Determine starting equity: initial balance + all closed P&L and cash flows BEFORE startDate
-    const startingEquity = await computeStartingEquity(req.user!.id, accountId, startUtc);
+    const equityResult = await computeStartingEquity(req.user!.id, accountIds, startUtc);
+    const startingEquity = equityResult.startingEquity;
 
     // Fetch user's risk settings for daily loss limit
     const userDoc = await User.findById(req.user!.id).select('riskSettings');
@@ -270,7 +316,6 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         strategyGroupMap.set(sId, { id: sId, name: sName, trades: [t] });
       }
     }
-
 
     const sortedStrategyGroups = Array.from(strategyGroupMap.values())
       .sort((a, b) => b.trades.length - a.trades.length)
@@ -336,6 +381,51 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       coneWarning = `Low sample size (N = ${eligibleRMultiples.length}/30 trades). Projection is not evidence of future statistical results.`;
     }
 
+    // 7. Prop Reference Lines (Max Loss floor, Profit Target, SOD Daily Loss floor)
+    let propReferenceLines: any = undefined;
+    if (scope.mode === 'PROP_FIRM' || accountIds.length > 0) {
+      const propAccounts = await TradingAccount.find({
+        _id: { $in: accountIds },
+        userId: req.user!.id,
+        $or: [
+          { accountType: 'PROP_FIRM' },
+          { 'propFirm.firmKey': { $exists: true, $ne: null } },
+          { 'propFirmConfig.enabled': true },
+        ],
+      });
+
+      if (propAccounts.length > 0) {
+        const primary = propAccounts[0];
+        const firmKey = primary.propFirm?.firmKey || primary.propFirmConfig?.firm || 'the5ers';
+        const planKey = primary.propFirm?.planKey || primary.propFirmConfig?.planName;
+        const preset = getPropFirmPreset(firmKey, planKey);
+        const ruleSet = preset
+          ? mergeRuleSetWithOverrides(preset, primary.propFirm?.ruleSetOverrides)
+          : (primary.propFirm?.ruleSetOverrides as any);
+        const startBal = Number(primary.propFirm?.startingBalance || primary.initialBalance || 100000);
+
+        const rawPhase = primary.propFirm?.phase;
+        const phaseNum = typeof rawPhase === 'number' ? rawPhase : 1;
+        const phaseRule = ruleSet?.phases?.[phaseNum - 1] || ruleSet?.phases?.[0];
+        const profitTargetPct = phaseRule?.profitTargetPct ?? (primary.propFirmConfig?.targetProfitPercent ?? undefined);
+        const maxLossPct =
+          ruleSet?.maxLoss?.limitPct ??
+          primary.propFirmConfig?.maxLossLimitPercent ??
+          undefined;
+        const dailyLossPct =
+          ruleSet?.dailyLoss?.limitPct ??
+          primary.propFirmConfig?.dailyLossLimitPercent ??
+          undefined;
+
+        propReferenceLines = {
+          startingBalance: startBal,
+          profitTarget: profitTargetPct !== undefined ? Number(new Decimal(startBal).times(1 + profitTargetPct / 100).toFixed(2)) : undefined,
+          maxLossFloor: maxLossPct !== undefined ? Number(new Decimal(startBal).times(1 - maxLossPct / 100).toFixed(2)) : undefined,
+          dailyLossFloor: dailyLossPct !== undefined ? Number(new Decimal(startBal).times(1 - dailyLossPct / 100).toFixed(2)) : undefined,
+        };
+      }
+    }
+
     const responseData = {
       moneyCurve,
       cumulativeRCurve: {
@@ -365,6 +455,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       },
       eventMarkers,
       startingEquity,
+      propReferenceLines,
+      hasMultipleCurrencies: equityResult.hasMultipleCurrencies,
+      currencyBreakdown: equityResult.currencyBreakdown,
     };
 
     return reply.send({ success: true, data: responseData });

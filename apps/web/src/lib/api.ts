@@ -168,6 +168,18 @@ export const api = {
         `/accounts/${id}/prop-advance-phase`,
         { method: 'POST' }
       ),
+    propPresets: () =>
+      request<{ success: boolean; data: any[] }>('/accounts/prop-presets'),
+    propOverview: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any>(`/accounts/prop-overview${suffix}`);
+    },
   },
 
   // Instruments
@@ -222,7 +234,16 @@ export const api = {
 
   // Trade Setup Templates
   templates: {
-    list: () => request<any[]>('/templates'),
+    list: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any[]>(`/templates${suffix}`);
+    },
     get: (id: string) => request<any>(`/templates/${id}`),
     create: (template: any) =>
       request<any>('/templates', { method: 'POST', body: JSON.stringify(template) }),
@@ -273,12 +294,28 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
       }),
-    getLiveWatcher: (accountId?: string) => {
-      const query = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
+    getLiveWatcher: (accountIdOrParams?: string | Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (typeof accountIdOrParams === 'string') {
+        if (accountIdOrParams && accountIdOrParams !== 'ALL') params.set('accountId', accountIdOrParams);
+      } else if (accountIdOrParams && typeof accountIdOrParams === 'object') {
+        for (const [k, v] of Object.entries(accountIdOrParams)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
       return request<ILiveWatcherSummary>(`/trades/live/watcher${query}`);
     },
-    getLiveAlerts: () =>
-      request<ILiveAlertState[]>('/trades/live/alerts'),
+    getLiveAlerts: (paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return request<ILiveAlertState[]>(`/trades/live/alerts${query}`);
+    },
     snoozeLiveAlert: (id: string, durationMinutes?: number) =>
       request<{ id: string; state: string; snoozedUntil: string }>(`/trades/live/alerts/${id}/snooze`, {
         method: 'POST',
@@ -492,14 +529,29 @@ export const api = {
 
   // Journal
   journal: {
-    calendar: (yearMonth?: string, accountId?: string) => {
+    calendar: (yearMonth?: string, accountIdOrParams?: string | Record<string, any>) => {
       const params = new URLSearchParams();
       if (yearMonth) params.set('yearMonth', yearMonth);
-      if (accountId && accountId !== 'ALL') params.set('accountId', accountId);
+      if (typeof accountIdOrParams === 'string') {
+        if (accountIdOrParams && accountIdOrParams !== 'ALL') params.set('accountId', accountIdOrParams);
+      } else if (accountIdOrParams && typeof accountIdOrParams === 'object') {
+        for (const [k, v] of Object.entries(accountIdOrParams)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
       const query = params.toString() ? `?${params.toString()}` : '';
       return request<{ yearMonth: string; days: any[] }>(`/journal/calendar${query}`);
     },
-    getDay: (date: string) => request<any>(`/journal/${date}`),
+    getDay: (date: string, paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return request<any>(`/journal/${date}${query}`);
+    },
     saveDay: (date: string, review: any) =>
       request<any>(`/journal/${date}`, { method: 'POST', body: JSON.stringify(review) }),
     deleteDay: (date: string) =>
@@ -695,13 +747,37 @@ export const api = {
 
   // Review Queue & Mistake Detection
   review: {
-    queue: () => request<any>('/review/queue'),
-    prefill: (date: string) => request<any>(`/review/prefill/${date}`),
+    queue: (paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const qs = params.toString();
+      return request<any>(`/review/queue${qs ? `?${qs}` : ''}`);
+    },
+    prefill: (date: string, paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const qs = params.toString();
+      return request<any>(`/review/prefill/${date}${qs ? `?${qs}` : ''}`);
+    },
     suggestMistakes: (tradeId: string) => request<any>(`/review/suggest-mistakes/${tradeId}`),
-    getWeekly: (week?: string, accountId?: string) => {
+    getWeekly: (week?: string, accountIdOrParams?: string | Record<string, any>) => {
       const params = new URLSearchParams();
       if (week) params.set('week', week);
-      if (accountId) params.set('accountId', accountId);
+      if (typeof accountIdOrParams === 'string') {
+        if (accountIdOrParams) params.set('accountId', accountIdOrParams);
+      } else if (accountIdOrParams && typeof accountIdOrParams === 'object') {
+        for (const [k, v] of Object.entries(accountIdOrParams)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
       const qs = params.toString();
       return request<{
         review: IWeeklyReview | null;
@@ -718,17 +794,33 @@ export const api = {
         status?: 'DRAFT' | 'FINALIZED';
         followedLastRule?: boolean | null;
       },
-      accountId?: string
+      accountIdOrParams?: string | Record<string, any>
     ) => {
-      const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
-      return request<IWeeklyReview>(`/review/weekly/${week}${qs}`, {
+      const params = new URLSearchParams();
+      if (typeof accountIdOrParams === 'string') {
+        if (accountIdOrParams) params.set('accountId', accountIdOrParams);
+      } else if (accountIdOrParams && typeof accountIdOrParams === 'object') {
+        for (const [k, v] of Object.entries(accountIdOrParams)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const qs = params.toString();
+      return request<IWeeklyReview>(`/review/weekly/${week}${qs ? `?${qs}` : ''}`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
     },
-    listWeekly: (accountId?: string) => {
-      const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
-      return request<IWeeklyReview[]>(`/review/weekly${qs}`);
+    listWeekly: (accountIdOrParams?: string | Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (typeof accountIdOrParams === 'string') {
+        if (accountIdOrParams) params.set('accountId', accountIdOrParams);
+      } else if (accountIdOrParams && typeof accountIdOrParams === 'object') {
+        for (const [k, v] of Object.entries(accountIdOrParams)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const qs = params.toString();
+      return request<IWeeklyReview[]>(`/review/weekly${qs ? `?${qs}` : ''}`);
     },
   },
 

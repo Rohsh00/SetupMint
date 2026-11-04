@@ -56,12 +56,13 @@ import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialo
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
-  const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
+  const { scope, isPropMode, queryParams, selectedAccountId, propAccounts } = useAccountScope();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -126,6 +127,7 @@ export function TradesPage() {
   const { data, isLoading } = useQuery({
     queryKey: [
       'trades',
+      queryParams,
       selectedAccountId,
       page,
       limit,
@@ -143,7 +145,8 @@ export function TradesPage() {
     ],
     queryFn: () =>
       api.trades.list({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
+        accountId: selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : queryParams.accountId,
         page,
         limit,
         search: search || undefined,
@@ -663,6 +666,28 @@ export function TradesPage() {
                     <Typography variant="caption" sx={{ display: 'block', mt: 1, color: muiTheme.palette.text.secondary }}>
                       Loading trades...
                     </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : isPropMode && propAccounts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={15} align="center" sx={{ py: 8 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700, color: muiTheme.palette.text.primary, mb: 0.5 }}>
+                      No Prop Firm Accounts in Scope
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mb: 2 }}>
+                      You have selected Prop Mode, but no prop firm challenge accounts exist. Add a prop firm account to start logging and tracking evaluation trades.
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      size="small"
+                      component={RouterLink}
+                      to="/accounts"
+                      startIcon={<AddIcon />}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Setup Prop Account
+                    </Button>
                   </TableCell>
                 </TableRow>
               ) : trades.length === 0 ? (

@@ -48,6 +48,7 @@ import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
 import { LiveWatcherService } from '../services/live-watcher.service.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { User } from '../db/models/index.js';
@@ -390,7 +391,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
 
     const { page, limit, sortBy, sortOrder } = queryResult.data;
-    const filter = buildTradeMongooseFilter(queryResult.data, req.user!.id);
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const filter = buildTradeMongooseFilter({ ...(queryResult.data as any), accountIds }, req.user!.id);
 
     const totalCount = await Trade.countDocuments(filter);
     const totalPages = Math.ceil(totalCount / limit);
@@ -468,7 +471,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       filter = { _id: { $in: validIds }, userId };
     } else {
       // FILTER
-      filter = buildTradeMongooseFilter(descriptor.filter, userId);
+      const scope = AccountScopeService.parseAccountScope(descriptor.filter);
+      const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
+      filter = buildTradeMongooseFilter({ ...(descriptor.filter as any), accountIds }, userId);
     }
 
     const totalCount = await Trade.countDocuments(filter);
@@ -841,8 +846,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // GET /live/watcher - Real-time open trades MTM, unrealized R, and SL/Target distance
   app.get('/live/watcher', async (req: any, reply) => {
     try {
-      const accountId = (req.query as any)?.accountId;
-      const summary = await LiveWatcherService.getLiveWatcherSummary(req.user!.id, accountId);
+      const scope = AccountScopeService.parseAccountScope(req.query);
+      const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+      const summary = await LiveWatcherService.getLiveWatcherSummary(req.user!.id, accountIds);
       return reply.send({
         success: true,
         data: summary,
@@ -861,7 +867,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   // GET /live/stream - Real-time Server-Sent Events (SSE) stream for zero-polling live metrics
   app.get('/live/stream', async (req: any, reply) => {
-    const accountId = (req.query as any)?.accountId;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
     const userId = req.user!.id;
 
     reply.raw.setHeader('Content-Type', 'text/event-stream');
@@ -871,7 +878,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // Send initial snapshot
     try {
-      const initial = await LiveWatcherService.getLiveWatcherSummary(userId, accountId);
+      const initial = await LiveWatcherService.getLiveWatcherSummary(userId, accountIds);
       reply.raw.write(`data: ${JSON.stringify(initial)}\n\n`);
     } catch (e: any) {
       reply.raw.write(`event: error\ndata: ${JSON.stringify({ message: e.message })}\n\n`);
@@ -884,7 +891,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const intervalId = setInterval(async () => {
       try {
-        const update = await LiveWatcherService.getLiveWatcherSummary(userId, accountId);
+        const update = await LiveWatcherService.getLiveWatcherSummary(userId, accountIds);
         reply.raw.write(`data: ${JSON.stringify(update)}\n\n`);
       } catch (err: any) {
         req.log.warn('SSE stream error: %s', err?.message);
@@ -899,10 +906,20 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // GET /live/alerts - Real-time active, snoozed, and recent alert states for the current user
   app.get('/live/alerts', async (req: any, reply) => {
     try {
-      const alerts = await AlertState.find({
+      const scope = AccountScopeService.parseAccountScope(req.query);
+      const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+      const tradesInScope = await Trade.find({ userId: req.user!.id, accountId: { $in: accountIds } }).select('_id');
+      const tradeIdsInScope = tradesInScope.map((t) => t._id);
+
+      const alertFilter: any = {
         userId: req.user!.id,
         state: { $in: ['ACTIVE', 'SNOOZED', 'CLEARED'] },
-      })
+      };
+      if (scope.mode !== 'ALL' || req.query.accountId || req.query.firmKey) {
+        alertFilter.tradeId = { $in: tradeIdsInScope };
+      }
+
+      const alerts = await AlertState.find(alertFilter)
         .populate('tradeId', 'symbol direction')
         .sort({ severity: -1, updatedAt: -1 })
         .limit(50);

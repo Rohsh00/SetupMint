@@ -104,6 +104,17 @@ SetupMint defines 22 core Mongoose models:
 | `riskRules.maxDailyLoss` | `Number` | No | — | — | Max allowable daily loss limit |
 | `riskRules.maxRiskPerTradePercent` | `Number` | No | — | — | Max risk % per position |
 | `riskRules.maxOpenTrades` | `Number` | No | — | — | Max concurrent open positions |
+| `propFirm` | `Object` | No | Embedded | Subdocument | Firm-specific rule engine evaluation profile |
+| `propFirm.firmKey` | `String` | No | — | Enum: `['THE5ERS', 'FTMO', 'FUNDEDNEXT', 'FUNDING_PIPS', 'APEX', 'TOPSTEP', 'CUSTOM']` | Prop firm identifier |
+| `propFirm.planKey` | `String` | No | — | String | Plan identifier key (e.g. `SUMMER_100K`) |
+| `propFirm.phase` | `String` | No | `'PHASE_1'` | Enum: `['PHASE_1', 'PHASE_2', 'PHASE_3', 'FUNDED']` | Active evaluation challenge phase |
+| `propFirm.phaseStartedAt` | `Date` | No | `Date.now` | — | Timestamp active phase started |
+| `propFirm.startingBalance` | `Number` | No | — | — | Baseline capital for the active phase |
+| `propFirm.status` | `String` | No | `'ACTIVE'` | Enum: `['ACTIVE', 'PASSED', 'FAILED', 'PAUSED']` | Evaluation status (`FAILED` is permanent & sticky) |
+| `propFirm.breachedAt` | `String` | No | — | ISO Timestamp | Timestamp when immutable breach occurred |
+| `propFirm.breachedRule` | `String` | No | — | String | Breached rule key (`dailyLoss`, `maxLoss`, etc.) |
+| `propFirm.ruleSetOverrides` | `Object` | No | — | Mixed | Per-account rule overrides (custom prop firm) |
+| `propFirmConfig` | `Object` | No | Embedded | Subdocument | Legacy configuration (synchronized for backward compatibility) |
 | `notes` | `String` | No | — | — | User notes |
 
 **Compound Indexes:**

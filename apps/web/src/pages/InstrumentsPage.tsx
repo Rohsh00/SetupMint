@@ -42,6 +42,7 @@ import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatDate } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { HelpHint } from '../components/help/index.js';
@@ -76,6 +77,7 @@ const defaultFormData: InstrumentFormData = {
 
 export function InstrumentsPage() {
   const { openDrill } = useTradeDrilldown();
+  const { queryParams } = useAccountScope();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
@@ -113,8 +115,8 @@ export function InstrumentsPage() {
 
   // Fetch only user's traded/created instruments (no presets!)
   const { data: instruments = [], isLoading } = useQuery({
-    queryKey: ['instruments', startDate, endDate],
-    queryFn: () => api.instruments.list({ startDate, endDate }),
+    queryKey: ['instruments', queryParams, startDate, endDate],
+    queryFn: () => api.instruments.list({ ...queryParams, startDate, endDate }),
   });
 
   // Create Custom Instrument Mutation
@@ -470,7 +472,7 @@ export function InstrumentsPage() {
                           if (tradeCount > 0) {
                             openDrill({
                               kind: 'FILTER',
-                              filter: { symbol: inst.symbol },
+                              filter: { ...(queryParams as any), symbol: inst.symbol },
                               label: `${inst.symbol} Executions`,
                             });
                           }
@@ -492,7 +494,7 @@ export function InstrumentsPage() {
                           if (tradeCount > 0) {
                             openDrill({
                               kind: 'FILTER',
-                              filter: { symbol: inst.symbol },
+                              filter: { ...(queryParams as any), symbol: inst.symbol },
                               label: `${inst.symbol} Executions`,
                             });
                           }

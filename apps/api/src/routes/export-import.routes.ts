@@ -28,6 +28,7 @@ import {
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 import { InstrumentClassifier } from '../services/instrument-classifier.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { FyersService } from '../services/fyers.service.js';
@@ -706,8 +707,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
     }
 
-    const filter: any = { userId: req.user!.id };
-    if (accountId) filter.accountId = accountId;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, accountId: { $in: accountIds } };
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -772,8 +775,10 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
     }
 
-    const filter: any = { userId: req.user!.id };
-    if (accountId) filter.accountId = accountId;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, accountId: { $in: accountIds } };
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {

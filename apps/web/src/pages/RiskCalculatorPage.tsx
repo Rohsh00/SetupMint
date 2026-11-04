@@ -33,6 +33,7 @@ import { calculateRiskAndPositionSize, calculateFractionalKelly } from '@tradeva
 import { getPresetSpec } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { formatCurrency, formatPercent, currentLocalIsoDateTime } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { HelpHint } from '../components/help/index.js';
@@ -60,11 +61,12 @@ export function RiskCalculatorPage() {
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
   const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
   const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
+  const { selectedAccountId: scopeAccountId, isPropMode, propAccounts, personalAccounts } = useAccountScope();
 
   const [searchParams] = useSearchParams();
   const urlSymbol = searchParams.get('symbol');
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(scopeAccountId || '');
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
 
   // 1. Account & Risk Budget string states (for seamless live typing & clearing)
@@ -91,11 +93,18 @@ export function RiskCalculatorPage() {
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [prefilledTradeData, setPrefilledTradeData] = useState<any>(null);
 
-  // Auto-set account equity when accounts list loads
+  // Auto-set account equity when accounts list or global scope changes
   useEffect(() => {
-    if (accounts.length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accounts[0].id);
-      const balance = accounts[0].currentBalance || accounts[0].initialBalance || 200000;
+    if (accounts.length === 0) return;
+    let targetAcc = scopeAccountId
+      ? accounts.find((a: any) => a.id === scopeAccountId)
+      : isPropMode && propAccounts.length > 0
+      ? propAccounts[0]
+      : accounts.find((a: any) => a.id === selectedAccountId) || accounts[0];
+
+    if (targetAcc && targetAcc.id !== selectedAccountId) {
+      setSelectedAccountId(targetAcc.id);
+      const balance = targetAcc.currentBalance || targetAcc.initialBalance || 100000;
       setAccountEquityStr(String(balance));
       if (riskMode === 'PERCENT') {
         const p = parseFloat(riskPercentStr) || 1.0;
@@ -105,7 +114,7 @@ export function RiskCalculatorPage() {
         setRiskPercentStr(balance > 0 ? ((f / balance) * 100).toFixed(2) : '1.0');
       }
     }
-  }, [accounts, selectedAccountId]);
+  }, [accounts, scopeAccountId, isPropMode, propAccounts]);
 
   // Pre-fill symbol if specified via URL param (e.g. from TradeInstrumentBadge)
   useEffect(() => {
@@ -290,25 +299,105 @@ export function RiskCalculatorPage() {
   const nearestLotQuantity = nearestLots * lotSize;
   const cashShareQuantity = Math.floor(rawQuantity);
 
-  // Determine effective quantity by user's selected mode
-  let effectiveQuantity = floorLotQuantity;
+  const selectedAccount = useMemo(() => {
+    return accounts.find((a: any) => (a.id || a._id) === selectedAccountId);
+  }, [accounts, selectedAccountId]);
+
+  const isSelectedAccountProp = Boolean(
+    selectedAccount &&
+      (selectedAccount.accountType === 'PROP_FIRM' ||
+        selectedAccount.propFirm?.firmKey ||
+        selectedAccount.propFirmConfig?.enabled)
+  );
+
+  const { data: propHealthRes } = useQuery({
+    queryKey: ['prop-health', selectedAccountId],
+    queryFn: () => api.accounts.propHealth(selectedAccountId),
+    enabled: Boolean(selectedAccountId && isSelectedAccountProp),
+    staleTime: 30 * 1000,
+  });
+
+  const plannedBudget = riskMode === 'FIXED' ? fixedRiskAmount : (accountEquity * riskPercent) / 100;
+  const lossPerUnit = stopDistance * contractMultiplier;
+
+  // Prop firm rule capping calculation
+  const propCapInfo = useMemo(() => {
+    const health = (propHealthRes as any)?.data ?? propHealthRes;
+    if (!isSelectedAccountProp || !health) return null;
+
+    const dailyLossEval =
+      health.rules?.DAILY_LOSS ||
+      health.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS');
+    const maxLossEval =
+      health.rules?.MAX_LOSS ||
+      health.evaluations?.find((e: any) => e.ruleKey === 'MAX_LOSS');
+    const remainingDaily =
+      dailyLossEval?.remaining ?? health.dailyBufferRemaining ?? health.dailyLossBuffer ?? Infinity;
+    const remainingMax =
+      maxLossEval?.remaining ?? health.maxLossBufferRemaining ?? health.maxLossBuffer ?? Infinity;
+
+    const perTradeCapPct =
+      health.rules?.MAX_RISK_PER_TRADE?.limit ?? health.ruleSet?.maxRiskPerTradePct;
+    const perTradeCapAmount = perTradeCapPct ? (accountEquity * perTradeCapPct) / 100 : Infinity;
+    const firmLotCap =
+      health.rules?.MAX_LOTS?.limit ?? health.ruleSet?.maxLotsOrContracts;
+
+    let limitingFactor: string | null = null;
+    let allowedBudget = plannedBudget;
+
+    if (remainingDaily < allowedBudget && remainingDaily > 0) {
+      allowedBudget = remainingDaily;
+      limitingFactor = `Daily Loss Buffer (${formatCurrency(remainingDaily, selectedAccount?.currency || 'USD')})`;
+    }
+    if (remainingMax < allowedBudget && remainingMax > 0) {
+      allowedBudget = remainingMax;
+      limitingFactor = `Max Drawdown Floor (${formatCurrency(remainingMax, selectedAccount?.currency || 'USD')})`;
+    }
+    if (perTradeCapAmount < allowedBudget && perTradeCapAmount > 0) {
+      allowedBudget = perTradeCapAmount;
+      limitingFactor = `Firm Per-Trade Cap (${perTradeCapPct}% / ${formatCurrency(perTradeCapAmount, selectedAccount?.currency || 'USD')})`;
+    }
+
+    let cappedQty = lossPerUnit > 0 ? Math.floor(allowedBudget / lossPerUnit) : rawQuantity;
+    if (firmLotCap && lotSize > 0 && cappedQty > firmLotCap * lotSize) {
+      cappedQty = firmLotCap * lotSize;
+      limitingFactor = `Firm Lot Cap (${firmLotCap} lots)`;
+    }
+
+    const wasCapped = allowedBudget < plannedBudget || (firmLotCap && rawQuantity > firmLotCap * lotSize);
+
+    return {
+      wasCapped,
+      limitingFactor,
+      allowedBudget,
+      cappedQty,
+      remainingDaily,
+      remainingMax,
+      perTradeCapPct,
+      firmLotCap,
+    };
+  }, [isSelectedAccountProp, propHealthRes, plannedBudget, lossPerUnit, rawQuantity, lotSize, accountEquity, selectedAccount]);
+
+  // Determine effective quantity by user's selected mode, constrained by prop rules if applicable
+  let baseEffectiveQuantity = floorLotQuantity;
   if (sizingMode === 'CASH_1') {
-    effectiveQuantity = cashShareQuantity;
+    baseEffectiveQuantity = cashShareQuantity;
   } else if (sizingMode === 'NEAREST') {
-    effectiveQuantity = nearestLotQuantity;
+    baseEffectiveQuantity = nearestLotQuantity;
   }
 
+  const effectiveQuantity =
+    propCapInfo?.wasCapped && propCapInfo.cappedQty < baseEffectiveQuantity
+      ? propCapInfo.cappedQty
+      : baseEffectiveQuantity;
+
   const effectiveLots = lotSize > 0 ? Math.round(effectiveQuantity / lotSize) : effectiveQuantity;
-  const lossPerUnit = stopDistance * contractMultiplier;
   const effectiveRiskMonetary = effectiveQuantity * lossPerUnit + estimatedCosts;
   const effectiveRiskPercent = accountEquity > 0 ? (effectiveRiskMonetary / accountEquity) * 100 : 0;
   const effectiveGrossReward = targetDistance * contractMultiplier * effectiveQuantity;
   const effectiveNetReward = Math.max(0, effectiveGrossReward - estimatedCosts);
   const effectiveNotionalCapital = effectiveQuantity * entryPrice;
   const effectiveCapitalPercent = accountEquity > 0 ? (effectiveNotionalCapital / accountEquity) * 100 : 0;
-
-  // Budget deficit diagnostics & 1-click remedies
-  const plannedBudget = riskMode === 'FIXED' ? fixedRiskAmount : (accountEquity * riskPercent) / 100;
   const oneLotRiskAmount = 1 * lotSize * lossPerUnit + estimatedCosts;
   const isBudgetDeficit = isGeometryValid && floorLotQuantity === 0 && rawQuantity > 0;
   const budgetGap = Math.max(0, oneLotRiskAmount - plannedBudget);
@@ -1143,6 +1232,13 @@ export function RiskCalculatorPage() {
               ) : (
                 <Alert severity="success" sx={{ fontSize: '0.75rem' }}>
                   Position size of <strong>{effectiveQuantity} units</strong> strictly respects your planned risk ceiling of {formatCurrency(plannedBudget)}.
+                </Alert>
+              )}
+
+              {/* Prop Firm Rule Capping Alert */}
+              {propCapInfo?.wasCapped && (
+                <Alert severity="warning" sx={{ fontSize: '0.75rem', mt: 1.5, fontWeight: 600 }}>
+                  <strong>Prop Firm Sizing Cap Active:</strong> Suggested size was capped from {rawQuantity.toFixed(1)} to {effectiveQuantity} units by {propCapInfo.limitingFactor} to prevent challenge rule breach.
                 </Alert>
               )}
             </Box>

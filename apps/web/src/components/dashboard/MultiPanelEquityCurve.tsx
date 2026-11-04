@@ -41,6 +41,7 @@ import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import { api } from '../../lib/api.js';
 import { formatCurrency, formatR, formatPercent, formatDate } from '../../lib/utils.js';
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { HelpHint } from '../help/index.js';
 import type { IEquityCurvesResponse, IStrategyOverlayCurve } from '@tradevault/shared';
 
@@ -67,13 +68,15 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
 
   // Strategy picker popover
   const [strategyAnchorEl, setStrategyAnchorEl] = useState<null | HTMLElement>(null);
+  const { queryParams, isPropMode } = useAccountScope();
 
   // Fetch full multi-panel dataset computed by Decimal.js
   const { data: curveData, isLoading, isError } = useQuery<IEquityCurvesResponse>({
-    queryKey: ['equity-curves', selectedAccountId, startDate, endDate],
+    queryKey: ['equity-curves', queryParams, selectedAccountId, startDate, endDate],
     queryFn: () =>
       api.dashboard.equityCurves({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
+        accountId: selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : queryParams.accountId,
         startDate,
         endDate,
       }),
@@ -81,6 +84,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
   });
 
   const moneyCurve = useMemo(() => curveData?.moneyCurve || [], [curveData]);
+  const propLines = curveData?.propReferenceLines;
   const cumulativeRCurve = curveData?.cumulativeRCurve;
   const rCurveList = useMemo(() => cumulativeRCurve?.curve || [], [cumulativeRCurve]);
   const recoveryStats = curveData?.recoveryStats;
@@ -693,6 +697,55 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
                     }
                   />
                 ))}
+              {/* Prop Reference Lines (Profit Target, Max Loss Floor, Daily Loss) */}
+              {curveMode !== 'R' && propLines?.profitTarget && (
+                <ReferenceLine
+                  yAxisId="moneyAxis"
+                  y={propLines.profitTarget}
+                  stroke="#10B981"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                  label={{
+                    value: `Target: ${formatCurrency(propLines.profitTarget)}`,
+                    fill: '#10B981',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    position: 'insideTopRight',
+                  }}
+                />
+              )}
+              {curveMode !== 'R' && propLines?.maxLossFloor && (
+                <ReferenceLine
+                  yAxisId="moneyAxis"
+                  y={propLines.maxLossFloor}
+                  stroke="#EF4444"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                  label={{
+                    value: `Max Loss: ${formatCurrency(propLines.maxLossFloor)}`,
+                    fill: '#EF4444',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    position: 'insideBottomRight',
+                  }}
+                />
+              )}
+              {curveMode !== 'R' && propLines?.dailyLossFloor && (
+                <ReferenceLine
+                  yAxisId="moneyAxis"
+                  y={propLines.dailyLossFloor}
+                  stroke="#F59E0B"
+                  strokeDasharray="3 3"
+                  strokeWidth={1.5}
+                  label={{
+                    value: `Daily Floor: ${formatCurrency(propLines.dailyLossFloor)}`,
+                    fill: '#F59E0B',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    position: 'insideBottomLeft',
+                  }}
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         ) : (

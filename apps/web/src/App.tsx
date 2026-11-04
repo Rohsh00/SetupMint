@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext.js';
 import { AppLayout } from './components/layout/AppLayout.js';
 import { TradeDrillProvider } from './context/TradeDrillContext.js';
 import { DateRangeProvider } from './context/DateRangeContext.js';
+import { AccountScopeProvider } from './context/AccountScopeContext.js';
 
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage.js').then(m => ({ default: m.DashboardPage })));
 const TradesPage = React.lazy(() => import('./pages/TradesPage.js').then(m => ({ default: m.TradesPage })));
@@ -57,8 +58,9 @@ export function App() {
   return (
     <BrowserRouter>
       <DateRangeProvider>
-        <TradeDrillProvider>
-          <Suspense fallback={<PageLoader />}>
+        <AccountScopeProvider>
+          <TradeDrillProvider>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
@@ -91,8 +93,9 @@ export function App() {
             </Routes>
           </Suspense>
         </TradeDrillProvider>
-      </DateRangeProvider>
-    </BrowserRouter>
+      </AccountScopeProvider>
+    </DateRangeProvider>
+  </BrowserRouter>
   );
 }
 export default App;

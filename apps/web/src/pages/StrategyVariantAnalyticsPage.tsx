@@ -43,6 +43,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutlineRounded';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { HelpHint } from '../components/help/index.js';
@@ -59,13 +60,13 @@ type SortColumn =
 
 export function StrategyVariantAnalyticsPage() {
   const { openDrill } = useTradeDrilldown();
+  const { queryParams: scopeQueryParams } = useAccountScope();
   const { startDate, endDate, resetRange } = useDateRange();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
-  const { selectedAccountId } = useOutletContext<{ selectedAccountId?: string }>() || {};
 
   const backTarget = (location.state as any)?.from;
 
@@ -116,8 +117,7 @@ export function StrategyVariantAnalyticsPage() {
   });
 
   const queryParams = useMemo(() => {
-    const params: Record<string, any> = {};
-    if (selectedAccountId && selectedAccountId !== 'ALL') params.accountId = selectedAccountId;
+    const params: Record<string, any> = { ...scopeQueryParams };
     if (startDate) params.startDate = startDate;
     if (endDate) params.endDate = endDate;
     if (symbolFilter.trim()) params.symbol = symbolFilter.trim();
@@ -125,7 +125,7 @@ export function StrategyVariantAnalyticsPage() {
     if (entryModelFilter) params.entryModel = entryModelFilter;
     if (momentumFilter) params.momentum = momentumFilter;
     return params;
-  }, [selectedAccountId, startDate, endDate, symbolFilter, directionFilter, entryModelFilter, momentumFilter]);
+  }, [scopeQueryParams, startDate, endDate, symbolFilter, directionFilter, entryModelFilter, momentumFilter]);
 
   const {
     data: analyticsData,
@@ -177,8 +177,7 @@ export function StrategyVariantAnalyticsPage() {
 
   const drawerTradesQueryParams = useMemo(() => {
     if (!selectedBucketKey) return null;
-    const params: Record<string, any> = { strategyId: id, limit: 100 };
-    if (selectedAccountId && selectedAccountId !== 'ALL') params.accountId = selectedAccountId;
+    const params: Record<string, any> = { ...scopeQueryParams, strategyId: id, limit: 100 };
     if (startDate) params.startDate = startDate;
     if (endDate) params.endDate = endDate;
     if (symbolFilter.trim()) params.symbol = symbolFilter.trim();
@@ -192,7 +191,7 @@ export function StrategyVariantAnalyticsPage() {
       params.variantKey = selectedBucketKey;
     }
     return params;
-  }, [selectedBucketKey, id, selectedAccountId, startDate, endDate, symbolFilter, directionFilter]);
+  }, [selectedBucketKey, id, scopeQueryParams, startDate, endDate, symbolFilter, directionFilter]);
 
   const { data: drawerTradesData, isLoading: isDrawerLoading } = useQuery({
     queryKey: ['variant-trades-drilldown', drawerTradesQueryParams],

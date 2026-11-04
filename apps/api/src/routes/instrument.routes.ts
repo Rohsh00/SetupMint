@@ -5,6 +5,7 @@ import { Instrument, Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { InstrumentService } from '../services/instrument.service.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 
 const updateInstrumentRequestSchema = createInstrumentSchema.partial().extend({
   applyToTrades: z.boolean().optional(),
@@ -31,8 +32,11 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
       }
     }
 
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
     const userInstruments = await Instrument.find({ userId: req.user!.id }).sort({ symbol: 1 });
-    const tradedSummaries = await InstrumentService.getTradedSummary(req.user!.id, { startDate, endDate });
+    const tradedSummaries = await InstrumentService.getTradedSummary(req.user!.id, { startDate, endDate }, accountIds);
 
     const formatted = userInstruments.map((i) => {
       const summary = tradedSummaries.get(i._id.toString());

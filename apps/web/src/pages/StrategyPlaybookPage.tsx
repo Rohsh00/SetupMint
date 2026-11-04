@@ -53,6 +53,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { HelpHint } from '../components/help/index.js';
@@ -65,6 +66,7 @@ import {
 
 export function StrategyPlaybookPage() {
   const { openDrill } = useTradeDrilldown();
+  const { queryParams } = useAccountScope();
   const queryClient = useQueryClient();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
@@ -74,11 +76,13 @@ export function StrategyPlaybookPage() {
   const activeTab = searchParams.get('tab') === 'templates' ? 'TEMPLATES' : 'STRATEGIES';
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: string) => {
+    const nextParams = new URLSearchParams(searchParams);
     if (newValue === 'TEMPLATES') {
-      setSearchParams({ tab: 'templates' });
+      nextParams.set('tab', 'templates');
     } else {
-      setSearchParams({});
+      nextParams.delete('tab');
     }
+    setSearchParams(nextParams);
   };
 
   const navigate = useNavigate();
@@ -113,15 +117,15 @@ export function StrategyPlaybookPage() {
   const [variantChecklist, setVariantChecklist] = useState('');
 
   const { data: strategies = [], isLoading: isLoadingStrategies } = useQuery({
-    queryKey: ['strategies', startDate, endDate],
-    queryFn: () => api.strategies.list({ startDate, endDate }),
+    queryKey: ['strategies', queryParams, startDate, endDate],
+    queryFn: () => api.strategies.list({ ...queryParams, startDate, endDate }),
   });
 
 
   // Templates query
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<ITradeTemplate[]>({
-    queryKey: ['templates'],
-    queryFn: () => api.templates.list(),
+    queryKey: ['templates', queryParams],
+    queryFn: () => api.templates.list(queryParams),
   });
 
   // Template category filter & search
@@ -753,7 +757,7 @@ export function StrategyPlaybookPage() {
                           onClick={() =>
                             openDrill({
                               kind: 'FILTER',
-                              filter: { strategyId: strat.id || strat._id },
+                              filter: { ...(queryParams as any), strategyId: strat.id || strat._id },
                               label: `${strat.name} Executions`,
                             })
                           }
@@ -847,7 +851,7 @@ export function StrategyPlaybookPage() {
                                 e.stopPropagation();
                                 openDrill({
                                   kind: 'FILTER',
-                                  filter: { strategyId: strat.id || strat._id },
+                                  filter: { ...(queryParams as any), strategyId: strat.id || strat._id },
                                   label: `${strat.name} Trades (${strat.edge?.verdict || 'Edge Validation'})`,
                                 });
                               }}
@@ -1015,7 +1019,7 @@ export function StrategyPlaybookPage() {
                               onClick={() =>
                                 openDrill({
                                   kind: 'FILTER',
-                                  filter: { strategyId: strat.id || strat._id },
+                                  filter: { ...(queryParams as any), strategyId: strat.id || strat._id },
                                   label: `${strat.name} Trades`,
                                 })
                               }

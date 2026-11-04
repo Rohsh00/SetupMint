@@ -429,6 +429,41 @@ SetupMint implements a unified, reusable `DateRangeFilter` component and `DateRa
    - **Dashboard Overview (`/`):** KPI cards, multi-panel equity curves, daily P&L bar chart, performance by instrument, and performance by strategy. All KPI and breakdown drilldowns carry active `startDate` & `endDate` into the `FILTER` descriptor to ensure exact aggregate reconciliation.
    - **Master Trades Ledger (`/trades`):** Queries filtered by inclusive `tradeDate` range; CSV export link automatically downloads the active range.
    - **Analytics (`/analytics`):** All 5 sub-tabs (Overview Drawdown Curve, Psychology & Discipline Correlations, Time & Weekday Heatmaps, Execution Quality MAE/MFE, and What-If Simulator) inherit the active date range.
+
+---
+
+## 5. Global Account Scope Filter Architecture (`AccountScopeContext`)
+
+SetupMint implements a unified, global `AccountScopeContext` embedded within `AppLayout.tsx`. It governs the active account context across all pages, queries, charts, and drawer drilldowns.
+
+### Scope Selector Options
+1. **All Accounts (`scope=ALL`):** Aggregates performance across every personal, live, prop firm, and paper account.
+2. **Live / Personal (`scope=TYPE&type=LIVE`):** Restricts data to personal brokerage accounts (`EQUITY`, `FUTURES_OPTIONS`, `COMMODITY`, `FOREX`, `CRYPTO`).
+3. **Prop Firm (All) (`scope=PROP_FIRM`):** Isolates all active prop challenge evaluation accounts. Activates **Prop Mode**.
+4. **Firm-Specific (`scope=PROP_FIRM&firm=THE5ERS` / `FTMO` / etc.):** Restricts view to accounts under a specific prop firm.
+5. **Individual Account (`scope=ACCOUNT&account=<id>`):** Focuses on a single brokerage ledger.
+6. **Demo Accounts (`scope=TYPE&type=DEMO`):** Isolated paper trading ledgers.
+
+### Persistence & URL Synchronization
+The active scope is synchronized in the browser URL query string:
+`?scope=PROP_FIRM&firm=THE5ERS`
+It survives browser refresh, deep-linking, and back/forward navigation alongside `DateRangeContext` (`?from=...&to=...`) and `TradeDrillContext` (`?drill=...`).
+
+### Prop Mode Dedicated User Experience
+When `isPropMode` is active:
+1. **Header Badge:** Top navigation bar renders a distinctive indigo/purple `PROP MODE` chip with firm identifier.
+2. **Prop Challenge Panel:** Top of `DashboardPage` renders real-time health cards for each challenge account:
+   - Profit target progress bar and required dollar amounts with tabular numerals.
+   - Daily loss buffer remaining, daily floor, and firm reset countdown.
+   - Max loss buffer remaining (static or trailing) with high-water mark floor.
+   - Timing & consistency metrics (minimum trading days remaining, best-day % share).
+   - Interactive drilldown: clicking any metric opens `TradeDrillDrawer` pre-filtered to the trades contributing to that metric.
+3. **Multi-Panel Equity Curves:** Renders horizontal reference lines for **Profit Target**, **Max Loss Floor**, and **Daily Loss Floor**.
+4. **Live Watcher Portfolio Risk Banner:** Substitutes personal risk guardrails with the prop firm's daily and max loss buffers.
+5. **Pre-Trade Risk Calculator:** Automatically caps recommended position size to `min(plannedRisk, dailyLossBuffer, maxLossBuffer, perTradeRiskCap, lotCap)` and explains which prop rule capped it.
+6. **Trade Form Pre-Entry Advisory Warnings:** Non-blocking advisories alert traders before entry if a trade violates news windows, weekend holding restrictions, lot caps, or is missing a mandatory stop loss.
+7. **Accounts Setup Wizard:** Dedicated configuration modal allows picking firm presets (The5ers, FTMO, FundedNext, Funding Pips, Apex, Topstep, Custom), starting phase, and fine-tuning custom rule overrides with verified dates and official rule documentation links.
+8. **Empty State:** If the active prop scope has no accounts, a dedicated empty state CTA guides the user to set up their first prop challenge account without silently falling back to other accounts.
    - **Strategy Playbook & Variant Analytics (`/strategies`, `/strategies/:id/analytics`):** Playbook stats and variant breakdowns filter trades inside the range.
    - **Reports & Export (`/reports`):** CSV and JSON export links stream trades inside the active date range.
    - **Instruments (`/instruments`):** Traded volume and execution counts calculate over the active range.

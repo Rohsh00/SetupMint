@@ -13,6 +13,97 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const accountScopeSchema = z.object({
+  mode: z.enum(['ALL', 'ACCOUNT', 'TYPE', 'PROP_FIRM']).default('ALL'),
+  accountId: z.string().optional(),
+  accountType: z.string().optional(),
+  firmKey: z.string().optional(),
+  includeArchived: z.boolean().optional().default(false),
+});
+export type AccountScopeInput = z.infer<typeof accountScopeSchema>;
+
+export const propFirmPhaseRuleSchema = z.object({
+  phase: z.string().min(1),
+  name: z.string().optional(),
+  profitTargetPct: z.number().nonnegative().optional(),
+  minTradingDays: z.number().int().nonnegative().optional(),
+  maxCalendarDays: z.number().int().positive().optional(),
+});
+
+export const propFirmDailyLossRuleSchema = z.object({
+  limitPct: z.number().positive(),
+  basis: z.enum([
+    'START_OF_DAY_BALANCE',
+    'START_OF_DAY_EQUITY',
+    'HIGHER_OF_BALANCE_EQUITY',
+    'PREVIOUS_EOD_EQUITY',
+  ]),
+  resetTimezone: z.string().default('UTC'),
+  resetTime: z.string().default('00:00'),
+  includesFloating: z.boolean().default(true),
+});
+
+export const propFirmMaxLossRuleSchema = z.object({
+  type: z.enum([
+    'STATIC',
+    'TRAILING_INTRADAY',
+    'TRAILING_EOD',
+    'TRAILING_UNTIL_BREAKEVEN_THEN_LOCK',
+    'STATIC_FROM_INITIAL',
+    'TRAILING_INTRADAY_HIGH',
+  ]),
+  limitPct: z.number().positive(),
+  floorLockRule: z.enum(['INITIAL_BALANCE', 'BREAKEVEN', 'TRAILS_ALWAYS']).optional(),
+});
+
+export const propFirmConsistencyRuleSchema = z.object({
+  type: z.enum(['BEST_DAY_PCT_OF_TOTAL', 'NONE']),
+  maxPct: z.number().positive().optional(),
+});
+
+export const propFirmPayoutRulesSchema = z.object({
+  minDays: z.number().int().nonnegative().optional(),
+  minProfit: z.number().nonnegative().optional(),
+  firstPayoutDays: z.number().int().positive().optional(),
+});
+
+export const propFirmRuleSetSchema = z.object({
+  firmKey: z.string().min(1),
+  planKey: z.string().min(1),
+  displayName: z.string().min(1),
+  currency: z.string().default('USD'),
+  accountSize: z.number().positive(),
+  phases: z.array(propFirmPhaseRuleSchema).min(1),
+  dailyLoss: propFirmDailyLossRuleSchema.optional(),
+  maxLoss: propFirmMaxLossRuleSchema.optional(),
+  consistencyRule: propFirmConsistencyRuleSchema.optional(),
+  holdOvernight: z.boolean().optional(),
+  holdWeekend: z.boolean().optional(),
+  newsTradingRestriction: z.boolean().optional(),
+  newsWindowMinutes: z.number().int().nonnegative().optional(),
+  maxLotsOrContracts: z.number().positive().optional(),
+  mandatoryStopLoss: z.boolean().optional(),
+  maxRiskPerTradePct: z.number().positive().optional(),
+  copyTradingAllowed: z.boolean().optional(),
+  profitSplit: z.number().nonnegative().max(100).optional(),
+  payoutRules: propFirmPayoutRulesSchema.optional(),
+  rulesVerifiedAt: z.string().optional(),
+  sourceUrl: z.string().optional(),
+});
+
+export const propFirmAccountDataSchema = z.object({
+  firmKey: z.string().min(1),
+  planKey: z.string().min(1),
+  phase: z.string().default('PHASE_1'),
+  ruleSetOverrides: z.record(z.any()).optional(),
+  phaseStartedAt: z.string().optional(),
+  startingBalance: z.number().positive().optional(),
+  status: z.enum(['ACTIVE', 'PASSED', 'FAILED']).default('ACTIVE'),
+  breachedAt: z.string().optional(),
+  breachedRule: z.string().optional(),
+  breachReason: z.string().optional(),
+});
+
 export const propFirmConfigSchema = z.object({
   enabled: z.boolean().default(true),
   firm: z.enum(['THE5ERS', 'FTMO', 'FUNDED_NEXT', 'APEX', 'TOPSTEP', 'CUSTOM']).default('THE5ERS'),
@@ -56,6 +147,7 @@ export const createAccountSchema = z.object({
     })
     .optional(),
   propFirmConfig: propFirmConfigSchema.optional(),
+  propFirm: propFirmAccountDataSchema.optional(),
   notes: z.string().optional(),
 });
 
@@ -414,6 +506,14 @@ export const tradeFilterQueryBaseSchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   search: z.preprocess(emptyStringToUndefined, z.string().optional()),
   accountId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  scope: z.preprocess(emptyStringToUndefined, z.enum(['ALL', 'ACCOUNT', 'TYPE', 'PROP_FIRM']).optional()),
+  firmKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  accountType: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  includeArchived: z.preprocess((v) => v === 'true' || v === true, z.boolean().optional()),
+  accountIds: z.preprocess(
+    (v) => (typeof v === 'string' ? v.split(',').map((s) => s.trim()) : v),
+    z.array(z.string()).optional()
+  ),
   symbol: z.preprocess(emptyStringToUndefined, z.string().optional()),
   assetClass: z.preprocess(emptyStringToUndefined, z.string().optional()),
   direction: z.preprocess(emptyStringToUndefined, z.enum(['LONG', 'SHORT']).optional()),

@@ -10,6 +10,7 @@ import { validateStrategyEdge, calculateVariantAnalytics } from '@tradevault/fin
 import { Strategy, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -32,6 +33,9 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
     const dateClause = buildDateRangeClause({ startDate, endDate });
 
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
     const strategies = await Strategy.find({ userId: req.user!.id }).sort({ name: 1 });
 
     const strategyIds = strategies.map((s) => s._id);
@@ -40,6 +44,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       userId: new (Trade.base.Types.ObjectId as any)(req.user!.id),
       strategyId: { $in: strategyIds },
       status: 'CLOSED',
+      accountId: { $in: accountIds },
     };
     if (dateClause.tradeDate) {
       matchCriteria.tradeDate = dateClause.tradeDate;
@@ -271,19 +276,14 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       }
     }
 
-    // Validate account ownership if accountId provided
-    if (accountId) {
-      const acc = await TradingAccount.findOne({ _id: accountId, userId: req.user!.id });
-      if (!acc) {
-        return reply.status(404).send({
-          success: false,
-          error: { code: 'ACCOUNT_NOT_FOUND', message: 'Trading account not found' },
-        });
-      }
-    }
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
-    const filter: any = { userId: req.user!.id, strategyId: strategy._id };
-    if (accountId) filter.accountId = accountId;
+    const filter: any = {
+      userId: req.user!.id,
+      strategyId: strategy._id,
+      accountId: { $in: accountIds },
+    };
     if (symbol) filter.symbol = new RegExp(symbol.trim(), 'i');
     if (session) filter.session = session;
     if (direction) filter.direction = direction;

@@ -60,6 +60,7 @@ import { api } from '../../lib/api.js';
 import { formatCurrency, formatPercent } from '../../lib/utils.js';
 import { HelpHint, WithHelp, DisabledReason } from '../help/index.js';
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 
 interface WhatIfSimulatorTabProps {
   accountId?: string;
@@ -77,6 +78,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
   initialSuggestedTargetR,
 }) => {
   const { openDrill } = useTradeDrilldown();
+  const { queryParams } = useAccountScope();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -105,6 +107,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
   } = useQuery<IWhatIfResponse>({
     queryKey: [
       'analytics-what-if',
+      queryParams,
       accountId,
       fillModel,
       slippageTicks,
@@ -116,7 +119,8 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
     queryFn: () =>
       api.analytics.whatIf({
         filters: {
-          accountId: accountId && accountId !== 'ALL' ? accountId : undefined,
+          ...(queryParams as any),
+          accountId: accountId && accountId !== 'ALL' ? accountId : queryParams.accountId,
           startDate,
           endDate,
         },
@@ -1127,7 +1131,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
               onClick={() => {
                 openDrill({
                   kind: 'FILTER',
-                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  filter: { ...(queryParams as any), accountId: accountId && accountId !== 'ALL' ? accountId : queryParams.accountId },
                   label: `What-If Simulation Trades (Stop ${selectedCell.stopR ?? 'None'}R, Target ${selectedCell.targetR ?? 'None'}R)`,
                 });
               }}
@@ -1369,7 +1373,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
               setShowExclusionsDrawer(false);
               openDrill({
                 kind: 'FILTER',
-                filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                filter: { ...(queryParams as any), accountId: accountId && accountId !== 'ALL' ? accountId : queryParams.accountId },
                 label: 'All Closed Trades in What-If Window',
               });
             }}

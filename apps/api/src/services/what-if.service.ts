@@ -11,6 +11,7 @@ import {
 import { runWhatIfSimulation, IWhatIfSnapshotInput } from '@tradevault/financial-engine';
 import { Trade, TradeCandleSnapshot } from '../db/models/index.js';
 import { generateSyntheticCandlesForTrade } from './synthetic-candle.service.js';
+import { AccountScopeService } from './account-scope.service.js';
 
 interface ICacheEntry {
   expiresAt: number;
@@ -65,9 +66,9 @@ export async function computeWhatIf(
     status: 'CLOSED',
   };
 
-  if (filters.accountId) {
-    tradeFilter.accountId = new mongoose.Types.ObjectId(filters.accountId);
-  }
+  const scope = AccountScopeService.parseAccountScope(filters);
+  const accountIds = await AccountScopeService.resolveAccountScope(userObjectId, scope);
+  tradeFilter.accountId = { $in: accountIds };
   if (filters.strategyId) {
     tradeFilter.strategyId = new mongoose.Types.ObjectId(filters.strategyId);
   }

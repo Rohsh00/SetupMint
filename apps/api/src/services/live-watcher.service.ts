@@ -191,7 +191,7 @@ export class LiveWatcherService {
    */
   static async getLiveWatcherSummary(
     userId: string | mongoose.Types.ObjectId,
-    accountId?: string
+    accountIdsOrId?: string | mongoose.Types.ObjectId | mongoose.Types.ObjectId[] | string[]
   ): Promise<ILiveWatcherSummary> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
@@ -199,8 +199,14 @@ export class LiveWatcherService {
       userId: uId,
       status: 'OPEN',
     };
-    if (accountId && mongoose.isValidObjectId(accountId)) {
-      filter.accountId = new mongoose.Types.ObjectId(accountId);
+    if (Array.isArray(accountIdsOrId)) {
+      filter.accountId = {
+        $in: accountIdsOrId
+          .filter((id) => mongoose.isValidObjectId(id))
+          .map((id) => (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id)),
+      };
+    } else if (accountIdsOrId && mongoose.isValidObjectId(accountIdsOrId)) {
+      filter.accountId = new mongoose.Types.ObjectId(accountIdsOrId);
     }
 
     const openTrades = await Trade.find(filter)

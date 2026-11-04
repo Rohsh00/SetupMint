@@ -91,6 +91,7 @@ import { HotkeyCheatSheetDialog } from './HotkeyCheatSheetDialog.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
 import { useAuth } from '../../../context/AuthContext.js';
+import { useAccountScope } from '../../../context/AccountScopeContext.js';
 import {
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
@@ -177,6 +178,38 @@ export function LiveOpenTradeWatcher({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { scope, isPropMode, queryParams, selectedAccountId } = useAccountScope();
+
+  const { data: propOverviewRes } = useQuery({
+    queryKey: ['prop-overview', scope.mode, scope.firmKey, selectedAccountId],
+    queryFn: () => api.accounts.propOverview(),
+    enabled: isPropMode,
+    staleTime: 30 * 1000,
+  });
+
+  const propOverviewList = useMemo(() => {
+    return Array.isArray(propOverviewRes)
+      ? propOverviewRes
+      : (propOverviewRes as any)?.data || [];
+  }, [propOverviewRes]);
+
+  const propDailyLossLimit = useMemo(() => {
+    if (!isPropMode || propOverviewList.length === 0) return undefined;
+    const firstProp = propOverviewList[0];
+    const dailyEval =
+      firstProp.health?.rules?.DAILY_LOSS ||
+      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS');
+    return dailyEval?.limit ?? firstProp.health?.dailyLossLimitAmount;
+  }, [isPropMode, propOverviewList]);
+
+  const propRemainingBuffer = useMemo(() => {
+    if (!isPropMode || propOverviewList.length === 0) return undefined;
+    const firstProp = propOverviewList[0];
+    const dailyEval =
+      firstProp.health?.rules?.DAILY_LOSS ||
+      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS');
+    return dailyEval?.remaining ?? firstProp.dailyLossBuffer ?? firstProp.health?.dailyBufferRemaining;
+  }, [isPropMode, propOverviewList]);
 
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [viewMode, setViewMode] = useState<'cockpit' | 'table'>(() => {
@@ -246,8 +279,8 @@ export function LiveOpenTradeWatcher({
   // 3.2 In-App Threat Alert Center State & Query
   const [alertCenterOpen, setAlertCenterOpen] = useState<boolean>(false);
   const { data: liveAlerts = [] } = useQuery<ILiveAlertState[]>({
-    queryKey: ['live-alerts-summary'],
-    queryFn: () => api.trades.getLiveAlerts(),
+    queryKey: ['live-alerts-summary', queryParams],
+    queryFn: () => api.trades.getLiveAlerts(queryParams),
     refetchInterval: 10000,
   });
   const activeAlertsCount = liveAlerts.filter((a) => a.state === 'ACTIVE').length;
@@ -573,8 +606,11 @@ export function LiveOpenTradeWatcher({
     isFetching,
     refetch,
   } = useQuery<ILiveWatcherSummary>({
-    queryKey: ['live-open-trades-watcher', accountId],
-    queryFn: () => api.trades.getLiveWatcher(accountId),
+    queryKey: ['live-open-trades-watcher', accountId, queryParams],
+    queryFn: () =>
+      api.trades.getLiveWatcher(
+        accountId && accountId !== 'ALL' ? { ...queryParams, accountId } : queryParams
+      ),
     refetchInterval: refreshIntervalSec > 0 ? refreshIntervalSec * 1000 : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
@@ -2300,6 +2336,9 @@ export function LiveOpenTradeWatcher({
                       isDark={isDark}
                       riskSettings={user?.riskSettings}
                       summary={summary}
+                      isPropMode={isPropMode}
+                      propRuleDailyLossLimit={propDailyLossLimit}
+                      propRuleRemainingBuffer={propRemainingBuffer}
                     />
                   </Box>
                 )}

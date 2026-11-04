@@ -30,6 +30,7 @@ import {
 } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
+import { AccountScopeService } from '../services/account-scope.service.js';
 
 
 function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
@@ -123,14 +124,19 @@ function toWeeklyReviewTrade(t: any): WeeklyReviewTradeInput {
 async function computeWeeklySnapshot(
   userId: mongoose.Types.ObjectId | string,
   week: string,
-  targetAccountId: mongoose.Types.ObjectId | null
+  targetAccountId: mongoose.Types.ObjectId | null,
+  accountIds?: mongoose.Types.ObjectId[]
 ) {
   const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
   const { startDate, endDate } = isoWeekToRange(week);
   const dateClause = buildDateRangeClause({ startDate, endDate });
 
   const tradeFilter: any = { userId: uId, ...dateClause };
-  if (targetAccountId) {
+  if (accountIds && accountIds.length > 0) {
+    tradeFilter.accountId = { $in: accountIds };
+  } else if (accountIds && accountIds.length === 0) {
+    tradeFilter.accountId = { $in: [] };
+  } else if (targetAccountId) {
     tradeFilter.accountId = targetAccountId;
   }
 
@@ -142,7 +148,11 @@ async function computeWeeklySnapshot(
   });
 
   const prevTradeFilter: any = { userId: uId, ...prevDateClause };
-  if (targetAccountId) {
+  if (accountIds && accountIds.length > 0) {
+    prevTradeFilter.accountId = { $in: accountIds };
+  } else if (accountIds && accountIds.length === 0) {
+    prevTradeFilter.accountId = { $in: [] };
+  } else if (targetAccountId) {
     prevTradeFilter.accountId = targetAccountId;
   }
 
@@ -207,6 +217,8 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   // GET /api/v1/review/queue - Returns unreviewed trades and days
   app.get('/queue', async (req: any, reply) => {
     const userId = req.user!.id;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
 
     const user = await User.findById(userId);
     const riskSettings = user?.riskSettings;
@@ -219,6 +231,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const trades = await Trade.find({
       userId,
       tradeDate: { $gte: thirtyDaysAgo },
+      accountId: { $in: accountIds },
     })
       .populate('strategyId', 'name')
       .sort({ entryTime: 1 });
@@ -404,6 +417,8 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   app.get('/prefill/:date', { preHandler: [validateDateParam('date')] }, async (req: any, reply) => {
     const { date } = req.params;
     const userId = req.user!.id;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
 
     const user = await User.findById(userId);
 
@@ -413,6 +428,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const trades = await Trade.find({
       userId,
       tradeDate: { $gte: startOfDay, $lte: endOfDay },
+      accountId: { $in: accountIds },
     }).sort({ entryTime: 1 });
 
     const tradeSummaries: ITradeSummaryForDetection[] = trades.map(toTradeSummary);
@@ -471,6 +487,8 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   app.get('/weekly', async (req: any, reply) => {
     const userId = req.user!.id;
     const { week, accountId } = req.query;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
 
     if (week) {
       if (!weeklyReviewWeekRegex.test(week)) {
@@ -522,7 +540,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
         });
       }
 
-      const computed = await computeWeeklySnapshot(userId, week, targetAccountId);
+      const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds);
 
       return reply.send({
         success: true,
@@ -584,6 +602,8 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const { week } = req.params;
     const userId = req.user!.id;
     const { accountId } = req.query;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
 
     if (!weeklyReviewWeekRegex.test(week)) {
       return reply.status(400).send({
@@ -634,7 +654,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       });
     }
 
-    const computed = await computeWeeklySnapshot(userId, week, targetAccountId);
+    const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds);
 
     return reply.send({
       success: true,
@@ -689,13 +709,16 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     let snapshotToSave: any;
     let previousFocusEvaluation: any;
 
+    const scope = AccountScopeService.parseAccountScope(bodyParsed.data);
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
+
     if (existing && existing.status === 'FINALIZED') {
       // FINALIZED snapshot stays immutable after new trades are added
       snapshotToSave = existing.snapshot;
       previousFocusEvaluation = existing.previousFocusEvaluation;
     } else {
       // Generate live snapshot
-      const computed = await computeWeeklySnapshot(userId, week, targetAccountId);
+      const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds);
       snapshotToSave = computed.snapshot;
       previousFocusEvaluation = computed.previousFocusEvaluation;
     }

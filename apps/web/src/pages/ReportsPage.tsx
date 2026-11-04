@@ -44,15 +44,18 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function ReportsPage() {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const { startDate, endDate } = useDateRange();
+  const { queryParams } = useAccountScope();
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
 
   const [selectedAccountId, setSelectedAccountId] = useState('');
+  const exportScopeParams = selectedAccountId ? { accountId: selectedAccountId } : queryParams;
 
   // Import states
   const [importKind, setImportKind] = useState<'TRADES' | 'CASH_FLOWS'>('TRADES');
@@ -231,7 +234,7 @@ export function ReportsPage() {
               <Box sx={{ display: 'flex', gap: 2, pt: 1 }}>
                 <Button
                   component="a"
-                  href={api.exportImport.csvUrl({ accountId: selectedAccountId, startDate, endDate })}
+                  href={api.exportImport.csvUrl({ ...exportScopeParams, startDate, endDate })}
                   download
                   variant="contained"
                   color="primary"
@@ -244,7 +247,7 @@ export function ReportsPage() {
 
                 <Button
                   component="a"
-                  href={api.exportImport.jsonUrl({ accountId: selectedAccountId, startDate, endDate })}
+                  href={api.exportImport.jsonUrl({ ...exportScopeParams, startDate, endDate })}
                   download
                   variant="outlined"
                   color="inherit"

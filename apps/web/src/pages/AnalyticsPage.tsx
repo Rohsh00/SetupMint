@@ -59,11 +59,12 @@ import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 
 export function AnalyticsPage() {
-  const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
+  const { queryParams, isPropMode, scopeLabel } = useAccountScope();
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate } = useDateRange();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
@@ -87,30 +88,39 @@ export function AnalyticsPage() {
   };
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['dashboard-stats', selectedAccountId, startDate, endDate],
+    queryKey: ['dashboard-stats', queryParams, startDate, endDate],
     queryFn: () =>
       api.dashboard.stats({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
         startDate,
         endDate,
       }),
   });
 
+  const { data: propOverviewRaw } = useQuery({
+    queryKey: ['accounts-prop-overview', queryParams],
+    queryFn: () => api.accounts.propOverview(queryParams),
+    enabled: isPropMode,
+  });
+  const propOverview: any[] = Array.isArray(propOverviewRaw)
+    ? propOverviewRaw
+    : propOverviewRaw?.data || [];
+
   const { data: psychologyData, isLoading: isPsychLoading } = useQuery({
-    queryKey: ['analytics-psychology', selectedAccountId, startDate, endDate],
+    queryKey: ['analytics-psychology', queryParams, startDate, endDate],
     queryFn: () =>
       api.analytics.psychology({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
         startDate,
         endDate,
       }),
   });
 
   const { data: excursionData, isLoading: isExcursionLoading } = useQuery({
-    queryKey: ['analytics-excursion', selectedAccountId, startDate, endDate, funnelMode, funnelMode === 'CUSTOM' ? customMfeStepsInput : ''],
+    queryKey: ['analytics-excursion', queryParams, startDate, endDate, funnelMode, funnelMode === 'CUSTOM' ? customMfeStepsInput : ''],
     queryFn: () =>
       api.analytics.excursion({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
         startDate,
         endDate,
         funnelMode,
@@ -252,6 +262,76 @@ export function AnalyticsPage() {
         </Box>
       </Box>
 
+      {/* PROP MODE ANALYTICS SUMMARY BANNER */}
+      {isPropMode && (
+        <Card
+          sx={{
+            p: 2,
+            borderRadius: 2.5,
+            border: '1px solid rgba(139, 92, 246, 0.35)',
+            backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Chip
+              label="PROP MODE ANALYTICS"
+              size="small"
+              sx={{
+                fontWeight: 800,
+                fontSize: '0.7rem',
+                bgcolor: 'rgba(139, 92, 246, 0.2)',
+                color: '#A78BFA',
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              Scope: <strong>{scopeLabel}</strong> • {propOverview.length} active prop evaluation(s)
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
+            {propOverview.slice(0, 3).map((item: any) => {
+              const targetRule = item.health?.rules?.find((r: any) => r.ruleKey === 'PROFIT_TARGET');
+              const consistencyRule = item.health?.rules?.find((r: any) => r.ruleKey === 'CONSISTENCY_RULE');
+              return (
+                <Box key={item.accountId} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700 }}>
+                      {item.accountName} TARGET REMAINING
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: 'success.main' }}>
+                      {targetRule?.remaining !== null && targetRule?.remaining !== undefined
+                        ? formatCurrency(targetRule.remaining, item.currency || 'USD')
+                        : 'Funded / N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700 }}>
+                      BEST-DAY CONSISTENCY
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: consistencyRule?.status === 'BREACHED' ? 'error.main' : 'text.primary',
+                      }}
+                    >
+                      {consistencyRule?.used !== null && consistencyRule?.used !== undefined
+                        ? `${Number(consistencyRule.used).toFixed(1)}%${consistencyRule.limit ? ` / ${consistencyRule.limit}%` : ''}`
+                        : 'No Cap'}
+                    </Typography>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        </Card>
+      )}
+
       {/* TAB 1: OVERVIEW & DISTRIBUTION */}
       {activeTab === 'OVERVIEW' && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -294,7 +374,7 @@ export function AnalyticsPage() {
                       if (date) {
                         openDrill({
                           kind: 'FILTER',
-                          filter: { date },
+                          filter: { ...(queryParams as any), date },
                           label: `Trades on ${date}`,
                         });
                       }
@@ -379,7 +459,7 @@ export function AnalyticsPage() {
                               const { netPnLMin, netPnLMax } = parsePnLRange(rangeStr);
                               openDrill({
                                 kind: 'FILTER',
-                                filter: { netPnLMin, netPnLMax },
+                                filter: { ...(queryParams as any), netPnLMin, netPnLMax },
                                 label: `Trades in P&L Range: ${rangeStr}`,
                               });
                             }
@@ -502,7 +582,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { disciplineScore: d.score },
+                          filter: { ...(queryParams as any), disciplineScore: d.score },
                           label: `Discipline Rating ${d.score}/5`,
                         })
                       }
@@ -571,7 +651,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { emotion: e.emotion },
+                          filter: { ...(queryParams as any), emotion: e.emotion },
                           label: `Emotion: ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`,
                         })
                       }
@@ -639,7 +719,7 @@ export function AnalyticsPage() {
                     onClick={() =>
                       openDrill({
                         kind: 'FILTER',
-                        filter: { mistakeTag: m.mistake },
+                        filter: { ...(queryParams as any), mistakeTag: m.mistake },
                         label: `Mistake: ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}`,
                       })
                     }
@@ -707,7 +787,7 @@ export function AnalyticsPage() {
                     onClick={() =>
                       openDrill({
                         kind: 'FILTER',
-                        filter: { weekday: day.day.toLowerCase() },
+                        filter: { ...(queryParams as any), weekday: day.day.toLowerCase() },
                         label: `${day.day} Trades`,
                       })
                     }
@@ -792,7 +872,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { session: sess.session },
+                          filter: { ...(queryParams as any), session: sess.session },
                           label: `${sess.session} Session Trades`,
                         })
                       }
@@ -1158,7 +1238,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { mfeRMin: 0.01 },
+                          filter: { ...(queryParams as any), mfeRMin: 0.01 },
                           label: 'Trades with Favorable Excursion',
                         })
                       }
@@ -1204,7 +1284,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { maeRMin: 0.01 },
+                          filter: { ...(queryParams as any), maeRMin: 0.01 },
                           label: 'Trades with Adverse Excursion',
                         })
                       }
@@ -1502,7 +1582,7 @@ export function AnalyticsPage() {
                             onClick={() =>
                               openDrill({
                                 kind: 'FILTER',
-                                filter: { mfeRMin: 1.0, outcome: 'LOSS' },
+                                filter: { ...(queryParams as any), mfeRMin: 1.0, outcome: 'LOSS' },
                                 label: `Round-Trip Loss Trades (Reached ≥ +1.0R Then Stopped Out)`,
                               })
                             }
@@ -1544,7 +1624,7 @@ export function AnalyticsPage() {
                               onClick={() =>
                                 openDrill({
                                   kind: 'FILTER',
-                                  filter: { mfeRMin: step.thresholdR },
+                                  filter: { ...(queryParams as any), mfeRMin: step.thresholdR },
                                   label: `Trades Reaching ≥ +${step.thresholdR}R MFE (${step.label})`,
                                 })
                               }
@@ -2050,7 +2130,7 @@ export function AnalyticsPage() {
       {/* TAB 5: WHAT-IF SIMULATOR */}
       {activeTab === 'WHAT_IF' && (
         <WhatIfSimulatorTab
-          accountId={selectedAccountId}
+          accountId={queryParams.accountId}
           startDate={startDate}
           endDate={endDate}
           initialSuggestedStopR={whatIfPrefill?.stopR}

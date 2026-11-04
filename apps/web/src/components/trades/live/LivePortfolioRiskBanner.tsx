@@ -15,6 +15,9 @@ export interface LivePortfolioRiskBannerProps {
   riskSettings?: IRiskSettings;
   summary?: ILiveWatcherSummary | null;
   tradesTodayCount?: number;
+  propRuleDailyLossLimit?: number;
+  propRuleRemainingBuffer?: number;
+  isPropMode?: boolean;
 }
 
 export function LivePortfolioRiskBanner({
@@ -23,6 +26,9 @@ export function LivePortfolioRiskBanner({
   riskSettings,
   summary,
   tradesTodayCount,
+  propRuleDailyLossLimit,
+  propRuleRemainingBuffer,
+  isPropMode = false,
 }: LivePortfolioRiskBannerProps) {
   const {
     netDirectionalBias,
@@ -43,8 +49,10 @@ export function LivePortfolioRiskBanner({
 
   const underlyingKeys = Object.keys(underlyingExposure);
 
-  // Discipline & Guardrails calculations
-  const maxDailyLoss = riskSettings?.maxDailyLoss ?? 5000;
+  // Discipline & Guardrails calculations (use firm rule daily limit if in Prop Mode)
+  const maxDailyLoss = (isPropMode && propRuleDailyLossLimit && propRuleDailyLossLimit > 0)
+    ? propRuleDailyLossLimit
+    : (riskSettings?.maxDailyLoss ?? 5000);
   const maxOpenTrades = riskSettings?.maxOpenTrades ?? 3;
   const maxDailyTrades = riskSettings?.maxDailyTrades ?? 6;
   const maxRiskPerTrade = riskSettings?.maxRiskPerTradePercent ?? 2.0;
@@ -139,8 +147,8 @@ export function LivePortfolioRiskBanner({
         {/* 1. Day Loss vs Max Daily Loss with 75% and 100% Markers */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: 'text.secondary' }}>
-              Day Floating Loss
+            <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: isPropMode ? 'secondary.main' : 'text.secondary' }}>
+              {isPropMode ? 'Prop Daily Loss Limit' : 'Day Floating Loss'}
             </Typography>
             <Typography
               variant="caption"

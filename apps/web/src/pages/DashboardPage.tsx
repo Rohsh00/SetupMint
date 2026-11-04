@@ -54,14 +54,16 @@ import { MultiPanelEquityCurve } from '../components/dashboard/MultiPanelEquityC
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
+import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { selectedAccountId } = useOutletContext<{ selectedAccountId: string }>();
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate, preset } = useDateRange();
+  const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts } = useAccountScope();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -80,20 +82,35 @@ export function DashboardPage() {
   };
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['dashboard-stats', selectedAccountId, startDate, endDate],
+    queryKey: ['dashboard-stats', queryParams, startDate, endDate],
     queryFn: () =>
       api.dashboard.stats({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
+        accountId: selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : queryParams.accountId,
         startDate,
         endDate,
       }),
   });
 
+  const activeCurrency = useMemo(() => {
+    const breakdownKeys = Object.keys(stats?.currencyBreakdown || {});
+    if (breakdownKeys.length === 1) return breakdownKeys[0];
+    if (selectedAccountId && selectedAccountId !== 'ALL') {
+      const acc = accounts.find((a: any) => a.id === selectedAccountId || a._id === selectedAccountId);
+      if (acc?.baseCurrency) return acc.baseCurrency;
+    }
+    if (isPropMode && propAccounts.length > 0) {
+      return propAccounts[0]?.baseCurrency || 'USD';
+    }
+    return 'INR';
+  }, [stats?.currencyBreakdown, selectedAccountId, accounts, isPropMode, propAccounts]);
+
   const { data: recentTradesData } = useQuery({
-    queryKey: ['recent-trades', selectedAccountId],
+    queryKey: ['recent-trades', queryParams],
     queryFn: () =>
       api.trades.list({
-        accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+        ...queryParams,
+        accountId: selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : queryParams.accountId,
         limit: 5,
         sortBy: 'tradeDate',
         sortOrder: 'desc',
@@ -101,14 +118,16 @@ export function DashboardPage() {
   });
 
   const { data: reviewQueueData } = useQuery({
-    queryKey: ['review-queue'],
-    queryFn: () => api.review.queue(),
+    queryKey: ['review-queue', queryParams],
+    queryFn: () => api.review.queue(queryParams),
   });
 
   const { data: weeklyReviews } = useQuery({
-    queryKey: ['weekly-reviews', selectedAccountId],
+    queryKey: ['weekly-reviews', queryParams],
     queryFn: () =>
-      api.review.listWeekly(selectedAccountId !== 'ALL' ? selectedAccountId : undefined),
+      api.review.listWeekly(
+        selectedAccountId && selectedAccountId !== 'ALL' ? selectedAccountId : queryParams
+      ),
   });
 
   const lastCompletedIsoWeek = useMemo(() => {
@@ -188,6 +207,15 @@ export function DashboardPage() {
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      {/* Prop Challenge Health Overview Panel in Prop Mode */}
+      {isPropMode && <PropChallengePanel />}
+
+      {/* Multi-Currency Scope Breakdown Notice */}
+      {stats?.hasMultipleCurrencies && (
+        <Alert severity="info" sx={{ borderRadius: 2 }}>
+          Multiple currencies detected across accounts in scope ({Object.keys(stats.currencyBreakdown || {}).join(', ')}).
+        </Alert>
+      )}
       {/* Daily Loss Breach Critical Alert Banner */}
       {reviewQueueData?.dailyLossBreach?.breached && (
         <Alert
@@ -395,14 +423,14 @@ export function DashboardPage() {
                   mb: 1.5,
                 }}
               >
-                {formatCurrency(stats?.netPnL)}
+                {formatCurrency(stats?.netPnL, activeCurrency)}
               </Typography>
 
               <Divider sx={{ mb: 1.5 }} />
 
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-                <span>Gross: <strong>{formatCurrency(stats?.grossPnL)}</strong></span>
-                <span>Fees: <strong>{formatCurrency(stats?.totalCosts)}</strong></span>
+                <span>Gross: <strong>{formatCurrency(stats?.grossPnL, activeCurrency)}</strong></span>
+                <span>Fees: <strong>{formatCurrency(stats?.totalCosts, activeCurrency)}</strong></span>
               </Box>
             </CardContent>
           </Card>
@@ -555,7 +583,7 @@ export function DashboardPage() {
               <Divider sx={{ mb: 1.5 }} />
 
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-                <span>Expectancy: <strong>{formatCurrency(stats?.expectancy)}</strong></span>
+                <span>Expectancy: <strong>{formatCurrency(stats?.expectancy, activeCurrency)}</strong></span>
                 <span>Avg R: <strong>{formatR(stats?.avgRealizedR)}</strong></span>
               </Box>
             </CardContent>
@@ -618,7 +646,7 @@ export function DashboardPage() {
               <Divider sx={{ mb: 1.5 }} />
 
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-                <span>Peak DD: <strong>{formatCurrency(stats?.maxDrawdownAmount)}</strong></span>
+                <span>Peak DD: <strong>{formatCurrency(stats?.maxDrawdownAmount, activeCurrency)}</strong></span>
                 <Box component="span" sx={{ color: muiTheme.palette.profit.main, fontWeight: 600 }}>
                   Rules: {formatPercent(stats?.ruleAdherencePercent)}
                 </Box>
@@ -676,7 +704,7 @@ export function DashboardPage() {
                       contentStyle={chartTooltipStyle}
                       itemStyle={{ color: muiTheme.palette.text.primary }}
                       labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
-                      formatter={(val: any) => [formatCurrency(val), 'Net P&L']}
+                      formatter={(val: any) => [formatCurrency(val, activeCurrency), 'Net P&L']}
                       labelFormatter={(label) => `${formatDate(label)} • Click to inspect session trades`}
                     />
                     <Bar dataKey="netPnL" radius={[4, 4, 0, 0]} cursor="pointer">
@@ -754,7 +782,7 @@ export function DashboardPage() {
                         color: inst.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
                       }}
                     >
-                      {formatCurrency(inst.netPnL)}
+                      {formatCurrency(inst.netPnL, activeCurrency)}
                     </Typography>
                   </Box>
                 ))
@@ -818,7 +846,7 @@ export function DashboardPage() {
                         color: strat.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
                       }}
                     >
-                      {formatCurrency(strat.netPnL)}
+                      {formatCurrency(strat.netPnL, activeCurrency)}
                     </Typography>
                   </Box>
                 ))
@@ -1041,7 +1069,7 @@ export function DashboardPage() {
                             : muiTheme.palette.text.secondary,
                       }}
                     >
-                      {formatCurrency(t.netPnL)}
+                      {formatCurrency(t.netPnL, t.currency || activeCurrency)}
                     </TableCell>
                     <TableCell align="center">
                       <Button
@@ -1168,7 +1196,7 @@ export function DashboardPage() {
                           : muiTheme.palette.text.secondary,
                       }}
                     >
-                      {formatCurrency(t.calculated?.netPnL)}
+                      {formatCurrency(t.calculated?.netPnL, t.currency || activeCurrency)}
                     </TableCell>
                     <TableCell
                       align="right"

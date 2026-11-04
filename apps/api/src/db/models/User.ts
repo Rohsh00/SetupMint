@@ -120,6 +120,10 @@ const UserSchema = new Schema<IUserDoc>(
       telegramBotToken: { type: String },
       telegramChatId: { type: String },
       telegramAlertEvents: { type: Object, default: DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents },
+      slippageGuardPercent: { type: Number, default: 0.5 },
+      snoozeDefaultMin: { type: Number, default: 10 },
+      quietHours: { type: Object },
+      telegramAlertPolicies: { type: Object },
       hardDisciplineLockoutEnabled: { type: Boolean, default: false },
       hardDisciplineLockoutDurationMins: { type: Number, default: 60 },
       staleDataThresholdSeconds: { type: Number, default: 10 },
@@ -150,7 +154,7 @@ const UserSchema = new Schema<IUserDoc>(
     toJSON: {
       transform: (_doc, ret: any) => {
         if (ret.liveWatcherSettings?.telegramBotToken) {
-          delete ret.liveWatcherSettings.telegramBotToken;
+          ret.liveWatcherSettings.telegramBotToken = '••••••••';
         }
         return ret;
       },

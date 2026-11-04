@@ -41,7 +41,7 @@ import {
 } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { config } from '../config.js';
-import { decryptSecret } from './crypto.service.js';
+import { decryptSecret, safeDecryptSecret } from './crypto.service.js';
 import { FyersService } from './fyers.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { AccountScopeService } from './account-scope.service.js';
@@ -176,7 +176,8 @@ export class TelegramAlertService {
     disableNotification: boolean = false
   ): Promise<any> {
     if (!botToken) return null;
-    const realToken = decryptSecret(botToken) || botToken;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return null;
     const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/sendMessage`;
     const payload: any = {
       chat_id: chatId,
@@ -216,7 +217,8 @@ export class TelegramAlertService {
     buttons?: ITelegramInlineButton[][]
   ): Promise<any> {
     if (!botToken) return null;
-    const realToken = decryptSecret(botToken) || botToken;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return null;
     const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/editMessageText`;
     const payload: any = {
       chat_id: chatId,
@@ -261,7 +263,8 @@ export class TelegramAlertService {
   ): Promise<void> {
     if (!botToken) return;
     try {
-      const realToken = decryptSecret(botToken) || botToken;
+      const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+      if (!realToken) return;
       const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/answerCallbackQuery`;
       await fetch(url, {
         method: 'POST',
@@ -296,7 +299,7 @@ export class TelegramAlertService {
     if (!settings?.telegramAlertsEnabled) return false;
 
     const rawToken = settings.telegramBotToken;
-    const botToken = decryptSecret(rawToken) || rawToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
     const chatId = settings.telegramChatId;
     if (!botToken || !chatId) return false;
 
@@ -666,8 +669,8 @@ export class TelegramAlertService {
         'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
       });
       for (const u of allUsers) {
-        const uToken = decryptSecret(u.liveWatcherSettings?.telegramBotToken);
-        if (uToken === knownBotToken) {
+        const uToken = safeDecryptSecret(u.liveWatcherSettings?.telegramBotToken);
+        if (uToken && uToken === knownBotToken) {
           user = u;
           if (u.liveWatcherSettings && !u.liveWatcherSettings.telegramChatId && chatId) {
             u.liveWatcherSettings.telegramChatId = String(chatId);
@@ -681,7 +684,7 @@ export class TelegramAlertService {
 
     if (!botToken && user) {
       const rawToken = user?.liveWatcherSettings?.telegramBotToken;
-      botToken = rawToken ? (decryptSecret(rawToken) || rawToken) : undefined;
+      botToken = rawToken ? (safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? undefined : rawToken)) : undefined;
     }
 
     if (!user) {
@@ -1108,8 +1111,8 @@ export class TelegramAlertService {
         'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
       });
       for (const cand of candidates) {
-        const dec = decryptSecret(cand.liveWatcherSettings?.telegramBotToken);
-        if (dec === knownBotToken) {
+        const dec = safeDecryptSecret(cand.liveWatcherSettings?.telegramBotToken);
+        if (dec && dec === knownBotToken) {
           user = cand;
           if (cand.liveWatcherSettings && !cand.liveWatcherSettings.telegramChatId && chatId) {
             cand.liveWatcherSettings.telegramChatId = String(chatId);
@@ -1142,7 +1145,7 @@ export class TelegramAlertService {
 
     if (!botToken) {
       const rawToken = user.liveWatcherSettings?.telegramBotToken;
-      botToken = rawToken ? (decryptSecret(rawToken) || rawToken) : undefined;
+      botToken = rawToken ? (safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? undefined : rawToken)) : undefined;
     }
     if (!botToken) return;
 
@@ -1233,8 +1236,8 @@ export class TelegramAlertService {
         'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
       });
       for (const cand of candidates) {
-        const dec = decryptSecret(cand.liveWatcherSettings?.telegramBotToken);
-        if (dec === knownBotToken) {
+        const dec = safeDecryptSecret(cand.liveWatcherSettings?.telegramBotToken);
+        if (dec && dec === knownBotToken) {
           user = cand;
           if (cand.liveWatcherSettings && !cand.liveWatcherSettings.telegramChatId && chatId) {
             cand.liveWatcherSettings.telegramChatId = String(chatId);
@@ -1262,7 +1265,7 @@ export class TelegramAlertService {
 
     if (!botToken) {
       const rawToken = user.liveWatcherSettings?.telegramBotToken;
-      botToken = rawToken ? (decryptSecret(rawToken) || rawToken) : undefined;
+      botToken = rawToken ? (safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? undefined : rawToken)) : undefined;
     }
     if (!botToken) return;
 
@@ -1749,7 +1752,8 @@ export class TelegramAlertService {
     const { botToken, chatId, title, body, severity = 'WARNING', metrics, progressBar, buttons, disableNotification = false } = payload;
     if (!botToken || !chatId) return false;
 
-    const realToken = decryptSecret(botToken) || botToken;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return false;
     const dedupeKey = `${chatId}:${title}:${body.slice(0, 30)}`;
     const now = Date.now();
     const lastSent = this.recentAlerts.get(dedupeKey);
@@ -1844,7 +1848,8 @@ export class TelegramAlertService {
     if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
 
     const rawToken = settings.telegramBotToken;
-    const botToken = decryptSecret(rawToken) || rawToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    if (!botToken) return;
     const chatId = settings.telegramChatId;
 
     // 1. Resolve all AlertState records for this trade
@@ -1914,7 +1919,8 @@ export class TelegramAlertService {
 
     const isBreach = percent >= 100;
     const rawToken = settings.telegramBotToken;
-    const botToken = decryptSecret(rawToken) || rawToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    if (!botToken) return;
     const chatId = settings.telegramChatId;
     const now = new Date();
 
@@ -1998,7 +2004,8 @@ export class TelegramAlertService {
     if (settings.telegramAlertEvents && settings.telegramAlertEvents.eodSummaryDigest === false) return;
 
     let botToken = settings.telegramBotToken;
-    botToken = decryptSecret(botToken) || botToken;
+    botToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!botToken) return;
     const chatId = settings.telegramChatId;
 
     // Calculate start of current day in IST (Asia/Kolkata)

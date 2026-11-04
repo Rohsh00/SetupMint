@@ -43,9 +43,11 @@ export function decryptSecret(value: string | null | undefined): string | null {
   // Candidate encryption keys (current configured key, common dev defaults, session secret)
   const candidateKeys = [
     config.tokenEncryptionKey,
-    'supersecret-setupmint-token-encryption-key-change-me-32chars',
     'tradevault-dev-token-encryption-key-change-me',
+    'supersecret-setupmint-token-encryption-key-change-me-32chars',
     config.sessionSecret,
+    'tradevault-cloud-session-secret-change-in-prod-32chars',
+    'setupmint-secret-key',
   ].filter(Boolean) as string[];
 
   const uniqueCandidateKeys = Array.from(new Set(candidateKeys));
@@ -67,6 +69,20 @@ export function decryptSecret(value: string | null | undefined): string | null {
   throw new Error(
     'Unable to authenticate encrypted secret (encryption key mismatch or invalid token). Please re-enter your secret credentials.'
   );
+}
+
+/**
+ * Safe version of decryptSecret that catches errors and returns null
+ * instead of throwing, ensuring background polling and message dispatching never crash.
+ */
+export function safeDecryptSecret(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (!isEncryptedSecret(value)) return value;
+  try {
+    return decryptSecret(value);
+  } catch {
+    return null;
+  }
 }
 
 export function hashOAuthState(state: string): string {

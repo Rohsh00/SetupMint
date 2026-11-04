@@ -2124,6 +2124,7 @@ export interface ILiveWatcherSettings {
   ladderViewMode?: LadderViewMode;
   layoutPresets?: IWatcherLayoutPreset[];
   activePresetId?: string;
+  clearTelegramCredentials?: boolean;
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {

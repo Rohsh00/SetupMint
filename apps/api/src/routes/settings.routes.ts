@@ -13,13 +13,15 @@ import { requireAuth } from '../middleware/auth.js';
 import { BackupStatusService } from '../services/backup-status.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { TelegramPollingService } from '../services/telegram-polling.service.js';
-import { encryptSecret, decryptSecret } from '../services/crypto.service.js';
+import { encryptSecret, decryptSecret, safeDecryptSecret } from '../services/crypto.service.js';
 
 function maskLiveWatcherSettings(settings: any) {
   if (!settings) return DEFAULT_LIVE_WATCHER_SETTINGS;
   const s = typeof settings.toObject === 'function' ? settings.toObject() : { ...settings };
   if (s.telegramBotToken) {
     s.telegramBotToken = '••••••••';
+  } else {
+    delete s.telegramBotToken;
   }
   return s;
 }
@@ -55,99 +57,173 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const { name, baseCurrency, theme, defaultAccountScope, riskSettings, patternDetectionSettings, liveWatcherSettings } = req.body;
 
     const update: any = {};
+    const unset: any = {};
     if (name) update.name = name;
     if (baseCurrency) update.baseCurrency = baseCurrency;
     if (theme) update.theme = theme;
     if (defaultAccountScope !== undefined) update.defaultAccountScope = String(defaultAccountScope).trim() || 'ALL';
-    if (riskSettings) {
-      update.riskSettings = {
-        maxDailyLoss: riskSettings.maxDailyLoss !== undefined ? Number(riskSettings.maxDailyLoss) : undefined,
-        maxDailyTrades: riskSettings.maxDailyTrades !== undefined ? Number(riskSettings.maxDailyTrades) : undefined,
-        maxOpenTrades: riskSettings.maxOpenTrades !== undefined ? Number(riskSettings.maxOpenTrades) : undefined,
-        maxRiskPerTradePercent: riskSettings.maxRiskPerTradePercent !== undefined ? Number(riskSettings.maxRiskPerTradePercent) : undefined,
-        revengeTradingMinutes: riskSettings.revengeTradingMinutes !== undefined ? Number(riskSettings.revengeTradingMinutes) : undefined,
-      };
-    }
-    if (patternDetectionSettings) {
-      update.patternDetectionSettings = {
-        defaultHtf: patternDetectionSettings.defaultHtf || '240',
-        defaultLtf: patternDetectionSettings.defaultLtf || '5',
-        autoDetectOnImport: patternDetectionSettings.autoDetectOnImport !== undefined ? Boolean(patternDetectionSettings.autoDetectOnImport) : true,
-        autoDetectMistakes: patternDetectionSettings.autoDetectMistakes !== undefined ? Boolean(patternDetectionSettings.autoDetectMistakes) : true,
-        instrumentOverrides: Array.isArray(patternDetectionSettings.instrumentOverrides)
-          ? patternDetectionSettings.instrumentOverrides
-              .map((item: any) => ({
-                symbol: String(item.symbol || '').toUpperCase().trim(),
-                htf: String(item.htf || '240'),
-                ltf: String(item.ltf || '5'),
-                preferredStrategyId: item.preferredStrategyId ? String(item.preferredStrategyId) : undefined,
-                preferredStrategyName: item.preferredStrategyName ? String(item.preferredStrategyName) : undefined,
-              }))
-              .filter((item: any) => item.symbol.length > 0)
-          : [],
-      };
-    }
-    if (liveWatcherSettings) {
-      update.liveWatcherSettings = {
-        defaultAutoExecute: liveWatcherSettings.defaultAutoExecute !== undefined ? Boolean(liveWatcherSettings.defaultAutoExecute) : DEFAULT_LIVE_WATCHER_SETTINGS.defaultAutoExecute,
-        defaultTargetMode: liveWatcherSettings.defaultTargetMode || DEFAULT_LIVE_WATCHER_SETTINGS.defaultTargetMode,
-        t1MultipleR: liveWatcherSettings.t1MultipleR !== undefined ? Number(liveWatcherSettings.t1MultipleR) : DEFAULT_LIVE_WATCHER_SETTINGS.t1MultipleR,
-        t1ExitRatio: liveWatcherSettings.t1ExitRatio !== undefined ? Number(liveWatcherSettings.t1ExitRatio) : DEFAULT_LIVE_WATCHER_SETTINGS.t1ExitRatio,
-        t1TrailingAction: liveWatcherSettings.t1TrailingAction || DEFAULT_LIVE_WATCHER_SETTINGS.t1TrailingAction,
-        t1TrailPoints: liveWatcherSettings.t1TrailPoints !== undefined ? Number(liveWatcherSettings.t1TrailPoints) : DEFAULT_LIVE_WATCHER_SETTINGS.t1TrailPoints,
-        t2Enabled: liveWatcherSettings.t2Enabled !== undefined ? Boolean(liveWatcherSettings.t2Enabled) : DEFAULT_LIVE_WATCHER_SETTINGS.t2Enabled,
-        t2MultipleR: liveWatcherSettings.t2MultipleR !== undefined ? Number(liveWatcherSettings.t2MultipleR) : DEFAULT_LIVE_WATCHER_SETTINGS.t2MultipleR,
-        t2ExitRatio: liveWatcherSettings.t2ExitRatio !== undefined ? Number(liveWatcherSettings.t2ExitRatio) : DEFAULT_LIVE_WATCHER_SETTINGS.t2ExitRatio,
-        t2TrailingAction: liveWatcherSettings.t2TrailingAction || DEFAULT_LIVE_WATCHER_SETTINGS.t2TrailingAction,
-        t2TrailPoints: liveWatcherSettings.t2TrailPoints !== undefined ? Number(liveWatcherSettings.t2TrailPoints) : DEFAULT_LIVE_WATCHER_SETTINGS.t2TrailPoints,
-        isFreeRunner: liveWatcherSettings.isFreeRunner !== undefined ? Boolean(liveWatcherSettings.isFreeRunner) : DEFAULT_LIVE_WATCHER_SETTINGS.isFreeRunner,
-        t3MultipleR: liveWatcherSettings.t3MultipleR !== undefined ? Number(liveWatcherSettings.t3MultipleR) : DEFAULT_LIVE_WATCHER_SETTINGS.t3MultipleR,
-        dynamicTrailingEnabled: liveWatcherSettings.dynamicTrailingEnabled !== undefined ? Boolean(liveWatcherSettings.dynamicTrailingEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailingEnabled,
-        dynamicTriggerR: liveWatcherSettings.dynamicTriggerR !== undefined ? Number(liveWatcherSettings.dynamicTriggerR) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTriggerR,
-        dynamicTrailType: liveWatcherSettings.dynamicTrailType || DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailType,
-        dynamicStepR: liveWatcherSettings.dynamicStepR !== undefined ? Number(liveWatcherSettings.dynamicStepR) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicStepR,
-        dynamicTrailPoints: liveWatcherSettings.dynamicTrailPoints !== undefined ? Number(liveWatcherSettings.dynamicTrailPoints) : DEFAULT_LIVE_WATCHER_SETTINGS.dynamicTrailPoints,
-        givebackAutoExitEnabled: liveWatcherSettings.givebackAutoExitEnabled !== undefined ? Boolean(liveWatcherSettings.givebackAutoExitEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.givebackAutoExitEnabled,
-        givebackMinPeakR: liveWatcherSettings.givebackMinPeakR !== undefined ? Number(liveWatcherSettings.givebackMinPeakR) : DEFAULT_LIVE_WATCHER_SETTINGS.givebackMinPeakR,
-        givebackMaxPercent: liveWatcherSettings.givebackMaxPercent !== undefined ? Number(liveWatcherSettings.givebackMaxPercent) : DEFAULT_LIVE_WATCHER_SETTINGS.givebackMaxPercent,
-        misSquareOffEnabled: liveWatcherSettings.misSquareOffEnabled !== undefined ? Boolean(liveWatcherSettings.misSquareOffEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.misSquareOffEnabled,
-        misSquareOffTime: liveWatcherSettings.misSquareOffTime || DEFAULT_LIVE_WATCHER_SETTINGS.misSquareOffTime,
-        scalperHotkeysEnabled: liveWatcherSettings.scalperHotkeysEnabled !== undefined ? Boolean(liveWatcherSettings.scalperHotkeysEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.scalperHotkeysEnabled,
-        soundAlertsEnabled: liveWatcherSettings.soundAlertsEnabled !== undefined ? Boolean(liveWatcherSettings.soundAlertsEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.soundAlertsEnabled,
-        defaultRefreshIntervalSec: liveWatcherSettings.defaultRefreshIntervalSec !== undefined ? Number(liveWatcherSettings.defaultRefreshIntervalSec) : DEFAULT_LIVE_WATCHER_SETTINGS.defaultRefreshIntervalSec,
-        paperExecutionMode: liveWatcherSettings.paperExecutionMode !== undefined ? Boolean(liveWatcherSettings.paperExecutionMode) : DEFAULT_LIVE_WATCHER_SETTINGS.paperExecutionMode,
-        serverSideExecutionEnabled: liveWatcherSettings.serverSideExecutionEnabled !== undefined ? Boolean(liveWatcherSettings.serverSideExecutionEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.serverSideExecutionEnabled,
-        telegramAlertsEnabled: liveWatcherSettings.telegramAlertsEnabled !== undefined ? Boolean(liveWatcherSettings.telegramAlertsEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertsEnabled,
-        telegramBotToken: liveWatcherSettings.telegramBotToken !== undefined
-          ? (String(liveWatcherSettings.telegramBotToken).startsWith('••') || String(liveWatcherSettings.telegramBotToken).startsWith('**')
-              ? (await User.findById(req.user!.id))?.liveWatcherSettings?.telegramBotToken
-              : (String(liveWatcherSettings.telegramBotToken).trim() ? encryptSecret(String(liveWatcherSettings.telegramBotToken).trim()) || undefined : undefined))
-          : undefined,
-        telegramChatId: liveWatcherSettings.telegramChatId !== undefined ? String(liveWatcherSettings.telegramChatId).trim() : undefined,
-        telegramAlertEvents: liveWatcherSettings.telegramAlertEvents || DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents,
-        slippageGuardPercent: liveWatcherSettings.slippageGuardPercent !== undefined ? Number(liveWatcherSettings.slippageGuardPercent) : 0.5,
-        snoozeDefaultMin: liveWatcherSettings.snoozeDefaultMin !== undefined ? Number(liveWatcherSettings.snoozeDefaultMin) : 10,
-        quietHours: liveWatcherSettings.quietHours || DEFAULT_LIVE_WATCHER_SETTINGS.quietHours,
-        telegramAlertPolicies: liveWatcherSettings.telegramAlertPolicies || {},
-        hardDisciplineLockoutEnabled: liveWatcherSettings.hardDisciplineLockoutEnabled !== undefined ? Boolean(liveWatcherSettings.hardDisciplineLockoutEnabled) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutEnabled,
-        hardDisciplineLockoutDurationMins: liveWatcherSettings.hardDisciplineLockoutDurationMins !== undefined ? Number(liveWatcherSettings.hardDisciplineLockoutDurationMins) : DEFAULT_LIVE_WATCHER_SETTINGS.hardDisciplineLockoutDurationMins,
-        staleDataThresholdSeconds: liveWatcherSettings.staleDataThresholdSeconds !== undefined ? Number(liveWatcherSettings.staleDataThresholdSeconds) : (DEFAULT_LIVE_WATCHER_SETTINGS.staleDataThresholdSeconds ?? 10),
-        requireHoldToConfirm: liveWatcherSettings.requireHoldToConfirm !== undefined ? Boolean(liveWatcherSettings.requireHoldToConfirm) : (DEFAULT_LIVE_WATCHER_SETTINGS.requireHoldToConfirm ?? true),
-        cardDensity: liveWatcherSettings.cardDensity || DEFAULT_LIVE_WATCHER_SETTINGS.cardDensity || 'standard',
-        sortMode: liveWatcherSettings.sortMode || DEFAULT_LIVE_WATCHER_SETTINGS.sortMode || 'urgency',
-        ladderViewMode: liveWatcherSettings.ladderViewMode || DEFAULT_LIVE_WATCHER_SETTINGS.ladderViewMode || 'classic',
-        layoutPresets: Array.isArray(liveWatcherSettings.layoutPresets)
-          ? liveWatcherSettings.layoutPresets
-          : DEFAULT_LIVE_WATCHER_SETTINGS.layoutPresets,
-        activePresetId: liveWatcherSettings.activePresetId || DEFAULT_LIVE_WATCHER_SETTINGS.activePresetId || 'positional',
-      };
+
+    if (riskSettings && typeof riskSettings === 'object') {
+      if (riskSettings.maxDailyLoss !== undefined) update['riskSettings.maxDailyLoss'] = Number(riskSettings.maxDailyLoss);
+      if (riskSettings.maxDailyTrades !== undefined) update['riskSettings.maxDailyTrades'] = Number(riskSettings.maxDailyTrades);
+      if (riskSettings.maxOpenTrades !== undefined) update['riskSettings.maxOpenTrades'] = Number(riskSettings.maxOpenTrades);
+      if (riskSettings.maxRiskPerTradePercent !== undefined) update['riskSettings.maxRiskPerTradePercent'] = Number(riskSettings.maxRiskPerTradePercent);
+      if (riskSettings.revengeTradingMinutes !== undefined) update['riskSettings.revengeTradingMinutes'] = Number(riskSettings.revengeTradingMinutes);
     }
 
-    const user = await User.findByIdAndUpdate(req.user!.id, { $set: update }, { new: true });
+    if (patternDetectionSettings && typeof patternDetectionSettings === 'object') {
+      if (patternDetectionSettings.defaultHtf !== undefined) update['patternDetectionSettings.defaultHtf'] = patternDetectionSettings.defaultHtf;
+      if (patternDetectionSettings.defaultLtf !== undefined) update['patternDetectionSettings.defaultLtf'] = patternDetectionSettings.defaultLtf;
+      if (patternDetectionSettings.autoDetectOnImport !== undefined) update['patternDetectionSettings.autoDetectOnImport'] = Boolean(patternDetectionSettings.autoDetectOnImport);
+      if (patternDetectionSettings.autoDetectMistakes !== undefined) update['patternDetectionSettings.autoDetectMistakes'] = Boolean(patternDetectionSettings.autoDetectMistakes);
+      if (Array.isArray(patternDetectionSettings.instrumentOverrides)) {
+        update['patternDetectionSettings.instrumentOverrides'] = patternDetectionSettings.instrumentOverrides
+          .map((item: any) => ({
+            symbol: String(item.symbol || '').toUpperCase().trim(),
+            htf: String(item.htf || '240'),
+            ltf: String(item.ltf || '5'),
+            preferredStrategyId: item.preferredStrategyId ? String(item.preferredStrategyId) : undefined,
+            preferredStrategyName: item.preferredStrategyName ? String(item.preferredStrategyName) : undefined,
+          }))
+          .filter((item: any) => item.symbol.length > 0);
+      }
+    }
+
+    if (liveWatcherSettings && typeof liveWatcherSettings === 'object') {
+      // 1. Boolean flags
+      const booleanKeys = [
+        'defaultAutoExecute',
+        't2Enabled',
+        'isFreeRunner',
+        'dynamicTrailingEnabled',
+        'givebackAutoExitEnabled',
+        'misSquareOffEnabled',
+        'scalperHotkeysEnabled',
+        'soundAlertsEnabled',
+        'paperExecutionMode',
+        'serverSideExecutionEnabled',
+        'hardDisciplineLockoutEnabled',
+        'requireHoldToConfirm',
+      ] as const;
+
+      for (const k of booleanKeys) {
+        if (liveWatcherSettings[k] !== undefined) {
+          update[`liveWatcherSettings.${k}`] = Boolean(liveWatcherSettings[k]);
+        }
+      }
+
+      // 2. Numeric parameters
+      const numberKeys = [
+        't1MultipleR',
+        't1ExitRatio',
+        't1TrailPoints',
+        't2MultipleR',
+        't2ExitRatio',
+        't2TrailPoints',
+        't3MultipleR',
+        'dynamicTriggerR',
+        'dynamicStepR',
+        'dynamicTrailPoints',
+        'givebackMinPeakR',
+        'givebackMaxPercent',
+        'defaultRefreshIntervalSec',
+        'slippageGuardPercent',
+        'snoozeDefaultMin',
+        'hardDisciplineLockoutDurationMins',
+        'staleDataThresholdSeconds',
+      ] as const;
+
+      for (const k of numberKeys) {
+        if (liveWatcherSettings[k] !== undefined) {
+          update[`liveWatcherSettings.${k}`] = Number(liveWatcherSettings[k]);
+        }
+      }
+
+      // 3. String configurations
+      const stringKeys = [
+        'defaultTargetMode',
+        't1TrailingAction',
+        't2TrailingAction',
+        'dynamicTrailType',
+        'misSquareOffTime',
+        'cardDensity',
+        'sortMode',
+        'ladderViewMode',
+        'activePresetId',
+      ] as const;
+
+      for (const k of stringKeys) {
+        if (liveWatcherSettings[k] !== undefined) {
+          update[`liveWatcherSettings.${k}`] = liveWatcherSettings[k];
+        }
+      }
+
+      // 4. Arrays and objects
+      if (Array.isArray(liveWatcherSettings.layoutPresets)) {
+        update['liveWatcherSettings.layoutPresets'] = liveWatcherSettings.layoutPresets;
+      }
+      if (liveWatcherSettings.quietHours !== undefined) {
+        update['liveWatcherSettings.quietHours'] = liveWatcherSettings.quietHours;
+      }
+      if (liveWatcherSettings.telegramAlertPolicies !== undefined) {
+        update['liveWatcherSettings.telegramAlertPolicies'] = liveWatcherSettings.telegramAlertPolicies;
+      }
+      if (liveWatcherSettings.telegramAlertEvents && typeof liveWatcherSettings.telegramAlertEvents === 'object') {
+        for (const [evtKey, evtVal] of Object.entries(liveWatcherSettings.telegramAlertEvents)) {
+          update[`liveWatcherSettings.telegramAlertEvents.${evtKey}`] = Boolean(evtVal);
+        }
+      }
+
+      // 5. Telegram Alerts Enabled Flag
+      if (liveWatcherSettings.telegramAlertsEnabled !== undefined) {
+        update['liveWatcherSettings.telegramAlertsEnabled'] = Boolean(liveWatcherSettings.telegramAlertsEnabled);
+      }
+
+      // 6. Telegram Chat ID (Never wiped on partial updates or empty string unless explicit disconnect requested)
+      if (liveWatcherSettings.telegramChatId !== undefined) {
+        const rawChatId = String(liveWatcherSettings.telegramChatId).trim();
+        if (rawChatId !== '') {
+          update['liveWatcherSettings.telegramChatId'] = rawChatId;
+        } else if (liveWatcherSettings.clearTelegramCredentials === true) {
+          unset['liveWatcherSettings.telegramChatId'] = 1;
+        }
+      }
+
+      // 7. Telegram Bot Token (Masked values and partial payloads never overwrite real encrypted token)
+      if (liveWatcherSettings.telegramBotToken !== undefined) {
+        const rawToken = String(liveWatcherSettings.telegramBotToken).trim();
+        if (rawToken.startsWith('••') || rawToken.startsWith('**')) {
+          // Masked value sent from UI: PRESERVE existing encrypted token in database
+        } else if (rawToken === '' || rawToken === '__CLEAR__') {
+          if (liveWatcherSettings.clearTelegramCredentials === true || rawToken === '__CLEAR__') {
+            unset['liveWatcherSettings.telegramBotToken'] = 1;
+            unset['liveWatcherSettings.telegramChatId'] = 1;
+            update['liveWatcherSettings.telegramAlertsEnabled'] = false;
+          }
+          // If empty string without explicit disconnect, PRESERVE existing token
+        } else {
+          // Fresh token entered: encrypt using AES-256-GCM and store
+          const encrypted = encryptSecret(rawToken);
+          if (encrypted) {
+            update['liveWatcherSettings.telegramBotToken'] = encrypted;
+          }
+        }
+      } else if (liveWatcherSettings.clearTelegramCredentials === true) {
+        unset['liveWatcherSettings.telegramBotToken'] = 1;
+        unset['liveWatcherSettings.telegramChatId'] = 1;
+        update['liveWatcherSettings.telegramAlertsEnabled'] = false;
+      }
+    }
+
+    const mongoUpdate: any = {};
+    if (Object.keys(update).length > 0) mongoUpdate.$set = update;
+    if (Object.keys(unset).length > 0) mongoUpdate.$unset = unset;
+
+    const user = await User.findByIdAndUpdate(req.user!.id, mongoUpdate, { new: true });
 
     // Synchronize background long-polling for Telegram bot updates
     if (user?.liveWatcherSettings?.telegramBotToken) {
-      const activeBotToken = decryptSecret(user.liveWatcherSettings.telegramBotToken);
+      const activeBotToken = safeDecryptSecret(user.liveWatcherSettings.telegramBotToken);
       if (activeBotToken) {
         if (user.liveWatcherSettings.telegramAlertsEnabled !== false) {
           TelegramPollingService.startPollingForBot(activeBotToken);
@@ -155,6 +231,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           TelegramPollingService.stopPollingForBot(activeBotToken);
         }
       }
+    } else {
+      // If token was cleared/unset, stop polling
+      TelegramPollingService.stop();
     }
 
     return reply.send({
@@ -309,7 +388,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.post('/sample-alert', async (req: any, reply) => {
     const user = await User.findById(req.user!.id);
     const settings = user?.liveWatcherSettings;
-    const botToken = settings?.telegramBotToken ? decryptSecret(settings.telegramBotToken) : null;
+    const botToken = settings?.telegramBotToken ? safeDecryptSecret(settings.telegramBotToken) : null;
     const chatId = settings?.telegramChatId;
 
     if (!botToken || !chatId) {

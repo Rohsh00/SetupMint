@@ -1,5 +1,5 @@
 import { User } from '../db/models/index.js';
-import { decryptSecret } from './crypto.service.js';
+import { decryptSecret, safeDecryptSecret } from './crypto.service.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
 
 interface ActivePoller {
@@ -26,9 +26,13 @@ export class TelegramPollingService {
       for (const u of users) {
         const rawToken = u.liveWatcherSettings?.telegramBotToken;
         if (!rawToken) continue;
-        const botToken = decryptSecret(rawToken) || rawToken;
-        if (botToken && !botToken.startsWith('••') && !botToken.startsWith('**')) {
-          this.startPollingForBot(botToken);
+        try {
+          const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+          if (botToken && !botToken.startsWith('••') && !botToken.startsWith('**')) {
+            this.startPollingForBot(botToken);
+          }
+        } catch (tokenErr: any) {
+          console.warn(`[TelegramPolling] Skipping unauthenticated token for user ${u._id}:`, tokenErr.message);
         }
       }
     } catch (err: any) {

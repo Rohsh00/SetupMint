@@ -264,6 +264,14 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       sessionToken = (req.query as any).token;
     }
 
+    const rawWatcher = user.liveWatcherSettings;
+    const watcherObj: any = rawWatcher
+      ? (typeof (rawWatcher as any).toObject === 'function' ? (rawWatcher as any).toObject() : { ...rawWatcher })
+      : DEFAULT_LIVE_WATCHER_SETTINGS;
+    if (watcherObj && watcherObj.telegramBotToken) {
+      watcherObj.telegramBotToken = '••••••••';
+    }
+
     return reply.send({
       success: true,
       data: {
@@ -276,7 +284,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           defaultAccountScope: user.defaultAccountScope || 'ALL',
           riskSettings: user.riskSettings,
           patternDetectionSettings: user.patternDetectionSettings,
-          liveWatcherSettings: user.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS,
+          liveWatcherSettings: watcherObj,
           createdAt: user.createdAt,
         },
         token: sessionToken,

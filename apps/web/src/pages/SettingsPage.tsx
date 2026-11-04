@@ -387,13 +387,14 @@ export function SettingsPage() {
   };
 
   const handleTestTelegram = async () => {
-    if (!telegramBotToken || !telegramChatId) {
+    const tokenToTest = telegramBotToken || user?.liveWatcherSettings?.telegramBotToken;
+    if (!tokenToTest || !telegramChatId) {
       toast.error('Please enter both Telegram Bot Token and Chat ID to send a test message.');
       return;
     }
     setTestingTelegram(true);
     try {
-      const res = await api.settings.testTelegram({ botToken: telegramBotToken, chatId: telegramChatId });
+      const res = await api.settings.testTelegram({ botToken: tokenToTest, chatId: telegramChatId });
       if (res.success) {
         setTelegramAlertsEnabled(true);
         refreshUser();
@@ -409,7 +410,8 @@ export function SettingsPage() {
   };
 
   const handleRegisterWebhook = async () => {
-    if (!telegramBotToken) {
+    const tokenToUse = telegramBotToken || user?.liveWatcherSettings?.telegramBotToken;
+    if (!tokenToUse) {
       toast.error('Telegram Bot Token is required to configure webhook.');
       return;
     }
@@ -422,7 +424,7 @@ export function SettingsPage() {
 
     setRegisteringWebhook(true);
     try {
-      const res = await api.settings.registerTelegramWebhook({ botToken: telegramBotToken, webhookUrl });
+      const res = await api.settings.registerTelegramWebhook({ botToken: tokenToUse, webhookUrl });
       if (res.success) {
         toast.success(res.message || 'Telegram Webhook registered successfully!');
       } else {
@@ -433,6 +435,20 @@ export function SettingsPage() {
     } finally {
       setRegisteringWebhook(false);
     }
+  };
+
+  const handleClearTelegramCredentials = () => {
+    if (!window.confirm('Are you sure you want to disconnect Telegram and clear stored credentials?')) return;
+    setTelegramBotToken('');
+    setTelegramChatId('');
+    setTelegramAlertsEnabled(false);
+    liveWatcherMutation.mutate({
+      clearTelegramCredentials: true,
+      telegramAlertsEnabled: false,
+      telegramBotToken: '',
+      telegramChatId: '',
+    } as any);
+    toast.info('Telegram credentials cleared.');
   };
 
   const handleSendSampleAlert = async () => {
@@ -453,6 +469,13 @@ export function SettingsPage() {
 
   const handleWatcherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const effectiveBotToken = telegramBotToken.trim() !== ''
+      ? telegramBotToken.trim()
+      : (user?.liveWatcherSettings?.telegramBotToken ? '••••••••' : undefined);
+    const effectiveChatId = telegramChatId.trim() !== ''
+      ? telegramChatId.trim()
+      : (user?.liveWatcherSettings?.telegramChatId || undefined);
+
     const payload: ILiveWatcherSettings = {
       defaultAutoExecute,
       defaultTargetMode,
@@ -483,8 +506,8 @@ export function SettingsPage() {
       paperExecutionMode,
       serverSideExecutionEnabled,
       telegramAlertsEnabled,
-      telegramBotToken,
-      telegramChatId,
+      telegramBotToken: effectiveBotToken,
+      telegramChatId: effectiveChatId,
       telegramAlertEvents,
       slippageGuardPercent: Number(slippageGuardPercent),
       snoozeDefaultMin: Number(snoozeDefaultMin),
@@ -1716,6 +1739,11 @@ export function SettingsPage() {
                                   placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
                                   value={telegramBotToken}
                                   onChange={(e) => setTelegramBotToken(e.target.value)}
+                                  helperText={
+                                    user?.liveWatcherSettings?.telegramBotToken
+                                      ? 'Token is securely encrypted in database. Leave as •••••••• to keep current token, or paste a new one to replace.'
+                                      : 'Paste your Telegram Bot Token from @BotFather'
+                                  }
                                   fullWidth
                                 />
                               </Grid>
@@ -1726,6 +1754,7 @@ export function SettingsPage() {
                                   placeholder="e.g. 987654321"
                                   value={telegramChatId}
                                   onChange={(e) => setTelegramChatId(e.target.value)}
+                                  helperText="Your numeric Telegram chat ID"
                                   fullWidth
                                 />
                               </Grid>
@@ -1736,7 +1765,7 @@ export function SettingsPage() {
                                     color="info"
                                     size="small"
                                     onClick={handleTestTelegram}
-                                    disabled={testingTelegram || !telegramBotToken || !telegramChatId}
+                                    disabled={testingTelegram || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
                                     sx={{ fontWeight: 700, flex: 1, whiteSpace: 'nowrap' }}
                                   >
                                     {testingTelegram ? 'Testing...' : 'Test Link'}
@@ -1746,7 +1775,7 @@ export function SettingsPage() {
                                     color="warning"
                                     size="small"
                                     onClick={handleSendSampleAlert}
-                                    disabled={sendingSampleAlert || !telegramBotToken || !telegramChatId}
+                                    disabled={sendingSampleAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
                                     sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
                                     title="Dispatches a realistic formatted risk telemetry card to Telegram"
                                   >
@@ -1757,12 +1786,24 @@ export function SettingsPage() {
                                     color="secondary"
                                     size="small"
                                     onClick={handleRegisterWebhook}
-                                    disabled={registeringWebhook || !telegramBotToken}
+                                    disabled={registeringWebhook || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken)}
                                     sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
                                     title="Connects two-way buttons and commands to your Telegram Bot"
                                   >
                                     {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
                                   </Button>
+                                  {(user?.liveWatcherSettings?.telegramBotToken || user?.liveWatcherSettings?.telegramChatId) && (
+                                    <Button
+                                      variant="outlined"
+                                      color="error"
+                                      size="small"
+                                      onClick={handleClearTelegramCredentials}
+                                      sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                      title="Disconnect Telegram and remove stored bot credentials"
+                                    >
+                                      Disconnect
+                                    </Button>
+                                  )}
                                 </Box>
                               </Grid>
                             </Grid>

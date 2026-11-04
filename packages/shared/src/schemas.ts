@@ -797,6 +797,7 @@ export const liveWatcherSettingsSchema = z.object({
   ladderViewMode: z.enum(['classic', 'vertical']).optional(),
   layoutPresets: z.array(watcherLayoutPresetSchema).optional(),
   activePresetId: z.string().optional(),
+  clearTelegramCredentials: z.boolean().optional(),
 });
 
 export const updateProfileSchema = z.object({

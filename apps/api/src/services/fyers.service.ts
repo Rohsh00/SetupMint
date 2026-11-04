@@ -1252,9 +1252,14 @@ export class FyersService {
 
             // If existing trade was OPEN and the new sync data has closed it, or added new fills:
             const existingFillIds = new Set((existing.fills || []).map((f: any) => f.fillId).filter(Boolean));
+            const alreadyClosedSameQty =
+              existing.status === 'CLOSED' &&
+              fifoSummary.isFullyClosed &&
+              Number(existing.calculated?.closedQuantity || 0) === closedQty;
             const hasNewFills =
-              grp.fills.length > (existing.fills?.length || 0) ||
-              grp.fills.some((f) => f.fillId && !existingFillIds.has(f.fillId));
+              !alreadyClosedSameQty &&
+              (grp.fills.length > (existing.fills?.length || 0) ||
+                grp.fills.some((f) => f.fillId && !existingFillIds.has(f.fillId)));
             const isClosing = existing.status === 'OPEN' && fifoSummary.isFullyClosed;
 
             if (isClosing || (existing.status === 'OPEN' && hasNewFills) || (existing.status === 'CLOSED' && hasNewFills)) {

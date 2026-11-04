@@ -16,6 +16,12 @@ jobs:
     name: Build (GitHub 7GB Runner) & Deploy to AWS
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      AWS_HOST: ${{ secrets.AWS_HOST }}
+      AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
+      AWS_USER: ${{ secrets.AWS_USER || 'ubuntu' }}
+      AWS_PORT: ${{ secrets.AWS_PORT || '22' }}
+      AWS_APP_DIR: ${{ secrets.AWS_APP_DIR || '/var/www/setupmint' }}
 
     steps:
       - name: Checkout repository
@@ -63,6 +69,17 @@ jobs:
           path: setupmint-release.tar.gz
           retention-days: 7
 
+      - name: Upload Pre-Built Bundle to AWS Server via SCP
+        if: env.AWS_HOST != '' && env.AWS_SSH_KEY != ''
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER || 'ubuntu' }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          port: ${{ secrets.AWS_PORT || 22 }}
+          source: "setupmint-release.tar.gz"
+          target: "/tmp"
+
       - name: Deploy to AWS 1GB Server via SSH
         if: env.AWS_HOST != '' && env.AWS_SSH_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
@@ -85,16 +102,18 @@ jobs:
             # If git repo is cloned on server, pull latest source
             if [ -d ".git" ]; then
               git fetch origin main || git fetch origin master
-              git reset --hard HEAD
-              git pull
+              git reset --hard origin/main || git reset --hard HEAD
             fi
 
             # Install runtime production dependencies only (no devDependencies, uses <100MB RAM)
             npm ci --omit=dev
 
-            # Build packages directly or ensure compiled dist
-            npm run build:api
-            npm run build:web
+            # Extract pre-built dist artifacts compiled on the 7GB GitHub runner
+            if [ -f "/tmp/setupmint-release.tar.gz" ]; then
+              echo "📦 Extracting pre-built distribution bundle..."
+              tar -xzf /tmp/setupmint-release.tar.gz -C $APP_DIR
+              rm -f /tmp/setupmint-release.tar.gz
+            fi
 
             # Reload PM2 process with zero downtime
             if command -v pm2 &> /dev/null; then
@@ -103,7 +122,4 @@ jobs:
             fi
 
             echo "✅ SetupMint deployment completed successfully on AWS!"
-        env:
-          AWS_HOST: ${{ secrets.AWS_HOST }}
-          AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
 

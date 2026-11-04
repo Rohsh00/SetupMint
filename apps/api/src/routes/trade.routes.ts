@@ -2553,11 +2553,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         trade.exchange === 'MCX' || trade.marketSegment === 'MCX' ? '09:00' : '09:15';
 
       const entryTime = trade.entryTime ? new Date(trade.entryTime) : new Date();
-      const exitTime = trade.exitTime ? new Date(trade.exitTime) : entryTime;
+      const exitTime = trade.exitTime
+        ? new Date(trade.exitTime)
+        : trade.status === 'OPEN'
+        ? new Date()
+        : entryTime;
 
       const pBefore = Math.max(20, Math.min(1000, Number(query.preloadBefore) || 150));
       const pAfter = Math.max(10, Math.min(500, Number(query.preloadAfter) || 50));
-      const forceRefetch = query.force === 'true' || query.force === true;
+      const forceRefetch =
+        query.force === 'true' ||
+        query.force === true ||
+        (trade.status === 'OPEN' && process.env.NODE_ENV !== 'test' && !process.env.VITEST);
 
       let rangeFrom: Date;
       let rangeTo: Date;

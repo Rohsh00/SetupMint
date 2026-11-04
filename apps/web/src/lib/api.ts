@@ -207,6 +207,53 @@ export const api = {
       const suffix = query.toString() ? `?${query.toString()}` : '';
       return request<any>(`/accounts/prop-overview${suffix}`);
     },
+    propCandles: (params: {
+      symbol?: string;
+      resolution?: string;
+      bars?: number;
+      accountId?: string;
+    } = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<{
+        symbol: string;
+        tvTicker: string;
+        resolution: string;
+        quote: {
+          symbol: string;
+          tvTicker: string;
+          ltp: number;
+          open: number;
+          high: number;
+          low: number;
+          changePct: number;
+          changeAbs: number;
+          timestamp: string;
+        } | null;
+        candles: Array<{
+          time: number;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume: number;
+        }>;
+        activeOverlays: Array<{
+          tradeId: string;
+          direction: 'LONG' | 'SHORT';
+          entryPrice: number;
+          stopLoss: number | null;
+          target: number | null;
+          quantity: number;
+          entryTime?: string;
+        }>;
+      }>(`/accounts/prop-candles${suffix}`);
+    },
   },
 
   // Instruments

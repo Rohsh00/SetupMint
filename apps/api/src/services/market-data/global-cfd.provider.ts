@@ -233,6 +233,106 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
     return result;
   }
 
+  static getTradingViewWidgetSymbol(rawSymbol: string): string {
+    const clean = normalizeCleanSymbol(rawSymbol);
+    const candidates = TV_TICKER_MAP[clean];
+    if (candidates && candidates.length > 0) {
+      // Prefer OANDA / COINBASE / FX for TradingView embed widget compatibility
+      const oandaOrFx = candidates.find(
+        (c) => c.startsWith('OANDA:') || c.startsWith('FX:') || c.startsWith('COINBASE:') || c.startsWith('FOREXCOM:')
+      );
+      return oandaOrFx || candidates[0];
+    }
+    return `OANDA:${clean || 'XAUUSD'}`;
+  }
+
+  private static calibrateSpotCandles(
+    candles: ITradeCandle[],
+    cleanSymbol: string,
+    isFuturesProxy: boolean,
+    trade: any,
+    liveQuote?: GlobalLiveQuote
+  ): ITradeCandle[] {
+    if (!candles || candles.length === 0) return candles;
+
+    const decimals = cleanSymbol.includes('EUR') || cleanSymbol.includes('GBP') || cleanSymbol.includes('AUD') || cleanSymbol.includes('NZD') || cleanSymbol.includes('CAD') || cleanSymbol.includes('CHF')
+      ? 5
+      : cleanSymbol.includes('JPY')
+      ? 3
+      : 2;
+
+    let basisOffset = 0;
+    const lastCandle = candles[candles.length - 1];
+    const nowSec = Math.floor(Date.now() / 1000);
+    const isRecentWindow = Math.abs(nowSec - lastCandle.t) <= 6 * 3600;
+
+    const rawEntryPrice = Number(
+      trade?.simpleExecution?.entryPrice ??
+        trade?.fills?.find((f: any) => f.type === 'ENTRY')?.price ??
+        trade?.risk?.plannedEntryPrice ??
+        trade?.entryPrice ??
+        0
+    );
+    const entryTimeMs = trade?.entryTime ? new Date(trade.entryTime).getTime() : 0;
+    const entryTimeSec = entryTimeMs > 0 ? Math.floor(entryTimeMs / 1000) : 0;
+
+    // 1. If we have a trade entryTime inside the candle window, check if futures basis shift is needed
+    if (rawEntryPrice > 0 && entryTimeSec > 0) {
+      let closest = candles[0];
+      let minDiff = Math.abs(candles[0].t - entryTimeSec);
+      for (const c of candles) {
+        const d = Math.abs(c.t - entryTimeSec);
+        if (d < minDiff) {
+          minDiff = d;
+          closest = c;
+        }
+      }
+      if (minDiff <= 3600) {
+        const insideBar = rawEntryPrice >= closest.l && rawEntryPrice <= closest.h;
+        if (!insideBar) {
+          const mid = (closest.h + closest.l) / 2;
+          const relDiff = Math.abs(rawEntryPrice - mid) / rawEntryPrice;
+          if (relDiff > 0.0003 && relDiff < 0.03) {
+            basisOffset = rawEntryPrice - closest.c;
+          }
+        }
+      }
+    }
+
+    // 2. Otherwise, if using a futures proxy (GC=F, NQ=F, YM=F, ES=F) on a live/recent window, align with TradingView Spot LTP
+    if (basisOffset === 0 && isFuturesProxy && isRecentWindow && liveQuote && liveQuote.ltp > 0) {
+      const relDiff = Math.abs(liveQuote.ltp - lastCandle.c) / liveQuote.ltp;
+      if (relDiff > 0.0002 && relDiff < 0.03) {
+        basisOffset = liveQuote.ltp - lastCandle.c;
+      }
+    }
+
+    const calibrated = candles.map((c) => {
+      if (basisOffset === 0) return c;
+      return {
+        t: c.t,
+        o: Number((c.o + basisOffset).toFixed(decimals)),
+        h: Number((c.h + basisOffset).toFixed(decimals)),
+        l: Number((c.l + basisOffset).toFixed(decimals)),
+        c: Number((c.c + basisOffset).toFixed(decimals)),
+        v: c.v,
+      };
+    });
+
+    // 3. If window is live and we have a real-time TradingView quote, update the forming bar close
+    if (isRecentWindow && liveQuote && liveQuote.ltp > 0 && calibrated.length > 0) {
+      const tip = calibrated[calibrated.length - 1];
+      const relGap = Math.abs(liveQuote.ltp - tip.c) / liveQuote.ltp;
+      if (relGap < 0.008) {
+        tip.c = Number(liveQuote.ltp.toFixed(decimals));
+        if (tip.c > tip.h) tip.h = tip.c;
+        if (tip.c < tip.l) tip.l = tip.c;
+      }
+    }
+
+    return calibrated;
+  }
+
   async supports(trade: any, _userId: string | mongoose.Types.ObjectId): Promise<boolean> {
     return GlobalCfdCandleProvider.isSupportedGlobalSymbol(
       trade?.symbol || trade?.underlying || '',
@@ -246,6 +346,14 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
     const resolution = String(params.resolution || '5');
     const fromMs = params.from.getTime();
     const toMs = params.to.getTime();
+
+    let liveQuote: GlobalLiveQuote | undefined;
+    try {
+      const quotesMap = await GlobalCfdCandleProvider.getLiveQuotes([clean]);
+      liveQuote = quotesMap.get(clean);
+    } catch {
+      // Optional live quote enrichment
+    }
 
     // 1. Try Yahoo Finance chart endpoint first (accurate for XAUUSD/GC=F, Forex pairs, Indices, Crypto)
     const yahooSym = YAHOO_SYMBOL_MAP[clean];
@@ -275,7 +383,7 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
           const resultObj = data?.chart?.result?.[0];
           const timestamps: number[] = resultObj?.timestamp || [];
           const quote = resultObj?.indicators?.quote?.[0] || {};
-          const candles: ITradeCandle[] = [];
+          const rawCandles: ITradeCandle[] = [];
 
           for (let i = 0; i < timestamps.length; i++) {
             const tSec = timestamps[i];
@@ -291,7 +399,7 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
               typeof l === 'number' &&
               typeof c === 'number'
             ) {
-              candles.push({
+              rawCandles.push({
                 t: tSec,
                 o: Number(o.toFixed(4)),
                 h: Number(h.toFixed(4)),
@@ -302,7 +410,15 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
             }
           }
 
-          if (candles.length > 0) {
+          if (rawCandles.length > 0) {
+            const isFuturesProxy = yahooSym.endsWith('=F');
+            const candles = GlobalCfdCandleProvider.calibrateSpotCandles(
+              rawCandles,
+              clean,
+              isFuturesProxy,
+              params.trade,
+              liveQuote
+            );
             return {
               ok: true,
               candles,
@@ -340,10 +456,10 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
         const res = await fetch(url);
         if (res.ok) {
           const rows = (await res.json()) as any[];
-          const candles: ITradeCandle[] = [];
+          const rawCandles: ITradeCandle[] = [];
           for (const r of rows || []) {
             if (Array.isArray(r) && r.length >= 6) {
-              candles.push({
+              rawCandles.push({
                 t: Math.floor(Number(r[0]) / 1000),
                 o: Number(parseFloat(r[1]).toFixed(4)),
                 h: Number(parseFloat(r[2]).toFixed(4)),
@@ -353,7 +469,14 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
               });
             }
           }
-          if (candles.length > 0) {
+          if (rawCandles.length > 0) {
+            const candles = GlobalCfdCandleProvider.calibrateSpotCandles(
+              rawCandles,
+              clean,
+              false,
+              params.trade,
+              liveQuote
+            );
             return {
               ok: true,
               candles,
@@ -374,6 +497,82 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
       ok: false,
       reason: 'EMPTY_RESULT',
       message: `No global CFD/Forex/Crypto historical candles found for ${clean}`,
+    };
+  }
+
+  /**
+   * Standalone live candle & quote stream for Prop Firm instruments (XAUUSD, EURUSD, NAS100, US30, BTCUSD, ETHUSD).
+   */
+  static async getLiveSymbolCandles(params: {
+    symbol: string;
+    resolution?: string;
+    bars?: number;
+  }) {
+    const clean = normalizeCleanSymbol(params.symbol || 'XAUUSD');
+    const resolution = String(params.resolution || '5');
+    const bars = Math.max(40, Math.min(500, Number(params.bars) || 180));
+
+    const resMinutes =
+      resolution === '1'
+        ? 1
+        : resolution === '5'
+        ? 5
+        : resolution === '15'
+        ? 15
+        : resolution === '30'
+        ? 30
+        : resolution === '60'
+        ? 60
+        : resolution === 'D'
+        ? 1440
+        : 5;
+
+    const now = new Date();
+    const lookbackMs = bars * resMinutes * 60 * 1000 * 1.8;
+    const from = new Date(now.getTime() - lookbackMs);
+
+    const provider = new GlobalCfdCandleProvider();
+    const [quotesMap, candleRes] = await Promise.all([
+      GlobalCfdCandleProvider.getLiveQuotes([clean]),
+      provider.getCandles({
+        trade: { symbol: clean, exchange: 'FOREX' },
+        resolution,
+        from,
+        to: now,
+        userId: '000000000000000000000000',
+      }),
+    ]);
+
+    const quote = quotesMap.get(clean) || null;
+    const rawCandles = candleRes.ok ? candleRes.candles : [];
+
+    // Deduplicate and format for lightweight-charts
+    const formatted = rawCandles
+      .map((c) => ({
+        time: Math.floor(c.t < 1e11 ? c.t : c.t / 1000),
+        open: Number(c.o),
+        high: Number(c.h),
+        low: Number(c.l),
+        close: Number(c.c),
+        volume: Number(c.v || 0),
+      }))
+      .sort((a, b) => a.time - b.time);
+
+    const uniqueCandles: typeof formatted = [];
+    const seen = new Set<number>();
+    for (const c of formatted) {
+      if (!seen.has(c.time)) {
+        seen.add(c.time);
+        uniqueCandles.push(c);
+      }
+    }
+
+    return {
+      symbol: clean,
+      tvTicker: GlobalCfdCandleProvider.getTradingViewWidgetSymbol(clean),
+      resolution,
+      quote,
+      candles: uniqueCandles,
     };
   }
 }

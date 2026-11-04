@@ -17,6 +17,7 @@ import { AccountService } from '../services/account.service.js';
 import { AccountScopeService } from '../services/account-scope.service.js';
 import { EconomicCalendarService } from '../services/economic-calendar.service.js';
 import { PropMonteCarloService } from '../services/prop-monte-carlo.service.js';
+import { GlobalCfdCandleProvider } from '../services/market-data/global-cfd.provider.js';
 import { FyersService } from '../services/fyers.service.js';
 import { decryptSecret } from '../services/crypto.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
@@ -147,6 +148,67 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   app.get('/prop-economic-calendar', async (req, reply) => {
     const calendar = await EconomicCalendarService.getCalendarOverview(new Date());
     return reply.send({ success: true, data: calendar });
+  });
+
+  // Get Live Spot-Calibrated Prop Instrument Candles & Active Position Levels (XAUUSD, EURUSD, NAS100, US30, BTCUSD, ETHUSD)
+  app.get('/prop-candles', async (req: any, reply) => {
+    const query = (req.query || {}) as {
+      symbol?: string;
+      resolution?: string;
+      bars?: string | number;
+      accountId?: string;
+    };
+    const symbol = String(query.symbol || 'XAUUSD').trim().toUpperCase();
+    const resolution = String(query.resolution || '5').trim();
+    const bars = Number(query.bars) || 180;
+
+    const stream = await GlobalCfdCandleProvider.getLiveSymbolCandles({
+      symbol,
+      resolution,
+      bars,
+    });
+
+    const openTradeFilter: any = {
+      userId: req.user!.id,
+      status: 'OPEN',
+      symbol: stream.symbol,
+    };
+    if (query.accountId && mongoose.isValidObjectId(query.accountId)) {
+      openTradeFilter.accountId = new mongoose.Types.ObjectId(query.accountId);
+    }
+
+    const openTrades = await Trade.find(openTradeFilter)
+      .sort({ entryTime: -1 })
+      .lean();
+
+    const activeOverlays = openTrades.map((t: any) => {
+      const entryPrice = Number(
+        t.simpleExecution?.entryPrice ??
+          t.fills?.find((f: any) => f.type === 'ENTRY')?.price ??
+          t.risk?.plannedEntryPrice ??
+          0
+      );
+      const stopLoss = Number(t.risk?.currentStopLoss ?? t.risk?.initialStopLoss ?? 0) || null;
+      const target = Number(t.risk?.plannedTarget ?? 0) || null;
+      const quantity = Number(t.simpleExecution?.quantity ?? t.lots ?? 0);
+      return {
+        tradeId: t._id.toString(),
+        direction: t.direction,
+        entryPrice,
+        stopLoss,
+        target,
+        quantity,
+        entryTime: t.entryTime,
+      };
+    });
+
+    return reply.send({
+      success: true,
+      data: {
+        ...stream,
+        activeOverlays,
+      },
+    });
   });
 
   // Get Prop Firm Accounts Overview for Dashboard

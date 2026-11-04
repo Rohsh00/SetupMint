@@ -75,7 +75,9 @@ import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 import KeyboardAltRoundedIcon from '@mui/icons-material/KeyboardAltRounded';
 import PictureInPictureRoundedIcon from '@mui/icons-material/PictureInPictureRounded';
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded';
+import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 
+import { PropLiveMarketChart } from '../../dashboard/PropLiveMarketChart.js';
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
 import { LiveUnifiedPriceLadder } from './LiveUnifiedPriceLadder.js';
@@ -666,6 +668,7 @@ export function LiveOpenTradeWatcher({
   }, [summary?.positions, sortMode]);
 
   // Card manual collapse toggle with 60s immunity tracking
+  const [expandedChartTrades, setExpandedChartTrades] = useState<Record<string, boolean>>({});
   const handleToggleCardCollapse = (tradeId: string) => {
     setCollapsedCards((prev) => {
       const willCollapse = !prev[tradeId];
@@ -3639,6 +3642,41 @@ export function LiveOpenTradeWatcher({
                             >
                               {customRules?.autoExecuteEnabled ? '⚡ Auto Armed' : '⚙️ Rules'}
                             </Button>
+
+                            <Button
+                              size="small"
+                              variant={expandedChartTrades[pos.tradeId] ? 'contained' : 'outlined'}
+                              startIcon={<CandlestickChartRoundedIcon sx={{ fontSize: 13 }} />}
+                              onClick={() =>
+                                setExpandedChartTrades((prev) => ({
+                                  ...prev,
+                                  [pos.tradeId]: !prev[pos.tradeId],
+                                }))
+                              }
+                              sx={{
+                                height: 26,
+                                px: 1,
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                textTransform: 'none',
+                                whiteSpace: 'nowrap',
+                                bgcolor: expandedChartTrades[pos.tradeId] ? '#8B5CF6' : 'transparent',
+                                color: expandedChartTrades[pos.tradeId] ? '#FFFFFF' : 'text.secondary',
+                                borderColor: expandedChartTrades[pos.tradeId]
+                                  ? '#8B5CF6'
+                                  : isDark
+                                  ? 'rgba(255, 255, 255, 0.15)'
+                                  : 'rgba(0, 0, 0, 0.15)',
+                                borderRadius: '5px',
+                                '&:hover': {
+                                  bgcolor: expandedChartTrades[pos.tradeId]
+                                    ? '#7C3AED'
+                                    : alpha('#8B5CF6', 0.12),
+                                },
+                              }}
+                            >
+                              {expandedChartTrades[pos.tradeId] ? 'Hide Chart' : 'Live Chart'}
+                            </Button>
                           </Box>
 
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
@@ -3677,6 +3715,27 @@ export function LiveOpenTradeWatcher({
                             />
                           </Box>
                         </Box>
+
+                        {/* 2B. Expandable Live Candlestick Chart Drawer Inside Open Position Card */}
+                        {expandedChartTrades[pos.tradeId] && (
+                          <Box sx={{ mb: 1.5 }}>
+                            <PropLiveMarketChart
+                              initialSymbol={pos.symbol}
+                              lockedSymbol={true}
+                              compact={true}
+                              height={320}
+                              positionOverlay={{
+                                tradeId: pos.tradeId,
+                                direction: pos.direction,
+                                entryPrice: pos.entryPrice,
+                                stopLoss: pos.stopLoss,
+                                target: pos.target,
+                                quantity: pos.quantity,
+                                currentLtp: pos.currentLtp,
+                              }}
+                            />
+                          </Box>
+                        )}
 
                         {/* 3. Density-Aware Presentation: Glance Strip vs 2-Column Detailed Inspector */}
                         {isGlance ? (

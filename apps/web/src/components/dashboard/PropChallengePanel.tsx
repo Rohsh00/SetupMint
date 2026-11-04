@@ -35,12 +35,14 @@ import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
 import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded';
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
+import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 
 import { api } from '../../lib/api.js';
 import { formatCurrency, formatPercent } from '../../lib/utils.js';
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { toast } from '../../context/ToastContext.js';
+import { PropLiveMarketChart } from './PropLiveMarketChart.js';
 
 function evaluateUsdNewsAndSessionRadar(now: Date = new Date()) {
   const utcHours = now.getUTCHours();
@@ -115,6 +117,9 @@ export function PropChallengePanel() {
 
   // Monte Carlo Scenario Mode ('actual' vs 'target1to2')
   const [mcScenarioMode, setMcScenarioMode] = useState<'actual' | 'target1to2'>('actual');
+
+  // Live Prop Market Chart Terminal toggle
+  const [showLiveChart, setShowLiveChart] = useState<boolean>(true);
 
   // Ledger & Phase Modal State
   const [ledgerModalAcc, setLedgerModalAcc] = useState<any | null>(null);
@@ -396,6 +401,23 @@ export function PropChallengePanel() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Button
                     size="small"
+                    variant={showLiveChart ? 'contained' : 'outlined'}
+                    startIcon={<CandlestickChartRoundedIcon sx={{ fontSize: 16 }} />}
+                    onClick={() => setShowLiveChart((prev) => !prev)}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      borderRadius: 1.5,
+                      ...(showLiveChart
+                        ? { bgcolor: '#10B981', '&:hover': { bgcolor: '#059669' } }
+                        : {}),
+                    }}
+                  >
+                    {showLiveChart ? 'Hide Live Chart' : 'Live Prop Chart'}
+                  </Button>
+                  <Button
+                    size="small"
                     variant="contained"
                     startIcon={<CloudUploadRoundedIcon sx={{ fontSize: 16 }} />}
                     onClick={() => {
@@ -659,6 +681,17 @@ export function PropChallengePanel() {
                   </Box>
                 </Box>
               </Box>
+
+              {/* 4b. Live Prop Market Chart Terminal (XAUUSD, EURUSD, NAS100, US30, BTCUSD, ETHUSD) */}
+              {showLiveChart && (
+                <Box sx={{ mt: 2 }}>
+                  <PropLiveMarketChart
+                    initialSymbol="XAUUSD"
+                    accountId={acc.id || acc.accountId}
+                    height={380}
+                  />
+                </Box>
+              )}
 
               {/* 5. Live USD Economic Calendar Feed (ForexFactory / Gold Movers) */}
               {acc.economicCalendar?.upcomingEvents?.length > 0 && (

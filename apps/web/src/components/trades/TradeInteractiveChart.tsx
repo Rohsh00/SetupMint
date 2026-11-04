@@ -547,16 +547,18 @@ export function TradeInteractiveChart({
 
   // Fetch candle data for trade and resolution
   const fetchCandleStream = useCallback(
-    async (targetResolution: string, force = false) => {
+    async (targetResolution: string, force = false, silent = false) => {
       if (!trade?._id && !trade?.id) return;
       const tradeId = trade.id || trade._id;
 
       try {
-        setLoading(true);
-        setErrorMsg(null);
-        setIsNoCandleData(false);
-        isInitialLoadRef.current = true;
-        hasMoreHistoryRef.current = true;
+        if (!silent) {
+          setLoading(true);
+          setErrorMsg(null);
+          setIsNoCandleData(false);
+          isInitialLoadRef.current = true;
+          hasMoreHistoryRef.current = true;
+        }
 
         const resp = await api.trades.getInteractiveCandles(tradeId, {
           resolution: targetResolution,
@@ -569,34 +571,55 @@ export function TradeInteractiveChart({
           candlesRef.current = resp.candles;
           firstTimeRef.current = resp.firstTime;
           setCandlesData(resp.candles);
-          setProviderName(resp.provider || 'FYERS');
+          const isGlobalCfd =
+            trade?.exchange === 'FOREX' ||
+            trade?.exchange === 'CRYPTO' ||
+            trade?.assetClass === 'FOREX' ||
+            trade?.assetClass === 'CRYPTO' ||
+            /^(XAU|XAG|EUR|GBP|USD|AUD|NZD|NAS|US30|SPX|BTC|ETH|SOL)/i.test(String(trade?.symbol || ''));
+          setProviderName(isGlobalCfd ? 'GLOBAL CFD SPOT' : resp.provider || 'FYERS');
           setIsUnderlyingProxy(Boolean(resp.isUnderlyingFallback));
 
           applyOverlaysAndData(resp.candles);
 
-          if (chartRef.current) {
+          if (!silent && chartRef.current) {
             chartRef.current.timeScale().fitContent();
           }
 
-          // Release initial load lock after viewport settles so fitContent does not trigger older history fetch
-          setTimeout(() => {
-            isInitialLoadRef.current = false;
-          }, 500);
-        } else {
+          if (!silent) {
+            // Release initial load lock after viewport settles so fitContent does not trigger older history fetch
+            setTimeout(() => {
+              isInitialLoadRef.current = false;
+            }, 500);
+          }
+        } else if (!silent) {
           setIsNoCandleData(true);
         }
       } catch (err: any) {
-        if (err.status === 404 || err.message?.includes('NO_CANDLE_DATA')) {
-          setIsNoCandleData(true);
-        } else {
-          setErrorMsg(err.message || 'Failed to stream candlestick market data.');
+        if (!silent) {
+          if (err.status === 404 || err.message?.includes('NO_CANDLE_DATA')) {
+            setIsNoCandleData(true);
+          } else {
+            setErrorMsg(err.message || 'Failed to stream candlestick market data.');
+          }
         }
       } finally {
-        setLoading(false);
+        if (!silent) {
+          setLoading(false);
+        }
       }
     },
     [trade, applyOverlaysAndData]
   );
+
+  // Live 5-second candle streaming loop when viewing an OPEN trade
+  useEffect(() => {
+    if (trade?.status !== 'OPEN') return;
+    const timer = setInterval(() => {
+      fetchCandleStream(resolutionRef.current, true, true);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [trade?.status, fetchCandleStream]);
 
   // Initialize and clean up chart canvas
   useEffect(() => {
@@ -921,6 +944,20 @@ export function TradeInteractiveChart({
               fontSize: '0.7rem',
             }}
           />
+
+          {trade?.status === 'OPEN' && (
+            <Chip
+              label="● LIVE STREAM (5s)"
+              size="small"
+              sx={{
+                bgcolor: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                fontWeight: 800,
+                fontSize: '0.68rem',
+              }}
+            />
+          )}
         </Box>
 
         {/* Center: Timeframe Switcher */}

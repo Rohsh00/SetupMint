@@ -21,12 +21,32 @@ export class BackupStatusService {
     cachedStatus = null;
   }
 
+  private static findLocalStatusPath(): string | null {
+    const candidates = [
+      path.resolve(process.cwd(), 'backups/status.json'),
+      path.resolve(process.cwd(), '../../backups/status.json'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   /**
-   * Reads off-site backup status, cached for 5 minutes.
+   * Reads off-site backup status, cached for 5 minutes (or invalidated when local status.json changes).
    */
   static async getStatus(): Promise<ISystemBackupStatus> {
     const now = Date.now();
-    if (cachedStatus && now - cachedStatus.timestamp < CACHE_TTL_MS) {
+    const localPath = this.findLocalStatusPath();
+    const localMtimeMs = localPath ? fs.statSync(localPath).mtimeMs : 0;
+
+    if (
+      cachedStatus &&
+      now - cachedStatus.timestamp < CACHE_TTL_MS &&
+      localMtimeMs <= cachedStatus.timestamp
+    ) {
       return cachedStatus.data;
     }
 
@@ -40,9 +60,19 @@ export class BackupStatusService {
       return unconfigured;
     }
 
-    let statusData: any = null;
+    let remoteData: any = null;
+    let localData: any = null;
 
-    // 1. Try reading status/latest.json from off-site S3 bucket
+    // 1. Read local backups/status.json if available
+    if (localPath) {
+      try {
+        localData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+      } catch {
+        // Ignored
+      }
+    }
+
+    // 2. Try reading status/latest.json from off-site S3 bucket
     try {
       const s3Client = new S3Client({
         region: config.backupS3Region || 'auto',
@@ -67,22 +97,18 @@ export class BackupStatusService {
         for await (const chunk of resp.Body as any) {
           chunks.push(Buffer.from(chunk));
         }
-        statusData = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+        remoteData = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
       }
     } catch {
-      // Fallback: check local backups/status.json
+      // Fallback to localData
     }
 
-    // 2. Fallback to local backups/status.json if remote status was not found
-    if (!statusData) {
-      try {
-        const localStatusPath = path.resolve(process.cwd(), 'backups/status.json');
-        if (fs.existsSync(localStatusPath)) {
-          statusData = JSON.parse(fs.readFileSync(localStatusPath, 'utf-8'));
-        }
-      } catch {
-        // Ignored
-      }
+    // Pick whichever status record has the newer lastRunAt timestamp
+    let statusData: any = remoteData || localData;
+    if (remoteData && localData) {
+      const remoteTime = remoteData.lastRunAt ? new Date(remoteData.lastRunAt).getTime() : 0;
+      const localTime = localData.lastRunAt ? new Date(localData.lastRunAt).getTime() : 0;
+      statusData = localTime >= remoteTime ? localData : remoteData;
     }
 
     if (!statusData) {

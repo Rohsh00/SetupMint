@@ -4,7 +4,7 @@ import path from 'path';
 import mongoose from 'mongoose';
 import { CANONICAL_COLLECTIONS, EXCLUDED_COLLECTIONS, BACKUP_FORMAT_VERSION } from './constants.js';
 import { extractSafeMongoHost } from './backup-config.js';
-import { syncScreenshotsIncremental, createS3Client } from './r2-sync.js';
+import { syncScreenshotsIncremental, createS3Client, resolveClockOffsetMs } from './r2-sync.js';
 
 const { EJSON } = mongoose.mongo.BSON;
 
@@ -109,10 +109,15 @@ export async function executeDatabaseDump(options) {
   console.log(`[Backup Dump] Checking ${requiredKeys.length} screenshot attachments...`);
 
   if (liveS3Config && liveS3Config.bucket && liveS3Config.endpoint) {
-    const liveS3Client = createS3Client(liveS3Config);
+    const liveClockOffsetMs = await resolveClockOffsetMs(liveS3Config.endpoint);
+    const liveS3Client = createS3Client(liveS3Config, liveClockOffsetMs);
+    const backupClockOffsetMs =
+      backupS3Config && backupS3Config.bucket && backupS3Config.endpoint
+        ? await resolveClockOffsetMs(backupS3Config.endpoint)
+        : 0;
     const backupS3Client =
       backupS3Config && backupS3Config.bucket && backupS3Config.endpoint
-        ? createS3Client(backupS3Config)
+        ? createS3Client(backupS3Config, backupClockOffsetMs)
         : null;
 
     const syncResult = await syncScreenshotsIncremental({

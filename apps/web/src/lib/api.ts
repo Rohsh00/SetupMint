@@ -737,6 +737,7 @@ export const api = {
     changePassword: (data: any) =>
       request('/settings/change-password', { method: 'POST', body: JSON.stringify(data) }),
     systemStatus: () => request<any>('/settings/system-status'),
+    runBackup: () => request<any>('/settings/run-backup', { method: 'POST' }),
     testTelegram: (data: { botToken?: string; chatId?: string }) =>
       request<any>('/settings/test-telegram', { method: 'POST', body: JSON.stringify(data) }),
     registerTelegramWebhook: (data: { botToken: string; webhookUrl: string }) =>

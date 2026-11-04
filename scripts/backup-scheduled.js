@@ -10,7 +10,7 @@ import { packDirectoryToTarGz } from './lib/tar-gz.js';
 import { encryptFile } from './lib/crypto-backup.js';
 import { detectAnomalies } from './lib/anomaly.js';
 import { calculateRetentionDeletions } from './lib/retention.js';
-import { createS3Client } from './lib/r2-sync.js';
+import { createS3Client, resolveClockOffsetMs } from './lib/r2-sync.js';
 import { notifyBackupEvent } from './lib/notify.js';
 
 async function runScheduledBackup() {
@@ -129,7 +129,8 @@ async function runScheduledBackup() {
       await encryptFile(tempTarGzPath, tempEncPath, config.encryptionKey);
 
       uploadedSizeBytes = fs.statSync(tempEncPath).size;
-      const backupS3Client = createS3Client(config.backupS3);
+      const clockOffsetMs = await resolveClockOffsetMs(config.backupS3.endpoint);
+      const backupS3Client = createS3Client(config.backupS3, clockOffsetMs);
 
       // Determine off-site upload key
       const folderPrefix = result === 'SUSPICIOUS' ? 'suspicious' : 'daily';
@@ -265,7 +266,8 @@ async function runScheduledBackup() {
       // Mirror status record to off-site bucket: status/latest.json
       if (config.backupS3.bucket && config.backupS3.endpoint) {
         try {
-          const backupS3Client = createS3Client(config.backupS3);
+          const clockOffsetMs = await resolveClockOffsetMs(config.backupS3.endpoint);
+          const backupS3Client = createS3Client(config.backupS3, clockOffsetMs);
           const statusKey = `${config.backupS3.prefix}/status/latest.json`;
           await backupS3Client.send(
             new PutObjectCommand({

@@ -1,6 +1,12 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+
+const execFileAsync = promisify(execFile);
 import { DEFAULT_PATTERN_DETECTION_SETTINGS, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
 import { User, Trade, TradingAccount, Attachment, Session } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -364,5 +370,44 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         backup,
       },
     });
+  });
+
+  // Trigger an immediate off-site encrypted cloud backup
+  app.post('/run-backup', async (_req, reply) => {
+    const candidates = [
+      path.resolve(process.cwd(), 'scripts/backup-scheduled.js'),
+      path.resolve(process.cwd(), '../../scripts/backup-scheduled.js'),
+    ];
+    const scriptPath = candidates.find((p) => fs.existsSync(p));
+    if (!scriptPath) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'BACKUP_SCRIPT_NOT_FOUND', message: 'Could not locate scripts/backup-scheduled.js' },
+      });
+    }
+
+    try {
+      await execFileAsync(process.execPath, [scriptPath], {
+        cwd: path.dirname(path.dirname(scriptPath)),
+        timeout: 120_000,
+      });
+      BackupStatusService.resetCache();
+      const backup = await BackupStatusService.getStatus();
+      return reply.send({
+        success: true,
+        data: { backup },
+      });
+    } catch (err: any) {
+      BackupStatusService.resetCache();
+      const backup = await BackupStatusService.getStatus();
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'BACKUP_EXECUTION_FAILED',
+          message: backup?.error || err.message || 'Off-site backup execution failed',
+        },
+        data: { backup },
+      });
+    }
   });
 };

@@ -159,11 +159,24 @@ export function DashboardPage() {
 
   const showWeeklyReviewPrompt = isSunday || !isLastWeekFinalized;
 
-  const { data: systemStatusResp } = useQuery({
+  const { data: systemStatusResp, refetch: refetchSystemStatus } = useQuery({
     queryKey: ['system-status'],
     queryFn: () => api.settings.systemStatus(),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
+  const [isRunningBackup, setIsRunningBackup] = useState(false);
+
+  const handleRunBackupNow = async () => {
+    setIsRunningBackup(true);
+    try {
+      await api.settings.runBackup();
+      await refetchSystemStatus();
+    } catch {
+      await refetchSystemStatus();
+    } finally {
+      setIsRunningBackup(false);
+    }
+  };
 
   const backupInfo = (systemStatusResp as any)?.data?.backup || (systemStatusResp as any)?.backup;
 
@@ -298,14 +311,26 @@ export function DashboardPage() {
           severity={backupInfo?.result === 'FAILED' ? 'error' : 'warning'}
           icon={<WarningAmberIcon />}
           action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={() => navigate('/settings')}
-              sx={{ fontWeight: 700, textTransform: 'none' }}
-            >
-              Inspect Settings
-            </Button>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Button
+                color="inherit"
+                size="small"
+                variant="outlined"
+                disabled={isRunningBackup}
+                onClick={handleRunBackupNow}
+                sx={{ fontWeight: 700, textTransform: 'none' }}
+              >
+                {isRunningBackup ? 'Running Backup...' : 'Run Backup Now'}
+              </Button>
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => navigate('/settings')}
+                sx={{ fontWeight: 700, textTransform: 'none' }}
+              >
+                Inspect Settings
+              </Button>
+            </Box>
           }
           sx={{
             borderRadius: 2,

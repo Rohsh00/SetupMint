@@ -10,9 +10,36 @@ import {
 } from '@aws-sdk/client-s3';
 
 /**
+ * Probes the remote S3 endpoint's HTTP Date header to compute clock offset (ms)
+ * between the remote server and local system clock. Prevents RequestTimeTooSkewed
+ * errors after macOS sleep/wake cycles or local NTP drift.
+ */
+export async function resolveClockOffsetMs(endpoint) {
+  if (!endpoint) return 0;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(endpoint, { method: 'HEAD', signal: controller.signal });
+    clearTimeout(timer);
+    const dateHeader = res.headers?.get?.('date');
+    if (dateHeader) {
+      const serverMs = new Date(dateHeader).getTime();
+      if (!Number.isNaN(serverMs)) {
+        const diff = serverMs - Date.now();
+        // Only apply offset if difference exceeds 5 seconds
+        return Math.abs(diff) > 5000 ? diff : 0;
+      }
+    }
+  } catch {
+    // Fallback to 0 offset if offline or unreachable
+  }
+  return 0;
+}
+
+/**
  * Creates an S3Client instance from config.
  */
-export function createS3Client(s3Config) {
+export function createS3Client(s3Config, systemClockOffset = 0) {
   return new S3Client({
     region: s3Config.region || 'auto',
     endpoint: s3Config.endpoint,
@@ -21,6 +48,8 @@ export function createS3Client(s3Config) {
       secretAccessKey: s3Config.secretAccessKey,
     },
     forcePathStyle: true,
+    maxAttempts: 3,
+    ...(systemClockOffset ? { systemClockOffset } : {}),
   });
 }
 

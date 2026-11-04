@@ -90,6 +90,7 @@ import { LivePortfolioRiskBanner } from './LivePortfolioRiskBanner.js';
 import { PanicKillSwitchDialog } from './PanicKillSwitchDialog.js';
 import { LiveAlertCenterDialog } from './LiveAlertCenterDialog.js';
 import { HotkeyCheatSheetDialog } from './HotkeyCheatSheetDialog.js';
+import { LiveWatcherDisplaySettingsModal } from './LiveWatcherDisplaySettingsModal.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
 import { useAuth } from '../../../context/AuthContext.js';
@@ -109,6 +110,8 @@ import {
   DEFAULT_WATCHER_LAYOUT_PRESETS,
   ILiveAlertState,
   createLadderRulesFromSettings,
+  ILiveWatcherDisplaySettings,
+  DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
 } from '@tradevault/shared';
 import {
   calculateTargetLadder,
@@ -179,8 +182,50 @@ export function LiveOpenTradeWatcher({
   const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { scope, isPropMode, queryParams, selectedAccountId } = useAccountScope();
+
+  const [displaySettingsModalOpen, setDisplaySettingsModalOpen] = useState<boolean>(false);
+  const [displaySettings, setDisplaySettings] = useState<ILiveWatcherDisplaySettings>(() => {
+    try {
+      const saved = localStorage.getItem('tv_live_watcher_display_settings');
+      if (saved) {
+        return { ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return {
+      ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
+      ...(user?.liveWatcherSettings?.displaySettings || {}),
+    };
+  });
+
+  useEffect(() => {
+    if (user?.liveWatcherSettings?.displaySettings) {
+      setDisplaySettings((prev) => ({
+        ...prev,
+        ...user.liveWatcherSettings!.displaySettings,
+      }));
+    }
+  }, [user?.liveWatcherSettings?.displaySettings]);
+
+  const handleSaveDisplaySettings = async (newSettings: ILiveWatcherDisplaySettings) => {
+    setDisplaySettings(newSettings);
+    try {
+      localStorage.setItem('tv_live_watcher_display_settings', JSON.stringify(newSettings));
+    } catch {}
+    try {
+      await api.settings.updateProfile({
+        liveWatcherSettings: {
+          displaySettings: newSettings,
+        },
+      });
+      refreshUser();
+      toast.success('Display preferences saved');
+      setDisplaySettingsModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save display preferences');
+    }
+  };
 
   const { data: propOverviewRes } = useQuery({
     queryKey: ['prop-overview', scope.mode, scope.firmKey, selectedAccountId, queryParams],
@@ -1445,14 +1490,23 @@ export function LiveOpenTradeWatcher({
   };
 
   const getActiveTacticalTab = (pos: ILiveOpenTradeMetric): 'ladder' | 'giveback' | 'greeks' | 'pulse' => {
-    if (tacticalTabs[pos.tradeId]) return tacticalTabs[pos.tradeId];
-    if (pos.giveback?.threatLevel === 'CRITICAL_REVERSAL' || pos.giveback?.threatLevel === 'LEAKING') {
+    const chosen = tacticalTabs[pos.tradeId];
+    if (chosen === 'ladder' && displaySettings.showScalingLadder !== false) return 'ladder';
+    if (chosen === 'giveback' && displaySettings.showGivebackMeter !== false) return 'giveback';
+    if (chosen === 'greeks' && displaySettings.showOptionsGreeks !== false) return 'greeks';
+    if (chosen === 'pulse') return 'pulse';
+
+    if (
+      displaySettings.showGivebackMeter !== false &&
+      (pos.giveback?.threatLevel === 'CRITICAL_REVERSAL' || pos.giveback?.threatLevel === 'LEAKING')
+    ) {
       return 'giveback';
     }
-    if (pos.targetLadder) return 'ladder';
-    if (pos.giveback) return 'giveback';
-    if (pos.optionsGreeks) return 'greeks';
-    return 'ladder';
+    if (displaySettings.showScalingLadder !== false && pos.targetLadder) return 'ladder';
+    if (displaySettings.showGivebackMeter !== false && pos.giveback) return 'giveback';
+    if (displaySettings.showOptionsGreeks !== false && pos.optionsGreeks) return 'greeks';
+    if (displaySettings.showScalingLadder !== false) return 'ladder';
+    return 'pulse';
   };
 
   const watcherCurrency =
@@ -1911,6 +1965,32 @@ export function LiveOpenTradeWatcher({
               </Button>
             </Tooltip>
 
+            {/* Display & Elements Customization Settings Modal Button */}
+            <Tooltip title="Customize Elements & Chart (Show/Hide)" arrow>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<TuneRoundedIcon sx={{ fontSize: 13 }} />}
+                onClick={() => setDisplaySettingsModalOpen(true)}
+                sx={{
+                  height: 28,
+                  px: 1,
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+                  borderRadius: '6px',
+                  color: isDark ? '#E2E8F0' : '#1E293B',
+                  '&:hover': {
+                    borderColor: 'primary.main',
+                    color: 'primary.main',
+                  },
+                }}
+              >
+                Display
+              </Button>
+            </Tooltip>
+
             {/* Hotkeys Cheat Sheet Button */}
             <Tooltip title="Keyboard Shortcuts Cheat Sheet [?]" arrow>
               <IconButton
@@ -2346,7 +2426,7 @@ export function LiveOpenTradeWatcher({
               </Box>
             ) : (
               <>
-                {summary?.portfolioRisk && summary.positions.length > 0 && (
+                {summary?.portfolioRisk && summary.positions.length > 0 && displaySettings.showPortfolioRiskBanner !== false && (
                   <Box sx={{ pt: 2 }}>
                     <LivePortfolioRiskBanner
                       risk={summary.portfolioRisk}
@@ -2382,9 +2462,11 @@ export function LiveOpenTradeWatcher({
                       <TableCell>Entry vs LTP</TableCell>
                       <TableCell>Floating Net MTM</TableCell>
                       <TableCell>Stop Loss & Buffer</TableCell>
-                      <TableCell>Target & Ladder</TableCell>
-                      <TableCell>Giveback Radar</TableCell>
-                      <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>Quick Cockpit Actions</TableCell>
+                      {displaySettings.showScalingLadder !== false && <TableCell>Target & Ladder</TableCell>}
+                      {displaySettings.showGivebackMeter !== false && <TableCell>Giveback Radar</TableCell>}
+                      {displaySettings.showQuickActionButtons !== false && (
+                        <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>Quick Cockpit Actions</TableCell>
+                      )}
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -2573,7 +2655,7 @@ export function LiveOpenTradeWatcher({
                                   Entry: {currSym}{pos.entryPrice} ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
                                 </Typography>
                               </Box>
-                              {pos.sparkline && (
+                              {pos.sparkline && displaySettings.showSparklines !== false && (
                                 <LiveSparkline points={pos.sparkline} isDark={isDark} width={70} height={22} />
                               )}
                             </Box>
@@ -2700,103 +2782,108 @@ export function LiveOpenTradeWatcher({
                           </TableCell>
 
                           {/* Target & Ladder */}
-                          <TableCell>
-                            {activeLadderStep ? (
-                              <Box sx={{ minWidth: 120 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
-                                  <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: activeLadderStep.status === 'MET' ? '#10B981' : '#3B82F6' }}>
-                                    {activeLadderStep.name}
-                                  </Typography>
-                                  {activeLadderStep.isActionable && (
-                                    <Button
-                                      size="small"
-                                      variant="contained"
-                                      onClick={() => setSelectedLadderStep({ step: activeLadderStep, metric: pos })}
-                                      sx={{
-                                        height: 18,
-                                        fontSize: '0.58rem',
-                                        fontWeight: 800,
-                                        py: 0,
-                                        px: 0.75,
-                                        textTransform: 'none',
-                                        bgcolor: '#10B981',
-                                        '&:hover': { bgcolor: '#059669' },
-                                        borderRadius: '3px',
-                                      }}
-                                    >
-                                      Execute
-                                    </Button>
-                                  )}
+                          {displaySettings.showScalingLadder !== false && (
+                            <TableCell>
+                              {activeLadderStep ? (
+                                <Box sx={{ minWidth: 120 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.68rem', color: activeLadderStep.status === 'MET' ? '#10B981' : '#3B82F6' }}>
+                                      {activeLadderStep.name}
+                                    </Typography>
+                                    {activeLadderStep.isActionable && (
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => setSelectedLadderStep({ step: activeLadderStep, metric: pos })}
+                                        sx={{
+                                          height: 18,
+                                          fontSize: '0.58rem',
+                                          fontWeight: 800,
+                                          py: 0,
+                                          px: 0.75,
+                                          textTransform: 'none',
+                                          bgcolor: '#10B981',
+                                          '&:hover': { bgcolor: '#059669' },
+                                          borderRadius: '3px',
+                                        }}
+                                      >
+                                        Execute
+                                      </Button>
+                                    )}
+                                  </Box>
+                                  <LinearProgress
+                                    variant="determinate"
+                                    value={Math.min(100, Math.max(0, activeLadderStep.progressPercent))}
+                                    sx={{
+                                      height: 3,
+                                      borderRadius: 2,
+                                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                                      '& .MuiLinearProgress-bar': { bgcolor: activeLadderStep.status === 'MET' ? '#10B981' : '#3B82F6' },
+                                    }}
+                                  />
                                 </Box>
-                                <LinearProgress
-                                  variant="determinate"
-                                  value={Math.min(100, Math.max(0, activeLadderStep.progressPercent))}
-                                  sx={{
-                                    height: 3,
-                                    borderRadius: 2,
-                                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                                    '& .MuiLinearProgress-bar': { bgcolor: activeLadderStep.status === 'MET' ? '#10B981' : '#3B82F6' },
-                                  }}
-                                />
-                              </Box>
-                            ) : pos.target !== null ? (
-                              <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 600 }}>
-                                ₹{pos.target} ({pos.targetProgressPercent ?? 0}%)
-                              </Typography>
-                            ) : (
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
-                                Not set
-                              </Typography>
-                            )}
-                          </TableCell>
+                              ) : pos.target !== null ? (
+                                <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 600 }}>
+                                  ₹{pos.target} ({pos.targetProgressPercent ?? 0}%)
+                                </Typography>
+                              ) : (
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                  Not set
+                                </Typography>
+                              )}
+                            </TableCell>
+                          )}
 
                           {/* Giveback Radar */}
-                          <TableCell>
-                            {pos.giveback ? (
-                              <Tooltip
-                                title={`Peak MTM: +₹${pos.giveback.peakFloatingNetPnL} (+${pos.giveback.peakUnrealizedR}R) | Retained: ${pos.giveback.retentionPercent}%`}
-                                arrow
-                              >
-                                <Chip
-                                  label={
-                                    pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                      ? 'REVERSAL'
-                                      : pos.giveback.threatLevel === 'LEAKING'
-                                      ? `${pos.giveback.givebackPercent}% LEAK`
-                                      : `${pos.giveback.retentionPercent}% HELD`
-                                  }
-                                  size="small"
-                                  sx={{
-                                    height: 18,
-                                    fontSize: '0.6rem',
-                                    fontWeight: 800,
-                                    color:
+                          {displaySettings.showGivebackMeter !== false && (
+                            <TableCell>
+                              {pos.giveback ? (
+                                <Tooltip
+                                  title={`Peak MTM: +₹${pos.giveback.peakFloatingNetPnL} (+${pos.giveback.peakUnrealizedR}R) | Retained: ${pos.giveback.retentionPercent}%`}
+                                  arrow
+                                >
+                                  <Chip
+                                    label={
                                       pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                        ? '#EF4444'
+                                        ? 'REVERSAL'
                                         : pos.giveback.threatLevel === 'LEAKING'
-                                        ? '#F59E0B'
-                                        : '#10B981',
-                                    bgcolor: alpha(
-                                      pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
-                                        ? '#EF4444'
-                                        : pos.giveback.threatLevel === 'LEAKING'
-                                        ? '#F59E0B'
-                                        : '#10B981',
-                                      0.12
-                                    ),
-                                    borderRadius: '4px',
-                                  }}
-                                />
-                              </Tooltip>
-                            ) : (
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
-                                -
-                              </Typography>
-                            )}
-                          </TableCell>
+                                        ? `${pos.giveback.givebackPercent}% LEAK`
+                                        : `${pos.giveback.retentionPercent}% HELD`
+                                    }
+                                    size="small"
+                                    sx={{
+                                      height: 18,
+                                      fontSize: '0.6rem',
+                                      fontWeight: 800,
+                                      color:
+                                        pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                          ? '#EF4444'
+                                          : pos.giveback.threatLevel === 'LEAKING'
+                                          ? '#F59E0B'
+                                          : '#10B981',
+                                      bgcolor: alpha(
+                                        pos.giveback.threatLevel === 'CRITICAL_REVERSAL'
+                                          ? '#EF4444'
+                                          : pos.giveback.threatLevel === 'LEAKING'
+                                          ? '#F59E0B'
+                                          : '#10B981',
+                                        0.12
+                                      ),
+                                      borderRadius: '4px',
+                                    }}
+                                  />
+                                </Tooltip>
+                              ) : (
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                  -
+                                </Typography>
+                              )}
+                            </TableCell>
+                          )}
 
                           {/* Quick Cockpit Actions */}
-                          <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>
+                          {displaySettings.showQuickActionButtons !== false && (
+                            <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.75, flexWrap: 'nowrap' }}>
                               <Tooltip
                                 title={
@@ -2942,6 +3029,7 @@ export function LiveOpenTradeWatcher({
                               </Tooltip>
                             </Box>
                           </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}
@@ -3318,7 +3406,7 @@ export function LiveOpenTradeWatcher({
                               </Box>
                             </Box>
 
-                            {pos.sparkline && (
+                            {pos.sparkline && displaySettings.showSparklines !== false && (
                               <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
                                 <LiveSparkline points={pos.sparkline} isDark={isDark} width={84} height={24} />
                               </Box>
@@ -3381,24 +3469,26 @@ export function LiveOpenTradeWatcher({
                                 />
                               )}
                             </Box>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{
-                                fontSize: '0.64rem',
-                                fontFamily: `'JetBrains Mono', monospace`,
-                                display: 'block',
-                                mt: 0.2,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, (pos as any).currency || watcherCurrency)} · Cost: -{formatCurrency(pos.estimatedCharges ?? 0, (pos as any).currency || watcherCurrency)}
-                            </Typography>
+                            {displaySettings.showCostBreakdown !== false && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{
+                                  fontSize: '0.64rem',
+                                  fontFamily: `'JetBrains Mono', monospace`,
+                                  display: 'block',
+                                  mt: 0.2,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, (pos as any).currency || watcherCurrency)} · Cost: -{formatCurrency(pos.estimatedCharges ?? 0, (pos as any).currency || watcherCurrency)}
+                              </Typography>
+                            )}
                           </Box>
                         </Box>
 
                         {/* Next-Action Deterministic Action Hint Strip */}
-                        {nextHint && (
+                        {displaySettings.showActionHints !== false && nextHint && (
                           <Box
                             sx={{
                               mb: 1.5,
@@ -3522,126 +3612,130 @@ export function LiveOpenTradeWatcher({
                               />
                             )}
 
-                            <Tooltip
-                              title={
-                                pos.dataHealth && !pos.dataHealth.canExecuteBroker
-                                  ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
-                                  : 'Book 50% partial profit at current LTP'
-                              }
-                              arrow
-                            >
-                              <span>
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  startIcon={<PieChartRoundedIcon sx={{ fontSize: 13 }} />}
-                                  onClick={() => handleOpenQuickClose(pos, 0.5)}
-                                  sx={{
-                                    height: 26,
-                                    px: 1.25,
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    textTransform: 'none',
-                                    whiteSpace: 'nowrap',
-                                    bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
-                                    color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
-                                    '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
-                                    borderRadius: '5px',
-                                    boxShadow: 'none',
-                                  }}
+                            {displaySettings.showQuickActionButtons !== false && (
+                              <>
+                                <Tooltip
+                                  title={
+                                    pos.dataHealth && !pos.dataHealth.canExecuteBroker
+                                      ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
+                                      : 'Book 50% partial profit at current LTP'
+                                  }
+                                  arrow
                                 >
-                                  Book 50%
-                                </Button>
-                              </span>
-                            </Tooltip>
+                                  <span>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      startIcon={<PieChartRoundedIcon sx={{ fontSize: 13 }} />}
+                                      onClick={() => handleOpenQuickClose(pos, 0.5)}
+                                      sx={{
+                                        height: 26,
+                                        px: 1.25,
+                                        fontSize: '0.7rem',
+                                        fontWeight: 700,
+                                        textTransform: 'none',
+                                        whiteSpace: 'nowrap',
+                                        bgcolor: isOneToOne ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
+                                        color: isOneToOne ? '#FFFFFF' : isDark ? '#F8FAFC' : '#0F172A',
+                                        '&:hover': { bgcolor: isOneToOne ? '#059669' : '#10B981', color: '#FFFFFF' },
+                                        borderRadius: '5px',
+                                        boxShadow: 'none',
+                                      }}
+                                    >
+                                      Book 50%
+                                    </Button>
+                                  </span>
+                                </Tooltip>
 
-                            <Tooltip
-                              title={
-                                pos.dataHealth && !pos.dataHealth.canExecuteBroker
-                                  ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
-                                  : 'Flatten full 100% position at current LTP'
-                              }
-                              arrow
-                            >
-                              <span>
-                                <Button
-                                  size="small"
-                                  variant="contained"
-                                  startIcon={<FlashOnRoundedIcon sx={{ fontSize: 13 }} />}
-                                  onClick={() => handleOpenQuickClose(pos, 1.0)}
-                                  sx={{
-                                    height: 26,
-                                    px: 1.25,
-                                    fontSize: '0.7rem',
-                                    fontWeight: 700,
-                                    textTransform: 'none',
-                                    whiteSpace: 'nowrap',
-                                    bgcolor: '#EF4444',
-                                    color: '#FFFFFF',
-                                    '&:hover': { bgcolor: '#DC2626' },
-                                    borderRadius: '5px',
-                                    boxShadow: 'none',
-                                  }}
+                                <Tooltip
+                                  title={
+                                    pos.dataHealth && !pos.dataHealth.canExecuteBroker
+                                      ? `Broker market orders guarded: ${pos.dataHealth.brokerExecutionBlockedReason || 'Simulation / Stale'}. Opens Journal close.`
+                                      : 'Flatten full 100% position at current LTP'
+                                  }
+                                  arrow
                                 >
-                                  Close 100% @ LTP
-                                </Button>
-                              </span>
-                            </Tooltip>
+                                  <span>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      startIcon={<FlashOnRoundedIcon sx={{ fontSize: 13 }} />}
+                                      onClick={() => handleOpenQuickClose(pos, 1.0)}
+                                      sx={{
+                                        height: 26,
+                                        px: 1.25,
+                                        fontSize: '0.7rem',
+                                        fontWeight: 700,
+                                        textTransform: 'none',
+                                        whiteSpace: 'nowrap',
+                                        bgcolor: '#EF4444',
+                                        color: '#FFFFFF',
+                                        '&:hover': { bgcolor: '#DC2626' },
+                                        borderRadius: '5px',
+                                        boxShadow: 'none',
+                                      }}
+                                    >
+                                      Close 100% @ LTP
+                                    </Button>
+                                  </span>
+                                </Tooltip>
 
-                            <Tooltip
-                              title={
-                                pos.trueBreakevenPrice
-                                  ? `Lock True Breakeven @ ${currSym}${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
-                                  : `Lock Breakeven @ ${currSym}${pos.entryPrice}`
-                              }
-                              arrow
-                            >
-                              <span>
+                                <Tooltip
+                                  title={
+                                    pos.trueBreakevenPrice
+                                      ? `Lock True Breakeven @ ${currSym}${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
+                                      : `Lock Breakeven @ ${currSym}${pos.entryPrice}`
+                                  }
+                                  arrow
+                                >
+                                  <span>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      startIcon={<LockRoundedIcon sx={{ fontSize: 12 }} />}
+                                      onClick={() => handleQuickMoveToBe(pos)}
+                                      disabled={isAtOrBeyondBe || updateSlMutation.isPending}
+                                      sx={{
+                                        height: 26,
+                                        px: 1.2,
+                                        fontSize: '0.68rem',
+                                        fontWeight: 700,
+                                        textTransform: 'none',
+                                        whiteSpace: 'nowrap',
+                                        borderColor: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
+                                        color: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
+                                        bgcolor: isAtOrBeyondBe ? alpha('#10B981', 0.08) : 'transparent',
+                                        '&:hover': { bgcolor: alpha('#3B82F6', 0.1), borderColor: '#2563EB' },
+                                        borderRadius: '5px',
+                                      }}
+                                    >
+                                      {isAtOrBeyondBe ? 'BE Protected' : `Lock BE+Fees${pos.trueBreakevenPrice ? ` (${currSym}${pos.trueBreakevenPrice.toFixed(1)})` : ''}`}
+                                    </Button>
+                                  </span>
+                                </Tooltip>
+
                                 <Button
                                   size="small"
-                                  variant="outlined"
-                                  startIcon={<LockRoundedIcon sx={{ fontSize: 12 }} />}
-                                  onClick={() => handleQuickMoveToBe(pos)}
-                                  disabled={isAtOrBeyondBe || updateSlMutation.isPending}
+                                  variant={customRules?.autoExecuteEnabled ? 'contained' : 'outlined'}
+                                  startIcon={<TuneRoundedIcon sx={{ fontSize: 12 }} />}
+                                  onClick={() => setCustomRulesMetric(pos)}
                                   sx={{
                                     height: 26,
-                                    px: 1.2,
+                                    px: 1,
                                     fontSize: '0.68rem',
                                     fontWeight: 700,
                                     textTransform: 'none',
                                     whiteSpace: 'nowrap',
-                                    borderColor: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
-                                    color: isAtOrBeyondBe ? '#10B981' : '#3B82F6',
-                                    bgcolor: isAtOrBeyondBe ? alpha('#10B981', 0.08) : 'transparent',
-                                    '&:hover': { bgcolor: alpha('#3B82F6', 0.1), borderColor: '#2563EB' },
+                                    bgcolor: customRules?.autoExecuteEnabled ? '#10B981' : 'transparent',
+                                    color: customRules?.autoExecuteEnabled ? '#FFFFFF' : 'text.secondary',
+                                    borderColor: customRules?.autoExecuteEnabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
                                     borderRadius: '5px',
                                   }}
                                 >
-                                  {isAtOrBeyondBe ? 'BE Protected' : `Lock BE+Fees${pos.trueBreakevenPrice ? ` (${currSym}${pos.trueBreakevenPrice.toFixed(1)})` : ''}`}
+                                  {customRules?.autoExecuteEnabled ? '⚡ Auto Armed' : '⚙️ Rules'}
                                 </Button>
-                              </span>
-                            </Tooltip>
-
-                            <Button
-                              size="small"
-                              variant={customRules?.autoExecuteEnabled ? 'contained' : 'outlined'}
-                              startIcon={<TuneRoundedIcon sx={{ fontSize: 12 }} />}
-                              onClick={() => setCustomRulesMetric(pos)}
-                              sx={{
-                                height: 26,
-                                px: 1,
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                textTransform: 'none',
-                                whiteSpace: 'nowrap',
-                                bgcolor: customRules?.autoExecuteEnabled ? '#10B981' : 'transparent',
-                                color: customRules?.autoExecuteEnabled ? '#FFFFFF' : 'text.secondary',
-                                borderColor: customRules?.autoExecuteEnabled ? '#10B981' : isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
-                                borderRadius: '5px',
-                              }}
-                            >
-                              {customRules?.autoExecuteEnabled ? '⚡ Auto Armed' : '⚙️ Rules'}
-                            </Button>
+                              </>
+                            )}
 
                             <Button
                               size="small"
@@ -3725,6 +3819,9 @@ export function LiveOpenTradeWatcher({
                               lockedSymbol={true}
                               compact={true}
                               height={320}
+                              showIndicators={displaySettings.showChartIndicators}
+                              showVolume={displaySettings.showChartVolume}
+                              showTradeLevels={displaySettings.showChartTradeLevels}
                               positionOverlay={{
                                 tradeId: pos.tradeId,
                                 direction: pos.direction,
@@ -3976,75 +4073,81 @@ export function LiveOpenTradeWatcher({
                               {/* 4-Tab Segmented Selector */}
                               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
                                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                  <Chip
-                                    label="🪜 LADDER"
-                                    size="small"
-                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'ladder' }))}
-                                    clickable
-                                    sx={{
-                                      height: 22,
-                                      fontSize: '0.62rem',
-                                      fontWeight: 800,
-                                      bgcolor: activeTacticalTab === 'ladder' ? alpha('#3B82F6', 0.2) : 'transparent',
-                                      color: activeTacticalTab === 'ladder' ? '#3B82F6' : 'text.secondary',
-                                      border: `1px solid ${activeTacticalTab === 'ladder' ? alpha('#3B82F6', 0.4) : 'transparent'}`,
-                                      borderRadius: '5px',
-                                    }}
-                                  />
+                                  {displaySettings.showScalingLadder !== false && (
+                                    <Chip
+                                      label="🪜 LADDER"
+                                      size="small"
+                                      onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'ladder' }))}
+                                      clickable
+                                      sx={{
+                                        height: 22,
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        bgcolor: activeTacticalTab === 'ladder' ? alpha('#3B82F6', 0.2) : 'transparent',
+                                        color: activeTacticalTab === 'ladder' ? '#3B82F6' : 'text.secondary',
+                                        border: `1px solid ${activeTacticalTab === 'ladder' ? alpha('#3B82F6', 0.4) : 'transparent'}`,
+                                        borderRadius: '5px',
+                                      }}
+                                    />
+                                  )}
 
-                                  <Chip
-                                    label={`🛡️ GIVEBACK ${
-                                      pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
-                                        ? '🚨'
-                                        : pos.giveback?.threatLevel === 'LEAKING'
-                                        ? '⚠️'
-                                        : ''
-                                    }`}
-                                    size="small"
-                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'giveback' }))}
-                                    clickable
-                                    sx={{
-                                      height: 22,
-                                      fontSize: '0.62rem',
-                                      fontWeight: 800,
-                                      bgcolor: activeTacticalTab === 'giveback'
-                                        ? pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
-                                          ? alpha('#EF4444', 0.2)
+                                  {displaySettings.showGivebackMeter !== false && (
+                                    <Chip
+                                      label={`🛡️ GIVEBACK ${
+                                        pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
+                                          ? '🚨'
                                           : pos.giveback?.threatLevel === 'LEAKING'
-                                          ? alpha('#F59E0B', 0.2)
-                                          : alpha('#10B981', 0.2)
-                                        : 'transparent',
-                                      color: activeTacticalTab === 'giveback'
-                                        ? pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
-                                          ? '#EF4444'
-                                          : pos.giveback?.threatLevel === 'LEAKING'
-                                          ? '#F59E0B'
-                                          : '#10B981'
-                                        : 'text.secondary',
-                                      border: `1px solid ${
-                                        activeTacticalTab === 'giveback'
-                                          ? alpha('#3B82F6', 0.4)
-                                          : 'transparent'
-                                      }`,
-                                      borderRadius: '5px',
-                                    }}
-                                  />
+                                          ? '⚠️'
+                                          : ''
+                                      }`}
+                                      size="small"
+                                      onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'giveback' }))}
+                                      clickable
+                                      sx={{
+                                        height: 22,
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        bgcolor: activeTacticalTab === 'giveback'
+                                          ? pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
+                                            ? alpha('#EF4444', 0.2)
+                                            : pos.giveback?.threatLevel === 'LEAKING'
+                                            ? alpha('#F59E0B', 0.2)
+                                            : alpha('#10B981', 0.2)
+                                          : 'transparent',
+                                        color: activeTacticalTab === 'giveback'
+                                          ? pos.giveback?.threatLevel === 'CRITICAL_REVERSAL'
+                                            ? '#EF4444'
+                                            : pos.giveback?.threatLevel === 'LEAKING'
+                                            ? '#F59E0B'
+                                            : '#10B981'
+                                          : 'text.secondary',
+                                        border: `1px solid ${
+                                          activeTacticalTab === 'giveback'
+                                            ? alpha('#3B82F6', 0.4)
+                                            : 'transparent'
+                                        }`,
+                                        borderRadius: '5px',
+                                      }}
+                                    />
+                                  )}
 
-                                  <Chip
-                                    label="📊 GREEKS & EDGE"
-                                    size="small"
-                                    onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'greeks' }))}
-                                    clickable
-                                    sx={{
-                                      height: 22,
-                                      fontSize: '0.62rem',
-                                      fontWeight: 800,
-                                      bgcolor: activeTacticalTab === 'greeks' ? alpha('#8B5CF6', 0.2) : 'transparent',
-                                      color: activeTacticalTab === 'greeks' ? '#8B5CF6' : 'text.secondary',
-                                      border: `1px solid ${activeTacticalTab === 'greeks' ? alpha('#8B5CF6', 0.4) : 'transparent'}`,
-                                      borderRadius: '5px',
-                                    }}
-                                  />
+                                  {displaySettings.showOptionsGreeks !== false && (
+                                    <Chip
+                                      label="📊 GREEKS & EDGE"
+                                      size="small"
+                                      onClick={() => setTacticalTabs((prev) => ({ ...prev, [pos.tradeId]: 'greeks' }))}
+                                      clickable
+                                      sx={{
+                                        height: 22,
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        bgcolor: activeTacticalTab === 'greeks' ? alpha('#8B5CF6', 0.2) : 'transparent',
+                                        color: activeTacticalTab === 'greeks' ? '#8B5CF6' : 'text.secondary',
+                                        border: `1px solid ${activeTacticalTab === 'greeks' ? alpha('#8B5CF6', 0.4) : 'transparent'}`,
+                                        borderRadius: '5px',
+                                      }}
+                                    />
+                                  )}
 
                                   <Chip
                                     label="🧠 PULSE"
@@ -4771,6 +4874,14 @@ export function LiveOpenTradeWatcher({
         </Box>,
         pipWindow.document.body
       )}
+
+      {/* ⚙️ Live Watcher Display & Elements Customization Settings Modal */}
+      <LiveWatcherDisplaySettingsModal
+        open={displaySettingsModalOpen}
+        onClose={() => setDisplaySettingsModalOpen(false)}
+        settings={displaySettings}
+        onSave={handleSaveDisplaySettings}
+      />
 
       {/* ♿ Accessibility Screen-Reader Live Regions */}
       <div className="sr-only" aria-live="assertive" role="alert">

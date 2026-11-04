@@ -66,7 +66,7 @@ export function DashboardPage() {
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate, preset } = useDateRange();
   const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts } = useAccountScope();
-  const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(true);
+  const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(false);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 

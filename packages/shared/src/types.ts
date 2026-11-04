@@ -2062,6 +2062,36 @@ export interface ICustomLadderRules {
   updatedAt?: string;
 }
 
+export interface ILiveWatcherDisplaySettings {
+  autoExpandCharts?: boolean;          // Default: false (Collapsed by default)
+  showChartIndicators?: boolean;       // Default: true
+  showChartTradeLevels?: boolean;      // Default: true
+  showChartVolume?: boolean;           // Default: true
+  showPortfolioRiskBanner?: boolean;   // Default: true
+  showCostBreakdown?: boolean;         // Default: true
+  showSparklines?: boolean;            // Default: true
+  showScalingLadder?: boolean;         // Default: true
+  showGivebackMeter?: boolean;         // Default: true
+  showActionHints?: boolean;           // Default: true
+  showQuickActionButtons?: boolean;    // Default: true
+  showOptionsGreeks?: boolean;         // Default: true
+}
+
+export const DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS: ILiveWatcherDisplaySettings = {
+  autoExpandCharts: false,          // COLLAPSED BY DEFAULT!
+  showChartIndicators: true,
+  showChartTradeLevels: true,
+  showChartVolume: true,
+  showPortfolioRiskBanner: true,
+  showCostBreakdown: true,
+  showSparklines: true,
+  showScalingLadder: true,
+  showGivebackMeter: true,
+  showActionHints: true,
+  showQuickActionButtons: true,
+  showOptionsGreeks: true,
+};
+
 export interface ILiveWatcherSettings {
   defaultAutoExecute: boolean;
   defaultTargetMode: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE';
@@ -2125,6 +2155,7 @@ export interface ILiveWatcherSettings {
   layoutPresets?: IWatcherLayoutPreset[];
   activePresetId?: string;
   clearTelegramCredentials?: boolean;
+  displaySettings?: ILiveWatcherDisplaySettings;
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
@@ -2184,6 +2215,7 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   ladderViewMode: 'classic',
   layoutPresets: DEFAULT_WATCHER_LAYOUT_PRESETS,
   activePresetId: 'positional',
+  displaySettings: DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
 };
 
 export function createLadderRulesFromSettings(

@@ -83,6 +83,8 @@ import {
   DEFAULT_PATTERN_DETECTION_SETTINGS,
   ILiveWatcherSettings,
   DEFAULT_LIVE_WATCHER_SETTINGS,
+  ILiveWatcherDisplaySettings,
+  DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
 } from '@tradevault/shared';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
@@ -218,12 +220,23 @@ export function SettingsPage() {
     ...(initialWatcher.telegramAlertEvents || {}),
   });
 
+  const [displaySettings, setDisplaySettings] = useState<ILiveWatcherDisplaySettings>(() => ({
+    ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
+    ...(initialWatcher.displaySettings || {}),
+  }));
+
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.liveWatcherSettings) {
       const s = user.liveWatcherSettings;
+      if (s.displaySettings) {
+        setDisplaySettings({
+          ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
+          ...s.displaySettings,
+        });
+      }
       setDefaultAutoExecute(s.defaultAutoExecute ?? false);
       setDefaultTargetMode(s.defaultTargetMode ?? 'TWO_TARGETS_RUNNER');
       setT1MultipleR(s.t1MultipleR ?? 1.0);
@@ -284,6 +297,7 @@ export function SettingsPage() {
       refreshUser();
       localStorage.setItem('tv_scalper_hotkeys', String(scalperHotkeysEnabled));
       localStorage.setItem('tv_live_watcher_interval', String(defaultRefreshIntervalSec));
+      localStorage.setItem('tv_live_watcher_display_settings', JSON.stringify(displaySettings));
       setWatcherError(null);
       setWatcherSuccess(true);
       toast.success('Live Trade Watcher & Execution defaults saved successfully.');
@@ -383,6 +397,7 @@ export function SettingsPage() {
       eodSummaryDigest: true,
       ...(d.telegramAlertEvents || {}),
     });
+    setDisplaySettings({ ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS });
     toast.info('Reset live watcher settings to institutional defaults. Click "Save Execution Settings" to persist.');
   };
 
@@ -515,6 +530,7 @@ export function SettingsPage() {
       requireHoldToConfirm,
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
+      displaySettings,
     };
     liveWatcherMutation.mutate(payload);
   };
@@ -2024,6 +2040,239 @@ export function SettingsPage() {
                             </Box>
                           </Box>
                         )}
+                      </Box>
+                    </Grid>
+
+                    {/* Live Watcher & Chart Display Customization */}
+                    <Grid size={{ xs: 12 }}>
+                      <Box sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: 'divider', bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : 'rgba(248, 250, 252, 0.8)' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <TuneRounded sx={{ color: 'primary.main', fontSize: 22 }} />
+                          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                            Display &amp; Elements Customization
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                          Control which visual elements, indicators, and telemetry modules appear in the Live Watcher and Candlestick Charts.
+                        </Typography>
+
+                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: '#8B5CF6', display: 'block', mb: 1 }}>
+                          Candlestick Chart Settings
+                        </Typography>
+                        <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={Boolean(displaySettings.autoExpandCharts)}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, autoExpandCharts: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Auto-Expand Candlestick Charts</Typography>
+                                  <Typography variant="caption" color="text.secondary">If disabled, charts stay collapsed by default to save screen space.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showChartVolume !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showChartVolume: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Show Volume Histogram</Typography>
+                                  <Typography variant="caption" color="text.secondary">Render volume bars below candles.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showChartTradeLevels !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showChartTradeLevels: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Show Trade Price Lines</Typography>
+                                  <Typography variant="caption" color="text.secondary">Draw Entry, Stop Loss (SL), and Target lines.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showChartIndicators !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showChartIndicators: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Show OHLC &amp; Live Bar Stats</Typography>
+                                  <Typography variant="caption" color="text.secondary">Header bar with candle Open, High, Low, Close.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                        </Grid>
+
+                        <Divider sx={{ my: 1.5 }} />
+
+                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: '#10B981', display: 'block', mb: 1 }}>
+                          Live Watcher Panel Elements
+                        </Typography>
+                        <Grid container spacing={1.5}>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showPortfolioRiskBanner !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showPortfolioRiskBanner: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Portfolio Risk Banner</Typography>
+                                  <Typography variant="caption" color="text.secondary">Floating MTM, drawdown limit, and risk gauge.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showCostBreakdown !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showCostBreakdown: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Gross vs Net MTM &amp; Cost</Typography>
+                                  <Typography variant="caption" color="text.secondary">Brokerage, exchange taxes, and net take-home.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showSparklines !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showSparklines: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Intra-Trade Sparklines</Typography>
+                                  <Typography variant="caption" color="text.secondary">Live tick curves showing trade price path.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showScalingLadder !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showScalingLadder: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Multi-Target Scaling Ladder</Typography>
+                                  <Typography variant="caption" color="text.secondary">T1 / T2 / T3 targets and trailing stops.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showGivebackMeter !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showGivebackMeter: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Peak Profit Giveback Meter</Typography>
+                                  <Typography variant="caption" color="text.secondary">Guards peak gains from reversing.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showActionHints !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showActionHints: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Next-Action Tactical Strips</Typography>
+                                  <Typography variant="caption" color="text.secondary">Deterministic guidance advice strips.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showQuickActionButtons !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showQuickActionButtons: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Quick Cockpit Action Buttons</Typography>
+                                  <Typography variant="caption" color="text.secondary">Book 50%, Close 100%, Lock BE buttons.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={displaySettings.showOptionsGreeks !== false}
+                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showOptionsGreeks: e.target.checked })}
+                                />
+                              }
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Options Greeks &amp; IV Card</Typography>
+                                  <Typography variant="caption" color="text.secondary">Delta, Theta, Gamma, IV for F&amp;O contracts.</Typography>
+                                </Box>
+                              }
+                            />
+                          </Grid>
+                        </Grid>
                       </Box>
                     </Grid>
                   </Grid>

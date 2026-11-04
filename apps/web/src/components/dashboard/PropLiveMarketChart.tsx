@@ -7,6 +7,10 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -14,6 +18,8 @@ import ZoomOutMapRoundedIcon from '@mui/icons-material/ZoomOutMapRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
 import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import {
   createChart,
   CandlestickSeries,
@@ -28,6 +34,7 @@ import {
 import { api } from '../../lib/api.js';
 import { formatPrice } from '../../lib/utils.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
+import { useAuth } from '../../context/AuthContext.js';
 
 export interface PropPositionOverlay {
   tradeId?: string;
@@ -48,6 +55,10 @@ export interface LiveMarketChartProps {
   height?: number;
   lockedSymbol?: boolean;
   positionOverlay?: PropPositionOverlay | null;
+  showIndicators?: boolean;
+  showVolume?: boolean;
+  showTradeLevels?: boolean;
+  onSettingsChange?: (settings: { showIndicators?: boolean; showVolume?: boolean; showTradeLevels?: boolean }) => void;
 }
 
 export type PropLiveMarketChartProps = LiveMarketChartProps;
@@ -91,10 +102,44 @@ export function LiveMarketChart({
   height = 420,
   lockedSymbol = false,
   positionOverlay = null,
+  showIndicators: propShowIndicators,
+  showVolume: propShowVolume,
+  showTradeLevels: propShowTradeLevels,
+  onSettingsChange,
 }: LiveMarketChartProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const { isPropMode } = useAccountScope();
+  const { user } = useAuth();
+  const displayDefaults = user?.liveWatcherSettings?.displaySettings;
+
+  const [showIndicators, setShowIndicators] = useState<boolean>(() =>
+    propShowIndicators !== undefined
+      ? propShowIndicators
+      : displayDefaults?.showChartIndicators ?? true
+  );
+  const [showVolume, setShowVolume] = useState<boolean>(() =>
+    propShowVolume !== undefined
+      ? propShowVolume
+      : displayDefaults?.showChartVolume ?? true
+  );
+  const [showTradeLevels, setShowTradeLevels] = useState<boolean>(() =>
+    propShowTradeLevels !== undefined
+      ? propShowTradeLevels
+      : displayDefaults?.showChartTradeLevels ?? true
+  );
+
+  useEffect(() => {
+    if (propShowIndicators !== undefined) setShowIndicators(propShowIndicators);
+  }, [propShowIndicators]);
+  useEffect(() => {
+    if (propShowVolume !== undefined) setShowVolume(propShowVolume);
+  }, [propShowVolume]);
+  useEffect(() => {
+    if (propShowTradeLevels !== undefined) setShowTradeLevels(propShowTradeLevels);
+  }, [propShowTradeLevels]);
+
+  const [chartSettingsAnchor, setChartSettingsAnchor] = useState<null | HTMLElement>(null);
 
   const effectiveMode = mode === 'AUTO' ? (isPropMode ? 'PROP' : 'NORMAL') : mode;
   const activeSymbols = effectiveMode === 'NORMAL' ? NORMAL_SYMBOLS : PROP_SYMBOLS;
@@ -332,7 +377,11 @@ export function LiveMarketChart({
     }));
 
     candleSeriesRef.current.setData(candles);
-    volSeriesRef.current.setData(volumes);
+    if (showVolume) {
+      volSeriesRef.current.setData(volumes);
+    } else {
+      volSeriesRef.current.setData([]);
+    }
 
     // Clear old price lines
     for (const pl of priceLinesRef.current) {
@@ -342,57 +391,59 @@ export function LiveMarketChart({
     }
     priceLinesRef.current = [];
 
-    // Combine explicit positionOverlay with any activeOverlays returned by the API for this symbol
-    const overlaysToDraw: PropPositionOverlay[] = positionOverlay
-      ? [positionOverlay]
-      : Array.isArray(streamData.activeOverlays)
-      ? streamData.activeOverlays
-      : [];
+    if (showTradeLevels) {
+      // Combine explicit positionOverlay with any activeOverlays returned by the API for this symbol
+      const overlaysToDraw: PropPositionOverlay[] = positionOverlay
+        ? [positionOverlay]
+        : Array.isArray(streamData.activeOverlays)
+        ? streamData.activeOverlays
+        : [];
 
-    for (const ov of overlaysToDraw) {
-      if (ov.entryPrice > 0) {
-        const entryLine = candleSeriesRef.current.createPriceLine({
-          price: ov.entryPrice,
-          color: '#3B82F6',
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `${ov.direction} ENTRY (${ov.quantity || ''} lots)`,
-        });
-        priceLinesRef.current.push(entryLine);
-      }
-      if (ov.stopLoss && ov.stopLoss > 0) {
-        const slLine = candleSeriesRef.current.createPriceLine({
-          price: ov.stopLoss,
-          color: '#EF4444',
-          lineWidth: 2,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
-          title: 'STOP LOSS (SL)',
-        });
-        priceLinesRef.current.push(slLine);
-      }
-      if (ov.target && ov.target > 0) {
-        const tpLine = candleSeriesRef.current.createPriceLine({
-          price: ov.target,
-          color: '#10B981',
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'TARGET (1:2 RR)',
-        });
-        priceLinesRef.current.push(tpLine);
-      }
-      if (ov.dailyBreachPrice && ov.dailyBreachPrice > 0) {
-        const breachLine = candleSeriesRef.current.createPriceLine({
-          price: ov.dailyBreachPrice,
-          color: '#F97316',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          axisLabelVisible: true,
-          title: '3% DAILY BREACH LEVEL',
-        });
-        priceLinesRef.current.push(breachLine);
+      for (const ov of overlaysToDraw) {
+        if (ov.entryPrice > 0) {
+          const entryLine = candleSeriesRef.current.createPriceLine({
+            price: ov.entryPrice,
+            color: '#3B82F6',
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `${ov.direction} ENTRY (${ov.quantity || ''} lots)`,
+          });
+          priceLinesRef.current.push(entryLine);
+        }
+        if (ov.stopLoss && ov.stopLoss > 0) {
+          const slLine = candleSeriesRef.current.createPriceLine({
+            price: ov.stopLoss,
+            color: '#EF4444',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: 'STOP LOSS (SL)',
+          });
+          priceLinesRef.current.push(slLine);
+        }
+        if (ov.target && ov.target > 0) {
+          const tpLine = candleSeriesRef.current.createPriceLine({
+            price: ov.target,
+            color: '#10B981',
+            lineWidth: 2,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'TARGET (1:2 RR)',
+          });
+          priceLinesRef.current.push(tpLine);
+        }
+        if (ov.dailyBreachPrice && ov.dailyBreachPrice > 0) {
+          const breachLine = candleSeriesRef.current.createPriceLine({
+            price: ov.dailyBreachPrice,
+            color: '#F97316',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: '3% DAILY BREACH LEVEL',
+          });
+          priceLinesRef.current.push(breachLine);
+        }
       }
     }
 
@@ -400,7 +451,7 @@ export function LiveMarketChart({
       chartRef.current.timeScale().fitContent();
       isFirstFitRef.current = false;
     }
-  }, [streamData, positionOverlay, chartMode]);
+  }, [streamData, positionOverlay, chartMode, showVolume, showTradeLevels]);
 
   const quote = streamData?.quote;
   const liveLtp = positionOverlay?.currentLtp || quote?.ltp || streamData?.candles?.[streamData?.candles?.length - 1]?.close || 0;
@@ -589,6 +640,73 @@ export function LiveMarketChart({
             </IconButton>
           </Tooltip>
 
+          <Tooltip title="Chart Display Elements">
+            <IconButton
+              size="small"
+              onClick={(e) => setChartSettingsAnchor(e.currentTarget)}
+              sx={{ p: 0.5 }}
+            >
+              <TuneRoundedIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Tooltip>
+
+          <Menu
+            anchorEl={chartSettingsAnchor}
+            open={Boolean(chartSettingsAnchor)}
+            onClose={() => setChartSettingsAnchor(null)}
+            slotProps={{
+              paper: {
+                sx: {
+                  borderRadius: 2,
+                  minWidth: 220,
+                  bgcolor: isDark ? '#1E293B' : '#FFFFFF',
+                  border: `1px solid ${muiTheme.palette.divider}`,
+                  boxShadow: isDark ? '0 10px 25px rgba(0,0,0,0.5)' : '0 10px 25px rgba(0,0,0,0.1)',
+                },
+              },
+            }}
+          >
+            <MenuItem
+              onClick={() => {
+                const next = !showVolume;
+                setShowVolume(next);
+                onSettingsChange?.({ showVolume: next, showTradeLevels, showIndicators });
+              }}
+              sx={{ py: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 28 }}>
+                {showVolume ? <CheckRoundedIcon fontSize="small" sx={{ color: '#10B981' }} /> : <Box sx={{ width: 18 }} />}
+              </ListItemIcon>
+              <ListItemText primary={<Typography sx={{ fontSize: '0.8rem', fontWeight: 600 }}>Volume Histogram</Typography>} />
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                const next = !showTradeLevels;
+                setShowTradeLevels(next);
+                onSettingsChange?.({ showVolume, showTradeLevels: next, showIndicators });
+              }}
+              sx={{ py: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 28 }}>
+                {showTradeLevels ? <CheckRoundedIcon fontSize="small" sx={{ color: '#10B981' }} /> : <Box sx={{ width: 18 }} />}
+              </ListItemIcon>
+              <ListItemText primary={<Typography sx={{ fontSize: '0.8rem', fontWeight: 600 }}>Trade Lines (SL/TP/Entry)</Typography>} />
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                const next = !showIndicators;
+                setShowIndicators(next);
+                onSettingsChange?.({ showVolume, showTradeLevels, showIndicators: next });
+              }}
+              sx={{ py: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 28 }}>
+                {showIndicators ? <CheckRoundedIcon fontSize="small" sx={{ color: '#10B981' }} /> : <Box sx={{ width: 18 }} />}
+              </ListItemIcon>
+              <ListItemText primary={<Typography sx={{ fontSize: '0.8rem', fontWeight: 600 }}>OHLC &amp; Live Bar Stats</Typography>} />
+            </MenuItem>
+          </Menu>
+
           {!compact && (
             <Tooltip title={expandedHeight ? 'Standard height' : 'Expand chart height'}>
               <IconButton
@@ -608,7 +726,7 @@ export function LiveMarketChart({
       </Box>
 
       {/* Crosshair OHLC HUD Bar (SetupMint Mode) */}
-      {chartMode === 'SETUPMINT' && hoveredBar && (
+      {chartMode === 'SETUPMINT' && hoveredBar && showIndicators && (
         <Box
           sx={{
             px: 1.5,

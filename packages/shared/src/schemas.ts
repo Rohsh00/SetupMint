@@ -745,6 +745,21 @@ export const watcherLayoutPresetSchema = z.object({
   isBuiltIn: z.boolean().optional(),
 });
 
+export const liveWatcherDisplaySettingsSchema = z.object({
+  autoExpandCharts: z.boolean().optional(),
+  showChartIndicators: z.boolean().optional(),
+  showChartTradeLevels: z.boolean().optional(),
+  showChartVolume: z.boolean().optional(),
+  showPortfolioRiskBanner: z.boolean().optional(),
+  showCostBreakdown: z.boolean().optional(),
+  showSparklines: z.boolean().optional(),
+  showScalingLadder: z.boolean().optional(),
+  showGivebackMeter: z.boolean().optional(),
+  showActionHints: z.boolean().optional(),
+  showQuickActionButtons: z.boolean().optional(),
+  showOptionsGreeks: z.boolean().optional(),
+});
+
 export const liveWatcherSettingsSchema = z.object({
   defaultAutoExecute: z.boolean().optional(),
   defaultTargetMode: z.enum(['T1_ONLY', 'T1_FREE_RUNNER', 'TWO_TARGETS_RUNNER', 'CLASSIC_THREE']).optional(),
@@ -798,6 +813,7 @@ export const liveWatcherSettingsSchema = z.object({
   layoutPresets: z.array(watcherLayoutPresetSchema).optional(),
   activePresetId: z.string().optional(),
   clearTelegramCredentials: z.boolean().optional(),
+  displaySettings: liveWatcherDisplaySettingsSchema.optional(),
 });
 
 export const updateProfileSchema = z.object({

@@ -147,6 +147,10 @@ const UserSchema = new Schema<IUserDoc>(
         default: DEFAULT_LIVE_WATCHER_SETTINGS.layoutPresets,
       },
       activePresetId: { type: String, default: 'positional' },
+      displaySettings: {
+        type: Object,
+        default: DEFAULT_LIVE_WATCHER_SETTINGS.displaySettings,
+      },
     },
   },
   {

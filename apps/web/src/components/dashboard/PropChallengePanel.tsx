@@ -119,7 +119,7 @@ export function PropChallengePanel() {
   const [mcScenarioMode, setMcScenarioMode] = useState<'actual' | 'target1to2'>('actual');
 
   // Live Prop Market Chart Terminal toggle
-  const [showLiveChart, setShowLiveChart] = useState<boolean>(true);
+  const [showLiveChart, setShowLiveChart] = useState<boolean>(false);
 
   // Ledger & Phase Modal State
   const [ledgerModalAcc, setLedgerModalAcc] = useState<any | null>(null);

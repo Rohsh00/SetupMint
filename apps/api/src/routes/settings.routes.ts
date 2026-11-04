@@ -173,6 +173,13 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           update[`liveWatcherSettings.telegramAlertEvents.${evtKey}`] = Boolean(evtVal);
         }
       }
+      if (liveWatcherSettings.displaySettings && typeof liveWatcherSettings.displaySettings === 'object') {
+        for (const [dispKey, dispVal] of Object.entries(liveWatcherSettings.displaySettings)) {
+          if (dispVal !== undefined) {
+            update[`liveWatcherSettings.displaySettings.${dispKey}`] = Boolean(dispVal);
+          }
+        }
+      }
 
       // 5. Telegram Alerts Enabled Flag
       if (liveWatcherSettings.telegramAlertsEnabled !== undefined) {

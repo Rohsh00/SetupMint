@@ -20,6 +20,7 @@ export interface IUserDoc extends Document {
   name: string;
   baseCurrency: string;
   theme: 'dark' | 'light' | 'system';
+  defaultAccountScope?: string;
   riskSettings?: IUserRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
   liveWatcherSettings?: ILiveWatcherSettings;
@@ -55,6 +56,11 @@ const UserSchema = new Schema<IUserDoc>(
       type: String,
       enum: ['dark', 'light', 'system'],
       default: 'dark',
+    },
+    defaultAccountScope: {
+      type: String,
+      default: 'ALL',
+      trim: true,
     },
     riskSettings: {
       maxDailyLoss: { type: Number, default: 5000 },

@@ -36,6 +36,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         email: user.email,
         baseCurrency: user.baseCurrency,
         theme: user.theme,
+        defaultAccountScope: user.defaultAccountScope || 'ALL',
         riskSettings: user.riskSettings,
         patternDetectionSettings: user.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
         liveWatcherSettings: maskLiveWatcherSettings(user.liveWatcherSettings),
@@ -43,14 +44,15 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     });
   });
 
-  // Update profile / base currency / theme / riskSettings / patternDetectionSettings / liveWatcherSettings
+  // Update profile / base currency / theme / defaultAccountScope / riskSettings / patternDetectionSettings / liveWatcherSettings
   app.put('/profile', async (req: any, reply) => {
-    const { name, baseCurrency, theme, riskSettings, patternDetectionSettings, liveWatcherSettings } = req.body;
+    const { name, baseCurrency, theme, defaultAccountScope, riskSettings, patternDetectionSettings, liveWatcherSettings } = req.body;
 
     const update: any = {};
     if (name) update.name = name;
     if (baseCurrency) update.baseCurrency = baseCurrency;
     if (theme) update.theme = theme;
+    if (defaultAccountScope !== undefined) update.defaultAccountScope = String(defaultAccountScope).trim() || 'ALL';
     if (riskSettings) {
       update.riskSettings = {
         maxDailyLoss: riskSettings.maxDailyLoss !== undefined ? Number(riskSettings.maxDailyLoss) : undefined,
@@ -157,6 +159,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         email: user!.email,
         baseCurrency: user!.baseCurrency,
         theme: user!.theme,
+        defaultAccountScope: user!.defaultAccountScope || 'ALL',
         riskSettings: user!.riskSettings,
         patternDetectionSettings: user!.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
         liveWatcherSettings: maskLiveWatcherSettings(user!.liveWatcherSettings),

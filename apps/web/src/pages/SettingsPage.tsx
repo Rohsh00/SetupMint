@@ -86,6 +86,7 @@ import {
 } from '@tradevault/shared';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
+import { useAccountScope } from '../context/AccountScopeContext.js';
 import { api, BASE_URL } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { HelpHint } from '../components/help/index.js';
@@ -118,6 +119,7 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const { user, refreshUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { selectedScopeValue, setScopeValue, personalAccounts, propAccounts } = useAccountScope();
 
   // Active Tab state (0: Live Execution, 1: Risk Guardrails, 2: Market Structure, 3: Brokers, 4: Account & Security)
   const [activeTab, setActiveTab] = useState<number>(() => {
@@ -999,7 +1001,7 @@ export function SettingsPage() {
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    profileMutation.mutate({ name, baseCurrency });
+    profileMutation.mutate({ name, baseCurrency, defaultAccountScope: selectedScopeValue });
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -1039,6 +1041,74 @@ export function SettingsPage() {
           />
         </Box>
       </Box>
+
+      {/* Persistent Global Workspace & Account Mode Selector */}
+      <Card
+        variant="outlined"
+        sx={{
+          p: 2,
+          borderRadius: 2.5,
+          borderColor: selectedScopeValue.startsWith('PROP_FIRM') ? 'secondary.main' : 'primary.main',
+          background: isDark
+            ? 'linear-gradient(90deg, rgba(16, 185, 129, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%)'
+            : 'linear-gradient(90deg, rgba(16, 185, 129, 0.04) 0%, rgba(99, 102, 241, 0.04) 100%)',
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ShieldRounded sx={{ color: 'primary.main', fontSize: 20 }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                Default Trading Mode & Account Scope
+              </Typography>
+              <Chip
+                label="Saved to Backend"
+                size="small"
+                color="success"
+                variant="outlined"
+                sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }}
+              />
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              Choose which account mode loads by default across all pages, charts, live watcher, and analytics.
+            </Typography>
+          </Box>
+
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={
+              selectedScopeValue.startsWith('PROP_FIRM')
+                ? 'PROP_FIRM:ALL'
+                : selectedScopeValue.startsWith('TYPE:LIVE')
+                ? 'TYPE:LIVE'
+                : 'ALL'
+            }
+            onChange={(_, val) => {
+              if (!val) return;
+              setScopeValue(val);
+              const modeLabel =
+                val === 'PROP_FIRM:ALL'
+                  ? 'Prop Firm Mode'
+                  : val === 'TYPE:LIVE'
+                  ? 'Normal / Personal Account Mode'
+                  : 'All Accounts (Consolidated)';
+              toast.success(`Default mode saved: ${modeLabel}`);
+            }}
+            sx={{ flexWrap: 'wrap' }}
+          >
+            <ToggleButton value="ALL" sx={{ px: 2, py: 0.75, fontWeight: 700, textTransform: 'none' }}>
+              🌐 All Accounts
+            </ToggleButton>
+            <ToggleButton value="TYPE:LIVE" sx={{ px: 2, py: 0.75, fontWeight: 700, textTransform: 'none' }}>
+              💼 Normal Account{personalAccounts.length === 1 ? ` (${personalAccounts[0].name})` : ''}
+            </ToggleButton>
+            <ToggleButton value="PROP_FIRM:ALL" sx={{ px: 2, py: 0.75, fontWeight: 700, textTransform: 'none' }}>
+              🏆 Prop Firm Mode{propAccounts.length === 1 ? ` (${propAccounts[0].name})` : ''}
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+      </Card>
 
       {/* Modern Navigation Tabs Header */}
       <Tabs
@@ -2886,6 +2956,30 @@ export function SettingsPage() {
                       helperText="Local database login identity (read-only)"
                       slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
                     />
+
+                    <TextField
+                      select
+                      label="Default Trading Mode (Saved to Account)"
+                      size="small"
+                      fullWidth
+                      value={
+                        selectedScopeValue.startsWith('PROP_FIRM')
+                          ? 'PROP_FIRM:ALL'
+                          : selectedScopeValue.startsWith('TYPE:LIVE')
+                          ? 'TYPE:LIVE'
+                          : 'ALL'
+                      }
+                      onChange={(e) => setScopeValue(e.target.value)}
+                      helperText="Automatically scopes all pages, charts, and analytics on login"
+                    >
+                      <MenuItem value="ALL">🌐 All Accounts (Consolidated)</MenuItem>
+                      <MenuItem value="TYPE:LIVE">
+                        💼 Normal / Personal Account Only{personalAccounts.length === 1 ? ` (${personalAccounts[0].name})` : ''}
+                      </MenuItem>
+                      <MenuItem value="PROP_FIRM:ALL">
+                        🏆 Prop Firm Mode Only{propAccounts.length === 1 ? ` (${propAccounts[0].name})` : ''}
+                      </MenuItem>
+                    </TextField>
 
                     <TextField
                       select

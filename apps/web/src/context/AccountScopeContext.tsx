@@ -3,14 +3,15 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AccountScope, AccountScopeMode } from '@tradevault/shared';
 import { api } from '../lib/api.js';
+import { useAuth } from './AuthContext.js';
 
 const SCOPE_STORAGE_KEY = 'setupmint_account_scope';
 
-function readStoredScopeValue(): string {
+function readStoredScopeValue(): string | null {
   try {
-    return sessionStorage.getItem(SCOPE_STORAGE_KEY) || 'ALL';
+    return sessionStorage.getItem(SCOPE_STORAGE_KEY);
   } catch {
-    return 'ALL';
+    return null;
   }
 }
 
@@ -43,12 +44,14 @@ const AccountScopeContext = createContext<AccountScopeContextValue | undefined>(
 export function AccountScopeProvider({ children }: { children: React.ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const { user, refreshUser } = useAuth();
 
   // Fetch accounts to resolve names, types, and prop firm keys
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ['accounts'],
     queryFn: () => api.accounts.list(),
     staleTime: 5 * 60 * 1000,
+    enabled: Boolean(user),
   });
 
   const propAccounts = useMemo(() => {
@@ -122,13 +125,16 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
         mode = 'ALL';
       }
     } else {
-      // Fall back to sessionStorage when navigating between pages that stripped query params
-      const stored = readStoredScopeValue();
-      if (stored === 'PROP_FIRM:ALL') {
+      // Fall back to sessionStorage or user's backend-saved defaultAccountScope
+      const stored = readStoredScopeValue() || user?.defaultAccountScope || 'ALL';
+      if (stored === 'PROP_FIRM:ALL' || stored === 'PROP_FIRM') {
         mode = 'PROP_FIRM';
       } else if (stored.startsWith('PROP_FIRM:')) {
         mode = 'PROP_FIRM';
         firmKey = stored.slice('PROP_FIRM:'.length).toLowerCase();
+      } else if (stored === 'LIVE' || stored === 'PERSONAL') {
+        mode = 'TYPE';
+        accountType = 'LIVE';
       } else if (stored.startsWith('TYPE:')) {
         mode = 'TYPE';
         accountType = stored.slice('TYPE:'.length) || 'LIVE';
@@ -149,6 +155,22 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
           mode = 'ALL';
         }
       }
+    }
+
+    // Normalize single-account groups so there are no duplicate menu items in the header switcher
+    if (mode === 'ACCOUNT' && accountId && accounts.length > 0) {
+      if (personalAccounts.length === 1 && (personalAccounts[0].id === accountId || personalAccounts[0]._id === accountId)) {
+        mode = 'TYPE';
+        accountType = 'LIVE';
+      } else if (propAccounts.length === 1 && (propAccounts[0].id === accountId || propAccounts[0]._id === accountId)) {
+        mode = 'PROP_FIRM';
+      }
+    }
+
+    if (mode === 'TYPE' && (accountType === 'LIVE' || !accountType) && personalAccounts.length === 1) {
+      accountId = personalAccounts[0].id || personalAccounts[0]._id;
+    } else if (mode === 'PROP_FIRM' && !accountId && propAccounts.length === 1) {
+      accountId = propAccounts[0].id || propAccounts[0]._id;
     }
 
     const currentScope: AccountScope = {
@@ -173,19 +195,24 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
     let scopeVal = 'ALL';
     let label = 'All Accounts';
     if (mode === 'PROP_FIRM') {
-      if (accountId) {
+      if (accountId && propAccounts.length > 1) {
         scopeVal = `ACCOUNT:${accountId}`;
         label = selectedAcc?.name || 'Prop Account';
-      } else if (firmKey) {
+      } else if (firmKey && propFirms.length > 1) {
         scopeVal = `PROP_FIRM:${firmKey}`;
         label = `Prop Firm (${firmKey.toUpperCase()})`;
       } else {
         scopeVal = 'PROP_FIRM:ALL';
-        label = 'All Prop Firms';
+        label = propAccounts.length === 1 ? propAccounts[0].name : 'All Prop Firms';
       }
     } else if (mode === 'TYPE') {
       scopeVal = `TYPE:${accountType || 'LIVE'}`;
-      label = accountType === 'DEMO' ? 'Demo Accounts' : 'Personal / Live Accounts';
+      label =
+        accountType === 'DEMO'
+          ? 'Demo Accounts'
+          : personalAccounts.length === 1
+          ? personalAccounts[0].name
+          : 'Personal / Live Accounts';
     } else if (mode === 'ACCOUNT' && accountId) {
       scopeVal = `ACCOUNT:${accountId}`;
       label = selectedAcc?.name || 'Account';
@@ -198,11 +225,13 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
       isPropMode: propModeActive,
       selectedAccountId: accountId,
     };
-  }, [hasExplicitUrlScope, rawScope, firmParam, typeParam, accountParam, accounts]);
+  }, [hasExplicitUrlScope, rawScope, firmParam, typeParam, accountParam, accounts, personalAccounts, propAccounts, propFirms, user?.defaultAccountScope]);
 
   // Keep sessionStorage and URL query params synchronized across route changes
   useEffect(() => {
-    writeStoredScopeValue(selectedScopeValue);
+    if (hasExplicitUrlScope || user) {
+      writeStoredScopeValue(selectedScopeValue);
+    }
 
     if (!hasExplicitUrlScope && selectedScopeValue !== 'ALL') {
       setSearchParams(
@@ -225,11 +254,18 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
         { replace: true }
       );
     }
-  }, [selectedScopeValue, hasExplicitUrlScope, location.pathname, setSearchParams]);
+  }, [selectedScopeValue, hasExplicitUrlScope, user, location.pathname, setSearchParams]);
 
   const setScopeValue = useCallback(
     (val: string) => {
       writeStoredScopeValue(val);
+      // Persist to backend so user never needs to re-select on next session/reload
+      if (user) {
+        api.settings
+          .updateProfile({ defaultAccountScope: val })
+          .then(() => refreshUser())
+          .catch(() => {});
+      }
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -275,7 +311,7 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
         { replace: true }
       );
     },
-    [setSearchParams]
+    [setSearchParams, user, refreshUser]
   );
 
   const setScope = useCallback(

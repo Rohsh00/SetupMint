@@ -8,6 +8,7 @@ export interface User {
   name: string;
   baseCurrency: string;
   theme?: string;
+  defaultAccountScope?: string;
   riskSettings?: IRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
   liveWatcherSettings?: ILiveWatcherSettings;

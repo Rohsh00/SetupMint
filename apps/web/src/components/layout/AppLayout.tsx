@@ -610,35 +610,55 @@ export function AppLayout() {
                     }}
                   >
                     <MenuItem value="ALL">
-                      <em>All Accounts (Consolidated)</em>
+                      🌐 All Accounts (Consolidated)
                     </MenuItem>
                     {personalAccounts.length > 0 && (
                       <MenuItem value="TYPE:LIVE">
-                        💼 Live / Personal Accounts
+                        💼{' '}
+                        {personalAccounts.length === 1
+                          ? `${personalAccounts[0].name} (${personalAccounts[0].baseCurrency})`
+                          : `Personal / Live Accounts (${personalAccounts.length})`}
                       </MenuItem>
                     )}
                     <MenuItem value="PROP_FIRM:ALL">
-                      🏆 Prop Firm Accounts (All)
+                      🏆{' '}
+                      {propAccounts.length === 1
+                        ? `${propAccounts[0].name} (${propAccounts[0].baseCurrency})`
+                        : `Prop Firm Mode${propAccounts.length > 1 ? ` (${propAccounts.length})` : ''}`}
                     </MenuItem>
-                    {propFirms.map((firm) => (
-                      <MenuItem key={firm} value={`PROP_FIRM:${firm}`} sx={{ pl: 3.5, fontSize: '0.8rem' }}>
-                        ↳ Firm: {firm.toUpperCase()}
-                      </MenuItem>
-                    ))}
+                    {propFirms.length > 1 &&
+                      propFirms.map((firm) => (
+                        <MenuItem key={firm} value={`PROP_FIRM:${firm}`} sx={{ pl: 3.5, fontSize: '0.8rem' }}>
+                          ↳ Firm: {firm.toUpperCase()}
+                        </MenuItem>
+                      ))}
                     {demoAccounts.length > 0 && (
                       <MenuItem value="TYPE:DEMO">
-                        🧪 Demo / Paper Accounts
+                        🧪{' '}
+                        {demoAccounts.length === 1
+                          ? `${demoAccounts[0].name} (${demoAccounts[0].baseCurrency})`
+                          : `Demo Accounts (${demoAccounts.length})`}
                       </MenuItem>
                     )}
-                    <Divider sx={{ my: 0.5 }} />
-                    <ListSubheader sx={{ lineHeight: '24px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Individual Accounts
-                    </ListSubheader>
-                    {accounts.map((acc: any) => (
-                      <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
-                        {acc.name} ({acc.broker} • {acc.baseCurrency})
-                      </MenuItem>
-                    ))}
+                    {(personalAccounts.length > 1 || propAccounts.length > 1) && [
+                      <Divider key="ind-div" sx={{ my: 0.5 }} />,
+                      <ListSubheader
+                        key="ind-sub"
+                        sx={{ lineHeight: '24px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}
+                      >
+                        Individual Accounts
+                      </ListSubheader>,
+                      ...(personalAccounts.length > 1 ? personalAccounts : []).map((acc: any) => (
+                        <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
+                          💼 {acc.name} ({acc.baseCurrency})
+                        </MenuItem>
+                      )),
+                      ...(propAccounts.length > 1 ? propAccounts : []).map((acc: any) => (
+                        <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
+                          🏆 {acc.name} ({acc.baseCurrency})
+                        </MenuItem>
+                      )),
+                    ]}
                   </Select>
                 </FormControl>
                 {isPropMode && (

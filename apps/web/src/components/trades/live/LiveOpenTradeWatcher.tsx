@@ -1451,6 +1451,13 @@ export function LiveOpenTradeWatcher({
     return 'ladder';
   };
 
+  const watcherCurrency =
+    isPropMode ||
+    (summary?.positions?.length && summary.positions.every((p: any) => p.currency === 'USD'))
+      ? 'USD'
+      : 'INR';
+  const currSym = watcherCurrency === 'USD' ? '$' : '₹';
+
   return (
     <>
       <Card
@@ -1607,7 +1614,7 @@ export function LiveOpenTradeWatcher({
                     sx={{ fontWeight: 900, color: netPnLColor, letterSpacing: -0.3, lineHeight: 1.2 }}
                   >
                     {isNetProfit ? '+' : ''}
-                    {formatCurrency(summary?.totalFloatingNetPnL ?? 0, 'INR')}
+                    {formatCurrency(summary?.totalFloatingNetPnL ?? 0, watcherCurrency)}
                   </Typography>
                 </Box>
 
@@ -2550,7 +2557,7 @@ export function LiveOpenTradeWatcher({
                               <Box>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                   <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                                    ₹{pos.currentLtp}
+                                    {currSym}{pos.currentLtp}
                                   </Typography>
                                   {pos.priceDeltaPoints >= 0 ? (
                                     <TrendingUpRoundedIcon sx={{ fontSize: 14, color: '#10B981' }} />
@@ -2559,7 +2566,7 @@ export function LiveOpenTradeWatcher({
                                   )}
                                 </Box>
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                  Entry: ₹{pos.entryPrice} ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
+                                  Entry: {currSym}{pos.entryPrice} ({pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts)
                                 </Typography>
                               </Box>
                               {pos.sparkline && (
@@ -2572,7 +2579,7 @@ export function LiveOpenTradeWatcher({
                           <TableCell>
                             <Typography variant="body2" sx={{ fontWeight: 800, color: posPnLColor }}>
                               {isPosProfitable ? '+' : ''}
-                              {formatCurrency(pos.floatingNetPnL, 'INR')}
+                              {formatCurrency(pos.floatingNetPnL, (pos as any).currency || watcherCurrency)}
                             </Typography>
                             {pos.unrealizedR !== null && (
                               <Chip
@@ -3264,7 +3271,7 @@ export function LiveOpenTradeWatcher({
                                   fontSize: '0.85rem',
                                 }}
                               >
-                                ₹{pos.currentLtp}
+                                {currSym}{pos.currentLtp}
                                 {pos.priceDeltaPoints >= 0 ? (
                                   <TrendingUpRoundedIcon sx={{ fontSize: 14 }} />
                                 ) : (
@@ -3280,7 +3287,7 @@ export function LiveOpenTradeWatcher({
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <Typography variant="subtitle1" sx={{ fontWeight: 900, color: posPnLColor, lineHeight: 1.1, fontSize: '0.95rem' }}>
                                   {isPosProfitable ? '+' : ''}
-                                  {formatCurrency(pos.floatingNetPnL, 'INR')}
+                                  {formatCurrency(pos.floatingNetPnL, (pos as any).currency || watcherCurrency)}
                                 </Typography>
                                 {pos.unrealizedR !== null && (
                                   <Chip
@@ -3672,7 +3679,7 @@ export function LiveOpenTradeWatcher({
                                       Entry Price
                                     </Typography>
                                     <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
-                                      ₹{pos.entryPrice}
+                                      {currSym}{pos.entryPrice}
                                     </Typography>
                                     <Typography variant="caption" sx={{ fontSize: '0.6rem', fontWeight: 700, color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E' }}>
                                       {pos.priceDeltaPoints >= 0 ? '+' : ''}{pos.priceDeltaPoints} pts ({pos.priceDeltaPercent >= 0 ? '+' : ''}{pos.priceDeltaPercent}%)
@@ -3686,10 +3693,10 @@ export function LiveOpenTradeWatcher({
                                       Current LTP
                                     </Typography>
                                     <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem', color: pos.priceDeltaPoints >= 0 ? '#10B981' : '#F43F5E' }}>
-                                      ₹{pos.currentLtp}
+                                      {currSym}{pos.currentLtp}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
-                                      Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, 'INR')}
+                                      Gross: {pos.floatingGrossPnL >= 0 ? '+' : ''}{formatCurrency(pos.floatingGrossPnL, (pos as any).currency || watcherCurrency)}
                                     </Typography>
                                   </Box>
                                 </Grid>
@@ -3700,7 +3707,7 @@ export function LiveOpenTradeWatcher({
                                       Risk Capital (1R)
                                     </Typography>
                                     <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem', color: '#F43F5E' }}>
-                                      {initialRiskAmount !== null ? formatCurrency(initialRiskAmount, 'INR') : '—'}
+                                      {initialRiskAmount !== null ? formatCurrency(initialRiskAmount, (pos as any).currency || watcherCurrency) : '—'}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
                                       {initialRiskPts !== null ? `${initialRiskPts.toFixed(1)} pts risk` : 'No stop set'}
@@ -3714,7 +3721,7 @@ export function LiveOpenTradeWatcher({
                                       Position Value
                                     </Typography>
                                     <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
-                                      {formatCurrency(notionalExposure, 'INR')}
+                                      {formatCurrency(notionalExposure, (pos as any).currency || watcherCurrency)}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
                                       {multiplier > 1 ? `${pos.quantity ?? 1} lots` : `${pos.quantity ?? 1} units`}

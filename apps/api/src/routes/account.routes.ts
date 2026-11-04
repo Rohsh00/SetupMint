@@ -8,6 +8,7 @@ import {
   AccountTransaction,
   BrokerFundsSnapshot,
   BrokerIntegration,
+  Instrument,
   Trade,
   TradingAccount,
 } from '../db/models/index.js';
@@ -1152,14 +1153,14 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const year = yrRaw < 100 ? 2000 + yrRaw : yrRaw;
         const hr = Number(m[4]);
         const min = Number(m[5]);
-        return new Date(Date.UTC(year, month, day, hr, min, 0) - 5.5 * 3600 * 1000);
+        return new Date(Date.UTC(year, month, day, hr, min, 0));
       }
       const d = new Date(clean);
       return Number.isNaN(d.getTime()) ? null : d;
     };
 
     const parseMoney = (val: string): number => {
-      if (!val) return 0;
+      if (!val || val === '-') return 0;
       const cleaned = val.replace(/[^0-9.-]/g, '');
       const num = parseFloat(cleaned);
       return Number.isFinite(num) ? num : 0;
@@ -1168,18 +1169,53 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const getContractSpec = (sym: string) => {
       const upper = sym.toUpperCase();
       if (upper === 'XAUUSD' || upper === 'GOLD') {
-        return { multiplier: 100, assetClass: 'FOREX' as const, exchange: 'FOREX' as const };
+        return {
+          multiplier: 100,
+          lotSize: 0.01,
+          displayName: 'Gold / US Dollar Spot (CFD/Forex)',
+          assetClass: 'FOREX' as const,
+          exchange: 'FOREX' as const,
+          marketSegment: 'FOREX' as const,
+        };
       }
       if (upper === 'XAGUSD' || upper === 'SILVER') {
-        return { multiplier: 5000, assetClass: 'FOREX' as const, exchange: 'FOREX' as const };
+        return {
+          multiplier: 5000,
+          lotSize: 0.01,
+          displayName: 'Silver / US Dollar Spot (CFD/Forex)',
+          assetClass: 'FOREX' as const,
+          exchange: 'FOREX' as const,
+          marketSegment: 'FOREX' as const,
+        };
       }
       if (upper.endsWith('USDT') || upper === 'ETHUSD' || upper === 'BTCUSD' || upper === 'SOLUSD') {
-        return { multiplier: 1, assetClass: 'CRYPTO' as const, exchange: 'CRYPTO' as const };
+        return {
+          multiplier: 1,
+          lotSize: 1,
+          displayName: upper === 'ETHUSD' ? 'Ethereum / US Dollar' : `${upper} Crypto CFD`,
+          assetClass: 'CRYPTO' as const,
+          exchange: 'CRYPTO' as const,
+          marketSegment: 'CRYPTO' as const,
+        };
       }
       if (['NAS100', 'USTEC', 'US30', 'SPX500', 'US500', 'GER40'].includes(upper)) {
-        return { multiplier: 1, assetClass: 'FUTURES' as const, exchange: 'FOREX' as const };
+        return {
+          multiplier: 1,
+          lotSize: 0.1,
+          displayName: `${upper} Index CFD`,
+          assetClass: 'FUTURES' as const,
+          exchange: 'FOREX' as const,
+          marketSegment: 'FOREX' as const,
+        };
       }
-      return { multiplier: 100000, assetClass: 'FOREX' as const, exchange: 'FOREX' as const };
+      return {
+        multiplier: 100000,
+        lotSize: 0.01,
+        displayName: `${upper} Forex Pair`,
+        assetClass: 'FOREX' as const,
+        exchange: 'FOREX' as const,
+        marketSegment: 'FOREX' as const,
+      };
     };
 
     const lines = rawText
@@ -1193,27 +1229,49 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
     for (const line of lines) {
       // Match tab-separated, comma-separated, or whitespace-separated The5ers row:
-      // e.g. 560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97 Win
+      // Closed: 560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97 Win
+      // Open:   560643070821 XAUUSD Sell 04.11.26 14:11 - $4,036.46 - 0.3 -$1.21 $0 -$1.21
       const rowRegex =
-        /^(\d{6,}(?:-\d+)?)\s+([A-Za-z0-9:._/-]+)\s+(Buy|Sell|LONG|SHORT)\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})(?:\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2}))?\s+(\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+(\$?[0-9,]+(?:\.[0-9]+)?))?\s+([0-9]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?))?/i;
+        /^(\d{6,}(?:-\d+)?)\s+([A-Za-z0-9:._/-]+)\s+(Buy|Sell|LONG|SHORT)\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})(?:\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2}|-))?\s+(\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+(\$?[0-9,]+(?:\.[0-9]+)?|-))?\s+([0-9]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-)(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-))?/i;
 
       const m = line.match(rowRegex);
       if (!m) continue;
 
-      const brokerTradeId = m[1];
+      const rawTicket = m[1];
       const rawSymbol = m[2].includes(':') ? m[2].split(':').pop()! : m[2];
       const symbol = rawSymbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
       const sideRaw = m[3].toUpperCase();
       const direction: 'LONG' | 'SHORT' = sideRaw === 'BUY' || sideRaw === 'LONG' ? 'LONG' : 'SHORT';
       const entryDate = parseThe5ersDate(m[4]) || new Date();
-      const exitDate = m[5] ? parseThe5ersDate(m[5]) : null;
+      const exitDate = m[5] && m[5] !== '-' ? parseThe5ersDate(m[5]) : null;
       const entryPrice = parseMoney(m[6]);
-      const exitPrice = m[7] ? parseMoney(m[7]) : 0;
+      const exitPrice = m[7] && m[7] !== '-' ? parseMoney(m[7]) : 0;
       const qty = parseFloat(m[8]) || 0.1;
       const feeAbs = Math.abs(parseMoney(m[9]));
       const swapFee = Math.abs(parseMoney(m[10]));
       const isClosed = Boolean(exitDate && exitPrice > 0);
       const spec = getContractSpec(symbol);
+
+      // Ensure instrument exists for user
+      let instrument = await Instrument.findOne({ userId: req.user!.id, symbol });
+      if (!instrument) {
+        instrument = await Instrument.create({
+          userId: req.user!.id,
+          symbol,
+          displayName: spec.displayName,
+          assetClass: spec.assetClass,
+          exchange: spec.exchange,
+          marketSegment: spec.marketSegment,
+          quoteCurrency: account.baseCurrency || 'USD',
+          contractMultiplier: spec.multiplier,
+          lotSize: spec.lotSize,
+          tickSize: 0.01,
+          quantityIncrement: spec.lotSize,
+          pricePrecision: 2,
+          isActive: true,
+          source: 'AUTO',
+        });
+      }
 
       const priceDiff = isClosed
         ? direction === 'LONG'
@@ -1221,9 +1279,12 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
           : entryPrice - exitPrice
         : 0;
       const grossPnL = isClosed ? Number((priceDiff * qty * spec.multiplier).toFixed(2)) : 0;
-      const totalCharges = Number((feeAbs + swapFee).toFixed(2));
-      const parsedNetPnl = m[11] !== undefined ? parseMoney(m[11]) : Number((grossPnL - totalCharges).toFixed(2));
-      const netPnL = isClosed ? parsedNetPnl : 0;
+      const totalCosts = Number((feeAbs + swapFee).toFixed(2));
+      const parsedNetPnl =
+        m[11] !== undefined && m[11] !== '-'
+          ? parseMoney(m[11])
+          : Number((grossPnL - totalCosts).toFixed(2));
+      const netPnL = isClosed ? parsedNetPnl : Number((-totalCosts).toFixed(2));
 
       // Compute Stop Loss & 1:2 RR Target
       let initialStopLoss: number;
@@ -1231,7 +1292,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       let realizedRMultiple = 0;
 
       if (!isClosed) {
-        const defaultRiskPts = Number((entryPrice * 0.0035).toFixed(2));
+        const defaultRiskPts = Number((entryPrice * 0.001).toFixed(2));
         initialStopLoss = Number(
           (direction === 'LONG' ? entryPrice - defaultRiskPts : entryPrice + defaultRiskPts).toFixed(2)
         );
@@ -1247,7 +1308,6 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         plannedTarget = Number(
           (direction === 'LONG' ? entryPrice + slDist * rrRatio : entryPrice - slDist * rrRatio).toFixed(2)
         );
-        realizedRMultiple = -1;
       } else {
         // Winning trade: 1:rrRatio RR -> SL distance = reward distance / rrRatio
         plannedTarget = exitPrice;
@@ -1256,68 +1316,108 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         initialStopLoss = Number(
           (direction === 'LONG' ? entryPrice - slDist : entryPrice + slDist).toFixed(2)
         );
-        realizedRMultiple = rrRatio;
       }
 
       const slDistance = Math.abs(entryPrice - initialStopLoss);
       const plannedRiskAmount = Number(Math.max(1, slDistance * qty * spec.multiplier).toFixed(2));
+      if (isClosed) {
+        realizedRMultiple = Number((netPnL / plannedRiskAmount).toFixed(2));
+      }
 
+      const ticketCandidates = [rawTicket];
+      if (rawTicket.length > 12 && !rawTicket.includes('-')) {
+        ticketCandidates.push(rawTicket.slice(0, 12));
+      }
+
+      // Match by externalBrokerOrderRef or matching OPEN trade at same entryPrice & qty
       const existing = await Trade.findOne({
         userId: req.user!.id,
         accountId: account._id,
-        brokerTradeId,
+        $or: [
+          { externalBrokerOrderRef: { $in: ticketCandidates } },
+          {
+            status: 'OPEN',
+            symbol,
+            direction,
+            'simpleExecution.entryPrice': entryPrice,
+            'simpleExecution.quantity': qty,
+          },
+        ],
       });
+
+      const canonicalTicket =
+        existing?.externalBrokerOrderRef && rawTicket.startsWith(existing.externalBrokerOrderRef)
+          ? existing.externalBrokerOrderRef
+          : rawTicket;
+
+      const tradeDateDay = new Date(
+        Date.UTC(entryDate.getUTCFullYear(), entryDate.getUTCMonth(), entryDate.getUTCDate(), 0, 0, 0)
+      );
+      const holdingTimeMinutes =
+        isClosed && exitDate
+          ? Math.max(1, Math.round((exitDate.getTime() - entryDate.getTime()) / 60000))
+          : undefined;
+      const outcome = !isClosed ? 'OPEN' : netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN';
 
       const tradePayload: any = {
         userId: req.user!.id,
         accountId: account._id,
-        brokerTradeId,
-        importSource: 'BROKER_SYNC',
+        instrumentId: instrument._id,
         symbol,
         underlying: symbol,
+        instrumentName: instrument.displayName,
         assetClass: spec.assetClass,
         exchange: spec.exchange,
+        marketSegment: spec.marketSegment,
+        currency: account.baseCurrency || 'USD',
         direction,
         status: isClosed ? 'CLOSED' : 'OPEN',
-        tradeDate: entryDate,
+        tradeDate: tradeDateDay,
+        timeZone: 'Asia/Kolkata',
         entryTime: entryDate,
-        exitTime: isClosed ? exitDate : undefined,
+        exitTime: isClosed && exitDate ? exitDate : undefined,
+        session: 'LONDON',
+        tradeTitle: `${symbol === 'XAUUSD' ? 'Gold' : symbol} ${direction === 'LONG' ? 'Long' : 'Short'} ${qty.toFixed(2)} Lots`,
+        externalBrokerOrderRef: canonicalTicket,
+        tags: ['THE5ERS', 'PROP_FIRM', 'TRADINGVIEW', symbol],
         executionMode: 'SIMPLE',
-        contractMultiplier: spec.multiplier,
-        lotSize: 0.01,
         simpleExecution: {
-          entryPrice: mongoose.Types.Decimal128.fromString(entryPrice.toFixed(2)),
-          exitPrice: isClosed ? mongoose.Types.Decimal128.fromString(exitPrice.toFixed(2)) : undefined,
+          entryPrice,
+          exitPrice: isClosed ? exitPrice : undefined,
           quantity: qty,
-          entryDate,
-          exitDate: isClosed ? exitDate : undefined,
-          commission: mongoose.Types.Decimal128.fromString(feeAbs.toFixed(2)),
-          taxes: mongoose.Types.Decimal128.fromString(swapFee.toFixed(2)),
           contractMultiplier: spec.multiplier,
+          brokerage: feeAbs,
+          exchangeFees: 0,
+          regulatoryFees: 0,
+          taxes: swapFee,
+          otherFees: 0,
+          explicitAdjustments: 0,
         },
         risk: {
-          initialStopLoss: mongoose.Types.Decimal128.fromString(initialStopLoss.toFixed(2)),
-          currentStopLoss: mongoose.Types.Decimal128.fromString(initialStopLoss.toFixed(2)),
-          plannedTarget: mongoose.Types.Decimal128.fromString(plannedTarget.toFixed(2)),
-          plannedRiskAmount: mongoose.Types.Decimal128.fromString(plannedRiskAmount.toFixed(2)),
-          plannedRewardRatio: rrRatio,
+          plannedEntryPrice: entryPrice,
+          initialStopLoss,
+          currentStopLoss: initialStopLoss,
+          initialStopSource: 'MANUAL',
+          plannedTarget,
+          riskBudgetAmount: plannedRiskAmount,
+          plannedRiskAmount,
+          actualQuantity: qty,
+          estimatedRiskAmount: plannedRiskAmount,
+          plannedRewardRiskRatio: rrRatio,
+          realizedRMultiple: isClosed ? realizedRMultiple : undefined,
+          riskRuleViolations: [],
         },
         calculated: {
-          totalEntryQuantity: qty,
-          totalExitQuantity: isClosed ? qty : 0,
-          openQuantity: isClosed ? 0 : qty,
-          averageEntryPrice: mongoose.Types.Decimal128.fromString(entryPrice.toFixed(2)),
-          averageExitPrice: isClosed ? mongoose.Types.Decimal128.fromString(exitPrice.toFixed(2)) : undefined,
-          grossPnL: mongoose.Types.Decimal128.fromString(grossPnL.toFixed(2)),
-          totalCharges: mongoose.Types.Decimal128.fromString(totalCharges.toFixed(2)),
-          netPnL: mongoose.Types.Decimal128.fromString(netPnL.toFixed(2)),
+          grossPnL,
+          totalCosts,
+          netPnL,
           realizedRMultiple: isClosed ? realizedRMultiple : undefined,
-          plannedRR: rrRatio,
-          holdingDurationSeconds:
-            isClosed && exitDate
-              ? Math.max(0, Math.round((exitDate.getTime() - entryDate.getTime()) / 1000))
-              : undefined,
-          isWinner: isClosed ? netPnL > 0 : undefined,
+          holdingTimeMinutes,
+          outcome,
+          closedQuantity: isClosed ? qty : 0,
+          openQuantity: isClosed ? 0 : qty,
+          averageEntryPrice: entryPrice,
+          averageExitPrice: isClosed ? exitPrice : undefined,
         },
       };
 
@@ -1325,12 +1425,36 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         await Trade.updateOne({ _id: existing._id }, { $set: tradePayload });
         updatedCount++;
       } else {
-        await Trade.create(tradePayload);
+        await Trade.create({
+          ...tradePayload,
+          fills: [],
+          thesis: { confluences: [], customTechnicalLabels: [] },
+          psychology: {
+            disciplineScore: 5,
+            checklistCompleted: true,
+            rulesFollowed: true,
+            mistakes: [],
+            revengeTrading: false,
+            overtrading: false,
+            prematureExit: false,
+            stopLossMoved: false,
+            positionSizeViolation: false,
+          },
+          screenshotIds: [],
+          auditLog: [
+            {
+              action: 'CREATED_PROP_FIRM_SYNC',
+              timestamp: new Date(),
+              changedBy: req.user!.email || 'user',
+              details: { ticket: canonicalTicket, source: 'The5ers / TradingView Sync' },
+            },
+          ],
+        });
         insertedCount++;
       }
 
       importedTrades.push({
-        brokerTradeId,
+        brokerTradeId: canonicalTicket,
         symbol,
         direction,
         status: isClosed ? 'CLOSED' : 'OPEN',
@@ -1339,6 +1463,17 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         initialStopLoss,
         plannedTarget,
         netPnL,
+      });
+    }
+
+    if (importedTrades.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'NO_VALID_ROWS',
+          message:
+            'Could not parse any valid trade rows. Expected format: ID Symbol Side OpenDate CloseDate EntryPrice ExitPrice Lots Fee Swap NetPnL',
+        },
       });
     }
 

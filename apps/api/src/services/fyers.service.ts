@@ -1152,8 +1152,10 @@ export class FyersService {
             multiplier
           );
 
-          const avgEntry = fifoSummary.weightedAvgEntryPrice.toNumber();
-          const avgExit = fifoSummary.weightedAvgExitPrice ? fifoSummary.weightedAvgExitPrice.toNumber() : undefined;
+          const avgEntry = fifoSummary.weightedAvgEntryPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+          const avgExit = fifoSummary.weightedAvgExitPrice
+            ? fifoSummary.weightedAvgExitPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
+            : undefined;
           const closedQty = fifoSummary.closedQuantity.toNumber();
           const tradeDate = grp.entryTime;
           const totalTradeQty = grp.fills.filter((f) => f.type === 'ENTRY').reduce((sum, f) => sum + f.quantity, 0);

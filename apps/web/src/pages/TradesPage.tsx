@@ -50,7 +50,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
-import { formatCurrency, formatPercent, formatR } from '../lib/utils.js';
+import { formatCurrency, formatPercent, formatPrice, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
@@ -826,16 +826,16 @@ export function TradesPage() {
                         </Box>
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
-                        {t.simpleExecution?.entryPrice || t.calculated?.averageEntryPrice || '—'}
+                        {formatPrice(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
-                        {t.simpleExecution?.exitPrice || t.calculated?.averageExitPrice || '—'}
+                        {formatPrice(t.simpleExecution?.exitPrice ?? t.calculated?.averageExitPrice)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
-                        {t.simpleExecution?.quantity || t.calculated?.closedQuantity || '—'}
+                        {formatPrice(t.simpleExecution?.quantity ?? t.calculated?.closedQuantity)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary }}>
-                        {formatCurrency(t.calculated?.totalCosts)}
+                        {formatCurrency(t.calculated?.totalCosts, t.currency)}
                       </TableCell>
                       <TableCell
                         align="right"
@@ -850,7 +850,7 @@ export function TradesPage() {
                             : muiTheme.palette.text.secondary,
                         }}
                       >
-                        {formatCurrency(t.calculated?.netPnL)}
+                        {formatCurrency(t.calculated?.netPnL, t.currency)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
                         {formatR(t.calculated?.realizedRMultiple)}

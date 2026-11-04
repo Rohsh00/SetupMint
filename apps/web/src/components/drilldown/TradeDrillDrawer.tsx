@@ -477,7 +477,7 @@ export function TradeDrillDrawer() {
                           : 'text.primary',
                     }}
                   >
-                    {formatCurrency(activeTrade.calculated?.netPnL)}
+                    {formatCurrency(activeTrade.calculated?.netPnL, (activeTrade as any).currency || 'INR')}
                   </Typography>
                   <Typography
                     variant="caption"
@@ -508,7 +508,7 @@ export function TradeDrillDrawer() {
                       Entry Price
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.averageEntryPrice || (activeTrade as any).simpleExecution?.entryPrice, 'INR')}
+                      {formatCurrency(activeTrade.calculated?.averageEntryPrice || (activeTrade as any).simpleExecution?.entryPrice, (activeTrade as any).currency || 'INR')}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -516,7 +516,7 @@ export function TradeDrillDrawer() {
                       Exit Price
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.averageExitPrice, 'INR')}
+                      {formatCurrency(activeTrade.calculated?.averageExitPrice, (activeTrade as any).currency || 'INR')}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -532,7 +532,7 @@ export function TradeDrillDrawer() {
                       Stop Loss
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: 'error.main' }}>
-                      {formatCurrency(activeTrade.risk?.initialStopLoss, 'INR')}
+                      {formatCurrency(activeTrade.risk?.initialStopLoss, (activeTrade as any).currency || 'INR')}
                     </Typography>
                   </Grid>
 
@@ -541,7 +541,7 @@ export function TradeDrillDrawer() {
                       Gross P&L
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.grossPnL)}
+                      {formatCurrency(activeTrade.calculated?.grossPnL, (activeTrade as any).currency || 'INR')}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -549,7 +549,7 @@ export function TradeDrillDrawer() {
                       Total Charges
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.totalCosts)}
+                      {formatCurrency(activeTrade.calculated?.totalCosts, (activeTrade as any).currency || 'INR')}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -557,7 +557,7 @@ export function TradeDrillDrawer() {
                       Planned Risk (1R)
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.risk?.riskBudgetAmount || activeTrade.risk?.estimatedRiskAmount)}
+                      {formatCurrency(activeTrade.risk?.riskBudgetAmount || activeTrade.risk?.estimatedRiskAmount, (activeTrade as any).currency || 'INR')}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>

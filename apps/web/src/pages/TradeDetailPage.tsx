@@ -58,7 +58,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
-import { formatCurrency, formatR } from '../lib/utils.js';
+import { formatCurrency, formatPrice, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
 import { TradeInteractiveChart } from '../components/trades/TradeInteractiveChart.js';
@@ -1012,7 +1012,7 @@ export function TradeDetailPage() {
                 <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Entry Price</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                    {trade.simpleExecution?.entryPrice || trade.calculated?.averageEntryPrice}
+                    {formatPrice(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice)}
                   </Typography>
                 </Box>
               </Grid>
@@ -1020,7 +1020,7 @@ export function TradeDetailPage() {
                 <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Exit Price</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                    {trade.simpleExecution?.exitPrice || trade.calculated?.averageExitPrice || '—'}
+                    {formatPrice(trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice)}
                   </Typography>
                 </Box>
               </Grid>
@@ -1028,7 +1028,7 @@ export function TradeDetailPage() {
                 <Box sx={{ p: 1.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)', textAlign: 'center' }}>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Quantity</Typography>
                   <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                    {trade.simpleExecution?.quantity || trade.calculated?.closedQuantity}
+                    {formatPrice(trade.simpleExecution?.quantity ?? trade.calculated?.closedQuantity)}
                   </Typography>
                 </Box>
               </Grid>

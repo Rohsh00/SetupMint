@@ -1578,9 +1578,9 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             );
 
             const tradeDate = group.entryTime;
-            const avgEntry = fifoSummary.weightedAvgEntryPrice.toNumber();
+            const avgEntry = fifoSummary.weightedAvgEntryPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
             const avgExit = fifoSummary.weightedAvgExitPrice
-              ? fifoSummary.weightedAvgExitPrice.toNumber()
+              ? fifoSummary.weightedAvgExitPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
               : undefined;
             const closedQty = fifoSummary.closedQuantity.toNumber();
             const openQty = fifoSummary.openQuantity.toNumber();

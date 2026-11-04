@@ -292,8 +292,8 @@ export class InstrumentService {
       outcome = body.status === 'OPEN' ? 'OPEN' : fifo.outcome;
       closedQty = fifo.closedQuantity.toNumber();
       openQty = fifo.openQuantity.toNumber();
-      avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(4));
-      avgExit = fifo.weightedAvgExitPrice ? Number(fifo.weightedAvgExitPrice.toFixed(4)) : undefined;
+      avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(2));
+      avgExit = fifo.weightedAvgExitPrice ? Number(fifo.weightedAvgExitPrice.toFixed(2)) : undefined;
 
       const simpleCosts = body.simpleExecution
         ? Number(

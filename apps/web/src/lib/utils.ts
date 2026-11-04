@@ -46,6 +46,21 @@ export function formatCurrency(
 }
 
 /**
+ * Format price or numeric value to at most `maxDecimals` decimal places without floating-point noise
+ * (e.g. 128.53333333333333 -> "128.53", 135 -> "135", 3908.7 -> "3908.7")
+ */
+export function formatPrice(
+  val: number | string | undefined | null,
+  maxDecimals = 2
+): string {
+  if (val === undefined || val === null || val === '' || isNaN(Number(val))) {
+    return '—';
+  }
+  const num = Number(val);
+  return String(Number(num.toFixed(maxDecimals)));
+}
+
+/**
  * Format date string (e.g. "2026-10-16" -> "16 Oct 2026")
  */
 export function formatDate(dateStr: string | Date | undefined): string {

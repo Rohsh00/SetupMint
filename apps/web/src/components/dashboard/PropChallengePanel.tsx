@@ -113,6 +113,9 @@ export function PropChallengePanel() {
   const [rawImportText, setRawImportText] = useState('');
   const [defaultRr, setDefaultRr] = useState<number>(2);
 
+  // Monte Carlo Scenario Mode ('actual' vs 'target1to2')
+  const [mcScenarioMode, setMcScenarioMode] = useState<'actual' | 'target1to2'>('actual');
+
   // Ledger & Phase Modal State
   const [ledgerModalAcc, setLedgerModalAcc] = useState<any | null>(null);
   const [feePaidInput, setFeePaidInput] = useState<string>('149');
@@ -434,16 +437,28 @@ export function PropChallengePanel() {
                 </Box>
               </Box>
 
-              {/* Red-Folder USD News Blackout Banner */}
-              {radar.activeAlert.status !== 'CLEAR' && (
+              {/* Red-Folder USD News Blackout Banner (Live Economic Calendar or Session Radar) */}
+              {(acc.economicCalendar?.activeAlert?.level === 'BLACKOUT' ||
+                acc.economicCalendar?.activeAlert?.level === 'IMMINENT' ||
+                radar.activeAlert.status !== 'CLEAR') && (
                 <Alert
-                  severity={radar.activeAlert.status === 'BLACKOUT' ? 'error' : 'warning'}
+                  severity={
+                    acc.economicCalendar?.activeAlert?.level === 'BLACKOUT' ||
+                    radar.activeAlert.status === 'BLACKOUT'
+                      ? 'error'
+                      : 'warning'
+                  }
                   icon={<NotificationsActiveRoundedIcon fontSize="small" />}
                   sx={{ mb: 2, py: 0.25, borderRadius: 2 }}
                 >
-                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                    {radar.activeAlert.message}
+                  <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                    {acc.economicCalendar?.activeAlert?.headline || radar.activeAlert.message}
                   </Typography>
+                  {acc.economicCalendar?.activeAlert?.subtext && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {acc.economicCalendar.activeAlert.subtext}
+                    </Typography>
+                  )}
                 </Alert>
               )}
 
@@ -644,6 +659,430 @@ export function PropChallengePanel() {
                   </Box>
                 </Box>
               </Box>
+
+              {/* 5. Live USD Economic Calendar Feed (ForexFactory / Gold Movers) */}
+              {acc.economicCalendar?.upcomingEvents?.length > 0 && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    p: 1.5,
+                    borderRadius: 2,
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.55)' : 'rgba(248, 250, 252, 0.9)',
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 1,
+                      mb: 1.25,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <AccessTimeRoundedIcon sx={{ fontSize: 16, color: '#F59E0B' }} />
+                      <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+                        LIVE USD ECONOMIC CALENDAR (XAUUSD GOLD MOVERS)
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={
+                          acc.economicCalendar.source === 'FOREX_FACTORY_LIVE'
+                            ? 'LIVE FOREXFACTORY FEED'
+                            : 'USD MACRO SCHEDULE'
+                        }
+                        sx={{
+                          height: 18,
+                          fontSize: '0.625rem',
+                          fontWeight: 800,
+                          bgcolor:
+                            acc.economicCalendar.source === 'FOREX_FACTORY_LIVE'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : 'rgba(148, 163, 184, 0.15)',
+                          color:
+                            acc.economicCalendar.source === 'FOREX_FACTORY_LIVE'
+                              ? '#10B981'
+                              : 'text.secondary',
+                        }}
+                      />
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                      {acc.economicCalendar.activeAlert?.headline}
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                      gap: 1,
+                    }}
+                  >
+                    {acc.economicCalendar.upcomingEvents.slice(0, 6).map((ev: any) => {
+                      const isRed = ev.impact === 'HIGH';
+                      const isBlackout = ev.status === 'BLACKOUT_NOW' || ev.status === 'IMMINENT';
+                      return (
+                        <Box
+                          key={ev.id}
+                          sx={{
+                            p: 1,
+                            borderRadius: 1.5,
+                            border: `1px solid ${
+                              isBlackout
+                                ? 'rgba(239, 68, 68, 0.5)'
+                                : isRed
+                                ? 'rgba(245, 158, 11, 0.28)'
+                                : muiTheme.palette.divider
+                            }`,
+                            backgroundColor: isBlackout
+                              ? 'rgba(239, 68, 68, 0.08)'
+                              : isDark
+                              ? 'rgba(30, 41, 59, 0.45)'
+                              : '#ffffff',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            gap: 0.5,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, minWidth: 0 }}>
+                              <Box
+                                sx={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: '50%',
+                                  flexShrink: 0,
+                                  bgcolor: isRed ? '#EF4444' : '#F59E0B',
+                                  boxShadow: isRed ? '0 0 6px rgba(239,68,68,0.6)' : 'none',
+                                }}
+                              />
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontWeight: 800,
+                                  fontSize: '0.73rem',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                                title={ev.title}
+                              >
+                                {ev.title}
+                              </Typography>
+                            </Box>
+                            <Chip
+                              size="small"
+                              label={ev.countdownStr}
+                              sx={{
+                                height: 18,
+                                fontSize: '0.625rem',
+                                fontWeight: 800,
+                                fontVariantNumeric: 'tabular-nums',
+                                bgcolor: isBlackout
+                                  ? 'rgba(239, 68, 68, 0.2)'
+                                  : ev.status === 'TODAY'
+                                  ? 'rgba(245, 158, 11, 0.16)'
+                                  : 'rgba(148, 163, 184, 0.12)',
+                                color: isBlackout
+                                  ? '#EF4444'
+                                  : ev.status === 'TODAY'
+                                  ? '#F59E0B'
+                                  : 'text.secondary',
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}
+                            >
+                              {ev.istTimeStr}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}
+                            >
+                              Fcst: <strong>{ev.forecast || '—'}</strong> • Prev: {ev.previous || '—'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              )}
+
+              {/* 6. Prop Firm "Pass Probability" & Drawdown Risk Monte Carlo Simulator */}
+              {acc.monteCarlo && (
+                <Box
+                  sx={{
+                    mt: 2,
+                    p: 1.75,
+                    borderRadius: 2,
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.65)' : 'rgba(248, 250, 252, 0.95)',
+                    border: `1px solid ${muiTheme.palette.divider}`,
+                  }}
+                >
+                  {(() => {
+                    const mc = acc.monteCarlo;
+                    const activeScenario =
+                      mcScenarioMode === 'actual' ? mc.scenarios.actual : mc.scenarios.target1to2;
+                    const edge = mc.actualEdge;
+
+                    return (
+                      <>
+                        {/* Simulator Header & Scenario Switcher */}
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: 1,
+                            mb: 1.5,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                            <RocketLaunchRoundedIcon sx={{ fontSize: 16, color: '#8B5CF6' }} />
+                            <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.04em' }}>
+                              MONTE CARLO PASS PROBABILITY & DRAWDOWN RISK SIMULATOR ({mc.simulationsCount.toLocaleString()} PATHS)
+                            </Typography>
+                            <Chip
+                              size="small"
+                              label={`Optimal Risk: ${activeScenario.recommendedRiskPct}% / trade`}
+                              sx={{
+                                height: 20,
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                bgcolor: 'rgba(139, 92, 246, 0.16)',
+                                color: '#A78BFA',
+                                border: '1px solid rgba(139, 92, 246, 0.35)',
+                              }}
+                            />
+                          </Box>
+
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                            <Button
+                              size="small"
+                              variant={mcScenarioMode === 'actual' ? 'contained' : 'outlined'}
+                              onClick={() => setMcScenarioMode('actual')}
+                              sx={{
+                                textTransform: 'none',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                py: 0.25,
+                                px: 1.25,
+                                borderRadius: 1.5,
+                                ...(mcScenarioMode === 'actual'
+                                  ? { bgcolor: '#8B5CF6', '&:hover': { bgcolor: '#7C3AED' } }
+                                  : {}),
+                              }}
+                            >
+                              Your Actual Edge ({edge.winRatePct}% WR • 1:{edge.payoffRatio} RR)
+                            </Button>
+                            <Button
+                              size="small"
+                              variant={mcScenarioMode === 'target1to2' ? 'contained' : 'outlined'}
+                              onClick={() => setMcScenarioMode('target1to2')}
+                              sx={{
+                                textTransform: 'none',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                py: 0.25,
+                                px: 1.25,
+                                borderRadius: 1.5,
+                                ...(mcScenarioMode === 'target1to2'
+                                  ? { bgcolor: '#8B5CF6', '&:hover': { bgcolor: '#7C3AED' } }
+                                  : {}),
+                              }}
+                            >
+                              Target 1:2 RR Plan (45% WR • 1:2.0 RR)
+                            </Button>
+                          </Box>
+                        </Box>
+
+                        {/* Historical Edge Summary Bar */}
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: 1.5,
+                            mb: 1.5,
+                            px: 1.25,
+                            py: 0.75,
+                            borderRadius: 1.5,
+                            backgroundColor: isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgba(241, 245, 249, 0.9)',
+                            border: `1px solid ${muiTheme.palette.divider}`,
+                          }}
+                        >
+                          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            Sample: <strong>{edge.sampleSize} closed trades</strong> ({edge.winCount}W / {edge.lossCount}L)
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            Avg Win / Loss:{' '}
+                            <strong style={{ color: '#10B981' }}>+${edge.avgWinUsd.toLocaleString()}</strong> /{' '}
+                            <strong style={{ color: '#EF4444' }}>-${edge.avgLossUsd.toLocaleString()}</strong>
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            Profit Factor: <strong>{edge.profitFactor}x</strong>
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            Expectancy:{' '}
+                            <strong style={{ color: activeScenario.expectancyR >= 0 ? '#10B981' : '#EF4444' }}>
+                              {activeScenario.expectancyR >= 0 ? '+' : ''}
+                              {activeScenario.expectancyR}R / trade
+                            </strong>
+                          </Typography>
+                        </Box>
+
+                        {/* 4 Risk-Per-Trade Simulation Cards */}
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
+                            gap: 1.25,
+                          }}
+                        >
+                          {activeScenario.tiers.map((tier: any) => {
+                            const passColor =
+                              tier.passProbabilityPct >= 75
+                                ? '#10B981'
+                                : tier.passProbabilityPct >= 50
+                                ? '#F59E0B'
+                                : '#EF4444';
+
+                            return (
+                              <Box
+                                key={tier.riskPct}
+                                sx={{
+                                  p: 1.25,
+                                  borderRadius: 2,
+                                  border: `1px solid ${
+                                    tier.isOptimal
+                                      ? '#8B5CF6'
+                                      : muiTheme.palette.divider
+                                  }`,
+                                  backgroundColor: tier.isOptimal
+                                    ? isDark
+                                      ? 'rgba(139, 92, 246, 0.10)'
+                                      : 'rgba(139, 92, 246, 0.05)'
+                                    : isDark
+                                    ? 'rgba(30, 41, 59, 0.4)'
+                                    : '#ffffff',
+                                  position: 'relative',
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 800, fontSize: '0.76rem', fontVariantNumeric: 'tabular-nums' }}
+                                  >
+                                    {tier.riskPct.toFixed(2)}% Risk (${tier.riskAmountUsd.toLocaleString()})
+                                  </Typography>
+                                  {tier.isOptimal && (
+                                    <Chip
+                                      size="small"
+                                      label="★ OPTIMAL"
+                                      sx={{
+                                        height: 17,
+                                        fontSize: '0.6rem',
+                                        fontWeight: 900,
+                                        bgcolor: '#8B5CF6',
+                                        color: '#ffffff',
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+
+                                {/* Pass Probability */}
+                                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.4 }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                    Pass Probability:
+                                  </Typography>
+                                  <Typography
+                                    variant="subtitle2"
+                                    sx={{
+                                      fontWeight: 900,
+                                      fontVariantNumeric: 'tabular-nums',
+                                      color: passColor,
+                                    }}
+                                  >
+                                    {tier.passProbabilityPct}%
+                                  </Typography>
+                                </Box>
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={Math.min(100, Math.max(0, tier.passProbabilityPct))}
+                                  sx={{
+                                    height: 5,
+                                    borderRadius: 3,
+                                    mb: 1,
+                                    bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+                                    '& .MuiLinearProgress-bar': { bgcolor: passColor },
+                                  }}
+                                />
+
+                                {/* Breach Risk Breakdown */}
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.35 }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                    Breach Risk (Daily / Max):
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontWeight: 700,
+                                      fontSize: '0.68rem',
+                                      fontVariantNumeric: 'tabular-nums',
+                                      color: tier.totalBreachRiskPct > 25 ? 'error.main' : 'text.primary',
+                                    }}
+                                  >
+                                    {tier.totalBreachRiskPct}% ({tier.dailyBreachRiskPct}% / {tier.maxDdBreachRiskPct}%)
+                                  </Typography>
+                                </Box>
+
+                                {/* Median Trades & Days to Pass */}
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.35 }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                    Est. Trades to Pass:
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 700, fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}
+                                  >
+                                    {tier.medianTradesToPass
+                                      ? `~${tier.medianTradesToPass} trades (~${tier.medianDaysToPass}d)`
+                                      : '>150 trades'}
+                                  </Typography>
+                                </Box>
+
+                                {/* Gold Lot Size & 95% Streak DD */}
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
+                                    XAUUSD ($10 SL) / 95% DD:
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 700, fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums', color: '#A78BFA' }}
+                                  >
+                                    {tier.xauusdLots10DollarSl} lots • -${tier.streakDrawdownUsd.toLocaleString()}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </>
+                    );
+                  })()}
+                </Box>
+              )}
             </CardContent>
           </Card>
         );

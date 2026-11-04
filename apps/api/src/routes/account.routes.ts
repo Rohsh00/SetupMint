@@ -15,6 +15,8 @@ import {
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
 import { AccountScopeService } from '../services/account-scope.service.js';
+import { EconomicCalendarService } from '../services/economic-calendar.service.js';
+import { PropMonteCarloService } from '../services/prop-monte-carlo.service.js';
 import { FyersService } from '../services/fyers.service.js';
 import { decryptSecret } from '../services/crypto.service.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
@@ -141,6 +143,12 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     return reply.send({ success: true, data: listPropFirmPresets() });
   });
 
+  // Get Live USD High-Impact Economic Calendar (ForexFactory / Faireconomy API with 2h cache)
+  app.get('/prop-economic-calendar', async (req, reply) => {
+    const calendar = await EconomicCalendarService.getCalendarOverview(new Date());
+    return reply.send({ success: true, data: calendar });
+  });
+
   // Get Prop Firm Accounts Overview for Dashboard
   app.get('/prop-overview', async (req: any, reply) => {
     const parsedScope = AccountScopeService.parseAccountScope(req.query);
@@ -157,6 +165,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+    const economicCalendar = await EconomicCalendarService.getCalendarOverview(now);
 
     const data = await Promise.all(
       propAccounts.map(async (acc) => {
@@ -225,6 +234,21 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const planKeyVal = acc.propFirm?.planKey || health.planKey || 'SUMMER_100K';
         const planNameVal = acc.propFirmConfig?.planName || health.planName || planKeyVal;
 
+        const targetProfitPercent =
+          acc.propFirmConfig?.targetProfitPercent ??
+          (health.phase === 'PHASE_2' ? 5 : health.phase === 'FUNDED' ? 10 : 10);
+        const dailyLossLimitPercent = acc.propFirmConfig?.dailyLossLimitPercent ?? 3;
+        const maxLossLimitPercent = acc.propFirmConfig?.maxLossLimitPercent ?? 10;
+
+        const monteCarlo = PropMonteCarloService.simulateAccount({
+          initialBalance: initialBalNum,
+          currentEquity: health.currentEquity || currentBalNum,
+          targetProfitPercent,
+          dailyLossLimitPercent,
+          maxLossLimitPercent,
+          trades,
+        });
+
         return {
           // Flattened fields for UI components (PropChallengePanel, AnalyticsPage)
           id: accIdStr,
@@ -258,6 +282,8 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
           totalPayoutsReceived: Number((acc.propFirm as any)?.totalPayoutsReceived ?? 0),
           nextPayoutDate: (acc.propFirm as any)?.nextPayoutDate ?? null,
           phaseHistory: (acc.propFirm as any)?.phaseHistory ?? [],
+          economicCalendar,
+          monteCarlo,
           // Structured fields for API contract & tests
           account: {
             id: accIdStr,

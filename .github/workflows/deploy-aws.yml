@@ -16,6 +16,8 @@ jobs:
     name: Build (GitHub 7GB Runner) & Deploy to AWS
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       AWS_HOST: ${{ secrets.AWS_HOST }}
       AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
@@ -68,6 +70,16 @@ jobs:
           name: setupmint-release
           path: setupmint-release.tar.gz
           retention-days: 7
+
+      - name: Publish Pre-Built Release Asset (Zero-RAM Pull for 1GB AWS)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Latest Pre-Built Production Bundle
+          body: "Automated pre-built production bundle for commit ${{ github.sha }}."
+          files: setupmint-release.tar.gz
+          prerelease: false
+          make_latest: true
 
       - name: Upload Pre-Built Bundle to AWS Server via SCP
         if: env.AWS_HOST != '' && env.AWS_SSH_KEY != ''

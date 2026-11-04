@@ -5,7 +5,7 @@
   "main": "./dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "NODE_OPTIONS=\"--max-old-space-size=1536\" tsc",
     "start": "node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
     "seed:demo": "tsx src/scripts/seed.ts",

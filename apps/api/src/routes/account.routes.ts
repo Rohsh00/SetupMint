@@ -1218,38 +1218,66 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       };
     };
 
-    const lines = rawText
+    // Normalize multi-line vertical pastes (where each cell from The5ers Hub is on its own line)
+    // into single-line trade records starting with a 6+ digit Ticket ID.
+    const rawLines = rawText
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => l && !/^ID\s+Symbol/i.test(l));
+      .filter(
+        (l) =>
+          l &&
+          !/^ID\s+Symbol/i.test(l) &&
+          !/^(ID|Ticket|Symbol|Side|Type|Open Date|Close Date|Open Price|Close Price|Entry|Exit|Lots|Volume|Commission|Fee|Swap|Profit|Net P&L|PnL|Status)$/i.test(
+            l
+          )
+      );
+
+    const lines: string[] = [];
+    for (const l of rawLines) {
+      if (/^\d{6,}(?:-\d+)?(?:\s|$)/.test(l)) {
+        lines.push(l);
+      } else if (lines.length > 0) {
+        lines[lines.length - 1] = `${lines[lines.length - 1]} ${l}`;
+      }
+    }
 
     let insertedCount = 0;
     let updatedCount = 0;
     const importedTrades: any[] = [];
 
     for (const line of lines) {
-      // Match tab-separated, comma-separated, or whitespace-separated The5ers row:
-      // Closed: 560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97 Win
-      // Open:   560643070821 XAUUSD Sell 04.11.26 14:11 - $4,036.46 - 0.3 -$1.21 $0 -$1.21
-      const rowRegex =
-        /^(\d{6,}(?:-\d+)?)\s+([A-Za-z0-9:._/-]+)\s+(Buy|Sell|LONG|SHORT)\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})(?:\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2}|-))?\s+(\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+(\$?[0-9,]+(?:\.[0-9]+)?|-))?\s+([0-9]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-)(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-))?/i;
+      // Closed trade row (has both Open Date and Close Date):
+      // e.g. 560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97 Win
+      const closedRowRegex =
+        /^(\d{6,}(?:-\d+)?)\s+([A-Za-z0-9:._/-]+)\s+(Buy|Sell|LONG|SHORT)\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})\s+(\$?[0-9,]+(?:\.[0-9]+)?)\s+(\$?[0-9,]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-)(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-))?/i;
 
-      const m = line.match(rowRegex);
-      if (!m) continue;
+      // Open trade row (has only Open Date, optional '-' for Close Date/Price):
+      // e.g. 560643070840785 XAUUSD Sell 04.11.26 14:58 $4,047.16 0.5 -$2.02 $0
+      const openRowRegex =
+        /^(\d{6,}(?:-\d+)?)\s+([A-Za-z0-9:._/-]+)\s+(Buy|Sell|LONG|SHORT)\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})(?:\s+-)?\s+(\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+-)?\s+([0-9]+(?:\.[0-9]+)?)(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-))?(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-))?(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?|-))?/i;
 
-      const rawTicket = m[1];
-      const rawSymbol = m[2].includes(':') ? m[2].split(':').pop()! : m[2];
+      const closedMatch = line.match(closedRowRegex);
+      const openMatch = !closedMatch ? line.match(openRowRegex) : null;
+      if (!closedMatch && !openMatch) continue;
+
+      const rawTicket = (closedMatch ? closedMatch[1] : openMatch![1]).trim();
+      const rawSymbol = (closedMatch ? closedMatch[2] : openMatch![2]).includes(':')
+        ? (closedMatch ? closedMatch[2] : openMatch![2]).split(':').pop()!
+        : closedMatch
+          ? closedMatch[2]
+          : openMatch![2];
       const symbol = rawSymbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const sideRaw = m[3].toUpperCase();
+      const sideRaw = (closedMatch ? closedMatch[3] : openMatch![3]).toUpperCase();
       const direction: 'LONG' | 'SHORT' = sideRaw === 'BUY' || sideRaw === 'LONG' ? 'LONG' : 'SHORT';
-      const entryDate = parseThe5ersDate(m[4]) || new Date();
-      const exitDate = m[5] && m[5] !== '-' ? parseThe5ersDate(m[5]) : null;
-      const entryPrice = parseMoney(m[6]);
-      const exitPrice = m[7] && m[7] !== '-' ? parseMoney(m[7]) : 0;
-      const qty = parseFloat(m[8]) || 0.1;
-      const feeAbs = Math.abs(parseMoney(m[9]));
-      const swapFee = Math.abs(parseMoney(m[10]));
-      const isClosed = Boolean(exitDate && exitPrice > 0);
+      const entryDate = parseThe5ersDate(closedMatch ? closedMatch[4] : openMatch![4]) || new Date();
+      const exitDate = closedMatch ? parseThe5ersDate(closedMatch[5]) : null;
+      const entryPrice = parseMoney(closedMatch ? closedMatch[6] : openMatch![5]);
+      const exitPrice = closedMatch ? parseMoney(closedMatch[7]) : 0;
+      const qty = parseFloat(closedMatch ? closedMatch[8] : openMatch![6]) || 0.1;
+      const feeAbs = Math.abs(parseMoney(closedMatch ? closedMatch[9] : openMatch![7] || '0'));
+      const swapFee = Math.abs(parseMoney(closedMatch ? closedMatch[10] : openMatch![8] || '0'));
+      const rawNetPnlToken = closedMatch ? closedMatch[11] : openMatch![9];
+      const isClosed = Boolean(closedMatch && exitDate && exitPrice > 0);
       const spec = getContractSpec(symbol);
 
       // Ensure instrument exists for user
@@ -1281,8 +1309,8 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       const grossPnL = isClosed ? Number((priceDiff * qty * spec.multiplier).toFixed(2)) : 0;
       const totalCosts = Number((feeAbs + swapFee).toFixed(2));
       const parsedNetPnl =
-        m[11] !== undefined && m[11] !== '-'
-          ? parseMoney(m[11])
+        rawNetPnlToken !== undefined && rawNetPnlToken !== '-'
+          ? parseMoney(rawNetPnlToken)
           : Number((grossPnL - totalCosts).toFixed(2));
       const netPnL = isClosed ? parsedNetPnl : Number((-totalCosts).toFixed(2));
 
@@ -1324,10 +1352,9 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         realizedRMultiple = Number((netPnL / plannedRiskAmount).toFixed(2));
       }
 
-      const ticketCandidates = [rawTicket];
-      if (rawTicket.length > 12 && !rawTicket.includes('-')) {
-        ticketCandidates.push(rawTicket.slice(0, 12));
-      }
+      const normalizedBaseTicket =
+        rawTicket.length === 15 && !rawTicket.includes('-') ? rawTicket.slice(0, 12) : rawTicket;
+      const ticketCandidates = Array.from(new Set([rawTicket, normalizedBaseTicket]));
 
       // Match by externalBrokerOrderRef or matching OPEN trade at same entryPrice & qty
       const existing = await Trade.findOne({
@@ -1345,10 +1372,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         ],
       });
 
-      const canonicalTicket =
-        existing?.externalBrokerOrderRef && rawTicket.startsWith(existing.externalBrokerOrderRef)
-          ? existing.externalBrokerOrderRef
-          : rawTicket;
+      const canonicalTicket = existing?.externalBrokerOrderRef || normalizedBaseTicket;
 
       const tradeDateDay = new Date(
         Date.UTC(entryDate.getUTCFullYear(), entryDate.getUTCMonth(), entryDate.getUTCDate(), 0, 0, 0)

@@ -142,6 +142,7 @@ export function PropChallengePanel() {
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['live-watcher'] });
+      queryClient.invalidateQueries({ queryKey: ['live-trades-watcher'] });
     },
     onError: (err: any) => {
       toast.error(err.message || 'Failed to import The5ers / TradingView trades');
@@ -660,7 +661,7 @@ export function PropChallengePanel() {
         </DialogTitle>
         <DialogContent dividers>
           <Alert severity="info" sx={{ mb: 2, fontSize: '0.78rem' }}>
-            Copy rows directly from your <strong>The5ers Trader Zone (hub.the5ers.com) Trades table</strong> or <strong>TradingView Account Manager</strong> and paste below.
+            Copy rows directly from your <strong>The5ers Trader Zone (hub.the5ers.com) Trades table</strong> or <strong>TradingView Account Manager</strong> and paste below (supports both <strong>single-line rows</strong> and <strong>multi-line vertical cell-per-line pastes</strong>).
             <ul>
               <li><strong>Losses:</strong> Stop Loss is automatically set to the exact Exit Price (since SL was hit) and Planned Target is set to <strong>1:{defaultRr} RR</strong>.</li>
               <li><strong>Wins:</strong> Planned Target is set to Exit Price and Initial Stop Loss is calculated at <strong>1:{defaultRr} RR</strong> distance.</li>
@@ -687,7 +688,7 @@ export function PropChallengePanel() {
             minRows={8}
             maxRows={16}
             fullWidth
-            placeholder={`Paste rows from hub.the5ers.com here, for example:\n560643070821 XAUUSD Sell 04.11.26 14:11 $4,036.46 0.3 -$1.21 $0\n560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97 Win`}
+            placeholder={`Paste single-line or multi-line rows from hub.the5ers.com here, for example:\n560643070840785\nXAUUSD\nSell\n04.11.26 14:58\n$4,047.16\n0.5\n-$2.02\n$0\n\nOr single-line: 560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97`}
             value={rawImportText}
             onChange={(e) => setRawImportText(e.target.value)}
             sx={{ '& .MuiInputBase-input': { fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8rem' } }}

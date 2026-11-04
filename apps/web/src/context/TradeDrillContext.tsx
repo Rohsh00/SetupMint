@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { DrillDescriptor } from '@tradevault/shared';
 import { api } from '../lib/api.js';
+import { useAccountScope } from './AccountScopeContext.js';
 
 interface TradeDrillContextValue {
   isOpen: boolean;
@@ -19,12 +20,33 @@ const TradeDrillContext = createContext<TradeDrillContextValue | undefined>(unde
 export function TradeDrillProvider({ children }: { children: React.ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const { queryParams } = useAccountScope();
 
   const [isOpen, setIsOpen] = useState(false);
   const [descriptor, setDescriptor] = useState<DrillDescriptor | null>(null);
   const [activeTradeId, setActiveTradeId] = useState<string | null>(null);
 
   const prefetchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const stampScopeOnDescriptor = useCallback(
+    (desc: DrillDescriptor): DrillDescriptor => {
+      if (desc.kind !== 'FILTER') return desc;
+      const existingFilter = (desc.filter || {}) as Record<string, any>;
+      const hasExplicitScope =
+        existingFilter.scope !== undefined ||
+        existingFilter.mode !== undefined ||
+        existingFilter.accountId !== undefined;
+      if (hasExplicitScope) return desc;
+      return {
+        ...desc,
+        filter: {
+          ...queryParams,
+          ...existingFilter,
+        },
+      };
+    },
+    [queryParams]
+  );
 
   // Sync state with URL '?drill=...'
   useEffect(() => {
@@ -60,7 +82,8 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
   }, [searchParams]);
 
   const openDrill = useCallback(
-    (desc: DrillDescriptor, targetTradeId?: string) => {
+    (rawDesc: DrillDescriptor, targetTradeId?: string) => {
+      const desc = stampScopeOnDescriptor(rawDesc);
       setDescriptor(desc);
       const initialActiveId = targetTradeId || (desc.kind === 'TRADE' ? desc.tradeId : null);
       setActiveTradeId(initialActiveId);
@@ -77,7 +100,7 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
         { replace: true }
       );
     },
-    [setSearchParams]
+    [setSearchParams, stampScopeOnDescriptor]
   );
 
   const closeDrill = useCallback(() => {
@@ -96,7 +119,8 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
   }, [setSearchParams]);
 
   const prefetchDrill = useCallback(
-    (desc: DrillDescriptor) => {
+    (rawDesc: DrillDescriptor) => {
+      const desc = stampScopeOnDescriptor(rawDesc);
       if (prefetchTimerRef.current) {
         clearTimeout(prefetchTimerRef.current);
       }
@@ -108,7 +132,7 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
         });
       }, 150);
     },
-    [queryClient]
+    [queryClient, stampScopeOnDescriptor]
   );
 
   return (

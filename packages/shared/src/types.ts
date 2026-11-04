@@ -255,7 +255,7 @@ export type AccountScopeMode = 'ALL' | 'ACCOUNT' | 'TYPE' | 'PROP_FIRM';
 export interface AccountScope {
   mode: AccountScopeMode;
   accountId?: string;
-  accountType?: AccountType;
+  accountType?: AccountType | 'LIVE' | 'PERSONAL';
   firmKey?: string;
   includeArchived?: boolean;
 }

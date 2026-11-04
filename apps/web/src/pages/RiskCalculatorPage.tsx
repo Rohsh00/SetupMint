@@ -58,10 +58,24 @@ export function RiskCalculatorPage() {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
-  const { data: instruments = [] } = useQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list() });
-  const { data: strategies = [] } = useQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list() });
-  const { selectedAccountId: scopeAccountId, isPropMode, propAccounts, personalAccounts } = useAccountScope();
+  const {
+    selectedAccountId: scopeAccountId,
+    isPropMode,
+    propAccounts,
+    personalAccounts,
+    scopedAccounts,
+    queryParams,
+  } = useAccountScope();
+  const { data: allAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
+  const accounts = scopedAccounts.length > 0 ? scopedAccounts : allAccounts;
+  const { data: instruments = [] } = useQuery({
+    queryKey: ['instruments', queryParams],
+    queryFn: () => api.instruments.list(queryParams),
+  });
+  const { data: strategies = [] } = useQuery({
+    queryKey: ['strategies', queryParams],
+    queryFn: () => api.strategies.list(queryParams),
+  });
 
   const [searchParams] = useSearchParams();
   const urlSymbol = searchParams.get('symbol');
@@ -96,10 +110,8 @@ export function RiskCalculatorPage() {
   // Auto-set account equity when accounts list or global scope changes
   useEffect(() => {
     if (accounts.length === 0) return;
-    let targetAcc = scopeAccountId
-      ? accounts.find((a: any) => a.id === scopeAccountId)
-      : isPropMode && propAccounts.length > 0
-      ? propAccounts[0]
+    const targetAcc = scopeAccountId
+      ? accounts.find((a: any) => a.id === scopeAccountId) || accounts[0]
       : accounts.find((a: any) => a.id === selectedAccountId) || accounts[0];
 
     if (targetAcc && targetAcc.id !== selectedAccountId) {
@@ -326,21 +338,27 @@ export function RiskCalculatorPage() {
     if (!isSelectedAccountProp || !health) return null;
 
     const dailyLossEval =
+      health.rules?.dailyLoss ||
       health.rules?.DAILY_LOSS ||
-      health.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS');
+      health.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS' || e.ruleKey === 'dailyLoss');
     const maxLossEval =
+      health.rules?.maxLoss ||
       health.rules?.MAX_LOSS ||
-      health.evaluations?.find((e: any) => e.ruleKey === 'MAX_LOSS');
+      health.evaluations?.find((e: any) => e.ruleKey === 'MAX_LOSS' || e.ruleKey === 'maxLoss');
     const remainingDaily =
       dailyLossEval?.remaining ?? health.dailyBufferRemaining ?? health.dailyLossBuffer ?? Infinity;
     const remainingMax =
       maxLossEval?.remaining ?? health.maxLossBufferRemaining ?? health.maxLossBuffer ?? Infinity;
 
     const perTradeCapPct =
-      health.rules?.MAX_RISK_PER_TRADE?.limit ?? health.ruleSet?.maxRiskPerTradePct;
+      health.rules?.maxRiskPerTrade?.limit ??
+      health.rules?.MAX_RISK_PER_TRADE?.limit ??
+      health.ruleSet?.maxRiskPerTradePct;
     const perTradeCapAmount = perTradeCapPct ? (accountEquity * perTradeCapPct) / 100 : Infinity;
     const firmLotCap =
-      health.rules?.MAX_LOTS?.limit ?? health.ruleSet?.maxLotsOrContracts;
+      health.rules?.maxLots?.limit ??
+      health.rules?.MAX_LOTS?.limit ??
+      health.ruleSet?.maxLotsOrContracts;
 
     let limitingFactor: string | null = null;
     let allowedBudget = plannedBudget;

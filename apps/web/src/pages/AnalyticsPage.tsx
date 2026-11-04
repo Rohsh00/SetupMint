@@ -294,8 +294,18 @@ export function AnalyticsPage() {
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', fontVariantNumeric: 'tabular-nums' }}>
             {propOverview.slice(0, 3).map((item: any) => {
-              const targetRule = item.health?.rules?.find((r: any) => r.ruleKey === 'PROFIT_TARGET');
-              const consistencyRule = item.health?.rules?.find((r: any) => r.ruleKey === 'CONSISTENCY_RULE');
+              const rulesObj = item.health?.rules;
+              const rulesList = Array.isArray(rulesObj)
+                ? rulesObj
+                : rulesObj && typeof rulesObj === 'object'
+                ? Object.values(rulesObj)
+                : [];
+              const targetRule =
+                (!Array.isArray(rulesObj) && (rulesObj?.profitTarget || rulesObj?.PROFIT_TARGET)) ||
+                rulesList.find((r: any) => r?.ruleKey === 'profitTarget' || r?.ruleKey === 'PROFIT_TARGET');
+              const consistencyRule =
+                (!Array.isArray(rulesObj) && (rulesObj?.consistency || rulesObj?.CONSISTENCY_RULE)) ||
+                rulesList.find((r: any) => r?.ruleKey === 'consistency' || r?.ruleKey === 'CONSISTENCY_RULE');
               return (
                 <Box key={item.accountId} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Box>

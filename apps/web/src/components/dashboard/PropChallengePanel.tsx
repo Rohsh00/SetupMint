@@ -35,11 +35,11 @@ export function PropChallengePanel() {
   const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
   const { openDrill } = useTradeDrilldown();
-  const { scope, selectedAccountId, propAccounts } = useAccountScope();
+  const { scope, selectedAccountId, propAccounts, queryParams } = useAccountScope();
 
   const { data: overviewResponse, isLoading } = useQuery({
-    queryKey: ['prop-overview', scope.mode, scope.firmKey, selectedAccountId],
-    queryFn: () => api.accounts.propOverview(),
+    queryKey: ['prop-overview', scope.mode, scope.firmKey, selectedAccountId, queryParams],
+    queryFn: () => api.accounts.propOverview(queryParams),
     staleTime: 30 * 1000,
   });
 

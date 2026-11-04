@@ -506,9 +506,13 @@ export const tradeFilterQueryBaseSchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   search: z.preprocess(emptyStringToUndefined, z.string().optional()),
   accountId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  account: z.preprocess(emptyStringToUndefined, z.string().optional()),
   scope: z.preprocess(emptyStringToUndefined, z.enum(['ALL', 'ACCOUNT', 'TYPE', 'PROP_FIRM']).optional()),
+  mode: z.preprocess(emptyStringToUndefined, z.enum(['ALL', 'ACCOUNT', 'TYPE', 'PROP_FIRM']).optional()),
   firmKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  firm: z.preprocess(emptyStringToUndefined, z.string().optional()),
   accountType: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  type: z.preprocess(emptyStringToUndefined, z.string().optional()),
   includeArchived: z.preprocess((v) => v === 'true' || v === true, z.boolean().optional()),
   accountIds: z.preprocess(
     (v) => (typeof v === 'string' ? v.split(',').map((s) => s.trim()) : v),
@@ -807,6 +811,13 @@ export const updateProfileSchema = z.object({
 export const excursionAnalyticsQuerySchema = z
   .object({
     accountId: z.preprocess(emptyStringToUndefined, z.string().optional()),
+    scope: z.string().optional(),
+    mode: z.string().optional(),
+    firmKey: z.string().optional(),
+    firm: z.string().optional(),
+    accountType: z.string().optional(),
+    type: z.string().optional(),
+    includeArchived: z.union([z.boolean(), z.string()]).optional(),
     strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
     variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
     startDate: z.preprocess(
@@ -917,6 +928,14 @@ export const chartGenerateOptionsSchema = generateChartSchema;
 export const analyticsFilterSchema = z
   .object({
     accountId: z.string().optional(),
+    account: z.string().optional(),
+    scope: z.string().optional(),
+    mode: z.string().optional(),
+    firmKey: z.string().optional(),
+    firm: z.string().optional(),
+    accountType: z.string().optional(),
+    type: z.string().optional(),
+    includeArchived: z.union([z.boolean(), z.string()]).optional(),
     symbol: z.string().optional(),
     assetClass: z.string().optional(),
     marketSegment: z.string().optional(),
@@ -998,6 +1017,12 @@ export const weeklyReviewParamsSchema = z.object({
     .regex(weeklyReviewWeekRegex, 'Invalid week format (expected YYYY-Www, e.g. 2026-W43)')
     .optional(),
   accountId: z.string().optional(),
+  scope: z.string().optional(),
+  firmKey: z.string().optional(),
+  firm: z.string().optional(),
+  accountType: z.string().optional(),
+  type: z.string().optional(),
+  includeArchived: z.union([z.boolean(), z.string()]).optional(),
 });
 export type WeeklyReviewParams = z.infer<typeof weeklyReviewParamsSchema>;
 
@@ -1013,6 +1038,12 @@ export const saveWeeklyReviewSchema = z.object({
   notes: z.string().max(5000, 'Notes cannot exceed 5000 characters').optional(),
   status: z.enum(['DRAFT', 'FINALIZED']).optional(),
   accountId: z.string().nullable().optional(),
+  scope: z.string().optional(),
+  firmKey: z.string().optional(),
+  firm: z.string().optional(),
+  accountType: z.string().optional(),
+  type: z.string().optional(),
+  includeArchived: z.union([z.boolean(), z.string()]).optional(),
   followedLastRule: z.boolean().nullable().optional(),
 });
 export type SaveWeeklyReviewInput = z.infer<typeof saveWeeklyReviewSchema>;

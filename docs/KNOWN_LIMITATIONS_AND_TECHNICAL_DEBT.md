@@ -32,6 +32,10 @@ This document records confirmed limitations, incomplete features, architectural 
 - **Right-Censoring Boundary:** When a real trade exited at its original stop loss or planned target, the post-exit price trajectory is unobserved in the trade lifecycle. Simulating a looser stop or farther target cannot guess what price would have done without lookahead bias; such trades are marked `status: 'CENSORED'` and omitted from evaluable statistics for that cell.
 - **250-Chunking Batch Loading:** Candle snapshots are batch-queried in 250-trade slices to avoid MongoDB cursor buffer limits and large payload overhead.
 
+### 6. DailyJournal Per-Day Qualitative Reflection Scope
+- **Current Behavior:** `DailyJournal` documents are uniquely indexed by `{ userId: 1, date: 1 }` with no `accountId` or `scopeKey` column.
+- **Scope Isolation Boundary:** All quantitative metrics in `GET /journal/calendar` and `GET /journal/:date` (trade counts, net P&L heatmaps, `prefill` session summaries, daily loss breach checks, and `trades` arrays) strictly honor `AccountScope`, and `bestTradeId` / `worstTradeId` references are masked as `null` when the referenced trade belongs to an out-of-scope account. However, qualitative trader reflections (`lessonsLearned`, `marketConditions`, `emotionalState`, `disciplineRating`, and the calendar `hasJournal` indicator) are stored once per trader per calendar day and appear across scopes until a schema migration to `{ userId, date, scopeKey }` is chosen.
+
 ---
 
 ## 2. Verified Technical Debt & Codebase Opportunities

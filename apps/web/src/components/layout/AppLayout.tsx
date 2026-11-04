@@ -90,6 +90,7 @@ export function AppLayout() {
     personalAccounts,
     demoAccounts,
     propFirms,
+    queryParams,
   } = useAccountScope();
 
   // Global Keyboard Shortcuts (Cmd+K palette, N for new trade)
@@ -152,11 +153,11 @@ export function AppLayout() {
 
   // Prefetch trade form reference data so opening 'Log New Trade' happens in 0ms synchronously from memory cache
   const prefetchTradeFormData = React.useCallback(() => {
-    queryClient.prefetchQuery({ queryKey: ['instruments'], queryFn: () => api.instruments.list(), staleTime: 10 * 60 * 1000 });
-    queryClient.prefetchQuery({ queryKey: ['strategies'], queryFn: () => api.strategies.list(), staleTime: 5 * 60 * 1000 });
-    queryClient.prefetchQuery({ queryKey: ['templates'], queryFn: () => api.templates.list(), staleTime: 5 * 60 * 1000 });
-    queryClient.prefetchQuery({ queryKey: ['trades', 'recent-tilt'], queryFn: () => api.trades.list({ limit: 20 }), staleTime: 60 * 1000 });
-  }, [queryClient]);
+    queryClient.prefetchQuery({ queryKey: ['instruments', queryParams], queryFn: () => api.instruments.list(queryParams), staleTime: 10 * 60 * 1000 });
+    queryClient.prefetchQuery({ queryKey: ['strategies', queryParams], queryFn: () => api.strategies.list(queryParams), staleTime: 5 * 60 * 1000 });
+    queryClient.prefetchQuery({ queryKey: ['templates', queryParams], queryFn: () => api.templates.list(queryParams), staleTime: 5 * 60 * 1000 });
+    queryClient.prefetchQuery({ queryKey: ['trades', 'recent-tilt', queryParams], queryFn: () => api.trades.list({ ...queryParams, limit: 20 }), staleTime: 60 * 1000 });
+  }, [queryClient, queryParams]);
 
   useEffect(() => {
     prefetchTradeFormData();
@@ -640,7 +641,7 @@ export function AppLayout() {
                           : `Demo Accounts (${demoAccounts.length})`}
                       </MenuItem>
                     )}
-                    {(personalAccounts.length > 1 || propAccounts.length > 1) && [
+                    {(personalAccounts.length > 1 || propAccounts.length > 1 || demoAccounts.length > 1) && [
                       <Divider key="ind-div" sx={{ my: 0.5 }} />,
                       <ListSubheader
                         key="ind-sub"
@@ -656,6 +657,11 @@ export function AppLayout() {
                       ...(propAccounts.length > 1 ? propAccounts : []).map((acc: any) => (
                         <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
                           🏆 {acc.name} ({acc.baseCurrency})
+                        </MenuItem>
+                      )),
+                      ...(demoAccounts.length > 1 ? demoAccounts : []).map((acc: any) => (
+                        <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
+                          🧪 {acc.name} ({acc.baseCurrency})
                         </MenuItem>
                       )),
                     ]}

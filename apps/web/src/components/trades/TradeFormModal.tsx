@@ -51,6 +51,7 @@ import {
   calculateContinuousTiltScore,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { toast } from '../../context/ToastContext.js';
 import { toLocalIsoDateTime, currentLocalIsoDateTime, fromLocalIsoDateTime } from '../../lib/utils.js';
 import { TradeCalculationBanner } from './form/TradeCalculationBanner.js';
@@ -228,10 +229,17 @@ function buildInitialFormValues(
     };
   }
 
+  const validPrefAcc =
+    rememberedPrefs.preferredAccountId &&
+    accounts.some((a: any) => (a.id || a._id) === rememberedPrefs.preferredAccountId)
+      ? rememberedPrefs.preferredAccountId
+      : undefined;
+
   const initialAccountId =
     defaultAccountId ||
-    rememberedPrefs.preferredAccountId ||
+    validPrefAcc ||
     accounts[0]?.id ||
+    accounts[0]?._id ||
     '';
 
   return {
@@ -312,26 +320,32 @@ function TradeFormModalContent({
   const queryClient = useQueryClient();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const { scopedAccounts, queryParams, selectedAccountId: scopeAccountId } = useAccountScope();
+  const effectiveDefaultAccountId = defaultAccountId || scopeAccountId;
 
   // Reference data with high-performance cache retention
-  const { data: accounts = [] } = useQuery({
+  const { data: allAccounts = [] } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => api.accounts.list(),
     staleTime: 5 * 60 * 1000,
   });
+  const accounts = useMemo(
+    () => (editTradeId ? allAccounts : scopedAccounts.length > 0 ? scopedAccounts : allAccounts),
+    [editTradeId, scopedAccounts, allAccounts]
+  );
   const { data: instruments = [] } = useQuery({
-    queryKey: ['instruments'],
-    queryFn: () => api.instruments.list(),
+    queryKey: ['instruments', queryParams],
+    queryFn: () => api.instruments.list(queryParams),
     staleTime: 10 * 60 * 1000,
   });
   const { data: strategies = [] } = useQuery({
-    queryKey: ['strategies'],
-    queryFn: () => api.strategies.list(),
+    queryKey: ['strategies', queryParams],
+    queryFn: () => api.strategies.list(queryParams),
     staleTime: 5 * 60 * 1000,
   });
   const { data: recentTradesResponse } = useQuery({
-    queryKey: ['trades', 'recent-tilt'],
-    queryFn: () => api.trades.list({ limit: 20 }),
+    queryKey: ['trades', 'recent-tilt', queryParams],
+    queryFn: () => api.trades.list({ ...queryParams, limit: 20 }),
     staleTime: 60 * 1000,
   });
   const recentTrades = recentTradesResponse?.data || [];
@@ -349,7 +363,7 @@ function TradeFormModalContent({
 
   // Compute optimized initial values once on mount
   const initialConfig = useMemo(
-    () => buildInitialFormValues(initialValues, defaultAccountId, accounts, rememberedPrefs),
+    () => buildInitialFormValues(initialValues, effectiveDefaultAccountId, accounts, rememberedPrefs),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -426,7 +440,7 @@ function TradeFormModalContent({
   // Sync form if initialValues changes dynamically while modal is open
   useEffect(() => {
     if (initialValues) {
-      const config = buildInitialFormValues(initialValues, defaultAccountId, accounts, rememberedPrefs);
+      const config = buildInitialFormValues(initialValues, effectiveDefaultAccountId, accounts, rememberedPrefs);
       reset(config.values);
       setIsAutoFees(config.shouldAutoFees);
       if (config.executionMode) {
@@ -439,17 +453,25 @@ function TradeFormModalContent({
         setExistingAttachments(initialValues.attachments);
       }
     } else if (!editTradeId && accounts.length > 0) {
-      // If fresh trade mounted before accounts were cached, harmonize default accountId
+      // If fresh trade mounted before accounts were cached or scope changed, harmonize default accountId
       const currentAcc = getValues('accountId');
-      if (!currentAcc) {
-        const fallback = defaultAccountId || rememberedPrefs.preferredAccountId || accounts[0]?.id;
+      const isCurrentValid =
+        currentAcc && accounts.some((a: any) => (a.id || a._id) === currentAcc);
+      if (!isCurrentValid) {
+        const validPref =
+          rememberedPrefs.preferredAccountId &&
+          accounts.some((a: any) => (a.id || a._id) === rememberedPrefs.preferredAccountId)
+            ? rememberedPrefs.preferredAccountId
+            : undefined;
+        const fallback =
+          effectiveDefaultAccountId || validPref || accounts[0]?.id || accounts[0]?._id;
         if (fallback) {
           setValue('accountId', fallback, { shouldDirty: false });
         }
       }
     }
     setSubmitError(null);
-  }, [initialValues, editTradeId, reset, defaultAccountId, accounts, rememberedPrefs, getValues, setValue]);
+  }, [initialValues, editTradeId, reset, effectiveDefaultAccountId, accounts, rememberedPrefs, getValues, setValue]);
 
   const handleDeleteExistingAttachment = async (attId: string) => {
     try {
@@ -1026,7 +1048,13 @@ function TradeFormModalContent({
 
   const handleResetDefaults = () => {
     const prefs = getRememberedTradePreferences();
-    const acc = defaultAccountId || prefs.preferredAccountId || accounts[0]?.id || '';
+    const validPref =
+      prefs.preferredAccountId &&
+      accounts.some((a: any) => (a.id || a._id) === prefs.preferredAccountId)
+        ? prefs.preferredAccountId
+        : undefined;
+    const acc =
+      effectiveDefaultAccountId || validPref || accounts[0]?.id || accounts[0]?._id || '';
     reset({
       accountId: acc,
       symbol: 'NIFTY',

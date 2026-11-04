@@ -518,17 +518,30 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
   // Create trade
   app.post('/', async (req, reply) => {
-    // Check opt-in Hard Discipline Lockout Mode
+    // Check opt-in Hard Discipline Lockout Mode (scoped to target account when provided)
     const user = await User.findById(req.user!.id);
     if (user?.liveWatcherSettings?.hardDisciplineLockoutEnabled) {
+      const rawAccountId = (req.body as any)?.accountId;
+      const targetAccOid =
+        rawAccountId && mongoose.Types.ObjectId.isValid(rawAccountId)
+          ? new mongoose.Types.ObjectId(rawAccountId)
+          : undefined;
+      const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+        req.user!.id,
+        targetAccOid ? [targetAccOid] : [],
+        targetAccOid ? { mode: 'ACCOUNT', accountId: targetAccOid.toString() } : { mode: 'ALL' },
+        user.riskSettings
+      );
       const todayStr = new Date().toISOString().split('T')[0];
       const todayClosedTrades = await Trade.find({
         userId: req.user!.id,
+        ...(targetAccOid ? { accountId: targetAccOid } : {}),
         status: 'CLOSED',
         exitTime: { $gte: new Date(todayStr + 'T00:00:00.000Z') },
       }).sort({ exitTime: -1 });
 
-      const maxDailyLoss = user.riskSettings?.maxDailyLoss ?? 5000;
+      const maxDailyLoss = scopedRisk.riskSettings.maxDailyLoss;
+      const sym = scopedRisk.currencySymbol;
       const todayPnl = todayClosedTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
       const isDailyBreached = todayPnl <= -Math.abs(maxDailyLoss);
 
@@ -553,7 +566,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             success: false,
             error: {
               code: 'DISCIPLINE_LOCKOUT_ACTIVE',
-              message: `Discipline Lockout active: ${isDailyBreached ? `Daily loss limit (₹${maxDailyLoss.toLocaleString()}) breached (Current: ₹${todayPnl.toFixed(2)})` : `${consecutiveLosses} consecutive losses recorded`}. New entries locked for ${remainingMins} more minutes.`,
+              message: `Discipline Lockout active: ${isDailyBreached ? `Daily loss limit (${sym}${maxDailyLoss.toLocaleString()}) breached (Current: ${sym}${todayPnl.toFixed(2)})` : `${consecutiveLosses} consecutive losses recorded`}. New entries locked for ${remainingMins} more minutes.`,
             },
           });
         }
@@ -914,10 +927,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       const alertFilter: any = {
         userId: req.user!.id,
         state: { $in: ['ACTIVE', 'SNOOZED', 'CLEARED'] },
+        tradeId: { $in: tradeIdsInScope },
       };
-      if (scope.mode !== 'ALL' || req.query.accountId || req.query.firmKey) {
-        alertFilter.tradeId = { $in: tradeIdsInScope };
-      }
 
       const alerts = await AlertState.find(alertFilter)
         .populate('tradeId', 'symbol direction')

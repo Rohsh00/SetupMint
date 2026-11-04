@@ -44,14 +44,18 @@ async function computeStartingEquity(
   }
 
   const currencyBreakdown: Record<string, number> = {};
-  const currencies = Array.from(new Set(accounts.map((a) => (a.currency || 'USD').toUpperCase())));
+  const accountCurrencyMap = new Map<string, string>();
+  const currencies = Array.from(
+    new Set(accounts.map((a) => (a.baseCurrency || a.currency || 'USD').toUpperCase()))
+  );
   const hasMultipleCurrencies = currencies.length > 1;
 
   let initialBalance = new Decimal(0);
   for (const acc of accounts) {
-    const c = (acc.currency || 'USD').toUpperCase();
+    const c = (acc.baseCurrency || acc.currency || 'USD').toUpperCase();
+    accountCurrencyMap.set(acc._id.toString(), c);
     const bal = new Decimal((acc.initialBalance || 0).toString());
-    currencyBreakdown[c] = (currencyBreakdown[c] || 0) + bal.toNumber();
+    currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(bal).toNumber();
     initialBalance = initialBalance.plus(bal);
   }
 
@@ -77,9 +81,17 @@ async function computeStartingEquity(
 
   const priorTradesAgg = await Trade.aggregate([
     { $match: tradeMatch },
-    { $group: { _id: null, totalNetPnL: { $sum: '$calculated.netPnL' } } },
+    { $group: { _id: '$accountId', totalNetPnL: { $sum: '$calculated.netPnL' } } },
   ]);
-  const priorPnL = new Decimal(priorTradesAgg[0]?.totalNetPnL || 0);
+  let priorPnL = new Decimal(0);
+  for (const row of priorTradesAgg) {
+    const pnlDec = new Decimal(row.totalNetPnL || 0);
+    priorPnL = priorPnL.plus(pnlDec);
+    const c = row._id ? accountCurrencyMap.get(row._id.toString()) : undefined;
+    if (c) {
+      currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(pnlDec).toNumber();
+    }
+  }
 
   // Aggregate cash flows strictly before startUtc
   const txMatch: any = {
@@ -93,7 +105,12 @@ async function computeStartingEquity(
 
   const priorTxAgg = await AccountTransaction.aggregate([
     { $match: txMatch },
-    { $group: { _id: '$type', totalAmount: { $sum: '$amount' } } },
+    {
+      $group: {
+        _id: { accountId: '$accountId', type: '$type' },
+        totalAmount: { $sum: '$amount' },
+      },
+    },
   ]);
 
   let priorDeposits = new Decimal(0);
@@ -102,12 +119,18 @@ async function computeStartingEquity(
 
   for (const stat of priorTxAgg) {
     const amountDec = new Decimal(stat.totalAmount.toString());
-    if (stat._id === 'DEPOSIT') {
+    const txType = stat._id?.type;
+    const accIdStr = stat._id?.accountId ? stat._id.accountId.toString() : undefined;
+    const c = accIdStr ? accountCurrencyMap.get(accIdStr) : undefined;
+    if (txType === 'DEPOSIT') {
       priorDeposits = priorDeposits.plus(amountDec);
-    } else if (stat._id === 'WITHDRAWAL') {
+      if (c) currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(amountDec).toNumber();
+    } else if (txType === 'WITHDRAWAL') {
       priorWithdrawals = priorWithdrawals.plus(amountDec);
-    } else if (stat._id === 'ADJUSTMENT') {
+      if (c) currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).minus(amountDec).toNumber();
+    } else if (txType === 'ADJUSTMENT') {
       priorAdjustments = priorAdjustments.plus(amountDec);
+      if (c) currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(amountDec).toNumber();
     }
   }
 
@@ -255,9 +278,15 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const equityResult = await computeStartingEquity(req.user!.id, accountIds, startUtc);
     const startingEquity = equityResult.startingEquity;
 
-    // Fetch user's risk settings for daily loss limit
+    // Fetch user's risk settings and resolve scope-appropriate daily loss limit
     const userDoc = await User.findById(req.user!.id).select('riskSettings');
-    const maxDailyLoss = userDoc?.riskSettings?.maxDailyLoss ?? 5000;
+    const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+      req.user!.id,
+      accountIds,
+      scope,
+      userDoc?.riskSettings
+    );
+    const maxDailyLoss = scopedRisk.riskSettings.maxDailyLoss;
 
     const trades = await Trade.find(filter)
       .sort({ tradeDate: 1 })
@@ -382,19 +411,26 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     }
 
     // 7. Prop Reference Lines (Max Loss floor, Profit Target, SOD Daily Loss floor)
+    // Only populate in PROP_FIRM scope or when viewing a single PROP_FIRM account
     let propReferenceLines: any = undefined;
-    if (scope.mode === 'PROP_FIRM' || accountIds.length > 0) {
+    if (
+      (scope.mode === 'PROP_FIRM' || scope.mode === 'ACCOUNT') &&
+      accountIds.length > 0
+    ) {
       const propAccounts = await TradingAccount.find({
         _id: { $in: accountIds },
         userId: req.user!.id,
         $or: [
           { accountType: 'PROP_FIRM' },
-          { 'propFirm.firmKey': { $exists: true, $ne: null } },
+          { 'propFirm.firmKey': { $exists: true, $nin: [null, ''] } },
           { 'propFirmConfig.enabled': true },
         ],
       });
 
-      if (propAccounts.length > 0) {
+      if (
+        propAccounts.length > 0 &&
+        (scope.mode === 'PROP_FIRM' || propAccounts.length === accountIds.length)
+      ) {
         const primary = propAccounts[0];
         const firmKey = primary.propFirm?.firmKey || primary.propFirmConfig?.firm || 'the5ers';
         const planKey = primary.propFirm?.planKey || primary.propFirmConfig?.planName;

@@ -82,6 +82,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       userId: req.user!.id,
       strategyId: { $in: strategyIds },
       status: 'CLOSED',
+      accountId: { $in: accountIds },
     };
     if (dateClause.tradeDate) {
       closedTradesFilter.tradeDate = dateClause.tradeDate;
@@ -213,7 +214,14 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       });
     }
 
-    const trades = await Trade.find({ strategyId: strategy._id, userId: req.user!.id })
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const trades = await Trade.find({
+      strategyId: strategy._id,
+      userId: req.user!.id,
+      accountId: { $in: accountIds },
+    })
       .sort({ tradeDate: -1 })
       .limit(100);
 

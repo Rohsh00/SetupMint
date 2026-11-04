@@ -105,14 +105,28 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const { date } = req.params; // format YYYY-MM-DD
 
     const journal = await DailyJournal.findOne({ userId: req.user!.id, date })
-      .populate('bestTradeId', 'symbol calculated.netPnL')
-      .populate('worstTradeId', 'symbol calculated.netPnL');
+      .populate('bestTradeId', 'symbol calculated.netPnL accountId')
+      .populate('worstTradeId', 'symbol calculated.netPnL accountId');
 
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
 
     const scope = AccountScopeService.parseAccountScope(req.query);
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const accountIdSet = new Set(accountIds.map((id) => id.toString()));
+
+    let scopedJournal: any = null;
+    if (journal) {
+      scopedJournal = journal.toObject();
+      const bestAccId = (scopedJournal.bestTradeId as any)?.accountId?.toString();
+      if (bestAccId && !accountIdSet.has(bestAccId)) {
+        scopedJournal.bestTradeId = null;
+      }
+      const worstAccId = (scopedJournal.worstTradeId as any)?.accountId?.toString();
+      if (worstAccId && !accountIdSet.has(worstAccId)) {
+        scopedJournal.worstTradeId = null;
+      }
+    }
 
     const trades = await Trade.find({
       userId: req.user!.id,
@@ -123,6 +137,12 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const totalNetPnL = trades.reduce((sum, t) => sum + (t.calculated?.netPnL || 0), 0);
 
     const user = await User.findById(req.user!.id);
+    const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+      req.user!.id,
+      accountIds,
+      scope,
+      user?.riskSettings
+    );
     const tradeSummaries = trades.map((t) => ({
       id: t._id.toString(),
       symbol: t.symbol,
@@ -147,13 +167,13 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       mistakes: t.psychology?.mistakes || [],
     }));
 
-    const prefill = calculateDailySessionSummary(date, tradeSummaries, user?.riskSettings);
+    const prefill = calculateDailySessionSummary(date, tradeSummaries, scopedRisk.riskSettings);
 
     return reply.send({
       success: true,
       data: {
         date,
-        journal: journal || null,
+        journal: scopedJournal,
         trades,
         summary: {
           tradesCount: trades.length,

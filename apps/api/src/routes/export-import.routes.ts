@@ -1928,12 +1928,15 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   // List Recent Import Batches
   app.get('/import/batches', async (req: any, reply) => {
     const userObjId = new mongoose.Types.ObjectId(req.user!.id);
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
     const [tradeBatches, ledgerBatches] = await Promise.all([
       Trade.aggregate([
         {
           $match: {
             userId: userObjId,
+            accountId: { $in: accountIds },
             importBatchId: { $exists: true, $ne: null },
           },
         },
@@ -1953,6 +1956,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         {
           $match: {
             userId: userObjId,
+            accountId: { $in: accountIds },
             importBatchId: { $exists: true, $ne: null },
             source: 'BROKER_LEDGER_IMPORT',
           },

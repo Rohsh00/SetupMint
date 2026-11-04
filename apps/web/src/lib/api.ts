@@ -215,7 +215,16 @@ export const api = {
       const suffix = query.toString() ? `?${query.toString()}` : '';
       return request<any[]>(`/strategies${suffix}`);
     },
-    get: (id: string) => request<any>(`/strategies/${id}`),
+    get: (id: string, params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any>(`/strategies/${id}${suffix}`);
+    },
     create: (strategy: any) =>
       request<any>('/strategies', { method: 'POST', body: JSON.stringify(strategy) }),
     update: (id: string, updates: any) =>
@@ -244,7 +253,16 @@ export const api = {
       const suffix = query.toString() ? `?${query.toString()}` : '';
       return request<any[]>(`/templates${suffix}`);
     },
-    get: (id: string) => request<any>(`/templates/${id}`),
+    get: (id: string, params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any>(`/templates/${id}${suffix}`);
+    },
     create: (template: any) =>
       request<any>('/templates', { method: 'POST', body: JSON.stringify(template) }),
     update: (id: string, updates: any) =>
@@ -720,7 +738,16 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ batchId }),
       }),
-    getBatches: () => request<any>('/export/import/batches'),
+    getBatches: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') {
+          query.set(key, String(val));
+        }
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : '';
+      return request<any>(`/export/import/batches${suffix}`);
+    },
     getMappings: () => request<any>('/export/mappings'),
     saveMapping: (data: { broker: string; name?: string; mapping: any }) =>
       request<any>('/export/mappings', {

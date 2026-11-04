@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
-import { Trade, Instrument, BrokerIntegration, User } from '../db/models/index.js';
+import { Trade, Instrument, BrokerIntegration, User, TradingAccount } from '../db/models/index.js';
 import { FyersService } from './fyers.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
+import { AccountScopeService } from './account-scope.service.js';
 import {
   calculateLiveOpenTradeMetric,
   calculateLiveWatcherSummary,
@@ -15,6 +16,23 @@ import {
 } from '@tradevault/financial-engine';
 
 export class LiveWatcherService {
+  /**
+   * Determines whether an open trade is eligible for live FYERS quotes and broker execution.
+   * Prop firm accounts, demo accounts, and non-Indian (Forex/Crypto) trades must never be
+   * treated as live FYERS positions or present simulated prices as real broker feeds.
+   */
+  private static isFyersEligibleTrade(trade: any, account?: any): boolean {
+    if (account) {
+      if (AccountScopeService.isPropAccount(account)) return false;
+      if (String(account.accountType || '').toUpperCase() === 'DEMO') return false;
+    }
+    const ex = String(trade.exchange || '').toUpperCase();
+    const ac = String(trade.assetClass || '').toUpperCase();
+    if (ex === 'FOREX' || ex === 'CRYPTO' || ac === 'FOREX' || ac === 'CRYPTO') {
+      return false;
+    }
+    return true;
+  }
   /**
    * Helper to robustly extract execution and risk parameters across simple and advanced modes.
    */
@@ -213,6 +231,30 @@ export class LiveWatcherService {
       .sort({ entryTime: -1 })
       .lean();
 
+    // Load scoped or open-trade accounts to check prop/demo/live eligibility
+    const accountIdsToCheck = Array.isArray(accountIdsOrId)
+      ? accountIdsOrId.filter((id) => mongoose.isValidObjectId(id))
+      : accountIdsOrId && mongoose.isValidObjectId(accountIdsOrId)
+      ? [accountIdsOrId]
+      : Array.from(new Set(openTrades.map((t) => t.accountId).filter(Boolean)));
+
+    const scopedAccounts =
+      accountIdsToCheck.length > 0
+        ? await TradingAccount.find({ _id: { $in: accountIdsToCheck }, userId: uId }).lean()
+        : [];
+    const accountMap = new Map<string, any>();
+    for (const acc of scopedAccounts) {
+      accountMap.set(acc._id.toString(), acc);
+    }
+    const anyFyersEligibleAccount =
+      scopedAccounts.length === 0
+        ? !Array.isArray(accountIdsOrId)
+        : scopedAccounts.some(
+            (a) =>
+              !AccountScopeService.isPropAccount(a) &&
+              String(a.accountType || '').toUpperCase() !== 'DEMO'
+          );
+
     if (!openTrades || openTrades.length === 0) {
       const [brokerIntegration, userDoc] = await Promise.all([
         BrokerIntegration.findOne({
@@ -226,6 +268,7 @@ export class LiveWatcherService {
       const tokenExpiresAt = brokerIntegration?.tokenExpiresAt;
       const isTokenExpired = Boolean(tokenExpiresAt && new Date(tokenExpiresAt) <= new Date());
       const hasActiveBroker = Boolean(
+        anyFyersEligibleAccount &&
         brokerIntegration &&
         brokerIntegration.accessToken &&
         !isTokenExpired
@@ -272,11 +315,15 @@ export class LiveWatcherService {
       instrumentMap.set(inst.symbol, inst);
     }
 
-    // 2. Prepare symbols for broker quote fetching
+    // 2. Prepare symbols for broker quote fetching (only for FYERS-eligible Indian live trades)
     const tradeFyersSymbolMap = new Map<string, string>();
     const fyersSymbolsToFetch: string[] = [];
 
     for (const trade of openTrades) {
+      const acc = trade.accountId ? accountMap.get(trade.accountId.toString()) : undefined;
+      if (!this.isFyersEligibleTrade(trade, acc)) {
+        continue;
+      }
       const fyersSym = formatFyersSymbol({
         symbol: trade.symbol,
         underlying: trade.underlying,
@@ -296,10 +343,12 @@ export class LiveWatcherService {
 
     // 3. Attempt to fetch quotes from FYERS
     let fyersQuotes = new Map<string, any>();
-    try {
-      fyersQuotes = await FyersService.getMarketQuotes(uId, fyersSymbolsToFetch);
-    } catch (err: any) {
-      console.warn(`[LiveWatcherService] Could not fetch FYERS quotes: ${err.message}`);
+    if (fyersSymbolsToFetch.length > 0) {
+      try {
+        fyersQuotes = await FyersService.getMarketQuotes(uId, fyersSymbolsToFetch);
+      } catch (err: any) {
+        console.warn(`[LiveWatcherService] Could not fetch FYERS quotes: ${err.message}`);
+      }
     }
 
     // Verify whether the trader has a connected FYERS integration and user settings
@@ -337,10 +386,13 @@ export class LiveWatcherService {
       const tradeId = trade._id.toString();
       const inst = instrumentMap.get(trade.symbol);
       const fields = this.extractTradeFields(trade, inst);
+      const acc = trade.accountId ? accountMap.get(trade.accountId.toString()) : undefined;
+      const isFyersEligible = this.isFyersEligibleTrade(trade, acc);
+      const effectiveHasBroker = hasActiveBroker && isFyersEligible;
 
       const fyersSym = tradeFyersSymbolMap.get(tradeId);
-      let quote = fyersSym ? fyersQuotes.get(fyersSym) : undefined;
-      if (!quote) {
+      let quote = isFyersEligible && fyersSym ? fyersQuotes.get(fyersSym) : undefined;
+      if (!quote && isFyersEligible) {
         quote =
           fyersQuotes.get(trade.symbol) ||
           (fyersSym && fyersSym.includes(':') ? fyersQuotes.get(fyersSym.split(':')[1]) : undefined);
@@ -349,7 +401,7 @@ export class LiveWatcherService {
       let quoteTimestamp: Date | null = null;
 
       let currentLtp: number;
-      if (quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
+      if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
         currentLtp = quote.ltp;
         provider = 'FYERS';
         quoteTimestamp = quote.timestamp
@@ -357,7 +409,7 @@ export class LiveWatcherService {
           : quote.last_traded_time
           ? new Date(quote.last_traded_time * 1000)
           : new Date();
-      } else if (hasActiveBroker) {
+      } else if (effectiveHasBroker) {
         // Connected broker invariant: Never oscillate simulated prices on real trades.
         // Fall back to recorded peak LTP or entry price to preserve financial integrity.
         currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
@@ -366,7 +418,7 @@ export class LiveWatcherService {
           ? new Date(trade.calculated.liveMfeSummary.peakTimestamp)
           : (trade.entryTime ? new Date(trade.entryTime) : new Date(Date.now() - 30000));
       } else {
-        // Pure offline sandbox mode only
+        // Pure offline sandbox / non-FYERS / Prop Firm mode
         currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
         provider = 'SIMULATED';
         quoteTimestamp = new Date();
@@ -383,7 +435,7 @@ export class LiveWatcherService {
         isMarketOpen: isNseMarketOpen,
         staleThresholdSeconds: staleThresholdSec,
         tokenExpiresAt,
-        hasActiveBrokerConnection: hasActiveBroker,
+        hasActiveBrokerConnection: effectiveHasBroker,
       });
 
       const metric = calculateLiveOpenTradeMetric({
@@ -446,7 +498,7 @@ export class LiveWatcherService {
       isMarketOpen: isNseMarketOpen,
       staleThresholdSeconds: staleThresholdSec,
       tokenExpiresAt,
-      hasActiveBrokerConnection: hasActiveBroker,
+      hasActiveBrokerConnection: hasActiveBroker && summaryProvider === 'FYERS',
     });
 
     return calculateLiveWatcherSummary(positions, new Date(), globalDataHealth);
@@ -521,7 +573,8 @@ export class LiveWatcherService {
       undefined;
 
     if (setupName || trade.strategyId) {
-      const cacheKey = `${userId.toString()}:${setupName || trade.strategyId?.toString()}`;
+      const accScopeKey = trade.accountId ? trade.accountId.toString() : 'all';
+      const cacheKey = `${userId.toString()}:${accScopeKey}:${setupName || trade.strategyId?.toString()}`;
       let stats = this.setupStatsCache.get(cacheKey);
       if (!stats) {
         try {
@@ -535,6 +588,7 @@ export class LiveWatcherService {
 
           const historical = await Trade.find({
             userId,
+            ...(trade.accountId ? { accountId: trade.accountId } : {}),
             status: 'CLOSED',
             ...(matchConditions.length > 0 ? { $or: matchConditions } : {}),
           })
@@ -698,29 +752,37 @@ export class LiveWatcherService {
 
     if (!trade) return null;
 
-    const inst = await Instrument.findOne({
-      userId: uId,
-      symbol: trade.symbol,
-    }).lean();
+    const [inst, tradeAccount] = await Promise.all([
+      Instrument.findOne({
+        userId: uId,
+        symbol: trade.symbol,
+      }).lean(),
+      trade.accountId
+        ? TradingAccount.findOne({ _id: trade.accountId, userId: uId }).lean()
+        : Promise.resolve(null),
+    ]);
 
     const fields = this.extractTradeFields(trade, inst);
+    const isFyersEligible = this.isFyersEligibleTrade(trade, tradeAccount);
 
-    const fyersSym = formatFyersSymbol({
-      symbol: trade.symbol,
-      underlying: trade.underlying,
-      assetClass: trade.assetClass,
-      exchange: trade.exchange,
-      marketSegment: trade.marketSegment,
-      optionType: trade.optionType,
-      strikePrice: trade.strikePrice,
-      expiryDate: trade.expiryDate,
-    });
+    const fyersSym = isFyersEligible
+      ? formatFyersSymbol({
+          symbol: trade.symbol,
+          underlying: trade.underlying,
+          assetClass: trade.assetClass,
+          exchange: trade.exchange,
+          marketSegment: trade.marketSegment,
+          optionType: trade.optionType,
+          strikePrice: trade.strikePrice,
+          expiryDate: trade.expiryDate,
+        })
+      : null;
 
     let currentLtp: number;
     let provider: LiveQuoteProvider = 'FYERS';
 
     let quote: any;
-    if (fyersSym) {
+    if (isFyersEligible && fyersSym) {
       try {
         const quotes = await FyersService.getMarketQuotes(uId, [fyersSym]);
         quote =
@@ -732,10 +794,10 @@ export class LiveWatcherService {
       }
     }
 
-    if (quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
+    if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
       currentLtp = quote.ltp;
       provider = 'FYERS';
-    } else {
+    } else if (isFyersEligible) {
       const brokerIntegration = await BrokerIntegration.findOne({
         userId: uId,
         broker: 'FYERS',
@@ -754,6 +816,9 @@ export class LiveWatcherService {
         currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
         provider = 'SIMULATED';
       }
+    } else {
+      currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
+      provider = 'SIMULATED';
     }
 
     const metric = calculateLiveOpenTradeMetric({

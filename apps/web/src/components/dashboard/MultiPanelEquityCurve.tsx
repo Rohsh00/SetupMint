@@ -83,6 +83,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
     staleTime: 60 * 1000,
   });
 
+  const currencySymbol = isPropMode ? '$' : '₹';
   const moneyCurve = useMemo(() => curveData?.moneyCurve || [], [curveData]);
   const propLines = curveData?.propReferenceLines;
   const cumulativeRCurve = curveData?.cumulativeRCurve;
@@ -344,7 +345,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
             sx={{ height: 32 }}
           >
             <ToggleButton value="MONEY" sx={{ px: 1.5, fontSize: '0.75rem', fontWeight: 600 }}>
-              Money (₹)
+              Money ({currencySymbol})
             </ToggleButton>
             <ToggleButton value="R" sx={{ px: 1.5, fontSize: '0.75rem', fontWeight: 600 }}>
               R-Multiple
@@ -532,7 +533,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
                 tickFormatter={(d: string) => (d.startsWith('+') ? d : formatDate(d))}
               />
 
-              {/* Left Y-Axis: Money (₹) */}
+              {/* Left Y-Axis: Money */}
               {(curveMode === 'MONEY' || curveMode === 'BOTH') && (
                 <YAxis
                   yAxisId="moneyAxis"
@@ -540,7 +541,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
                   stroke={chartAxisColor}
                   fontSize={11}
                   tickLine={false}
-                  tickFormatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={(v: number) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                 />
               )}
 

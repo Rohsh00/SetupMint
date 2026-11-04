@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
 import Box from '@mui/material/Box';
@@ -54,7 +54,7 @@ import { HelpHint } from '../components/help/index.js';
 
 export function JournalCalendarPage() {
   const { openDrill } = useTradeDrilldown();
-  const { queryParams, isPropMode, scopeLabel } = useAccountScope();
+  const { queryParams, isPropMode, scopeLabel, scopedAccounts, selectedAccountId: scopeAccountId } = useAccountScope();
   const queryClient = useQueryClient();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -63,8 +63,12 @@ export function JournalCalendarPage() {
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1-indexed
   const [metricMode, setMetricMode] = useState<'INR' | 'R'>('INR');
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(scopeAccountId || 'ALL');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setSelectedAccountId(scopeAccountId || 'ALL');
+  }, [scopeAccountId, queryParams]);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -79,7 +83,8 @@ export function JournalCalendarPage() {
     queryKey: ['accounts-list'],
     queryFn: () => api.accounts.list(),
   });
-  const accounts = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.accounts || [];
+  const allAccounts = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.accounts || [];
+  const accounts = scopedAccounts.length > 0 ? scopedAccounts : allAccounts;
 
   const { data: calendarData, isLoading } = useQuery({
     queryKey: ['journal-calendar', ymString, effectiveScopeParams],

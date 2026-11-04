@@ -39,6 +39,7 @@ import RateReviewRoundedIcon from '@mui/icons-material/RateReviewRounded';
 
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 
 export interface CommandPaletteProps {
   open: boolean;
@@ -62,6 +63,7 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
   const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { queryParams } = useAccountScope();
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -80,11 +82,11 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
     }
   }, [open]);
 
-  // Repeat last trade execution
+  // Repeat last trade execution (strictly within the active account scope)
   const handleRepeatLastTrade = async () => {
     try {
       setIsExecuting(true);
-      const res = await api.trades.list({ limit: 1, sortBy: 'createdAt', sortOrder: 'desc' });
+      const res = await api.trades.list({ ...queryParams, limit: 1, sortBy: 'createdAt', sortOrder: 'desc' });
       const trades = Array.isArray(res) ? res : res?.data || [];
       if (!trades || trades.length === 0) {
         toast.info('No recent trades found to repeat.');

@@ -40,6 +40,7 @@ import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
 import MicRoundedIcon from '@mui/icons-material/MicRounded';
 
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { api } from '../../lib/api.js';
 import { formatCurrency, formatR, formatPercent, formatDate, formatDateTime } from '../../lib/utils.js';
 import { TradeInstrumentBadge } from '../trades/TradeInstrumentBadge.js';
@@ -55,10 +56,27 @@ export function TradeDrillDrawer() {
   const queryClient = useQueryClient();
 
   const { isOpen, descriptor, activeTradeId, closeDrill, setActiveTradeId } = useTradeDrilldown();
+  const { queryParams } = useAccountScope();
 
   const [editModalTradeId, setEditModalTradeId] = useState<string | null>(null);
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
   const [screenshotViewerTrade, setScreenshotViewerTrade] = useState<any | null>(null);
+
+  const effectiveDescriptor = useMemo(() => {
+    if (!descriptor) return null;
+    if (descriptor.kind !== 'FILTER') return descriptor;
+    const f = (descriptor.filter || {}) as Record<string, any>;
+    const hasExplicitScope =
+      f.scope !== undefined || f.mode !== undefined || f.accountId !== undefined;
+    if (hasExplicitScope) return descriptor;
+    return {
+      ...descriptor,
+      filter: {
+        ...queryParams,
+        ...f,
+      },
+    };
+  }, [descriptor, queryParams]);
 
   // Fetch drilldown trades & aggregate
   const {
@@ -67,9 +85,9 @@ export function TradeDrillDrawer() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['drilldown', descriptor],
-    queryFn: () => api.trades.drilldown({ descriptor: descriptor!, limit: 200 }),
-    enabled: Boolean(isOpen && descriptor),
+    queryKey: ['drilldown', effectiveDescriptor],
+    queryFn: () => api.trades.drilldown({ descriptor: effectiveDescriptor!, limit: 200 }),
+    enabled: Boolean(isOpen && effectiveDescriptor),
     staleTime: 30 * 1000,
   });
 

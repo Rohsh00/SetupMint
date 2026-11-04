@@ -32,6 +32,7 @@ import {
 import {
   User,
   Trade,
+  TradingAccount,
   Attachment,
   AlertState,
   AlertEvent,
@@ -1440,11 +1441,18 @@ export class TelegramAlertService {
    * Generates live PnL report card for /pnl command.
    */
   private static async handlePnlCommand(user: any, botToken: string | null | undefined, chatId: string | number, scopeArg?: string): Promise<void> {
-    const isProp = scopeArg?.toLowerCase().includes('prop');
-    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const argLower = scopeArg?.toLowerCase() || '';
+    const isProp = argLower.includes('prop');
+    const isLive = argLower.includes('live') || argLower.includes('personal');
+    const scope = isProp
+      ? { mode: 'PROP_FIRM' as const }
+      : isLive
+      ? { mode: 'TYPE' as const, accountType: 'LIVE' as const }
+      : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
     const openCount = summary.positions.length;
+    const sym = isProp ? '$' : '₹';
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -1463,15 +1471,15 @@ export class TelegramAlertService {
     const rSign = (summary.portfolioUnrealizedR || 0) >= 0 ? '+' : '';
 
     const text =
-      `📈 <b>SetupMint Live Portfolio PnL</b>\n` +
+      `📈 <b>SetupMint Live Portfolio PnL${isProp ? ' (PROP MODE)' : isLive ? ' (LIVE PERSONAL)' : ''}</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<pre>\n` +
       `Open Positions  : ${openCount}\n` +
-      `Floating Net    : ${pnlSign}₹${summary.totalFloatingNetPnL.toFixed(2)} (${rSign}${(summary.portfolioUnrealizedR || 0).toFixed(2)}R)\n` +
-      `Floating Gross  : ₹${summary.totalFloatingGrossPnL.toFixed(2)}\n` +
-      `Est Charges     : -₹${summary.totalEstimatedCharges.toFixed(2)}\n` +
-      `Realized Today  : ₹${realizedPnL.toFixed(2)}\n` +
-      `Total Day PnL   : ${daySign}₹${totalDayPnL.toFixed(2)}\n` +
+      `Floating Net    : ${pnlSign}${sym}${summary.totalFloatingNetPnL.toFixed(2)} (${rSign}${(summary.portfolioUnrealizedR || 0).toFixed(2)}R)\n` +
+      `Floating Gross  : ${sym}${summary.totalFloatingGrossPnL.toFixed(2)}\n` +
+      `Est Charges     : -${sym}${summary.totalEstimatedCharges.toFixed(2)}\n` +
+      `Realized Today  : ${sym}${realizedPnL.toFixed(2)}\n` +
+      `Total Day PnL   : ${daySign}${sym}${totalDayPnL.toFixed(2)}\n` +
       `</pre>\n` +
       `<i>Status: ${summary.provider} live feed • ${new Date().toLocaleTimeString('en-IN')} IST</i>`;
 
@@ -1489,10 +1497,17 @@ export class TelegramAlertService {
    * Generates interactive open positions list for /trades command.
    */
   private static async handleTradesCommand(user: any, botToken: string | null | undefined, chatId: string | number, scopeArg?: string): Promise<void> {
-    const isProp = scopeArg?.toLowerCase().includes('prop');
-    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const argLower = scopeArg?.toLowerCase() || '';
+    const isProp = argLower.includes('prop');
+    const isLive = argLower.includes('live') || argLower.includes('personal');
+    const scope = isProp
+      ? { mode: 'PROP_FIRM' as const }
+      : isLive
+      ? { mode: 'TYPE' as const, accountType: 'LIVE' as const }
+      : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
+    const sym = isProp ? '$' : '₹';
     if (summary.positions.length === 0) {
       await this.sendMessage(
         botToken,
@@ -1508,17 +1523,17 @@ export class TelegramAlertService {
       const mult = pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1;
       const exposure = pos.quantity * mult * pos.currentLtp;
 
-      const stopInfo = pos.stopLoss ? `₹${pos.stopLoss} (${pos.distanceToStopPoints?.toFixed(1) || 0} pts left)` : 'NO STOP (NAKED)';
-      const beInfo = pos.trueBreakevenPrice ? `₹${pos.trueBreakevenPrice.toFixed(2)}` : `₹${pos.entryPrice}`;
+      const stopInfo = pos.stopLoss ? `${sym}${pos.stopLoss} (${pos.distanceToStopPoints?.toFixed(1) || 0} pts left)` : 'NO STOP (NAKED)';
+      const beInfo = pos.trueBreakevenPrice ? `${sym}${pos.trueBreakevenPrice.toFixed(2)}` : `${sym}${pos.entryPrice}`;
 
       const text =
         `<b>${pos.symbol}</b> (<code>${pos.direction}</code>)\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
-        `Entry    : ₹${pos.entryPrice.toFixed(2)}  |  LTP: ₹${pos.currentLtp.toFixed(2)}\n` +
-        `Net PnL  : ${pnlSign}₹${pos.floatingNetPnL.toFixed(2)} (${rSign}${(pos.unrealizedR || 0).toFixed(2)}R)\n` +
+        `Entry    : ${sym}${pos.entryPrice.toFixed(2)}  |  LTP: ${sym}${pos.currentLtp.toFixed(2)}\n` +
+        `Net PnL  : ${pnlSign}${sym}${pos.floatingNetPnL.toFixed(2)} (${rSign}${(pos.unrealizedR || 0).toFixed(2)}R)\n` +
         `Quantity : ${pos.quantity} ${mult > 1 ? `lots (${pos.quantity * mult} units)` : 'units'}\n` +
-        `Exposure : ₹${exposure.toLocaleString('en-IN')}\n` +
+        `Exposure : ${sym}${exposure.toLocaleString('en-IN')}\n` +
         `StopLoss : ${stopInfo}\n` +
         `True BE  : ${beInfo}\n` +
         `</pre>`;
@@ -1538,8 +1553,14 @@ export class TelegramAlertService {
    * Lists active and snoozed alert states for /alerts command.
    */
   private static async handleAlertsListCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
-    const isProp = scopeArg?.toLowerCase().includes('prop');
-    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const argLower = scopeArg?.toLowerCase() || '';
+    const isProp = argLower.includes('prop');
+    const isLive = argLower.includes('live') || argLower.includes('personal');
+    const scope = isProp
+      ? { mode: 'PROP_FIRM' as const }
+      : isLive
+      ? { mode: 'TYPE' as const, accountType: 'LIVE' as const }
+      : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const tradesInScope = await Trade.find({ userId: user._id, accountId: { $in: accountIds } }).select('_id');
     const tradeIds = tradesInScope.map((t) => t._id);
@@ -1547,10 +1568,8 @@ export class TelegramAlertService {
     const alertFilter: any = {
       userId: user._id,
       state: { $in: ['ACTIVE', 'SNOOZED'] },
+      tradeId: { $in: tradeIds },
     };
-    if (isProp) {
-      alertFilter.tradeId = { $in: tradeIds };
-    }
 
     const alerts = await AlertState.find(alertFilter).lean();
 
@@ -1603,10 +1622,18 @@ export class TelegramAlertService {
   }
 
   /**
-   * Executes emergency two-step panic flattening across all open positions.
+   * Executes emergency two-step panic flattening across all open FYERS (non-prop/live) positions.
    */
   private static async executePanicExit(user: any, botToken: string | null | undefined, chatId: string | number, messageId?: number): Promise<void> {
-    const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' });
+    const liveAccountIds = await AccountScopeService.resolveAccountScope(user._id, {
+      mode: 'TYPE',
+      accountType: 'LIVE',
+    });
+    const openTrades = await Trade.find({
+      userId: user._id,
+      accountId: { $in: liveAccountIds },
+      status: 'OPEN',
+    });
     if (openTrades.length === 0) {
       await this.sendMessage(botToken, chatId, `ℹ️ No open positions to flatten.`);
       return;
@@ -1665,9 +1692,16 @@ export class TelegramAlertService {
    * Generates summary statistics for /summary command.
    */
   private static async handleSummaryCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
-    const isProp = scopeArg?.toLowerCase().includes('prop');
-    const scope = isProp ? { mode: 'PROP_FIRM' as const } : { mode: 'ALL' as const };
+    const argLower = scopeArg?.toLowerCase() || '';
+    const isProp = argLower.includes('prop');
+    const isLive = argLower.includes('live') || argLower.includes('personal');
+    const scope = isProp
+      ? { mode: 'PROP_FIRM' as const }
+      : isLive
+      ? { mode: 'TYPE' as const, accountType: 'LIVE' as const }
+      : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
+    const sym = isProp ? '$' : '₹';
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -1695,12 +1729,12 @@ export class TelegramAlertService {
     const netR = trades.reduce((acc, t) => acc + (t.calculated?.realizedRMultiple || 0), 0);
 
     const text =
-      `📊 <b>Today's Trading Performance Digest</b>\n` +
+      `📊 <b>Today's Trading Performance Digest${isProp ? ' (PROP MODE)' : ''}</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<pre>\n` +
       `Total Trades : ${count}\n` +
       `Win / Loss   : ${wins}W / ${losses}L (${winRate}%)\n` +
-      `Net PnL      : ${netPnL >= 0 ? '+' : ''}₹${netPnL.toFixed(2)}\n` +
+      `Net PnL      : ${netPnL >= 0 ? '+' : ''}${sym}${netPnL.toFixed(2)}\n` +
       `Harvested R  : ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R\n` +
       `</pre>\n` +
       `<i>Date: ${new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</i>`;
@@ -1975,8 +2009,22 @@ export class TelegramAlertService {
     const istOffsetMs = 5.5 * 60 * 60 * 1000;
     const startOfIstDay = new Date(Date.UTC(istYear, istMonth, istDate, 0, 0, 0) - istOffsetMs);
 
+    const nonLiveAccounts = await TradingAccount.find({
+      userId: user._id,
+      $or: [
+        { status: 'ARCHIVED' },
+        { accountType: { $in: ['PROP_FIRM', 'DEMO'] } },
+        { 'propFirm.firmKey': { $exists: true, $ne: null } },
+        { 'propFirmConfig.enabled': true },
+      ],
+    })
+      .select('_id')
+      .lean();
+    const excludedAccountIds = nonLiveAccounts.map((a) => a._id);
+
     const trades = await Trade.find({
       userId: user._id,
+      ...(excludedAccountIds.length > 0 ? { accountId: { $nin: excludedAccountIds } } : {}),
       status: 'CLOSED',
       exitTime: { $gte: startOfIstDay },
     }).lean();

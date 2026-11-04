@@ -51,18 +51,19 @@ export function ReportsPage() {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
   const { startDate, endDate } = useDateRange();
-  const { queryParams } = useAccountScope();
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
+  const { queryParams, scopedAccounts, selectedAccountId: scopeAccountId } = useAccountScope();
+  const { data: allAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
+  const accounts = scopedAccounts.length > 0 ? scopedAccounts : allAccounts;
 
   const [selectedAccountId, setSelectedAccountId] = useState('');
-  const exportScopeParams = selectedAccountId ? { accountId: selectedAccountId } : queryParams;
+  const exportScopeParams = selectedAccountId ? { ...queryParams, accountId: selectedAccountId } : queryParams;
 
   // Import states
   const [importKind, setImportKind] = useState<'TRADES' | 'CASH_FLOWS'>('TRADES');
   const [importMode, setImportMode] = useState<'FILE' | 'PASTE'>('FILE');
   const [pastedText, setPastedText] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importTargetAccount, setImportTargetAccount] = useState('');
+  const [importTargetAccount, setImportTargetAccount] = useState(scopeAccountId || '');
   const [previewData, setPreviewData] = useState<any>(null);
   const [selectedBroker, setSelectedBroker] = useState<string>('CUSTOM');
   const [saveMapping, setSaveMapping] = useState<boolean>(true);
@@ -71,10 +72,21 @@ export function ReportsPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [undoTargetBatch, setUndoTargetBatch] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (scopeAccountId) {
+      setImportTargetAccount(scopeAccountId);
+    } else if (accounts.length > 0 && importTargetAccount && !accounts.some((a: any) => a.id === importTargetAccount)) {
+      setImportTargetAccount(accounts[0].id);
+    }
+    if (selectedAccountId && !accounts.some((a: any) => a.id === selectedAccountId)) {
+      setSelectedAccountId('');
+    }
+  }, [scopeAccountId, accounts, importTargetAccount, selectedAccountId]);
+
   // Recent import batches query
   const { data: batches = [], refetch: refetchBatches } = useQuery({
-    queryKey: ['import-batches'],
-    queryFn: () => api.exportImport.getBatches(),
+    queryKey: ['import-batches', queryParams],
+    queryFn: () => api.exportImport.getBatches(queryParams),
   });
 
   const previewMutation = useMutation({

@@ -33,6 +33,7 @@ export interface AccountScopeContextValue {
   queryParams: Record<string, string>;
   selectedAccountId?: string;
   accounts: any[];
+  scopedAccounts: any[];
   propAccounts: any[];
   personalAccounts: any[];
   demoAccounts: any[];
@@ -381,6 +382,35 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
     return p;
   }, [scope]);
 
+  const scopedAccounts = useMemo(() => {
+    if (scope.accountId) {
+      return accounts.filter((a: any) => (a.id || a._id) === scope.accountId);
+    }
+    if (scope.mode === 'PROP_FIRM') {
+      if (scope.firmKey && scope.firmKey !== 'ALL') {
+        const target = scope.firmKey.toLowerCase();
+        return propAccounts.filter((a: any) => {
+          const fk = (
+            a.propFirm?.firmKey ||
+            (a.propFirmConfig?.enabled ? a.propFirmConfig?.firm : '') ||
+            a.broker ||
+            a.propFirmConfig?.firm ||
+            ''
+          ).toLowerCase();
+          return fk === target || (a.broker || '').toLowerCase() === target;
+        });
+      }
+      return propAccounts;
+    }
+    if (scope.mode === 'TYPE') {
+      if (String(scope.accountType || '').toUpperCase() === 'DEMO') {
+        return demoAccounts;
+      }
+      return personalAccounts;
+    }
+    return accounts;
+  }, [scope, accounts, propAccounts, personalAccounts, demoAccounts]);
+
   const value = useMemo(
     () => ({
       scope,
@@ -392,6 +422,7 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
       queryParams,
       selectedAccountId,
       accounts,
+      scopedAccounts,
       propAccounts,
       personalAccounts,
       demoAccounts,
@@ -407,6 +438,7 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
       queryParams,
       selectedAccountId,
       accounts,
+      scopedAccounts,
       propAccounts,
       personalAccounts,
       demoAccounts,

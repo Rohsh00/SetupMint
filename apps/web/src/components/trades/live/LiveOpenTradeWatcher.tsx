@@ -181,8 +181,8 @@ export function LiveOpenTradeWatcher({
   const { scope, isPropMode, queryParams, selectedAccountId } = useAccountScope();
 
   const { data: propOverviewRes } = useQuery({
-    queryKey: ['prop-overview', scope.mode, scope.firmKey, selectedAccountId],
-    queryFn: () => api.accounts.propOverview(),
+    queryKey: ['prop-overview', scope.mode, scope.firmKey, selectedAccountId, queryParams],
+    queryFn: () => api.accounts.propOverview(queryParams),
     enabled: isPropMode,
     staleTime: 30 * 1000,
   });
@@ -197,8 +197,9 @@ export function LiveOpenTradeWatcher({
     if (!isPropMode || propOverviewList.length === 0) return undefined;
     const firstProp = propOverviewList[0];
     const dailyEval =
+      firstProp.health?.rules?.dailyLoss ||
       firstProp.health?.rules?.DAILY_LOSS ||
-      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS');
+      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS' || e.ruleKey === 'dailyLoss');
     return dailyEval?.limit ?? firstProp.health?.dailyLossLimitAmount;
   }, [isPropMode, propOverviewList]);
 
@@ -206,8 +207,9 @@ export function LiveOpenTradeWatcher({
     if (!isPropMode || propOverviewList.length === 0) return undefined;
     const firstProp = propOverviewList[0];
     const dailyEval =
+      firstProp.health?.rules?.dailyLoss ||
       firstProp.health?.rules?.DAILY_LOSS ||
-      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS');
+      firstProp.evaluations?.find((e: any) => e.ruleKey === 'DAILY_LOSS' || e.ruleKey === 'dailyLoss');
     return dailyEval?.remaining ?? firstProp.dailyLossBuffer ?? firstProp.health?.dailyBufferRemaining;
   }, [isPropMode, propOverviewList]);
 

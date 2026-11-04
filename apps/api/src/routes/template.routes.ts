@@ -60,8 +60,13 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     return statsMap;
   }
 
-  function formatTemplateWithStats(template: any, isBuiltIn: boolean, stat?: any) {
-    const totalTrades = stat ? stat.totalTrades : (template.usageCount || 0);
+  function formatTemplateWithStats(template: any, isBuiltIn: boolean, stat?: any, isScoped = false) {
+    const totalTrades = stat ? stat.totalTrades : 0;
+    const usageCount = isScoped
+      ? totalTrades
+      : stat
+      ? Math.max(totalTrades, template.usageCount || 0)
+      : template.usageCount || 0;
     const winTrades = stat ? stat.winTrades : 0;
     const netPnL = stat ? Number(stat.netPnL.toFixed(2)) : 0;
     const winRate = totalTrades > 0 ? Number(((winTrades / totalTrades) * 100).toFixed(1)) : 0;
@@ -98,7 +103,7 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       session: template.session,
       isBuiltIn,
       isFavorite: template.isFavorite || false,
-      usageCount: totalTrades,
+      usageCount,
       lastUsedAt: template.lastUsedAt,
       userId: template.userId ? template.userId.toString() : undefined,
       clonedFromId: template.clonedFromId,
@@ -119,6 +124,7 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.get('/', async (req, reply) => {
     const userId = req.user!.id;
     const scope = AccountScopeService.parseAccountScope(req.query);
+    const isScoped = scope.mode !== 'ALL';
     const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
     const statsMap = await getTemplateStatsMap(userId, accountIds);
 
@@ -131,13 +137,13 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     const formattedUserTemplates = userTemplates.map((t) => {
       const stat = statsMap.get(t._id.toString());
-      return formatTemplateWithStats(t, false, stat);
+      return formatTemplateWithStats(t, false, stat, isScoped);
     });
 
     // Format built-in templates
     const formattedBuiltIns = BUILT_IN_TEMPLATES.map((b) => {
       const stat = statsMap.get(b.id);
-      return formatTemplateWithStats(b, true, stat);
+      return formatTemplateWithStats(b, true, stat, isScoped);
     });
 
     // Custom/favorited templates first, followed by built-ins
@@ -197,7 +203,10 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.get('/:id', async (req: any, reply) => {
     const { id } = req.params;
     const userId = req.user!.id;
-    const statsMap = await getTemplateStatsMap(userId);
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const isScoped = scope.mode !== 'ALL';
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
+    const statsMap = await getTemplateStatsMap(userId, accountIds);
 
     // Check built-ins first
     const builtIn = BUILT_IN_TEMPLATES.find((b) => b.id === id);
@@ -205,7 +214,7 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       const stat = statsMap.get(builtIn.id);
       return reply.send({
         success: true,
-        data: formatTemplateWithStats(builtIn, true, stat),
+        data: formatTemplateWithStats(builtIn, true, stat, isScoped),
       });
     }
 
@@ -233,7 +242,7 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const stat = statsMap.get(template._id.toString());
     return reply.send({
       success: true,
-      data: formatTemplateWithStats(template, false, stat),
+      data: formatTemplateWithStats(template, false, stat, isScoped),
     });
   });
 

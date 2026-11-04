@@ -125,7 +125,8 @@ async function computeWeeklySnapshot(
   userId: mongoose.Types.ObjectId | string,
   week: string,
   targetAccountId: mongoose.Types.ObjectId | null,
-  accountIds?: mongoose.Types.ObjectId[]
+  accountIds?: mongoose.Types.ObjectId[],
+  scope?: any
 ) {
   const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
   const { startDate, endDate } = isoWeekToRange(week);
@@ -171,7 +172,13 @@ async function computeWeeklySnapshot(
 
   const mappedTrades = trades.map(toWeeklyReviewTrade);
   const mappedPrevTrades = prevTrades.map(toWeeklyReviewTrade);
-  const riskSettings = user?.riskSettings;
+  const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+    uId,
+    accountIds || (targetAccountId ? [targetAccountId] : []),
+    scope,
+    user?.riskSettings
+  );
+  const riskSettings = scopedRisk.riskSettings;
 
   const previousFocusRule = prevReviewDoc?.focusRule || null;
 
@@ -221,7 +228,13 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
 
     const user = await User.findById(userId);
-    const riskSettings = user?.riskSettings;
+    const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+      userId,
+      accountIds,
+      scope,
+      user?.riskSettings
+    );
+    const riskSettings = scopedRisk.riskSettings;
 
     // Look back 30 days for review items
     const thirtyDaysAgo = new Date();
@@ -393,7 +406,8 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     );
     const dailyLossBreach = checkDailyLossBreach(
       todayClosedTrades,
-      riskSettings?.maxDailyLoss ?? 5000
+      riskSettings?.maxDailyLoss ?? 5000,
+      scopedRisk.currency
     );
 
     return reply.send({
@@ -421,6 +435,12 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
 
     const user = await User.findById(userId);
+    const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+      userId,
+      accountIds,
+      scope,
+      user?.riskSettings
+    );
 
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
@@ -436,7 +456,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const prefill = calculateDailySessionSummary(
       date,
       tradeSummaries,
-      user?.riskSettings
+      scopedRisk.riskSettings
     );
 
     return reply.send({
@@ -459,13 +479,21 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     }
 
     const user = await User.findById(userId);
+    const targetAccId = target.accountId as mongoose.Types.ObjectId;
+    const scopedRisk = await AccountScopeService.resolveScopedRiskSettings(
+      userId,
+      targetAccId ? [targetAccId] : [],
+      { mode: 'ACCOUNT', accountId: targetAccId?.toString() },
+      user?.riskSettings
+    );
 
-    // Fetch trades within 24h of target trade
+    // Fetch trades within 24h of target trade on the SAME account (never mix prop and live trades)
     const windowStart = new Date(target.entryTime);
     windowStart.setHours(windowStart.getHours() - 24);
 
     const trades = await Trade.find({
       userId,
+      ...(targetAccId ? { accountId: targetAccId } : {}),
       entryTime: { $gte: windowStart, $lte: target.entryTime },
     }).sort({ entryTime: 1 });
 
@@ -474,7 +502,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const detection = detectMistakeSuggestions({
       trades: tradeSummaries,
       targetTradeId: tradeId,
-      thresholds: user?.riskSettings,
+      thresholds: scopedRisk.riskSettings,
     });
 
     return reply.send({
@@ -501,16 +529,27 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
         });
       }
 
-      const targetAccountId =
-        accountId && mongoose.Types.ObjectId.isValid(accountId)
-          ? new mongoose.Types.ObjectId(accountId)
-          : null;
+      const validTargetAccount =
+        accountId &&
+        mongoose.Types.ObjectId.isValid(accountId) &&
+        accountIds.some((id) => id.toString() === String(accountId));
+      const targetAccountId = validTargetAccount
+        ? new mongoose.Types.ObjectId(accountId)
+        : null;
 
-      const existingReview = await WeeklyReview.findOne({
-        userId,
-        week,
-        accountId: targetAccountId,
-      });
+      // Only look up an existing WeeklyReview document if:
+      // 1) A valid owned single accountId was requested, OR
+      // 2) No accountId was requested AND scope.mode === 'ALL' (where accountId: null represents ALL accounts)
+      const canUseStoredReview =
+        Boolean(targetAccountId) || (!accountId && scope.mode === 'ALL');
+
+      const existingReview = canUseStoredReview
+        ? await WeeklyReview.findOne({
+            userId,
+            week,
+            accountId: targetAccountId,
+          })
+        : null;
 
       if (existingReview && existingReview.status === 'FINALIZED') {
         const prevWeek = getAdjacentIsoWeek(week, -1);
@@ -540,7 +579,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
         });
       }
 
-      const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds);
+      const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds, scope);
 
       return reply.send({
         success: true,
@@ -562,14 +601,22 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     }
 
     // List recent reviews (last 12)
-    const targetAccountId =
-      accountId && mongoose.Types.ObjectId.isValid(accountId)
-        ? new mongoose.Types.ObjectId(accountId)
-        : null;
+    const validTargetAccount =
+      accountId &&
+      mongoose.Types.ObjectId.isValid(accountId) &&
+      accountIds.some((id) => id.toString() === String(accountId));
+    const targetAccountId = validTargetAccount
+      ? new mongoose.Types.ObjectId(accountId)
+      : null;
 
     const filter: any = { userId };
-    if (targetAccountId) {
+    if (accountId && !validTargetAccount) {
+      // Requested an unowned or out-of-scope accountId
+      filter.accountId = { $in: [] };
+    } else if (targetAccountId) {
       filter.accountId = targetAccountId;
+    } else if (scope.mode !== 'ALL') {
+      filter.accountId = { $in: accountIds };
     }
 
     const reviews = await WeeklyReview.find(filter).sort({ week: -1 }).limit(12);
@@ -615,16 +662,24 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       });
     }
 
-    const targetAccountId =
-      accountId && mongoose.Types.ObjectId.isValid(accountId)
-        ? new mongoose.Types.ObjectId(accountId)
-        : null;
+    const validTargetAccount =
+      accountId &&
+      mongoose.Types.ObjectId.isValid(accountId) &&
+      accountIds.some((id) => id.toString() === String(accountId));
+    const targetAccountId = validTargetAccount
+      ? new mongoose.Types.ObjectId(accountId)
+      : null;
 
-    const existingReview = await WeeklyReview.findOne({
-      userId,
-      week,
-      accountId: targetAccountId,
-    });
+    const canUseStoredReview =
+      Boolean(targetAccountId) || (!accountId && scope.mode === 'ALL');
+
+    const existingReview = canUseStoredReview
+      ? await WeeklyReview.findOne({
+          userId,
+          week,
+          accountId: targetAccountId,
+        })
+      : null;
 
     if (existingReview && existingReview.status === 'FINALIZED') {
       const prevWeek = getAdjacentIsoWeek(week, -1);
@@ -654,7 +709,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       });
     }
 
-    const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds);
+    const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds, scope);
 
     return reply.send({
       success: true,
@@ -699,26 +754,29 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     }
 
     const { focusRule, notes, status = 'DRAFT', accountId, followedLastRule } = bodyParsed.data;
-    const targetAccountId =
-      accountId && mongoose.Types.ObjectId.isValid(accountId)
-        ? new mongoose.Types.ObjectId(accountId)
-        : null;
+    const scope = AccountScopeService.parseAccountScope({ ...(req.query || {}), ...bodyParsed.data });
+    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
+
+    const validTargetAccount =
+      accountId &&
+      mongoose.Types.ObjectId.isValid(accountId) &&
+      accountIds.some((id) => id.toString() === String(accountId));
+    const targetAccountId = validTargetAccount
+      ? new mongoose.Types.ObjectId(accountId)
+      : null;
 
     const existing = await WeeklyReview.findOne({ userId, week, accountId: targetAccountId });
 
     let snapshotToSave: any;
     let previousFocusEvaluation: any;
 
-    const scope = AccountScopeService.parseAccountScope(bodyParsed.data);
-    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
-
-    if (existing && existing.status === 'FINALIZED') {
+    if (existing && existing.status === 'FINALIZED' && (targetAccountId || scope.mode === 'ALL')) {
       // FINALIZED snapshot stays immutable after new trades are added
       snapshotToSave = existing.snapshot;
       previousFocusEvaluation = existing.previousFocusEvaluation;
     } else {
       // Generate live snapshot
-      const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds);
+      const computed = await computeWeeklySnapshot(userId, week, targetAccountId, accountIds, scope);
       snapshotToSave = computed.snapshot;
       previousFocusEvaluation = computed.previousFocusEvaluation;
     }

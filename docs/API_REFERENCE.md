@@ -54,11 +54,11 @@ Every reporting, aggregation, chart, watcher, and trade endpoint accepts unified
 |:---|:---|:---|:---|
 | `scope` | String | `ALL` | Scope filter mode: `ALL`, `ACCOUNT`, `TYPE`, or `PROP_FIRM`. |
 | `accountId` | String (ObjectId) | `undefined` | Scopes exclusively to a single owned account. |
-| `accountType` | String | `undefined` | Filter by `EQUITY`, `FUTURES_OPTIONS`, `COMMODITY`, `FOREX`, `CRYPTO`, or `PROP_FIRM`. |
+| `accountType` | String | `undefined` | Filter by `LIVE` (all personal non-prop/non-demo accounts), `DEMO`, `EQUITY`, `FUTURES_OPTIONS`, `COMMODITY`, `FOREX`, `CRYPTO`, or `PROP_FIRM`. |
 | `firmKey` | String | `undefined` | When `scope=PROP_FIRM`, filters by firm (`THE5ERS`, `FTMO`, `FUNDEDNEXT`, `FUNDING_PIPS`, `APEX`, `TOPSTEP`, `CUSTOM`). |
 | `includeArchived` | Boolean | `false` | Whether to include archived trading accounts. |
 
-Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET /trades/live/watcher`, `GET /trades/live/alerts`, `GET /dashboard/stats`, `GET /dashboard/equity-curves`, `GET /analytics/psychology`, `GET /analytics/excursion`, `POST /analytics/what-if`, `GET /journal/calendar`, `GET /journal/:date`, `GET /review/queue`, `GET /review/prefill/:date`, `GET /review/weekly`, `GET /strategies`, `GET /instruments`, `GET /export/csv`, `GET /export/json`, `GET /templates`, Telegram commands `/pnl`, `/trades`, `/summary`, `/alerts`.
+Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET /trades/live/watcher`, `GET /trades/live/alerts`, `GET /dashboard/stats`, `GET /dashboard/equity-curves`, `GET /analytics/psychology`, `GET /analytics/excursion`, `POST /analytics/what-if`, `GET /journal/calendar`, `GET /journal/:date`, `GET /review/queue`, `GET /review/prefill/:date`, `GET /review/weekly`, `GET /review/weekly/:week`, `POST /review/weekly/:week`, `GET /strategies`, `GET /strategies/:id`, `GET /strategies/:id/analytics`, `GET /templates`, `GET /templates/:id`, `GET /instruments`, `GET /accounts/prop-overview`, `GET /export/csv`, `GET /export/json`, `GET /export/import/batches`, and Telegram commands `/pnl [prop|live]`, `/trades [prop|live]`, `/summary [prop|live]`, `/alerts [prop|live]` (while `/panic`, EOD digest, and the live-execution worker strictly target active personal `LIVE` accounts).
 
 ---
 

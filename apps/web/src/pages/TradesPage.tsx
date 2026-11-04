@@ -113,8 +113,8 @@ export function TradesPage() {
 
   // Query strategies for filtering and bulk classifying
   const { data: strategiesRes } = useQuery({
-    queryKey: ['strategies'],
-    queryFn: () => api.strategies.list(),
+    queryKey: ['strategies', queryParams],
+    queryFn: () => api.strategies.list(queryParams),
   });
   const strategiesList: any[] = Array.isArray(strategiesRes)
     ? strategiesRes
@@ -344,7 +344,8 @@ export function TradesPage() {
           <Button
             component="a"
             href={api.exportImport.csvUrl({
-              accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
+              ...queryParams,
+              accountId: selectedAccountId !== 'ALL' ? selectedAccountId : queryParams.accountId,
               startDate,
               endDate,
             })}

@@ -434,7 +434,7 @@ describe('TradeVault Comprehensive QA & Regression Test Suite', () => {
       expect(t.calculated.closedQuantity).toBe(60);
       expect(t.calculated.openQuantity).toBe(0);
       expect(t.calculated.averageEntryPrice).toBe(50100);
-      expect(t.calculated.averageExitPrice).toBe(50533.3333);
+      expect(t.calculated.averageExitPrice).toBe(50533.33);
       // Realized R = 25880 / 5000 = 5.18 R
       expect(t.calculated.realizedRMultiple).toBe(5.18);
     });

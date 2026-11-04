@@ -4,6 +4,7 @@ import { FyersService } from './fyers.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
 import { BrokerAutoSyncWorker } from './broker-auto-sync.service.js';
+import { AccountScopeService } from './account-scope.service.js';
 import {
   calculateTargetLadder,
   evaluateGivebackAutoExit,
@@ -85,7 +86,12 @@ export class LiveExecutionWorker {
         }
       }
 
-      // Check Daily Loss threshold (Calculated strictly against Indian Standard Time calendar day)
+      const liveAccountIds = await AccountScopeService.resolveAccountScope(user._id, {
+        mode: 'TYPE',
+        accountType: 'LIVE',
+      });
+
+      // Check Daily Loss threshold (Calculated strictly against Indian Standard Time calendar day for personal LIVE accounts)
       const maxDailyLoss = user.riskSettings?.maxDailyLoss;
       const isDailyLossAlertActive = watcherSettings?.telegramAlertEvents?.dailyLossBreached !== false;
 
@@ -108,6 +114,7 @@ export class LiveExecutionWorker {
 
         const todayClosed = await Trade.find({
           userId: user._id,
+          accountId: { $in: liveAccountIds },
           status: 'CLOSED',
           exitTime: { $gte: startOfIstDay },
         }).lean();
@@ -115,7 +122,7 @@ export class LiveExecutionWorker {
 
         let floatingDayLoss = 0;
         try {
-          const liveSummary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString());
+          const liveSummary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), liveAccountIds);
           floatingDayLoss = liveSummary.totalFloatingNetPnL;
         } catch {}
 
@@ -192,9 +199,10 @@ export class LiveExecutionWorker {
         }
       }
 
-      // Find open trades for this user
+      // Find open trades on active personal LIVE accounts for FYERS broker evaluation
       const openTrades = await Trade.find({
         userId: user._id,
+        accountId: { $in: liveAccountIds },
         status: 'OPEN',
       }).lean();
 

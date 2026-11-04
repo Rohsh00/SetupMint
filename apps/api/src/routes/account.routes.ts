@@ -142,21 +142,17 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
   // Get Prop Firm Accounts Overview for Dashboard
   app.get('/prop-overview', async (req: any, reply) => {
-    const query: any = {
-      userId: req.user!.id,
-      status: 'ACTIVE',
-      $or: [
-        { accountType: 'PROP_FIRM' },
-        { 'propFirm.firmKey': { $exists: true, $nin: [null, ''] } },
-        { 'propFirmConfig.enabled': true },
-      ],
+    const parsedScope = AccountScopeService.parseAccountScope(req.query);
+    const propScope = {
+      ...parsedScope,
+      mode: 'PROP_FIRM' as const,
     };
+    const propAccountIds = await AccountScopeService.resolveAccountScope(req.user!.id, propScope);
 
-    if (req.query?.accountId && mongoose.Types.ObjectId.isValid(req.query.accountId)) {
-      query._id = new mongoose.Types.ObjectId(req.query.accountId);
-    }
-
-    const propAccounts = await TradingAccount.find(query).sort({ createdAt: 1 });
+    const propAccounts = await TradingAccount.find({
+      _id: { $in: propAccountIds },
+      userId: req.user!.id,
+    }).sort({ createdAt: 1 });
 
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
@@ -251,9 +247,11 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
           dailyLossBuffer: health.dailyBufferRemaining,
           maxLossBuffer: health.maxLossBufferRemaining,
           maxLossFloor: health.maxLossFloor,
-          nextResetTime: health.rules?.DAILY_LOSS?.resetsAt,
-          minTradingDaysRemaining: health.rules?.MIN_TRADING_DAYS?.remaining,
-          consistencyPct: health.rules?.CONSISTENCY_RULE?.used,
+          nextResetTime: health.rules?.dailyLoss?.resetsAt ?? health.rules?.DAILY_LOSS?.resetsAt,
+          minTradingDaysRemaining:
+            health.rules?.minTradingDays?.remaining ?? health.rules?.MIN_TRADING_DAYS?.remaining,
+          consistencyPct:
+            health.rules?.consistency?.used ?? health.rules?.CONSISTENCY_RULE?.used,
           // Structured fields for API contract & tests
           account: {
             id: accIdStr,

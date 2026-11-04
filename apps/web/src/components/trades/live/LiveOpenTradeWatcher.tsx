@@ -978,8 +978,12 @@ export function LiveOpenTradeWatcher({
       ).length;
 
       const netPnL = summary.totalFloatingNetPnL ?? 0;
-      const pnlPrefix = netPnL >= 0 ? '+₹' : '-₹';
-      const absPnL = Math.abs(netPnL).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+      const isUsdDom =
+        isPropMode ||
+        (summary.positions.length > 0 && summary.positions.every((p: any) => p.currency === 'USD'));
+      const sym = isUsdDom ? '$' : '₹';
+      const pnlPrefix = netPnL >= 0 ? `+${sym}` : `-${sym}`;
+      const absPnL = Math.abs(netPnL).toLocaleString(isUsdDom ? 'en-US' : 'en-IN', { maximumFractionDigits: 0 });
       const pnlStr = `${pnlPrefix}${absPnL}`;
 
       if (criticalCount > 0) {

@@ -1314,10 +1314,11 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
       const instProp = instPropRes.json().data;
       const xauInst = instProp.find((i: any) => i.symbol === 'XAUUSD');
       const niftyInst = instProp.find((i: any) => i.symbol === 'NIFTY26OCTFUT');
+      expect(xauInst).toBeDefined();
       expect(xauInst.tradeCount).toBe(1);
       expect(xauInst.netPnL).toBe(PNL_5ERS);
-      expect(niftyInst.tradeCount).toBe(0);
-      expect(niftyInst.netPnL).toBe(0);
+      // NIFTY26OCTFUT was traded only on the LIVE FYERS account and must not appear in PROP_FIRM scope
+      expect(niftyInst).toBeUndefined();
     });
   });
 

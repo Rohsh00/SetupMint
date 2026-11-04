@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { createInstrumentSchema, dateRangeSchema } from '@tradevault/shared';
-import { Instrument, Trade } from '../db/models/index.js';
+import { Instrument, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { InstrumentService } from '../services/instrument.service.js';
@@ -15,7 +15,7 @@ const updateInstrumentRequestSchema = createInstrumentSchema.partial().extend({
 export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
-  // List only the current user's instruments (strict tenant isolation, no presets)
+  // List only the current user's instruments (strict tenant + scope isolation, no presets)
   app.get('/', async (req, reply) => {
     const { startDate, endDate } = (req.query || {}) as any;
     if (startDate || endDate) {
@@ -35,10 +35,50 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     const scope = AccountScopeService.parseAccountScope(req.query);
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
+    if (scope.mode !== 'ALL' && accountIds.length === 0) {
+      return reply.send({
+        success: true,
+        data: [],
+      });
+    }
+
     const userInstruments = await Instrument.find({ userId: req.user!.id }).sort({ symbol: 1 });
     const tradedSummaries = await InstrumentService.getTradedSummary(req.user!.id, { startDate, endDate }, accountIds);
 
-    const formatted = userInstruments.map((i) => {
+    let scopedInstruments = userInstruments;
+    if (scope.mode !== 'ALL') {
+      const [allTimeScopedSummaries, allTimeGlobalSummaries, scopedAccounts] = await Promise.all([
+        startDate || endDate
+          ? InstrumentService.getTradedSummary(req.user!.id, undefined, accountIds)
+          : Promise.resolve(tradedSummaries),
+        InstrumentService.getTradedSummary(req.user!.id, undefined),
+        TradingAccount.find({ _id: { $in: accountIds }, userId: req.user!.id })
+          .select('baseCurrency')
+          .lean(),
+      ]);
+
+      const scopedCurrencies = new Set(
+        scopedAccounts.map((a: any) => String(a.baseCurrency || 'INR').toUpperCase())
+      );
+
+      scopedInstruments = userInstruments.filter((inst) => {
+        const idStr = inst._id.toString();
+        const scopedCount = allTimeScopedSummaries.get(idStr)?.tradeCount ?? 0;
+        if (scopedCount > 0) return true;
+
+        // If never traded in ANY account, keep only if custom/untraded instrument matches scoped currency
+        const globalCount = allTimeGlobalSummaries.get(idStr)?.tradeCount ?? 0;
+        if (globalCount === 0) {
+          const instCurrency = String(inst.quoteCurrency || 'INR').toUpperCase();
+          return scopedCurrencies.size === 0 || scopedCurrencies.has(instCurrency);
+        }
+
+        // Traded only in out-of-scope accounts -> exclude from this scope
+        return false;
+      });
+    }
+
+    const formatted = scopedInstruments.map((i) => {
       const summary = tradedSummaries.get(i._id.toString());
       return {
         id: i._id.toString(),

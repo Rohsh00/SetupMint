@@ -58,6 +58,7 @@ import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
+import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
@@ -341,6 +342,7 @@ export function AnalyticsPage() {
           </Box>
         </Card>
       )}
+      {isPropMode && <PropChallengePanel />}
 
       {/* TAB 1: OVERVIEW & DISTRIBUTION */}
       {activeTab === 'OVERVIEW' && (

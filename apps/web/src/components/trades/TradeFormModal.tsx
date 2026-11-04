@@ -494,6 +494,69 @@ function TradeFormModalContent({
     return accounts.find((a: any) => a.id === watchedAccountId);
   }, [accounts, watchedAccountId]);
 
+  const isSelectedAccountProp = useMemo(() => {
+    if (!selectedAccount) return false;
+    return (
+      selectedAccount.accountType === 'PROP_FIRM' ||
+      Boolean(selectedAccount.propFirm?.firmKey) ||
+      Boolean(selectedAccount.propFirmConfig?.enabled)
+    );
+  }, [selectedAccount]);
+
+  const { data: selectedPropHealth } = useQuery<any>({
+    queryKey: ['prop-health-form', selectedAccount?.id],
+    queryFn: () => api.accounts.getPropHealth(selectedAccount!.id),
+    enabled: Boolean(isOpen && isSelectedAccountProp && selectedAccount?.id),
+    staleTime: 15000,
+  });
+
+  // Live Prop Firm Pre-Trade Lot & Buffer Guardrail
+  const propSizingGuardrail = useMemo(() => {
+    if (!isSelectedAccountProp || !selectedAccount) return null;
+    const initialBal = Number(selectedAccount.initialBalance || 100000);
+    const currentBal = Number(selectedAccount.currentBalance || initialBal);
+    const dailyPct = Number(selectedAccount.propFirmConfig?.dailyLossLimitPercent ?? 3);
+    const maxPct = Number(selectedAccount.propFirmConfig?.maxLossLimitPercent ?? 10);
+
+    const dailyBuffer = Number(
+      selectedPropHealth?.dailyBufferRemaining ??
+        selectedPropHealth?.rules?.dailyLoss?.remaining ??
+        (currentBal * dailyPct) / 100
+    );
+    const maxBuffer = Number(
+      selectedPropHealth?.maxLossBufferRemaining ??
+        selectedPropHealth?.rules?.maxLoss?.remaining ??
+        currentBal - initialBal * (1 - maxPct / 100)
+    );
+
+    const entryNum = Number(watchedSimple?.entryPrice || watchedRisk?.plannedEntryPrice || 0);
+    const stopNum = Number(watchedRisk?.initialStopLoss || 0);
+    const qtyNum = Number(watchedSimple?.quantity || 0);
+    const multNum = Number(watchedSimple?.contractMultiplier || 1);
+    const slDist = entryNum > 0 && stopNum > 0 ? Math.abs(entryNum - stopNum) : 0;
+
+    const riskPerOneLot = slDist > 0 ? slDist * multNum : 0;
+    const tradeSlRiskDollars = slDist > 0 ? slDist * qtyNum * multNum : Number(watchedRisk?.riskBudgetAmount || 0);
+    const safeRiskDollars = Math.max(0, Math.min(dailyBuffer * 0.25, initialBal * 0.005));
+    const safeLots = riskPerOneLot > 0 ? Number((safeRiskDollars / riskPerOneLot).toFixed(2)) : null;
+    const maxBreachLots = riskPerOneLot > 0 ? Number(( Math.max(0, dailyBuffer * 0.95) / riskPerOneLot).toFixed(2)) : null;
+    const bufferUsedPct = dailyBuffer > 0 ? Number(((tradeSlRiskDollars / dailyBuffer) * 100).toFixed(1)) : 100;
+    const wouldBreachDaily = tradeSlRiskDollars >= dailyBuffer && dailyBuffer > 0;
+    const wouldBreachMax = tradeSlRiskDollars >= maxBuffer && maxBuffer > 0;
+
+    return {
+      dailyBuffer,
+      maxBuffer,
+      tradeSlRiskDollars,
+      safeRiskDollars,
+      safeLots,
+      maxBreachLots,
+      bufferUsedPct,
+      wouldBreachDaily,
+      wouldBreachMax,
+    };
+  }, [isSelectedAccountProp, selectedAccount, selectedPropHealth, watchedSimple, watchedRisk]);
+
   // Advisory Prop Firm Rules Verification
   const propAdvisories = useMemo(() => {
     if (!selectedAccount) return [];
@@ -1646,6 +1709,92 @@ function TradeFormModalContent({
                   Non-blocking advisory warning. Ensure execution aligns with your evaluation rules.
                 </Typography>
               </Alert>
+            )}
+
+            {/* Live Prop Firm Pre-Trade Lot & Daily Buffer Guardrail */}
+            {propSizingGuardrail && (
+              <Box
+                sx={{
+                  p: 1.75,
+                  borderRadius: 2,
+                  border: `1px solid ${
+                    propSizingGuardrail.wouldBreachDaily || propSizingGuardrail.wouldBreachMax
+                      ? muiTheme.palette.error.main
+                      : propSizingGuardrail.bufferUsedPct > 40
+                      ? muiTheme.palette.warning.main
+                      : 'rgba(139, 92, 246, 0.4)'
+                  }`,
+                  backgroundColor:
+                    propSizingGuardrail.wouldBreachDaily || propSizingGuardrail.wouldBreachMax
+                      ? 'rgba(239, 68, 68, 0.08)'
+                      : isDark
+                      ? 'rgba(139, 92, 246, 0.06)'
+                      : 'rgba(139, 92, 246, 0.04)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 1.5,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                  <Chip
+                    size="small"
+                    label="PROP GUARDRAIL"
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: '0.625rem',
+                      height: 20,
+                      backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                      color: '#c4b5fd',
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 }}>
+                    Daily Buffer Left: <strong style={{ color: '#10b981' }}>${propSizingGuardrail.dailyBuffer.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  </Typography>
+                  <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 }}>
+                    Max Loss Buffer: <strong>${propSizingGuardrail.maxBuffer.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      fontWeight: 800,
+                      color:
+                        propSizingGuardrail.wouldBreachDaily || propSizingGuardrail.wouldBreachMax
+                          ? muiTheme.palette.error.main
+                          : propSizingGuardrail.bufferUsedPct > 35
+                          ? muiTheme.palette.warning.main
+                          : muiTheme.palette.text.primary,
+                    }}
+                  >
+                    Planned SL Risk: ${propSizingGuardrail.tradeSlRiskDollars.toFixed(2)} ({propSizingGuardrail.bufferUsedPct}% of Daily Buffer)
+                  </Typography>
+                  {propSizingGuardrail.safeLots !== null && propSizingGuardrail.safeLots > 0 && (
+                    <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#a78bfa', fontWeight: 700 }}>
+                      Safe Size (0.5%): <strong>{propSizingGuardrail.safeLots} lots</strong> (Max Cap: {propSizingGuardrail.maxBreachLots} lots)
+                    </Typography>
+                  )}
+                </Box>
+                {propSizingGuardrail.safeLots !== null && propSizingGuardrail.safeLots > 0 && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setValue('simpleExecution.quantity', propSizingGuardrail.safeLots!, { shouldDirty: true })}
+                    sx={{
+                      textTransform: 'none',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      py: 0.25,
+                      px: 1.25,
+                      borderColor: 'rgba(139, 92, 246, 0.5)',
+                      color: '#c4b5fd',
+                    }}
+                  >
+                    Apply Safe {propSizingGuardrail.safeLots} Lots
+                  </Button>
+                )}
+              </Box>
             )}
             {/* Primary Express Trade Entry Section */}
             <TradeQuickSection

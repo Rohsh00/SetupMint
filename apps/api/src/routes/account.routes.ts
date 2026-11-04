@@ -252,6 +252,11 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
             health.rules?.minTradingDays?.remaining ?? health.rules?.MIN_TRADING_DAYS?.remaining,
           consistencyPct:
             health.rules?.consistency?.used ?? health.rules?.CONSISTENCY_RULE?.used,
+          evaluationFeePaid: Number((acc.propFirm as any)?.evaluationFeePaid ?? (planKeyVal.includes('SUMMER') ? 149 : 495)),
+          profitSplitPct: Number((acc.propFirm as any)?.profitSplitPct ?? 80),
+          totalPayoutsReceived: Number((acc.propFirm as any)?.totalPayoutsReceived ?? 0),
+          nextPayoutDate: (acc.propFirm as any)?.nextPayoutDate ?? null,
+          phaseHistory: (acc.propFirm as any)?.phaseHistory ?? [],
           // Structured fields for API contract & tests
           account: {
             id: accIdStr,
@@ -1114,5 +1119,301 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     }
 
     return reply.send({ success: true, message: 'Account balance successfully reconciled', data: summary });
+  });
+
+  // 1-Click The5ers Hub & TradingView Trade Importer (with automatic SL & 1:2 RR calculation)
+  app.post('/:id/prop-import-trades', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    const rawText = String(req.body?.rawText || '').trim();
+    const rrRatio = Number(req.body?.defaultRiskReward || 2) || 2;
+    if (!rawText) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'EMPTY_INPUT', message: 'Paste rows from The5ers Trader Zone or TradingView CSV' },
+      });
+    }
+
+    const parseThe5ersDate = (s: string): Date | null => {
+      const clean = String(s || '').trim();
+      if (!clean || clean === '-') return null;
+      // Match DD.MM.YY HH:mm or DD/MM/YY HH:mm
+      const m = clean.match(/^(\d{2})[./-](\d{2})[./-](\d{2,4})\s+(\d{1,2}):(\d{2})/);
+      if (m) {
+        const day = Number(m[1]);
+        const month = Number(m[2]) - 1;
+        const yrRaw = Number(m[3]);
+        const year = yrRaw < 100 ? 2000 + yrRaw : yrRaw;
+        const hr = Number(m[4]);
+        const min = Number(m[5]);
+        return new Date(Date.UTC(year, month, day, hr, min, 0) - 5.5 * 3600 * 1000);
+      }
+      const d = new Date(clean);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    const parseMoney = (val: string): number => {
+      if (!val) return 0;
+      const cleaned = val.replace(/[^0-9.-]/g, '');
+      const num = parseFloat(cleaned);
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    const getContractSpec = (sym: string) => {
+      const upper = sym.toUpperCase();
+      if (upper === 'XAUUSD' || upper === 'GOLD') {
+        return { multiplier: 100, assetClass: 'FOREX' as const, exchange: 'FOREX' as const };
+      }
+      if (upper === 'XAGUSD' || upper === 'SILVER') {
+        return { multiplier: 5000, assetClass: 'FOREX' as const, exchange: 'FOREX' as const };
+      }
+      if (upper.endsWith('USDT') || upper === 'ETHUSD' || upper === 'BTCUSD' || upper === 'SOLUSD') {
+        return { multiplier: 1, assetClass: 'CRYPTO' as const, exchange: 'CRYPTO' as const };
+      }
+      if (['NAS100', 'USTEC', 'US30', 'SPX500', 'US500', 'GER40'].includes(upper)) {
+        return { multiplier: 1, assetClass: 'FUTURES' as const, exchange: 'FOREX' as const };
+      }
+      return { multiplier: 100000, assetClass: 'FOREX' as const, exchange: 'FOREX' as const };
+    };
+
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !/^ID\s+Symbol/i.test(l));
+
+    let insertedCount = 0;
+    let updatedCount = 0;
+    const importedTrades: any[] = [];
+
+    for (const line of lines) {
+      // Match tab-separated, comma-separated, or whitespace-separated The5ers row:
+      // e.g. 560643070803 XAUUSD Buy 04.11.26 13:25 04.11.26 13:36 $4,021.78 $4,035.26 0.5 -$4.03 $0 +$669.97 Win
+      const rowRegex =
+        /^(\d{6,}(?:-\d+)?)\s+([A-Za-z0-9:._/-]+)\s+(Buy|Sell|LONG|SHORT)\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2})(?:\s+(\d{2}[./-]\d{2}[./-]\d{2,4}\s+\d{1,2}:\d{2}))?\s+(\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+(\$?[0-9,]+(?:\.[0-9]+)?))?\s+([0-9]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?)\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?)(?:\s+([+-]?\$?[0-9,]+(?:\.[0-9]+)?))?/i;
+
+      const m = line.match(rowRegex);
+      if (!m) continue;
+
+      const brokerTradeId = m[1];
+      const rawSymbol = m[2].includes(':') ? m[2].split(':').pop()! : m[2];
+      const symbol = rawSymbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const sideRaw = m[3].toUpperCase();
+      const direction: 'LONG' | 'SHORT' = sideRaw === 'BUY' || sideRaw === 'LONG' ? 'LONG' : 'SHORT';
+      const entryDate = parseThe5ersDate(m[4]) || new Date();
+      const exitDate = m[5] ? parseThe5ersDate(m[5]) : null;
+      const entryPrice = parseMoney(m[6]);
+      const exitPrice = m[7] ? parseMoney(m[7]) : 0;
+      const qty = parseFloat(m[8]) || 0.1;
+      const feeAbs = Math.abs(parseMoney(m[9]));
+      const swapFee = Math.abs(parseMoney(m[10]));
+      const isClosed = Boolean(exitDate && exitPrice > 0);
+      const spec = getContractSpec(symbol);
+
+      const priceDiff = isClosed
+        ? direction === 'LONG'
+          ? exitPrice - entryPrice
+          : entryPrice - exitPrice
+        : 0;
+      const grossPnL = isClosed ? Number((priceDiff * qty * spec.multiplier).toFixed(2)) : 0;
+      const totalCharges = Number((feeAbs + swapFee).toFixed(2));
+      const parsedNetPnl = m[11] !== undefined ? parseMoney(m[11]) : Number((grossPnL - totalCharges).toFixed(2));
+      const netPnL = isClosed ? parsedNetPnl : 0;
+
+      // Compute Stop Loss & 1:2 RR Target
+      let initialStopLoss: number;
+      let plannedTarget: number;
+      let realizedRMultiple = 0;
+
+      if (!isClosed) {
+        const defaultRiskPts = Number((entryPrice * 0.0035).toFixed(2));
+        initialStopLoss = Number(
+          (direction === 'LONG' ? entryPrice - defaultRiskPts : entryPrice + defaultRiskPts).toFixed(2)
+        );
+        plannedTarget = Number(
+          (direction === 'LONG'
+            ? entryPrice + defaultRiskPts * rrRatio
+            : entryPrice - defaultRiskPts * rrRatio).toFixed(2)
+        );
+      } else if (netPnL <= 0) {
+        // Loss trade: exit price was the Stop Loss hit; Target at 1:rrRatio
+        initialStopLoss = exitPrice;
+        const slDist = Math.max(0.01, Math.abs(exitPrice - entryPrice));
+        plannedTarget = Number(
+          (direction === 'LONG' ? entryPrice + slDist * rrRatio : entryPrice - slDist * rrRatio).toFixed(2)
+        );
+        realizedRMultiple = -1;
+      } else {
+        // Winning trade: 1:rrRatio RR -> SL distance = reward distance / rrRatio
+        plannedTarget = exitPrice;
+        const rewardDist = Math.max(0.02, Math.abs(exitPrice - entryPrice));
+        const slDist = rewardDist / rrRatio;
+        initialStopLoss = Number(
+          (direction === 'LONG' ? entryPrice - slDist : entryPrice + slDist).toFixed(2)
+        );
+        realizedRMultiple = rrRatio;
+      }
+
+      const slDistance = Math.abs(entryPrice - initialStopLoss);
+      const plannedRiskAmount = Number(Math.max(1, slDistance * qty * spec.multiplier).toFixed(2));
+
+      const existing = await Trade.findOne({
+        userId: req.user!.id,
+        accountId: account._id,
+        brokerTradeId,
+      });
+
+      const tradePayload: any = {
+        userId: req.user!.id,
+        accountId: account._id,
+        brokerTradeId,
+        importSource: 'BROKER_SYNC',
+        symbol,
+        underlying: symbol,
+        assetClass: spec.assetClass,
+        exchange: spec.exchange,
+        direction,
+        status: isClosed ? 'CLOSED' : 'OPEN',
+        tradeDate: entryDate,
+        entryTime: entryDate,
+        exitTime: isClosed ? exitDate : undefined,
+        executionMode: 'SIMPLE',
+        contractMultiplier: spec.multiplier,
+        lotSize: 0.01,
+        simpleExecution: {
+          entryPrice: mongoose.Types.Decimal128.fromString(entryPrice.toFixed(2)),
+          exitPrice: isClosed ? mongoose.Types.Decimal128.fromString(exitPrice.toFixed(2)) : undefined,
+          quantity: qty,
+          entryDate,
+          exitDate: isClosed ? exitDate : undefined,
+          commission: mongoose.Types.Decimal128.fromString(feeAbs.toFixed(2)),
+          taxes: mongoose.Types.Decimal128.fromString(swapFee.toFixed(2)),
+          contractMultiplier: spec.multiplier,
+        },
+        risk: {
+          initialStopLoss: mongoose.Types.Decimal128.fromString(initialStopLoss.toFixed(2)),
+          currentStopLoss: mongoose.Types.Decimal128.fromString(initialStopLoss.toFixed(2)),
+          plannedTarget: mongoose.Types.Decimal128.fromString(plannedTarget.toFixed(2)),
+          plannedRiskAmount: mongoose.Types.Decimal128.fromString(plannedRiskAmount.toFixed(2)),
+          plannedRewardRatio: rrRatio,
+        },
+        calculated: {
+          totalEntryQuantity: qty,
+          totalExitQuantity: isClosed ? qty : 0,
+          openQuantity: isClosed ? 0 : qty,
+          averageEntryPrice: mongoose.Types.Decimal128.fromString(entryPrice.toFixed(2)),
+          averageExitPrice: isClosed ? mongoose.Types.Decimal128.fromString(exitPrice.toFixed(2)) : undefined,
+          grossPnL: mongoose.Types.Decimal128.fromString(grossPnL.toFixed(2)),
+          totalCharges: mongoose.Types.Decimal128.fromString(totalCharges.toFixed(2)),
+          netPnL: mongoose.Types.Decimal128.fromString(netPnL.toFixed(2)),
+          realizedRMultiple: isClosed ? realizedRMultiple : undefined,
+          plannedRR: rrRatio,
+          holdingDurationSeconds:
+            isClosed && exitDate
+              ? Math.max(0, Math.round((exitDate.getTime() - entryDate.getTime()) / 1000))
+              : undefined,
+          isWinner: isClosed ? netPnL > 0 : undefined,
+        },
+      };
+
+      if (existing) {
+        await Trade.updateOne({ _id: existing._id }, { $set: tradePayload });
+        updatedCount++;
+      } else {
+        await Trade.create(tradePayload);
+        insertedCount++;
+      }
+
+      importedTrades.push({
+        brokerTradeId,
+        symbol,
+        direction,
+        status: isClosed ? 'CLOSED' : 'OPEN',
+        entryPrice,
+        exitPrice: isClosed ? exitPrice : null,
+        initialStopLoss,
+        plannedTarget,
+        netPnL,
+      });
+    }
+
+    const balanceSummary = await AccountService.recalculateAccountBalances(account._id, req.user!.id);
+
+    return reply.send({
+      success: true,
+      data: {
+        insertedCount,
+        updatedCount,
+        totalProcessed: insertedCount + updatedCount,
+        trades: importedTrades,
+        balanceSummary,
+      },
+    });
+  });
+
+  // Update Prop Firm Business Ledger (Fee Paid, Profit Split %, Total Payouts Received, Optional Phase Override)
+  app.patch('/:id/prop-ledger', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    const evaluationFeePaid =
+      req.body?.evaluationFeePaid !== undefined
+        ? Number(req.body.evaluationFeePaid)
+        : Number((account.propFirm as any)?.evaluationFeePaid ?? 149);
+    const profitSplitPct =
+      req.body?.profitSplitPct !== undefined
+        ? Number(req.body.profitSplitPct)
+        : Number((account.propFirm as any)?.profitSplitPct ?? 80);
+    const totalPayoutsReceived =
+      req.body?.totalPayoutsReceived !== undefined
+        ? Number(req.body.totalPayoutsReceived)
+        : Number((account.propFirm as any)?.totalPayoutsReceived ?? 0);
+    const nextPayoutDate =
+      req.body?.nextPayoutDate !== undefined
+        ? req.body.nextPayoutDate
+        : (account.propFirm as any)?.nextPayoutDate ?? null;
+    const requestedPhase = req.body?.phase as 'PHASE_1' | 'PHASE_2' | 'FUNDED' | undefined;
+
+    account.propFirm = {
+      ...(account.propFirm || { firmKey: 'THE5ERS', planKey: 'SUMMER_100K', phase: 'PHASE_1' }),
+      ...(requestedPhase ? { phase: requestedPhase } : {}),
+      evaluationFeePaid,
+      profitSplitPct,
+      totalPayoutsReceived,
+      nextPayoutDate,
+    } as any;
+
+    if (requestedPhase && account.propFirmConfig) {
+      account.propFirmConfig.phase = requestedPhase;
+      account.propFirmConfig.targetProfitPercent =
+        requestedPhase === 'PHASE_1' ? 10 : requestedPhase === 'PHASE_2' ? 5 : 0;
+      account.markModified('propFirmConfig');
+    }
+
+    account.markModified('propFirm');
+    await account.save();
+
+    return reply.send({
+      success: true,
+      data: {
+        id: account._id.toString(),
+        phase: account.propFirm?.phase,
+        evaluationFeePaid,
+        profitSplitPct,
+        totalPayoutsReceived,
+        nextPayoutDate,
+        netCareerRoi: Number((totalPayoutsReceived - evaluationFeePaid).toFixed(2)),
+      },
+    });
   });
 };

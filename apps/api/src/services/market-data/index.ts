@@ -6,4 +6,5 @@ export * from './pure/chunk-planner.js';
 export * from './angel-one.client.js';
 export * from './fyers.provider.js';
 export * from './angel-one.provider.js';
+export * from './global-cfd.provider.js';
 export * from './market-data.service.js';

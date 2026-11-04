@@ -10,11 +10,13 @@ import { IMarketDataIntegrationStatus, CandleUnavailableReason, CandleFallbackPr
 import { ICandleProvider, CandleProviderResult } from './types.js';
 import { FyersCandleProvider } from './fyers.provider.js';
 import { AngelOneCandleProvider } from './angel-one.provider.js';
+import { GlobalCfdCandleProvider } from './global-cfd.provider.js';
 import { AngelOneClient } from './angel-one.client.js';
 
 export class MarketDataService {
   private static fyersProvider = new FyersCandleProvider();
   private static angelOneProvider = new AngelOneCandleProvider();
+  private static globalCfdProvider = new GlobalCfdCandleProvider();
 
   /**
    * Retrieves sanitized connection status for Angel One market data integration.
@@ -465,6 +467,29 @@ export class MarketDataService {
       }
     } catch {
       // Proceed to underlying fallback
+    }
+
+    // Step 3b-global: Try Global CFD/Forex/Crypto provider (TradingView / Yahoo / Binance for XAUUSD, ETHUSD, BTCUSD, EURUSD, NAS100)
+    if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+      try {
+        const globalSupports = await this.globalCfdProvider.supports(trade, uId);
+        if (globalSupports) {
+          const globalResult = await this.globalCfdProvider.getCandles({
+            trade,
+            resolution,
+            from,
+            to,
+            userId: uId,
+            isUnderlyingFallback: false,
+          });
+          if (globalResult.ok && globalResult.candles.length > 0) {
+            await this.persistSnapshot(uId, trade._id, globalResult, from, to);
+            return globalResult;
+          }
+        }
+      } catch {
+        // Proceed to underlying fallback
+      }
     }
 
     // Step 3c: Underlying fallback (if trade is an option/derivative with an underlying)

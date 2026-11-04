@@ -4,6 +4,7 @@ import { Trade, Instrument, BrokerIntegration, User, TradingAccount } from '../d
 import { FyersService } from './fyers.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
 import { AccountScopeService } from './account-scope.service.js';
+import { GlobalCfdCandleProvider } from './market-data/global-cfd.provider.js';
 import {
   calculateLiveOpenTradeMetric,
   calculateLiveWatcherSummary,
@@ -318,10 +319,18 @@ export class LiveWatcherService {
     // 2. Prepare symbols for broker quote fetching (only for FYERS-eligible Indian live trades)
     const tradeFyersSymbolMap = new Map<string, string>();
     const fyersSymbolsToFetch: string[] = [];
+    const globalSymbolsToFetch: string[] = [];
 
     for (const trade of openTrades) {
       const acc = trade.accountId ? accountMap.get(trade.accountId.toString()) : undefined;
       if (!this.isFyersEligibleTrade(trade, acc)) {
+        if (
+          process.env.NODE_ENV !== 'test' &&
+          !process.env.VITEST &&
+          GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass)
+        ) {
+          globalSymbolsToFetch.push(trade.symbol);
+        }
         continue;
       }
       const fyersSym = formatFyersSymbol({
@@ -341,13 +350,21 @@ export class LiveWatcherService {
       }
     }
 
-    // 3. Attempt to fetch quotes from FYERS
+    // 3. Attempt to fetch quotes from FYERS and Global TradingView CFD/Forex/Crypto scanner
     let fyersQuotes = new Map<string, any>();
+    let globalQuotes = new Map<string, any>();
     if (fyersSymbolsToFetch.length > 0) {
       try {
         fyersQuotes = await FyersService.getMarketQuotes(uId, fyersSymbolsToFetch);
       } catch (err: any) {
         console.warn(`[LiveWatcherService] Could not fetch FYERS quotes: ${err.message}`);
+      }
+    }
+    if (globalSymbolsToFetch.length > 0) {
+      try {
+        globalQuotes = await GlobalCfdCandleProvider.getLiveQuotes(globalSymbolsToFetch);
+      } catch (err: any) {
+        console.warn(`[LiveWatcherService] Could not fetch global CFD quotes: ${err.message}`);
       }
     }
 
@@ -418,10 +435,17 @@ export class LiveWatcherService {
           ? new Date(trade.calculated.liveMfeSummary.peakTimestamp)
           : (trade.entryTime ? new Date(trade.entryTime) : new Date(Date.now() - 30000));
       } else {
-        // Pure offline sandbox / non-FYERS / Prop Firm mode
-        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
-        provider = 'SIMULATED';
-        quoteTimestamp = new Date();
+        // Prop Firm / Global CFD-Forex-Crypto mode (TradingView live quote when available)
+        const globalQuote = globalQuotes.get(trade.symbol);
+        if (globalQuote && typeof globalQuote.ltp === 'number' && globalQuote.ltp > 0) {
+          currentLtp = globalQuote.ltp;
+          provider = 'SIMULATED';
+          quoteTimestamp = globalQuote.timestamp || new Date();
+        } else {
+          currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
+          provider = 'SIMULATED';
+          quoteTimestamp = new Date();
+        }
       }
 
       if (quoteTimestamp && (!latestQuoteTimestamp || quoteTimestamp > latestQuoteTimestamp)) {
@@ -817,8 +841,26 @@ export class LiveWatcherService {
         provider = 'SIMULATED';
       }
     } else {
-      currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
-      provider = 'SIMULATED';
+      let globalQuote: any = null;
+      if (
+        process.env.NODE_ENV !== 'test' &&
+        !process.env.VITEST &&
+        GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass)
+      ) {
+        try {
+          const gMap = await GlobalCfdCandleProvider.getLiveQuotes([trade.symbol]);
+          globalQuote = gMap.get(trade.symbol);
+        } catch {
+          // Fallback to simulated LTP
+        }
+      }
+      if (globalQuote && typeof globalQuote.ltp === 'number' && globalQuote.ltp > 0) {
+        currentLtp = globalQuote.ltp;
+        provider = 'SIMULATED';
+      } else {
+        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
+        provider = 'SIMULATED';
+      }
     }
 
     const metric = calculateLiveOpenTradeMetric({

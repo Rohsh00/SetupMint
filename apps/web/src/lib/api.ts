@@ -162,12 +162,39 @@ export const api = {
         method: 'POST',
       }),
     propHealth: (id: string) =>
-      request<{ success: boolean; data: any }>(`/accounts/${id}/prop-health`),
-    propAdvancePhase: (id: string) =>
-      request<{ success: boolean; data: any; message: string }>(
+      request<any>(`/accounts/${id}/prop-health`),
+    getPropHealth: (id: string) =>
+      request<any>(`/accounts/${id}/prop-health`),
+    propAdvancePhase: (id: string, payload?: { targetPhase?: 'PHASE_1' | 'PHASE_2' | 'FUNDED' }) =>
+      request<any>(
         `/accounts/${id}/prop-advance-phase`,
-        { method: 'POST' }
+        { method: 'POST', body: JSON.stringify(payload || {}) }
       ),
+    importPropTrades: (id: string, payload: { rawText: string; defaultRiskReward?: number }) =>
+      request<{
+        insertedCount: number;
+        updatedCount: number;
+        totalProcessed: number;
+        trades: any[];
+        balanceSummary: any;
+      }>(`/accounts/${id}/prop-import-trades`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    updatePropLedger: (
+      id: string,
+      payload: {
+        evaluationFeePaid?: number;
+        profitSplitPct?: number;
+        totalPayoutsReceived?: number;
+        nextPayoutDate?: string | null;
+        phase?: 'PHASE_1' | 'PHASE_2' | 'FUNDED';
+      }
+    ) =>
+      request<any>(`/accounts/${id}/prop-ledger`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
     propPresets: () =>
       request<{ success: boolean; data: any[] }>('/accounts/prop-presets'),
     propOverview: (params: Record<string, any> = {}) => {

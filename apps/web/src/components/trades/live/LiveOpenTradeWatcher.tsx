@@ -77,7 +77,7 @@ import PictureInPictureRoundedIcon from '@mui/icons-material/PictureInPictureRou
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded';
 import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 
-import { PropLiveMarketChart } from '../../dashboard/PropLiveMarketChart.js';
+import { LiveMarketChart } from '../../dashboard/PropLiveMarketChart.js';
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
 import { LiveUnifiedPriceLadder } from './LiveUnifiedPriceLadder.js';
@@ -3719,7 +3719,8 @@ export function LiveOpenTradeWatcher({
                         {/* 2B. Expandable Live Candlestick Chart Drawer Inside Open Position Card */}
                         {expandedChartTrades[pos.tradeId] && (
                           <Box sx={{ mb: 1.5 }}>
-                            <PropLiveMarketChart
+                            <LiveMarketChart
+                              mode={isPropMode ? 'PROP' : 'NORMAL'}
                               initialSymbol={pos.symbol}
                               lockedSymbol={true}
                               compact={true}

@@ -45,6 +45,15 @@ const TV_TICKER_MAP: Record<string, string[]> = {
   USOIL: ['TVC:USOIL', 'OANDA:WTICOUSD'],
   WTI: ['TVC:USOIL'],
   UKOIL: ['TVC:UKOIL', 'OANDA:BCOUSD'],
+  NIFTY: ['NSE:NIFTY'],
+  NIFTY50: ['NSE:NIFTY'],
+  BANKNIFTY: ['NSE:BANKNIFTY'],
+  FINNIFTY: ['NSE:FINNIFTY'],
+  MIDCPNIFTY: ['NSE:MIDCPNIFTY'],
+  SENSEX: ['BSE:SENSEX'],
+  RELIANCE: ['NSE:RELIANCE'],
+  HDFCBANK: ['NSE:HDFCBANK'],
+  CRUDEOIL: ['MCX:CRUDEOIL1!', 'TVC:USOIL'],
 };
 
 const BINANCE_KLINE_MAP: Record<string, string> = {
@@ -79,11 +88,29 @@ const YAHOO_SYMBOL_MAP: Record<string, string> = {
   SPX500: 'ES=F',
   US500: 'ES=F',
   USOIL: 'CL=F',
+  CRUDEOIL: 'CL=F',
+  NIFTY: '^NSEI',
+  NIFTY50: '^NSEI',
+  BANKNIFTY: '^NSEBANK',
+  FINNIFTY: 'NIFTY_FIN_SERVICE.NS',
+  MIDCPNIFTY: 'NIFTY_MID_SELECT.NS',
+  SENSEX: '^BSESN',
+  RELIANCE: 'RELIANCE.NS',
+  HDFCBANK: 'HDFCBANK.NS',
 };
 
 function normalizeCleanSymbol(rawSymbol: string): string {
   const upper = String(rawSymbol || '').trim().toUpperCase();
   const withoutExchange = upper.includes(':') ? upper.split(':').pop()! : upper;
+
+  if (withoutExchange.includes('BANKNIFTY')) return 'BANKNIFTY';
+  if (withoutExchange.includes('FINNIFTY')) return 'FINNIFTY';
+  if (withoutExchange.includes('MIDCPNIFTY')) return 'MIDCPNIFTY';
+  if (withoutExchange.includes('NIFTY')) return 'NIFTY';
+  if (withoutExchange.includes('SENSEX')) return 'SENSEX';
+  if (withoutExchange.includes('CRUDEOIL')) return 'CRUDEOIL';
+  if (withoutExchange.includes('XAUUSD')) return 'XAUUSD';
+
   return withoutExchange.replace(/[^A-Z0-9]/g, '');
 }
 

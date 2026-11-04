@@ -1232,7 +1232,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const parseThe5ersDate = (s: string): Date | null => {
       const clean = String(s || '').trim();
       if (!clean || clean === '-') return null;
-      // Match DD.MM.YY HH:mm or DD/MM/YY HH:mm
+      // Match DD.MM.YY HH:mm or DD/MM/YY HH:mm (displayed in user's IST +05:30 browser timezone on hub.the5ers.com)
       const m = clean.match(/^(\d{2})[./-](\d{2})[./-](\d{2,4})\s+(\d{1,2}):(\d{2})/);
       if (m) {
         const day = Number(m[1]);
@@ -1241,7 +1241,8 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const year = yrRaw < 100 ? 2000 + yrRaw : yrRaw;
         const hr = Number(m[4]);
         const min = Number(m[5]);
-        return new Date(Date.UTC(year, month, day, hr, min, 0));
+        const istOffsetMs = 5.5 * 3600 * 1000;
+        return new Date(Date.UTC(year, month, day, hr, min, 0) - istOffsetMs);
       }
       const d = new Date(clean);
       return Number.isNaN(d.getTime()) ? null : d;

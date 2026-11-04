@@ -95,6 +95,40 @@ function getSavedOverlays(): OverlayToggles {
   return DEFAULT_OVERLAYS;
 }
 
+function getTradingViewSymbolForTrade(trade: any): string {
+  const sym = String(trade?.symbol || '').toUpperCase().trim();
+  const und = String(trade?.underlying || '').toUpperCase().trim();
+  const ex = String(trade?.exchange || '').toUpperCase().trim();
+
+  if (und.includes('BANKNIFTY') || sym.includes('BANKNIFTY')) return 'NSE:BANKNIFTY';
+  if (und.includes('FINNIFTY') || sym.includes('FINNIFTY')) return 'NSE:FINNIFTY';
+  if (und.includes('MIDCPNIFTY') || sym.includes('MIDCPNIFTY')) return 'NSE:MIDCPNIFTY';
+  if (und.includes('NIFTY') || sym.includes('NIFTY')) return 'NSE:NIFTY';
+  if (und.includes('SENSEX') || sym.includes('SENSEX')) return 'BSE:SENSEX';
+  if (und.includes('BANKEX') || sym.includes('BANKEX')) return 'BSE:BANKEX';
+  if (und.includes('CRUDEOIL') || sym.includes('CRUDEOIL')) return 'MCX:CRUDEOIL1!';
+  if (und.includes('NATURALGAS') || sym.includes('NATURALGAS')) return 'MCX:NATURALGAS1!';
+  if (und.includes('GOLD') || sym.includes('GOLD')) return 'MCX:GOLD1!';
+  if (und.includes('SILVER') || sym.includes('SILVER')) return 'MCX:SILVER1!';
+
+  if (sym === 'XAUUSD') return 'OANDA:XAUUSD';
+  if (sym === 'XAGUSD') return 'OANDA:XAGUSD';
+  if (sym === 'EURUSD') return 'OANDA:EURUSD';
+  if (sym === 'GBPUSD') return 'OANDA:GBPUSD';
+  if (sym === 'USDJPY') return 'OANDA:USDJPY';
+  if (sym === 'NAS100' || sym === 'USTEC' || sym === 'NDX') return 'OANDA:NAS100USD';
+  if (sym === 'US30' || sym === 'DJ30') return 'OANDA:US30USD';
+  if (sym === 'SPX500' || sym === 'US500') return 'OANDA:SPX500USD';
+  if (sym === 'BTCUSD' || sym === 'BTCUSDT') return 'BINANCE:BTCUSDT';
+  if (sym === 'ETHUSD' || sym === 'ETHUSDT') return 'BINANCE:ETHUSDT';
+
+  if (ex === 'NSE' || !ex || ex === 'EQUITY') {
+    const cleanSym = und || sym.replace(/[^A-Z0-9]/g, '');
+    return `NSE:${cleanSym}`;
+  }
+  return `NSE:${und || sym}`;
+}
+
 export function TradeInteractiveChart({
   trade,
   attachments = [],
@@ -119,6 +153,7 @@ export function TradeInteractiveChart({
   const [overlays, setOverlays] = useState<OverlayToggles>(getSavedOverlays);
   const [showOverlayToolbar, setShowOverlayToolbar] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [chartViewMode, setChartViewMode] = useState<'SETUPMINT' | 'TRADINGVIEW'>('SETUPMINT');
 
   // Data streaming state
   const [loading, setLoading] = useState(true);
@@ -983,22 +1018,66 @@ export function TradeInteractiveChart({
 
         {/* Right: Controls & Overlays Toggle */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Button
-            size="small"
-            startIcon={<LayersRounded />}
-            onClick={() => setShowOverlayToolbar((prev) => !prev)}
-            variant={showOverlayToolbar ? 'contained' : 'outlined'}
-            color={showOverlayToolbar ? 'primary' : 'inherit'}
-            sx={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'none' }}
-          >
-            Overlays
-          </Button>
+          <ButtonGroup size="small" variant="outlined">
+            <Tooltip title="SetupMint Execution Chart — Shows entry/exit markers, stop loss moves, R-ladder, and excursion">
+              <Button
+                variant={chartViewMode === 'SETUPMINT' ? 'contained' : 'outlined'}
+                onClick={() => setChartViewMode('SETUPMINT')}
+                startIcon={<LayersRounded sx={{ fontSize: 13 }} />}
+                sx={{
+                  px: 1,
+                  py: 0.35,
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  ...(chartViewMode === 'SETUPMINT'
+                    ? { bgcolor: '#10B981', color: '#ffffff', '&:hover': { bgcolor: '#059669' } }
+                    : {}),
+                }}
+              >
+                Execution Chart
+              </Button>
+            </Tooltip>
+            <Tooltip title="TradingView Advanced Chart — Full indicators, drawings, EMAs, and multi-timeframe analysis">
+              <Button
+                variant={chartViewMode === 'TRADINGVIEW' ? 'contained' : 'outlined'}
+                onClick={() => setChartViewMode('TRADINGVIEW')}
+                sx={{
+                  px: 1,
+                  py: 0.35,
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  ...(chartViewMode === 'TRADINGVIEW'
+                    ? { bgcolor: '#3B82F6', color: '#ffffff', '&:hover': { bgcolor: '#2563EB' } }
+                    : {}),
+                }}
+              >
+                TradingView Widget
+              </Button>
+            </Tooltip>
+          </ButtonGroup>
 
-          <Tooltip title="Fit chart viewport">
-            <IconButton size="small" onClick={handleFitContent} disabled={loading || isNoCandleData}>
-              <ZoomOutMapRounded fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          {chartViewMode === 'SETUPMINT' && (
+            <Button
+              size="small"
+              startIcon={<LayersRounded />}
+              onClick={() => setShowOverlayToolbar((prev) => !prev)}
+              variant={showOverlayToolbar ? 'contained' : 'outlined'}
+              color={showOverlayToolbar ? 'primary' : 'inherit'}
+              sx={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'none' }}
+            >
+              Overlays
+            </Button>
+          )}
+
+          {chartViewMode === 'SETUPMINT' && (
+            <Tooltip title="Fit chart viewport">
+              <IconButton size="small" onClick={handleFitContent} disabled={loading || isNoCandleData}>
+                <ZoomOutMapRounded fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Tooltip title="Refresh candlestick data">
             <IconButton
@@ -1214,8 +1293,25 @@ export function TradeInteractiveChart({
           </Box>
         )}
 
-        {/* 404 NO_CANDLE_DATA Fallback: Show permanent SVG snapshot */}
-        {isNoCandleData && !loading ? (
+        {chartViewMode === 'TRADINGVIEW' ? (
+          <iframe
+            key={`${getTradingViewSymbolForTrade(trade)}-${resolution}-${isDark ? 'dark' : 'light'}`}
+            title={`TradingView Advanced Chart ${trade.symbol}`}
+            src={`https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(
+              getTradingViewSymbolForTrade(trade)
+            )}&interval=${encodeURIComponent(
+              resolution === 'D' ? 'D' : resolution
+            )}&theme=${
+              isDark ? 'dark' : 'light'
+            }&style=1&timezone=Asia%2FKolkata&withdateranges=1&hide_side_toolbar=0&allow_symbol_change=1&saveimage=1&studies=%5B%5D`}
+            style={{
+              width: '100%',
+              height: isFullscreen ? 'calc(100vh - 120px)' : '540px',
+              border: 'none',
+              display: 'block',
+            }}
+          />
+        ) : isNoCandleData && !loading ? (
           <Box
             sx={{
               p: 3,

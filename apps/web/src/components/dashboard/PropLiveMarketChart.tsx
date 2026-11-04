@@ -27,6 +27,7 @@ import {
 } from 'lightweight-charts';
 import { api } from '../../lib/api.js';
 import { formatPrice } from '../../lib/utils.js';
+import { useAccountScope } from '../../context/AccountScopeContext.js';
 
 export interface PropPositionOverlay {
   tradeId?: string;
@@ -39,14 +40,17 @@ export interface PropPositionOverlay {
   dailyBreachPrice?: number | null;
 }
 
-export interface PropLiveMarketChartProps {
+export interface LiveMarketChartProps {
   initialSymbol?: string;
   accountId?: string;
+  mode?: 'AUTO' | 'PROP' | 'NORMAL';
   compact?: boolean;
   height?: number;
   lockedSymbol?: boolean;
   positionOverlay?: PropPositionOverlay | null;
 }
+
+export type PropLiveMarketChartProps = LiveMarketChartProps;
 
 const PROP_SYMBOLS = [
   { key: 'XAUUSD', label: 'XAUUSD (Gold)' },
@@ -59,6 +63,17 @@ const PROP_SYMBOLS = [
   { key: 'ETHUSD', label: 'ETHUSD' },
 ];
 
+const NORMAL_SYMBOLS = [
+  { key: 'NIFTY', label: 'NIFTY 50' },
+  { key: 'BANKNIFTY', label: 'BANK NIFTY' },
+  { key: 'FINNIFTY', label: 'FINNIFTY' },
+  { key: 'SENSEX', label: 'SENSEX' },
+  { key: 'CRUDEOIL', label: 'Crude Oil' },
+  { key: 'GOLD', label: 'Gold (MCX)' },
+  { key: 'RELIANCE', label: 'Reliance' },
+  { key: 'HDFCBANK', label: 'HDFC Bank' },
+];
+
 const RESOLUTIONS = [
   { key: '1', label: '1m' },
   { key: '5', label: '5m' },
@@ -68,18 +83,24 @@ const RESOLUTIONS = [
   { key: 'D', label: '1D' },
 ];
 
-export function PropLiveMarketChart({
-  initialSymbol = 'XAUUSD',
+export function LiveMarketChart({
+  initialSymbol,
   accountId,
+  mode = 'AUTO',
   compact = false,
   height = 420,
   lockedSymbol = false,
   positionOverlay = null,
-}: PropLiveMarketChartProps) {
+}: LiveMarketChartProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const { isPropMode } = useAccountScope();
 
-  const [symbol, setSymbol] = useState<string>(initialSymbol.toUpperCase());
+  const effectiveMode = mode === 'AUTO' ? (isPropMode ? 'PROP' : 'NORMAL') : mode;
+  const activeSymbols = effectiveMode === 'NORMAL' ? NORMAL_SYMBOLS : PROP_SYMBOLS;
+  const defaultSym = initialSymbol || (effectiveMode === 'NORMAL' ? 'NIFTY' : 'XAUUSD');
+
+  const [symbol, setSymbol] = useState<string>(defaultSym.toUpperCase());
   const [resolution, setResolution] = useState<string>('5');
   const [chartMode, setChartMode] = useState<'SETUPMINT' | 'TRADINGVIEW'>('SETUPMINT');
   const [expandedHeight, setExpandedHeight] = useState<boolean>(false);
@@ -102,10 +123,12 @@ export function PropLiveMarketChart({
   const isFirstFitRef = useRef<boolean>(true);
 
   useEffect(() => {
-    if (initialSymbol && lockedSymbol) {
+    if (initialSymbol) {
       setSymbol(initialSymbol.toUpperCase());
+    } else {
+      setSymbol(effectiveMode === 'NORMAL' ? 'NIFTY' : 'XAUUSD');
     }
-  }, [initialSymbol, lockedSymbol]);
+  }, [initialSymbol, effectiveMode]);
 
   const activeHeight = expandedHeight ? Math.max(height + 200, 620) : height;
 
@@ -412,7 +435,7 @@ export function PropLiveMarketChart({
           <CandlestickChartRoundedIcon sx={{ fontSize: 18, color: '#8B5CF6' }} />
           {!lockedSymbol ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-              {PROP_SYMBOLS.map((s) => (
+              {activeSymbols.map((s) => (
                 <Chip
                   key={s.key}
                   size="small"
@@ -446,7 +469,7 @@ export function PropLiveMarketChart({
           {liveLtp > 0 && (
             <Chip
               size="small"
-              label={`$${formatPrice(liveLtp)} ${
+              label={`${effectiveMode === 'NORMAL' ? '₹' : '$'}${formatPrice(liveLtp)} ${
                 quote?.changePct !== undefined
                   ? `(${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%)`
                   : ''
@@ -669,3 +692,6 @@ export function PropLiveMarketChart({
     </Box>
   );
 }
+
+export const PropLiveMarketChart = LiveMarketChart;
+

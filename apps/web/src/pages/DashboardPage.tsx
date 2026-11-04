@@ -33,6 +33,7 @@ import InsightsIcon from '@mui/icons-material/InsightsRounded';
 import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckCircleIcon from '@mui/icons-material/CheckCircleRounded';
+import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 import Alert from '@mui/material/Alert';
 
 import {
@@ -57,6 +58,7 @@ import { useDateRange } from '../context/DateRangeContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
+import { LiveMarketChart } from '../components/dashboard/PropLiveMarketChart.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function DashboardPage() {
@@ -64,6 +66,7 @@ export function DashboardPage() {
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate, preset } = useDateRange();
   const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts } = useAccountScope();
+  const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(true);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -222,6 +225,64 @@ export function DashboardPage() {
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
       {/* Prop Challenge Health Overview Panel in Prop Mode */}
       {isPropMode && <PropChallengePanel />}
+
+      {/* Live Market Chart Terminal in Normal Accounts Mode */}
+      {!isPropMode && (
+        <Card sx={{ p: 2, borderRadius: 2.5 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              mb: showNormalMarketChart ? 1.5 : 0,
+              flexWrap: 'wrap',
+              gap: 1,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CandlestickChartRoundedIcon sx={{ color: '#8B5CF6', fontSize: 22 }} />
+              <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', letterSpacing: '-0.01em' }}>
+                Live Market Chart Terminal
+              </Typography>
+              <Chip
+                label="LIVE SPOT / NSE"
+                size="small"
+                sx={{
+                  height: 20,
+                  fontSize: '0.625rem',
+                  fontWeight: 800,
+                  bgcolor: 'rgba(16, 185, 129, 0.15)',
+                  color: '#10B981',
+                }}
+              />
+            </Box>
+            <Button
+              size="small"
+              variant={showNormalMarketChart ? 'contained' : 'outlined'}
+              startIcon={<CandlestickChartRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={() => setShowNormalMarketChart((prev) => !prev)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                borderRadius: 1.5,
+                ...(showNormalMarketChart
+                  ? { bgcolor: '#10B981', '&:hover': { bgcolor: '#059669' } }
+                  : {}),
+              }}
+            >
+              {showNormalMarketChart ? 'Hide Live Chart' : 'Show Live Chart'}
+            </Button>
+          </Box>
+          {showNormalMarketChart && (
+            <LiveMarketChart
+              mode="NORMAL"
+              initialSymbol="NIFTY"
+              height={380}
+            />
+          )}
+        </Card>
+      )}
 
       {/* Multi-Currency Scope Breakdown Notice */}
       {stats?.hasMultipleCurrencies && (

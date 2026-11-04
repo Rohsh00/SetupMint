@@ -1115,6 +1115,7 @@ export class FyersService {
         : (inst.displayName || underlying);
 
       interface ActiveGroup {
+        existingTradeId?: mongoose.Types.ObjectId;
         direction: 'LONG' | 'SHORT';
         fills: Array<{
           fillId: string;
@@ -1196,10 +1197,23 @@ export class FyersService {
             },
           });
 
-          const existing = await Trade.findOne({
-            userId: uId,
-            $or: matchClauses,
-          });
+          const existing = grp.existingTradeId
+            ? await Trade.findOne({ _id: grp.existingTradeId, userId: uId })
+            : await Trade.findOne({
+                userId: uId,
+                $or: matchClauses,
+              });
+
+          // Clean up any orphan OPEN trade that was previously created from exit fills of an overnight position
+          const exitFillIds = grp.fills.filter((f) => f.type === 'EXIT' && f.fillId).map((f) => f.fillId);
+          if (existing && exitFillIds.length > 0) {
+            await Trade.deleteMany({
+              _id: { $ne: existing._id },
+              userId: uId,
+              status: 'OPEN',
+              'fills.fillId': { $in: exitFillIds },
+            });
+          }
 
           if (existing) {
             let updated = false;
@@ -1237,7 +1251,10 @@ export class FyersService {
             }
 
             // If existing trade was OPEN and the new sync data has closed it, or added new fills:
-            const hasNewFills = grp.fills.length !== (existing.fills?.length || 0);
+            const existingFillIds = new Set((existing.fills || []).map((f: any) => f.fillId).filter(Boolean));
+            const hasNewFills =
+              grp.fills.length > (existing.fills?.length || 0) ||
+              grp.fills.some((f) => f.fillId && !existingFillIds.has(f.fillId));
             const isClosing = existing.status === 'OPEN' && fifoSummary.isFullyClosed;
 
             if (isClosing || (existing.status === 'OPEN' && hasNewFills) || (existing.status === 'CLOSED' && hasNewFills)) {
@@ -1472,6 +1489,72 @@ export class FyersService {
           console.error('[FYERS Sync] Error committing trade to journal:', e);
         }
       };
+
+      // Check for an overnight position carried over from a previous trading session
+      const todayFillIds = new Set(execList.map((e) => makeFillId(e)).filter(Boolean));
+      const earliestTodayTs = execList[0]?.timestamp;
+      if (earliestTodayTs) {
+        const symbolCandidates = Array.from(
+          new Set([cleanSymbol, formattedSymbol, inst.symbol, sample.raw.symbol, underlying].filter(Boolean))
+        );
+        const carryOverTrade = await Trade.findOne({
+          userId: uId,
+          accountId: account._id,
+          $or: [
+            { symbol: { $in: symbolCandidates } },
+            { underlying: { $in: symbolCandidates } },
+          ],
+          entryTime: { $lt: earliestTodayTs },
+          $and: [
+            {
+              $or: [
+                { status: 'OPEN' },
+                ...(todayFillIds.size > 0 ? [{ 'fills.fillId': { $in: Array.from(todayFillIds) } }] : []),
+              ],
+            },
+          ],
+        }).sort({ entryTime: 1 });
+
+        if (carryOverTrade) {
+          const priorFills = (carryOverTrade.fills || [])
+            .filter(
+              (f: any) =>
+                !todayFillIds.has(f.fillId) &&
+                new Date(f.timestamp).getTime() < earliestTodayTs.getTime()
+            )
+            .map((f: any) => ({
+              fillId: f.fillId,
+              type: f.type as 'ENTRY' | 'EXIT',
+              price: Number(f.price),
+              quantity: Number(f.quantity),
+              timestamp: new Date(f.timestamp),
+            }));
+
+          if (priorFills.length === 0 && carryOverTrade.simpleExecution?.quantity) {
+            priorFills.push({
+              fillId: `overnight_${carryOverTrade._id.toString()}`,
+              type: 'ENTRY',
+              price: Number(carryOverTrade.simpleExecution.entryPrice),
+              quantity: Number(carryOverTrade.simpleExecution.quantity),
+              timestamp: new Date(carryOverTrade.entryTime || carryOverTrade.tradeDate),
+            });
+          }
+
+          const entryQty = priorFills.filter((f) => f.type === 'ENTRY').reduce((s, f) => s + f.quantity, 0);
+          const exitQty = priorFills.filter((f) => f.type === 'EXIT').reduce((s, f) => s + f.quantity, 0);
+          const priorOpenQty = Math.max(0, entryQty - exitQty);
+
+          if (priorOpenQty > 0) {
+            currentGroup = {
+              existingTradeId: carryOverTrade._id as mongoose.Types.ObjectId,
+              direction: carryOverTrade.direction as 'LONG' | 'SHORT',
+              fills: priorFills,
+              openQuantity: priorOpenQty,
+              entryTime: new Date(carryOverTrade.entryTime || priorFills[0].timestamp),
+            };
+          }
+        }
+      }
 
       for (const exec of execList) {
         if (!currentGroup) {

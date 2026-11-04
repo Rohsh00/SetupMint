@@ -175,7 +175,7 @@ async function main() {
 
   // 4. Build trade payloads
   const tradesToInsert = [
-    // 1. Open Trade: XAUUSD Short 0.4 lot
+    // 1. Closed Trade: XAUUSD Short 0.4 lot (3908.75 -> 3908.70, Qty 0.4, Fee 3.12, Net -$1.12)
     {
       userId: user._id,
       accountId: account._id,
@@ -188,18 +188,20 @@ async function main() {
       marketSegment: 'FOREX',
       currency: 'USD',
       direction: 'SHORT',
-      status: 'OPEN',
+      status: 'CLOSED',
       tradeDate: new Date('2026-11-03T00:00:00Z'),
       entryTime: new Date('2026-11-03T15:25:00Z'),
+      exitTime: new Date('2026-11-03T16:39:00Z'),
       externalBrokerOrderRef: '560643070273-1',
-      tradeTitle: 'Gold Short 0.40 Lots (Open)',
+      tradeTitle: 'Gold Short 0.40 Lots',
       tags: ['THE5ERS', 'PROP_FIRM', 'METATRADER5', 'GOLD'],
       executionMode: 'SIMPLE',
       simpleExecution: {
         entryPrice: 3908.75,
+        exitPrice: 3908.7,
         quantity: 0.4,
         contractMultiplier: 100,
-        brokerage: 1.56,
+        brokerage: 3.12,
         exchangeFees: 0,
         regulatoryFees: 0,
         taxes: 0,
@@ -224,13 +226,15 @@ async function main() {
         positionSizeViolation: false,
       },
       calculated: {
-        grossPnL: 0,
-        totalCosts: 1.56,
-        netPnL: 0,
-        outcome: 'OPEN',
-        closedQuantity: 0,
-        openQuantity: 0.4,
+        grossPnL: 2.0,
+        totalCosts: 3.12,
+        netPnL: -1.12,
+        outcome: 'LOSS',
+        closedQuantity: 0.4,
+        openQuantity: 0,
         averageEntryPrice: 3908.75,
+        averageExitPrice: 3908.7,
+        holdingTimeMinutes: 74,
       },
       screenshotIds: [],
       auditLog: [
@@ -243,7 +247,7 @@ async function main() {
       ],
     },
 
-    // 2. Open Trade: XAUUSD Short 0.15 lot
+    // 2. Closed Trade: XAUUSD Short 0.15 lot (3909.18 -> 3908.68, Qty 0.15, Fee 1.18, Net +$6.32)
     {
       userId: user._id,
       accountId: account._id,
@@ -256,18 +260,20 @@ async function main() {
       marketSegment: 'FOREX',
       currency: 'USD',
       direction: 'SHORT',
-      status: 'OPEN',
+      status: 'CLOSED',
       tradeDate: new Date('2026-11-03T00:00:00Z'),
       entryTime: new Date('2026-11-03T15:24:00Z'),
+      exitTime: new Date('2026-11-03T16:39:00Z'),
       externalBrokerOrderRef: '560643070273-2',
-      tradeTitle: 'Gold Short 0.15 Lots (Open)',
+      tradeTitle: 'Gold Short 0.15 Lots',
       tags: ['THE5ERS', 'PROP_FIRM', 'METATRADER5', 'GOLD'],
       executionMode: 'SIMPLE',
       simpleExecution: {
         entryPrice: 3909.18,
+        exitPrice: 3908.68,
         quantity: 0.15,
         contractMultiplier: 100,
-        brokerage: 0.59,
+        brokerage: 1.18,
         exchangeFees: 0,
         regulatoryFees: 0,
         taxes: 0,
@@ -292,13 +298,15 @@ async function main() {
         positionSizeViolation: false,
       },
       calculated: {
-        grossPnL: 0,
-        totalCosts: 0.59,
-        netPnL: 0,
-        outcome: 'OPEN',
-        closedQuantity: 0,
-        openQuantity: 0.15,
+        grossPnL: 7.5,
+        totalCosts: 1.18,
+        netPnL: 6.32,
+        outcome: 'WIN',
+        closedQuantity: 0.15,
+        openQuantity: 0,
         averageEntryPrice: 3909.18,
+        averageExitPrice: 3908.68,
+        holdingTimeMinutes: 75,
       },
       screenshotIds: [],
       auditLog: [
@@ -673,7 +681,7 @@ async function main() {
   ];
 
   const createdTrades = await Trade.insertMany(tradesToInsert);
-  console.log(`[Trades] Inserted ${createdTrades.length} trades (5 closed, 2 open).`);
+  console.log(`[Trades] Inserted ${createdTrades.length} trades (7 closed, 0 open).`);
 
   // 5. Authoritative Balance Recalculation
   const balanceSummary = await AccountService.recalculateAccountBalances(account._id, user._id);

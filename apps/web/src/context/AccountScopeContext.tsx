@@ -46,6 +46,7 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const { user, refreshUser } = useAuth();
+  const [manualScopeOverride, setManualScopeOverride] = React.useState<string | null>(null);
 
   // Fetch accounts to resolve names, types, and prop firm keys
   const { data: accounts = [] } = useQuery<any[]>({
@@ -126,8 +127,15 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
         mode = 'ALL';
       }
     } else {
-      // Fall back to sessionStorage or user's backend-saved defaultAccountScope
-      const stored = readStoredScopeValue() || user?.defaultAccountScope || 'ALL';
+      // Prefer explicit in-session selection, then backend-saved defaultAccountScope, then sessionStorage
+      const sessionVal = readStoredScopeValue();
+      const stored =
+        manualScopeOverride ||
+        (user?.defaultAccountScope && user.defaultAccountScope !== 'ALL'
+          ? user.defaultAccountScope
+          : sessionVal && sessionVal !== 'ALL'
+          ? sessionVal
+          : user?.defaultAccountScope || sessionVal || 'ALL');
       if (stored === 'PROP_FIRM:ALL' || stored === 'PROP_FIRM') {
         mode = 'PROP_FIRM';
       } else if (stored.startsWith('PROP_FIRM:')) {
@@ -226,7 +234,7 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
       isPropMode: propModeActive,
       selectedAccountId: accountId,
     };
-  }, [hasExplicitUrlScope, rawScope, firmParam, typeParam, accountParam, accounts, personalAccounts, propAccounts, propFirms, user?.defaultAccountScope]);
+  }, [hasExplicitUrlScope, rawScope, firmParam, typeParam, accountParam, accounts, personalAccounts, propAccounts, propFirms, user?.defaultAccountScope, manualScopeOverride]);
 
   // Keep sessionStorage and URL query params synchronized across route changes
   useEffect(() => {
@@ -259,6 +267,7 @@ export function AccountScopeProvider({ children }: { children: React.ReactNode }
 
   const setScopeValue = useCallback(
     (val: string) => {
+      setManualScopeOverride(val);
       writeStoredScopeValue(val);
       // Persist to backend so user never needs to re-select on next session/reload
       if (user) {

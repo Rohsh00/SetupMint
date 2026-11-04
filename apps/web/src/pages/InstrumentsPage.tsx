@@ -77,7 +77,7 @@ const defaultFormData: InstrumentFormData = {
 
 export function InstrumentsPage() {
   const { openDrill } = useTradeDrilldown();
-  const { queryParams } = useAccountScope();
+  const { queryParams, scope, scopedAccounts } = useAccountScope();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
@@ -275,12 +275,26 @@ export function InstrumentsPage() {
     updateMutation.mutate({ id, updates });
   };
 
-  const filtered = instruments.filter(
-    (i: any) =>
+  const scopedCurrencies = React.useMemo(
+    () => new Set(scopedAccounts.map((a: any) => String(a.baseCurrency || 'INR').toUpperCase())),
+    [scopedAccounts]
+  );
+
+  const filtered = instruments.filter((i: any) => {
+    if (scope.mode !== 'ALL') {
+      const hasScopedTrades = (i.tradeCount ?? 0) > 0;
+      const instCurr = String(i.quoteCurrency || 'INR').toUpperCase();
+      const matchesScopedCurrency = scopedCurrencies.size === 0 || scopedCurrencies.has(instCurr);
+      if (!hasScopedTrades && !(i.source === 'CUSTOM' && matchesScopedCurrency)) {
+        return false;
+      }
+    }
+    return (
       i.symbol.toLowerCase().includes(search.toLowerCase()) ||
       (i.displayName && i.displayName.toLowerCase().includes(search.toLowerCase())) ||
       (i.exchange && i.exchange.toLowerCase().includes(search.toLowerCase()))
-  );
+    );
+  });
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 2, md: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>

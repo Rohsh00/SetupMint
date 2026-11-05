@@ -195,8 +195,12 @@ export function SettingsPage() {
   // Institutional Execution, Telegram Alerts & Lockout State
   const [paperExecutionMode, setPaperExecutionMode] = useState(initialWatcher.paperExecutionMode ?? false);
   const [serverSideExecutionEnabled, setServerSideExecutionEnabled] = useState(initialWatcher.serverSideExecutionEnabled ?? false);
-  const [telegramAlertsEnabled, setTelegramAlertsEnabled] = useState(initialWatcher.telegramAlertsEnabled ?? false);
-  const [telegramBotToken, setTelegramBotToken] = useState(initialWatcher.telegramBotToken ?? '');
+  const [telegramAlertsEnabled, setTelegramAlertsEnabled] = useState(
+    initialWatcher.telegramAlertsEnabled !== undefined
+      ? initialWatcher.telegramAlertsEnabled
+      : Boolean(initialWatcher.telegramBotToken && initialWatcher.telegramChatId)
+  );
+  const [telegramBotToken, setTelegramBotToken] = useState(initialWatcher.telegramBotToken ? '••••••••' : '');
   const [telegramChatId, setTelegramChatId] = useState(initialWatcher.telegramChatId ?? '');
   const [slippageGuardPercent, setSlippageGuardPercent] = useState<number>(initialWatcher.slippageGuardPercent ?? 0.5);
   const [snoozeDefaultMin, setSnoozeDefaultMin] = useState<number>(initialWatcher.snoozeDefaultMin ?? 10);
@@ -265,8 +269,9 @@ export function SettingsPage() {
       setDefaultRefreshIntervalSec(s.defaultRefreshIntervalSec ?? 5);
       setPaperExecutionMode(s.paperExecutionMode ?? false);
       setServerSideExecutionEnabled(s.serverSideExecutionEnabled ?? false);
-      setTelegramAlertsEnabled(s.telegramAlertsEnabled ?? false);
-      setTelegramBotToken(s.telegramBotToken ?? '');
+      const hasCreds = Boolean(s.telegramBotToken && s.telegramChatId);
+      setTelegramAlertsEnabled(s.telegramAlertsEnabled !== undefined ? s.telegramAlertsEnabled : hasCreds);
+      setTelegramBotToken(s.telegramBotToken ? '••••••••' : '');
       setTelegramChatId(s.telegramChatId ?? '');
       setSlippageGuardPercent(s.slippageGuardPercent ?? 0.5);
       setSnoozeDefaultMin(s.snoozeDefaultMin ?? 10);
@@ -378,9 +383,7 @@ export function SettingsPage() {
     setDefaultRefreshIntervalSec(d.defaultRefreshIntervalSec);
     setPaperExecutionMode(d.paperExecutionMode ?? false);
     setServerSideExecutionEnabled(d.serverSideExecutionEnabled ?? false);
-    setTelegramAlertsEnabled(d.telegramAlertsEnabled ?? false);
-    setTelegramBotToken(d.telegramBotToken ?? '');
-    setTelegramChatId(d.telegramChatId ?? '');
+    // Note: Do not reset user's Telegram bot credentials or alert subscriptions when resetting ladder execution defaults.
     setStaleDataThresholdSeconds(d.staleDataThresholdSeconds ?? 10);
     setRequireHoldToConfirm(d.requireHoldToConfirm ?? true);
     setHardDisciplineLockoutEnabled(d.hardDisciplineLockoutEnabled ?? false);
@@ -491,6 +494,14 @@ export function SettingsPage() {
       ? telegramChatId.trim()
       : (user?.liveWatcherSettings?.telegramChatId || undefined);
 
+    // Auto-enable alerts if fresh botToken and chatId are being provided for the first time
+    const effectiveAlertsEnabled = telegramAlertsEnabled || Boolean(
+      telegramBotToken.trim() !== '' &&
+      !telegramBotToken.startsWith('••') &&
+      effectiveChatId &&
+      !user?.liveWatcherSettings?.telegramBotToken
+    );
+
     const payload: ILiveWatcherSettings = {
       defaultAutoExecute,
       defaultTargetMode,
@@ -520,7 +531,7 @@ export function SettingsPage() {
       defaultRefreshIntervalSec: Number(defaultRefreshIntervalSec),
       paperExecutionMode,
       serverSideExecutionEnabled,
-      telegramAlertsEnabled,
+      telegramAlertsEnabled: effectiveAlertsEnabled,
       telegramBotToken: effectiveBotToken,
       telegramChatId: effectiveChatId,
       telegramAlertEvents,
@@ -1726,103 +1737,137 @@ export function SettingsPage() {
                     {/* Telegram Push Alerts */}
                     <Grid size={{ xs: 12 }}>
                       <Box sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: telegramAlertsEnabled ? 'info.main' : 'divider', bgcolor: telegramAlertsEnabled ? alpha('#0284C7', 0.04) : 'transparent' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <SendRounded sx={{ color: telegramAlertsEnabled ? 'info.main' : 'text.secondary', fontSize: 22 }} />
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5, mb: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                            <SendRounded sx={{ color: (user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) ? 'info.main' : 'text.secondary', fontSize: 22 }} />
                             <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                               Telegram Off-Screen Terminal & Mobile Remote Control
                             </Typography>
+                            {(user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) && (user?.liveWatcherSettings?.telegramChatId || telegramChatId) ? (
+                              <Chip
+                                icon={<CheckCircleRounded sx={{ fontSize: '15px !important' }} />}
+                                label={telegramAlertsEnabled ? 'Connected & Active' : 'Configured (Alerts Muted)'}
+                                color={telegramAlertsEnabled ? 'success' : 'default'}
+                                size="small"
+                                variant={telegramAlertsEnabled ? 'filled' : 'outlined'}
+                                sx={{ fontWeight: 700 }}
+                              />
+                            ) : (
+                              <Chip
+                                label="Not Configured"
+                                size="small"
+                                variant="outlined"
+                                sx={{ fontWeight: 600, color: 'text.secondary' }}
+                              />
+                            )}
                           </Box>
-                          <Switch
-                            checked={telegramAlertsEnabled}
-                            onChange={(e) => setTelegramAlertsEnabled(e.target.checked)}
-                            color="info"
-                          />
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: telegramAlertsEnabled ? 'info.main' : 'text.secondary', fontSize: '0.85rem' }}>
+                              {telegramAlertsEnabled ? 'Alerts Active' : 'Alerts Paused'}
+                            </Typography>
+                            <Switch
+                              checked={telegramAlertsEnabled}
+                              onChange={(e) => setTelegramAlertsEnabled(e.target.checked)}
+                              color="info"
+                            />
+                          </Box>
                         </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
                           Receive loud, real-time risk alerts and interact directly with your trading account from Telegram using inline buttons (1-tap Exit, Lock BE) and two-way chat commands (/pnl, /trades, /panic).
                         </Typography>
 
+                        {/* Credentials and Testing - ALWAYS VISIBLE */}
+                        <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? alpha('#0284C7', 0.05) : alpha('#0284C7', 0.03), border: '1px solid', borderColor: alpha('#0284C7', 0.2), mb: 2 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'info.main', letterSpacing: '0.05em', display: 'block', mb: 1.5 }}>
+                            Bot Credentials & Connection
+                          </Typography>
+                          <Grid container spacing={2}>
+                            <Grid size={{ xs: 12, md: 5 }}>
+                              <TextField
+                                size="small"
+                                type="password"
+                                label="Telegram Bot Token"
+                                placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                                value={telegramBotToken}
+                                onChange={(e) => setTelegramBotToken(e.target.value)}
+                                helperText={
+                                  user?.liveWatcherSettings?.telegramBotToken
+                                    ? 'Token is securely encrypted in database. Leave as •••••••• to keep current token, or paste a new one to replace.'
+                                    : 'Paste your Telegram Bot Token from @BotFather'
+                                }
+                                fullWidth
+                              />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 4 }}>
+                              <TextField
+                                size="small"
+                                label="Telegram Chat ID"
+                                placeholder="e.g. 987654321"
+                                value={telegramChatId}
+                                onChange={(e) => setTelegramChatId(e.target.value)}
+                                helperText={user?.liveWatcherSettings?.telegramChatId ? `Connected to Chat ID: ${user.liveWatcherSettings.telegramChatId}` : "Your numeric Telegram chat ID from @userinfobot"}
+                                fullWidth
+                              />
+                            </Grid>
+                            <Grid size={{ xs: 12, md: 3 }}>
+                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                <Button
+                                  variant="outlined"
+                                  color="info"
+                                  size="small"
+                                  onClick={handleTestTelegram}
+                                  disabled={testingTelegram || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
+                                  sx={{ fontWeight: 700, flex: 1, whiteSpace: 'nowrap' }}
+                                >
+                                  {testingTelegram ? 'Testing...' : 'Test Link'}
+                                </Button>
+                                <Button
+                                  variant="outlined"
+                                  color="warning"
+                                  size="small"
+                                  onClick={handleSendSampleAlert}
+                                  disabled={sendingSampleAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
+                                  sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                  title="Dispatches a realistic formatted risk telemetry card to Telegram"
+                                >
+                                  {sendingSampleAlert ? 'Sending...' : 'Sample Alert'}
+                                </Button>
+                                <Button
+                                  variant="outlined"
+                                  color="secondary"
+                                  size="small"
+                                  onClick={handleRegisterWebhook}
+                                  disabled={registeringWebhook || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken)}
+                                  sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                  title="Connects two-way buttons and commands to your Telegram Bot"
+                                >
+                                  {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
+                                </Button>
+                                {(user?.liveWatcherSettings?.telegramBotToken || user?.liveWatcherSettings?.telegramChatId) && (
+                                  <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    onClick={handleClearTelegramCredentials}
+                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                    title="Disconnect Telegram and remove stored bot credentials"
+                                  >
+                                    Disconnect
+                                  </Button>
+                                )}
+                              </Box>
+                            </Grid>
+                          </Grid>
+                        </Box>
+
+                        {!telegramAlertsEnabled && ((user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) && (user?.liveWatcherSettings?.telegramChatId || telegramChatId)) && (
+                          <Alert severity="info" variant="outlined" sx={{ py: 0.5, px: 2, mb: 2, alignItems: 'center' }}>
+                            Telegram Bot is configured and linked. Real-time push alerts are currently <strong>Paused</strong>. Flip the switch above to &quot;Alerts Active&quot; to receive risk notifications on Telegram.
+                          </Alert>
+                        )}
+
                         {telegramAlertsEnabled && (
                           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                            {/* Credentials and Testing */}
-                            <Grid container spacing={2}>
-                              <Grid size={{ xs: 12, md: 5 }}>
-                                <TextField
-                                  size="small"
-                                  type="password"
-                                  label="Telegram Bot Token"
-                                  placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                                  value={telegramBotToken}
-                                  onChange={(e) => setTelegramBotToken(e.target.value)}
-                                  helperText={
-                                    user?.liveWatcherSettings?.telegramBotToken
-                                      ? 'Token is securely encrypted in database. Leave as •••••••• to keep current token, or paste a new one to replace.'
-                                      : 'Paste your Telegram Bot Token from @BotFather'
-                                  }
-                                  fullWidth
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 4 }}>
-                                <TextField
-                                  size="small"
-                                  label="Telegram Chat ID"
-                                  placeholder="e.g. 987654321"
-                                  value={telegramChatId}
-                                  onChange={(e) => setTelegramChatId(e.target.value)}
-                                  helperText="Your numeric Telegram chat ID"
-                                  fullWidth
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 3 }}>
-                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                  <Button
-                                    variant="outlined"
-                                    color="info"
-                                    size="small"
-                                    onClick={handleTestTelegram}
-                                    disabled={testingTelegram || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                    sx={{ fontWeight: 700, flex: 1, whiteSpace: 'nowrap' }}
-                                  >
-                                    {testingTelegram ? 'Testing...' : 'Test Link'}
-                                  </Button>
-                                  <Button
-                                    variant="outlined"
-                                    color="warning"
-                                    size="small"
-                                    onClick={handleSendSampleAlert}
-                                    disabled={sendingSampleAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                    title="Dispatches a realistic formatted risk telemetry card to Telegram"
-                                  >
-                                    {sendingSampleAlert ? 'Sending...' : 'Sample Alert'}
-                                  </Button>
-                                  <Button
-                                    variant="outlined"
-                                    color="secondary"
-                                    size="small"
-                                    onClick={handleRegisterWebhook}
-                                    disabled={registeringWebhook || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken)}
-                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                    title="Connects two-way buttons and commands to your Telegram Bot"
-                                  >
-                                    {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
-                                  </Button>
-                                  {(user?.liveWatcherSettings?.telegramBotToken || user?.liveWatcherSettings?.telegramChatId) && (
-                                    <Button
-                                      variant="outlined"
-                                      color="error"
-                                      size="small"
-                                      onClick={handleClearTelegramCredentials}
-                                      sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                      title="Disconnect Telegram and remove stored bot credentials"
-                                    >
-                                      Disconnect
-                                    </Button>
-                                  )}
-                                </Box>
-                              </Grid>
-                            </Grid>
 
                             <Grid container spacing={2} sx={{ mt: 1 }}>
                               <Grid size={{ xs: 12, sm: 6 }}>

@@ -261,16 +261,19 @@ export class LiveWatcherService {
         BrokerIntegration.findOne({
           userId: uId,
           broker: 'FYERS',
-          status: 'CONNECTED',
         }).lean(),
         User.findById(uId).select('liveWatcherSettings').lean(),
       ]);
 
       const tokenExpiresAt = brokerIntegration?.tokenExpiresAt;
-      const isTokenExpired = Boolean(tokenExpiresAt && new Date(tokenExpiresAt) <= new Date());
+      const isTokenExpired = Boolean(
+        (tokenExpiresAt && new Date(tokenExpiresAt) <= new Date()) ||
+        brokerIntegration?.status === 'ERROR'
+      );
       const hasActiveBroker = Boolean(
         anyFyersEligibleAccount &&
         brokerIntegration &&
+        brokerIntegration.status === 'CONNECTED' &&
         brokerIntegration.accessToken &&
         !isTokenExpired
       );
@@ -323,30 +326,38 @@ export class LiveWatcherService {
 
     for (const trade of openTrades) {
       const acc = trade.accountId ? accountMap.get(trade.accountId.toString()) : undefined;
-      if (!this.isFyersEligibleTrade(trade, acc)) {
-        if (
-          process.env.NODE_ENV !== 'test' &&
-          !process.env.VITEST &&
-          GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass)
-        ) {
-          globalSymbolsToFetch.push(trade.symbol);
-        }
-        continue;
-      }
-      const fyersSym = formatFyersSymbol({
-        symbol: trade.symbol,
-        underlying: trade.underlying,
-        assetClass: trade.assetClass,
-        exchange: trade.exchange,
-        marketSegment: trade.marketSegment,
-        optionType: trade.optionType,
-        strikePrice: trade.strikePrice,
-        expiryDate: trade.expiryDate,
-      });
+      const isFyersEligible = this.isFyersEligibleTrade(trade, acc);
 
-      if (fyersSym) {
-        tradeFyersSymbolMap.set(trade._id.toString(), fyersSym);
-        fyersSymbolsToFetch.push(fyersSym);
+      if (isFyersEligible) {
+        const fyersSym = formatFyersSymbol({
+          symbol: trade.symbol,
+          underlying: trade.underlying,
+          assetClass: trade.assetClass,
+          exchange: trade.exchange,
+          marketSegment: trade.marketSegment,
+          optionType: trade.optionType,
+          strikePrice: trade.strikePrice,
+          expiryDate: trade.expiryDate,
+        });
+
+        if (fyersSym) {
+          tradeFyersSymbolMap.set(trade._id.toString(), fyersSym);
+          fyersSymbolsToFetch.push(fyersSym);
+        }
+      }
+
+      // Always queue candidate symbol in real-time scanner so if FYERS session is expired,
+      // unauthenticated, or rate-limited, live market quotes (e.g. MCX Crude Oil, Nifty) are immediately available
+      if (
+        process.env.NODE_ENV !== 'test' &&
+        !process.env.VITEST &&
+        (GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass) ||
+         (trade.underlying && GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.underlying, trade.exchange, trade.assetClass)))
+      ) {
+        globalSymbolsToFetch.push(trade.symbol);
+        if (trade.underlying && trade.underlying !== trade.symbol) {
+          globalSymbolsToFetch.push(trade.underlying);
+        }
       }
     }
 
@@ -373,15 +384,18 @@ export class LiveWatcherService {
       BrokerIntegration.findOne({
         userId: uId,
         broker: 'FYERS',
-        status: 'CONNECTED',
       }).lean(),
       User.findById(uId).select('liveWatcherSettings').lean(),
     ]);
 
     const tokenExpiresAt = brokerIntegration?.tokenExpiresAt;
-    const isTokenExpired = Boolean(tokenExpiresAt && new Date(tokenExpiresAt) <= new Date());
+    const isTokenExpired = Boolean(
+      (tokenExpiresAt && new Date(tokenExpiresAt) <= new Date()) ||
+      brokerIntegration?.status === 'ERROR'
+    );
     const hasActiveBroker = Boolean(
       brokerIntegration &&
+      brokerIntegration.status === 'CONNECTED' &&
       brokerIntegration.accessToken &&
       !isTokenExpired
     );
@@ -394,6 +408,7 @@ export class LiveWatcherService {
     const istDay = istDate.getUTCDay(); // 0 = Sun, 6 = Sat
     const istMinutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
     const isNseMarketOpen = istDay >= 1 && istDay <= 5 && istMinutes >= (9 * 60 + 15) && istMinutes <= (15 * 60 + 30);
+    const isMcxMarketOpen = istDay >= 1 && istDay <= 5 && istMinutes >= (9 * 60) && istMinutes <= (23 * 60 + 30);
 
     // 4. Calculate metrics for each open trade
     const positions: ILiveOpenTradeMetric[] = [];
@@ -426,21 +441,20 @@ export class LiveWatcherService {
           : quote.last_traded_time
           ? new Date(quote.last_traded_time * 1000)
           : new Date();
-      } else if (effectiveHasBroker) {
-        // Connected broker invariant: Never oscillate simulated prices on real trades.
-        // Fall back to recorded peak LTP or entry price to preserve financial integrity.
-        currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
-        provider = 'FYERS';
-        quoteTimestamp = trade.calculated?.liveMfeSummary?.peakTimestamp
-          ? new Date(trade.calculated.liveMfeSummary.peakTimestamp)
-          : (trade.entryTime ? new Date(trade.entryTime) : new Date(Date.now() - 30000));
       } else {
-        // Prop Firm / Global CFD-Forex-Crypto mode (TradingView live quote when available)
-        const globalQuote = globalQuotes.get(trade.symbol);
+        // Fallback: Real-time TradingView / Yahoo market scanner quote
+        const globalQuote = globalQuotes.get(trade.symbol) || (trade.underlying ? globalQuotes.get(trade.underlying) : undefined);
         if (globalQuote && typeof globalQuote.ltp === 'number' && globalQuote.ltp > 0) {
           currentLtp = globalQuote.ltp;
           provider = 'SIMULATED';
-          quoteTimestamp = globalQuote.timestamp || new Date();
+          quoteTimestamp = globalQuote.timestamp ? new Date(globalQuote.timestamp) : new Date();
+        } else if (effectiveHasBroker) {
+          // Connected broker fallback: peak LTP or entry price
+          currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
+          provider = 'FYERS';
+          quoteTimestamp = trade.calculated?.liveMfeSummary?.peakTimestamp
+            ? new Date(trade.calculated.liveMfeSummary.peakTimestamp)
+            : (trade.entryTime ? new Date(trade.entryTime) : new Date(Date.now() - 30000));
         } else {
           currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
           provider = 'SIMULATED';
@@ -452,11 +466,17 @@ export class LiveWatcherService {
         latestQuoteTimestamp = quoteTimestamp;
       }
 
+      const isMcxTrade =
+        String(trade.exchange || '').toUpperCase() === 'MCX' ||
+        String(trade.marketSegment || '').toUpperCase() === 'MCX' ||
+        String(trade.assetClass || '').toUpperCase() === 'COMMODITY';
+      const isTradeMarketOpen = isMcxTrade ? isMcxMarketOpen : isNseMarketOpen;
+
       const tradeDataHealth = evaluateDataHealth({
         provider,
         lastTickAt: quoteTimestamp,
         asOf: new Date(),
-        isMarketOpen: isNseMarketOpen,
+        isMarketOpen: isTradeMarketOpen,
         staleThresholdSeconds: staleThresholdSec,
         tokenExpiresAt,
         hasActiveBrokerConnection: effectiveHasBroker,
@@ -821,42 +841,46 @@ export class LiveWatcherService {
     if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
       currentLtp = quote.ltp;
       provider = 'FYERS';
-    } else if (isFyersEligible) {
-      const brokerIntegration = await BrokerIntegration.findOne({
-        userId: uId,
-        broker: 'FYERS',
-        status: 'CONNECTED',
-      }).lean();
-      const hasActiveBroker = Boolean(
-        brokerIntegration &&
-        brokerIntegration.accessToken &&
-        (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
-      );
-
-      if (hasActiveBroker) {
-        currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
-        provider = 'FYERS';
-      } else {
-        currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
-        provider = 'SIMULATED';
-      }
     } else {
       let globalQuote: any = null;
       if (
         process.env.NODE_ENV !== 'test' &&
         !process.env.VITEST &&
-        GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass)
+        (GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass) ||
+         (trade.underlying && GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.underlying, trade.exchange, trade.assetClass)))
       ) {
         try {
-          const gMap = await GlobalCfdCandleProvider.getLiveQuotes([trade.symbol]);
-          globalQuote = gMap.get(trade.symbol);
+          const syms = [trade.symbol];
+          if (trade.underlying && trade.underlying !== trade.symbol) syms.push(trade.underlying);
+          const gMap = await GlobalCfdCandleProvider.getLiveQuotes(syms);
+          globalQuote = gMap.get(trade.symbol) || (trade.underlying ? gMap.get(trade.underlying) : undefined);
         } catch {
           // Fallback to simulated LTP
         }
       }
+
       if (globalQuote && typeof globalQuote.ltp === 'number' && globalQuote.ltp > 0) {
         currentLtp = globalQuote.ltp;
         provider = 'SIMULATED';
+      } else if (isFyersEligible) {
+        const brokerIntegration = await BrokerIntegration.findOne({
+          userId: uId,
+          broker: 'FYERS',
+          status: 'CONNECTED',
+        }).lean();
+        const hasActiveBroker = Boolean(
+          brokerIntegration &&
+          brokerIntegration.accessToken &&
+          (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
+        );
+
+        if (hasActiveBroker) {
+          currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
+          provider = 'FYERS';
+        } else {
+          currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
+          provider = 'SIMULATED';
+        }
       } else {
         currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);
         provider = 'SIMULATED';

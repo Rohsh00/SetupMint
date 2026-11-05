@@ -4440,10 +4440,14 @@ export function LiveOpenTradeWatcher({
               slotProps={{
                 input: {
                   startAdornment: <InputAdornment position="start">{currSym}</InputAdornment>,
-                  inputProps: { step: 'any' },
+                  inputProps: { step: editSlMetric.tickSize ? String(editSlMetric.tickSize) : 'any' },
                 },
               }}
-              helperText={`Current SL: ${editSlMetric.stopLoss !== null ? `${currSym}${editSlMetric.stopLoss}` : 'Not set'}`}
+              helperText={
+                editSlMetric.tickSize && editSlMetric.tickSize > 0
+                  ? `Exchange Tick: ${currSym}${editSlMetric.tickSize} • Current SL: ${editSlMetric.stopLoss !== null ? `${currSym}${editSlMetric.stopLoss}` : 'Not set'}`
+                  : `Current SL: ${editSlMetric.stopLoss !== null ? `${currSym}${editSlMetric.stopLoss}` : 'Not set'}`
+              }
               sx={{ mb: 1.5 }}
             />
 

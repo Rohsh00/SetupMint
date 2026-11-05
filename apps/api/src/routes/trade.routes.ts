@@ -1715,7 +1715,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // Update trade in MongoDB
     const prevStop = trade.risk?.currentStopLoss ?? initialStop;
-    const newStopPrice = Number(stopPrice);
+    const newStopPrice = brokerResult?.cleanStopPrice ?? Number(stopPrice);
 
     trade.risk = {
       ...(trade.risk || {}),

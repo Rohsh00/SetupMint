@@ -11,6 +11,7 @@ import {
   BrokerFundsSnapshot,
   AccountTransaction,
   TradeCandleSnapshot,
+  CommodityMaster,
 } from '../db/models/index.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
 import {
@@ -32,6 +33,7 @@ import {
   ITradeCandle,
   IExcursionBackfillResponse,
   CandleFallbackProvider,
+  getPresetSpec,
 } from '@tradevault/shared';
 import { AccountService } from './account.service.js';
 import { InstrumentService } from './instrument.service.js';
@@ -2998,6 +3000,8 @@ export class FyersService {
     executedOnBroker: boolean;
     action: 'MODIFIED' | 'PLACED' | 'JOURNAL_ONLY';
     orderId?: string;
+    cleanStopPrice?: number;
+    limitPrice?: number;
     message: string;
   }> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
@@ -3059,11 +3063,74 @@ export class FyersService {
       (o: any) => o.side === expectedSide && (o.type === 4 || o.type === 3 || Number(o.stopPrice || 0) > 0)
     );
 
-    const tick = 0.05;
-    const cleanStopPrice = Number((Math.round(newStopPrice / tick) * tick).toFixed(2));
+    // Resolve instrument tick size and price precision to ensure orders strictly align with exchange tick rules
+    let tick = 0.05;
+    let pricePrecision = 2;
+
+    if (trade.instrumentId) {
+      const inst = await Instrument.findById(trade.instrumentId).lean();
+      if (inst?.tickSize) tick = Number(inst.tickSize);
+      if (inst?.pricePrecision !== undefined) pricePrecision = Number(inst.pricePrecision);
+    } else {
+      const inst = await Instrument.findOne({
+        userId: uId,
+        $or: [
+          { symbol: trade.symbol },
+          { symbol: trade.underlying },
+        ],
+      }).lean();
+      if (inst?.tickSize) tick = Number(inst.tickSize);
+      if (inst?.pricePrecision !== undefined) pricePrecision = Number(inst.pricePrecision);
+    }
+
+    if (tick === 0.05) {
+      const norm = InstrumentService.normalizeUnderlying(matchedPos.symbol || trade.symbol || '');
+      const preset = getPresetSpec(trade.symbol) ||
+        (trade.underlying ? getPresetSpec(trade.underlying) : undefined) ||
+        (norm ? getPresetSpec(norm) : undefined);
+      if (preset?.tickSize) tick = Number(preset.tickSize);
+      if (preset?.pricePrecision !== undefined) pricePrecision = Number(preset.pricePrecision);
+    }
+
+    if (tick === 0.05 && (trade.exchange === 'MCX' || matchedPos.symbol?.startsWith('MCX:'))) {
+      const com = await CommodityMaster.findOne({
+        $or: [
+          { symbol: trade.underlying },
+          { symbol: trade.symbol },
+          { aliases: trade.underlying },
+          { aliases: trade.symbol },
+        ],
+        isActive: true,
+      }).lean();
+      if (com?.tickSize) tick = Number(com.tickSize);
+      if (com?.pricePrecision !== undefined) pricePrecision = Number(com.pricePrecision);
+    }
+
+    if (tick === 0.05) {
+      const upperSym = (trade.symbol || matchedPos.symbol || '').toUpperCase();
+      if (upperSym.includes('CRUDEOIL') || upperSym.includes('GOLD') || upperSym.includes('SILVER')) {
+        tick = 1.0;
+      } else if (upperSym.includes('NATGAS') || upperSym.includes('NATURALGAS')) {
+        tick = 0.1;
+      }
+    }
+
+    const tickDecimals = tick.toString().includes('.')
+      ? tick.toString().split('.')[1].length
+      : 0;
+    const decimals = Math.max(tickDecimals, pricePrecision ?? 2);
+
+    const cleanStopPrice = Number((Math.round(newStopPrice / tick) * tick).toFixed(decimals));
+
+    // For SL-Limit (type 4):
+    // Buy stop (side 1): limitPrice must be >= stopPrice
+    // Sell stop (side -1): limitPrice must be <= stopPrice
+    // Buffer must be an exact positive integer multiple of tick
+    const tickMultiplier = tick >= 1 ? 1 : Math.max(1, Math.round(0.5 / tick));
+    const buffer = Number((tickMultiplier * tick).toFixed(decimals));
     const limitPrice = expectedSide === 1
-      ? Number((cleanStopPrice + 0.5).toFixed(2))
-      : Number((cleanStopPrice - 0.5).toFixed(2));
+      ? Number((cleanStopPrice + buffer).toFixed(decimals))
+      : Number(Math.max(tick, cleanStopPrice - buffer).toFixed(decimals));
 
     if (pendingSlOrder) {
       // Modify existing pending order
@@ -3079,6 +3146,8 @@ export class FyersService {
         executedOnBroker: true,
         action: 'MODIFIED',
         orderId: pendingSlOrder.id,
+        cleanStopPrice,
+        limitPrice,
         message: `FYERS Stop Loss order #${pendingSlOrder.id} modified to ₹${cleanStopPrice} on exchange.`,
       };
     } else {
@@ -3104,7 +3173,9 @@ export class FyersService {
         executedOnBroker: true,
         action: 'PLACED',
         orderId: placeRes.id,
-        message: `New FYERS Stop Loss order #${placeRes.id} placed at ₹${newStopPrice} on exchange.`,
+        cleanStopPrice,
+        limitPrice,
+        message: `New FYERS Stop Loss order #${placeRes.id} placed at ₹${cleanStopPrice} on exchange.`,
       };
     }
   }

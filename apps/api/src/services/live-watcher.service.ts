@@ -204,6 +204,28 @@ export class LiveWatcherService {
   }
 
   /**
+   * Guards against anomalous or corrupted prices (e.g. underlying spot index price applied to an option contract).
+   */
+  private static isPlausiblePrice(
+    price: number | undefined | null,
+    entryPrice: number,
+    isOption: boolean
+  ): boolean {
+    if (price == null || !Number.isFinite(price) || price <= 0) return false;
+    if (entryPrice <= 0) return true;
+
+    if (isOption) {
+      // Option contracts cannot exceed 1000 when entry is below 500, or jump 4x
+      if (entryPrice < 500 && price > 1000) return false;
+      if (price > entryPrice * 4) return false;
+      if (price < entryPrice * 0.05) return false;
+    } else {
+      if (price > entryPrice * 4 || price < entryPrice * 0.15) return false;
+    }
+    return true;
+  }
+
+  /**
    * Fetches live market quotes for all open trades of a user and computes
    * real-time floating P&L, unrealized R, distance to SL (points/ticks),
    * and distance to Target.
@@ -346,9 +368,16 @@ export class LiveWatcherService {
         }
       }
 
-      // Always queue candidate symbol in real-time scanner so if FYERS session is expired,
-      // unauthenticated, or rate-limited, live market quotes (e.g. MCX Crude Oil, Nifty) are immediately available
+      // Queue candidate symbol in real-time scanner for spot/CFD/futures assets.
+      // NEVER queue or mix option derivatives with underlying spot index prices!
+      const isOption =
+        trade.assetClass === 'OPTIONS' ||
+        Boolean(trade.optionType) ||
+        Boolean(trade.strikePrice) ||
+        /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
+
       if (
+        !isOption &&
         process.env.NODE_ENV !== 'test' &&
         !process.env.VITEST &&
         (GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass) ||
@@ -432,6 +461,12 @@ export class LiveWatcherService {
       let provider: LiveQuoteProvider = 'FYERS';
       let quoteTimestamp: Date | null = null;
 
+      const isOption =
+        trade.assetClass === 'OPTIONS' ||
+        Boolean(trade.optionType) ||
+        Boolean(trade.strikePrice) ||
+        /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
+
       let currentLtp: number;
       if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
         currentLtp = quote.ltp;
@@ -442,14 +477,17 @@ export class LiveWatcherService {
           ? new Date(quote.last_traded_time * 1000)
           : new Date();
       } else {
-        // Fallback: Real-time TradingView / Yahoo market scanner quote
-        const globalQuote = globalQuotes.get(trade.symbol) || (trade.underlying ? globalQuotes.get(trade.underlying) : undefined);
+        // Fallback: Real-time TradingView / Yahoo market scanner quote (strictly non-options only)
+        const globalQuote = !isOption
+          ? (globalQuotes.get(trade.symbol) || (trade.underlying ? globalQuotes.get(trade.underlying) : undefined))
+          : undefined;
+
         if (globalQuote && typeof globalQuote.ltp === 'number' && globalQuote.ltp > 0) {
           currentLtp = globalQuote.ltp;
           provider = 'SIMULATED';
           quoteTimestamp = globalQuote.timestamp ? new Date(globalQuote.timestamp) : new Date();
-        } else if (effectiveHasBroker) {
-          // Connected broker fallback: peak LTP or entry price
+        } else if (effectiveHasBroker && this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption)) {
+          // Connected broker fallback: peak LTP (if plausible) or entry price
           currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
           provider = 'FYERS';
           quoteTimestamp = trade.calculated?.liveMfeSummary?.peakTimestamp
@@ -482,6 +520,22 @@ export class LiveWatcherService {
         hasActiveBrokerConnection: effectiveHasBroker,
       });
 
+      // Guard against corrupted peak MFE previously stored in DB (e.g. spot index price applied to an option)
+      const isExistingPeakPlausible = this.isPlausiblePrice(
+        trade.calculated?.liveMfeSummary?.peakLtp,
+        fields.entryPrice,
+        isOption
+      );
+
+      if (trade.calculated?.liveMfeSummary && !isExistingPeakPlausible) {
+        Trade.updateOne(
+          { _id: trade._id },
+          { $unset: { 'calculated.liveMfeSummary': 1 } }
+        ).catch(() => {});
+      }
+
+      const effectivePeakMfe = isExistingPeakPlausible ? trade.calculated?.liveMfeSummary : undefined;
+
       const metric = calculateLiveOpenTradeMetric({
         tradeId,
         symbol: trade.symbol,
@@ -499,14 +553,18 @@ export class LiveWatcherService {
         assetClass: trade.assetClass,
         marketSegment: trade.marketSegment,
         provider,
-        previousPeakMfe: trade.calculated?.liveMfeSummary,
+        previousPeakMfe: effectivePeakMfe,
         dataHealth: tradeDataHealth,
         customRules: trade.customLadderRules,
       });
 
-      // Asynchronously persist new peak MFE to DB if new high reached
-      const prevPeak = trade.calculated?.liveMfeSummary?.peakFloatingNetPnL ?? -Infinity;
-      if (metric.giveback && metric.giveback.peakFloatingNetPnL > prevPeak) {
+      // Asynchronously persist new peak MFE to DB if new high reached AND price is plausible
+      const prevPeak = effectivePeakMfe?.peakFloatingNetPnL ?? -Infinity;
+      if (
+        metric.giveback &&
+        metric.giveback.peakFloatingNetPnL > prevPeak &&
+        this.isPlausiblePrice(metric.giveback.peakLtp, fields.entryPrice, isOption)
+      ) {
         Trade.updateOne(
           { _id: trade._id },
           {
@@ -809,6 +867,12 @@ export class LiveWatcherService {
     const fields = this.extractTradeFields(trade, inst);
     const isFyersEligible = this.isFyersEligibleTrade(trade, tradeAccount);
 
+    const isOption =
+      trade.assetClass === 'OPTIONS' ||
+      Boolean(trade.optionType) ||
+      Boolean(trade.strikePrice) ||
+      /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
+
     const fyersSym = isFyersEligible
       ? formatFyersSymbol({
           symbol: trade.symbol,
@@ -844,6 +908,7 @@ export class LiveWatcherService {
     } else {
       let globalQuote: any = null;
       if (
+        !isOption &&
         process.env.NODE_ENV !== 'test' &&
         !process.env.VITEST &&
         (GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass) ||
@@ -874,7 +939,7 @@ export class LiveWatcherService {
           (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
         );
 
-        if (hasActiveBroker) {
+        if (hasActiveBroker && this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption)) {
           currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
           provider = 'FYERS';
         } else {
@@ -886,6 +951,21 @@ export class LiveWatcherService {
         provider = 'SIMULATED';
       }
     }
+
+    const isExistingPeakPlausible = this.isPlausiblePrice(
+      trade.calculated?.liveMfeSummary?.peakLtp,
+      fields.entryPrice,
+      isOption
+    );
+
+    if (trade.calculated?.liveMfeSummary && !isExistingPeakPlausible) {
+      Trade.updateOne(
+        { _id: trade._id },
+        { $unset: { 'calculated.liveMfeSummary': 1 } }
+      ).catch(() => {});
+    }
+
+    const effectivePeakMfe = isExistingPeakPlausible ? trade.calculated?.liveMfeSummary : undefined;
 
     const metric = calculateLiveOpenTradeMetric({
       tradeId: trade._id.toString(),
@@ -904,12 +984,16 @@ export class LiveWatcherService {
       assetClass: trade.assetClass,
       marketSegment: trade.marketSegment,
       provider,
-      previousPeakMfe: trade.calculated?.liveMfeSummary,
+      previousPeakMfe: effectivePeakMfe,
       customRules: trade.customLadderRules,
     });
 
-    const prevPeak = trade.calculated?.liveMfeSummary?.peakFloatingNetPnL ?? -Infinity;
-    if (metric.giveback && metric.giveback.peakFloatingNetPnL > prevPeak) {
+    const prevPeak = effectivePeakMfe?.peakFloatingNetPnL ?? -Infinity;
+    if (
+      metric.giveback &&
+      metric.giveback.peakFloatingNetPnL > prevPeak &&
+      this.isPlausiblePrice(metric.giveback.peakLtp, fields.entryPrice, isOption)
+    ) {
       Trade.updateOne(
         { _id: trade._id },
         {

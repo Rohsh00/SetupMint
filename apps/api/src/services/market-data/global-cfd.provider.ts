@@ -121,12 +121,15 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
   private static readonly QUOTE_TTL_MS = 4000;
 
   static isSupportedGlobalSymbol(rawSymbol: string, exchange?: string, assetClass?: string): boolean {
+    const ac = String(assetClass || '').toUpperCase();
+    if (ac === 'OPTIONS' || /(\d+(?:CE|PE))$/i.test(rawSymbol || '')) {
+      return false;
+    }
     const clean = normalizeCleanSymbol(rawSymbol);
     if (TV_TICKER_MAP[clean] || BINANCE_KLINE_MAP[clean] || YAHOO_SYMBOL_MAP[clean]) {
       return true;
     }
     const ex = String(exchange || '').toUpperCase();
-    const ac = String(assetClass || '').toUpperCase();
     if (ex === 'FOREX' || ex === 'CRYPTO' || ac === 'FOREX' || ac === 'CRYPTO') {
       return clean.endsWith('USD') || clean.endsWith('USDT') || clean.endsWith('JPY') || clean.endsWith('EUR');
     }
@@ -361,6 +364,14 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
   }
 
   async supports(trade: any, _userId: string | mongoose.Types.ObjectId): Promise<boolean> {
+    const isOption =
+      trade?.assetClass === 'OPTIONS' ||
+      Boolean(trade?.optionType) ||
+      Boolean(trade?.strikePrice) ||
+      /(\d+(?:CE|PE))$/i.test(trade?.symbol || '');
+    if (isOption) {
+      return false;
+    }
     return GlobalCfdCandleProvider.isSupportedGlobalSymbol(
       trade?.symbol || trade?.underlying || '',
       trade?.exchange,
@@ -369,6 +380,18 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
   }
 
   async getCandles(params: CandleFetchParams): Promise<CandleProviderResult> {
+    const isOption =
+      params.trade?.assetClass === 'OPTIONS' ||
+      Boolean(params.trade?.optionType) ||
+      Boolean(params.trade?.strikePrice) ||
+      /(\d+(?:CE|PE))$/i.test(params.trade?.symbol || '');
+    if (isOption) {
+      return {
+        ok: false,
+        reason: 'NO_SYMBOL_TOKEN',
+        message: 'Option contracts are not supported by Global CFD provider',
+      };
+    }
     const clean = normalizeCleanSymbol(params.trade?.symbol || params.trade?.underlying || '');
     const resolution = String(params.resolution || '5');
     const fromMs = params.from.getTime();

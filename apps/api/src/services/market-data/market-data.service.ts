@@ -470,7 +470,14 @@ export class MarketDataService {
     }
 
     // Step 3b-global: Try Global CFD/Forex/Crypto provider (TradingView / Yahoo / Binance for XAUUSD, ETHUSD, BTCUSD, EURUSD, NAS100)
-    if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+    // NEVER use Global CFD spot candles for Option contracts!
+    const isOptionTrade =
+      trade.assetClass === 'OPTIONS' ||
+      Boolean(trade.optionType) ||
+      Boolean(trade.strikePrice) ||
+      /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
+
+    if (!isOptionTrade && process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
       try {
         const globalSupports = await this.globalCfdProvider.supports(trade, uId);
         if (globalSupports) {

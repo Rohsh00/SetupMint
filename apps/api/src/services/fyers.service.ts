@@ -1967,12 +1967,16 @@ export class FyersService {
       Boolean(trade.strikePrice) ||
       /(\d+(?:CE|PE))$/i.test(trade.symbol);
 
-    if (isUnderlyingFallback && isOptionTrade) {
+    const entryPriceCheck = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
+    const sampleCandlePrice = candles[0]?.c || candles[0]?.o || 0;
+    const isMismatchedScale = isOptionTrade && entryPriceCheck > 0 && sampleCandlePrice > entryPriceCheck * 4 && sampleCandlePrice > 500;
+
+    if (isMismatchedScale || (isUnderlyingFallback && isOptionTrade)) {
       trade.calculated = trade.calculated || ({} as any);
       trade.calculated.excursion = {
         status: 'UNAVAILABLE',
         failureReason:
-          'Option contract candles unavailable; cannot calculate MAE/MFE using spot underlying index without delta translation',
+          'Option contract candles unavailable or mismatched with underlying spot index price; cannot calculate MAE/MFE using spot index',
         source: 'UNDERLYING_FALLBACK',
         resolution,
         isLowResolution: resolution !== '1',

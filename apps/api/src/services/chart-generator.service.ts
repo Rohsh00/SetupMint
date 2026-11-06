@@ -35,6 +35,7 @@ export interface ChartGeneratorOptions {
   entryIndex?: number;
   exitIndex?: number;
   strategyName?: string;
+  currentLtp?: number;
 }
 
 export interface GenerateChartsOptions {
@@ -103,15 +104,27 @@ export class ChartGeneratorService {
     const exitPrice = Number(
       trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice ?? trade.exitPrice ?? 0
     );
-    const stopLoss = trade.risk?.initialStopLoss ? Number(trade.risk.initialStopLoss) : undefined;
-    const target = trade.risk?.plannedTarget ? Number(trade.risk.plannedTarget) : undefined;
+    const currentLtp = Number(
+      options.currentLtp ?? trade.currentLtp ?? trade.ltp ?? 0
+    );
+    const isOpen = trade.status === 'OPEN' || exitPrice <= 0;
+    const stopLoss = Number(
+      trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? trade.stopLoss ?? 0
+    ) || undefined;
+    const target = Number(
+      trade.risk?.plannedTarget ?? trade.target ?? 0
+    ) || undefined;
     const direction = trade.direction || 'LONG';
     const netPnl = Number(trade.calculated?.netPnL ?? trade.calculated?.netPnl ?? trade.netPnl ?? 0);
-    const rMultiple = trade.calculated?.realizedRMultiple !== undefined
-      ? Number(trade.calculated.realizedRMultiple)
-      : trade.calculated?.realizedR !== undefined
-      ? Number(trade.calculated.realizedR)
-      : undefined;
+    const floatingPnl = Number(trade.calculated?.floatingNetPnL ?? trade.floatingNetPnL ?? netPnl);
+    const activePnl = isOpen ? floatingPnl : netPnl;
+    const rMultiple = isOpen
+      ? (trade.calculated?.unrealizedR !== undefined ? Number(trade.calculated.unrealizedR) : undefined)
+      : (trade.calculated?.realizedRMultiple !== undefined
+        ? Number(trade.calculated.realizedRMultiple)
+        : trade.calculated?.realizedR !== undefined
+        ? Number(trade.calculated.realizedR)
+        : undefined);
     const excursion = trade.calculated?.excursion;
 
     // Calculate vertical price scaling bounds
@@ -130,6 +143,10 @@ export class ChartGeneratorService {
     if (exitPrice > 0) {
       if (exitPrice < minPrice) minPrice = exitPrice;
       if (exitPrice > maxPrice) maxPrice = exitPrice;
+    }
+    if (currentLtp > 0) {
+      if (currentLtp < minPrice) minPrice = currentLtp;
+      if (currentLtp > maxPrice) maxPrice = currentLtp;
     }
     if (stopLoss && stopLoss > 0) {
       if (stopLoss < minPrice) minPrice = stopLoss;
@@ -219,12 +236,23 @@ export class ChartGeneratorService {
     }
 
     // Exit Line (Purple / Violet)
-    if (exitPrice > 0) {
+    if (exitPrice > 0 && !isOpen) {
       const yExit = priceToY(exitPrice);
       overlaysSvg += `
     <line x1="${plotX0}" y1="${yExit}" x2="${plotX1}" y2="${yExit}" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="4,2" />
     <rect x="${plotX1 + 6}" y="${yExit - 10}" width="78" height="20" rx="3" fill="#7c3aed" />
     <text x="${plotX1 + 45}" y="${yExit + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">EXIT: ${exitPrice.toFixed(1)}</text>`;
+    }
+
+    // Live Market LTP Line (Amber / Gold dashed)
+    if (currentLtp > 0 && isOpen) {
+      const yLtp = priceToY(currentLtp);
+      const ltpColor = '#f59e0b';
+      overlaysSvg += `
+    <!-- Live Market LTP Line -->
+    <line x1="${plotX0}" y1="${yLtp}" x2="${plotX1}" y2="${yLtp}" stroke="${ltpColor}" stroke-width="1.5" stroke-dasharray="4,3" />
+    <rect x="${plotX1 + 6}" y="${yLtp - 10}" width="78" height="20" rx="3" fill="${ltpColor}" />
+    <text x="${plotX1 + 45}" y="${yLtp + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#0b0f19" text-anchor="middle">LTP: ${currentLtp.toFixed(1)}</text>`;
     }
 
     // Identify entry and exit candle indices to draw pinpoint markers and shaded band
@@ -260,9 +288,10 @@ export class ChartGeneratorService {
 
     // Shaded Active Trade Span Band
     let shadedBandSvg = '';
-    if (closestEntryIdx !== -1 && closestExitIdx !== -1 && closestExitIdx >= closestEntryIdx) {
+    const endBandIdx = isOpen ? candleCount - 1 : closestExitIdx;
+    if (closestEntryIdx !== -1 && endBandIdx !== -1 && endBandIdx >= closestEntryIdx) {
       const entryX = plotX0 + (closestEntryIdx + 0.5) * stepX;
-      const exitX = plotX0 + (closestExitIdx + 0.5) * stepX;
+      const exitX = plotX0 + (endBandIdx + 0.5) * stepX;
       const bandX = entryX - barWidth / 2;
       const bandWidth = Math.max(barWidth, exitX - entryX + barWidth);
 
@@ -310,7 +339,7 @@ export class ChartGeneratorService {
     }
 
     // Exit Marker Badge on specific candle
-    if (closestExitIdx >= 0 && closestExitIdx < candleCount && exitPrice > 0) {
+    if (!isOpen && closestExitIdx >= 0 && closestExitIdx < candleCount && exitPrice > 0) {
       const c = sortedCandles[closestExitIdx];
       const cx = plotX0 + (closestExitIdx + 0.5) * stepX;
       const isProfitable = netPnl >= 0;
@@ -327,7 +356,7 @@ export class ChartGeneratorService {
     // Header Content
     const symbolStr = trade.symbol || 'UNKNOWN';
     const dateStr = trade.entryTime ? moment(trade.entryTime).format('DD MMM YYYY, HH:mm') : '';
-    const exitDateStr = trade.exitTime ? moment(trade.exitTime).format('HH:mm') : '';
+    const exitDateStr = trade.exitTime && !isOpen ? moment(trade.exitTime).format('HH:mm') : '';
 
     const timeframeStr = options.timeframe || (resolution === 'D' ? '1D' : `${resolution}m`);
     let paddingStr = '';
@@ -337,11 +366,13 @@ export class ChartGeneratorService {
     const timeframeDisplay = `${timeframeStr}${paddingStr}`;
     const tfChipWidth = Math.max(40, timeframeDisplay.length * 8 + 14);
 
+    const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
+    const symPrefix = isForex ? '$' : '₹';
     const directionColor = direction === 'LONG' ? '#10b981' : '#f43f5e';
-    const pnlColor = netPnl >= 0 ? '#10b981' : '#f43f5e';
-    const pnlPrefix = netPnl >= 0 ? '+' : '';
+    const pnlColor = activePnl >= 0 ? '#10b981' : '#f43f5e';
+    const pnlPrefix = activePnl >= 0 ? '+' : '';
     const rMultipleStr = rMultiple !== undefined ? ` (${rMultiple >= 0 ? '+' : ''}${rMultiple.toFixed(2)}R)` : '';
-    const pnlLabel = `${pnlPrefix}₹${Math.abs(netPnl).toFixed(2)}${rMultipleStr}`;
+    const pnlLabel = `${isOpen ? 'LIVE ' : ''}${pnlPrefix}${symPrefix}${Math.abs(activePnl).toFixed(2)}${rMultipleStr}`;
 
     // Excursion HUD Box (if computed)
     let excursionHudSvg = '';
@@ -371,7 +402,13 @@ export class ChartGeneratorService {
     let badgeText = '#22d3ee';
     let watermarkSource = 'FYERS API v3';
 
-    if (provider === 'ANGEL_ONE') {
+    if (isOpen) {
+      badgeLabel = '🔴 LIVE POSITION CHART';
+      badgeBg = '#450a0a';
+      badgeBorder = '#ef4444';
+      badgeText = '#fca5a5';
+      watermarkSource = 'Live Execution Feed';
+    } else if (provider === 'ANGEL_ONE') {
       badgeLabel = '⚡ ANGEL ONE AUTO CHART';
       badgeBg = '#451a03';
       badgeBorder = '#d97706';

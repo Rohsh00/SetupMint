@@ -104,6 +104,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'serverSideExecutionEnabled',
         'hardDisciplineLockoutEnabled',
         'requireHoldToConfirm',
+        'telegramAttachLiveChart',
       ] as const;
 
       for (const k of booleanKeys) {
@@ -150,6 +151,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'sortMode',
         'ladderViewMode',
         'activePresetId',
+        'telegramChartTimeframe',
       ] as const;
 
       for (const k of stringKeys) {

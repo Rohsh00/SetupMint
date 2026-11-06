@@ -120,6 +120,8 @@ const UserSchema = new Schema<IUserDoc>(
       telegramBotToken: { type: String },
       telegramChatId: { type: String },
       telegramAlertEvents: { type: Object, default: DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents },
+      telegramAttachLiveChart: { type: Boolean, default: true },
+      telegramChartTimeframe: { type: String, default: '5' },
       slippageGuardPercent: { type: Number, default: 0.5 },
       snoozeDefaultMin: { type: Number, default: 10 },
       quietHours: { type: Object },

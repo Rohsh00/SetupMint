@@ -378,4 +378,40 @@ describe('SetupMint Telegram Alerting Engine Integration Tests', () => {
     expect(lastMsg.text).toContain('100%');
     expect(lastMsg.replyMarkup).toBeDefined();
   });
+
+  it('11. Generates live candlestick chart PNG for open position with flexible timeframes', async () => {
+    const pngBuffer = await TelegramAlertService.generatePositionChart(userA, tradeA, '5');
+    expect(pngBuffer).toBeDefined();
+    expect(Buffer.isBuffer(pngBuffer)).toBe(true);
+    expect(pngBuffer!.length).toBeGreaterThan(100);
+
+    // PNG signature verification: 89 50 4E 47 0D 0A 1A 0A
+    expect(pngBuffer![0]).toBe(0x89);
+    expect(pngBuffer![1]).toBe(0x50);
+    expect(pngBuffer![2]).toBe(0x4e);
+    expect(pngBuffer![3]).toBe(0x47);
+
+    // Test with flexible 1m and 15m timeframes
+    const png1m = await TelegramAlertService.generatePositionChart(userA, tradeA, '1');
+    expect(png1m).toBeDefined();
+    expect(png1m![0]).toBe(0x89);
+
+    const png15m = await TelegramAlertService.generatePositionChart(userA, tradeA, '15');
+    expect(png15m).toBeDefined();
+    expect(png15m![0]).toBe(0x89);
+
+    // Verify keyboard contains flexible timeframe buttons
+    const buttonsWithTf = TelegramAlertService.buildContextualKeyboard(
+      tradeA,
+      'STOP_THREAT',
+      102.5,
+      1,
+      false,
+      true
+    );
+    const hasTfRow = buttonsWithTf.some((row) =>
+      row.some((b) => b.text.includes('⏱️ 5m'))
+    );
+    expect(hasTfRow).toBe(true);
+  });
 });

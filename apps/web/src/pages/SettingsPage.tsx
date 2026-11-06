@@ -202,6 +202,8 @@ export function SettingsPage() {
   );
   const [telegramBotToken, setTelegramBotToken] = useState(initialWatcher.telegramBotToken ? '••••••••' : '');
   const [telegramChatId, setTelegramChatId] = useState(initialWatcher.telegramChatId ?? '');
+  const [telegramAttachLiveChart, setTelegramAttachLiveChart] = useState(initialWatcher.telegramAttachLiveChart ?? true);
+  const [telegramChartTimeframe, setTelegramChartTimeframe] = useState<string>(initialWatcher.telegramChartTimeframe || '5');
   const [slippageGuardPercent, setSlippageGuardPercent] = useState<number>(initialWatcher.slippageGuardPercent ?? 0.5);
   const [snoozeDefaultMin, setSnoozeDefaultMin] = useState<number>(initialWatcher.snoozeDefaultMin ?? 10);
   const [staleDataThresholdSeconds, setStaleDataThresholdSeconds] = useState<number>(initialWatcher.staleDataThresholdSeconds ?? 10);
@@ -273,6 +275,8 @@ export function SettingsPage() {
       setTelegramAlertsEnabled(s.telegramAlertsEnabled !== undefined ? s.telegramAlertsEnabled : hasCreds);
       setTelegramBotToken(s.telegramBotToken ? '••••••••' : '');
       setTelegramChatId(s.telegramChatId ?? '');
+      setTelegramAttachLiveChart(s.telegramAttachLiveChart ?? true);
+      setTelegramChartTimeframe(s.telegramChartTimeframe || '5');
       setSlippageGuardPercent(s.slippageGuardPercent ?? 0.5);
       setSnoozeDefaultMin(s.snoozeDefaultMin ?? 10);
       setStaleDataThresholdSeconds(s.staleDataThresholdSeconds ?? 10);
@@ -534,6 +538,8 @@ export function SettingsPage() {
       telegramAlertsEnabled: effectiveAlertsEnabled,
       telegramBotToken: effectiveBotToken,
       telegramChatId: effectiveChatId,
+      telegramAttachLiveChart,
+      telegramChartTimeframe,
       telegramAlertEvents,
       slippageGuardPercent: Number(slippageGuardPercent),
       snoozeDefaultMin: Number(snoozeDefaultMin),
@@ -1937,6 +1943,59 @@ export function SettingsPage() {
                                     onChange={(e) => setRequireHoldToConfirm(e.target.checked)}
                                   />
                                 </Box>
+                              </Grid>
+                            </Grid>
+
+                            {/* Live Candlestick Snapshot Settings */}
+                            <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                              <Grid size={{ xs: 12, sm: 7 }}>
+                                <Box
+                                  sx={{
+                                    p: 1.5,
+                                    borderRadius: 2,
+                                    border: '1px solid',
+                                    borderColor: telegramAttachLiveChart ? 'rgba(56, 189, 248, 0.4)' : 'divider',
+                                    bgcolor: telegramAttachLiveChart ? alpha('#0284C7', 0.05) : 'transparent',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    height: '100%',
+                                  }}
+                                >
+                                  <Box>
+                                    <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                                      📊 Attach Live Candlestick Charts (/trades)
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', display: 'block' }}>
+                                      Generates and sends live candlestick snapshots with Entry, SL, TP, and LTP levels
+                                    </Typography>
+                                  </Box>
+                                  <Switch
+                                    size="small"
+                                    color="info"
+                                    checked={telegramAttachLiveChart}
+                                    onChange={(e) => setTelegramAttachLiveChart(e.target.checked)}
+                                  />
+                                </Box>
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 5 }}>
+                                <TextField
+                                  select
+                                  size="small"
+                                  label="Default Chart Timeframe"
+                                  fullWidth
+                                  value={telegramChartTimeframe}
+                                  onChange={(e) => setTelegramChartTimeframe(e.target.value)}
+                                  helperText="Flexible: tap [⏱️ 1m], [⏱️ 5m], [⏱️ 15m], [⏱️ 1h] in Telegram to change anytime"
+                                >
+                                  <MenuItem value="1">⏱️ 1m (1 Minute Micro)</MenuItem>
+                                  <MenuItem value="3">⏱️ 3m (3 Minutes Scalp)</MenuItem>
+                                  <MenuItem value="5">⏱️ 5m (5 Minutes — Recommended)</MenuItem>
+                                  <MenuItem value="15">⏱️ 15m (15 Minutes Intraday)</MenuItem>
+                                  <MenuItem value="30">⏱️ 30m (30 Minutes Swing)</MenuItem>
+                                  <MenuItem value="60">⏱️ 1h (1 Hour Trend)</MenuItem>
+                                  <MenuItem value="D">📅 1D (Daily Macro)</MenuItem>
+                                </TextField>
                               </Grid>
                             </Grid>
 

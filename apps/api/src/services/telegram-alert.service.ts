@@ -45,6 +45,10 @@ import { decryptSecret, safeDecryptSecret } from './crypto.service.js';
 import { FyersService } from './fyers.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { AccountScopeService } from './account-scope.service.js';
+import { ChartGeneratorService } from './chart-generator.service.js';
+import { MarketDataService } from './market-data/index.js';
+import { ITradeCandle } from '@tradevault/shared';
+import sharp from 'sharp';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -243,11 +247,304 @@ export class TelegramAlertService {
         if (json.description && json.description.includes('message is not modified')) {
           return null;
         }
+        // If the original message was a photo, edit caption instead!
+        if (json.description && json.description.includes('there is no text in the message to edit')) {
+          return await this.editMessageCaption(botToken, chatId, messageId, text, buttons);
+        }
         console.warn(`[TelegramAlertService] editMessageText notice:`, json.description);
       }
       return json.result;
     } catch (err: any) {
       console.warn(`[TelegramAlertService] editMessageText network error:`, err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Low-level Telegram sendPhoto API caller supporting multipart/form-data with inline keyboard & caption.
+   */
+  static async sendPhoto(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    photoBuffer: Buffer,
+    caption?: string,
+    buttons?: ITelegramInlineButton[][],
+    disableNotification: boolean = false
+  ): Promise<any> {
+    if (!botToken) return null;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return null;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/sendPhoto`;
+
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('photo', new Blob([new Uint8Array(photoBuffer)], { type: 'image/png' }), 'live_chart.png');
+    if (caption) {
+      formData.append('caption', caption.length > 1024 ? caption.slice(0, 1020) + '...' : caption);
+      formData.append('parse_mode', 'HTML');
+    }
+    if (disableNotification) {
+      formData.append('disable_notification', 'true');
+    }
+    if (buttons && buttons.length > 0) {
+      formData.append('reply_markup', JSON.stringify({ inline_keyboard: buttons }));
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const json = (await res.json()) as any;
+    if (!json.ok) {
+      throw new Error(json.description || 'Telegram sendPhoto returned an error');
+    }
+    return json.result;
+  }
+
+  /**
+   * Edits the caption of an existing photo/media message in Telegram.
+   */
+  static async editMessageCaption(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    messageId: number,
+    caption: string,
+    buttons?: ITelegramInlineButton[][]
+  ): Promise<any> {
+    if (!botToken) return null;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return null;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/editMessageCaption`;
+    const payload: any = {
+      chat_id: chatId,
+      message_id: messageId,
+      caption: caption.length > 1024 ? caption.slice(0, 1020) + '...' : caption,
+      parse_mode: 'HTML',
+    };
+    if (buttons) {
+      payload.reply_markup = { inline_keyboard: buttons };
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json()) as any;
+      if (!json.ok) {
+        if (json.description && json.description.includes('message is not modified')) {
+          return null;
+        }
+        console.warn(`[TelegramAlertService] editMessageCaption notice:`, json.description);
+      }
+      return json.result;
+    } catch (err: any) {
+      console.warn(`[TelegramAlertService] editMessageCaption network error:`, err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Replaces the photo and caption of an existing Telegram photo message in-place.
+   */
+  static async editMessageMedia(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    messageId: number,
+    photoBuffer: Buffer,
+    caption?: string,
+    buttons?: ITelegramInlineButton[][]
+  ): Promise<any> {
+    if (!botToken) return null;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return null;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/editMessageMedia`;
+
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('message_id', String(messageId));
+    formData.append(
+      'media',
+      JSON.stringify({
+        type: 'photo',
+        media: 'attach://photo',
+        caption: caption ? (caption.length > 1024 ? caption.slice(0, 1020) + '...' : caption) : undefined,
+        parse_mode: 'HTML',
+      })
+    );
+    formData.append('photo', new Blob([new Uint8Array(photoBuffer)], { type: 'image/png' }), 'live_chart.png');
+    if (buttons && buttons.length > 0) {
+      formData.append('reply_markup', JSON.stringify({ inline_keyboard: buttons }));
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+    const json = (await res.json()) as any;
+    if (!json.ok) {
+      throw new Error(json.description || 'editMessageMedia failed');
+    }
+    return json.result;
+  }
+
+  /**
+   * Generates a high-fidelity candlestick PNG chart for an open trade or position.
+   * Defaults to 5m (or user setting), with fallback to synthetic micro-candles if broker candles are unavailable.
+   */
+  static async generatePositionChart(
+    user: any,
+    tradeOrPos: any,
+    resolution: string = '5'
+  ): Promise<Buffer | null> {
+    try {
+      const tradeId = tradeOrPos._id || tradeOrPos.tradeId;
+      let tradeDoc: any = null;
+      if (tradeId && mongoose.Types.ObjectId.isValid(tradeId)) {
+        tradeDoc = await Trade.findById(tradeId).lean();
+      }
+      if (!tradeDoc) {
+        tradeDoc = { ...tradeOrPos, _id: tradeId || new mongoose.Types.ObjectId() };
+      }
+
+      // Merge realtime properties if passed from LiveWatcher position
+      if (tradeOrPos.currentLtp !== undefined) {
+        tradeDoc.currentLtp = tradeOrPos.currentLtp;
+      }
+      if (tradeOrPos.floatingNetPnL !== undefined) {
+        tradeDoc.floatingNetPnL = tradeOrPos.floatingNetPnL;
+        if (!tradeDoc.calculated) tradeDoc.calculated = {};
+        tradeDoc.calculated.floatingNetPnL = tradeOrPos.floatingNetPnL;
+      }
+      if (tradeOrPos.unrealizedR !== undefined) {
+        if (!tradeDoc.calculated) tradeDoc.calculated = {};
+        tradeDoc.calculated.unrealizedR = tradeOrPos.unrealizedR;
+      }
+      if (tradeOrPos.stopLoss !== undefined) {
+        if (!tradeDoc.risk) tradeDoc.risk = {};
+        tradeDoc.risk.currentStopLoss = tradeOrPos.stopLoss;
+      }
+
+      const cleanRes = resolution === '60' || resolution === '1h'
+        ? '60'
+        : resolution === 'D' || resolution === '1D'
+        ? 'D'
+        : resolution.replace('m', '');
+
+      const to = new Date();
+      const nowMs = to.getTime();
+      let lookbackMs = 8 * 60 * 60 * 1000; // 8 hours default for 5m
+
+      switch (cleanRes) {
+        case '1':
+          lookbackMs = 2 * 60 * 60 * 1000;
+          break;
+        case '3':
+          lookbackMs = 4 * 60 * 60 * 1000;
+          break;
+        case '5':
+          lookbackMs = 8 * 60 * 60 * 1000;
+          break;
+        case '15':
+          lookbackMs = 24 * 60 * 60 * 1000;
+          break;
+        case '30':
+          lookbackMs = 3 * 24 * 60 * 60 * 1000;
+          break;
+        case '60':
+          lookbackMs = 7 * 24 * 60 * 60 * 1000;
+          break;
+        case 'D':
+          lookbackMs = 60 * 24 * 60 * 60 * 1000;
+          break;
+      }
+
+      const entryMs = tradeDoc.entryTime ? new Date(tradeDoc.entryTime).getTime() : nowMs - 3600 * 1000;
+      const fromMs = Math.min(nowMs - lookbackMs, entryMs - Math.floor(lookbackMs / 2));
+      const from = new Date(fromMs);
+
+      let candles: ITradeCandle[] = [];
+      let providerName: any = 'FYERS';
+      let isUnderlyingFallback = false;
+
+      try {
+        const res = await MarketDataService.getCandlesWithFallback({
+          trade: tradeDoc,
+          resolution: cleanRes,
+          from,
+          to,
+          userId: user._id,
+          forceRefetch: true,
+        });
+        if (res.ok && res.candles && res.candles.length > 0) {
+          candles = [...res.candles];
+          providerName = res.provider;
+          isUnderlyingFallback = Boolean(res.isUnderlyingFallback);
+        }
+      } catch (marketErr: any) {
+        console.warn('[TelegramAlertService] getCandlesWithFallback error:', marketErr.message);
+      }
+
+      const currentLtp = Number(
+        tradeDoc.currentLtp ?? tradeOrPos.currentLtp ?? tradeDoc.entryPrice ?? tradeOrPos.entryPrice ?? 100
+      );
+      const entryPrice = Number(
+        tradeDoc.simpleExecution?.entryPrice ?? tradeDoc.entryPrice ?? tradeOrPos.entryPrice ?? currentLtp
+      );
+
+      // If no candles found from broker, synthesize realistic micro-candles from entry to current LTP
+      if (candles.length === 0) {
+        const candleCount = 28;
+        const spanMs = Math.max(30 * 60 * 1000, to.getTime() - from.getTime());
+        const stepMs = Math.floor(spanMs / candleCount);
+        const priceDiff = currentLtp - entryPrice;
+        let runningPrice = entryPrice;
+
+        candles = [];
+        for (let i = 0; i < candleCount; i++) {
+          const cTime = from.getTime() + i * stepMs;
+          const progress = i / (candleCount - 1);
+          const noise = (Math.sin(i * 0.9) * 0.3 + (Math.sin(i * 2.1) * 0.2)) * Math.max(1, Math.abs(priceDiff) * 0.5);
+          const open = runningPrice;
+          const close = i === candleCount - 1 ? currentLtp : entryPrice + priceDiff * progress + noise;
+          const high = Math.max(open, close) + Math.abs(priceDiff) * 0.12 + Math.random() * (open * 0.001);
+          const low = Math.min(open, close) - Math.abs(priceDiff) * 0.12 - Math.random() * (open * 0.001);
+          runningPrice = close;
+
+          candles.push({
+            t: Math.floor(cTime / 1000),
+            o: Number(open.toFixed(2)),
+            h: Number(high.toFixed(2)),
+            l: Number(low.toFixed(2)),
+            c: Number(close.toFixed(2)),
+            v: Math.floor(100 + Math.random() * 400),
+          });
+        }
+      } else if (currentLtp > 0) {
+        // Ensure latest candle aligns with current LTP
+        const lastCandle = candles[candles.length - 1];
+        lastCandle.c = currentLtp;
+        if (currentLtp > lastCandle.h) lastCandle.h = currentLtp;
+        if (currentLtp < lastCandle.l) lastCandle.l = currentLtp;
+      }
+
+      const svg = ChartGeneratorService.generateChartSvg(candles, tradeDoc, {
+        resolution: cleanRes,
+        timeframe: cleanRes === 'D' ? '1D' : `${cleanRes}m`,
+        currentLtp,
+        provider: providerName,
+        isUnderlyingFallback,
+      });
+
+      const pngBuffer = await sharp(Buffer.from(svg))
+        .png({ quality: 90 })
+        .toBuffer();
+
+      return pngBuffer;
+    } catch (err: any) {
+      console.error('[TelegramAlertService] generatePositionChart error:', err);
       return null;
     }
   }
@@ -381,7 +678,16 @@ export class TelegramAlertService {
     });
 
     const isAudible = policy.audible && (alertInput.severity >= 2 || alertInput.type === 'NAKED_POSITION');
-    const buttons = this.buildContextualKeyboard(trade, alertInput.type, alertInput.ltp, cardVersion, decision.action === 'CLEAR');
+    const attachChart = user.liveWatcherSettings?.telegramAttachLiveChart !== false;
+    const defaultTf = user.liveWatcherSettings?.telegramChartTimeframe || '5';
+    const buttons = this.buildContextualKeyboard(
+      trade,
+      alertInput.type,
+      alertInput.ltp,
+      cardVersion,
+      decision.action === 'CLEAR',
+      attachChart
+    );
 
     // 5. Execute Decision Actions
     if (decision.action === 'CLEAR') {
@@ -457,8 +763,21 @@ export class TelegramAlertService {
         }
       }
 
-      // Send new audible Telegram alert
-      const sentMsg = await this.sendMessage(botToken, chatId, context.cardText, buttons, !isAudible);
+      // Send new audible Telegram alert (with live chart photo if enabled)
+      let sentMsg: any = null;
+      if (attachChart) {
+        try {
+          const photoBuf = await this.generatePositionChart(user, trade, defaultTf);
+          if (photoBuf) {
+            sentMsg = await this.sendPhoto(botToken, chatId, photoBuf, context.cardText, buttons, !isAudible);
+          }
+        } catch (photoErr: any) {
+          console.warn('[TelegramAlertService] sendPhoto failed in dispatchRiskAlert, falling back to sendMessage:', photoErr.message);
+        }
+      }
+      if (!sentMsg) {
+        sentMsg = await this.sendMessage(botToken, chatId, context.cardText, buttons, !isAudible);
+      }
       const messageId = sentMsg?.message_id;
 
       await AlertState.findOneAndUpdate(
@@ -505,7 +824,8 @@ export class TelegramAlertService {
     type: AlertType,
     ltp: number,
     cardVersion: number,
-    isCleared: boolean = false
+    isCleared: boolean = false,
+    includeTimeframes: boolean = false
   ): ITelegramInlineButton[][] {
     const tradeId = trade._id.toString();
     const roundLtp = Number(ltp.toFixed(2));
@@ -515,6 +835,13 @@ export class TelegramAlertService {
         [{ text: '🔄 Refresh Terminal', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` }],
       ];
     }
+
+    const tfRow: ITelegramInlineButton[] = [
+      { text: '⏱️ 1m', callback_data: `x:${tradeId}:CHART_1:${cardVersion}:${roundLtp}` },
+      { text: '⏱️ 5m', callback_data: `x:${tradeId}:CHART_5:${cardVersion}:${roundLtp}` },
+      { text: '⏱️ 15m', callback_data: `x:${tradeId}:CHART_15:${cardVersion}:${roundLtp}` },
+      { text: '⏱️ 1h', callback_data: `x:${tradeId}:CHART_60:${cardVersion}:${roundLtp}` },
+    ];
 
     const isLong = trade.direction === 'LONG';
     const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? trade.entryPrice ?? 0);
@@ -545,6 +872,7 @@ export class TelegramAlertService {
       }
       return [
         row1,
+        ...(includeTimeframes ? [tfRow] : []),
         [
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
           { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
@@ -559,6 +887,7 @@ export class TelegramAlertService {
       ];
       return [
         row1,
+        ...(includeTimeframes ? [tfRow] : []),
         [
           { text: '🛡️ Trail to BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` },
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
@@ -572,6 +901,7 @@ export class TelegramAlertService {
           { text: '🎯 Scale Out T1', callback_data: `x:${tradeId}:L1:${cardVersion}:${roundLtp}` },
           { text: '🛡️ Lock True BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` },
         ],
+        ...(includeTimeframes ? [tfRow] : []),
         [
           { text: `🚨 Market Exit`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
@@ -585,6 +915,7 @@ export class TelegramAlertService {
           { text: `🚨 Exit Position`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
           { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
         ],
+        ...(includeTimeframes ? [tfRow] : []),
       ];
     }
 
@@ -596,6 +927,7 @@ export class TelegramAlertService {
           ? [{ text: '🛡️ Lock BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` }]
           : []),
       ],
+      ...(includeTimeframes ? [tfRow] : []),
       [
         { text: '🎯 Book 50%', callback_data: `x:${tradeId}:B50:${cardVersion}:${roundLtp}` },
         { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
@@ -754,6 +1086,62 @@ export class TelegramAlertService {
           (cq.message?.text || '') + '\n\n<i>Position is already closed.</i>',
           []
         );
+      }
+      return;
+    }
+
+    // Fast-path: Handle dynamic timeframe switching on live chart snapshot cards
+    if (actionCode.startsWith('CHART_')) {
+      const tf = actionCode.replace('CHART_', '');
+      const tfLabel = tf === '60' ? '1h' : tf === 'D' ? '1D' : `${tf}m`;
+      await this.answerCallbackQuery(botToken, cq.id, `⏱️ Generating ${tfLabel} live chart...`);
+
+      try {
+        const photoBuf = await this.generatePositionChart(user, trade, tf);
+        if (photoBuf) {
+          const tAny = trade as any;
+          const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
+          const sym = isForex ? '$' : '₹';
+          const pnlVal = Number(tAny.calculated?.floatingNetPnL ?? tAny.floatingNetPnL ?? tAny.calculated?.netPnL ?? 0);
+          const pnlSign = pnlVal >= 0 ? '+' : '';
+          const ltpVal = renderLtp > 0 ? renderLtp : (tAny.currentLtp || tAny.simpleExecution?.entryPrice || 0);
+          const entryVal = Number(tAny.simpleExecution?.entryPrice ?? tAny.calculated?.averageEntryPrice ?? tAny.entryPrice ?? 0);
+
+          const caption =
+            `📊 <b>${trade.symbol}</b> (<code>${trade.direction}</code>) — <b>${tfLabel} Snapshot</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `<pre>\n` +
+            `Entry    : ${sym}${entryVal.toFixed(2)}  |  LTP: ${sym}${ltpVal.toFixed(2)}\n` +
+            `Net PnL  : ${pnlSign}${sym}${pnlVal.toFixed(2)}\n` +
+            `StopLoss : ${trade.risk?.currentStopLoss || trade.risk?.initialStopLoss ? `${sym}${trade.risk?.currentStopLoss || trade.risk?.initialStopLoss}` : 'NONE'}\n` +
+            `Target   : ${trade.risk?.plannedTarget ? `${sym}${trade.risk?.plannedTarget}` : 'OPEN'}\n` +
+            `</pre>`;
+
+          const newButtons = this.buildContextualKeyboard(
+            trade,
+            'STOP_THREAT',
+            ltpVal,
+            cardVersion,
+            false,
+            true // includeTimeframes
+          );
+
+          let updated = false;
+          if (messageId) {
+            try {
+              await this.editMessageMedia(botToken, chatId, messageId, photoBuf, caption, newButtons);
+              updated = true;
+            } catch (mediaErr: any) {
+              console.warn('[TelegramAlertService] editMessageMedia notice:', mediaErr.message);
+            }
+          }
+          if (!updated) {
+            await this.sendPhoto(botToken, chatId, photoBuf, caption, newButtons);
+          }
+        }
+      } catch (err: any) {
+        console.error('[TelegramAlertService] Error generating timeframe chart:', err);
+        await this.answerCallbackQuery(botToken, cq.id, '❌ Failed to generate chart snapshot.', true);
       }
       return;
     }
@@ -1158,7 +1546,8 @@ export class TelegramAlertService {
           `👋 <b>SetupMint Terminal Commands</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `• <b>/pnl</b> — Live floating PnL, open R-multiple & day PnL\n` +
-          `• <b>/trades</b> — List active open trades with 1-tap Exit and Lock BE\n` +
+          `• <b>/trades</b> — List active open trades with live charts & 1-tap Exit\n` +
+          `• <b>/chart [timeframe]</b> — Instant live candlestick chart (1m, 5m, 15m, 1h)\n` +
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
           `• <b>/alerts</b> — List active alert states and snoozed trades\n` +
           `• <b>/snooze</b> — Snooze alerts for 15 minutes\n` +
@@ -1174,6 +1563,10 @@ export class TelegramAlertService {
 
       case '/trades':
         await this.handleTradesCommand(user, botToken, chatId, args[0]);
+        break;
+
+      case '/chart':
+        await this.handleChartCommand(user, botToken, chatId, args);
         break;
 
       case '/summary':
@@ -1541,14 +1934,140 @@ export class TelegramAlertService {
         `True BE  : ${beInfo}\n` +
         `</pre>`;
 
+      const attachChart = user.liveWatcherSettings?.telegramAttachLiveChart !== false;
+      const defaultTf = user.liveWatcherSettings?.telegramChartTimeframe || '5';
+
       const buttons = this.buildContextualKeyboard(
         { _id: pos.tradeId, direction: pos.direction, calculated: { trueBreakevenPrice: pos.trueBreakevenPrice } },
         'STOP_THREAT',
         pos.currentLtp,
-        1
+        1,
+        false,
+        true // includeTimeframes
       );
 
-      await this.sendMessage(botToken, chatId, text, buttons);
+      let sent = false;
+      if (attachChart) {
+        try {
+          const photoBuf = await this.generatePositionChart(user, pos, defaultTf);
+          if (photoBuf) {
+            await this.sendPhoto(botToken, chatId, photoBuf, text, buttons);
+            sent = true;
+          }
+        } catch (chartErr: any) {
+          console.warn('[TelegramAlertService] sendPhoto failed for /trades, falling back to text:', chartErr.message);
+        }
+      }
+
+      if (!sent) {
+        await this.sendMessage(botToken, chatId, text, buttons);
+      }
+    }
+  }
+
+  /**
+   * Generates and sends an on-demand live candlestick chart snapshot.
+   * Usage: /chart [timeframe] or /chart [symbol] [timeframe]
+   */
+  private static async handleChartCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[] = []
+  ): Promise<void> {
+    const validTimeframes = ['1', '3', '5', '15', '30', '60', '1h', 'D', '1m', '3m', '5m', '15m', '30m', '1d', 'd'];
+    let reqTf: string | undefined;
+    let reqSymbol: string | undefined;
+
+    for (const a of args) {
+      const lower = a.toLowerCase();
+      if (validTimeframes.includes(lower)) {
+        reqTf = lower.replace('m', '').replace('h', '60').replace('d', 'D');
+      } else if (!reqSymbol) {
+        reqSymbol = a.toUpperCase();
+      }
+    }
+
+    const tf = reqTf || user.liveWatcherSettings?.telegramChartTimeframe || '5';
+    const tfLabel = tf === '60' ? '1h' : tf === 'D' ? '1D' : `${tf}m`;
+
+    const openTradesQuery: any = {
+      userId: user._id,
+      status: 'OPEN',
+    };
+    if (reqSymbol) {
+      openTradesQuery.symbol = new RegExp(reqSymbol, 'i');
+    }
+
+    const openTrades = await Trade.find(openTradesQuery).sort({ entryTime: -1 }).limit(3);
+
+    if (openTrades.length === 0) {
+      if (reqSymbol) {
+        const recentTrade = await Trade.findOne({
+          userId: user._id,
+          symbol: new RegExp(reqSymbol, 'i'),
+        }).sort({ createdAt: -1 });
+
+        if (recentTrade) {
+          const photoBuf = await this.generatePositionChart(user, recentTrade, tf);
+          if (photoBuf) {
+            const sym = recentTrade.exchange === 'FOREX' ? '$' : '₹';
+            const netPnl = Number(recentTrade.calculated?.netPnL ?? (recentTrade as any).netPnl ?? 0);
+            const pnlSign = netPnl >= 0 ? '+' : '';
+            const caption =
+              `📈 <b>${recentTrade.symbol}</b> (${recentTrade.direction}) — <b>${tfLabel} Review</b>\n` +
+              `Status: ${recentTrade.status} • Net PnL: ${pnlSign}${sym}${netPnl.toFixed(2)}`;
+            await this.sendPhoto(botToken, chatId, photoBuf, caption);
+            return;
+          }
+        }
+      }
+
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `ℹ️ <b>No Matching Open Positions</b>\n\nNo active open positions found${reqSymbol ? ` matching "${reqSymbol}"` : ''}. Capital is safe.`
+      );
+      return;
+    }
+
+    for (const trade of openTrades) {
+      const tAny = trade as any;
+      const currentLtp = Number(tAny.calculated?.liveMfeSummary?.peakLtp || tAny.simpleExecution?.entryPrice || 0);
+      const photoBuf = await this.generatePositionChart(user, trade, tf);
+
+      const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
+      const sym = isForex ? '$' : '₹';
+      const pnlVal = Number(tAny.calculated?.floatingNetPnL ?? tAny.floatingNetPnL ?? 0);
+      const pnlSign = pnlVal >= 0 ? '+' : '';
+      const rVal = tAny.calculated?.unrealizedR || 0;
+      const rSign = rVal >= 0 ? '+' : '';
+      const entryVal = Number(tAny.simpleExecution?.entryPrice ?? tAny.calculated?.averageEntryPrice ?? tAny.entryPrice ?? 0);
+
+      const caption =
+        `📊 <b>${trade.symbol}</b> (<code>${trade.direction}</code>) — <b>${tfLabel} Live Snapshot</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Entry    : ${sym}${entryVal.toFixed(2)}  |  LTP: ${sym}${currentLtp.toFixed(2)}\n` +
+        `Net PnL  : ${pnlSign}${sym}${pnlVal.toFixed(2)} (${rSign}${rVal.toFixed(2)}R)\n` +
+        `StopLoss : ${trade.risk?.currentStopLoss || trade.risk?.initialStopLoss ? `${sym}${trade.risk?.currentStopLoss || trade.risk?.initialStopLoss}` : 'NONE'}\n` +
+        `Target   : ${trade.risk?.plannedTarget ? `${sym}${trade.risk?.plannedTarget}` : 'OPEN'}\n` +
+        `</pre>`;
+
+      const buttons = this.buildContextualKeyboard(
+        trade,
+        'STOP_THREAT',
+        currentLtp,
+        1,
+        false,
+        true // includeTimeframes
+      );
+
+      if (photoBuf) {
+        await this.sendPhoto(botToken, chatId, photoBuf, caption, buttons);
+      } else {
+        await this.sendMessage(botToken, chatId, caption, buttons);
+      }
     }
   }
 

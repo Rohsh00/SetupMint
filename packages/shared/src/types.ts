@@ -2156,6 +2156,8 @@ export interface ILiveWatcherSettings {
   activePresetId?: string;
   clearTelegramCredentials?: boolean;
   displaySettings?: ILiveWatcherDisplaySettings;
+  telegramAttachLiveChart?: boolean;
+  telegramChartTimeframe?: '1' | '3' | '5' | '15' | '30' | '60' | 'D' | string;
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
@@ -2188,6 +2190,8 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   paperExecutionMode: false,
   serverSideExecutionEnabled: true,
   telegramAlertsEnabled: false,
+  telegramAttachLiveChart: true,
+  telegramChartTimeframe: '5',
   slippageGuardPercent: 0.5,
   snoozeDefaultMin: 10,
   quietHours: {

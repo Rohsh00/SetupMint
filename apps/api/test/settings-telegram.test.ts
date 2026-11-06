@@ -59,6 +59,8 @@ describe('Telegram Settings Persistence & Live Watcher Isolation', () => {
           telegramAlertsEnabled: true,
           telegramBotToken: testBotToken,
           telegramChatId: testChatId,
+          telegramAttachLiveChart: true,
+          telegramChartTimeframe: '15',
           slippageGuardPercent: 0.8,
         },
       },
@@ -71,6 +73,8 @@ describe('Telegram Settings Persistence & Live Watcher Isolation', () => {
     expect(body.data.liveWatcherSettings.telegramBotToken).toBe('••••••••');
     expect(body.data.liveWatcherSettings.telegramChatId).toBe(testChatId);
     expect(body.data.liveWatcherSettings.telegramAlertsEnabled).toBe(true);
+    expect(body.data.liveWatcherSettings.telegramAttachLiveChart).toBe(true);
+    expect(body.data.liveWatcherSettings.telegramChartTimeframe).toBe('15');
 
     // Verify DB storage: must be stored encrypted with enc:v1: prefix
     const userDoc = await User.findById(userId);
@@ -81,6 +85,8 @@ describe('Telegram Settings Persistence & Live Watcher Isolation', () => {
     expect(decryptSecret(storedToken)).toBe(testBotToken);
     expect(userDoc?.liveWatcherSettings?.telegramChatId).toBe(testChatId);
     expect(userDoc?.liveWatcherSettings?.telegramAlertsEnabled).toBe(true);
+    expect(userDoc?.liveWatcherSettings?.telegramAttachLiveChart).toBe(true);
+    expect(userDoc?.liveWatcherSettings?.telegramChartTimeframe).toBe('15');
   });
 
   it('2. GET /profile and GET /auth/me return masked token and real chatId', async () => {

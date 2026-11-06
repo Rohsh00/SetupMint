@@ -125,11 +125,15 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
     if (ac === 'OPTIONS' || /(\d+(?:CE|PE))$/i.test(rawSymbol || '')) {
       return false;
     }
+    const ex = String(exchange || '').toUpperCase();
+    // Indian MCX commodity futures are priced in INR, whereas Yahoo/CFD futures proxies (CL=F, GC=F) are in USD!
+    if (ex === 'MCX' || /MINI/i.test(rawSymbol) || rawSymbol.toUpperCase().includes('MCX')) {
+      return false;
+    }
     const clean = normalizeCleanSymbol(rawSymbol);
     if (TV_TICKER_MAP[clean] || BINANCE_KLINE_MAP[clean] || YAHOO_SYMBOL_MAP[clean]) {
       return true;
     }
-    const ex = String(exchange || '').toUpperCase();
     if (ex === 'FOREX' || ex === 'CRYPTO' || ac === 'FOREX' || ac === 'CRYPTO') {
       return clean.endsWith('USD') || clean.endsWith('USDT') || clean.endsWith('JPY') || clean.endsWith('EUR');
     }
@@ -372,6 +376,14 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
     if (isOption) {
       return false;
     }
+    const ex = String(trade?.exchange || '').toUpperCase();
+    if (ex === 'MCX') {
+      return false;
+    }
+    const sym = String(trade?.symbol || '').toUpperCase();
+    if (sym.includes('MINI') || sym.includes('MCX')) {
+      return false;
+    }
     return GlobalCfdCandleProvider.isSupportedGlobalSymbol(
       trade?.symbol || trade?.underlying || '',
       trade?.exchange,
@@ -390,6 +402,15 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
         ok: false,
         reason: 'NO_SYMBOL_TOKEN',
         message: 'Option contracts are not supported by Global CFD provider',
+      };
+    }
+    const ex = String(params.trade?.exchange || '').toUpperCase();
+    const sym = String(params.trade?.symbol || '').toUpperCase();
+    if (ex === 'MCX' || sym.includes('MINI') || sym.includes('MCX')) {
+      return {
+        ok: false,
+        reason: 'NO_SYMBOL_TOKEN',
+        message: 'MCX commodity instruments require broker data feed in INR',
       };
     }
     const clean = normalizeCleanSymbol(params.trade?.symbol || params.trade?.underlying || '');
@@ -469,6 +490,29 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
               params.trade,
               liveQuote
             );
+
+            // Sanity check: Ensure candle scale matches trade's reference price
+            const refPrice = Number(
+              params.trade?.currentLtp ||
+              params.trade?.simpleExecution?.entryPrice ||
+              params.trade?.entryPrice ||
+              params.trade?.risk?.plannedEntryPrice ||
+              0
+            );
+            if (refPrice > 0 && candles.length > 0) {
+              const sample = candles.slice(-20);
+              const avgC = sample.reduce((sum, c) => sum + c.c, 0) / sample.length;
+              const ratio = avgC / refPrice;
+              if (ratio < 0.4 || ratio > 2.5) {
+                console.warn(`[GlobalCfdCandleProvider] Price scale mismatch for ${clean}: candles avg ${avgC.toFixed(2)} vs trade ref ${refPrice.toFixed(2)}. Rejecting global candles.`);
+                return {
+                  ok: false,
+                  reason: 'NO_SYMBOL_TOKEN',
+                  message: `Candle scale mismatch: candles avg ${avgC.toFixed(2)} vs trade ref ${refPrice.toFixed(2)}`,
+                };
+              }
+            }
+
             return {
               ok: true,
               candles,
@@ -527,6 +571,29 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
               params.trade,
               liveQuote
             );
+
+            // Sanity check: Ensure candle scale matches trade's reference price
+            const refPrice = Number(
+              params.trade?.currentLtp ||
+              params.trade?.simpleExecution?.entryPrice ||
+              params.trade?.entryPrice ||
+              params.trade?.risk?.plannedEntryPrice ||
+              0
+            );
+            if (refPrice > 0 && candles.length > 0) {
+              const sample = candles.slice(-20);
+              const avgC = sample.reduce((sum, c) => sum + c.c, 0) / sample.length;
+              const ratio = avgC / refPrice;
+              if (ratio < 0.4 || ratio > 2.5) {
+                console.warn(`[GlobalCfdCandleProvider] Price scale mismatch for ${clean}: candles avg ${avgC.toFixed(2)} vs trade ref ${refPrice.toFixed(2)}. Rejecting global candles.`);
+                return {
+                  ok: false,
+                  reason: 'NO_SYMBOL_TOKEN',
+                  message: `Candle scale mismatch: candles avg ${avgC.toFixed(2)} vs trade ref ${refPrice.toFixed(2)}`,
+                };
+              }
+            }
+
             return {
               ok: true,
               candles,

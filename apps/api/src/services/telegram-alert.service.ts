@@ -494,23 +494,37 @@ export class TelegramAlertService {
         tradeDoc.simpleExecution?.entryPrice ?? tradeDoc.entryPrice ?? tradeOrPos.entryPrice ?? currentLtp
       );
 
+      // Check candle scale against trade's actual price level
+      const refPrice = currentLtp > 0 ? currentLtp : entryPrice;
+      if (candles.length > 0 && refPrice > 0) {
+        const sample = candles.slice(-20);
+        const avgC = sample.reduce((sum, c) => sum + c.c, 0) / sample.length;
+        const ratio = avgC / refPrice;
+        if (ratio < 0.4 || ratio > 2.5) {
+          console.warn(`[TelegramAlertService] Candle price scale mismatch: avg=${avgC.toFixed(2)}, ref=${refPrice.toFixed(2)}. Rejecting candles and using realistic synthetic micro-candles.`);
+          candles = [];
+        }
+      }
+
       // If no candles found from broker, synthesize realistic micro-candles from entry to current LTP
       if (candles.length === 0) {
         const candleCount = 28;
         const spanMs = Math.max(30 * 60 * 1000, to.getTime() - from.getTime());
         const stepMs = Math.floor(spanMs / candleCount);
         const priceDiff = currentLtp - entryPrice;
+        const baseVol = Math.max(Math.abs(priceDiff) * 0.4, currentLtp * 0.003);
         let runningPrice = entryPrice;
 
         candles = [];
         for (let i = 0; i < candleCount; i++) {
           const cTime = from.getTime() + i * stepMs;
           const progress = i / (candleCount - 1);
-          const noise = (Math.sin(i * 0.9) * 0.3 + (Math.sin(i * 2.1) * 0.2)) * Math.max(1, Math.abs(priceDiff) * 0.5);
+          const noise = (Math.sin(i * 0.9) * 0.5 + Math.sin(i * 2.1) * 0.3) * baseVol;
           const open = runningPrice;
           const close = i === candleCount - 1 ? currentLtp : entryPrice + priceDiff * progress + noise;
-          const high = Math.max(open, close) + Math.abs(priceDiff) * 0.12 + Math.random() * (open * 0.001);
-          const low = Math.min(open, close) - Math.abs(priceDiff) * 0.12 - Math.random() * (open * 0.001);
+          const wick = baseVol * (0.2 + Math.abs(Math.sin(i * 1.7)) * 0.3);
+          const high = Math.max(open, close) + wick;
+          const low = Math.min(open, close) - wick;
           runningPrice = close;
 
           candles.push({
@@ -699,9 +713,15 @@ export class TelegramAlertService {
           `Risk condition (${alertInput.type}) has stabilized back within safety margins.\n\n` +
           `Current LTP: ₹${alertInput.ltp.toFixed(2)} • Time: ${now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
-        await this.editMessageText(botToken, chatId, alertState.messageId, clearedText, [
-          [{ text: '🔄 Refresh Terminal', callback_data: `x:${trade._id}:REF:${cardVersion}:${alertInput.ltp}` }],
-        ]);
+        try {
+          await this.editMessageCaption(botToken, chatId, alertState.messageId, clearedText, [
+            [{ text: '🔄 Refresh Terminal', callback_data: `x:${trade._id}:REF:${cardVersion}:${alertInput.ltp}` }],
+          ]);
+        } catch {
+          await this.editMessageText(botToken, chatId, alertState.messageId, clearedText, [
+            [{ text: '🔄 Refresh Terminal', callback_data: `x:${trade._id}:REF:${cardVersion}:${alertInput.ltp}` }],
+          ]);
+        }
       }
 
       await AlertState.findOneAndUpdate(
@@ -734,7 +754,11 @@ export class TelegramAlertService {
       if (alertState && alertState.messageId) {
         const lastEdit = alertState.lastSentAt ? alertState.lastSentAt.getTime() : 0;
         if (now.getTime() - lastEdit >= 10000) {
-          await this.editMessageText(botToken, chatId, alertState.messageId, context.cardText, buttons);
+          try {
+            await this.editMessageCaption(botToken, chatId, alertState.messageId, context.cardText, buttons);
+          } catch {
+            await this.editMessageText(botToken, chatId, alertState.messageId, context.cardText, buttons);
+          }
           await AlertState.findByIdAndUpdate(alertState._id, {
             $set: {
               lastSentAt: now,
@@ -751,7 +775,7 @@ export class TelegramAlertService {
       // If a previous message card existed for this trade & type, mark it superseded and strip buttons
       if (alertState && alertState.messageId) {
         try {
-          await this.editMessageText(
+          await this.editMessageCaption(
             botToken,
             chatId,
             alertState.messageId,
@@ -759,7 +783,17 @@ export class TelegramAlertService {
             []
           );
         } catch {
-          // Swallow any edit error on old message
+          try {
+            await this.editMessageText(
+              botToken,
+              chatId,
+              alertState.messageId,
+              `↪ <i>Superseded by updated alert below</i>`,
+              []
+            );
+          } catch {
+            // Swallow any edit error on old message
+          }
         }
       }
 

@@ -53,6 +53,9 @@ function resolutionOrder(r: string): number {
   return map[r] || 99;
 }
 
+const FONT_MONO = "'DejaVu Sans Mono', 'Liberation Mono', 'JetBrains Mono', 'Courier New', monospace";
+const FONT_SANS = "'DejaVu Sans', 'Liberation Sans', system-ui, -apple-system, sans-serif";
+
 export class ChartGeneratorService {
   /**
    * Generates a sleek, high-fidelity dark mode TradingView-style SVG candlestick chart
@@ -90,8 +93,13 @@ export class ChartGeneratorService {
 
     if (sortedCandles.length === 0) {
       return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      text { font-family: ${FONT_SANS}; }
+    </style>
+  </defs>
   <rect width="${width}" height="${height}" fill="#0b0f19" rx="8" />
-  <text x="${width / 2}" y="${height / 2}" font-family="system-ui, sans-serif" font-size="14" fill="#64748b" text-anchor="middle">
+  <text x="${width / 2}" y="${height / 2}" font-family="${FONT_SANS}" font-size="14" fill="#64748b" text-anchor="middle">
     No historical candlestick data available for chart generation
   </text>
 </svg>`;
@@ -183,7 +191,7 @@ export class ChartGeneratorService {
 
       priceGridSvg += `
     <line x1="${plotX0}" y1="${y}" x2="${plotX1}" y2="${y}" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3" />
-    <text x="${plotX1 + 10}" y="${y + 4}" font-family="'JetBrains Mono', monospace" font-size="10" fill="#64748b">${formattedPrice}</text>`;
+    <text x="${plotX1 + 10}" y="${y + 4}" font-family="${FONT_MONO}" font-size="10" fill="#64748b">${formattedPrice}</text>`;
     }
 
     // Candle step & dynamic bar width
@@ -202,7 +210,7 @@ export class ChartGeneratorService {
 
       timeGridSvg += `
     <line x1="${cx}" y1="${plotY0}" x2="${cx}" y2="${plotY1}" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4" />
-    <text x="${cx}" y="${plotY1 + 20}" font-family="'JetBrains Mono', monospace" font-size="10" fill="#64748b" text-anchor="middle">${timeLabel}</text>`;
+    <text x="${cx}" y="${plotY1 + 20}" font-family="${FONT_MONO}" font-size="10" fill="#64748b" text-anchor="middle">${timeLabel}</text>`;
     }
 
     // Execution Overlays
@@ -214,7 +222,7 @@ export class ChartGeneratorService {
       overlaysSvg += `
     <line x1="${plotX0}" y1="${ySL}" x2="${plotX1}" y2="${ySL}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,4" />
     <rect x="${plotX1 + 6}" y="${ySL - 10}" width="78" height="20" rx="3" fill="#ef4444" fill-opacity="0.2" stroke="#ef4444" stroke-width="1" />
-    <text x="${plotX1 + 45}" y="${ySL + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#ef4444" text-anchor="middle">SL: ${stopLoss.toFixed(1)}</text>`;
+    <text x="${plotX1 + 45}" y="${ySL + 4}" font-family="${FONT_MONO}" font-size="10" font-weight="700" fill="#ef4444" text-anchor="middle">SL: ${stopLoss.toFixed(1)}</text>`;
     }
 
     // Target Line (Green dashed)
@@ -223,7 +231,7 @@ export class ChartGeneratorService {
       overlaysSvg += `
     <line x1="${plotX0}" y1="${yTP}" x2="${plotX1}" y2="${yTP}" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,4" />
     <rect x="${plotX1 + 6}" y="${yTP - 10}" width="78" height="20" rx="3" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="1" />
-    <text x="${plotX1 + 45}" y="${yTP + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#10b981" text-anchor="middle">TP: ${target.toFixed(1)}</text>`;
+    <text x="${plotX1 + 45}" y="${yTP + 4}" font-family="${FONT_MONO}" font-size="10" font-weight="700" fill="#10b981" text-anchor="middle">TP: ${target.toFixed(1)}</text>`;
     }
 
     // Entry Line (Cyan / Sky)
@@ -232,7 +240,7 @@ export class ChartGeneratorService {
       overlaysSvg += `
     <line x1="${plotX0}" y1="${yEntry}" x2="${plotX1}" y2="${yEntry}" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="4,2" />
     <rect x="${plotX1 + 6}" y="${yEntry - 10}" width="78" height="20" rx="3" fill="#0284c7" />
-    <text x="${plotX1 + 45}" y="${yEntry + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">ENT: ${entryPrice.toFixed(1)}</text>`;
+    <text x="${plotX1 + 45}" y="${yEntry + 4}" font-family="${FONT_MONO}" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">ENT: ${entryPrice.toFixed(1)}</text>`;
     }
 
     // Exit Line (Purple / Violet)
@@ -241,7 +249,7 @@ export class ChartGeneratorService {
       overlaysSvg += `
     <line x1="${plotX0}" y1="${yExit}" x2="${plotX1}" y2="${yExit}" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="4,2" />
     <rect x="${plotX1 + 6}" y="${yExit - 10}" width="78" height="20" rx="3" fill="#7c3aed" />
-    <text x="${plotX1 + 45}" y="${yExit + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">EXIT: ${exitPrice.toFixed(1)}</text>`;
+    <text x="${plotX1 + 45}" y="${yExit + 4}" font-family="${FONT_MONO}" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">EXIT: ${exitPrice.toFixed(1)}</text>`;
     }
 
     // Live Market LTP Line (Amber / Gold dashed)
@@ -252,7 +260,7 @@ export class ChartGeneratorService {
     <!-- Live Market LTP Line -->
     <line x1="${plotX0}" y1="${yLtp}" x2="${plotX1}" y2="${yLtp}" stroke="${ltpColor}" stroke-width="1.5" stroke-dasharray="4,3" />
     <rect x="${plotX1 + 6}" y="${yLtp - 10}" width="78" height="20" rx="3" fill="${ltpColor}" />
-    <text x="${plotX1 + 45}" y="${yLtp + 4}" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#0b0f19" text-anchor="middle">LTP: ${currentLtp.toFixed(1)}</text>`;
+    <text x="${plotX1 + 45}" y="${yLtp + 4}" font-family="${FONT_MONO}" font-size="10" font-weight="700" fill="#0b0f19" text-anchor="middle">LTP: ${currentLtp.toFixed(1)}</text>`;
     }
 
     // Identify entry and exit candle indices to draw pinpoint markers and shaded band
@@ -335,7 +343,7 @@ export class ChartGeneratorService {
     <!-- Entry Marker -->
     <circle cx="${cx}" cy="${priceToY(entryPrice)}" r="4" fill="#0ea5e9" stroke="#ffffff" stroke-width="1.5" />
     <rect x="${cx - 40}" y="${anchorY - 9}" width="80" height="18" rx="4" fill="#0f172a" stroke="${badgeColor}" stroke-width="1.5" />
-    <text x="${cx}" y="${anchorY + 4}" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="700" fill="${badgeColor}" text-anchor="middle">${label}</text>`;
+    <text x="${cx}" y="${anchorY + 4}" font-family="${FONT_MONO}" font-size="9" font-weight="700" fill="${badgeColor}" text-anchor="middle">${label}</text>`;
     }
 
     // Exit Marker Badge on specific candle
@@ -350,7 +358,7 @@ export class ChartGeneratorService {
     <!-- Exit Marker -->
     <circle cx="${cx}" cy="${priceToY(exitPrice)}" r="4" fill="#8b5cf6" stroke="#ffffff" stroke-width="1.5" />
     <rect x="${cx - 40}" y="${anchorY - 9}" width="80" height="18" rx="4" fill="#0f172a" stroke="#8b5cf6" stroke-width="1.5" />
-    <text x="${cx}" y="${anchorY + 4}" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="700" fill="#a78bfa" text-anchor="middle">${label}</text>`;
+    <text x="${cx}" y="${anchorY + 4}" font-family="${FONT_MONO}" font-size="9" font-weight="700" fill="#a78bfa" text-anchor="middle">${label}</text>`;
     }
 
     // Header Content
@@ -386,7 +394,7 @@ export class ChartGeneratorService {
       excursionHudSvg = `
     <!-- Excursion HUD -->
     <rect x="${plotX0 + 8}" y="${plotY0 + 8}" width="280" height="28" rx="5" fill="#0f172a" fill-opacity="0.85" stroke="#334155" stroke-width="1" />
-    <text x="${plotX0 + 16}" y="${plotY0 + 26}" font-family="'JetBrains Mono', monospace" font-size="10" fill="#94a3b8">
+    <text x="${plotX0 + 16}" y="${plotY0 + 26}" font-family="${FONT_MONO}" font-size="10" fill="#94a3b8">
       <tspan fill="#10b981" font-weight="700">MFE:</tspan> +${mfePts}${mfeRStr}  
       <tspan fill="#f43f5e" font-weight="700">MAE:</tspan> -${maePts}${maeRStr}  
       <tspan fill="#38bdf8" font-weight="700">Eff:</tspan> ${effStr}
@@ -435,6 +443,10 @@ export class ChartGeneratorService {
       <stop offset="0%" stop-color="#0b0f19" />
       <stop offset="100%" stop-color="#030712" />
     </linearGradient>
+    <style>
+      text { font-family: ${FONT_MONO}; }
+      .sans { font-family: ${FONT_SANS}; }
+    </style>
   </defs>
 
   <!-- Canvas Background -->
@@ -444,36 +456,36 @@ export class ChartGeneratorService {
   <rect x="${plotX0}" y="${plotY0}" width="${plotWidth}" height="${plotHeight}" fill="none" stroke="#1e293b" stroke-width="1" />
 
   <!-- Header Section -->
-  <text x="${plotX0}" y="34" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="800" fill="#f8fafc" letter-spacing="-0.02em">
+  <text x="${plotX0}" y="34" font-family="${FONT_SANS}" font-size="18" font-weight="800" fill="#f8fafc" letter-spacing="-0.02em">
     ${symbolStr}
   </text>
   
   <!-- Timeframe & Padding Chip -->
   <rect x="${tfChipX}" y="18" width="${tfChipWidth}" height="20" rx="4" fill="#1e293b" />
-  <text x="${tfChipX + tfChipWidth / 2}" y="32" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="600" fill="#94a3b8" text-anchor="middle">
+  <text x="${tfChipX + tfChipWidth / 2}" y="32" font-family="${FONT_MONO}" font-size="10" font-weight="600" fill="#94a3b8" text-anchor="middle">
     ${timeframeDisplay}
   </text>
 
   <!-- Direction Chip -->
   <rect x="${dirChipX}" y="18" width="52" height="20" rx="4" fill="${directionColor}" fill-opacity="0.18" stroke="${directionColor}" stroke-width="1" />
-  <text x="${dirChipX + 26}" y="32" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="700" fill="${directionColor}" text-anchor="middle">
+  <text x="${dirChipX + 26}" y="32" font-family="${FONT_MONO}" font-size="11" font-weight="700" fill="${directionColor}" text-anchor="middle">
     ${direction}
   </text>
 
   <!-- Date Range Subheader -->
-  <text x="${plotX0}" y="52" font-family="'JetBrains Mono', monospace" font-size="11" fill="#64748b">
+  <text x="${plotX0}" y="52" font-family="${FONT_MONO}" font-size="11" fill="#64748b">
     ${dateStr}${exitDateStr ? ` → ${exitDateStr}` : ''}${stratStr}
   </text>
 
   <!-- PnL Outcome Pill (Top Right) -->
   <rect x="${plotX1 - 130}" y="18" width="130" height="26" rx="5" fill="${pnlColor}" fill-opacity="0.15" stroke="${pnlColor}" stroke-width="1" />
-  <text x="${plotX1 - 65}" y="35" font-family="'JetBrains Mono', monospace" font-size="12" font-weight="700" fill="${pnlColor}" text-anchor="middle">
+  <text x="${plotX1 - 65}" y="35" font-family="${FONT_MONO}" font-size="12" font-weight="700" fill="${pnlColor}" text-anchor="middle">
     ${pnlLabel}
   </text>
 
   <!-- Provider AUTO CHART Badge -->
   <rect x="${plotX1 - 310}" y="18" width="170" height="26" rx="5" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
-  <text x="${plotX1 - 225}" y="35" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="${badgeText}" text-anchor="middle">
+  <text x="${plotX1 - 225}" y="35" font-family="${FONT_SANS}" font-size="11" font-weight="700" fill="${badgeText}" text-anchor="middle">
     ${badgeLabel}
   </text>
 
@@ -496,7 +508,7 @@ export class ChartGeneratorService {
   ${excursionHudSvg}
 
   <!-- Watermark & Generation Time -->
-  <text x="${plotX0}" y="${height - 12}" font-family="'JetBrains Mono', monospace" font-size="10" fill="#475569">
+  <text x="${plotX0}" y="${height - 12}" font-family="${FONT_MONO}" font-size="10" fill="#475569">
     ${watermarkStr}
   </text>
 </svg>`;

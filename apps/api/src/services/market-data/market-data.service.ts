@@ -6,7 +6,7 @@ import { Instrument } from '../../db/models/Instrument.js';
 import { TradeCandleSnapshot } from '../../db/models/TradeCandleSnapshot.js';
 import { encryptSecret, decryptSecret } from '../crypto.service.js';
 import { config } from '../../config.js';
-import { IMarketDataIntegrationStatus, CandleUnavailableReason, CandleFallbackProvider } from '@tradevault/shared';
+import { IMarketDataIntegrationStatus, CandleUnavailableReason, CandleFallbackProvider, ITradeCandle } from '@tradevault/shared';
 import { ICandleProvider, CandleProviderResult } from './types.js';
 import { FyersCandleProvider } from './fyers.provider.js';
 import { AngelOneCandleProvider } from './angel-one.provider.js';
@@ -357,6 +357,23 @@ export class MarketDataService {
     const { trade, resolution, from, to, userId, forceRefetch, provider = 'AUTO' } = params;
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
+    const tradeRefPrice = Number(
+      trade?.currentLtp ||
+      trade?.simpleExecution?.entryPrice ||
+      trade?.entryPrice ||
+      trade?.risk?.plannedEntryPrice ||
+      (trade?.fills && trade.fills.length > 0 ? trade.fills[0].price : 0) ||
+      0
+    );
+
+    const isScaleValid = (candles: ITradeCandle[]): boolean => {
+      if (!candles || candles.length === 0 || tradeRefPrice <= 0) return true;
+      const sample = candles.slice(-20);
+      const avg = sample.reduce((sum, c) => sum + c.c, 0) / sample.length;
+      const ratio = avg / tradeRefPrice;
+      return ratio >= 0.4 && ratio <= 2.5;
+    };
+
     let partialSnapshot: any = null;
 
     // 1. Check cached snapshot
@@ -366,7 +383,7 @@ export class MarketDataService {
       resolution,
     });
 
-    if (snapshot && snapshot.candles && snapshot.candles.length > 0) {
+    if (snapshot && snapshot.candles && snapshot.candles.length > 0 && isScaleValid(snapshot.candles)) {
       let covFrom = snapshot.coverageFrom;
       let covTo = snapshot.coverageTo;
 
@@ -438,7 +455,7 @@ export class MarketDataService {
           isUnderlyingFallback: false,
         });
 
-        if (fyersResult.ok && fyersResult.candles.length > 0) {
+        if (fyersResult.ok && fyersResult.candles.length > 0 && isScaleValid(fyersResult.candles)) {
           await this.persistSnapshot(uId, trade._id, fyersResult, from, to);
           return fyersResult;
         }
@@ -460,7 +477,7 @@ export class MarketDataService {
           isUnderlyingFallback: false,
         });
 
-        if (angelResult.ok && angelResult.candles.length > 0) {
+        if (angelResult.ok && angelResult.candles.length > 0 && isScaleValid(angelResult.candles)) {
           await this.persistSnapshot(uId, trade._id, angelResult, from, to);
           return angelResult;
         }
@@ -489,7 +506,7 @@ export class MarketDataService {
             userId: uId,
             isUnderlyingFallback: false,
           });
-          if (globalResult.ok && globalResult.candles.length > 0) {
+          if (globalResult.ok && globalResult.candles.length > 0 && isScaleValid(globalResult.candles)) {
             await this.persistSnapshot(uId, trade._id, globalResult, from, to);
             return globalResult;
           }
@@ -511,7 +528,7 @@ export class MarketDataService {
           userId: uId,
           isUnderlyingFallback: true,
         });
-        if (undFyers.ok && undFyers.candles.length > 0) {
+        if (undFyers.ok && undFyers.candles.length > 0 && isScaleValid(undFyers.candles)) {
           await this.persistSnapshot(uId, trade._id, undFyers, from, to);
           return undFyers;
         }
@@ -529,7 +546,7 @@ export class MarketDataService {
           userId: uId,
           isUnderlyingFallback: true,
         });
-        if (undAngel.ok && undAngel.candles.length > 0) {
+        if (undAngel.ok && undAngel.candles.length > 0 && isScaleValid(undAngel.candles)) {
           await this.persistSnapshot(uId, trade._id, undAngel, from, to);
           return undAngel;
         }

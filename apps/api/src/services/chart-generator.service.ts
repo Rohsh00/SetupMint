@@ -337,7 +337,7 @@ export class ChartGeneratorService {
       const isLong = direction === 'LONG';
       const anchorY = isLong ? priceToY(c.l) + 16 : priceToY(c.h) - 16;
       const badgeColor = isLong ? '#10b981' : '#f43f5e';
-      const label = `${isLong ? '▲ BUY' : '▼ SELL'} @ ${entryPrice.toFixed(1)}`;
+      const label = `${isLong ? 'BUY' : 'SELL'} @ ${entryPrice.toFixed(1)}`;
 
       overlaysSvg += `
     <!-- Entry Marker -->
@@ -352,7 +352,7 @@ export class ChartGeneratorService {
       const cx = plotX0 + (closestExitIdx + 0.5) * stepX;
       const isProfitable = netPnl >= 0;
       const anchorY = priceToY(c.h) - 18;
-      const label = `✕ EXIT @ ${exitPrice.toFixed(1)}`;
+      const label = `EXIT @ ${exitPrice.toFixed(1)}`;
 
       overlaysSvg += `
     <!-- Exit Marker -->
@@ -404,26 +404,26 @@ export class ChartGeneratorService {
     const provider = options.provider || 'FYERS';
     const isUnderlying = Boolean(options.isUnderlyingFallback);
 
-    let badgeLabel = '⚡ FYERS AUTO CHART';
+    let badgeLabel = 'FYERS AUTO CHART';
     let badgeBg = '#083344';
     let badgeBorder = '#06b6d4';
     let badgeText = '#22d3ee';
     let watermarkSource = 'FYERS API v3';
 
     if (isOpen) {
-      badgeLabel = '🔴 LIVE POSITION CHART';
+      badgeLabel = 'LIVE POSITION';
       badgeBg = '#450a0a';
       badgeBorder = '#ef4444';
       badgeText = '#fca5a5';
       watermarkSource = 'Live Execution Feed';
     } else if (provider === 'ANGEL_ONE') {
-      badgeLabel = '⚡ ANGEL ONE AUTO CHART';
+      badgeLabel = 'ANGEL ONE AUTO CHART';
       badgeBg = '#451a03';
       badgeBorder = '#d97706';
       badgeText = '#fbbf24';
       watermarkSource = 'Angel One SmartAPI';
     } else if (isUnderlying) {
-      badgeLabel = '⚡ UNDERLYING PROXY';
+      badgeLabel = 'UNDERLYING PROXY';
       badgeBg = '#3b0764';
       badgeBorder = '#9333ea';
       badgeText = '#c084fc';
@@ -436,6 +436,12 @@ export class ChartGeneratorService {
 
     const tfChipX = plotX0 + symbolStr.length * 11 + 10;
     const dirChipX = tfChipX + tfChipWidth + 8;
+
+    const pnlPillWidth = Math.max(120, Math.round(pnlLabel.length * 8.2 + 24));
+    const pnlPillX = plotX1 - pnlPillWidth;
+
+    const badgeWidth = Math.round(badgeLabel.length * 7.5 + (isOpen ? 34 : 24));
+    const badgeX = pnlPillX - badgeWidth - 10;
 
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -478,14 +484,15 @@ export class ChartGeneratorService {
   </text>
 
   <!-- PnL Outcome Pill (Top Right) -->
-  <rect x="${plotX1 - 130}" y="18" width="130" height="26" rx="5" fill="${pnlColor}" fill-opacity="0.15" stroke="${pnlColor}" stroke-width="1" />
-  <text x="${plotX1 - 65}" y="35" font-family="${FONT_MONO}" font-size="12" font-weight="700" fill="${pnlColor}" text-anchor="middle">
+  <rect x="${pnlPillX}" y="18" width="${pnlPillWidth}" height="26" rx="5" fill="${pnlColor}" fill-opacity="0.15" stroke="${pnlColor}" stroke-width="1" />
+  <text x="${pnlPillX + pnlPillWidth / 2}" y="35" font-family="${FONT_MONO}" font-size="12" font-weight="700" fill="${pnlColor}" text-anchor="middle">
     ${pnlLabel}
   </text>
 
-  <!-- Provider AUTO CHART Badge -->
-  <rect x="${plotX1 - 310}" y="18" width="170" height="26" rx="5" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
-  <text x="${plotX1 - 225}" y="35" font-family="${FONT_SANS}" font-size="11" font-weight="700" fill="${badgeText}" text-anchor="middle">
+  <!-- Provider AUTO CHART / LIVE Status Badge -->
+  <rect x="${badgeX}" y="18" width="${badgeWidth}" height="26" rx="5" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1" />
+  ${isOpen ? `<circle cx="${badgeX + 13}" cy="31" r="3.5" fill="#ef4444" />` : ''}
+  <text x="${isOpen ? badgeX + 22 + (badgeWidth - 22) / 2 : badgeX + badgeWidth / 2}" y="35" font-family="${FONT_SANS}" font-size="11" font-weight="700" fill="${badgeText}" text-anchor="middle">
     ${badgeLabel}
   </text>
 

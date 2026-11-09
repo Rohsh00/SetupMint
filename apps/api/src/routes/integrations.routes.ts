@@ -1,6 +1,7 @@
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { BrokerIntegration, MarketDataIntegration } from '../db/models/index.js';
+import { BrokerIntegration, MarketDataIntegration, Trade, Instrument, TradingAccount, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { FyersService } from '../services/fyers.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
@@ -142,6 +143,441 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       TelegramAlertService.processWebhookUpdate(req.body).catch((err) => {
         req.log.warn('[TelegramWebhook] Async update processing error: %s', err.message);
       });
+    });
+  });
+
+  // Contract specs for MetaTrader 5 & Elefin global CFD/Forex symbols
+  function getMt5ContractSpec(sym: string) {
+    const upper = sym.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (upper === 'XAUUSD' || upper === 'GOLD') {
+      return {
+        symbol: 'XAUUSD',
+        multiplier: 100,
+        lotSize: 0.01,
+        displayName: 'Gold / US Dollar Spot (CFD/Forex)',
+        assetClass: 'FOREX' as const,
+        exchange: 'FOREX' as const,
+        marketSegment: 'FOREX' as const,
+        tickSize: 0.01,
+      };
+    }
+    if (upper === 'XAGUSD' || upper === 'SILVER') {
+      return {
+        symbol: 'XAGUSD',
+        multiplier: 5000,
+        lotSize: 0.01,
+        displayName: 'Silver / US Dollar Spot (CFD/Forex)',
+        assetClass: 'FOREX' as const,
+        exchange: 'FOREX' as const,
+        marketSegment: 'FOREX' as const,
+        tickSize: 0.001,
+      };
+    }
+    if (upper.endsWith('USDT') || ['BTCUSD', 'ETHUSD', 'SOLUSD', 'DOGEUSD'].includes(upper)) {
+      return {
+        symbol: upper,
+        multiplier: 1,
+        lotSize: 0.01,
+        displayName: `${upper} Crypto CFD`,
+        assetClass: 'CRYPTO' as const,
+        exchange: 'CRYPTO' as const,
+        marketSegment: 'CRYPTO' as const,
+        tickSize: 0.01,
+      };
+    }
+    if (['NAS100', 'USTEC', 'US30', 'DJ30', 'SPX500', 'US500', 'GER40', 'DAX'].includes(upper)) {
+      return {
+        symbol: upper,
+        multiplier: 1,
+        lotSize: 0.1,
+        displayName: `${upper} Index CFD`,
+        assetClass: 'FUTURES' as const,
+        exchange: 'FOREX' as const,
+        marketSegment: 'FOREX' as const,
+        tickSize: 0.1,
+      };
+    }
+    if (['USOIL', 'WTI', 'UKOIL', 'BRENT'].includes(upper)) {
+      return {
+        symbol: 'USOIL',
+        multiplier: 1000,
+        lotSize: 0.01,
+        displayName: `${upper} Crude Oil Spot CFD`,
+        assetClass: 'COMMODITY' as const,
+        exchange: 'FOREX' as const,
+        marketSegment: 'FOREX' as const,
+        tickSize: 0.01,
+      };
+    }
+    return {
+      symbol: upper,
+      multiplier: 100000,
+      lotSize: 0.01,
+      displayName: `${upper} Forex Pair`,
+      assetClass: 'FOREX' as const,
+      exchange: 'FOREX' as const,
+      marketSegment: 'FOREX' as const,
+      tickSize: upper.includes('JPY') ? 0.001 : 0.00001,
+    };
+  }
+
+  // Public MetaTrader 5 (MT5) & Elefin Webhook Endpoint
+  // Supports automated real-time trade open, modify, and close syncing from MT5 Expert Advisors
+  app.post('/mt5/webhook', async (req: any, reply: any) => {
+    const rawToken =
+      req.headers['x-api-key'] ||
+      req.headers['x-webhook-token'] ||
+      req.query?.token ||
+      req.query?.key ||
+      req.body?.token;
+
+    // Locate target trading account
+    let account: any = null;
+    if (rawToken && mongoose.isValidObjectId(rawToken)) {
+      account = await TradingAccount.findById(rawToken);
+    }
+    if (!account && (rawToken === 'elefin' || !rawToken)) {
+      // Default to active Elefin account
+      account = await TradingAccount.findOne({ broker: /elefin/i, status: 'ACTIVE' });
+    }
+    if (!account) {
+      account = await TradingAccount.findOne({
+        $or: [{ broker: /elefin/i }, { name: /elefin/i }],
+        status: 'ACTIVE',
+      });
+    }
+
+    if (!account) {
+      req.log.warn('[MT5Webhook] Target trading account not found for token: %s', rawToken);
+      return reply.status(404).send({ success: false, error: 'Trading account not found' });
+    }
+
+    // Health check / ping test
+    if (req.body?.action === 'PING' || req.body?.ping) {
+      return reply.send({ ok: true, status: 'CONNECTED', broker: account.broker, accountName: account.name });
+    }
+
+    // Update account balance if provided in payload
+    if (req.body?.balance !== undefined) {
+      const bal = Number(req.body.balance);
+      if (Number.isFinite(bal) && bal > 0) {
+        account.currentBalance = mongoose.Types.Decimal128.fromString(bal.toFixed(2));
+        await account.save().catch(() => {});
+      }
+    }
+
+    const rawItems: any[] = Array.isArray(req.body?.positions)
+      ? req.body.positions
+      : Array.isArray(req.body)
+      ? req.body
+      : req.body?.ticket || req.body?.symbol
+      ? [req.body]
+      : [];
+
+    if (rawItems.length === 0) {
+      return reply.send({ ok: true, processed: 0, message: 'No positions in payload' });
+    }
+
+    let processedCount = 0;
+    const results: any[] = [];
+
+    for (const item of rawItems) {
+      const ticketStr = String(item.ticket || item.id || item.ticket_id || item.order || '').trim();
+      if (!ticketStr) continue;
+
+      const rawSym = String(item.symbol || '').toUpperCase().trim();
+      const spec = getMt5ContractSpec(rawSym);
+      const symbol = spec.symbol;
+      const rawSide = String(item.type || item.side || '').toUpperCase().trim();
+      const direction: 'LONG' | 'SHORT' =
+        rawSide === 'BUY' || rawSide === '0' || rawSide === 'LONG' ? 'LONG' : 'SHORT';
+      const volume = Math.abs(parseFloat(item.volume || item.lots || item.qty || 0.01) || 0.01);
+      const entryPrice = Math.abs(parseFloat(item.price || item.open_price || item.entry || 0) || 0);
+      const stopLoss = parseFloat(item.sl || item.stop_loss || 0) || undefined;
+      const takeProfit = parseFloat(item.tp || item.take_profit || 0) || undefined;
+      const closePrice = parseFloat(item.close_price || item.exit_price || 0) || undefined;
+      const profit = parseFloat(item.profit || item.net_profit || item.pnl || 0) || 0;
+      const commission = Math.abs(parseFloat(item.commission || item.fee || 0) || 0);
+      const swap = Math.abs(parseFloat(item.swap || 0) || 0);
+      const rawAction = String(item.action || '').toUpperCase();
+
+      const isClose =
+        rawAction === 'CLOSE' ||
+        (closePrice !== undefined && closePrice > 0) ||
+        String(item.status || '').toUpperCase() === 'CLOSED';
+
+      const isModify = rawAction === 'MODIFY' && !isClose;
+
+      // Locate existing trade record by ticket tag
+      const ticketTag = `MT5_TICKET_${ticketStr}`;
+      let trade = await Trade.findOne({
+        userId: account.userId,
+        accountId: account._id,
+        tags: ticketTag,
+      });
+
+      if (isClose) {
+        if (!trade) {
+          // Untracked trade closed: create closed record
+          let instrument = await Instrument.findOne({ userId: account.userId, symbol });
+          if (!instrument) {
+            instrument = await Instrument.create({
+              userId: account.userId,
+              symbol,
+              displayName: spec.displayName,
+              assetClass: spec.assetClass,
+              exchange: spec.exchange,
+              marketSegment: spec.marketSegment,
+              quoteCurrency: account.baseCurrency || 'USD',
+              contractMultiplier: spec.multiplier,
+              lotSize: spec.lotSize,
+              tickSize: spec.tickSize,
+              quantityIncrement: spec.lotSize,
+              pricePrecision: 2,
+              isActive: true,
+              source: 'AUTO',
+            });
+          }
+
+          const exitPriceFinal = closePrice || entryPrice;
+          const priceDiff = direction === 'LONG' ? exitPriceFinal - entryPrice : entryPrice - exitPriceFinal;
+          const grossPnL = profit !== 0 ? profit : Number((priceDiff * volume * spec.multiplier).toFixed(2));
+          const totalCosts = Number((commission + swap).toFixed(2));
+          const netPnL = Number((grossPnL - totalCosts).toFixed(2));
+
+          trade = await Trade.create({
+            userId: account.userId,
+            accountId: account._id,
+            instrumentId: instrument._id,
+            underlying: symbol,
+            symbol,
+            tradeTitle: `${symbol} ${direction} (Elefin #${ticketStr})`,
+            assetClass: spec.assetClass,
+            exchange: spec.exchange,
+            marketSegment: spec.marketSegment,
+            currency: account.baseCurrency || 'USD',
+            direction,
+            status: 'CLOSED',
+            tradeDate: new Date(),
+            entryTime: item.open_time ? new Date(item.open_time) : new Date(),
+            exitTime: item.close_time ? new Date(item.close_time) : new Date(),
+            tags: ['ELEFIN', 'MT5', ticketTag],
+            importBatchId: `MT5_${ticketStr}`,
+            executionMode: 'ADVANCED',
+            simpleExecution: {
+              contractMultiplier: spec.multiplier,
+              entryPrice,
+              exitPrice: exitPriceFinal,
+              quantity: volume,
+              brokerage: commission,
+              taxes: 0,
+              exchangeFees: 0,
+              regulatoryFees: 0,
+              otherFees: swap,
+              explicitAdjustments: 0,
+            },
+            fills: [
+              {
+                fillId: `mt5_${ticketStr}_entry`,
+                timestamp: item.open_time ? new Date(item.open_time) : new Date(),
+                type: 'ENTRY',
+                price: entryPrice,
+                quantity: volume,
+                fee: commission,
+              },
+              {
+                fillId: `mt5_${ticketStr}_exit`,
+                timestamp: item.close_time ? new Date(item.close_time) : new Date(),
+                type: 'EXIT',
+                price: exitPriceFinal,
+                quantity: volume,
+                fee: 0,
+              },
+            ],
+            risk: {
+              initialStopLoss: stopLoss,
+              currentStopLoss: stopLoss,
+              plannedTarget: takeProfit,
+              riskRuleViolations: [],
+            },
+            calculated: {
+              averageEntryPrice: entryPrice,
+              averageExitPrice: exitPriceFinal,
+              openQuantity: 0,
+              closedQuantity: volume,
+              totalCosts,
+              grossPnL,
+              netPnL,
+              outcome: netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN',
+            },
+          });
+        } else {
+          // Existing trade closed
+          const exitPriceFinal = closePrice || entryPrice;
+          const entryP = trade.simpleExecution?.entryPrice || entryPrice;
+          const priceDiff = direction === 'LONG' ? exitPriceFinal - entryP : entryP - exitPriceFinal;
+          const grossPnL = profit !== 0 ? profit : Number((priceDiff * volume * spec.multiplier).toFixed(2));
+          const totalCosts = Number((commission + swap).toFixed(2));
+          const netPnL = Number((grossPnL - totalCosts).toFixed(2));
+
+          trade.status = 'CLOSED';
+          trade.exitTime = item.close_time ? new Date(item.close_time) : new Date();
+          if (trade.simpleExecution) {
+            trade.simpleExecution.exitPrice = exitPriceFinal;
+          }
+          trade.fills.push({
+            fillId: `mt5_${ticketStr}_exit`,
+            timestamp: trade.exitTime,
+            type: 'EXIT',
+            price: exitPriceFinal,
+            quantity: volume,
+            fee: 0,
+          } as any);
+
+          if (!trade.calculated) trade.calculated = {} as any;
+          trade.calculated.averageExitPrice = exitPriceFinal;
+          trade.calculated.openQuantity = 0;
+          trade.calculated.closedQuantity = volume;
+          trade.calculated.grossPnL = grossPnL;
+          trade.calculated.netPnL = netPnL;
+          trade.calculated.outcome = netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN';
+
+          trade.markModified('fills');
+          trade.markModified('calculated');
+          trade.markModified('simpleExecution');
+          await trade.save();
+        }
+
+        const userDoc = await User.findById(account.userId).lean();
+        if (userDoc && trade) {
+          TelegramAlertService.notifyTradeClosed(userDoc, trade, {
+            netPnL: trade.calculated?.netPnL || 0,
+            exitPrice: trade.calculated?.averageExitPrice || closePrice || entryPrice,
+          }).catch(() => {});
+        }
+
+        results.push({ ticket: ticketStr, status: 'CLOSED', id: trade._id });
+        processedCount++;
+      } else if (isModify) {
+        if (trade && trade.status === 'OPEN') {
+          if (stopLoss && trade.risk?.currentStopLoss !== stopLoss) {
+            trade.risk = trade.risk || {};
+            trade.risk.currentStopLoss = stopLoss;
+            trade.markModified('risk');
+          }
+          if (takeProfit && trade.risk?.plannedTarget !== takeProfit) {
+            trade.risk = trade.risk || {};
+            trade.risk.plannedTarget = takeProfit;
+            trade.markModified('risk');
+          }
+          await trade.save();
+          results.push({ ticket: ticketStr, status: 'MODIFIED', id: trade._id });
+          processedCount++;
+        }
+      } else {
+        // OPEN Position
+        if (trade && trade.status === 'OPEN') {
+          if (stopLoss && trade.risk?.currentStopLoss !== stopLoss) {
+            trade.risk = trade.risk || {};
+            trade.risk.currentStopLoss = stopLoss;
+            trade.markModified('risk');
+            await trade.save();
+          }
+          results.push({ ticket: ticketStr, status: 'ALREADY_OPEN', id: trade._id });
+          processedCount++;
+        } else if (!trade) {
+          let instrument = await Instrument.findOne({ userId: account.userId, symbol });
+          if (!instrument) {
+            instrument = await Instrument.create({
+              userId: account.userId,
+              symbol,
+              displayName: spec.displayName,
+              assetClass: spec.assetClass,
+              exchange: spec.exchange,
+              marketSegment: spec.marketSegment,
+              quoteCurrency: account.baseCurrency || 'USD',
+              contractMultiplier: spec.multiplier,
+              lotSize: spec.lotSize,
+              tickSize: spec.tickSize,
+              quantityIncrement: spec.lotSize,
+              pricePrecision: 2,
+              isActive: true,
+              source: 'AUTO',
+            });
+          }
+
+          trade = await Trade.create({
+            userId: account.userId,
+            accountId: account._id,
+            instrumentId: instrument._id,
+            underlying: symbol,
+            symbol,
+            tradeTitle: `${symbol} ${direction} (Elefin #${ticketStr})`,
+            assetClass: spec.assetClass,
+            exchange: spec.exchange,
+            marketSegment: spec.marketSegment,
+            currency: account.baseCurrency || 'USD',
+            direction,
+            status: 'OPEN',
+            tradeDate: new Date(),
+            entryTime: item.open_time ? new Date(item.open_time) : new Date(),
+            tags: ['ELEFIN', 'MT5', ticketTag],
+            importBatchId: `MT5_${ticketStr}`,
+            executionMode: 'ADVANCED',
+            simpleExecution: {
+              contractMultiplier: spec.multiplier,
+              entryPrice,
+              quantity: volume,
+              brokerage: commission,
+              taxes: 0,
+              exchangeFees: 0,
+              regulatoryFees: 0,
+              otherFees: swap,
+              explicitAdjustments: 0,
+            },
+            fills: [
+              {
+                fillId: `mt5_${ticketStr}_entry`,
+                timestamp: item.open_time ? new Date(item.open_time) : new Date(),
+                type: 'ENTRY',
+                price: entryPrice,
+                quantity: volume,
+                fee: commission,
+              },
+            ],
+            risk: {
+              initialStopLoss: stopLoss,
+              currentStopLoss: stopLoss,
+              plannedTarget: takeProfit,
+              riskRuleViolations: [],
+            },
+            calculated: {
+              averageEntryPrice: entryPrice,
+              openQuantity: volume,
+              closedQuantity: 0,
+              totalCosts: Number((commission + swap).toFixed(2)),
+              grossPnL: 0,
+              netPnL: 0,
+              outcome: 'OPEN',
+            },
+          });
+
+          const userDoc = await User.findById(account.userId).lean();
+          if (userDoc) {
+            TelegramAlertService.notifyTradeOpened(userDoc, trade, stopLoss).catch(() => {});
+          }
+
+          results.push({ ticket: ticketStr, status: 'OPENED', id: trade._id });
+          processedCount++;
+        }
+      }
+    }
+
+    return reply.send({
+      ok: true,
+      processed: processedCount,
+      broker: account.broker,
+      results,
     });
   });
 

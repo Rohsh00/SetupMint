@@ -1437,7 +1437,7 @@ export function LiveOpenTradeWatcher({
         sublabel: 'FYERS FEED',
         color: '#64748B',
         bg: alpha('#64748B', 0.12),
-        tooltip: 'Market session closed (NSE: 09:15-15:30, MCX: 09:00-23:55 IST). Quotes frozen at market close.',
+        tooltip: 'Market session closed (NSE: 09:15-15:30, MCX: 09:00-23:55 IST, Forex: 24/5, Crypto: 24/7). Quotes frozen at market close.',
         isSimulated: false,
         isStale: false,
         canExecuteBroker: false,

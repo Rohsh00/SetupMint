@@ -302,6 +302,15 @@ export class LiveWatcherService {
       const staleThresholdSec = userDoc?.liveWatcherSettings?.staleDataThresholdSeconds ?? 10;
 
       const now = new Date();
+      const utcDay = now.getUTCDay(); // 0 = Sun, 6 = Sat
+      const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+      // Forex 24/5: Opens Sun 22:00 UTC (03:30 IST Mon), Closes Fri 22:00 UTC (03:30 IST Sat)
+      const isForexMarketOpen =
+        (utcDay === 0 && utcMinutes >= 22 * 60) ||
+        (utcDay >= 1 && utcDay <= 4) ||
+        (utcDay === 5 && utcMinutes < 22 * 60);
+      const isCryptoMarketOpen = true;
+
       const istOffsetMs = 5.5 * 60 * 60 * 1000;
       const istDate = new Date(now.getTime() + istOffsetMs);
       const dayOfWeek = istDate.getUTCDay();
@@ -316,13 +325,26 @@ export class LiveWatcherService {
         dayOfWeek <= 5 &&
         totalMinutes >= 9 * 60 &&
         totalMinutes <= 23 * 60 + 55;
-      const isAnyIndianMarketOpen = isNseMarketOpen || isMcxMarketOpen;
+
+      const isScopeForex = scopedAccounts.some((a) =>
+        String(a.accountType || '').toUpperCase() === 'FOREX' ||
+        String(a.broker || '').toUpperCase().includes('ELEFIN')
+      );
+      const isScopeCrypto = scopedAccounts.some((a) =>
+        String(a.accountType || '').toUpperCase() === 'CRYPTO'
+      );
+
+      const isMarketOpenForEmpty = isScopeCrypto
+        ? isCryptoMarketOpen
+        : isScopeForex
+        ? isForexMarketOpen
+        : isNseMarketOpen || isMcxMarketOpen || isForexMarketOpen;
 
       const emptyHealth = evaluateDataHealth({
         provider: hasActiveBroker ? 'FYERS' : 'SIMULATED',
         lastTickAt: hasActiveBroker ? new Date() : null,
         asOf: new Date(),
-        isMarketOpen: isAnyIndianMarketOpen,
+        isMarketOpen: isMarketOpenForEmpty,
         staleThresholdSeconds: staleThresholdSec,
         tokenExpiresAt,
         hasActiveBrokerConnection: hasActiveBroker,
@@ -436,7 +458,18 @@ export class LiveWatcherService {
     );
     const staleThresholdSec = userDoc?.liveWatcherSettings?.staleDataThresholdSeconds ?? 10;
 
-    // Determine if Indian Equity/Derivatives market is currently open (09:15 to 15:30 IST Mon-Fri)
+    // Market session schedules:
+    // 1. Forex/CFD (24/5): Opens Sun 22:00 UTC (03:30 IST Mon), Closes Fri 22:00 UTC (03:30 IST Sat)
+    const nowUtcDate = new Date();
+    const utcDay = nowUtcDate.getUTCDay();
+    const utcMinutes = nowUtcDate.getUTCHours() * 60 + nowUtcDate.getUTCMinutes();
+    const isForexMarketOpen =
+      (utcDay === 0 && utcMinutes >= 22 * 60) ||
+      (utcDay >= 1 && utcDay <= 4) ||
+      (utcDay === 5 && utcMinutes < 22 * 60);
+    const isCryptoMarketOpen = true;
+
+    // 2. Indian Equity (NSE: 09:15 to 15:30 IST) & Commodities (MCX: 09:00 to 23:55 IST)
     const nowUtc = Date.now();
     const istOffsetMs = 5.5 * 3600 * 1000;
     const istDate = new Date(nowUtc + istOffsetMs);
@@ -510,16 +543,46 @@ export class LiveWatcherService {
         latestQuoteTimestamp = quoteTimestamp;
       }
 
+      const upperSym = String(trade.symbol || '').toUpperCase();
+      const ex = String(trade.exchange || '').toUpperCase();
+      const seg = String(trade.marketSegment || '').toUpperCase();
+      const ac = String(trade.assetClass || '').toUpperCase();
+
+      const isCryptoTrade =
+        ex === 'CRYPTO' ||
+        seg === 'CRYPTO' ||
+        ac === 'CRYPTO' ||
+        upperSym.endsWith('USDT') ||
+        ['BTCUSD', 'ETHUSD', 'SOLUSD', 'DOGEUSD'].includes(upperSym);
+
       const isMcxTrade =
-        String(trade.exchange || '').toUpperCase() === 'MCX' ||
-        String(trade.marketSegment || '').toUpperCase() === 'MCX' ||
-        String(trade.assetClass || '').toUpperCase() === 'COMMODITY' ||
-        String(trade.symbol || '').toUpperCase().includes('CRUDE') ||
-        String(trade.symbol || '').toUpperCase().includes('GOLD') ||
-        String(trade.symbol || '').toUpperCase().includes('SILVER') ||
-        String(trade.symbol || '').toUpperCase().includes('NATURALGAS') ||
-        String(trade.symbol || '').toUpperCase().includes('COPPER');
-      const isTradeMarketOpen = isMcxTrade ? isMcxMarketOpen : isNseMarketOpen;
+        ex === 'MCX' ||
+        seg === 'MCX' ||
+        (ac === 'COMMODITY' && !upperSym.endsWith('USD') && !upperSym.startsWith('XAU') && !upperSym.startsWith('XAG')) ||
+        upperSym.includes('CRUDEOIL') ||
+        upperSym.includes('NATURALGAS') ||
+        (upperSym.includes('MINI') && !upperSym.endsWith('USD')) ||
+        upperSym.includes('COPPER');
+
+      const isForexOrCfdTrade =
+        !isMcxTrade &&
+        (ex === 'FOREX' ||
+          seg === 'FOREX' ||
+          ac === 'FOREX' ||
+          upperSym.includes('XAU') ||
+          upperSym.includes('XAG') ||
+          upperSym === 'GOLD' ||
+          upperSym === 'SILVER' ||
+          upperSym.endsWith('USD') ||
+          GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass));
+
+      const isTradeMarketOpen = isCryptoTrade
+        ? isCryptoMarketOpen
+        : isForexOrCfdTrade
+        ? isForexMarketOpen
+        : isMcxTrade
+        ? isMcxMarketOpen
+        : isNseMarketOpen;
 
       const tradeDataHealth = evaluateDataHealth({
         provider,
@@ -604,6 +667,30 @@ export class LiveWatcherService {
       ? 'FYERS'
       : 'SIMULATED';
 
+    const hasCryptoOpenPosition = openTrades.some((t) => {
+      const sym = String(t.symbol || '').toUpperCase();
+      const ex = String(t.exchange || '').toUpperCase();
+      const ac = String(t.assetClass || '').toUpperCase();
+      return ex === 'CRYPTO' || ac === 'CRYPTO' || sym.endsWith('USDT') || ['BTCUSD', 'ETHUSD', 'SOLUSD', 'DOGEUSD'].includes(sym);
+    });
+
+    const hasForexOpenPosition = openTrades.some((t) => {
+      const sym = String(t.symbol || '').toUpperCase();
+      const ex = String(t.exchange || '').toUpperCase();
+      const ac = String(t.assetClass || '').toUpperCase();
+      const isMcx = ex === 'MCX' || sym.includes('CRUDEOIL') || sym.includes('NATURALGAS') || (sym.includes('MINI') && !sym.endsWith('USD'));
+      return !isMcx && (
+        ex === 'FOREX' ||
+        ac === 'FOREX' ||
+        sym.includes('XAU') ||
+        sym.includes('XAG') ||
+        sym === 'GOLD' ||
+        sym === 'SILVER' ||
+        sym.endsWith('USD') ||
+        GlobalCfdCandleProvider.isSupportedGlobalSymbol(t.symbol, t.exchange, t.assetClass)
+      );
+    });
+
     const hasMcxOpenPosition = openTrades.some((t) => {
       const ex = String(t.exchange || '').toUpperCase();
       const seg = String(t.marketSegment || '').toUpperCase();
@@ -612,16 +699,21 @@ export class LiveWatcherService {
       return (
         ex === 'MCX' ||
         seg === 'MCX' ||
-        ac === 'COMMODITY' ||
-        sym.includes('CRUDE') ||
-        sym.includes('GOLD') ||
-        sym.includes('SILVER') ||
+        (ac === 'COMMODITY' && !sym.endsWith('USD') && !sym.startsWith('XAU') && !sym.startsWith('XAG')) ||
+        sym.includes('CRUDEOIL') ||
         sym.includes('NATURALGAS') ||
+        (sym.includes('MINI') && !sym.endsWith('USD')) ||
         sym.includes('COPPER')
       );
     });
 
-    const isSessionMarketOpen = hasMcxOpenPosition ? isMcxMarketOpen : isNseMarketOpen;
+    const isSessionMarketOpen = hasCryptoOpenPosition
+      ? isCryptoMarketOpen
+      : hasForexOpenPosition
+      ? isForexMarketOpen
+      : hasMcxOpenPosition
+      ? isMcxMarketOpen
+      : isNseMarketOpen;
 
     const globalDataHealth = evaluateDataHealth({
       provider: summaryProvider,

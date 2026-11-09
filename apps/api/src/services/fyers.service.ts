@@ -982,6 +982,24 @@ export class FyersService {
     }
     const normalizedOrders = this.normalizeOrderbook(rawOrderbook);
 
+    // Fetch FYERS current positions (ground truth for open vs closed quantities)
+    let netPositions: any[] = [];
+    try {
+      const posRes = await fetch(`${this.FYERS_API_BASE}/positions`, {
+        method: 'GET',
+        headers: {
+          Authorization: `${appId}:${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (posRes.ok) {
+        const posJson = (await posRes.json()) as any;
+        netPositions = posJson?.netPositions || [];
+      }
+    } catch (posErr: any) {
+      console.warn('[FYERS Sync] Positions fetch failed; proceeding without position reconciliation:', posErr?.message || posErr);
+    }
+
     // Prefer the account explicitly linked to this FYERS client.
     let account = integration.linkedAccountId
       ? await TradingAccount.findOne({
@@ -1503,6 +1521,11 @@ export class FyersService {
       const todayFillIds = new Set(execList.map((e) => makeFillId(e)).filter(Boolean));
       const earliestTodayTs = execList[0]?.timestamp;
       if (earliestTodayTs) {
+        // Calculate the start of today in IST (00:00:00 IST), converted to UTC
+        const istDate = new Date(earliestTodayTs.getTime() + 5.5 * 3600 * 1000);
+        istDate.setUTCHours(0, 0, 0, 0);
+        const startOfTodayUtc = new Date(istDate.getTime() - 5.5 * 3600 * 1000);
+
         const symbolCandidates = Array.from(
           new Set([cleanSymbol, formattedSymbol, inst.symbol, sample.raw.symbol, underlying].filter(Boolean))
         );
@@ -1513,7 +1536,7 @@ export class FyersService {
             { symbol: { $in: symbolCandidates } },
             { underlying: { $in: symbolCandidates } },
           ],
-          entryTime: { $lt: earliestTodayTs },
+          entryTime: { $lt: startOfTodayUtc },
           $and: [
             {
               $or: [
@@ -1647,6 +1670,87 @@ export class FyersService {
       // If position is still open at end of executions
       if (currentGroup && currentGroup.fills.length > 0) {
         await commitTrade(currentGroup);
+      }
+    }
+
+    // 5b. Ground-Truth Broker Positions Reconciliation
+    // If FYERS reports netQty === 0 for an instrument, ensure any open trade in SetupMint is reconciled to CLOSED.
+    if (netPositions && netPositions.length > 0) {
+      try {
+        const remainingOpenTrades = await Trade.find({
+          userId: uId,
+          accountId: account._id,
+          status: 'OPEN',
+        });
+
+        for (const openTrade of remainingOpenTrades) {
+          const matchedPos = netPositions.find((p: any) => {
+            if (!p?.symbol) return false;
+            const parsed = parseFyersSymbol(p.symbol);
+            const candidates = [p.symbol, parsed.cleanSymbol, parsed.formattedSymbol];
+            return (
+              candidates.includes(openTrade.symbol) ||
+              candidates.includes(openTrade.underlying) ||
+              (openTrade.symbol && candidates.some((c) => openTrade.symbol.includes(c) || c.includes(openTrade.symbol)))
+            );
+          });
+
+          if (matchedPos && Number(matchedPos.netQty || 0) === 0) {
+            // Broker confirms net position is 0 (flat/closed).
+            // Strip any phantom overnight fills that may have been erroneously created in previous syncs.
+            const realFills = (openTrade.fills || []).filter(
+              (f: any) => !String(f.fillId || '').startsWith('overnight_')
+            );
+            const entryFills = realFills.filter((f: any) => f.type === 'ENTRY');
+            const exitFills = realFills.filter((f: any) => f.type === 'EXIT');
+            const totalEntryQty = entryFills.reduce((s: number, f: any) => s + Number(f.quantity || 0), 0);
+            const totalExitQty = exitFills.reduce((s: number, f: any) => s + Number(f.quantity || 0), 0);
+
+            if (totalEntryQty > 0 && totalEntryQty === totalExitQty) {
+              openTrade.fills = realFills as any;
+              openTrade.status = 'CLOSED';
+              const lastExit = exitFills.slice(-1)[0];
+              if (lastExit?.timestamp) {
+                openTrade.exitTime = new Date(lastExit.timestamp);
+              }
+              if (!openTrade.calculated) {
+                openTrade.calculated = {} as any;
+              }
+              openTrade.calculated.openQuantity = 0;
+              openTrade.calculated.closedQuantity = totalEntryQty;
+
+              if (matchedPos.realized_profit !== undefined || matchedPos.pl !== undefined) {
+                const brokerRealized = Number(matchedPos.realized_profit ?? matchedPos.pl ?? 0);
+                if (brokerRealized !== 0 || !openTrade.calculated.netPnL) {
+                  openTrade.calculated.grossPnL = brokerRealized;
+                  const costs = Number(openTrade.calculated.totalCosts || 0);
+                  openTrade.calculated.netPnL = brokerRealized - costs;
+                }
+              }
+
+              const netPnL = Number(openTrade.calculated.netPnL || 0);
+              openTrade.calculated.outcome = netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN';
+
+              if (openTrade.simpleExecution) {
+                openTrade.simpleExecution.quantity = totalEntryQty;
+                if (matchedPos.avgPrice && !openTrade.simpleExecution.exitPrice) {
+                  openTrade.simpleExecution.exitPrice = Number(matchedPos.avgPrice);
+                }
+              }
+
+              openTrade.markModified('fills');
+              openTrade.markModified('calculated');
+              openTrade.markModified('simpleExecution');
+              await openTrade.save();
+
+              closedTradeIds.add(openTrade._id.toString());
+              syncedTradesCount++;
+              console.log(`[FYERS Sync] Reconciled trade ${openTrade._id} (${openTrade.symbol}) to CLOSED via broker netPositions`);
+            }
+          }
+        }
+      } catch (reconErr: any) {
+        console.error('[FYERS Sync] Broker position reconciliation error:', reconErr);
       }
     }
 

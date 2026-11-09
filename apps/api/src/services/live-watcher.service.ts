@@ -311,12 +311,18 @@ export class LiveWatcherService {
         dayOfWeek <= 5 &&
         totalMinutes >= 9 * 60 + 15 &&
         totalMinutes <= 15 * 60 + 30;
+      const isMcxMarketOpen =
+        dayOfWeek >= 1 &&
+        dayOfWeek <= 5 &&
+        totalMinutes >= 9 * 60 &&
+        totalMinutes <= 23 * 60 + 55;
+      const isAnyIndianMarketOpen = isNseMarketOpen || isMcxMarketOpen;
 
       const emptyHealth = evaluateDataHealth({
         provider: hasActiveBroker ? 'FYERS' : 'SIMULATED',
         lastTickAt: hasActiveBroker ? new Date() : null,
         asOf: new Date(),
-        isMarketOpen: isNseMarketOpen,
+        isMarketOpen: isAnyIndianMarketOpen,
         staleThresholdSeconds: staleThresholdSec,
         tokenExpiresAt,
         hasActiveBrokerConnection: hasActiveBroker,
@@ -437,7 +443,7 @@ export class LiveWatcherService {
     const istDay = istDate.getUTCDay(); // 0 = Sun, 6 = Sat
     const istMinutes = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
     const isNseMarketOpen = istDay >= 1 && istDay <= 5 && istMinutes >= (9 * 60 + 15) && istMinutes <= (15 * 60 + 30);
-    const isMcxMarketOpen = istDay >= 1 && istDay <= 5 && istMinutes >= (9 * 60) && istMinutes <= (23 * 60 + 30);
+    const isMcxMarketOpen = istDay >= 1 && istDay <= 5 && istMinutes >= (9 * 60) && istMinutes <= (23 * 60 + 55);
 
     // 4. Calculate metrics for each open trade
     const positions: ILiveOpenTradeMetric[] = [];
@@ -507,7 +513,12 @@ export class LiveWatcherService {
       const isMcxTrade =
         String(trade.exchange || '').toUpperCase() === 'MCX' ||
         String(trade.marketSegment || '').toUpperCase() === 'MCX' ||
-        String(trade.assetClass || '').toUpperCase() === 'COMMODITY';
+        String(trade.assetClass || '').toUpperCase() === 'COMMODITY' ||
+        String(trade.symbol || '').toUpperCase().includes('CRUDE') ||
+        String(trade.symbol || '').toUpperCase().includes('GOLD') ||
+        String(trade.symbol || '').toUpperCase().includes('SILVER') ||
+        String(trade.symbol || '').toUpperCase().includes('NATURALGAS') ||
+        String(trade.symbol || '').toUpperCase().includes('COPPER');
       const isTradeMarketOpen = isMcxTrade ? isMcxMarketOpen : isNseMarketOpen;
 
       const tradeDataHealth = evaluateDataHealth({
@@ -593,11 +604,30 @@ export class LiveWatcherService {
       ? 'FYERS'
       : 'SIMULATED';
 
+    const hasMcxOpenPosition = openTrades.some((t) => {
+      const ex = String(t.exchange || '').toUpperCase();
+      const seg = String(t.marketSegment || '').toUpperCase();
+      const ac = String(t.assetClass || '').toUpperCase();
+      const sym = String(t.symbol || '').toUpperCase();
+      return (
+        ex === 'MCX' ||
+        seg === 'MCX' ||
+        ac === 'COMMODITY' ||
+        sym.includes('CRUDE') ||
+        sym.includes('GOLD') ||
+        sym.includes('SILVER') ||
+        sym.includes('NATURALGAS') ||
+        sym.includes('COPPER')
+      );
+    });
+
+    const isSessionMarketOpen = hasMcxOpenPosition ? isMcxMarketOpen : isNseMarketOpen;
+
     const globalDataHealth = evaluateDataHealth({
       provider: summaryProvider,
       lastTickAt: latestQuoteTimestamp,
       asOf: new Date(),
-      isMarketOpen: isNseMarketOpen,
+      isMarketOpen: isSessionMarketOpen,
       staleThresholdSeconds: staleThresholdSec,
       tokenExpiresAt,
       hasActiveBrokerConnection: hasActiveBroker && summaryProvider === 'FYERS',

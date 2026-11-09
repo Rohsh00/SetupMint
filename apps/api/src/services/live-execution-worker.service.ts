@@ -5,6 +5,7 @@ import { LiveWatcherService } from './live-watcher.service.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
 import { BrokerAutoSyncWorker } from './broker-auto-sync.service.js';
 import { AccountScopeService } from './account-scope.service.js';
+import { Mt5CommandService } from './mt5-command.service.js';
 import {
   calculateTargetLadder,
   evaluateGivebackAutoExit,
@@ -333,15 +334,16 @@ export class LiveExecutionWorker {
         // Just dispatch Telegram alert if enabled
         this.executedMilestones.add(triggerKey);
         if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+          const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
           TelegramAlertService.sendAlert({
             botToken: watcherSettings.telegramBotToken,
             chatId: watcherSettings.telegramChatId,
-            title: `🎯 Target ${step.targetIndex} Reached: ${metric.symbol}`,
-            body: `${step.name} reached at ₹${metric.currentLtp}. Auto-execute is OFF. Action required: ${step.suggestedStopLabel}.`,
+            title: `🎯 Target ${step.targetIndex} (${step.name}) Reached: ${metric.symbol}`,
+            body: `${step.name} reached at ${sym}${metric.currentLtp}. Auto-execute is OFF. Action required: ${step.suggestedStopLabel}.`,
             severity: 'SUCCESS',
             metrics: {
-              LTP: `₹${metric.currentLtp}`,
-              Target: `₹${step.targetPrice}`,
+              LTP: `${sym}${metric.currentLtp}`,
+              Target: `${sym}${step.targetPrice}`,
               PlannedExit: `${(step.plannedExitRatio * 100).toFixed(0)}% (${step.plannedExitQty} units)`,
             },
             buttons: [
@@ -359,17 +361,40 @@ export class LiveExecutionWorker {
       this.executedMilestones.add(triggerKey);
       console.log(`[LiveExecutionWorker] Executing ${step.name} server-side for trade ${tradeId} (${metric.symbol})...`);
 
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
+      const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+
       // 1. Partial Exit
       if (step.plannedExitQty > 0) {
-        await FyersService.executeBrokerExit(user._id, tradeId, {
-          exitQty: step.plannedExitQty,
-          isFullClose: step.plannedExitQty >= metric.quantity,
-        });
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id.toString(),
+            accountId: trade.accountId?.toString(),
+            tradeId: tradeId,
+            ticket,
+            volume: step.plannedExitQty,
+          });
+        } else {
+          await FyersService.executeBrokerExit(user._id, tradeId, {
+            exitQty: step.plannedExitQty,
+            isFullClose: step.plannedExitQty >= metric.quantity,
+          });
+        }
       }
 
       // 2. Trailing SL modification
       if (step.suggestedStopLoss && step.suggestedStopLoss > 0) {
-        await FyersService.executeBrokerStopLoss(user._id, tradeId, step.suggestedStopLoss);
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id.toString(),
+            accountId: trade.accountId?.toString(),
+            tradeId: tradeId,
+            ticket,
+            stopLoss: step.suggestedStopLoss,
+          });
+        } else {
+          await FyersService.executeBrokerStopLoss(user._id, tradeId, step.suggestedStopLoss);
+        }
       }
 
       // 3. Telegram success alert

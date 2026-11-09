@@ -271,13 +271,39 @@ export class InstrumentService {
     let avgEntry = 0;
     let avgExit: number | undefined = undefined;
 
+    const normBroker = ((body.broker || body.accountId?.broker || '') as string).toUpperCase().replace(/[\s_-]/g, '');
+    const isForexOrUsd =
+      body.currency === 'USD' ||
+      body.currency === 'EUR' ||
+      body.currency === 'GBP' ||
+      body.assetClass === 'FOREX' ||
+      body.assetClass === 'CRYPTO' ||
+      body.marketSegment === 'FOREX' ||
+      body.marketSegment === 'CRYPTO' ||
+      (typeof body.symbol === 'string' &&
+        (body.symbol.includes('XAU') ||
+          body.symbol.includes('EUR') ||
+          body.symbol.includes('USD') ||
+          body.symbol.includes('GBP') ||
+          body.symbol.includes('BTC'))) ||
+      ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker);
+
+    if (isForexOrUsd && body.simpleExecution) {
+      if (body.simpleExecution.brokerage === 40) {
+        body.simpleExecution.brokerage = 0;
+      }
+      body.simpleExecution.exchangeFees = 0;
+      body.simpleExecution.regulatoryFees = 0;
+      body.simpleExecution.taxes = 0;
+    }
+
     if (body.executionMode === 'SIMPLE' && body.simpleExecution) {
       const exec = body.simpleExecution;
       const res = calculateSimpleExecutionPnL(body.direction, exec);
 
       grossPnL = res.grossPnLNumber;
-      totalCosts = res.totalCostsNumber;
-      netPnL = res.netPnLNumber;
+      totalCosts = isForexOrUsd && res.totalCostsNumber === 40 ? 0 : res.totalCostsNumber;
+      netPnL = Number((grossPnL - totalCosts + (exec.explicitAdjustments || 0)).toFixed(2));
       outcome = body.status === 'OPEN' ? 'OPEN' : res.outcome;
       closedQty = exec.exitPrice ? exec.quantity : 0;
       openQty = exec.exitPrice ? 0 : exec.quantity;
@@ -312,7 +338,7 @@ export class InstrumentService {
       if (fifoCosts > 0) {
         totalCosts = fifoCosts;
       } else if (simpleCosts > 0) {
-        totalCosts = simpleCosts;
+        totalCosts = isForexOrUsd && simpleCosts === 40 ? 0 : simpleCosts;
       } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
         const autoCharges = calculateIndianCharges({
           direction: body.direction,
@@ -322,6 +348,8 @@ export class InstrumentService {
           exitPrice: avgExit,
           quantity: closedQty > 0 ? closedQty : openQty,
           contractMultiplier: mult,
+          currency: body.currency,
+          broker: body.broker,
         });
         totalCosts = autoCharges.totalCosts;
         if (!body.simpleExecution) {
@@ -372,6 +400,7 @@ export class InstrumentService {
       totalCosts,
       netPnL,
       realizedRMultiple,
+      realizedR: realizedRMultiple,
       holdingTimeMinutes,
       outcome,
       closedQuantity: closedQty,

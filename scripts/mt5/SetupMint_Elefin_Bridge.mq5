@@ -5,22 +5,78 @@
 //+------------------------------------------------------------------+
 #property copyright   "SetupMint"
 #property link        "https://setupmint.com"
-#property version     "1.00"
-#property description "Automated Real-Time Live Position & Trade Sync Bridge for SetupMint"
+#property version     "2.00"
+#property description "Automated Real-Time 2-Way Execution & Live Trade Sync Bridge for SetupMint"
 #property strict
+
+#include <Trade\Trade.mqh>
 
 //--- Input parameters
 input string   InpSetupMintUrl = "http://13.205.58.162/api/v1/integrations/mt5/webhook"; // SetupMint Webhook URL
 input string   InpToken        = "6af1fa0735d0f0f584d918bf"; // Account Webhook Token (or 'elefin')
-input int      InpSyncTimerSec = 5;                           // Periodic Sync Interval (Seconds)
+input int      InpSyncTimerSec = 3;                           // Periodic Sync Interval (Seconds)
 
 //--- Global Variables
 datetime lastHistoryCheckTime = 0;
+CTrade   m_trade;
+
+// Forward declarations
+void ProcessSetupMintCommands(string responseJson);
+void SyncAllActivePositions();
+void CheckClosedDeals();
 
 //+------------------------------------------------------------------+
-//| Helper to send HTTP POST request                                 |
+//| Helper string parsers for lightweight JSON decoding              |
 //+------------------------------------------------------------------+
-bool SendJsonToSetupMint(string jsonPayload)
+string ExtractJsonString(string json, string key)
+{
+   string search = "\"" + key + "\":\"";
+   int start = StringFind(json, search);
+   if(start == -1) return "";
+   start += StringLen(search);
+   int end = StringFind(json, "\"", start);
+   if(end == -1) return "";
+   return StringSubstr(json, start, end - start);
+}
+
+double ExtractJsonNumber(string json, string key)
+{
+   string search = "\"" + key + "\":";
+   int start = StringFind(json, search);
+   if(start == -1) return 0.0;
+   start += StringLen(search);
+   int endComma = StringFind(json, ",", start);
+   int endBrace = StringFind(json, "}", start);
+   int end = endComma;
+   if(end == -1 || (endBrace != -1 && endBrace < end)) end = endBrace;
+   if(end == -1) end = StringLen(json);
+   string valStr = StringSubstr(json, start, end - start);
+   StringTrimLeft(valStr);
+   StringTrimRight(valStr);
+   return StringToDouble(valStr);
+}
+
+long ExtractJsonLong(string json, string key)
+{
+   string search = "\"" + key + "\":";
+   int start = StringFind(json, search);
+   if(start == -1) return 0;
+   start += StringLen(search);
+   int endComma = StringFind(json, ",", start);
+   int endBrace = StringFind(json, "}", start);
+   int end = endComma;
+   if(end == -1 || (endBrace != -1 && endBrace < end)) end = endBrace;
+   if(end == -1) end = StringLen(json);
+   string valStr = StringSubstr(json, start, end - start);
+   StringTrimLeft(valStr);
+   StringTrimRight(valStr);
+   return StringToInteger(valStr);
+}
+
+//+------------------------------------------------------------------+
+//| Helper to send HTTP POST request & process inbound commands      |
+//+------------------------------------------------------------------+
+bool SendJsonToSetupMint(string jsonPayload, bool handleCommands = true)
 {
    char postData[];
    char resultData[];
@@ -49,7 +105,141 @@ bool SendJsonToSetupMint(string jsonPayload)
       }
       return false;
    }
+
+   // Process inbound execution commands from SetupMint
+   if(handleCommands && ArraySize(resultData) > 0)
+   {
+      string responseJson = CharArrayToString(resultData, 0, WHOLE_ARRAY, CP_UTF8);
+      ProcessSetupMintCommands(responseJson);
+   }
+
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Process and execute inbound broker commands from SetupMint       |
+//+------------------------------------------------------------------+
+void ProcessSetupMintCommands(string responseJson)
+{
+   int cmdPos = StringFind(responseJson, "\"commands\":[");
+   if(cmdPos == -1) return;
+   
+   cmdPos += StringLen("\"commands\":[");
+   int cmdEnd = StringFind(responseJson, "]", cmdPos);
+   if(cmdEnd == -1 || cmdEnd <= cmdPos) return;
+   
+   string commandsBlock = StringSubstr(responseJson, cmdPos, cmdEnd - cmdPos);
+   StringTrimLeft(commandsBlock);
+   StringTrimRight(commandsBlock);
+   if(StringLen(commandsBlock) == 0) return;
+   
+   string resultsJson = "";
+   int executedCount = 0;
+   
+   int curIdx = 0;
+   while(curIdx < StringLen(commandsBlock))
+   {
+      int objStart = StringFind(commandsBlock, "{", curIdx);
+      if(objStart == -1) break;
+      int objEnd = StringFind(commandsBlock, "}", objStart);
+      if(objEnd == -1) break;
+      
+      string cmdObj = StringSubstr(commandsBlock, objStart, objEnd - objStart + 1);
+      curIdx = objEnd + 1;
+      
+      string commandId = ExtractJsonString(cmdObj, "commandId");
+      string action = ExtractJsonString(cmdObj, "action");
+      ulong ticket = (ulong)ExtractJsonLong(cmdObj, "ticket");
+      double sl = ExtractJsonNumber(cmdObj, "stopLoss");
+      double tp = ExtractJsonNumber(cmdObj, "takeProfit");
+      double volume = ExtractJsonNumber(cmdObj, "volume");
+      
+      if(ticket <= 0 || StringLen(action) == 0) continue;
+      
+      bool success = false;
+      string msg = "";
+      
+      if(action == "MODIFY_SL")
+      {
+         if(PositionSelectByTicket(ticket))
+         {
+            double curTp = tp > 0 ? tp : PositionGetDouble(POSITION_TP);
+            ResetLastError();
+            if(m_trade.PositionModify(ticket, sl, curTp))
+            {
+               success = true;
+               msg = "Stop Loss modified to " + DoubleToString(sl, 2);
+               Print("[SetupMint] ⚡ PositionModify SUCCESS on Ticket #", ticket, " -> SL: ", sl);
+            }
+            else
+            {
+               success = false;
+               msg = "PositionModify failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+               Print("[SetupMint] ❌ PositionModify FAILED on Ticket #", ticket, " - ", msg);
+            }
+         }
+         else
+         {
+            success = false;
+            msg = "Position ticket #" + IntegerToString(ticket) + " not found or already closed";
+            Print("[SetupMint] ⚠️ ", msg);
+         }
+      }
+      else if(action == "CLOSE_POSITION")
+      {
+         if(PositionSelectByTicket(ticket))
+         {
+            ResetLastError();
+            bool closeRes = false;
+            double openVol = PositionGetDouble(POSITION_VOLUME);
+            if(volume > 0 && volume < openVol)
+            {
+               closeRes = m_trade.PositionClosePartial(ticket, volume);
+            }
+            else
+            {
+               closeRes = m_trade.PositionClose(ticket);
+            }
+            
+            if(closeRes)
+            {
+               success = true;
+               msg = "Position closed successfully";
+               Print("[SetupMint] ⚡ PositionClose SUCCESS on Ticket #", ticket);
+            }
+            else
+            {
+               success = false;
+               msg = "PositionClose failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+               Print("[SetupMint] ❌ PositionClose FAILED on Ticket #", ticket, " - ", msg);
+            }
+         }
+         else
+         {
+            success = false;
+            msg = "Position ticket #" + IntegerToString(ticket) + " not found or already closed";
+            Print("[SetupMint] ⚠️ ", msg);
+         }
+      }
+      
+      if(StringLen(commandId) > 0)
+      {
+         if(executedCount > 0) resultsJson += ",";
+         resultsJson += "{\"commandId\":\"" + commandId + "\",\"status\":\"" + (success ? "SUCCESS" : "FAILED") + "\",\"message\":\"" + msg + "\"}";
+         executedCount++;
+      }
+   }
+   
+   if(executedCount > 0)
+   {
+      // Acknowledge command results to SetupMint without re-processing commands
+      string ackPayload = "{\"token\":\"" + InpToken + "\",\"commandResults\":[" + resultsJson + "]}";
+      SendJsonToSetupMint(ackPayload, false);
+      
+      // Immediately refresh active positions and deal history
+      SyncAllActivePositions();
+      CheckClosedDeals();
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -97,14 +287,11 @@ void SyncAllActivePositions()
    }
    json += "]}";
 
-   if(added > 0)
-   {
-      SendJsonToSetupMint(json);
-   }
+   SendJsonToSetupMint(json, true);
 }
 
 //+------------------------------------------------------------------+
-//| Check recently closed orders from Deal History                  |
+//| Check recently closed orders from Deal History                   |
 //+------------------------------------------------------------------+
 void CheckClosedDeals()
 {
@@ -146,7 +333,7 @@ void CheckClosedDeals()
             json += "\"close_time\":\"" + TimeToString(closeTime, TIME_DATE|TIME_SECONDS) + "\"";
             json += "}";
 
-            SendJsonToSetupMint(json);
+            SendJsonToSetupMint(json, false);
          }
       }
    }
@@ -158,13 +345,16 @@ void CheckClosedDeals()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("[SetupMint] Initializing SetupMint Elefin MT5 Bridge EA...");
+   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.00...");
+   m_trade.SetExpertMagicNumber(1998);
+   m_trade.SetDeviationInPoints(30);
+
    EventSetTimer(InpSyncTimerSec);
    lastHistoryCheckTime = TimeCurrent() - 3600; // Look back 1 hour
    
    // Ping SetupMint server
    string pingJson = "{\"token\":\"" + InpToken + "\",\"action\":\"PING\"}";
-   SendJsonToSetupMint(pingJson);
+   SendJsonToSetupMint(pingJson, true);
    
    // Initial sync
    SyncAllActivePositions();
@@ -206,4 +396,3 @@ void OnTimer()
    CheckClosedDeals();
 }
 //+------------------------------------------------------------------+
-

@@ -14,6 +14,7 @@ export interface CalculateChargesParams {
   contractMultiplier?: number | string | Decimal;
   brokerFlatFeePerLeg?: number | string | Decimal;
   broker?: string;
+  currency?: string;
   isSingleLeg?: boolean;
 }
 
@@ -43,6 +44,39 @@ export interface ChargesBreakdown {
  * - SHORT: entry is SELL (incurs STT/CTT), exit is BUY (incurs Stamp Duty).
  */
 export function calculateIndianCharges(params: CalculateChargesParams): ChargesBreakdown {
+  const normBroker = (params.broker || '').toUpperCase().replace(/[\s_-]/g, '');
+  const isForexOrUsd =
+    params.currency === 'USD' ||
+    params.assetClass === 'FOREX' ||
+    params.assetClass === 'CRYPTO' ||
+    params.marketSegment === 'FOREX' ||
+    params.marketSegment === 'CRYPTO' ||
+    ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker);
+
+  if (isForexOrUsd) {
+    const flatPerLeg = params.brokerFlatFeePerLeg !== undefined ? new Decimal(params.brokerFlatFeePerLeg) : new Decimal(0);
+    const legs = params.isSingleLeg ? 1 : 2;
+    const brokerage = flatPerLeg.times(legs);
+    const finalBrokerage = Number(brokerage.toFixed(2));
+    const zero = new Decimal(0);
+    return {
+      brokerage: finalBrokerage,
+      exchangeFees: 0,
+      regulatoryFees: 0,
+      taxes: 0,
+      totalCosts: finalBrokerage,
+      sebiTurnover: 0,
+      stampDuty: 0,
+      sttCtt: 0,
+      gst: 0,
+      brokerageDecimal: brokerage,
+      exchangeFeesDecimal: zero,
+      regulatoryFeesDecimal: zero,
+      taxesDecimal: zero,
+      totalCostsDecimal: brokerage,
+    };
+  }
+
   const dEntry = new Decimal(params.entryPrice || 0);
   const dQty = new Decimal(params.quantity || 0);
   const dMultiplier = params.contractMultiplier ? new Decimal(params.contractMultiplier) : new Decimal(1);
@@ -194,7 +228,8 @@ export class IndianChargesCalculator {
     contractMultiplier: number | string | Decimal = 1,
     brokerFlatFeePerLeg: number | string | Decimal = 20,
     broker?: string,
-    direction?: Direction | 'LONG' | 'SHORT' | string
+    direction?: Direction | 'LONG' | 'SHORT' | string,
+    currency?: string
   ): ChargesBreakdown {
     return calculateIndianCharges({
       direction,
@@ -206,6 +241,7 @@ export class IndianChargesCalculator {
       contractMultiplier,
       brokerFlatFeePerLeg,
       broker,
+      currency,
     });
   }
 }

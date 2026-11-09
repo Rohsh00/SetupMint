@@ -183,7 +183,7 @@ export function LiveOpenTradeWatcher({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user, refreshUser } = useAuth();
-  const { scope, isPropMode, queryParams, selectedAccountId } = useAccountScope();
+  const { scope, isPropMode, queryParams, selectedAccountId, accounts } = useAccountScope();
 
   const [displaySettingsModalOpen, setDisplaySettingsModalOpen] = useState<boolean>(false);
   const [displaySettings, setDisplaySettings] = useState<ILiveWatcherDisplaySettings>(() => {
@@ -422,10 +422,14 @@ export function LiveOpenTradeWatcher({
       });
     },
     onSuccess: (data: any, variables) => {
-      if (data?.brokerResult?.executedOnBroker) {
-        toast.success(`🟢 FYERS Live: ${data.brokerResult.message || `Stop Loss moved to ₹${variables.newStopLoss}`}`);
+      const isMt5 = data?.brokerResult?.action === 'QUEUED_TO_MT5' || data?.brokerResult?.isMt5;
+      const bRes = data?.brokerResult;
+      if (isMt5) {
+        toast.success(`🟢 MT5 Live: Stop Loss queued to MT5 bridge (${currSym}${variables.newStopLoss})`);
+      } else if (bRes?.executedOnBroker) {
+        toast.success(`🟢 FYERS Live: ${bRes.message || `Stop Loss moved to ${currSym}${variables.newStopLoss}`}`);
       } else {
-        toast.success(`Stop Loss moved to ₹${variables.newStopLoss} successfully!`);
+        toast.success(`Stop Loss moved to ${currSym}${variables.newStopLoss} successfully!`);
       }
       queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
       queryClient.invalidateQueries({ queryKey: ['trades'] });
@@ -618,13 +622,18 @@ export function LiveOpenTradeWatcher({
       });
     },
     onSuccess: (data: any, variables) => {
-      const exitMsg = data?.brokerExitResult?.executedOnBroker
+      const isMt5 = data?.brokerExitResult?.action === 'QUEUED_TO_MT5' || data?.brokerSlResult?.action === 'QUEUED_TO_MT5';
+      const exitMsg = isMt5
+        ? `🟢 MT5 Live: Exited ${variables.exitQty} lots.`
+        : data?.brokerExitResult?.executedOnBroker
         ? `🟢 FYERS Live: Exited ${variables.exitQty} lots.`
         : `Exited ${variables.exitQty} lots recorded.`;
-      const slMsg = data?.brokerSlResult?.executedOnBroker
-        ? ` Trailed SL to ₹${variables.newStopLoss} on FYERS.`
+      const slMsg = isMt5
+        ? ` Trailed SL to ${currSym}${variables.newStopLoss} on MT5.`
+        : data?.brokerSlResult?.executedOnBroker
+        ? ` Trailed SL to ${currSym}${variables.newStopLoss} on FYERS.`
         : variables.newStopLoss
-        ? ` Trailed SL to ₹${variables.newStopLoss}.`
+        ? ` Trailed SL to ${currSym}${variables.newStopLoss}.`
         : '';
       toast.success(`${exitMsg}${slMsg}`);
 
@@ -870,7 +879,7 @@ export function LiveOpenTradeWatcher({
       if (e.key === 'b' || e.key === 'B') {
         e.preventDefault();
         const bePrice = topPos.trueBreakevenPrice ?? topPos.entryPrice;
-        toast.info(`⚡ Hotkey [B]: Locking BE + Fees for ${topPos.symbol} @ ₹${bePrice.toFixed(2)}`);
+        toast.info(`⚡ Hotkey [B]: Locking BE + Fees for ${topPos.symbol} @ ${currSym}${bePrice.toFixed(2)}`);
         handleQuickMoveToBe(topPos);
       } else if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
@@ -1137,9 +1146,10 @@ export function LiveOpenTradeWatcher({
             idempotencyKey: `${pos.tradeId}_auto_exit_${step.name}_${Date.now()}`,
           })
           .then(() => {
+            const brokerName = pos.isMt5 ? 'MT5' : 'FYERS';
             soundEngine.playTargetHit();
-            notificationService.sendNotification(`⚡ FYERS Target Met: ${pos.symbol}`, {
-              body: `Hit ${step.name} @ ₹${pos.currentLtp}! Exited ${exitQty} units.`,
+            notificationService.sendNotification(`⚡ ${brokerName} Target Met: ${pos.symbol}`, {
+              body: `Hit ${step.name} @ ${currSym}${pos.currentLtp}! Exited ${exitQty} units.`,
             });
             if (step.suggestedStopLoss) {
               api.trades
@@ -1150,7 +1160,7 @@ export function LiveOpenTradeWatcher({
                 })
                 .then(() => {
                   toast.success(
-                    `⚡ FYERS Auto-Executed: Hit ${step.name} @ ₹${pos.currentLtp}! Exited ${exitQty} units & trailed SL to ₹${step.suggestedStopLoss} (fees protected).`
+                    `⚡ ${brokerName} Auto-Executed: Hit ${step.name} @ ${currSym}${pos.currentLtp}! Exited ${exitQty} units & trailed SL to ${currSym}${step.suggestedStopLoss} (fees protected).`
                   );
                   queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
                   queryClient.invalidateQueries({ queryKey: ['trades'] });
@@ -1163,7 +1173,7 @@ export function LiveOpenTradeWatcher({
                 });
             } else {
               toast.success(
-                `⚡ FYERS Auto-Executed: Hit ${step.name} @ ₹${pos.currentLtp}! Exited ${exitQty} units.`
+                `⚡ ${brokerName} Auto-Executed: Hit ${step.name} @ ${currSym}${pos.currentLtp}! Exited ${exitQty} units.`
               );
               queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
               queryClient.invalidateQueries({ queryKey: ['trades'] });
@@ -1204,12 +1214,13 @@ export function LiveOpenTradeWatcher({
                 executeBroker: true,
               })
               .then(() => {
+                const brokerName = pos.isMt5 ? 'MT5' : 'FYERS';
                 soundEngine.playAutoExecuted();
-                notificationService.sendNotification(`⚡ FYERS Dynamic SL Trailed: ${pos.symbol}`, {
-                  body: `Ratcheted Stop Loss to ₹${dynEval.newStopPrice} (${dynEval.reason})`,
+                notificationService.sendNotification(`⚡ ${brokerName} Dynamic SL Trailed: ${pos.symbol}`, {
+                  body: `Ratcheted Stop Loss to ${currSym}${dynEval.newStopPrice} (${dynEval.reason})`,
                 });
                 toast.success(
-                  `⚡ Dynamic Trailing: Ratcheted Stop Loss to ₹${dynEval.newStopPrice} on FYERS! (${dynEval.reason})`
+                  `⚡ Dynamic Trailing: Ratcheted Stop Loss to ${currSym}${dynEval.newStopPrice} on ${brokerName}! (${dynEval.reason})`
                 );
                 queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
                 queryClient.invalidateQueries({ queryKey: ['trades'] });
@@ -1240,6 +1251,7 @@ export function LiveOpenTradeWatcher({
               );
             } catch {}
 
+            const brokerName = pos.isMt5 ? 'MT5' : 'FYERS';
             api.trades
               .liveBrokerExit(pos.tradeId, {
                 quantity: pos.quantity,
@@ -1250,11 +1262,11 @@ export function LiveOpenTradeWatcher({
               })
               .then(() => {
                 soundEngine.playGivebackAlert();
-                notificationService.sendNotification(`🛡️ FYERS Giveback Auto-Exit: ${pos.symbol}`, {
-                  body: `Closed runner position at ₹${pos.currentLtp}! (${gbEval.reason})`,
+                notificationService.sendNotification(`🛡️ ${brokerName} Giveback Auto-Exit: ${pos.symbol}`, {
+                  body: `Closed runner position at ${currSym}${pos.currentLtp}! (${gbEval.reason})`,
                 });
                 toast.warning(
-                  `🛡️ Giveback Protection: Closed runner at ₹${pos.currentLtp}! (${gbEval.reason})`
+                  `🛡️ Giveback Protection: Closed runner at ${currSym}${pos.currentLtp}! (${gbEval.reason})`
                 );
                 queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
                 queryClient.invalidateQueries({ queryKey: ['trades'] });
@@ -1509,9 +1521,15 @@ export function LiveOpenTradeWatcher({
     return 'pulse';
   };
 
+  const selectedAccount = accounts?.find((a: any) => String(a._id) === String(selectedAccountId || accountId));
+  const isUsdAccount =
+    selectedAccount?.baseCurrency === 'USD' ||
+    (selectedAccount?.broker && ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(String(selectedAccount.broker).toUpperCase()));
+
   const watcherCurrency =
     isPropMode ||
-    (summary?.positions?.length && summary.positions.every((p: any) => p.currency === 'USD'))
+    isUsdAccount ||
+    (summary?.positions?.length && summary.positions.some((p: any) => p.currency === 'USD' || p.symbol?.includes('USD') || p.symbol === 'XAUUSD'))
       ? 'USD'
       : 'INR';
   const currSym = watcherCurrency === 'USD' ? '$' : '₹';
@@ -2618,7 +2636,7 @@ export function LiveOpenTradeWatcher({
                                 </Tooltip>
                               )}
                               {pos.stagnation?.isStagnant && (
-                                <Tooltip title={`${pos.stagnation.message} (Velocity: ₹${pos.stagnation.pnlVelocityPerMinute}/min)`} arrow>
+                                <Tooltip title={`${pos.stagnation.message} (Velocity: ${currSym}${pos.stagnation.pnlVelocityPerMinute}/min)`} arrow>
                                   <Chip
                                     label="STALLED"
                                     size="small"
@@ -2687,7 +2705,7 @@ export function LiveOpenTradeWatcher({
                           <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                               <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem' }}>
-                                {pos.stopLoss !== null ? `₹${pos.stopLoss}` : 'None'}
+                                {pos.stopLoss !== null ? `${currSym}${pos.stopLoss}` : 'None'}
                               </Typography>
                               <Chip
                                 label={threat.label}
@@ -2705,7 +2723,7 @@ export function LiveOpenTradeWatcher({
                                 <Tooltip
                                   title={
                                     pos.trueBreakevenPrice
-                                      ? `Lock True Breakeven @ ₹${pos.trueBreakevenPrice} (covers all fees)`
+                                      ? `Lock True Breakeven @ ${currSym}${pos.trueBreakevenPrice} (covers all fees)`
                                       : 'Quick Lock Breakeven Stop'
                                   }
                                   arrow
@@ -2754,7 +2772,7 @@ export function LiveOpenTradeWatcher({
                                         idempotencyKey: `${pos.tradeId}_arm_sl_${Date.now()}`,
                                       })
                                       .then(() => {
-                                        toast.success(`Protection SL armed on FYERS @ ₹${slToArm}`);
+                                        toast.success(`Protection SL armed on ${pos.isMt5 ? 'MT5' : 'FYERS'} @ ${currSym}${slToArm}`);
                                         queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
                                       })
                                       .catch((err: any) => {
@@ -2824,7 +2842,7 @@ export function LiveOpenTradeWatcher({
                                 </Box>
                               ) : pos.target !== null ? (
                                 <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 600 }}>
-                                  ₹{pos.target} ({pos.targetProgressPercent ?? 0}%)
+                                  {currSym}{pos.target} ({pos.targetProgressPercent ?? 0}%)
                                 </Typography>
                               ) : (
                                 <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
@@ -2839,7 +2857,7 @@ export function LiveOpenTradeWatcher({
                             <TableCell>
                               {pos.giveback ? (
                                 <Tooltip
-                                  title={`Peak MTM: +₹${pos.giveback.peakFloatingNetPnL} (+${pos.giveback.peakUnrealizedR}R) | Retained: ${pos.giveback.retentionPercent}%`}
+                                  title={`Peak MTM: +${currSym}${pos.giveback.peakFloatingNetPnL} (+${pos.giveback.peakUnrealizedR}R) | Retained: ${pos.giveback.retentionPercent}%`}
                                   arrow
                                 >
                                   <Chip
@@ -2952,8 +2970,8 @@ export function LiveOpenTradeWatcher({
                               <Tooltip
                                 title={
                                   pos.trueBreakevenPrice
-                                    ? `Lock True Breakeven @ ₹${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
-                                    : `Lock Breakeven @ ₹${pos.entryPrice}`
+                                    ? `Lock True Breakeven @ ${currSym}${pos.trueBreakevenPrice} (covers all fees: +${pos.feeBufferPoints || 0} pts)`
+                                    : `Lock Breakeven @ ${currSym}${pos.entryPrice}`
                                 }
                                 arrow
                               >
@@ -3243,7 +3261,7 @@ export function LiveOpenTradeWatcher({
                                         idempotencyKey: `${pos.tradeId}_arm_sl_${Date.now()}`,
                                       })
                                       .then(() => {
-                                        toast.success(`Protection SL armed on FYERS @ ₹${slToArm}`);
+                                        toast.success(`Protection SL armed on ${pos.isMt5 ? 'MT5' : 'FYERS'} @ ${currSym}${slToArm}`);
                                         queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
                                       })
                                       .catch((err: any) => {
@@ -4452,47 +4470,62 @@ export function LiveOpenTradeWatcher({
             />
 
             {/* Live Broker Execution Indicator & Toggle */}
-            <Box
-              sx={{
-                mb: 2,
-                p: 1.25,
-                borderRadius: '8px',
-                bgcolor: executeSlOnBroker ? alpha('#10B981', 0.1) : alpha('#64748B', 0.1),
-                border: '1px solid',
-                borderColor: executeSlOnBroker ? alpha('#10B981', 0.3) : alpha('#64748B', 0.2),
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {(() => {
+              const isMt5Metric = Boolean(
+                editSlMetric.isMt5 ||
+                (editSlMetric as any)?.tags?.some((t: string) => t.toUpperCase() === 'MT5' || t.toUpperCase() === 'ELEFIN' || t.startsWith('MT5_TICKET')) ||
+                (editSlMetric as any)?.accountBroker === 'Elefin' ||
+                (editSlMetric as any)?.accountBroker === 'MT5' ||
+                selectedAccount?.broker === 'Elefin' ||
+                selectedAccount?.broker === 'MT5'
+              );
+
+              return (
                 <Box
                   sx={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    bgcolor: executeSlOnBroker ? '#10B981' : '#64748B',
-                    boxShadow: executeSlOnBroker ? '0 0 8px #10B981' : 'none',
+                    mb: 2,
+                    p: 1.25,
+                    borderRadius: '8px',
+                    bgcolor: executeSlOnBroker ? alpha('#10B981', 0.1) : alpha('#64748B', 0.1),
+                    border: '1px solid',
+                    borderColor: executeSlOnBroker ? alpha('#10B981', 0.3) : alpha('#64748B', 0.2),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
-                />
-                <Box>
-                  <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', color: executeSlOnBroker ? '#10B981' : 'text.secondary' }}>
-                    Live Broker Execution (FYERS API v3)
-                  </Typography>
-                  <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>
-                    {executeSlOnBroker
-                      ? 'Order will be placed/modified directly in FYERS orderbook'
-                      : 'Update SetupMint journal only'}
-                  </Typography>
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: executeSlOnBroker ? '#10B981' : '#64748B',
+                        boxShadow: executeSlOnBroker ? '0 0 8px #10B981' : 'none',
+                      }}
+                    />
+                    <Box>
+                      <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', color: executeSlOnBroker ? '#10B981' : 'text.secondary' }}>
+                        {isMt5Metric ? 'Live Broker Execution (MT5 / Elefin Bridge)' : 'Live Broker Execution (FYERS API v3)'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>
+                        {executeSlOnBroker
+                          ? (isMt5Metric
+                              ? 'Order will be placed/modified directly in MT5 via Bridge EA'
+                              : 'Order will be placed/modified directly in FYERS orderbook')
+                          : 'Update SetupMint journal only'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Switch
+                    size="small"
+                    checked={executeSlOnBroker}
+                    onChange={(e) => setExecuteSlOnBroker(e.target.checked)}
+                    color="success"
+                  />
                 </Box>
-              </Box>
-              <Switch
-                size="small"
-                checked={executeSlOnBroker}
-                onChange={(e) => setExecuteSlOnBroker(e.target.checked)}
-                color="success"
-              />
-            </Box>
+              );
+            })()}
 
             {/* Dynamic Analysis / Risk Impact Message */}
             {(() => {
@@ -4586,9 +4619,9 @@ export function LiveOpenTradeWatcher({
               }}
             >
               {updateSlMutation.isPending
-                ? 'Transmitting Order...'
+                ? (editSlMetric?.isMt5 || selectedAccount?.broker === 'Elefin' ? 'Queuing to MT5...' : 'Transmitting Order...')
                 : executeSlOnBroker
-                ? '⚡ Execute Live Broker SL'
+                ? (editSlMetric?.isMt5 || selectedAccount?.broker === 'Elefin' ? '⚡ Execute Live MT5 SL' : '⚡ Execute Live Broker SL')
                 : 'Update Stop Loss'}
             </Button>
           </DialogActions>
@@ -4828,7 +4861,7 @@ export function LiveOpenTradeWatcher({
 
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.75 }}>
                     <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums', fontSize: '0.72rem' }}>
-                      LTP ₹{pos.currentLtp.toFixed(2)} · {pos.unrealizedR !== null ? `${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR.toFixed(2)}R` : '—'}
+                      LTP {currSym}{pos.currentLtp.toFixed(2)} · {pos.unrealizedR !== null ? `${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR.toFixed(2)}R` : '—'}
                     </Typography>
                     <Typography
                       variant="caption"
@@ -4843,7 +4876,7 @@ export function LiveOpenTradeWatcher({
                             : 'rgba(255,255,255,0.7)',
                       }}
                     >
-                      SL: ₹{pos.stopLoss !== null ? pos.stopLoss.toFixed(2) : 'None'} ({pos.distanceToStopPoints !== null ? `${pos.distanceToStopPoints.toFixed(1)} pts` : '—'})
+                      SL: {pos.stopLoss !== null ? `${currSym}${pos.stopLoss.toFixed(2)}` : 'None'} ({pos.distanceToStopPoints !== null ? `${pos.distanceToStopPoints.toFixed(1)} pts` : '—'})
                     </Typography>
                   </Box>
 

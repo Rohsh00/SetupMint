@@ -4,6 +4,7 @@ import { Trade, Instrument, BrokerIntegration, User, TradingAccount } from '../d
 import { FyersService } from './fyers.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
 import { AccountScopeService } from './account-scope.service.js';
+import { Mt5CommandService } from './mt5-command.service.js';
 import { GlobalCfdCandleProvider } from './market-data/global-cfd.provider.js';
 import {
   calculateLiveOpenTradeMetric,
@@ -525,9 +526,11 @@ export class LiveWatcherService {
           currentLtp = globalQuote.ltp;
           provider = 'SIMULATED';
           quoteTimestamp = globalQuote.timestamp ? new Date(globalQuote.timestamp) : new Date();
-        } else if (effectiveHasBroker && this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption)) {
+        } else if (effectiveHasBroker && (this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption) || fields.entryPrice > 0)) {
           // Connected broker fallback: peak LTP (if plausible) or entry price
-          currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
+          currentLtp = this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption)
+            ? trade.calculated!.liveMfeSummary!.peakLtp!
+            : fields.entryPrice;
           provider = 'FYERS';
           quoteTimestamp = trade.calculated?.liveMfeSummary?.peakTimestamp
             ? new Date(trade.calculated.liveMfeSummary.peakTimestamp)
@@ -594,6 +597,11 @@ export class LiveWatcherService {
         hasActiveBrokerConnection: effectiveHasBroker,
       });
 
+      if (Mt5CommandService.isMt5Trade(trade, trade.accountId)) {
+        tradeDataHealth.canExecuteBroker = true;
+        tradeDataHealth.brokerExecutionBlockedReason = undefined;
+      }
+
       // Guard against corrupted peak MFE previously stored in DB (e.g. spot index price applied to an option)
       const isExistingPeakPlausible = this.isPlausiblePrice(
         trade.calculated?.liveMfeSummary?.peakLtp,
@@ -626,6 +634,8 @@ export class LiveWatcherService {
         tickSize: fields.tickSize,
         assetClass: trade.assetClass,
         marketSegment: trade.marketSegment,
+        currency: trade.currency || (isForexOrCfdTrade ? 'USD' : 'INR'),
+        broker: acc?.broker,
         provider,
         previousPeakMfe: effectivePeakMfe,
         dataHealth: tradeDataHealth,
@@ -655,6 +665,11 @@ export class LiveWatcherService {
       }
 
       await this.enrichLiveMetric(metric, trade, fields, uId);
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, acc);
+      (metric as any).currency = trade.currency || (isForexOrCfdTrade ? 'USD' : 'INR');
+      (metric as any).accountBroker = acc?.broker || (trade.accountId as any)?.broker || '';
+      (metric as any).tags = trade.tags || [];
+      (metric as any).isMt5 = isMt5;
 
       positions.push(metric);
     }
@@ -1061,8 +1076,10 @@ export class LiveWatcherService {
           (!brokerIntegration.tokenExpiresAt || new Date(brokerIntegration.tokenExpiresAt) > new Date())
         );
 
-        if (hasActiveBroker && this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption)) {
-          currentLtp = trade.calculated?.liveMfeSummary?.peakLtp || fields.entryPrice;
+        if (hasActiveBroker && (this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption) || fields.entryPrice > 0)) {
+          currentLtp = this.isPlausiblePrice(trade.calculated?.liveMfeSummary?.peakLtp, fields.entryPrice, isOption)
+            ? trade.calculated!.liveMfeSummary!.peakLtp!
+            : fields.entryPrice;
           provider = 'FYERS';
         } else {
           currentLtp = this.generateSimulatedLtp(trade, fields.tickSize, fields.stopLoss);

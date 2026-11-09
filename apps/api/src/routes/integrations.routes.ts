@@ -5,6 +5,7 @@ import { BrokerIntegration, MarketDataIntegration, Trade, Instrument, TradingAcc
 import { requireAuth } from '../middleware/auth.js';
 import { FyersService } from '../services/fyers.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
+import { Mt5CommandService } from '../services/mt5-command.service.js';
 import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto.service.js';
 import { excursionBackfillSchema } from '@tradevault/shared';
 import { config } from '../config.js';
@@ -252,9 +253,23 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       return reply.status(404).send({ success: false, error: 'Trading account not found' });
     }
 
+    // Process command execution acknowledgements from MT5 EA
+    if (Array.isArray(req.body?.commandResults)) {
+      await Mt5CommandService.processCommandResults(req.body.commandResults);
+    }
+
+    // Retrieve pending 2-way broker commands for this account
+    const pendingCommands = await Mt5CommandService.getPendingCommandsForAccount(account._id);
+
     // Health check / ping test
     if (req.body?.action === 'PING' || req.body?.ping) {
-      return reply.send({ ok: true, status: 'CONNECTED', broker: account.broker, accountName: account.name });
+      return reply.send({
+        ok: true,
+        status: 'CONNECTED',
+        broker: account.broker,
+        accountName: account.name,
+        commands: pendingCommands,
+      });
     }
 
     // Update account balance if provided in payload
@@ -275,7 +290,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       : [];
 
     if (rawItems.length === 0) {
-      return reply.send({ ok: true, processed: 0, message: 'No positions in payload' });
+      return reply.send({ ok: true, processed: 0, message: 'No positions in payload', commands: pendingCommands });
     }
 
     let processedCount = 0;
@@ -578,6 +593,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       processed: processedCount,
       broker: account.broker,
       results,
+      commands: pendingCommands,
     });
   });
 

@@ -113,6 +113,23 @@ export function QuickCloseTradeDialog({
   const isLotBased = lotSize > 1;
   const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQuantity / lotSize)) : totalOpenQuantity;
 
+  const isMt5Trade = Boolean(
+    (trade as any)?.isMt5 ||
+    (trade as any)?.tags?.some((t: string) => t.toUpperCase() === 'MT5' || t.toUpperCase() === 'ELEFIN' || t.startsWith('MT5_TICKET')) ||
+    trade?.importBatchId?.startsWith('MT5_') ||
+    (trade as any)?.accountBroker === 'Elefin' ||
+    (trade as any)?.accountBroker === 'MT5'
+  );
+
+  const isUsdTrade =
+    trade?.currency === 'USD' ||
+    trade?.symbol?.includes('USD') ||
+    trade?.symbol === 'XAUUSD' ||
+    trade?.assetClass === 'FOREX' ||
+    isMt5Trade;
+
+  const currSym = isUsdTrade ? '$' : '₹';
+
   // Data health & provider guard check
   const effectiveDataHealth: ILiveDataHealth | undefined = dataHealth || trade?.dataHealth;
   const isBrokerExecutionBlocked = effectiveDataHealth ? !effectiveDataHealth.canExecuteBroker : false;
@@ -144,6 +161,7 @@ export function QuickCloseTradeDialog({
   const [orderStage, setOrderStage] = useState<OrderExecutionStage>('IDLE');
   const [brokerResultDetails, setBrokerResultDetails] = useState<{
     orderId?: string;
+    commandId?: string;
     tradedPrice?: number;
     tradedQty?: number;
     orderStatus?: string;
@@ -266,12 +284,14 @@ export function QuickCloseTradeDialog({
         selectedCloseQty,
         contractMultiplier,
         20,
-        accountBroker
+        accountBroker,
+        direction,
+        isUsdTrade ? 'USD' : 'INR'
       );
     } catch {
       return null;
     }
-  }, [isPriceValid, entryPrice, numExitPrice, selectedCloseQty, contractMultiplier, accountBroker, marketSegment, assetClass]);
+  }, [isPriceValid, entryPrice, numExitPrice, selectedCloseQty, contractMultiplier, accountBroker, marketSegment, assetClass, direction, isUsdTrade]);
 
   // Live P&L computation on closed quantity
   const { grossPnL, totalCosts, netPnL, realizedR } = useMemo(() => {
@@ -420,10 +440,12 @@ export function QuickCloseTradeDialog({
 
       setOrderStage('FILLED');
 
-      if (bRes?.executedOnBroker) {
+      if (bRes?.action === 'QUEUED_TO_MT5' || isMt5Trade) {
+        toast.success(`🟢 MT5 Live: Exit order queued to MT5 bridge for ${selectedCloseQty} lot`);
+      } else if (bRes?.executedOnBroker) {
         toast.success(`🟢 FYERS Live: ${bRes.message || `Exit executed for ${selectedCloseQty} qty`}`);
       } else if (isPartial) {
-        toast.success(`Partial exit of ${selectedCloseQty} qty @ ₹${numExitPrice} executed (+₹${netPnL} locked). Remaining: ${remainingQty} qty.`);
+        toast.success(`Partial exit of ${selectedCloseQty} qty @ ${currSym}${numExitPrice} executed (+${currSym}${netPnL} locked). Remaining: ${remainingQty} qty.`);
       } else {
         toast.success(`Trade ${trade.symbol} closed successfully.`);
       }
@@ -652,7 +674,7 @@ export function QuickCloseTradeDialog({
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                   <CircularProgress size={14} />
                   <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                    Transmitting market order to FYERS API gateway...
+                    {isMt5Trade ? 'Queuing exit command to MT5 bridge...' : 'Transmitting market order to FYERS API gateway...'}
                   </Typography>
                 </Box>
               )}
@@ -660,19 +682,19 @@ export function QuickCloseTradeDialog({
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                   <SyncRoundedIcon sx={{ fontSize: 16, animation: 'spin 1s linear infinite' }} />
                   <Typography variant="caption" sx={{ fontWeight: 600, color: '#F59E0B' }}>
-                    Order working on exchange orderbook — awaiting execution fill...
+                    {isMt5Trade ? 'Command dispatched to MT5 EA — awaiting confirmation...' : 'Order working on exchange orderbook — awaiting execution fill...'}
                   </Typography>
                 </Box>
               )}
               {orderStage === 'FILLED' && (
                 <Box>
                   <Typography variant="body2" sx={{ fontWeight: 800, color: '#10B981' }}>
-                    🟢 Order Filled Successfully
+                    🟢 {isMt5Trade ? 'Order Queued to MT5 Successfully' : 'Order Filled Successfully'}
                   </Typography>
-                  {brokerResultDetails?.orderId && (
+                  {(brokerResultDetails?.orderId || brokerResultDetails?.commandId) && (
                     <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: 'text.secondary', display: 'block' }}>
-                      FYERS Order ID: <strong>{brokerResultDetails.orderId}</strong>
-                      {brokerResultDetails.tradedPrice ? ` @ ₹${brokerResultDetails.tradedPrice}` : ''}
+                      {isMt5Trade ? 'MT5 Command ID' : 'FYERS Order ID'}: <strong>{brokerResultDetails.orderId || brokerResultDetails.commandId}</strong>
+                      {brokerResultDetails.tradedPrice ? ` @ ${currSym}${brokerResultDetails.tradedPrice}` : ''}
                     </Typography>
                   )}
                 </Box>
@@ -740,7 +762,7 @@ export function QuickCloseTradeDialog({
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-            <span>Entry: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>₹{entryPrice}</strong></span>
+            <span>Entry: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{currSym}{entryPrice}</strong></span>
             <span>Position: <strong style={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary }}>{totalOpenQuantity} Qty{isLotBased ? ` (${totalLots} Lots)` : ''}</strong></span>
             <span>Account: <strong>{trade.accountName || 'Trading Account'}</strong></span>
           </Box>
@@ -930,13 +952,15 @@ export function QuickCloseTradeDialog({
             />
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 800, color: executeOnBroker ? '#10B981' : 'text.secondary' }}>
-                Live Broker Order (FYERS API v3)
+                Live Broker Order ({isMt5Trade ? 'MT5 / Elefin Bridge' : 'FYERS API v3'})
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
                 {isBrokerExecutionBlocked
                   ? brokerBlockReason || 'Broker execution is unavailable'
                   : executeOnBroker
-                  ? `Places a real market exit order for ${selectedCloseQty} qty directly with FYERS exchange gateway`
+                  ? (isMt5Trade
+                      ? `Queues a real market exit order for ${selectedCloseQty} lot directly with MT5 bridge EA`
+                      : `Places a real market exit order for ${selectedCloseQty} qty directly with FYERS exchange gateway`)
                   : 'Record in SetupMint journal only without placing exchange order'}
               </Typography>
             </Box>
@@ -966,7 +990,7 @@ export function QuickCloseTradeDialog({
           placeholder={`e.g. ${entryPrice}`}
           slotProps={{
             input: {
-              startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+              startAdornment: <InputAdornment position="start">{currSym}</InputAdornment>,
               sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
             },
           }}
@@ -1048,7 +1072,7 @@ export function QuickCloseTradeDialog({
               onChange={(e) => setCustomExitFees(e.target.value)}
               slotProps={{
                 input: {
-                  startAdornment: <InputAdornment position="start">₹</InputAdornment>,
+                  startAdornment: <InputAdornment position="start">{currSym}</InputAdornment>,
                   sx: { fontFamily: `'JetBrains Mono', monospace` },
                 },
               }}
@@ -1099,18 +1123,18 @@ export function QuickCloseTradeDialog({
 
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Gross P&L ({selectedCloseQty} Qty @ ₹{numExitPrice || 0})
+              Gross P&L ({selectedCloseQty} {isLotBased || isMt5Trade ? 'Lot' : 'Qty'} @ {currSym}{numExitPrice || 0})
             </Typography>
             <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
-              {isPriceValid ? formatCurrency(grossPnL) : '—'}
+              {isPriceValid ? formatCurrency(grossPnL, isUsdTrade ? 'USD' : 'INR') : '—'}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Total Costs & Taxes (STT, Stamp, Exchange, GST)
+              {isUsdTrade ? 'Total Costs (Forex / Elefin: Spread-based)' : 'Total Costs & Taxes (STT, Stamp, Exchange, GST)'}
             </Typography>
             <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary }}>
-              {isPriceValid ? formatCurrency(totalCosts) : '—'}
+              {isPriceValid ? formatCurrency(totalCosts, isUsdTrade ? 'USD' : 'INR') : '—'}
             </Typography>
           </Box>
           <Box
@@ -1138,7 +1162,7 @@ export function QuickCloseTradeDialog({
                   : muiTheme.palette.text.primary,
               }}
             >
-              {isPriceValid ? formatCurrency(netPnL) : '₹0.00'}
+              {isPriceValid ? formatCurrency(netPnL, isUsdTrade ? 'USD' : 'INR') : `${currSym}0.00`}
             </Typography>
           </Box>
         </Card>
@@ -1181,8 +1205,8 @@ export function QuickCloseTradeDialog({
               : orderStage === 'FILLED'
               ? 'Order Filled'
               : isPartial
-              ? `⚡ Hold to Exit 50% (${selectedCloseQty} Qty)`
-              : `⚡ Hold to Close 100% (${selectedCloseQty} Qty)`}
+              ? `⚡ Hold to Exit 50% (${selectedCloseQty} ${isLotBased || isMt5Trade ? 'Lot' : 'Qty'})`
+              : `⚡ Hold to Close 100% (${selectedCloseQty} ${isLotBased || isMt5Trade ? 'Lot' : 'Qty'})`}
           </HoldToConfirmButton>
         ) : (
           <Button

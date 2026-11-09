@@ -404,26 +404,26 @@ export class ChartGeneratorService {
     const provider = options.provider || 'FYERS';
     const isUnderlying = Boolean(options.isUnderlyingFallback);
 
-    let badgeLabel = 'FYERS AUTO CHART';
+    let badgeLabel = '⚡ FYERS AUTO CHART';
     let badgeBg = '#083344';
     let badgeBorder = '#06b6d4';
     let badgeText = '#22d3ee';
     let watermarkSource = 'FYERS API v3';
 
     if (isOpen) {
-      badgeLabel = 'LIVE POSITION';
+      badgeLabel = '⚡ LIVE POSITION';
       badgeBg = '#450a0a';
       badgeBorder = '#ef4444';
       badgeText = '#fca5a5';
       watermarkSource = 'Live Execution Feed';
     } else if (provider === 'ANGEL_ONE') {
-      badgeLabel = 'ANGEL ONE AUTO CHART';
+      badgeLabel = '⚡ ANGEL ONE AUTO CHART';
       badgeBg = '#451a03';
       badgeBorder = '#d97706';
       badgeText = '#fbbf24';
       watermarkSource = 'Angel One SmartAPI';
     } else if (isUnderlying) {
-      badgeLabel = 'UNDERLYING PROXY';
+      badgeLabel = '⚡ UNDERLYING PROXY';
       badgeBg = '#3b0764';
       badgeBorder = '#9333ea';
       badgeText = '#c084fc';

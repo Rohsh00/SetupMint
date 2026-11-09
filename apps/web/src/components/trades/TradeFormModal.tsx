@@ -120,7 +120,30 @@ function buildInitialFormValues(
       initialAssetClass = 'COMMODITY';
     }
 
+    const isForexOrUsd =
+      initialValues.currency === 'USD' ||
+      initialValues.currency === 'EUR' ||
+      initialValues.currency === 'GBP' ||
+      initialValues.assetClass === 'FOREX' ||
+      initialValues.marketSegment === 'FOREX' ||
+      symUpper.includes('XAU') ||
+      symUpper.includes('EUR') ||
+      symUpper.includes('GBP') ||
+      (Array.isArray(initialValues.tags) && (initialValues.tags.includes('ELEFIN') || initialValues.tags.includes('MT5')));
+
+    if (isForexOrUsd) {
+      initialExchange = 'FOREX';
+      initialMarketSegment = 'FOREX';
+      initialAssetClass = 'FOREX';
+    }
+
     let initialExec = initialValues.simpleExecution ? { ...initialValues.simpleExecution } : {};
+    if (isForexOrUsd) {
+      if (Number(initialExec.brokerage) === 40) initialExec.brokerage = 0;
+      initialExec.exchangeFees = 0;
+      initialExec.regulatoryFees = 0;
+      initialExec.taxes = 0;
+    }
     const hasItemizedFees =
       Number(initialExec.brokerage || 0) > 0 ||
       Number(initialExec.exchangeFees || 0) > 0 ||
@@ -162,7 +185,9 @@ function buildInitialFormValues(
           qty,
           mult,
           20,
-          brokerCode
+          brokerCode,
+          initialValues.direction,
+          matchedAcc?.baseCurrency || initialValues?.currency
         );
         if (autoCharges) {
           initialExec = {
@@ -678,7 +703,9 @@ function TradeFormModalContent({
         qty,
         mult,
         20,
-        selectedAccount?.broker
+        selectedAccount?.broker,
+        watchedDirection,
+        selectedAccount?.currency || selectedAccount?.baseCurrency || initialValues?.currency
       );
     }
     return null;

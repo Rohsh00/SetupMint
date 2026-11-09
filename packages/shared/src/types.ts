@@ -2538,6 +2538,10 @@ export interface ILiveOpenTradeMetric {
   contractMultiplier?: number;
   lotSize?: number;
   totalLots?: number;
+  currency?: string;
+  accountBroker?: string;
+  tags?: string[];
+  isMt5?: boolean;
   trueBreakevenPrice?: number;
   nominalBreakevenPrice?: number;
   feeBufferPoints?: number;

@@ -62,6 +62,8 @@ export interface ILiveOpenTradeCalculationParams {
   tickSize?: number | string | Decimal | null;
   assetClass?: AssetClass;
   marketSegment?: MarketSegment;
+  currency?: string;
+  broker?: string;
   provider?: LiveQuoteProvider;
   asOf?: Date | number;
   customRules?: ICustomLadderRules;
@@ -81,6 +83,10 @@ export interface ILiveOpenTradeMetric {
   contractMultiplier?: number;
   lotSize?: number;
   totalLots?: number;
+  currency?: string;
+  accountBroker?: string;
+  tags?: string[];
+  isMt5?: boolean;
   trueBreakevenPrice?: number;
   nominalBreakevenPrice?: number;
   feeBufferPoints?: number;
@@ -226,7 +232,10 @@ export function calculateTargetLadder(params: {
   tickSize?: Decimal | number;
   customRules?: ICustomLadderRules;
   estimatedCharges?: Decimal | number;
+  currency?: string;
+  currencySymbol?: string;
 }): ILiveTargetLadder | undefined {
+  const sym = params.currencySymbol || (params.currency === 'USD' ? '$' : '₹');
   const isLong = params.direction === 'LONG';
   const dEntry = params.entryPrice instanceof Decimal ? params.entryPrice : new Decimal(params.entryPrice);
   const dLtp = params.currentLtp instanceof Decimal ? params.currentLtp : new Decimal(params.currentLtp);
@@ -325,18 +334,18 @@ export function calculateTargetLadder(params: {
   const t1Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(t1RiskPoints).times(100).toFixed(1))));
 
   let t1StopLoss = Number(dEntry.toFixed(2));
-  let t1StopLabel = `Lock BE (₹${t1StopLoss})`;
+  let t1StopLabel = `Lock BE (${sym}${t1StopLoss})`;
   if (rules?.t1?.trailAction === 'TRUE_BE_WITH_FEES' && trueBePrice) {
     t1StopLoss = trueBePrice;
-    t1StopLabel = `Lock True BE + Fees (₹${trueBePrice})`;
+    t1StopLabel = `Lock True BE + Fees (${sym}${trueBePrice})`;
   } else if (rules?.t1?.trailAction === 'CUSTOM_POINTS' && rules.t1.trailPoints) {
     const pts = new Decimal(rules.t1.trailPoints);
     const sl = isLong ? dEntry.plus(pts) : dEntry.minus(pts);
     t1StopLoss = Number(sl.toFixed(2));
-    t1StopLabel = `Trail +${rules.t1.trailPoints} pts (₹${t1StopLoss})`;
+    t1StopLabel = `Trail +${rules.t1.trailPoints} pts (${sym}${t1StopLoss})`;
   } else if (rules?.t1?.trailAction === 'NOMINAL_BE') {
     t1StopLoss = Number(dEntry.toFixed(2));
-    t1StopLabel = `Lock BE (₹${t1StopLoss})`;
+    t1StopLabel = `Lock BE (${sym}${t1StopLoss})`;
   }
 
   const isT1AllOut = t1ExitRatio >= 1.0;
@@ -370,12 +379,12 @@ export function calculateTargetLadder(params: {
   const t2Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(t2RiskPoints).times(100).toFixed(1))));
 
   let t2StopLoss = Number(t1Price.toFixed(2));
-  let t2StopLabel = `Trail Stop to +${t1TargetR}R (₹${t2StopLoss})`;
+  let t2StopLabel = `Trail Stop to +${t1TargetR}R (${sym}${t2StopLoss})`;
   if (rules?.t2?.trailAction === 'CUSTOM_POINTS' && rules.t2.trailPoints) {
     const pts = new Decimal(rules.t2.trailPoints);
     const sl = isLong ? dEntry.plus(pts) : dEntry.minus(pts);
     t2StopLoss = Number(sl.toFixed(2));
-    t2StopLabel = `Trail +${rules.t2.trailPoints} pts (₹${t2StopLoss})`;
+    t2StopLabel = `Trail +${rules.t2.trailPoints} pts (${sym}${t2StopLoss})`;
   }
 
   // T3: Runner (Free Move or Fixed Target)
@@ -454,7 +463,7 @@ export function calculateTargetLadder(params: {
         plannedExitLots: totalLots > 1 ? runnerLots : 1,
         lotSize: lotSizeNum,
         suggestedStopLoss: t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss,
-        suggestedStopLabel: `Open Trail (SL: ₹${t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss})`,
+        suggestedStopLabel: `Open Trail (SL: ${sym}${t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss})`,
         distancePoints: 0,
         distancePercent: 0,
         progressPercent: isT1Met ? 100 : 0,
@@ -473,7 +482,7 @@ export function calculateTargetLadder(params: {
         plannedExitLots: totalLots > 1 ? runnerLots : 1,
         lotSize: lotSizeNum,
         suggestedStopLoss: Number(t2Price.toFixed(2)),
-        suggestedStopLabel: `Trail Behind Swing (₹${Number(t2Price.toFixed(2))})`,
+        suggestedStopLabel: `Trail Behind Swing (${sym}${Number(t2Price.toFixed(2))})`,
         distancePoints: Number(t3Dist.toFixed(2)),
         distancePercent: Number(t3Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
         progressPercent: t3Progress,
@@ -545,16 +554,28 @@ export function calculateLiveOpenTradeMetric(
   // 3. Estimated Round-Trip Indian Regulatory & Brokerage Charges
   let estimatedCharges = new Decimal(0);
   try {
-    const charges = calculateIndianCharges({
-      direction: params.direction,
-      assetClass: params.assetClass || 'EQUITY',
-      marketSegment: params.marketSegment || 'NSE_EQ',
-      entryPrice: dEntry,
-      exitPrice: dLtp,
-      quantity: dQty,
-      contractMultiplier: dMultiplier,
-    });
-    estimatedCharges = new Decimal(charges.totalCosts);
+    const isForexOrUsd =
+      params.currency === 'USD' ||
+      params.assetClass === 'FOREX' ||
+      params.assetClass === 'CRYPTO' ||
+      params.marketSegment === 'FOREX' ||
+      params.marketSegment === 'CRYPTO' ||
+      (params.broker && ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(String(params.broker).toUpperCase().replace(/[\s_-]/g, '')));
+
+    if (!isForexOrUsd) {
+      const charges = calculateIndianCharges({
+        direction: params.direction,
+        assetClass: params.assetClass || 'EQUITY',
+        marketSegment: params.marketSegment || 'NSE_EQ',
+        entryPrice: dEntry,
+        exitPrice: dLtp,
+        quantity: dQty,
+        contractMultiplier: dMultiplier,
+        broker: params.broker,
+        currency: params.currency,
+      });
+      estimatedCharges = new Decimal(charges.totalCosts);
+    }
   } catch {
     // If charges calculation fails (e.g. unknown asset class), fallback to 0
     estimatedCharges = new Decimal(0);
@@ -687,12 +708,14 @@ export function calculateLiveOpenTradeMetric(
       tickSize: dTick,
       customRules: params.customRules,
       estimatedCharges,
+      currency: params.currency,
     });
 
     const metric: ILiveOpenTradeMetric = {
       tradeId: params.tradeId,
       symbol: params.symbol,
       direction: params.direction,
+      currency: params.currency,
       quantity: Number(dQty.toNumber()),
       contractMultiplier: Number(dMultiplier.toNumber()),
       lotSize: lotSizeNum,
@@ -1284,6 +1307,8 @@ export function calculatePreFlightExecutionPreview(
     exitPrice: dLtp,
     quantity: clampedExitQty,
     contractMultiplier: dMultiplier,
+    currency: (params as any).currency,
+    broker: (params as any).broker,
   });
 
   const netPnL = grossPnL.minus(charges.totalCostsDecimal);

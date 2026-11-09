@@ -478,6 +478,8 @@ export interface IAlertContextInput {
   exchange?: string;
   givebackPercent?: number;
   isStagnant?: boolean;
+  currency?: string;
+  currencySymbol?: string;
 }
 
 export type IAlertContextParams = IAlertContextInput;
@@ -514,16 +516,32 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
   const qty = new Decimal(params.quantity);
   const isLong = params.direction === 'LONG';
 
+  // Currency resolution: $ for USD/FOREX/Metals/Crypto, ₹ for INR
+  const isUsd =
+    params.currency === 'USD' ||
+    params.currencySymbol === '$' ||
+    params.assetClass === 'FOREX' ||
+    params.assetClass === 'CRYPTO' ||
+    (params.symbol &&
+      (params.symbol.includes('XAU') ||
+        params.symbol.includes('EUR') ||
+        params.symbol.includes('USD') ||
+        params.symbol.includes('GBP')));
+  const currSym = params.currencySymbol || (isUsd ? '$' : '₹');
+  const locale = isUsd ? 'en-US' : 'en-IN';
+
   // 1. Current Floating Gross & Net Calculations
   const priceDelta = isLong ? dLtp.minus(dEntry) : dEntry.minus(dLtp);
   const floatingGross = priceDelta.times(qty).times(mult);
 
-  const chargesNow = calculateIndianCharges({
-    assetClass: (params.assetClass as any) || 'EQUITY',
-    entryPrice: dEntry,
-    exitPrice: dLtp,
-    quantity: qty.times(mult),
-  });
+  const chargesNow = isUsd
+    ? { totalCostsDecimal: new Decimal(0) }
+    : calculateIndianCharges({
+        assetClass: (params.assetClass as any) || 'EQUITY',
+        entryPrice: dEntry,
+        exitPrice: dLtp,
+        quantity: qty.times(mult),
+      });
   const floatingNet = floatingGross.minus(chargesNow.totalCostsDecimal);
 
   // 2. "If SL" Loss Calculation (net of full statutory charges upon stop exit)
@@ -535,17 +553,19 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
 
   if (params.stopLoss !== null && params.stopLoss !== undefined && params.stopLoss > 0) {
     const dStop = new Decimal(params.stopLoss);
-    stopStr = `₹${dStop.toFixed(2)}`;
+    stopStr = `${currSym}${dStop.toFixed(2)}`;
 
     const slPriceDelta = isLong ? dStop.minus(dEntry) : dEntry.minus(dStop);
     const slGross = slPriceDelta.times(qty).times(mult);
 
-    const chargesSl = calculateIndianCharges({
-      assetClass: (params.assetClass as any) || 'EQUITY',
-      entryPrice: dEntry,
-      exitPrice: dStop,
-      quantity: qty.times(mult),
-    });
+    const chargesSl = isUsd
+      ? { totalCostsDecimal: new Decimal(0) }
+      : calculateIndianCharges({
+          assetClass: (params.assetClass as any) || 'EQUITY',
+          entryPrice: dEntry,
+          exitPrice: dStop,
+          quantity: qty.times(mult),
+        });
     // Net loss at stop (typically negative)
     ifSlLoss = slGross.minus(chargesSl.totalCostsDecimal);
 
@@ -581,13 +601,13 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
   if (maxDayLoss && maxDayLoss > 0) {
     const currentLoss = Math.abs(curDayLoss || 0);
     const pct = Math.min(100, Math.round((currentLoss / maxDayLoss) * 100));
-    dayLossUsageStr = `₹${currentLoss.toLocaleString('en-IN')} / ₹${maxDayLoss.toLocaleString('en-IN')} (${pct}%)`;
+    dayLossUsageStr = `${currSym}${currentLoss.toLocaleString(locale)} / ${currSym}${maxDayLoss.toLocaleString(locale)} (${pct}%)`;
   }
 
   // 6. Total Open Risk
   const totalOpenRisk = params.totalOpenRiskAcrossTrades ?? params.portfolioOpenRisk;
   const totalOpenRiskStr = totalOpenRisk !== undefined
-    ? `₹${Math.round(totalOpenRisk).toLocaleString('en-IN')}`
+    ? `${currSym}${Math.round(totalOpenRisk).toLocaleString(locale)}`
     : '—';
 
   // 7. Deterministic Trading Engine Hint
@@ -599,16 +619,16 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
   } else if (params.isStagnant) {
     deterministicHint = 'Momentum stalled: trade holding duration exceeds average with zero expansion.';
   } else if (exitNowSaves.greaterThan(500)) {
-    deterministicHint = `Exiting at market saves ~₹${exitNowSaves.toFixed(0)} vs full stop out.`;
+    deterministicHint = `Exiting at market saves ~${currSym}${exitNowSaves.toFixed(0)} vs full stop out.`;
   }
 
   const pR = params.peakR ?? params.peakUnrealizedR;
   const uR = params.unrealizedR;
-  const peakRStr = pR !== undefined && pR !== null ? `+${pR.toFixed(2)}R` : '—';
+  const peakRStr = pR !== undefined && pR !== null ? `${pR >= 0 ? '+' : ''}${pR.toFixed(2)}R` : '—';
   const currentRStr = uR !== undefined && uR !== null ? `${uR >= 0 ? '+' : ''}${uR.toFixed(2)}R` : '—';
-  const floatingNetPnLStr = `${floatingNet.isPositive() ? '+' : ''}₹${floatingNet.toFixed(2)}`;
-  const ifSlLossStr = ifSlLoss.isZero() && stopStr === '—' ? '—' : `-₹${ifSlLoss.abs().toFixed(2)}`;
-  const exitNowSavesStr = `₹${exitNowSaves.toFixed(2)}`;
+  const floatingNetPnLStr = `${floatingNet.isPositive() ? '+' : ''}${currSym}${floatingNet.toFixed(2)}`;
+  const ifSlLossStr = ifSlLoss.isZero() && stopStr === '—' ? '—' : `-${currSym}${ifSlLoss.abs().toFixed(2)}`;
+  const exitNowSavesStr = `${currSym}${exitNowSaves.toFixed(2)}`;
   const timeInTradeStr = params.minutesInTrade !== undefined
     ? `${params.minutesInTrade}m`
     : params.entryTime
@@ -630,7 +650,7 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
     `<b>${title}</b>${retestNotice ? `   ${retestNotice}` : ''}`,
     `<i>${situation}</i>\n`,
     '<pre>',
-    `LTP      ${`₹${dLtp.toFixed(2)}`.padEnd(10)} (${velocity60sStr})`,
+    `LTP      ${`${currSym}${dLtp.toFixed(2)}`.padEnd(10)} (${velocity60sStr})`,
     ...(stopStr !== '—' ? [`SL       ${stopStr.padEnd(10)} ${ptsToStopStr} · ${ticksToStopStr}`] : []),
     `R now    ${currentRStr.padEnd(10)} (peak ${peakRStr})`,
     `Float    ${floatingNetPnLStr.padEnd(10)} net of est. fees`,
@@ -643,7 +663,7 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
   ];
 
   return {
-    ltpStr: `₹${dLtp.toFixed(2)}`,
+    ltpStr: `${currSym}${dLtp.toFixed(2)}`,
     stopStr,
     ptsToStopStr,
     ticksToStopStr,

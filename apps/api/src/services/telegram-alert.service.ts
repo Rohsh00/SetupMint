@@ -43,6 +43,7 @@ import { getStorage } from '../storage/index.js';
 import { config } from '../config.js';
 import { decryptSecret, safeDecryptSecret } from './crypto.service.js';
 import { FyersService } from './fyers.service.js';
+import { Mt5CommandService } from './mt5-command.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { AccountScopeService } from './account-scope.service.js';
 import { ChartGeneratorService } from './chart-generator.service.js';
@@ -93,6 +94,26 @@ export class TelegramAlertService {
     const filledCount = Math.max(0, Math.min(length, Math.round((safePct / 100) * length)));
     const emptyCount = length - filledCount;
     return `[${'█'.repeat(filledCount)}${'░'.repeat(emptyCount)}] ${safePct}%`;
+  }
+
+  /**
+   * Deterministic Currency Symbol resolver for trade alerts ($ for USD/FOREX/Metals/Prop, ₹ for INR).
+   */
+  static getTradeCurrencySymbol(trade: any): string {
+    if (!trade) return '₹';
+    if (trade.currency === 'USD' || trade.currency === 'EUR' || trade.currency === 'GBP') {
+      return trade.currency === 'USD' ? '$' : trade.currency === 'EUR' ? '€' : '£';
+    }
+    const isForex =
+      trade.exchange === 'FOREX' ||
+      (trade.symbol &&
+        (trade.symbol.includes('XAU') ||
+          trade.symbol.includes('EUR') ||
+          trade.symbol.includes('USD') ||
+          trade.symbol.includes('GBP') ||
+          trade.symbol.includes('BTC'))) ||
+      (Array.isArray(trade.tags) && (trade.tags.includes('ELEFIN') || trade.tags.includes('MT5')));
+    return isForex ? '$' : '₹';
   }
 
   /**
@@ -666,6 +687,7 @@ export class TelegramAlertService {
 
     // 4. Build Context and Card Formatting via pure engine
     const cardVersion = (alertState?.cardVersion || 0) + 1;
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
     const context = buildAlertContext({
       type: alertInput.type,
       severity: alertInput.severity,
@@ -689,6 +711,9 @@ export class TelegramAlertService {
         ? Math.max(1, Math.round((now.getTime() - new Date(trade.calculated.liveMfeSummary.peakTimestamp).getTime()) / 60000))
         : 1,
       priceVelocityPerMin: 0,
+      unrealizedR: trade.calculated?.unrealizedR || 0,
+      currency: trade.currency,
+      currencySymbol: sym,
     });
 
     const isAudible = policy.audible && (alertInput.severity >= 2 || alertInput.type === 'NAKED_POSITION');
@@ -711,7 +736,7 @@ export class TelegramAlertService {
           `✅ <b>CONDITION RECOVERED · ${trade.symbol}</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `Risk condition (${alertInput.type}) has stabilized back within safety margins.\n\n` +
-          `Current LTP: ₹${alertInput.ltp.toFixed(2)} • Time: ${now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
+          `Current LTP: ${sym}${alertInput.ltp.toFixed(2)} • Time: ${now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
         try {
           await this.editMessageCaption(botToken, chatId, alertState.messageId, clearedText, [
@@ -896,9 +921,11 @@ export class TelegramAlertService {
     trueBePrice = trueBePrice || entryPrice;
     const isProfitableSideOfBe = isLong ? ltp > trueBePrice : ltp < trueBePrice;
 
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+
     if (type === 'STOP_THREAT') {
       const row1: ITelegramInlineButton[] = [
-        { text: `🚨 Exit @~₹${roundLtp}`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
+        { text: `🚨 Exit @~${sym}${roundLtp}`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
       ];
       // Lock BE ONLY if LTP is on the profitable side of true breakeven
       if (isProfitableSideOfBe) {
@@ -917,7 +944,7 @@ export class TelegramAlertService {
     if (type === 'GIVEBACK') {
       const row1: ITelegramInlineButton[] = [
         { text: '🎯 Book 50%', callback_data: `x:${tradeId}:B50:${cardVersion}:${roundLtp}` },
-        { text: `🚨 Exit @~₹${roundLtp}`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
+        { text: `🚨 Exit @~${sym}${roundLtp}`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
       ];
       return [
         row1,
@@ -1124,6 +1151,8 @@ export class TelegramAlertService {
       return;
     }
 
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+
     // Fast-path: Handle dynamic timeframe switching on live chart snapshot cards
     if (actionCode.startsWith('CHART_')) {
       const tf = actionCode.replace('CHART_', '');
@@ -1228,11 +1257,11 @@ export class TelegramAlertService {
           const confirmAction = actionCode === 'E' ? 'CONF_E' : 'CONF_B50';
           const confirmText =
             (cq.message?.text || '') +
-            `\n\n⚠️ <b>SLIPPAGE WARNING:</b> Price moved from ₹${renderLtp} to ₹${currentLtp} (${slippage.toFixed(2)}% > guard ${slippageGuardPct}%). Confirm execution?`;
+            `\n\n⚠️ <b>SLIPPAGE WARNING:</b> Price moved from ${sym}${renderLtp} to ${sym}${currentLtp} (${slippage.toFixed(2)}% > guard ${slippageGuardPct}%). Confirm execution?`;
 
           await this.editMessageText(botToken, chatId, messageId, confirmText, [
             [
-              { text: `⚠️ Confirm Execution @ ₹${currentLtp}`, callback_data: `x:${tradeId}:${confirmAction}:${cardVersion}:${currentLtp}` },
+              { text: `⚠️ Confirm Execution @ ${sym}${currentLtp}`, callback_data: `x:${tradeId}:${confirmAction}:${cardVersion}:${currentLtp}` },
               { text: `❌ Cancel`, callback_data: `x:${tradeId}:REF:${cardVersion}:${currentLtp}` },
             ],
           ]);
@@ -1240,26 +1269,45 @@ export class TelegramAlertService {
         }
       }
 
+      const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
+      const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+
       // f. Execute Action
       if (actionCode === 'E' || actionCode === 'CONF_E') {
         const openQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1;
-        const res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
-          exitQty: openQty,
-          isFullClose: true,
-        });
+        let res: any = { executedOnBroker: false, tradedPrice: currentLtp };
 
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            volume: openQty,
+          });
+          res = { executedOnBroker: true, tradedPrice: currentLtp, message: `Dispatched to MT5 Bridge (Ticket #${ticket})` };
+        } else {
+          res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
+            exitQty: openQty,
+            isFullClose: true,
+          });
+        }
+
+        const brokerLabel = isMt5 ? 'MT5 / ELEFIN BRIDGE' : 'FYERS';
+        const statusLabel = isMt5 ? `SENT TO MT5 BRIDGE (#${ticket})` : (res.executedOnBroker ? 'FILLED ON EXCHANGE' : 'SIMULATED');
         const updateText =
           (cq.message?.text || '') +
-          `\n\n<b>[✅ EXECUTED MARKET EXIT ON FYERS]</b>\n` +
-          `Order Status: ${res.executedOnBroker ? 'FILLED ON EXCHANGE' : 'SIMULATED'}\n` +
-          `Traded Price: ₹${res.tradedPrice || currentLtp} • Time: ${new Date().toLocaleTimeString('en-IN')} IST`;
+          `\n\n<b>[✅ EXECUTED MARKET EXIT ON ${brokerLabel}]</b>\n` +
+          `Order Status: ${statusLabel}\n` +
+          `Traded Price: ${sym}${res.tradedPrice || currentLtp} • Time: ${new Date().toLocaleTimeString('en-IN')} IST`;
 
         await this.editMessageText(botToken, chatId, messageId, updateText, []);
 
         trade.auditLog.push({
           action: 'TELEGRAM_EXIT',
           timestamp: new Date(),
-          details: { text: `Market exit via Telegram button. Traded Price: ₹${res.tradedPrice || currentLtp}` },
+          details: { text: `Market exit via Telegram button. Traded Price: ${sym}${res.tradedPrice || currentLtp}` },
           changedBy: 'telegram',
         });
         await trade.save();
@@ -1295,24 +1343,36 @@ export class TelegramAlertService {
         };
 
         let brokerResult: any = { executedOnBroker: false };
-        try {
-          brokerResult = await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), trueBePrice);
-        } catch {
-          // Broker stop placement fallback
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            stopLoss: trueBePrice,
+          });
+          brokerResult = { executedOnBroker: true, message: `Dispatched to MT5 Bridge (Ticket #${ticket})` };
+        } else {
+          try {
+            brokerResult = await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), trueBePrice);
+          } catch {
+            // Broker stop placement fallback
+          }
         }
 
         trade.auditLog.push({
           action: 'TELEGRAM_LOCK_BE',
           timestamp: new Date(),
-          details: { text: `Stop moved to true breakeven ₹${trueBePrice} via Telegram button` },
+          details: { text: `Stop moved to true breakeven ${sym}${trueBePrice} via Telegram button` },
           changedBy: 'telegram',
         });
         await trade.save();
 
+        const brokerStatus = isMt5 ? 'DISPATCHED TO MT5 BRIDGE' : (brokerResult.executedOnBroker ? 'UPDATED ON BROKER' : 'STORED');
         const updateText =
           (cq.message?.text || '') +
           `\n\n<b>[🛡️ STOP LOCKED AT TRUE BREAKEVEN]</b>\n` +
-          `SL Level: ₹${trueBePrice.toFixed(2)} • Status: ${brokerResult.executedOnBroker ? 'UPDATED ON BROKER' : 'STORED'}`;
+          `SL Level: ${sym}${trueBePrice.toFixed(2)} • Status: ${brokerStatus}`;
 
         await this.editMessageText(botToken, chatId, messageId, updateText, []);
 
@@ -1339,15 +1399,27 @@ export class TelegramAlertService {
         const openQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1;
         const halfQty = Math.max(1, Math.floor(openQty / 2));
 
-        const res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
-          exitQty: halfQty,
-          isFullClose: false,
-        });
+        let res: any = { executedOnBroker: false, tradedPrice: currentLtp };
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            volume: halfQty,
+          });
+          res = { executedOnBroker: true, tradedPrice: currentLtp };
+        } else {
+          res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
+            exitQty: halfQty,
+            isFullClose: false,
+          });
+        }
 
         const updateText =
           (cq.message?.text || '') +
           `\n\n<b>[🎯 50% PARTIAL PROFIT BOOKED]</b>\n` +
-          `Qty Closed: ${halfQty} • Traded: ₹${res.tradedPrice || currentLtp}`;
+          `Qty Closed: ${halfQty} • Traded: ${sym}${res.tradedPrice || currentLtp}`;
 
         await this.editMessageText(botToken, chatId, messageId, updateText, []);
 
@@ -1412,10 +1484,22 @@ export class TelegramAlertService {
           }
         }
 
-        const res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
-          exitQty,
-          isFullClose: exitQty >= openQty,
-        });
+        let res: any = { executedOnBroker: false, tradedPrice: currentLtp };
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            volume: exitQty,
+          });
+          res = { executedOnBroker: true, tradedPrice: currentLtp };
+        } else {
+          res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
+            exitQty,
+            isFullClose: exitQty >= openQty,
+          });
+        }
 
         if (newStopLoss && newStopLoss > 0) {
           trade.risk = {
@@ -1423,18 +1507,28 @@ export class TelegramAlertService {
             initialStopLoss: trade.risk?.initialStopLoss || entryPrice,
             currentStopLoss: Number(newStopLoss.toFixed(2)),
           };
-          try {
-            await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), Number(newStopLoss.toFixed(2)));
-          } catch {
-            // Broker SL placement fallback
+          if (isMt5 && ticket) {
+            await Mt5CommandService.queueModifySl({
+              userId: user._id,
+              accountId: (account?._id || trade.accountId)!,
+              tradeId: trade._id,
+              ticket,
+              stopLoss: Number(newStopLoss.toFixed(2)),
+            });
+          } else {
+            try {
+              await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), Number(newStopLoss.toFixed(2)));
+            } catch {
+              // Broker SL placement fallback
+            }
           }
         }
 
         const updateText =
           (cq.message?.text || '') +
           `\n\n<b>[🎯 TARGET T${stepNum} SCALED OUT VIA TELEGRAM]</b>\n` +
-          `Qty Closed: ${exitQty} • Traded: ₹${res.tradedPrice || currentLtp}\n` +
-          `Stop Trailed: ${newStopLoss ? `₹${newStopLoss.toFixed(2)}` : 'Unchanged'}`;
+          `Qty Closed: ${exitQty} • Traded: ${sym}${res.tradedPrice || currentLtp}\n` +
+          `Stop Trailed: ${newStopLoss ? `${sym}${newStopLoss.toFixed(2)}` : 'Unchanged'}`;
 
         await this.editMessageText(botToken, chatId, messageId, updateText, []);
 
@@ -1831,9 +1925,10 @@ export class TelegramAlertService {
       // 8. Reply with Rich Telegram Confirmation
       const sizeKb = Math.round(audioBuffer.length / 1024);
       if (targetTrade) {
+        const sym = TelegramAlertService.getTradeCurrencySymbol(targetTrade);
         const pnlStr =
           targetTrade.calculated?.netPnL !== undefined
-            ? ` • Net PnL: ${targetTrade.calculated.netPnL >= 0 ? '+' : ''}₹${targetTrade.calculated.netPnL.toLocaleString('en-IN')}`
+            ? ` • Net PnL: ${targetTrade.calculated.netPnL >= 0 ? '+' : ''}${sym}${targetTrade.calculated.netPnL.toFixed(2)}`
             : '';
 
         const replyHtml =
@@ -1882,7 +1977,8 @@ export class TelegramAlertService {
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
     const openCount = summary.positions.length;
-    const sym = isProp ? '$' : '₹';
+    const hasUsd = isProp || summary.positions.some((p: any) => p.currency === 'USD' || p.isMt5 || (p.symbol && p.symbol.includes('XAU')));
+    const sym = hasUsd ? '$' : '₹';
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -1948,22 +2044,33 @@ export class TelegramAlertService {
     }
 
     for (const pos of summary.positions) {
+      const posIsUsd =
+        isProp ||
+        pos.currency === 'USD' ||
+        pos.isMt5 ||
+        (pos.symbol &&
+          (pos.symbol.includes('XAU') ||
+            pos.symbol.includes('EUR') ||
+            pos.symbol.includes('USD') ||
+            pos.symbol.includes('GBP')));
+      const posSym = posIsUsd ? '$' : '₹';
+      const posLocale = posIsUsd ? 'en-US' : 'en-IN';
       const pnlSign = pos.floatingNetPnL >= 0 ? '+' : '';
       const rSign = (pos.unrealizedR || 0) >= 0 ? '+' : '';
       const mult = pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1;
       const exposure = pos.quantity * mult * pos.currentLtp;
 
-      const stopInfo = pos.stopLoss ? `${sym}${pos.stopLoss} (${pos.distanceToStopPoints?.toFixed(1) || 0} pts left)` : 'NO STOP (NAKED)';
-      const beInfo = pos.trueBreakevenPrice ? `${sym}${pos.trueBreakevenPrice.toFixed(2)}` : `${sym}${pos.entryPrice}`;
+      const stopInfo = pos.stopLoss ? `${posSym}${pos.stopLoss} (${pos.distanceToStopPoints?.toFixed(1) || 0} pts left)` : 'NO STOP (NAKED)';
+      const beInfo = pos.trueBreakevenPrice ? `${posSym}${pos.trueBreakevenPrice.toFixed(2)}` : `${posSym}${pos.entryPrice}`;
 
       const text =
         `<b>${pos.symbol}</b> (<code>${pos.direction}</code>)\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
-        `Entry    : ${sym}${pos.entryPrice.toFixed(2)}  |  LTP: ${sym}${pos.currentLtp.toFixed(2)}\n` +
-        `Net PnL  : ${pnlSign}${sym}${pos.floatingNetPnL.toFixed(2)} (${rSign}${(pos.unrealizedR || 0).toFixed(2)}R)\n` +
+        `Entry    : ${posSym}${pos.entryPrice.toFixed(2)}  |  LTP: ${posSym}${pos.currentLtp.toFixed(2)}\n` +
+        `Net PnL  : ${pnlSign}${posSym}${pos.floatingNetPnL.toFixed(2)} (${rSign}${(pos.unrealizedR || 0).toFixed(2)}R)\n` +
         `Quantity : ${pos.quantity} ${mult > 1 ? `lots (${pos.quantity * mult} units)` : 'units'}\n` +
-        `Exposure : ${sym}${exposure.toLocaleString('en-IN')}\n` +
+        `Exposure : ${posSym}${exposure.toLocaleString(posLocale)}\n` +
         `StopLoss : ${stopInfo}\n` +
         `True BE  : ${beInfo}\n` +
         `</pre>`;
@@ -2045,7 +2152,7 @@ export class TelegramAlertService {
         if (recentTrade) {
           const photoBuf = await this.generatePositionChart(user, recentTrade, tf);
           if (photoBuf) {
-            const sym = recentTrade.exchange === 'FOREX' ? '$' : '₹';
+            const sym = TelegramAlertService.getTradeCurrencySymbol(recentTrade);
             const netPnl = Number(recentTrade.calculated?.netPnL ?? (recentTrade as any).netPnl ?? 0);
             const pnlSign = netPnl >= 0 ? '+' : '';
             const caption =
@@ -2257,7 +2364,6 @@ export class TelegramAlertService {
       ? { mode: 'TYPE' as const, accountType: 'LIVE' as const }
       : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
-    const sym = isProp ? '$' : '₹';
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -2267,6 +2373,10 @@ export class TelegramAlertService {
       exitTime: { $gte: startOfDay },
       accountId: { $in: accountIds },
     }).lean();
+
+    const hasUsd = isProp || trades.some((t: any) => t.currency === 'USD' || t.exchange === 'FOREX' || (t.symbol && t.symbol.includes('XAU')));
+    const sym = hasUsd ? '$' : '₹';
+    const locale = hasUsd ? 'en-US' : 'en-IN';
 
     const count = trades.length;
     if (count === 0) {
@@ -2360,6 +2470,7 @@ export class TelegramAlertService {
     if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
     if (settings.telegramAlertEvents && settings.telegramAlertEvents.tradeOpened === false) return;
 
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
     const mult = trade.contractMultiplier || trade.simpleExecution?.contractMultiplier || 1;
     const qty = trade.quantity || trade.simpleExecution?.quantity || 1;
     const entry = trade.entryPrice || trade.simpleExecution?.entryPrice || 0;
@@ -2376,9 +2487,9 @@ export class TelegramAlertService {
         Symbol: trade.symbol,
         Direction: trade.direction,
         Quantity: `${qty} ${mult > 1 ? `lots (${qty * mult} units)` : 'units'}`,
-        EntryPrice: `₹${entry}`,
-        StopLoss: sl !== 'None' ? `₹${sl}` : 'NO STOP (NAKED)',
-        InitialRisk: riskAmt ? `₹${Number(riskAmt).toFixed(2)}` : 'Unspecified',
+        EntryPrice: `${sym}${entry}`,
+        StopLoss: sl !== 'None' ? `${sym}${sl}` : 'NO STOP (NAKED)',
+        InitialRisk: riskAmt ? `${sym}${Number(riskAmt).toFixed(2)}` : 'Unspecified',
       },
       buttons: [
         [
@@ -2405,6 +2516,8 @@ export class TelegramAlertService {
     if (!botToken) return;
     const chatId = settings.telegramChatId;
 
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+
     // 1. Resolve all AlertState records for this trade
     const activeAlerts = await AlertState.find({
       userId: user._id,
@@ -2419,7 +2532,7 @@ export class TelegramAlertService {
             botToken,
             chatId,
             a.messageId,
-            `🏁 <b>Position Closed</b> at ₹${outcome.exitPrice} (${outcome.netPnL >= 0 ? '+' : ''}₹${outcome.netPnL.toFixed(2)}).\n` +
+            `🏁 <b>Position Closed</b> at ${sym}${outcome.exitPrice} (${outcome.netPnL >= 0 ? '+' : ''}${sym}${outcome.netPnL.toFixed(2)}).\n` +
             `<i>Buttons disabled. Trade archived in journal.</i>`,
             []
           );
@@ -2444,13 +2557,13 @@ export class TelegramAlertService {
       botToken: settings.telegramBotToken,
       chatId: settings.telegramChatId,
       title: `${isWin ? '🏁 Trade Closed in Profit' : '🛑 Trade Closed in Loss'}: ${trade.symbol}`,
-      body: `Position closed at ₹${outcome.exitPrice}. Net outcome recorded in journal.`,
+      body: `Position closed at ${sym}${outcome.exitPrice}. Net outcome recorded in journal.`,
       severity: isWin ? 'SUCCESS' : 'WARNING',
       metrics: {
         Symbol: trade.symbol,
         Side: trade.direction,
-        ExitPrice: `₹${outcome.exitPrice}`,
-        NetPnL: `${sign}₹${outcome.netPnL.toFixed(2)}`,
+        ExitPrice: `${sym}${outcome.exitPrice}`,
+        NetPnL: `${sign}${sym}${outcome.netPnL.toFixed(2)}`,
         RealizedR: `${rSign}${(outcome.realizedR || 0).toFixed(2)}R`,
         ExitReason: outcome.exitReason || 'Manual / Broker Order',
       },
@@ -2510,17 +2623,19 @@ export class TelegramAlertService {
 
     if (decision.action === 'SKIP') return;
 
+    const sym = user?.baseCurrency === 'USD' || user?.profile?.currency === 'USD' ? '$' : '₹';
+
     await this.sendAlert({
       botToken: settings.telegramBotToken,
       chatId: settings.telegramChatId,
       title: isBreach ? '🚨 CRITICAL: Daily Loss Limit Breached!' : '⚠️ WARNING: Daily Loss Threshold Reached',
       body: isBreach
-        ? `Daily loss limit of ₹${dailyLimit.toLocaleString('en-IN')} has been 100% BREACHED. Stop trading immediately!`
+        ? `Daily loss limit of ${sym}${dailyLimit.toLocaleString('en-US')} has been 100% BREACHED. Stop trading immediately!`
         : `Cumulative day loss reached ${percent.toFixed(0)}% of your allowed daily risk limit. Exercise extreme caution.`,
       severity: isBreach ? 'CRITICAL' : 'WARNING',
       metrics: {
-        CurrentLoss: `-₹${currentLoss.toFixed(2)}`,
-        DailyLimit: `₹${dailyLimit.toFixed(2)}`,
+        CurrentLoss: `-${sym}${currentLoss.toFixed(2)}`,
+        DailyLimit: `${sym}${dailyLimit.toFixed(2)}`,
         UsedPercent: `${percent.toFixed(1)}%`,
       },
       progressBar: {
@@ -2621,24 +2736,28 @@ export class TelegramAlertService {
 
     const pnlSign = netPnL >= 0 ? '+' : '';
     const rSign = netR >= 0 ? '+' : '';
+    const hasUsdTrades = trades.some((t: any) => t.currency === 'USD' || t.exchange === 'FOREX');
+    const sym = hasUsdTrades ? '$' : '₹';
 
     let text =
       `📊 <b>EOD Trading Performance Digest</b>\n` +
       `📅 <i>${nowIST.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<pre>\n` +
-      `Net P&L      : ${pnlSign}₹${netPnL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+      `Net P&L      : ${pnlSign}${sym}${netPnL.toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
       `Win Rate     : ${winRate}% (${wins.length}W / ${losses.length}L)\n` +
       `Total Trades : ${count}\n` +
       `Harvested R  : ${rSign}${netR.toFixed(2)}R\n` +
-      `Broker Costs : -₹${totalCosts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+      `Broker Costs : -${sym}${totalCosts.toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
       `</pre>\n`;
 
     if (bestWin) {
-      text += `🏆 <b>Best Win:</b> ${bestWin.symbol} (+₹${(bestWin.calculated?.netPnL || 0).toLocaleString('en-IN')})\n`;
+      const winSym = TelegramAlertService.getTradeCurrencySymbol(bestWin);
+      text += `🏆 <b>Best Win:</b> ${bestWin.symbol} (+${winSym}${(bestWin.calculated?.netPnL || 0).toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN')})\n`;
     }
     if (worstLoss) {
-      text += `🛑 <b>Max Loss:</b> ${worstLoss.symbol} (-₹${Math.abs(worstLoss.calculated?.netPnL || 0).toLocaleString('en-IN')})\n`;
+      const lossSym = TelegramAlertService.getTradeCurrencySymbol(worstLoss);
+      text += `🛑 <b>Max Loss:</b> ${worstLoss.symbol} (-${lossSym}${Math.abs(worstLoss.calculated?.netPnL || 0).toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN')})\n`;
     }
 
     text += `\n💾 <i>All excursion analytics and SVG chart snapshots are archived in SetupMint Pro.</i>`;

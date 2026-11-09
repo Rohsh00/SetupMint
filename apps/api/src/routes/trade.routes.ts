@@ -51,6 +51,7 @@ import { LiveWatcherService } from '../services/live-watcher.service.js';
 import { AccountScopeService } from '../services/account-scope.service.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
+import { Mt5CommandService } from '../services/mt5-command.service.js';
 import { User } from '../db/models/index.js';
 
 /**
@@ -1460,6 +1461,32 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       fills: parseResult.data.fills || existingTrade.fills,
     };
 
+    const isForexOrUsd =
+      mergedData.currency === 'USD' ||
+      mergedData.currency === 'EUR' ||
+      mergedData.currency === 'GBP' ||
+      mergedData.assetClass === 'FOREX' ||
+      mergedData.assetClass === 'CRYPTO' ||
+      mergedData.marketSegment === 'FOREX' ||
+      mergedData.marketSegment === 'CRYPTO' ||
+      (typeof mergedData.symbol === 'string' &&
+        (mergedData.symbol.includes('XAU') ||
+          mergedData.symbol.includes('EUR') ||
+          mergedData.symbol.includes('USD') ||
+          mergedData.symbol.includes('GBP'))) ||
+      ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(
+        (((existingTrade as any).broker || (existingTrade.accountId as any)?.broker || '') as string)
+          .toUpperCase()
+          .replace(/[\s_-]/g, '')
+      );
+
+    if (isForexOrUsd && mergedData.simpleExecution) {
+      if (mergedData.simpleExecution.brokerage === 40) mergedData.simpleExecution.brokerage = 0;
+      mergedData.simpleExecution.exchangeFees = 0;
+      mergedData.simpleExecution.regulatoryFees = 0;
+      mergedData.simpleExecution.taxes = 0;
+    }
+
     // Validate classification rules and compute warnings on mergedData
     const classValidation = await validateTradeClassificationAndComputeWarnings(req.user!.id, {
       direction: mergedData.direction,
@@ -1667,33 +1694,65 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     let brokerResult: any = { executedOnBroker: false, action: 'JOURNAL_ONLY', message: 'Updated in SetupMint journal' };
 
     if (executeBroker) {
-      const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
-      const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
-      if (!integration || !integration.accessToken || isExpired) {
-        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'BROKER_EXECUTION_BLOCKED',
-            message: isExpired
-              ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
-              : 'Live broker execution blocked: FYERS broker is not connected.',
-          },
-        });
-      }
+      const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
 
-      try {
-        brokerResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(stopPrice));
-      } catch (err: any) {
-        if (isLocked) IdempotencyService.reject(compositeKey, err);
-        req.log.error({ err, tradeId: trade._id }, 'FYERS broker Stop Loss execution failed');
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'BROKER_ORDER_ERROR',
-            message: err.message || 'Failed to place or modify Stop Loss on FYERS broker',
-          },
+      if (isMt5) {
+        const ticket = Mt5CommandService.extractTicket(trade);
+        if (!ticket) {
+          if (isLocked) IdempotencyService.reject(compositeKey, new Error('MT5 ticket not found for trade'));
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'MT5_TICKET_NOT_FOUND',
+              message: 'Live execution blocked: MT5 position ticket could not be resolved from trade tags.',
+            },
+          });
+        }
+
+        const cmd = await Mt5CommandService.queueModifySl({
+          userId: req.user!.id,
+          accountId: (account?._id || trade.accountId)!,
+          tradeId: trade._id,
+          ticket,
+          stopLoss: Number(stopPrice),
         });
+
+        brokerResult = {
+          executedOnBroker: true,
+          action: 'QUEUED_TO_MT5',
+          message: `Stop Loss order (${stopPrice}) sent to MT5 Bridge (Ticket #${ticket})`,
+          commandId: cmd._id.toString(),
+        };
+      } else {
+        const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
+        const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
+        if (!integration || !integration.accessToken || isExpired) {
+          if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'BROKER_EXECUTION_BLOCKED',
+              message: isExpired
+                ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
+                : 'Live broker execution blocked: FYERS broker is not connected.',
+            },
+          });
+        }
+
+        try {
+          brokerResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(stopPrice));
+        } catch (err: any) {
+          if (isLocked) IdempotencyService.reject(compositeKey, err);
+          req.log.error({ err, tradeId: trade._id }, 'FYERS broker Stop Loss execution failed');
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'BROKER_ORDER_ERROR',
+              message: err.message || 'Failed to place or modify Stop Loss on FYERS broker',
+            },
+          });
+        }
       }
     }
 
@@ -1832,36 +1891,68 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     let brokerResult: any = { executedOnBroker: false, message: 'Updated in SetupMint journal' };
 
     if (executeBroker) {
-      const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
-      const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
-      if (!integration || !integration.accessToken || isExpired) {
-        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'BROKER_EXECUTION_BLOCKED',
-            message: isExpired
-              ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
-              : 'Live broker execution blocked: FYERS broker is not connected.',
-          },
-        });
-      }
+      const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
 
-      try {
-        brokerResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
-          exitQty,
-          isFullClose: isReallyFullClose,
+      if (isMt5) {
+        const ticket = Mt5CommandService.extractTicket(trade);
+        if (!ticket) {
+          if (isLocked) IdempotencyService.reject(compositeKey, new Error('MT5 ticket not found for trade'));
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'MT5_TICKET_NOT_FOUND',
+              message: 'Live execution blocked: MT5 position ticket could not be resolved from trade tags.',
+            },
+          });
+        }
+
+        const cmd = await Mt5CommandService.queueClosePosition({
+          userId: req.user!.id,
+          accountId: (account?._id || trade.accountId)!,
+          tradeId: trade._id,
+          ticket,
+          volume: exitQty,
         });
-      } catch (err: any) {
-        if (isLocked) IdempotencyService.reject(compositeKey, err);
-        req.log.error({ err, tradeId: trade._id }, 'FYERS broker exit order failed');
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'BROKER_ORDER_ERROR',
-            message: err.message || 'Failed to execute exit order on FYERS broker',
-          },
-        });
+
+        brokerResult = {
+          executedOnBroker: true,
+          action: 'QUEUED_TO_MT5',
+          message: `Market exit order (${exitQty} lot) sent to MT5 Bridge (Ticket #${ticket})`,
+          commandId: cmd._id.toString(),
+        };
+      } else {
+        const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
+        const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
+        if (!integration || !integration.accessToken || isExpired) {
+          if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'BROKER_EXECUTION_BLOCKED',
+              message: isExpired
+                ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
+                : 'Live broker execution blocked: FYERS broker is not connected.',
+            },
+          });
+        }
+
+        try {
+          brokerResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
+            exitQty,
+            isFullClose: isReallyFullClose,
+          });
+        } catch (err: any) {
+          if (isLocked) IdempotencyService.reject(compositeKey, err);
+          req.log.error({ err, tradeId: trade._id }, 'FYERS broker exit order failed');
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'BROKER_ORDER_ERROR',
+              message: err.message || 'Failed to execute exit order on FYERS broker',
+            },
+          });
+        }
       }
     }
 
@@ -1878,6 +1969,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       entryPrice: effectiveExitPrice,
       quantity: exitQty,
       contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+      currency: trade.currency,
+      broker: (trade.accountId as any)?.broker,
       isSingleLeg: true,
     });
 
@@ -2091,6 +2184,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         entryPrice: effectiveExitPrice,
         quantity: requestedExitQty,
         contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+        currency: trade.currency,
+        broker: (trade.accountId as any)?.broker,
         isSingleLeg: true,
       });
 

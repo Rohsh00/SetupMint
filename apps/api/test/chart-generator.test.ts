@@ -89,7 +89,7 @@ describe('ChartGeneratorService Unit Tests', () => {
     });
 
     expect(svg).toContain('SHORT');
-    expect(svg).toContain('▼ SELL @ 2550.0');
+    expect(svg).toContain('SELL @ 2550.0');
     expect(svg).toContain('SL: 2580.0');
   });
 

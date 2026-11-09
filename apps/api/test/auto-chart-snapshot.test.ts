@@ -25,8 +25,11 @@ describe('Auto Chart Snapshot Lifecycle & Cap Enforcement Tests', () => {
     tradeId: mongoose.Types.ObjectId,
     uId: mongoose.Types.ObjectId,
     symbol: string,
-    resolutions = ['1', '5', '60', '240']
+    resolutions = ['1', '5', '60', '240'],
+    price = 100
   ) => {
+    const t0 = moment().subtract(4, 'hours').valueOf();
+    const t1 = moment().add(1, 'hour').valueOf();
     for (const resolution of resolutions) {
       await TradeCandleSnapshot.create({
         tradeId,
@@ -34,9 +37,11 @@ describe('Auto Chart Snapshot Lifecycle & Cap Enforcement Tests', () => {
         symbol,
         resolution,
         candles: [
-          { t: 1761298200000, o: 100, h: 105, l: 99, c: 102, v: 100 },
-          { t: 1761298260000, o: 102, h: 106, l: 101, c: 104, v: 120 },
+          { t: t0, o: price, h: price * 1.02, l: price * 0.98, c: price * 1.01, v: 100 },
+          { t: t1, o: price * 1.01, h: price * 1.03, l: price * 0.99, c: price * 1.02, v: 120 },
         ],
+        coverageFrom: new Date(t0),
+        coverageTo: new Date(t1),
         candleCount: 2,
         appliedPaddingBefore: 15,
         appliedPaddingAfter: 15,
@@ -232,7 +237,7 @@ describe('Auto Chart Snapshot Lifecycle & Cap Enforcement Tests', () => {
       screenshotIds: [],
     });
 
-    await createMockCandles(closedTrade._id, new mongoose.Types.ObjectId(userId), 'NSE:INFY-EQ');
+    await createMockCandles(closedTrade._id, new mongoose.Types.ObjectId(userId), 'NSE:INFY-EQ', undefined, 1800);
 
     // First call generates
     const firstResults = await ChartGeneratorService.ensureTradeSnapshot(
@@ -274,7 +279,7 @@ describe('Auto Chart Snapshot Lifecycle & Cap Enforcement Tests', () => {
       screenshotIds: [],
     });
 
-    await createMockCandles(tradeToEdit._id, new mongoose.Types.ObjectId(userId), 'NSE:TCS-EQ');
+    await createMockCandles(tradeToEdit._id, new mongoose.Types.ObjectId(userId), 'NSE:TCS-EQ', undefined, 4000);
 
     await ChartGeneratorService.ensureTradeSnapshot(
       tradeToEdit._id.toString(),

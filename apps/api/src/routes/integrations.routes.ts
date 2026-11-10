@@ -648,7 +648,26 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
   app.register(async (protectedApp) => {
     protectedApp.addHook('preHandler', requireAuth);
 
+    const userHasFyers = async (userId: string): Promise<boolean> => {
+      const accs = await TradingAccount.find({ userId }).lean();
+      return accs.some(
+        (a) =>
+          (a.broker || '').toUpperCase() === 'FYERS' ||
+          a.profile?.executionAdapterKey === 'FYERS'
+      );
+    };
+
     const createLoginUrl = async (req: any, reply: any) => {
+      if (!(await userHasFyers(req.user.id))) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'CAPABILITY_NOT_SUPPORTED',
+            message: 'No active trading account is configured with the FYERS execution adapter.',
+          },
+        });
+      }
+
       const integration = await BrokerIntegration.findOne({
         userId: req.user.id,
         broker: 'FYERS',
@@ -812,6 +831,15 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     // Manually trigger FYERS tradebook and funds synchronization
     protectedApp.post('/fyers/sync', async (req: any, reply) => {
+      if (!(await userHasFyers(req.user.id))) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'CAPABILITY_NOT_SUPPORTED',
+            message: 'No active trading account is configured with the FYERS execution adapter.',
+          },
+        });
+      }
       try {
         const tradeResult = await FyersService.syncTradesForUser(req.user.id);
         let fundsResult: any = null;
@@ -851,6 +879,15 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     // Re-run matching for same-day trades that have no stop loss against current-day FYERS orderbook
     protectedApp.post('/fyers/sl-backfill', async (req: any, reply) => {
+      if (!(await userHasFyers(req.user.id))) {
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'CAPABILITY_NOT_SUPPORTED',
+            message: 'No active trading account is configured with the FYERS execution adapter.',
+          },
+        });
+      }
       try {
         const isDryRun = req.body?.dryRun !== false;
         const result = await FyersService.backfillSLFromOrderbook(req.user.id, {

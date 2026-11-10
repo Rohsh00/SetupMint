@@ -3,6 +3,7 @@ import { UseFormRegister, UseFormWatch, UseFieldArrayReturn } from 'react-hook-f
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { formatCurrency, currentLocalIsoDateTime } from '../../../lib/utils.js';
+import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 import { HelpHint } from '../../help/index.js';
 
 interface TradeExecutionTabProps {
@@ -21,6 +22,7 @@ export function TradeExecutionTab({
   fillsFieldArray,
 }: TradeExecutionTabProps) {
   const { fields, append, remove } = fillsFieldArray;
+  const caps = useAccountCapabilities();
 
   const handleAddFill = (type: 'ENTRY' | 'EXIT') => {
     append({
@@ -37,40 +39,42 @@ export function TradeExecutionTab({
   return (
     <div className="space-y-4">
       {/* Mode Switcher */}
-      <div className="flex items-center justify-between pb-3 border-b border-border">
-        <div>
-          <span className="text-xs font-semibold text-foreground">Execution Workflow Mode</span>
-          <p className="text-[11px] text-muted-foreground">
-            Simple mode for completed trades; Advanced mode for multi-fill scaling and partial exits
-          </p>
-        </div>
+      {!caps.position.isHedging && (
+        <div className="flex items-center justify-between pb-3 border-b border-border">
+          <div>
+            <span className="text-xs font-semibold text-foreground">Execution Workflow Mode</span>
+            <p className="text-[11px] text-muted-foreground">
+              Simple mode for completed trades; Advanced mode for multi-fill scaling and partial exits
+            </p>
+          </div>
 
-        <div className="flex rounded-lg border border-border bg-card p-1 text-xs">
-          <button
-            type="button"
-            onClick={() => setExecutionMode('SIMPLE')}
-            className={`px-3 py-1 rounded-md font-medium transition-all ${
-              executionMode === 'SIMPLE'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Simple Mode
-          </button>
-          <button
-            type="button"
-            onClick={() => setExecutionMode('ADVANCED')}
-            className={`px-3 py-1 rounded-md font-medium transition-all inline-flex items-center gap-1 ${
-              executionMode === 'ADVANCED'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Advanced Fills (FIFO)
-            <HelpHint hintKey="trade.form.fifo" />
-          </button>
+          <div className="flex rounded-lg border border-border bg-card p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setExecutionMode('SIMPLE')}
+              className={`px-3 py-1 rounded-md font-medium transition-all ${
+                executionMode === 'SIMPLE'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Simple Mode
+            </button>
+            <button
+              type="button"
+              onClick={() => setExecutionMode('ADVANCED')}
+              className={`px-3 py-1 rounded-md font-medium transition-all inline-flex items-center gap-1 ${
+                executionMode === 'ADVANCED'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Advanced Fills (FIFO)
+              <HelpHint hintKey="trade.form.fifo" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {executionMode === 'SIMPLE' ? (
         /* SIMPLE MODE */
@@ -112,20 +116,22 @@ export function TradeExecutionTab({
               />
             </div>
 
-            <div>
-              <div className="flex items-center mb-1">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Contract Multiplier
-                </label>
-                <HelpHint hintKey="trade.form.multiplier" />
+            {caps.instruments.showMultiplier && (
+              <div>
+                <div className="flex items-center mb-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Contract Multiplier
+                  </label>
+                  <HelpHint hintKey="trade.form.multiplier" />
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  {...register('simpleExecution.contractMultiplier', { valueAsNumber: true })}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
               </div>
-              <input
-                type="number"
-                step="any"
-                {...register('simpleExecution.contractMultiplier', { valueAsNumber: true })}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
+            )}
           </div>
 
           {/* Transaction Costs Section */}

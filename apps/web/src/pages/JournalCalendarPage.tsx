@@ -49,7 +49,7 @@ import { formatCurrency, getCurrencySymbol } from '../lib/utils.js';
 import { MISTAKE_TAGS } from '@tradevault/shared';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function JournalCalendarPage() {
@@ -86,11 +86,13 @@ export function JournalCalendarPage() {
   const allAccounts = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.accounts || [];
   const accounts = scopedAccounts.length > 0 ? scopedAccounts : allAccounts;
 
+  const caps = useAccountCapabilities();
   const activeCurrency =
+    (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) ||
     (selectedAccountId !== 'ALL' ? accounts.find((a: any) => a.id === selectedAccountId)?.baseCurrency : null) ||
     activeAccount?.baseCurrency ||
     (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
-  const currencySym = getCurrencySymbol(activeCurrency);
+  const currencySym = caps.currency.symbol || getCurrencySymbol(activeCurrency);
 
   const { data: calendarData, isLoading } = useQuery({
     queryKey: ['journal-calendar', ymString, effectiveScopeParams],

@@ -162,6 +162,40 @@ Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET
 - **Auth:** **Required**.
 - **Response:** Array of accounts with initial balance, realized P&L, deposits, withdrawals, adjustments, current balance, and optional FYERS `brokerLink`.
 
+### `GET /api/v1/accounts/capabilities`
+- **Purpose:** Resolve single source-of-truth UI capabilities for the active account scope (`ALL`, `ACCOUNT`, `TYPE`, `PROP_FIRM`).
+- **Auth:** **Required**.
+- **Query Parameters:**
+  - `scope`: Scope filter mode (`ALL`, `ACCOUNT`, `TYPE`, `PROP_FIRM`).
+  - `accountId`: Specific trading account ID (when `scope=ACCOUNT`).
+  - `accountType`: Account type filter (when `scope=TYPE`).
+  - `firmKey`: Prop firm identifier (when `scope=PROP_FIRM`).
+- **Response (HTTP 200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "capabilities": {
+        "isDemo": false,
+        "isArchived": false,
+        "isMultiAccount": false,
+        "activeAccountCount": 1,
+        "currency": { "code": "INR", "symbol": "₹", "isSingleCurrency": true, "isMultiCurrency": false, "availableCurrencies": ["INR"] },
+        "broker": { "adapter": "FYERS", "isFyers": true, "isConnected": true, "canSyncTrades": true, "canSyncFunds": true, "canExecuteLive": true, "canLinkAccount": false, "needsDailyLogin": true },
+        "csvImport": { "tradebook": true, "cashLedger": true, "brokerPresets": ["CUSTOM", "FYERS"] },
+        "marketData": { "fyersHistory": true, "angelOneFallback": true },
+        "fees": { "model": "INDIA_STATUTORY", "showStatutoryBreakdown": true, "showCommissionSwap": false },
+        "instruments": { "showLots": true, "showMultiplier": true, "showOptionsFields": true },
+        "position": { "model": "NETTING_FIFO", "isNetting": true, "isHedging": false },
+        "sessions": { "calendarKey": "NSE", "allowedSessions": ["NSE_REGULAR", "OFF_HOURS"] },
+        "live": { "watcher": true, "scalingLadder": true, "giveback": true, "telegramExecution": true, "killSwitch": true },
+        "prop": { "isProp": false, "showChallengePanel": false, "showRuleAdvisories": false },
+        "multiAccountScope": { "mixedCurrency": false, "mixedBrokers": false, "byCurrency": ["INR"] }
+      }
+    }
+  }
+  ```
+
 ### `POST /api/v1/accounts`
 - **Purpose:** Create new trading account.
 - **Auth:** **Required**.
@@ -228,7 +262,7 @@ Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET
 - **Auth:** **Required**.
 - **Request Body:** `{ "clientId": "FYERS_CLIENT_ID" }`.
 - **Behavior:** Requires an active FYERS session. Rejects client ID mismatch, non-FYERS accounts, and a client ID already linked to another account.
-- **Responses:** `200 OK`, `400 CLIENT_ID_REQUIRED`, `400 CLIENT_ID_MISMATCH`, `409 ACCOUNT_NOT_FYERS`, `409 CLIENT_ALREADY_LINKED`, `409 BROKER_NOT_CONNECTED`.
+- **Responses:** `200 OK`, `400 CLIENT_ID_REQUIRED`, `400 CLIENT_ID_MISMATCH`, `409 CAPABILITY_NOT_SUPPORTED`, `409 ACCOUNT_NOT_FYERS`, `409 CLIENT_ALREADY_LINKED`, `409 BROKER_NOT_CONNECTED`.
 
 ### `DELETE /api/v1/accounts/:id/broker-link`
 - **Purpose:** Remove the FYERS link from an account.
@@ -240,7 +274,7 @@ Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET
 - **Auth:** **Required**.
 - **Response:** `{ snapshot, currentBalance, brokerBalance, drift, tolerance, suggestionCreated, skipReason, pendingTransaction }`.
 - **Skip Reasons:** `WITHIN_TOLERANCE`, `OPEN_OR_PLANNED_TRADES`, `PENDING_REVIEW_EXISTS`, `ALREADY_REVIEWED_FOR_THIS_DRIFT`.
-- **Responses:** `200 OK`, `409 ACCOUNT_NOT_LINKED`, `409 BROKER_NOT_CONNECTED`, `502 FUNDS_SYNC_FAILED`, `503 FUNDS_SYNC_DISABLED`.
+- **Responses:** `200 OK`, `409 CAPABILITY_NOT_SUPPORTED`, `409 ACCOUNT_NOT_LINKED`, `409 BROKER_NOT_CONNECTED`, `502 FUNDS_SYNC_FAILED`, `503 FUNDS_SYNC_DISABLED`.
 
 ### `GET /api/v1/accounts/:id/pending-transactions`
 - **Purpose:** List `PENDING_REVIEW` transactions and the latest FYERS funds snapshot for an account.
@@ -644,6 +678,7 @@ Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET
     }
     ```
   - `400 BROKER_ORDER_ERROR`: If broker rejects the order modification (e.g. invalid tick size, insufficient margin).
+  - `409 CAPABILITY_NOT_SUPPORTED`: If the target account adapter does not support live stop loss modifications.
 
 ### `POST /api/v1/trades/:id/broker-exit`
 - **Purpose:** Execute a market exit (50% partial or 100% full close) on the connected broker (FYERS) and record the exit fill in SetupMint. When closing fully, automatically cancels any pending open SL orders on the broker orderbook.
@@ -673,6 +708,7 @@ Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET
       }
     }
     ```
+  - `409 CAPABILITY_NOT_SUPPORTED`: If the target account adapter does not support live broker exits.
 
 ### `POST /api/v1/trades/:id/broker-ladder-step`
 - **Purpose:** Execute an atomic Multi-Target Scaling Ladder step. Submits a partial market exit on FYERS, amends or places a trailing Stop Loss order on FYERS, appends an EXIT fill in SetupMint, records `LADDER_STEP_<n>` in audit log, and reconciles account balances.
@@ -701,6 +737,7 @@ Endpoints honoring `AccountScope`: `GET /trades`, `POST /trades/drilldown`, `GET
       }
     }
     ```
+  - `409 CAPABILITY_NOT_SUPPORTED`: If the target account adapter does not support multi-target ladder execution.
 
 ### `GET /api/v1/trades/live/alerts`
 - **Purpose:** Fetches active, snoozed, and recently resolved threat alert states for the authenticated user, populated with trade symbol and direction. Syncs bidirectionally with the Telegram alerting daemon.

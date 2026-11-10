@@ -51,6 +51,7 @@ import {
   resolveTemplate,
   rankTemplates,
   calculateContinuousTiltScore,
+  resolveAccountUiCapabilities,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
@@ -520,19 +521,27 @@ function TradeFormModalContent({
   const watchedAssetClass = watch('assetClass');
   const watchedMarketSegment = watch('marketSegment');
 
-  // Selected account for broker identification
+  // Selected account for broker identification & UI capabilities
   const selectedAccount = useMemo(() => {
     return accounts.find((a: any) => a.id === watchedAccountId);
   }, [accounts, watchedAccountId]);
 
-  const isSelectedAccountProp = useMemo(() => {
-    if (!selectedAccount) return false;
-    return (
-      selectedAccount.accountType === 'PROP_FIRM' ||
-      Boolean(selectedAccount.propFirm?.firmKey) ||
-      Boolean(selectedAccount.propFirmConfig?.enabled)
+  const formCaps = useMemo(() => {
+    if (!selectedAccount) return resolveAccountUiCapabilities({ mode: 'ALL' }, accounts);
+    return resolveAccountUiCapabilities(
+      { mode: 'ACCOUNT', accountId: selectedAccount.id || selectedAccount._id },
+      accounts
     );
-  }, [selectedAccount]);
+  }, [selectedAccount, accounts]);
+
+  const isSelectedAccountProp = formCaps.prop.isProp;
+
+  // Auto-switch away from ADVANCED mode if account uses Hedging position model
+  useEffect(() => {
+    if (formCaps.position.isHedging && executionMode === 'ADVANCED') {
+      setExecutionMode('SIMPLE');
+    }
+  }, [formCaps.position.isHedging, executionMode]);
 
   const { data: selectedPropHealth } = useQuery<any>({
     queryKey: ['prop-health-form', selectedAccount?.id],
@@ -1519,7 +1528,7 @@ function TradeFormModalContent({
                 </Typography>
                 <Chip
                   size="small"
-                  label={executionMode === 'ADVANCED' ? 'FIFO Multi-Fill' : 'Simple Fill'}
+                  label={formCaps.position.isHedging ? 'Ticket-Based (Hedging)' : executionMode === 'ADVANCED' ? 'FIFO Multi-Fill' : 'Simple Fill'}
                   sx={{
                     height: 20,
                     fontSize: '0.6875rem',
@@ -1610,7 +1619,7 @@ function TradeFormModalContent({
             totalCosts={liveCosts}
             netPnL={liveNet}
             outcome={liveOutcome}
-            currency={selectedAccount?.currency || selectedAccount?.baseCurrency || 'USD'}
+            currency={formCaps.currency.code || selectedAccount?.currency || selectedAccount?.baseCurrency || 'USD'}
             realizedR={liveRealizedR}
             plannedRisk={plannedRiskAmount}
             status={watchedStatus}
@@ -1855,55 +1864,58 @@ function TradeFormModalContent({
               onCreateMissingStrategy={handleCreateMissingStrategy}
               isCreatingStrategy={isCreatingStrategy}
               userTemplates={allTemplatesData.filter((t: any) => !t.isBuiltIn)}
+              capabilities={formCaps}
             />
 
-            {/* Execution Mode Toggle Bar */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                px: 2,
-                py: 1.25,
-                borderRadius: 2,
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                border: `1px dashed ${muiTheme.palette.divider}`,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <LayersRounded sx={{ fontSize: 18, color: muiTheme.palette.text.secondary }} />
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  Execution Engine Mode:
-                </Typography>
-                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  {executionMode === 'SIMPLE'
-                    ? 'Single Entry & Exit Price (Standard)'
-                    : 'Real-time FIFO Matching with multiple scaled entries & partial profit scales'}
-                </Typography>
-              </Box>
+            {/* Execution Mode Toggle Bar (hidden for Hedging accounts which are ticket-based) */}
+            {!formCaps.position.isHedging && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  px: 2,
+                  py: 1.25,
+                  borderRadius: 2,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                  border: `1px dashed ${muiTheme.palette.divider}`,
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <LayersRounded sx={{ fontSize: 18, color: muiTheme.palette.text.secondary }} />
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Execution Engine Mode:
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    {executionMode === 'SIMPLE'
+                      ? 'Single Entry & Exit Price (Standard)'
+                      : 'Real-time FIFO Matching with multiple scaled entries & partial profit scales'}
+                  </Typography>
+                </Box>
 
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Button
-                  size="small"
-                  variant={executionMode === 'ADVANCED' ? 'contained' : 'outlined'}
-                  color={executionMode === 'ADVANCED' ? 'secondary' : 'inherit'}
-                  onClick={() => setExecutionMode((prev) => (prev === 'SIMPLE' ? 'ADVANCED' : 'SIMPLE'))}
-                  startIcon={<SwapHorizRounded />}
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    borderRadius: 1.5,
-                  }}
-                >
-                  {executionMode === 'SIMPLE' ? 'Switch to Multi-Fill (FIFO)' : 'Switch to Simple Fill'}
-                </Button>
-                <HelpHint hintKey="trade.form.fifo" />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant={executionMode === 'ADVANCED' ? 'contained' : 'outlined'}
+                    color={executionMode === 'ADVANCED' ? 'secondary' : 'inherit'}
+                    onClick={() => setExecutionMode((prev) => (prev === 'SIMPLE' ? 'ADVANCED' : 'SIMPLE'))}
+                    startIcon={<SwapHorizRounded />}
+                    sx={{
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      borderRadius: 1.5,
+                    }}
+                  >
+                    {executionMode === 'SIMPLE' ? 'Switch to Multi-Fill (FIFO)' : 'Switch to Simple Fill'}
+                  </Button>
+                  <HelpHint hintKey="trade.form.fifo" />
+                </Box>
               </Box>
-            </Box>
+            )}
 
-            {/* Advanced Multi-Fill Section (if executionMode === 'ADVANCED') */}
-            {executionMode === 'ADVANCED' && (
+            {/* Advanced Multi-Fill Section (if executionMode === 'ADVANCED' and Netting account) */}
+            {!formCaps.position.isHedging && executionMode === 'ADVANCED' && (
               <TradeAdvancedFills
                 register={register}
                 watch={watch}

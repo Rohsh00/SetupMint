@@ -471,3 +471,109 @@ When `isPropMode` is active:
 2. **Local / Fixed Views (Excluded from Global Date Range):**
    - **Journal Calendar (`/journal`):** Stays strictly month-based using `?yearMonth=YYYY-MM` to maintain the monthly calendar heatmap UI paradigm.
    - **Daily Review Queue (`/review/queue`):** Stays fixed to the last 30 calendar days of unreviewed sessions to prevent old unreviewed trades from being hidden by a narrow date range.
+
+---
+
+## 6. UI Capability Matrix & Account-Driven Page Gating
+
+SetupMint enforces strict **account-driven UI capability gating**. No feature, button, tab, card, menu item, or form field is rendered speculatively or "just in case". If a feature is unsupported for the active scope, it is hidden (`null` in DOM).
+
+### 1. Account Type × Feature Capability Matrix
+
+| Account Type / Scope | Live Order Exec / Hotkeys | FYERS Sync / Tokens | Indian Statutory Fees | Lots & Multipliers | Position Model | Sessions Calendar | Prop Challenge Panel | CSV Broker Presets |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **FYERS Live F&O (IN)** | ✅ Yes | ✅ Yes | ✅ Yes (STT, GST, etc.) | ✅ Lots + Mult | Netting FIFO | NSE (`NSE_REGULAR`, `OFF_HOURS`) | ❌ Hidden | FYERS, CUSTOM |
+| **FYERS Live Equity (IN)** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ (Qty only) | Netting FIFO | NSE | ❌ Hidden | FYERS, CUSTOM |
+| **Zerodha Manual Equity (IN)** | ❌ Hidden | ❌ Hidden | ✅ Yes | ❌ (Qty only) | Netting FIFO | NSE | ❌ Hidden | ZERODHA, CUSTOM |
+| **Angel One Manual F&O (IN)** | ❌ Hidden | ❌ Hidden | ✅ Yes | ✅ Lots + Mult | Netting FIFO | NSE | ❌ Hidden | ANGEL_ONE, CUSTOM |
+| **MCX Commodity (IN)** | ❌ Hidden | ❌ Hidden | ✅ Yes | ✅ Lots + Mult | Netting FIFO | MCX (`MCX_EVENING`, `OFF_HOURS`) | ❌ Hidden | CUSTOM |
+| **The5ers Prop (USD)** | ❌ Hidden | ❌ Hidden | ❌ Hidden (Comm/Swap) | ✅ Lots | Hedging Ticket | FOREX 24/5 (`ASIA`, `LONDON`, `NY`) | ✅ Yes | CUSTOM |
+| **Apex Prop Futures (USD)** | ❌ Hidden | ❌ Hidden | ❌ Hidden (Comm/Swap) | ✅ Lots | Hedging Ticket | FOREX 24/5 | ✅ Yes | CUSTOM |
+| **Forex Hedging MT5 (USD)** | ❌ Hidden | ❌ Hidden | ❌ Hidden (Comm/Swap) | ✅ Lots | Hedging Ticket | FOREX 24/5 | ❌ Hidden | MT5, CUSTOM |
+| **Crypto Spot/Futures (USD)** | ❌ Hidden | ❌ Hidden | ❌ Hidden (Comm/Swap) | ❌ Hidden | Netting FIFO | CRYPTO 24/7 (`OFF_HOURS`) | ❌ Hidden | CRYPTO, CUSTOM |
+| **Demo Account** | ❌ Hidden | ❌ Hidden | Matches market | Matches type | Matches type | Matches market | ❌ Hidden | CUSTOM |
+| **Archived Account** | ❌ Read-Only | ❌ Read-Only | Matches profile | Matches profile | Read-Only | Matches profile | ❌ Read-Only | Read-Only |
+| **Multi-Account Scope (ALL)** | ❌ Intersection | ❌ Intersection | ❌ If mixed | ❌ If mixed | ❌ If mixed | Intersection | ❌ If mixed | Union |
+
+### 2. Page-by-Page Gating Implementation Details
+
+1. **Header & AppLayout (`AppLayout.tsx`):**
+   - FYERS Tradebook Sync Button: Gated on `caps.broker.isFyers && caps.broker.canSyncTrades`.
+   - FYERS Daily Auth Expiry Chip: Gated on `caps.broker.needsDailyLogin`.
+   - "+ Log New Trade" Quick Action: Gated on `!caps.isArchived`.
+   - Currency Symbols: Formatted via `caps.currency.symbol` (e.g. ₹ vs $ vs currency code in multi-scope).
+
+2. **Command Palette & Keyboard Shortcuts (`CommandPalette.tsx`, `HotkeyCheatSheetDialog.tsx`):**
+   - New Trade / Template prefill commands: Excluded when `caps.isArchived`.
+   - Live Execution Actions (`Lock BE [B]`, `Book 50% [Space]`, `Panic Kill Switch [K]`): Excluded from palette and cheat sheet when `!caps.broker.canExecuteLive`.
+   - FYERS Connect / Daily Auth action: Rendered only when `caps.broker.isFyers`.
+
+3. **Dashboard Page (`DashboardPage.tsx`):**
+   - `<PropChallengePanel />`: Gated on `caps.prop.showChallengePanel`.
+   - `<LiveOpenTradeWatcher />`: Gated on `caps.live.watcher`.
+   - Live Market Candlestick Chart: Gated on `!caps.prop.isProp && (caps.marketData.fyersHistory || caps.marketData.angelOneFallback)`.
+   - Currency Displays: Uses `caps.currency.symbol` without hardcoded ₹ defaults.
+
+4. **Master Trades Ledger (`TradesPage.tsx`):**
+   - Live Open Trade Watcher Banner: Gated on `caps.live.watcher`.
+   - "+ Log Trade" and Import buttons: Hidden when `caps.isArchived`.
+   - Bulk Operations (Bulk Tag, Bulk Delete): Hidden when `caps.isArchived`.
+   - Row Edit, Delete, and Quick Close actions: Hidden when `caps.isArchived`.
+
+5. **Trade Logging & Quick Form Modal (`TradeFormModal.tsx` & subcomponents):**
+   - Account Selection Dropdown: Dynamically re-resolves capabilities (`formCaps`) when switching accounts inside the modal.
+   - Lots & Lot Stepper: Gated on `formCaps.instruments.showLots`.
+   - Multiplier Input: Gated on `formCaps.instruments.showMultiplier`.
+   - Options CE/PE Strike & Expiry Fields: Gated on `formCaps.instruments.showOptionsFields`.
+   - Statutory Tax Breakdown: Rendered when `formCaps.fees.showStatutoryBreakdown`; replaces with Commission & Swap inputs when `formCaps.fees.showCommissionSwap`.
+   - Advanced Fills / FIFO Matching: Hidden when `formCaps.position.isHedging`.
+   - Sessions Dropdown: Filtered strictly to `formCaps.sessions.allowedSessions`.
+   - Market Template Bar: Filtered by market region (hides FNO/MCX for Forex/Crypto; hides Forex for Indian INR).
+
+6. **Quick Close Position Dialog (`QuickCloseTradeDialog.tsx`):**
+   - Live Broker Order Exit Toggle Box: Gated on `tradeCaps.broker.canExecuteLive`.
+   - Feed Freshness Warnings: Rendered only when live broker execution is enabled.
+
+7. **Live Execution Cockpit & Scaling Ladder (`LiveOpenTradeWatcher.tsx`, `ExecuteLadderStepDialog.tsx`):**
+   - Instant Execution Cockpit Buttons (`Close 100%`, `Book 50%`, `Lock BE`, `Adjust SL`): Gated on `caps.broker.canExecuteLive`.
+   - Scalper Hotkeys Switch & Listeners: Gated on `caps.broker.canExecuteLive`.
+   - Scaling Ladder Inspector Tab: Gated on `caps.live.scalingLadder`.
+   - Personal Risk Guardrail Strip: Gated on `!caps.prop.isProp` (replaced with prop limits).
+   - Execute Step Live Broker Toggle: Gated on `caps.broker.canExecuteLive`.
+
+8. **Trade Detail Page (`TradeDetailPage.tsx`):**
+   - Edit, Delete, and Quick Close Header Actions: Hidden when `caps.isArchived`.
+   - Live Trade Monitor: Gated on `caps.live.watcher`.
+   - Excursion Analytics (MAE/MFE) & Automated Chart Generation: Gated on `caps.marketData.fyersHistory || caps.marketData.angelOneFallback`.
+
+9. **Accounts Ledger Page (`AccountsPage.tsx`):**
+   - FYERS Live Funds & Balance Card: Gated on `accCaps.broker.canSyncFunds`.
+   - Contextual "Link FYERS" CTA: Shown only when `accCaps.broker.isFyers && !acc.brokerLink`.
+   - Cash Flow Actions (Add/Withdraw Capital): Hidden when `acc.isArchived`.
+
+10. **Instruments Catalog (`InstrumentsPage.tsx`):**
+    - Multiplier & Lot Size Columns in Table: Gated on `caps.instruments.showMultiplier` and `caps.instruments.showLots`.
+    - Form Modal Multiplier & Lot Inputs: Gated on capability flags.
+
+11. **Reports & Portability (`ReportsPage.tsx`):**
+    - Cash Ledger Import: Gated on `caps.csvImport.cashLedger`.
+    - Broker Presets Dropdown: Filtered strictly to `caps.csvImport.brokerPresets`.
+
+12. **Analytics & Performance (`AnalyticsPage.tsx`):**
+    - Execution Quality (MAE/MFE Excursion) and Stops & Targets (What-If Simulator) Tabs: Gated on `caps.marketData.fyersHistory || caps.marketData.angelOneFallback`.
+
+13. **Risk Calculator (`RiskCalculatorPage.tsx`):**
+    - Lot-Based Sizing Modes & Lot Size Input: Gated on `caps.instruments.showLots`.
+    - Contract Multiplier Input: Gated on `caps.instruments.showMultiplier`.
+
+14. **Strategy Playbook (`StrategyPlaybookPage.tsx`):**
+    - Setup Template Groups: Filtered by active market region (`IN` vs `GLOBAL`).
+
+15. **Journal Calendar (`JournalCalendarPage.tsx`):**
+    - Day Cell P&L Figures & Tooltips: Format with `caps.currency.symbol`.
+
+16. **Settings Page (`SettingsPage.tsx`):**
+    - FYERS Live Broker Card: Gated on `hasFyersAccount`.
+    - Angel One Market Data Card: Gated on `hasMarketDataAccount`.
+    - Telegram Live Execution Controls: Gated on `hasLiveExecutableAccount`.
+

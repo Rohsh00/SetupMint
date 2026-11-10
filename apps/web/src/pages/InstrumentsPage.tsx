@@ -42,7 +42,7 @@ import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatDate } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { HelpHint } from '../components/help/index.js';
@@ -78,6 +78,7 @@ const defaultFormData: InstrumentFormData = {
 export function InstrumentsPage() {
   const { openDrill } = useTradeDrilldown();
   const { queryParams, scope, scopedAccounts, activeAccount, currency: scopeCurrency } = useAccountScope();
+  const caps = useAccountCapabilities();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
@@ -93,7 +94,10 @@ export function InstrumentsPage() {
 
   // Creation modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [createFormData, setCreateFormData] = useState<InstrumentFormData>(defaultFormData);
+  const [createFormData, setCreateFormData] = useState<InstrumentFormData>(() => ({
+    ...defaultFormData,
+    quoteCurrency: caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : 'USD',
+  }));
   const [createError, setCreateError] = useState<string | null>(null);
 
   // Edit modal state
@@ -369,8 +373,8 @@ export function InstrumentsPage() {
                 <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Display Name</TableCell>
                 <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Asset Class</TableCell>
                 <TableCell sx={{ fontWeight: 600, py: 1.5 }}>Exchange</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Multiplier</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Lot Size</TableCell>
+                {caps.instruments.showMultiplier && <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Multiplier</TableCell>}
+                {caps.instruments.showLots && <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Lot Size</TableCell>}
                 <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Tick Size</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Trades</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 600, py: 1.5 }}>Net Realized P&L</TableCell>
@@ -468,13 +472,17 @@ export function InstrumentsPage() {
                         {inst.exchange}
                       </TableCell>
 
-                      <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: 'primary.main' }}>
-                        x{inst.contractMultiplier}
-                      </TableCell>
+                      {caps.instruments.showMultiplier && (
+                        <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: 'primary.main' }}>
+                          x{inst.contractMultiplier}
+                        </TableCell>
+                      )}
 
-                      <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace' }}>
-                        {inst.lotSize}
-                      </TableCell>
+                      {caps.instruments.showLots && (
+                        <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace' }}>
+                          {inst.lotSize}
+                        </TableCell>
+                      )}
 
                       <TableCell align="right" sx={{ fontFamily: '"JetBrains Mono", monospace', color: 'text.secondary' }}>
                         {inst.tickSize}
@@ -677,28 +685,36 @@ export function InstrumentsPage() {
               />
             </Box>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
-              <TextField
-                label="Contract Multiplier *"
-                type="number"
-                size="small"
-                required
-                fullWidth
-                value={createFormData.contractMultiplier}
-                onChange={(e) => setCreateFormData({ ...createFormData, contractMultiplier: Number(e.target.value) })}
-                slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: caps.instruments.showMultiplier && caps.instruments.showLots ? '1fr 1fr 1fr' : caps.instruments.showMultiplier || caps.instruments.showLots ? '1fr 1fr' : '1fr',
+              gap: 2,
+            }}>
+              {caps.instruments.showMultiplier && (
+                <TextField
+                  label="Contract Multiplier *"
+                  type="number"
+                  size="small"
+                  required
+                  fullWidth
+                  value={createFormData.contractMultiplier}
+                  onChange={(e) => setCreateFormData({ ...createFormData, contractMultiplier: Number(e.target.value) })}
+                  slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                />
+              )}
 
-              <TextField
-                label="Lot Size *"
-                type="number"
-                size="small"
-                required
-                fullWidth
-                value={createFormData.lotSize}
-                onChange={(e) => setCreateFormData({ ...createFormData, lotSize: Number(e.target.value) })}
-                slotProps={{ htmlInput: { step: 'any', min: 1, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
+              {caps.instruments.showLots && (
+                <TextField
+                  label="Lot Size *"
+                  type="number"
+                  size="small"
+                  required
+                  fullWidth
+                  value={createFormData.lotSize}
+                  onChange={(e) => setCreateFormData({ ...createFormData, lotSize: Number(e.target.value) })}
+                  slotProps={{ htmlInput: { step: 'any', min: 1, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                />
+              )}
 
               <TextField
                 label="Tick Size *"
@@ -845,28 +861,36 @@ export function InstrumentsPage() {
               />
             </Box>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
-              <TextField
-                label="Contract Multiplier *"
-                type="number"
-                size="small"
-                required
-                fullWidth
-                value={editFormData.contractMultiplier}
-                onChange={(e) => setEditFormData({ ...editFormData, contractMultiplier: Number(e.target.value) })}
-                slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: caps.instruments.showMultiplier && caps.instruments.showLots ? '1fr 1fr 1fr' : caps.instruments.showMultiplier || caps.instruments.showLots ? '1fr 1fr' : '1fr',
+              gap: 2,
+            }}>
+              {caps.instruments.showMultiplier && (
+                <TextField
+                  label="Contract Multiplier *"
+                  type="number"
+                  size="small"
+                  required
+                  fullWidth
+                  value={editFormData.contractMultiplier}
+                  onChange={(e) => setEditFormData({ ...editFormData, contractMultiplier: Number(e.target.value) })}
+                  slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                />
+              )}
 
-              <TextField
-                label="Lot Size *"
-                type="number"
-                size="small"
-                required
-                fullWidth
-                value={editFormData.lotSize}
-                onChange={(e) => setEditFormData({ ...editFormData, lotSize: Number(e.target.value) })}
-                slotProps={{ htmlInput: { step: 'any', min: 1, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
+              {caps.instruments.showLots && (
+                <TextField
+                  label="Lot Size *"
+                  type="number"
+                  size="small"
+                  required
+                  fullWidth
+                  value={editFormData.lotSize}
+                  onChange={(e) => setEditFormData({ ...editFormData, lotSize: Number(e.target.value) })}
+                  slotProps={{ htmlInput: { step: 'any', min: 1, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                />
+              )}
 
               <TextField
                 label="Tick Size *"

@@ -53,7 +53,7 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency, formatPercent } from '../lib/utils.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { HelpHint } from '../components/help/index.js';
@@ -67,6 +67,8 @@ import {
 export function StrategyPlaybookPage() {
   const { openDrill } = useTradeDrilldown();
   const { queryParams } = useAccountScope();
+  const caps = useAccountCapabilities();
+  const isIndianMarket = caps.fees.showStatutoryBreakdown;
   const queryClient = useQueryClient();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
@@ -459,6 +461,8 @@ export function StrategyPlaybookPage() {
   // Filter templates
   const filteredTemplates = useMemo(() => {
     return templates.filter((t) => {
+      if (!isIndianMarket && (t.group === 'FNO' || t.group === 'MCX')) return false;
+      if (isIndianMarket && caps.currency.code === 'INR' && t.group === 'FOREX_GOLD') return false;
       if (templateFilter === 'CUSTOM' && t.isBuiltIn) return false;
       if (templateFilter === 'FAVORITES' && !t.isFavorite) return false;
       if (templateFilter !== 'ALL' && templateFilter !== 'CUSTOM' && templateFilter !== 'FAVORITES' && t.group !== templateFilter) {
@@ -474,7 +478,7 @@ export function StrategyPlaybookPage() {
       }
       return true;
     });
-  }, [templates, templateFilter, templateSearch]);
+  }, [templates, templateFilter, templateSearch, isIndianMarket, caps.currency.code]);
 
   const groupBadgeColor = (group: TemplateGroup) => {
     switch (group) {
@@ -1146,11 +1150,17 @@ export function StrategyPlaybookPage() {
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
               {[
                 { id: 'ALL', label: 'All Setups' },
-                { id: 'FNO', label: 'F&O' },
-                { id: 'STOCKS', label: 'Stocks' },
-                { id: 'FOREX_GOLD', label: 'Forex & Gold' },
+                ...(isIndianMarket
+                  ? [
+                      { id: 'FNO', label: 'F&O' },
+                      { id: 'STOCKS', label: 'Stocks' },
+                      { id: 'MCX', label: 'MCX' },
+                    ]
+                  : []),
+                ...((!isIndianMarket || caps.currency.code !== 'INR')
+                  ? [{ id: 'FOREX_GOLD', label: 'Forex & Gold' }]
+                  : []),
                 { id: 'CRYPTO', label: 'Crypto' },
-                { id: 'MCX', label: 'MCX' },
                 { id: 'PRICE_ACTION', label: 'Price Action / SMC' },
                 { id: 'CUSTOM', label: 'Custom' },
               ].map((f) => (

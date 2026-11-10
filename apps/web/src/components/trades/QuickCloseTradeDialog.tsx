@@ -37,11 +37,13 @@ import {
   ChargesBreakdown,
   calculatePreFlightExecutionPreview,
   IPreFlightExecutionPreviewResult,
+  resolveAccountUiCapabilities,
 } from '@tradevault/financial-engine';
 import { ILiveDataHealth } from '@tradevault/shared';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
 import { formatCurrency, currentLocalIsoDateTime, getCurrencySymbol } from '../../lib/utils.js';
+import { useAccountScope, useAccountCapabilities } from '../../context/AccountScopeContext.js';
 import { HoldToConfirmButton } from './live/HoldToConfirmButton.js';
 
 export interface QuickCloseTradeProps {
@@ -121,6 +123,19 @@ export function QuickCloseTradeDialog({
     (trade as any)?.accountBroker === 'MT5'
   );
 
+  const { accounts } = useAccountScope();
+  const scopeCaps = useAccountCapabilities();
+  const tradeAccount = useMemo(() => {
+    return accounts.find((a: any) => a.id === trade?.accountId || a._id === trade?.accountId);
+  }, [accounts, trade?.accountId]);
+
+  const tradeCaps = useMemo(() => {
+    if (!tradeAccount) return scopeCaps;
+    return resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: tradeAccount.id || tradeAccount._id }, accounts);
+  }, [tradeAccount, accounts, scopeCaps]);
+
+  const canBrokerExecute = tradeCaps.broker.canExecuteLive;
+
   const isUsdTrade =
     trade?.currency === 'USD' ||
     trade?.symbol?.includes('USD') ||
@@ -128,8 +143,8 @@ export function QuickCloseTradeDialog({
     trade?.assetClass === 'FOREX' ||
     isMt5Trade;
 
-  const tradeCurrency = trade?.currency || (isUsdTrade ? 'USD' : 'INR');
-  const currSym = getCurrencySymbol(tradeCurrency);
+  const tradeCurrency = trade?.currency || tradeAccount?.baseCurrency || tradeCaps.currency.code || (isUsdTrade ? 'USD' : 'INR');
+  const currSym = tradeCaps.currency.symbol || getCurrencySymbol(tradeCurrency);
 
   // Data health & provider guard check
   const effectiveDataHealth: ILiveDataHealth | undefined = dataHealth || trade?.dataHealth;
@@ -156,7 +171,7 @@ export function QuickCloseTradeDialog({
   const [manualFeesOverride, setManualFeesOverride] = useState(false);
   const [customExitFees, setCustomExitFees] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [executeOnBroker, setExecuteOnBroker] = useState<boolean>(() => !isBrokerExecutionBlocked);
+  const [executeOnBroker, setExecuteOnBroker] = useState<boolean>(() => canBrokerExecute && !isBrokerExecutionBlocked);
 
   // Stepper & order state
   const [orderStage, setOrderStage] = useState<OrderExecutionStage>('IDLE');
@@ -220,14 +235,14 @@ export function QuickCloseTradeDialog({
       // Default exit time to current local time in ISO format for datetime-local
       setExitTime(currentLocalIsoDateTime());
 
-      // If broker execution is blocked, force journal only
-      if (isBrokerExecutionBlocked) {
+      // If broker execution is blocked or not supported, force journal only
+      if (!canBrokerExecute || isBrokerExecutionBlocked) {
         setExecuteOnBroker(false);
       } else {
         setExecuteOnBroker(true);
       }
     }
-  }, [open, trade, defaultExitPrice, defaultCloseRatio, totalOpenQuantity, isBrokerExecutionBlocked]);
+  }, [open, trade, defaultExitPrice, defaultCloseRatio, totalOpenQuantity, canBrokerExecute, isBrokerExecutionBlocked]);
 
   const numExitPrice = parseFloat(exitPrice);
   const isPriceValid = !isNaN(numExitPrice) && numExitPrice > 0;
@@ -710,7 +725,7 @@ export function QuickCloseTradeDialog({
         )}
 
         {/* Data Freshness Warning / Guard Banner */}
-        {isBrokerExecutionBlocked && (
+        {canBrokerExecute && isBrokerExecutionBlocked && (
           <Alert
             severity="warning"
             icon={<WarningAmberRoundedIcon sx={{ fontSize: 20 }} />}
@@ -922,62 +937,64 @@ export function QuickCloseTradeDialog({
           </Box>
         </Box>
 
-        {/* Live Broker Execution (FYERS) Toggle */}
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: 2,
-            bgcolor: executeOnBroker
-              ? isDark
-                ? 'rgba(16, 185, 129, 0.12)'
-                : 'rgba(16, 185, 129, 0.08)'
-              : isDark
-              ? 'rgba(100, 116, 139, 0.1)'
-              : 'rgba(100, 116, 139, 0.05)',
-            border: '1px solid',
-            borderColor: executeOnBroker ? 'rgba(16, 185, 129, 0.3)' : 'rgba(100, 116, 139, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-            <Box
-              sx={{
-                width: 9,
-                height: 9,
-                borderRadius: '50%',
-                bgcolor: executeOnBroker ? '#10B981' : '#64748B',
-                boxShadow: executeOnBroker ? '0 0 8px #10B981' : 'none',
-              }}
-            />
-            <Box>
-              <Typography variant="body2" sx={{ fontWeight: 800, color: executeOnBroker ? '#10B981' : 'text.secondary' }}>
-                Live Broker Order ({isMt5Trade ? 'MT5 / Elefin Bridge' : 'FYERS API v3'})
-              </Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
-                {isBrokerExecutionBlocked
-                  ? brokerBlockReason || 'Broker execution is unavailable'
-                  : executeOnBroker
-                  ? (isMt5Trade
-                      ? `Queues a real market exit order for ${selectedCloseQty} lot directly with MT5 bridge EA`
-                      : `Places a real market exit order for ${selectedCloseQty} qty directly with FYERS exchange gateway`)
-                  : 'Record in SetupMint journal only without placing exchange order'}
-              </Typography>
-            </Box>
-          </Box>
-          <Tooltip title={isBrokerExecutionBlocked ? (brokerBlockReason || 'Broker execution blocked') : ''} arrow>
-            <span>
-              <Switch
-                checked={executeOnBroker}
-                disabled={isBrokerExecutionBlocked || orderStage !== 'IDLE'}
-                onChange={(e) => setExecuteOnBroker(e.target.checked)}
-                color="success"
-                size="small"
+        {/* Live Broker Execution Toggle */}
+        {canBrokerExecute && (
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: executeOnBroker
+                ? isDark
+                  ? 'rgba(16, 185, 129, 0.12)'
+                  : 'rgba(16, 185, 129, 0.08)'
+                : isDark
+                ? 'rgba(100, 116, 139, 0.1)'
+                : 'rgba(100, 116, 139, 0.05)',
+              border: '1px solid',
+              borderColor: executeOnBroker ? 'rgba(16, 185, 129, 0.3)' : 'rgba(100, 116, 139, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+              <Box
+                sx={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: '50%',
+                  bgcolor: executeOnBroker ? '#10B981' : '#64748B',
+                  boxShadow: executeOnBroker ? '0 0 8px #10B981' : 'none',
+                }}
               />
-            </span>
-          </Tooltip>
-        </Box>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 800, color: executeOnBroker ? '#10B981' : 'text.secondary' }}>
+                  Live Broker Order ({isMt5Trade ? 'MT5 / Elefin Bridge' : 'FYERS API v3'})
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.72rem' }}>
+                  {isBrokerExecutionBlocked
+                    ? brokerBlockReason || 'Broker execution is unavailable'
+                    : executeOnBroker
+                    ? (isMt5Trade
+                        ? `Queues a real market exit order for ${selectedCloseQty} lot directly with MT5 bridge EA`
+                        : `Places a real market exit order for ${selectedCloseQty} qty directly with FYERS exchange gateway`)
+                    : 'Record in SetupMint journal only without placing exchange order'}
+                </Typography>
+              </Box>
+            </Box>
+            <Tooltip title={isBrokerExecutionBlocked ? (brokerBlockReason || 'Broker execution blocked') : ''} arrow>
+              <span>
+                <Switch
+                  checked={executeOnBroker}
+                  disabled={isBrokerExecutionBlocked || orderStage !== 'IDLE'}
+                  onChange={(e) => setExecuteOnBroker(e.target.checked)}
+                  color="success"
+                  size="small"
+                />
+              </span>
+            </Tooltip>
+          </Box>
+        )}
 
         {/* Exit Price Input */}
         <TextField

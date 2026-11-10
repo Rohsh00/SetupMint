@@ -55,7 +55,7 @@ import { MultiPanelEquityCurve } from '../components/dashboard/MultiPanelEquityC
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { LiveMarketChart } from '../components/dashboard/PropLiveMarketChart.js';
@@ -66,6 +66,7 @@ export function DashboardPage() {
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate, preset } = useDateRange();
   const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts, currency: scopeCurrency, isMultiCurrency, currencies } = useAccountScope();
+  const caps = useAccountCapabilities();
   const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(false);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -96,6 +97,7 @@ export function DashboardPage() {
   });
 
   const activeCurrency = useMemo(() => {
+    if (caps.currency.code && caps.currency.code !== 'MULTI') return caps.currency.code;
     if (stats?.primaryCurrency) return stats.primaryCurrency;
     if (scopeCurrency && scopeCurrency !== 'MULTI') return scopeCurrency;
     const breakdownKeys = Object.keys(stats?.currencyBreakdown || stats?.byCurrency || {});
@@ -108,7 +110,7 @@ export function DashboardPage() {
       return propAccounts[0]?.baseCurrency || 'USD';
     }
     return 'USD';
-  }, [stats?.primaryCurrency, stats?.currencyBreakdown, stats?.byCurrency, scopeCurrency, selectedAccountId, accounts, isPropMode, propAccounts]);
+  }, [caps.currency.code, stats?.primaryCurrency, stats?.currencyBreakdown, stats?.byCurrency, scopeCurrency, selectedAccountId, accounts, isPropMode, propAccounts]);
 
   const { data: recentTradesData } = useQuery({
     queryKey: ['recent-trades', queryParams],
@@ -226,10 +228,10 @@ export function DashboardPage() {
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
       {/* Prop Challenge Health Overview Panel in Prop Mode */}
-      {isPropMode && <PropChallengePanel />}
+      {caps.prop.showChallengePanel && <PropChallengePanel />}
 
       {/* Live Market Chart Terminal in Normal Accounts Mode */}
-      {!isPropMode && (
+      {!caps.prop.isProp && (caps.marketData.fyersHistory || caps.marketData.angelOneFallback) && (
         <Card sx={{ p: 2, borderRadius: 2.5 }}>
           <Box
             sx={{
@@ -247,7 +249,7 @@ export function DashboardPage() {
                 Live Market Chart Terminal
               </Typography>
               <Chip
-                label="LIVE SPOT / NSE"
+                label={caps.broker.isFyers ? "LIVE SPOT / FYERS" : "LIVE FEED"}
                 size="small"
                 sx={{
                   height: 20,
@@ -279,7 +281,7 @@ export function DashboardPage() {
           {showNormalMarketChart && (
             <LiveMarketChart
               mode="NORMAL"
-              initialSymbol="NIFTY"
+              initialSymbol={caps.currency.code === 'INR' ? "NIFTY" : undefined}
               height={380}
             />
           )}
@@ -456,9 +458,11 @@ export function DashboardPage() {
       </Box>
 
       {/* Live Open Trade Watcher (MTM, Unrealized R, Distance to SL/Target) */}
-      <LiveOpenTradeWatcher
-        accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
-      />
+      {caps.live.watcher && (
+        <LiveOpenTradeWatcher
+          accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+        />
+      )}
 
       {/* KPI Stats Grid */}
       <Grid container spacing={2.5}>

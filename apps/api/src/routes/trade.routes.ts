@@ -10,6 +10,7 @@ import {
   aggregateCandles,
   estimateFetchRange,
   sanitizeTradeFills,
+  resolveAccountUiCapabilities,
 } from '@tradevault/financial-engine';
 import {
   createTradeSchema,
@@ -1730,6 +1731,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     if (executeBroker) {
       const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const caps = account ? resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: String(account._id) }, [account]) : null;
+      if (!caps || !caps.broker.canExecuteLive || !account?.profile?.capabilities?.canModifyStopLoss) {
+        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker execution not supported for this account'));
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'CAPABILITY_NOT_SUPPORTED',
+            message: 'Remote stop loss modification is not supported by the execution adapter for this trade.',
+          },
+        });
+      }
+
       const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
 
       if (isMt5) {
@@ -1927,6 +1940,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     if (executeBroker) {
       const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const caps = account ? resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: String(account._id) }, [account]) : null;
+      if (!caps || !caps.broker.canExecuteLive || !account?.profile?.capabilities?.canExitPositions) {
+        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker execution not supported for this account'));
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'CAPABILITY_NOT_SUPPORTED',
+            message: 'Live position liquidation is not supported by the execution adapter for this trade.',
+          },
+        });
+      }
+
       const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
 
       if (isMt5) {
@@ -2154,6 +2179,18 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     // 1. If executing on broker, perform exit and SL adjustments
     if (executeBroker) {
       const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const caps = account ? resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: String(account._id) }, [account]) : null;
+      if (!caps || !caps.broker.canExecuteLive || !caps.live.scalingLadder || !account?.profile?.capabilities?.canScaleLadder) {
+        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker execution not supported for this account'));
+        return reply.status(409).send({
+          success: false,
+          error: {
+            code: 'CAPABILITY_NOT_SUPPORTED',
+            message: 'Scaling ladder execution is not supported by the execution adapter for this trade.',
+          },
+        });
+      }
+
       const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
 
       if (isMt5) {

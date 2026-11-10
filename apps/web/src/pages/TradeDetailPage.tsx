@@ -60,6 +60,8 @@ import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatPrice, formatR, getCurrencySymbol } from '../lib/utils.js';
 import { useCapabilities } from '../hooks/useCapabilities.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
+import { resolveAccountUiCapabilities } from '@tradevault/financial-engine';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
 import { TradeInteractiveChart } from '../components/trades/TradeInteractiveChart.js';
@@ -90,10 +92,27 @@ export function TradeDetailPage() {
     enabled: !!id,
   });
 
+  const { accounts } = useAccountScope();
+  const scopeCaps = useAccountCapabilities();
+
   const trade = (rawTrade as any)?.data || rawTrade;
+
+  const tradeAccount = useMemo(() => {
+    const accId = typeof trade?.accountId === 'object' ? trade.accountId?.id || trade.accountId?._id : trade?.accountId;
+    return accounts.find((a: any) => (a.id || a._id) === accId);
+  }, [accounts, trade?.accountId]);
+
+  const caps = useMemo(() => {
+    if (!tradeAccount) return scopeCaps;
+    return resolveAccountUiCapabilities(
+      { mode: 'ACCOUNT', accountId: tradeAccount.id || tradeAccount._id },
+      accounts
+    );
+  }, [tradeAccount, accounts, scopeCaps]);
+
   const isOpenTrade = trade?.status === 'OPEN';
-  const tradeCurrency = trade?.currency || trade?.accountId?.baseCurrency || 'USD';
-  const currSym = getCurrencySymbol(tradeCurrency);
+  const tradeCurrency = trade?.currency || caps.currency.code || tradeAccount?.baseCurrency || trade?.accountId?.baseCurrency || 'USD';
+  const currSym = caps.currency.symbol || getCurrencySymbol(tradeCurrency);
 
   const {
     data: liveMetric,
@@ -437,7 +456,7 @@ export function TradeDetailPage() {
 
         {/* Action Buttons */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          {(trade.status === 'OPEN' || trade.status === 'PLANNED') && (
+          {!caps.isArchived && (trade.status === 'OPEN' || trade.status === 'PLANNED') && (
             <Button
               variant="contained"
               color="primary"
@@ -465,39 +484,43 @@ export function TradeDetailPage() {
           >
             Copy Link
           </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={() => duplicateMutation.mutate()}
-            startIcon={<ContentCopyIcon fontSize="small" />}
-            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-          >
-            Duplicate
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={() => setIsEditModalOpen(true)}
-            startIcon={<EditIcon fontSize="small" />}
-            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="outlined"
-            color="error"
-            size="small"
-            onClick={() => setShowDeleteConfirm(true)}
-            startIcon={<DeleteOutlineIcon fontSize="small" />}
-            sx={{ fontWeight: 600, fontSize: '0.75rem' }}
-          >
-            Delete
-          </Button>
+          {!caps.isArchived && (
+            <>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => duplicateMutation.mutate()}
+                startIcon={<ContentCopyIcon fontSize="small" />}
+                sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+              >
+                Duplicate
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setIsEditModalOpen(true)}
+                startIcon={<EditIcon fontSize="small" />}
+                sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+              >
+                Edit
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={() => setShowDeleteConfirm(true)}
+                startIcon={<DeleteOutlineIcon fontSize="small" />}
+                sx={{ fontWeight: 600, fontSize: '0.75rem' }}
+              >
+                Delete
+              </Button>
+            </>
+          )}
         </Box>
       </Box>
 
       {/* Live Open Position Monitor Card (When Trade is OPEN) */}
-      {isOpenTrade && liveMetric && (
+      {isOpenTrade && liveMetric && caps.live.watcher && (
         <Card
           sx={{
             p: 2.5,
@@ -1449,32 +1472,36 @@ export function TradeDetailPage() {
                 <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
                   Historical candle data unavailable for this trade lifecycle {exc?.failureReason ? `(${exc.failureReason})` : ''}.
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => computeExcursionMutation.mutate({ provider: 'AUTO' })}
-                    disabled={computeExcursionMutation.isPending}
-                    sx={{ textTransform: 'none', fontWeight: 600 }}
-                  >
-                    Retry Fetch (Auto)
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="warning"
-                    onClick={() => computeExcursionMutation.mutate({ provider: 'ANGEL_ONE' })}
-                    disabled={computeExcursionMutation.isPending}
-                    sx={{ textTransform: 'none', fontWeight: 600 }}
-                  >
-                    Retry with Angel One
-                  </Button>
-                </Box>
+                {(caps.marketData.fyersHistory || caps.marketData.angelOneFallback) && (
+                  <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => computeExcursionMutation.mutate({ provider: 'AUTO' })}
+                      disabled={computeExcursionMutation.isPending}
+                      sx={{ textTransform: 'none', fontWeight: 600 }}
+                    >
+                      Retry Fetch (Auto)
+                    </Button>
+                    {caps.marketData.angelOneFallback && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="warning"
+                        onClick={() => computeExcursionMutation.mutate({ provider: 'ANGEL_ONE' })}
+                        disabled={computeExcursionMutation.isPending}
+                        sx={{ textTransform: 'none', fontWeight: 600 }}
+                      >
+                        Retry with Angel One
+                      </Button>
+                    )}
+                  </Box>
+                )}
               </Box>
-            ) : (
+            ) : (caps.marketData.fyersHistory || caps.marketData.angelOneFallback) ? (
               <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
-                  Excursion metrics have not been computed yet for this trade. Compute now using FYERS historical candles to reveal your maximum potential vs captured profit.
+                  Excursion metrics have not been computed yet for this trade. Compute now using market data historical candles to reveal your maximum potential vs captured profit.
                 </Typography>
                 <Button
                   variant="contained"
@@ -1486,6 +1513,12 @@ export function TradeDetailPage() {
                 >
                   Compute Excursion Metrics
                 </Button>
+              </Box>
+            ) : (
+              <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Historical candle analysis is not supported for this account.
+                </Typography>
               </Box>
             )}
 
@@ -2319,17 +2352,19 @@ export function TradeDetailPage() {
       </Card>
 
       {/* Automated Execution Charts Generator Panel */}
-      <Box id="execution-charts-panel">
-        <GenerateExecutionChartsPanel
-          tradeId={id!}
-          symbol={trade.symbol}
-          status={trade.status}
-          entryDate={trade.entryDate}
-          exitDate={trade.exitDate}
-          attachments={trade.attachments || []}
-          onGenerated={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
-        />
-      </Box>
+      {(caps.marketData.fyersHistory || caps.marketData.angelOneFallback) && (
+        <Box id="execution-charts-panel">
+          <GenerateExecutionChartsPanel
+            tradeId={id!}
+            symbol={trade.symbol}
+            status={trade.status}
+            entryDate={trade.entryDate}
+            exitDate={trade.exitDate}
+            attachments={trade.attachments || []}
+            onGenerated={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
+          />
+        </Box>
+      )}
 
       {/* Chart Screenshots & Visual Review Gallery */}
       <TradeScreenshotGallery

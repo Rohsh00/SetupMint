@@ -125,6 +125,15 @@ Trading Vault/
 10. **Prop Firm Challenge Rule Guard Invariant:**
     - For prop challenge accounts (`accountType: 'PROP_FIRM'`), the automated execution pipeline enforces pre-trade rule verification (daily loss limit buffer, maximum loss limit buffer, lot size caps, mandatory stop loss requirement, weekend hold rules, and news window restrictions).
     - Automation never breaches a prop challenge rule; manual user overrides require explicit audited confirmation.
+11. **Account-Driven UI Capability Invariant:**
+    - The entire SetupMint UI is strictly capability-driven and account-bound. Every button, tab, card, menu item, form field, banner, shortcut, command-palette action, and Settings section renders **only** if the active account or scope supports it.
+    - Derived via `resolveAccountUiCapabilities(scope, accounts)` in `@tradevault/financial-engine`:
+      - **Zero Speculative / "Just in Case" UI:** If a feature is unsupported for the active scope, it is hidden (`null` in DOM), never disabled, greyed out, or shown as an "upgrade/connect" teaser. (Exception: Contextual "Connect FYERS" CTA shown strictly for FYERS accounts).
+      - **Broker Live Actions:** Live order exits, stop adjustments, scaling ladders, giveback triggers, panic kill switches, FYERS trade/funds sync, and FYERS daily session chips render ONLY when `executionAdapterKey === 'FYERS'`.
+      - **Market & Prop Isolation:** Forex and Prop accounts hide Indian statutory charge breakdowns, NSE templates, and MCX lots, rendering commission/swap fees, 24/5 forex sessions, and prop challenge / rule advisory panels. Non-prop accounts hide prop panels.
+      - **Position Model Gating:** Hedging accounts expose ticket-based position UI and hide FIFO matching/fills UI. Netting accounts expose FIFO fill calculations.
+      - **Demo & Archived Guards:** Demo accounts hide real broker calls and execution switches. Archived accounts are strictly read-only, hiding trade creation, editing, closing, and cash flows.
+      - **Defense in Depth:** Broker execution and integration endpoints (`/broker-sl`, `/broker-exit`, `/broker-ladder-step`, `sync-funds`, `broker-link`, `/integrations/fyers/*`) strictly reject requests targeting unsupported accounts with HTTP `409 Conflict` (`CAPABILITY_NOT_SUPPORTED`).
 
 ---
 

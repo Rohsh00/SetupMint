@@ -25,6 +25,7 @@ import {
   IPreFlightExecutionPreviewResult,
 } from '@tradevault/financial-engine';
 import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
+import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 import { HoldToConfirmButton } from './HoldToConfirmButton.js';
 
 interface ExecuteLadderStepDialogProps {
@@ -54,10 +55,11 @@ export function ExecuteLadderStepDialog({
 }: ExecuteLadderStepDialogProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const caps = useAccountCapabilities();
 
   const [exitQty, setExitQty] = useState<number>(1);
   const [newStopLoss, setNewStopLoss] = useState<number>(0);
-  const currSym = getCurrencySymbol((metric as any)?.currency || 'USD');
+  const currSym = caps.currency.symbol || getCurrencySymbol((metric as any)?.currency || caps.currency.code || 'USD');
 
   const isMt5 = Boolean((metric as any)?.isMt5 || /elefin|mt5/i.test((metric as any)?.accountBroker || ''));
   const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
@@ -67,19 +69,19 @@ export function ExecuteLadderStepDialog({
   const isBrokerExecutionBlocked = effectiveDataHealth ? !effectiveDataHealth.canExecuteBroker : false;
   const brokerBlockReason = effectiveDataHealth?.brokerExecutionBlockedReason;
 
-  const [executeBroker, setExecuteBroker] = useState<boolean>(() => !isBrokerExecutionBlocked);
+  const [executeBroker, setExecuteBroker] = useState<boolean>(() => caps.broker.canExecuteLive && !isBrokerExecutionBlocked);
 
   useEffect(() => {
     if (step) {
       setExitQty(step.plannedExitQty);
       setNewStopLoss(step.suggestedStopLoss);
-      if (isBrokerExecutionBlocked) {
+      if (!caps.broker.canExecuteLive || isBrokerExecutionBlocked) {
         setExecuteBroker(false);
       } else {
         setExecuteBroker(true);
       }
     }
-  }, [step, isBrokerExecutionBlocked]);
+  }, [step, caps.broker.canExecuteLive, isBrokerExecutionBlocked]);
 
   const totalOpenQty = metric?.quantity || 1;
   const lotSize = step?.lotSize ?? metric?.lotSize ?? 1;
@@ -206,7 +208,7 @@ export function ExecuteLadderStepDialog({
         </Box>
 
         {/* Data Freshness Warning / Guard Banner */}
-        {isBrokerExecutionBlocked && (
+        {caps.broker.canExecuteLive && isBrokerExecutionBlocked && (
           <Alert
             severity="warning"
             icon={<WarningAmberRoundedIcon sx={{ fontSize: 18 }} />}
@@ -332,7 +334,7 @@ export function ExecuteLadderStepDialog({
             </Box>
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-              <span style={{ color: muiTheme.palette.text.secondary }}>Statutory Charges (Auto):</span>
+              <span style={{ color: muiTheme.palette.text.secondary }}>{caps.fees.showStatutoryBreakdown ? 'Statutory Charges (Auto):' : 'Estimated Fees:'}</span>
               <span style={{ fontFamily: `'JetBrains Mono', monospace` }}>{formatCurrency(preFlightPreview.estimatedCharges)}</span>
             </Box>
 
@@ -355,66 +357,68 @@ export function ExecuteLadderStepDialog({
         )}
 
         {/* Live Broker Execution Toggle */}
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: '10px',
-            bgcolor: executeBroker
-              ? isDark
-                ? 'rgba(16, 185, 129, 0.1)'
-                : 'rgba(16, 185, 129, 0.08)'
-              : isDark
-              ? 'rgba(255, 255, 255, 0.03)'
-              : 'rgba(0, 0, 0, 0.02)',
-            border: '1px solid',
-            borderColor: executeBroker
-              ? alpha('#10B981', 0.4)
-              : isDark
-              ? 'rgba(255, 255, 255, 0.08)'
-              : 'rgba(0, 0, 0, 0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
-                Execute on {brokerLabel} Broker
+        {caps.broker.canExecuteLive && (
+          <Box
+            sx={{
+              p: 1.5,
+              borderRadius: '10px',
+              bgcolor: executeBroker
+                ? isDark
+                  ? 'rgba(16, 185, 129, 0.1)'
+                  : 'rgba(16, 185, 129, 0.08)'
+                : isDark
+                ? 'rgba(255, 255, 255, 0.03)'
+                : 'rgba(0, 0, 0, 0.02)',
+              border: '1px solid',
+              borderColor: executeBroker
+                ? alpha('#10B981', 0.4)
+                : isDark
+                ? 'rgba(255, 255, 255, 0.08)'
+                : 'rgba(0, 0, 0, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
+                  Execute on {brokerLabel} Broker
+                </Typography>
+                <Chip
+                  label={executeBroker ? 'LIVE BROKER' : 'JOURNAL ONLY'}
+                  size="small"
+                  sx={{
+                    height: 18,
+                    fontSize: '0.6rem',
+                    fontWeight: 800,
+                    bgcolor: executeBroker ? '#10B981' : '#64748B',
+                    color: '#FFFFFF',
+                    borderRadius: '3px',
+                  }}
+                />
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
+                {isBrokerExecutionBlocked
+                  ? brokerBlockReason || 'Broker execution is unavailable'
+                  : executeBroker
+                  ? (isMt5 ? 'Submits real market exit and trails SL via MT5 bridge' : 'Submits real market exit and trails SL on FYERS orderbook')
+                  : 'Simulates ladder step in SetupMint without broker order'}
               </Typography>
-              <Chip
-                label={executeBroker ? 'LIVE BROKER' : 'JOURNAL ONLY'}
-                size="small"
-                sx={{
-                  height: 18,
-                  fontSize: '0.6rem',
-                  fontWeight: 800,
-                  bgcolor: executeBroker ? '#10B981' : '#64748B',
-                  color: '#FFFFFF',
-                  borderRadius: '3px',
-                }}
-              />
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
-              {isBrokerExecutionBlocked
-                ? brokerBlockReason || 'Broker execution is unavailable'
-                : executeBroker
-                ? (isMt5 ? 'Submits real market exit and trails SL via MT5 bridge' : 'Submits real market exit and trails SL on FYERS orderbook')
-                : 'Simulates ladder step in SetupMint without broker order'}
-            </Typography>
+            <Tooltip title={isBrokerExecutionBlocked ? (brokerBlockReason || 'Broker execution blocked') : ''} arrow>
+              <span>
+                <Switch
+                  checked={executeBroker}
+                  disabled={isBrokerExecutionBlocked || isLoading}
+                  onChange={(e) => setExecuteBroker(e.target.checked)}
+                  color="success"
+                  size="small"
+                />
+              </span>
+            </Tooltip>
           </Box>
-          <Tooltip title={isBrokerExecutionBlocked ? (brokerBlockReason || 'Broker execution blocked') : ''} arrow>
-            <span>
-              <Switch
-                checked={executeBroker}
-                disabled={isBrokerExecutionBlocked || isLoading}
-                onChange={(e) => setExecuteBroker(e.target.checked)}
-                color="success"
-                size="small"
-              />
-            </span>
-          </Tooltip>
-        </Box>
+        )}
       </DialogContent>
 
       <DialogActions sx={{ p: 2, gap: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

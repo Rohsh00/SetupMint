@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -122,9 +122,36 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const { user, refreshUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
-  const { selectedScopeValue, setScopeValue, personalAccounts, propAccounts, currency, activeAccount } = useAccountScope();
+  const { accounts, selectedScopeValue, setScopeValue, personalAccounts, propAccounts, currency, activeAccount } = useAccountScope();
   const settingsCurrency = activeAccount?.baseCurrency || (currency && currency !== 'MULTI' ? currency : 'USD');
   const currSym = getCurrencySymbol(settingsCurrency);
+
+  const hasFyersAccount = useMemo(() => {
+    return accounts.some((a: any) =>
+      a.broker === 'FYERS' ||
+      a.profile?.executionAdapterKey === 'FYERS' ||
+      a.brokerLink?.clientId
+    );
+  }, [accounts]);
+
+  const hasMarketDataAccount = useMemo(() => {
+    return accounts.some((a: any) =>
+      a.profile?.marketRegion === 'IN' ||
+      a.profile?.capabilities?.canFetchHistory ||
+      a.broker === 'FYERS' ||
+      a.broker === 'ZERODHA' ||
+      a.broker === 'ANGEL_ONE' ||
+      a.baseCurrency === 'INR'
+    );
+  }, [accounts]);
+
+  const hasLiveExecutableAccount = useMemo(() => {
+    return accounts.some((a: any) =>
+      a.profile?.capabilities?.canExitPositions ||
+      a.profile?.executionAdapterKey === 'FYERS' ||
+      a.profile?.executionAdapterKey === 'ELEFIN_MT5'
+    );
+  }, [accounts]);
 
   // Active Tab state (0: Live Execution, 1: Risk Guardrails, 2: Market Structure, 3: Brokers, 4: Account & Security)
   const [activeTab, setActiveTab] = useState<number>(() => {
@@ -829,6 +856,7 @@ export function SettingsPage() {
   const { data: fyersStatus } = useQuery({
     queryKey: ['fyers-status'],
     queryFn: () => api.integrations.fyersStatus(),
+    enabled: hasFyersAccount,
   });
 
   const fyersData = (fyersStatus as any)?.data ?? fyersStatus;
@@ -942,6 +970,7 @@ export function SettingsPage() {
   const { data: angelOneStatus, isLoading: isAngelOneLoading } = useQuery({
     queryKey: ['angel-one-status'],
     queryFn: () => api.marketData.angelOne.status(),
+    enabled: hasMarketDataAccount,
   });
 
   const angelOneData = (angelOneStatus as any)?.data ?? angelOneStatus;
@@ -1894,17 +1923,19 @@ export function SettingsPage() {
                                 >
                                   {sendingSampleAlert ? 'Sending...' : 'Sample Alert'}
                                 </Button>
-                                <Button
-                                  variant="outlined"
-                                  color="secondary"
-                                  size="small"
-                                  onClick={handleRegisterWebhook}
-                                  disabled={registeringWebhook || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken)}
-                                  sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                  title="Connects two-way buttons and commands to your Telegram Bot"
-                                >
-                                  {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
-                                </Button>
+                                {hasLiveExecutableAccount && (
+                                  <Button
+                                    variant="outlined"
+                                    color="secondary"
+                                    size="small"
+                                    onClick={handleRegisterWebhook}
+                                    disabled={registeringWebhook || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken)}
+                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                                    title="Connects two-way buttons and commands to your Telegram Bot"
+                                  >
+                                    {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
+                                  </Button>
+                                )}
                                 {(user?.liveWatcherSettings?.telegramBotToken || user?.liveWatcherSettings?.telegramChatId) && (
                                   <Button
                                     variant="outlined"
@@ -3070,8 +3101,20 @@ export function SettingsPage() {
           ========================================================================= */}
       {activeTab === 3 && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          {!hasFyersAccount && !hasMarketDataAccount && (
+            <Card variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                No External Broker Integrations Needed
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Your currently configured trading accounts use manual journaling, CSV tradebook imports, or prop simulated feeds. External broker connections appear only when an account adapter requires them.
+              </Typography>
+            </Card>
+          )}
+
           {/* FYERS Live Broker Card */}
-          <Card variant="outlined" sx={{ p: 1 }}>
+          {hasFyersAccount && (
+            <Card variant="outlined" sx={{ p: 1 }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
                 <Box>
@@ -3364,8 +3407,10 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Angel One SmartAPI Market Data Fallback Card */}
+          {hasMarketDataAccount && (
           <Card variant="outlined" sx={{ p: 1 }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
@@ -3543,6 +3588,7 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+          )}
         </Box>
       )}
 

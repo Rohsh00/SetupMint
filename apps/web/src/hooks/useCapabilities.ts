@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
-import { useAccount } from '../context/AccountContext.js';
-import { ITradingAccountCapabilities } from '@tradevault/shared';
+import { useAccount, useAccountCapabilities } from '../context/AccountContext.js';
+import { ITradingAccountCapabilities, IAccountUiCapabilities } from '@tradevault/shared';
 
 export type CapabilityAction =
   | 'canPlaceOrders'
@@ -19,6 +19,7 @@ export interface CapabilityCheck {
 
 export function useCapabilities() {
   const { capabilities, activeAccount, profile } = useAccount();
+  const uiCapabilities = useAccountCapabilities();
 
   const getReason = useCallback(
     (action: CapabilityAction): string => {
@@ -68,15 +69,21 @@ export function useCapabilities() {
   return useMemo(
     () => ({
       capabilities,
+      uiCapabilities,
       can,
       assert,
       getReason,
-      adapterKey: profile?.executionAdapterKey || 'MANUAL',
-      isHedging: profile?.positionModel === 'HEDGING',
-      positionModel: profile?.positionModel || 'NETTING_FIFO',
-      feeModelKey: profile?.feeModelKey || 'NONE',
+      adapterKey: profile?.executionAdapterKey || uiCapabilities.broker.adapter || 'MANUAL',
+      isHedging: uiCapabilities.position.isHedging,
+      positionModel: uiCapabilities.position.model,
+      feeModelKey: uiCapabilities.fees.model,
+      isFyers: uiCapabilities.broker.isFyers,
+      isArchived: uiCapabilities.isArchived,
+      isDemo: uiCapabilities.isDemo,
+      isProp: uiCapabilities.prop.isProp,
     }),
-    [capabilities, can, assert, getReason, profile]
+    [capabilities, uiCapabilities, can, assert, getReason, profile]
   );
 }
+
 

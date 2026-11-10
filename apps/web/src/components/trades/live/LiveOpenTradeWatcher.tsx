@@ -94,7 +94,7 @@ import { LiveWatcherDisplaySettingsModal } from './LiveWatcherDisplaySettingsMod
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
 import { useAuth } from '../../../context/AuthContext.js';
-import { useAccountScope } from '../../../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 import {
   ILiveWatcherSummary,
   ILiveOpenTradeMetric,
@@ -184,6 +184,7 @@ export function LiveOpenTradeWatcher({
   const queryClient = useQueryClient();
   const { user, refreshUser } = useAuth();
   const { scope, isPropMode, queryParams, selectedAccountId, accounts } = useAccountScope();
+  const caps = useAccountCapabilities();
 
   const [displaySettingsModalOpen, setDisplaySettingsModalOpen] = useState<boolean>(false);
   const [displaySettings, setDisplaySettings] = useState<ILiveWatcherDisplaySettings>(() => {
@@ -871,7 +872,7 @@ export function LiveOpenTradeWatcher({
         return;
       }
 
-      if (!scalperHotkeysEnabled || !summary?.positions?.length) return;
+      if (!caps.broker.canExecuteLive || !scalperHotkeysEnabled || !summary?.positions?.length) return;
 
       const topPos = summary.positions[0];
       if (!topPos) return;
@@ -2153,26 +2154,28 @@ export function LiveOpenTradeWatcher({
           <Divider sx={{ my: 1 }} />
 
           {/* Scalper Hotkeys Toggle */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
-            <Box>
-              <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 700 }}>
-                Scalper Hotkeys
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
-                [B] Lock BE · [Space] 50% · [K] Panic
-              </Typography>
+          {caps.broker.canExecuteLive && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
+              <Box>
+                <Typography variant="body2" sx={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                  Scalper Hotkeys
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
+                  [B] Lock BE · [Space] 50% · [K] Panic
+                </Typography>
+              </Box>
+              <Switch
+                size="small"
+                checked={scalperHotkeysEnabled}
+                onChange={() => {
+                  const next = !scalperHotkeysEnabled;
+                  setScalperHotkeysEnabled(next);
+                  localStorage.setItem('tv_scalper_hotkeys', String(next));
+                  toast.info(next ? '⚡ Scalper Hotkeys Armed: [B] Lock BE | [Space] 50% | [K] Kill' : 'Hotkeys Disabled');
+                }}
+              />
             </Box>
-            <Switch
-              size="small"
-              checked={scalperHotkeysEnabled}
-              onChange={() => {
-                const next = !scalperHotkeysEnabled;
-                setScalperHotkeysEnabled(next);
-                localStorage.setItem('tv_scalper_hotkeys', String(next));
-                toast.info(next ? '⚡ Scalper Hotkeys Armed: [B] Lock BE | [Space] 50% | [K] Kill' : 'Hotkeys Disabled');
-              }}
-            />
-          </Box>
+          )}
 
           {/* Hold-to-Confirm Exits (~600ms) */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, py: 0.75 }}>
@@ -2446,7 +2449,7 @@ export function LiveOpenTradeWatcher({
               </Box>
             ) : (
               <>
-                {summary?.portfolioRisk && summary.positions.length > 0 && displaySettings.showPortfolioRiskBanner !== false && (
+                {!caps.prop.isProp && summary?.portfolioRisk && summary.positions.length > 0 && displaySettings.showPortfolioRiskBanner !== false && (
                   <Box sx={{ pt: 2 }}>
                     <LivePortfolioRiskBanner
                       risk={summary.portfolioRisk}
@@ -2482,9 +2485,9 @@ export function LiveOpenTradeWatcher({
                       <TableCell>Entry vs LTP</TableCell>
                       <TableCell>Floating Net MTM</TableCell>
                       <TableCell>Stop Loss & Buffer</TableCell>
-                      {displaySettings.showScalingLadder !== false && <TableCell>Target & Ladder</TableCell>}
+                      {caps.live.scalingLadder && displaySettings.showScalingLadder !== false && <TableCell>Target & Ladder</TableCell>}
                       {displaySettings.showGivebackMeter !== false && <TableCell>Giveback Radar</TableCell>}
-                      {displaySettings.showQuickActionButtons !== false && (
+                      {displaySettings.showQuickActionButtons !== false && caps.broker.canExecuteLive && (
                         <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>Quick Cockpit Actions</TableCell>
                       )}
                     </TableRow>
@@ -2802,7 +2805,7 @@ export function LiveOpenTradeWatcher({
                           </TableCell>
 
                           {/* Target & Ladder */}
-                          {displaySettings.showScalingLadder !== false && (
+                          {caps.live.scalingLadder && displaySettings.showScalingLadder !== false && (
                             <TableCell>
                               {activeLadderStep ? (
                                 <Box sx={{ minWidth: 120 }}>
@@ -2902,7 +2905,7 @@ export function LiveOpenTradeWatcher({
                           )}
 
                           {/* Quick Cockpit Actions */}
-                          {displaySettings.showQuickActionButtons !== false && (
+                          {displaySettings.showQuickActionButtons !== false && caps.broker.canExecuteLive && (
                             <TableCell align="right" sx={{ minWidth: 330, width: 330, whiteSpace: 'nowrap' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.75, flexWrap: 'nowrap' }}>
                               <Tooltip
@@ -3632,7 +3635,7 @@ export function LiveOpenTradeWatcher({
                               />
                             )}
 
-                            {displaySettings.showQuickActionButtons !== false && (
+                            {displaySettings.showQuickActionButtons !== false && caps.broker.canExecuteLive && (
                               <>
                                 <Tooltip
                                   title={
@@ -4093,7 +4096,7 @@ export function LiveOpenTradeWatcher({
                               {/* 4-Tab Segmented Selector */}
                               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
                                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                  {displaySettings.showScalingLadder !== false && (
+                                  {caps.live.scalingLadder && displaySettings.showScalingLadder !== false && (
                                     <Chip
                                       label="🪜 LADDER"
                                       size="small"

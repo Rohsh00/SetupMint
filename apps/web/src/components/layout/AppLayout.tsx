@@ -52,7 +52,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
-import { useAccountScope } from '../../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../../context/AccountScopeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
 import { TradeDrillDrawer } from '../drilldown/TradeDrillDrawer.js';
@@ -96,6 +96,7 @@ export function AppLayout() {
     currencies,
     currency,
   } = useAccountScope();
+  const caps = useAccountCapabilities();
 
   // Global Keyboard Shortcuts (Cmd+K palette, N for new trade)
   useEffect(() => {
@@ -117,9 +118,9 @@ export function AppLayout() {
 
       if (isInputActive) return;
 
-      // Single-key global shortcuts when no modal is open
+      // Single-key global shortcuts when no modal is open (N disabled in archived mode)
       if (!isTradeModalOpen && !isCommandPaletteOpen) {
-        if (e.key.toLowerCase() === 'n') {
+        if (e.key.toLowerCase() === 'n' && !caps.isArchived) {
           e.preventDefault();
           setIsTradeModalOpen(true);
         } else if (e.key.toLowerCase() === 'w') {
@@ -131,7 +132,7 @@ export function AppLayout() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isTradeModalOpen, isCommandPaletteOpen]);
+  }, [isTradeModalOpen, isCommandPaletteOpen, caps.isArchived, navigate]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -167,10 +168,11 @@ export function AppLayout() {
     prefetchTradeFormData();
   }, [prefetchTradeFormData]);
 
-  // Query FYERS live connection status
+  // Query FYERS live connection status (only when scope supports FYERS)
   const { data: fyersStatus } = useQuery({
     queryKey: ['fyers-status'],
     queryFn: () => api.integrations.fyersStatus(),
+    enabled: Boolean(caps.broker.isFyers),
   });
 
   const fyersData = (fyersStatus as any)?.data ?? fyersStatus;
@@ -299,35 +301,37 @@ export function AppLayout() {
         )}
       </Box>
 
-      {/* Log Trade CTA */}
-      <Box sx={{ p: sidebarCollapsed ? 1 : 2 }}>
-        <Button
-          fullWidth
-          variant="contained"
-          color="primary"
-          onMouseEnter={prefetchTradeFormData}
-          onClick={() => {
-            setIsTradeModalOpen(true);
-            if (isMobile) setMobileOpen(false);
-          }}
-          startIcon={<AddIcon />}
-          sx={{
-            py: 1,
-            borderRadius: 2,
-            fontWeight: 700,
-            fontSize: '0.8125rem',
-            minWidth: sidebarCollapsed ? 0 : 'auto',
-            px: sidebarCollapsed ? 0 : 2,
-            justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-            '& .MuiButton-startIcon': {
-              mr: sidebarCollapsed ? 0 : 1,
-              ml: sidebarCollapsed ? 0 : 0,
-            },
-          }}
-        >
-          {!sidebarCollapsed && 'Log New Trade'}
-        </Button>
-      </Box>
+      {/* Log Trade CTA (Hidden in Archived Mode) */}
+      {!caps.isArchived && (
+        <Box sx={{ p: sidebarCollapsed ? 1 : 2 }}>
+          <Button
+            fullWidth
+            variant="contained"
+            color="primary"
+            onMouseEnter={prefetchTradeFormData}
+            onClick={() => {
+              setIsTradeModalOpen(true);
+              if (isMobile) setMobileOpen(false);
+            }}
+            startIcon={<AddIcon />}
+            sx={{
+              py: 1,
+              borderRadius: 2,
+              fontWeight: 700,
+              fontSize: '0.8125rem',
+              minWidth: sidebarCollapsed ? 0 : 'auto',
+              px: sidebarCollapsed ? 0 : 2,
+              justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+              '& .MuiButton-startIcon': {
+                mr: sidebarCollapsed ? 0 : 1,
+                ml: sidebarCollapsed ? 0 : 0,
+              },
+            }}
+          >
+            {!sidebarCollapsed && 'Log New Trade'}
+          </Button>
+        </Box>
+      )}
 
       {/* Navigation Links */}
       <List sx={{ px: 1, py: 0.5, flex: 1, overflowY: 'auto' }}>
@@ -738,92 +742,94 @@ export function AppLayout() {
 
             {/* Top Bar Actions */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              {/* Dynamic FYERS Broker Sync / Connect Button */}
-              {isFyersConnected ? (
-                /* Connected: Show live Sync button */
-                <Tooltip title="FYERS Broker Connected. Click to sync today’s tradebook executions." arrow>
-                  <Button
-                    id="quick-fyers-sync-btn"
-                    variant="outlined"
-                    size="small"
-                    onClick={handleQuickFyersSync}
-                    disabled={isSyncingFyers}
-                    startIcon={
-                      <SyncIcon
-                        sx={{
-                          fontSize: 16,
-                          color: 'success.main',
-                          animation: isSyncingFyers ? 'spin 1s linear infinite' : 'none',
-                          '@keyframes spin': {
-                            '0%': { transform: 'rotate(0deg)' },
-                            '100%': { transform: 'rotate(360deg)' },
-                          },
-                        }}
-                      />
+              {/* Dynamic FYERS Broker Sync / Connect Button (Strictly Account-Driven) */}
+              {caps.broker.isFyers && (
+                isFyersConnected ? (
+                  /* Connected: Show live Sync button */
+                  <Tooltip title="FYERS Broker Connected. Click to sync today’s tradebook executions." arrow>
+                    <Button
+                      id="quick-fyers-sync-btn"
+                      variant="outlined"
+                      size="small"
+                      onClick={handleQuickFyersSync}
+                      disabled={isSyncingFyers}
+                      startIcon={
+                        <SyncIcon
+                          sx={{
+                            fontSize: 16,
+                            color: 'success.main',
+                            animation: isSyncingFyers ? 'spin 1s linear infinite' : 'none',
+                            '@keyframes spin': {
+                              '0%': { transform: 'rotate(0deg)' },
+                              '100%': { transform: 'rotate(360deg)' },
+                            },
+                          }}
+                        />
+                      }
+                      sx={{
+                        height: 36,
+                        borderRadius: 2,
+                        borderColor: 'rgba(16, 185, 129, 0.4)',
+                        color: isDark ? '#34d399' : '#059669',
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.06)',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        textTransform: 'none',
+                        px: 1.5,
+                        display: { xs: 'none', sm: 'inline-flex' },
+                        '&:hover': {
+                          borderColor: 'rgba(16, 185, 129, 0.7)',
+                          backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                        },
+                      }}
+                    >
+                      {isSyncingFyers ? 'Syncing...' : 'Sync FYERS'}
+                    </Button>
+                  </Tooltip>
+                ) : (
+                  /* Not Connected: Show dynamic Connect FYERS button */
+                  <Tooltip
+                    title={
+                      isFyersConfigured
+                        ? 'FYERS daily session expired. Click for 1-Click Daily Auth.'
+                        : 'Connect your FYERS broker to auto-sync trades with exact executions.'
                     }
-                    sx={{
-                      height: 36,
-                      borderRadius: 2,
-                      borderColor: 'rgba(16, 185, 129, 0.4)',
-                      color: isDark ? '#34d399' : '#059669',
-                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.06)',
-                      fontWeight: 700,
-                      fontSize: '0.75rem',
-                      textTransform: 'none',
-                      px: 1.5,
-                      display: { xs: 'none', sm: 'inline-flex' },
-                      '&:hover': {
-                        borderColor: 'rgba(16, 185, 129, 0.7)',
-                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
-                      },
-                    }}
+                    arrow
                   >
-                    {isSyncingFyers ? 'Syncing...' : 'Sync FYERS'}
-                  </Button>
-                </Tooltip>
-              ) : (
-                /* Not Connected: Show dynamic Connect FYERS button */
-                <Tooltip
-                  title={
-                    isFyersConfigured
-                      ? 'FYERS daily session expired. Click for 1-Click Daily Auth.'
-                      : 'Connect your FYERS broker to auto-sync trades with exact executions.'
-                  }
-                  arrow
-                >
-                  <Button
-                    id="quick-fyers-connect-btn"
-                    variant="outlined"
-                    size="small"
-                    onClick={handleQuickFyersConnect}
-                    disabled={isConnectingFyers}
-                    startIcon={
-                      isConnectingFyers ? (
-                        <CircularProgress size={14} color="inherit" />
-                      ) : (
-                        <LinkRoundedIcon sx={{ fontSize: 16 }} />
-                      )
-                    }
-                    sx={{
-                      height: 36,
-                      borderRadius: 2,
-                      borderColor: isDark ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.4)',
-                      color: isDark ? '#fbbf24' : '#d97706',
-                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
-                      fontWeight: 700,
-                      fontSize: '0.75rem',
-                      textTransform: 'none',
-                      px: 1.5,
-                      display: { xs: 'none', sm: 'inline-flex' },
-                      '&:hover': {
-                        borderColor: isDark ? '#fbbf24' : '#d97706',
-                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
-                      },
-                    }}
-                  >
-                    {isConnectingFyers ? 'Connecting...' : 'Connect FYERS'}
-                  </Button>
-                </Tooltip>
+                    <Button
+                      id="quick-fyers-connect-btn"
+                      variant="outlined"
+                      size="small"
+                      onClick={handleQuickFyersConnect}
+                      disabled={isConnectingFyers}
+                      startIcon={
+                        isConnectingFyers ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <LinkRoundedIcon sx={{ fontSize: 16 }} />
+                        )
+                      }
+                      sx={{
+                        height: 36,
+                        borderRadius: 2,
+                        borderColor: isDark ? 'rgba(245, 158, 11, 0.5)' : 'rgba(245, 158, 11, 0.4)',
+                        color: isDark ? '#fbbf24' : '#d97706',
+                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        textTransform: 'none',
+                        px: 1.5,
+                        display: { xs: 'none', sm: 'inline-flex' },
+                        '&:hover': {
+                          borderColor: isDark ? '#fbbf24' : '#d97706',
+                          backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.12)',
+                        },
+                      }}
+                    >
+                      {isConnectingFyers ? 'Connecting...' : 'Connect FYERS'}
+                    </Button>
+                  </Tooltip>
+                )
               )}
 
               {/* Command Palette Trigger */}
@@ -887,8 +893,8 @@ export function AppLayout() {
                 </IconButton>
               )}
 
-              {/* Mobile Quick Trade Button */}
-              {isMobile && (
+              {/* Mobile Quick Trade Button (Hidden in Archived Mode) */}
+              {isMobile && !caps.isArchived && (
                 <Button
                   variant="contained"
                   color="primary"

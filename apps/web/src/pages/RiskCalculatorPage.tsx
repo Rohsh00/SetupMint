@@ -33,7 +33,7 @@ import { calculateRiskAndPositionSize, calculateFractionalKelly } from '@tradeva
 import { getPresetSpec } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { formatCurrency, formatPercent, currentLocalIsoDateTime, getCurrencySymbol } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { HelpHint } from '../components/help/index.js';
@@ -82,12 +82,13 @@ export function RiskCalculatorPage() {
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>(scopeAccountId || '');
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
+  const caps = useAccountCapabilities();
 
   const selectedAccount = useMemo(() => {
     return accounts.find((a: any) => (a.id || a._id) === selectedAccountId) || accounts[0];
   }, [accounts, selectedAccountId]);
-  const calcCurrency = selectedAccount?.baseCurrency || 'USD';
-  const currSym = getCurrencySymbol(calcCurrency);
+  const calcCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || selectedAccount?.baseCurrency || 'USD';
+  const currSym = caps.currency.symbol || getCurrencySymbol(calcCurrency);
 
   // 1. Account & Risk Budget string states (for seamless live typing & clearing)
   const [accountEquityStr, setAccountEquityStr] = useState<string>('200000');
@@ -96,19 +97,19 @@ export function RiskCalculatorPage() {
   const [fixedRiskAmountStr, setFixedRiskAmountStr] = useState<string>('2000');
 
   // 2. Trade Setup string states
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(() => caps.currency.code === 'INR' ? 'NIFTY' : 'EURUSD');
   const [direction, setDirection] = useState<'LONG' | 'SHORT'>('LONG');
-  const [entryPriceStr, setEntryPriceStr] = useState<string>('24000');
-  const [stopLossPriceStr, setStopLossPriceStr] = useState<string>('23940');
-  const [targetPriceStr, setTargetPriceStr] = useState<string>('24150');
+  const [entryPriceStr, setEntryPriceStr] = useState<string>(() => caps.currency.code === 'INR' ? '24000' : '1.0850');
+  const [stopLossPriceStr, setStopLossPriceStr] = useState<string>(() => caps.currency.code === 'INR' ? '23940' : '1.0820');
+  const [targetPriceStr, setTargetPriceStr] = useState<string>(() => caps.currency.code === 'INR' ? '24150' : '1.0910');
 
   // 3. Contract & Execution parameters
-  const [lotSizeStr, setLotSizeStr] = useState<string>('25');
+  const [lotSizeStr, setLotSizeStr] = useState<string>(() => caps.instruments.showLots ? (caps.currency.code === 'INR' ? '25' : '100000') : '1');
   const [contractMultiplierStr, setContractMultiplierStr] = useState<string>('1');
   const [estimatedCostsStr, setEstimatedCostsStr] = useState<string>('50');
 
   // 4. Sizing Mode: Conservative Floor vs Nearest Lot vs Cash Single Shares
-  const [sizingMode, setSizingMode] = useState<'FLOOR' | 'NEAREST' | 'CASH_1'>('FLOOR');
+  const [sizingMode, setSizingMode] = useState<'FLOOR' | 'NEAREST' | 'CASH_1'>(() => caps.instruments.showLots ? 'FLOOR' : 'CASH_1');
 
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [prefilledTradeData, setPrefilledTradeData] = useState<any>(null);
@@ -922,49 +923,53 @@ export function RiskCalculatorPage() {
 
             {/* Instrument Contract Specs */}
             <Grid container spacing={2}>
-              <Grid size={{ xs: 4 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
-                    Lot Size
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 0.5 }}>
-                    <Typography
-                      variant="caption"
-                      onClick={() => setLotSizeStr('1')}
-                      sx={{ cursor: 'pointer', color: 'primary.main', fontSize: '0.625rem', textDecoration: 'underline' }}
-                    >
-                      1 (Cash)
+              {caps.instruments.showLots && (
+                <Grid size={{ xs: caps.instruments.showMultiplier ? 4 : 6 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
+                      Lot Size
                     </Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Typography
+                        variant="caption"
+                        onClick={() => setLotSizeStr('1')}
+                        sx={{ cursor: 'pointer', color: 'primary.main', fontSize: '0.625rem', textDecoration: 'underline' }}
+                      >
+                        1 (Cash)
+                      </Typography>
+                    </Box>
                   </Box>
-                </Box>
-                <TextField
-                  fullWidth
-                  size="small"
-                  value={lotSizeStr}
-                  onChange={(e) => setLotSizeStr(sanitizeNumericInput(e.target.value))}
-                  placeholder="e.g. 6 or 25"
-                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
-                />
-              </Grid>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={lotSizeStr}
+                    onChange={(e) => setLotSizeStr(sanitizeNumericInput(e.target.value))}
+                    placeholder="e.g. 6 or 25"
+                    slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
+                  />
+                </Grid>
+              )}
 
-              <Grid size={{ xs: 4 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
-                    Contract Multiplier
-                  </Typography>
-                  <HelpHint hintKey="trade.form.multiplier" />
-                </Box>
-                <TextField
-                  fullWidth
-                  size="small"
-                  value={contractMultiplierStr}
-                  onChange={(e) => setContractMultiplierStr(sanitizeNumericInput(e.target.value))}
-                  placeholder="1"
-                  slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
-                />
-              </Grid>
+              {caps.instruments.showMultiplier && (
+                <Grid size={{ xs: caps.instruments.showLots ? 4 : 6 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
+                      Contract Multiplier
+                    </Typography>
+                    <HelpHint hintKey="trade.form.multiplier" />
+                  </Box>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={contractMultiplierStr}
+                    onChange={(e) => setContractMultiplierStr(sanitizeNumericInput(e.target.value))}
+                    placeholder="1"
+                    slotProps={{ input: { sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 } } }}
+                  />
+                </Grid>
+              )}
 
-              <Grid size={{ xs: 4 }}>
+              <Grid size={{ xs: caps.instruments.showLots && caps.instruments.showMultiplier ? 4 : caps.instruments.showLots || caps.instruments.showMultiplier ? 6 : 12 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
                   Est. Costs ({currSym})
                 </Typography>
@@ -1070,32 +1075,38 @@ export function RiskCalculatorPage() {
                 </Typography>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontFamily: `'JetBrains Mono', monospace` }}>
                   {isGeometryValid
-                    ? `= ${effectiveLots} lot${effectiveLots !== 1 ? 's' : ''} (Lot Size: ${lotSize}) • Raw: ${rawQuantity.toFixed(2)} units`
+                    ? (caps.instruments.showLots
+                        ? `= ${effectiveLots} lot${effectiveLots !== 1 ? 's' : ''} (Lot Size: ${lotSize}) • Raw: ${rawQuantity.toFixed(2)} units`
+                        : `Raw Position Size: ${rawQuantity.toFixed(2)} units`)
                     : 'Check price geometry'}
                 </Typography>
 
                 {/* Sizing Mode Selection Pills */}
                 {isGeometryValid && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.75, mt: 1.5, flexWrap: 'wrap' }}>
-                    <Chip
-                      label={`Strict Floor (${floorLotQuantity}u)`}
-                      size="small"
-                      onClick={() => setSizingMode('FLOOR')}
-                      color={sizingMode === 'FLOOR' ? 'primary' : 'default'}
-                      variant={sizingMode === 'FLOOR' ? 'filled' : 'outlined'}
-                      sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
-                    />
-                    <Chip
-                      label={`Nearest Lot (${nearestLotQuantity}u)`}
-                      size="small"
-                      onClick={() => setSizingMode('NEAREST')}
-                      color={sizingMode === 'NEAREST' ? 'info' : 'default'}
-                      variant={sizingMode === 'NEAREST' ? 'filled' : 'outlined'}
-                      sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
-                    />
-                    {lotSize > 1 && (
+                    {caps.instruments.showLots && (
+                      <>
+                        <Chip
+                          label={`Strict Floor (${floorLotQuantity}u)`}
+                          size="small"
+                          onClick={() => setSizingMode('FLOOR')}
+                          color={sizingMode === 'FLOOR' ? 'primary' : 'default'}
+                          variant={sizingMode === 'FLOOR' ? 'filled' : 'outlined'}
+                          sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
+                        />
+                        <Chip
+                          label={`Nearest Lot (${nearestLotQuantity}u)`}
+                          size="small"
+                          onClick={() => setSizingMode('NEAREST')}
+                          color={sizingMode === 'NEAREST' ? 'info' : 'default'}
+                          variant={sizingMode === 'NEAREST' ? 'filled' : 'outlined'}
+                          sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
+                        />
+                      </>
+                    )}
+                    {(!caps.instruments.showLots || lotSize > 1) && (
                       <Chip
-                        label={`Cash Shares (${cashShareQuantity}u)`}
+                        label={caps.instruments.showLots ? `Cash Shares (${cashShareQuantity}u)` : `Exact Units (${cashShareQuantity}u)`}
                         size="small"
                         onClick={() => setSizingMode('CASH_1')}
                         color={sizingMode === 'CASH_1' ? 'success' : 'default'}

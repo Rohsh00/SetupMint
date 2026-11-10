@@ -279,5 +279,46 @@ Implemented in [`apps/web/src/context/ToastContext.tsx`](file:///Users/komal/pro
   - Renders emotion-coded pulse nodes (Calm `#10B981`, Confident `#3B82F6`, Anxious `#EF4444`, FOMO `#F59E0B`, Greedy `#EC4899`) plotted along the trajectory curve with rich tooltips.
   - Displays the in-trade emotional pulse history timeline and identified tactical mistake chips directly in the Psychology & Discipline Audit section of [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx).
 
+---
+
+## 9. Account-Driven Capability System & UI Gating
+
+The SetupMint user interface enforces strict **account-driven capability gating**. No feature, tab, action button, or form field is rendered speculatively or "just in case".
+
+### 1. The Single Source of Truth: `resolveAccountUiCapabilities`
+Defined in `@tradevault/financial-engine` and typed in `@tradevault/shared`:
+```ts
+resolveAccountUiCapabilities(scope: Partial<AccountScope> | string | null, accounts: ITradingAccount[]): IAccountUiCapabilities
+```
+Capabilities are derived purely from:
+- `TradingAccount.profile` (`marketRegion`, `baseCurrency`, `timezone`, `feeModelKey`, `executionAdapterKey`, `positionModel`, `sessionCalendarKey`, `capabilities`)
+- `accountType` (`EQUITY`, `FUTURES_OPTIONS`, `COMMODITY`, `FOREX`, `CRYPTO`, `PROP_FIRM`, `DEMO`)
+- `brokerLink` (`FYERS` credentials and connection state)
+- `propFirm` metadata (evaluation vs funded, starting balances, challenge rules)
+
+### 2. React Context & Hooks
+- `useAccountCapabilities()`: Returns the live `IAccountUiCapabilities` object for the current scope, automatically re-evaluating when switching accounts.
+- `useCan(capPath: string)`: Dot-path helper evaluating boolean capability flags (e.g. `useCan('broker.canExecuteLive')`, `useCan('prop.showChallengePanel')`).
+- `<CapabilityGate cap="path">`: Higher-order JSX container rendering `null` (not disabled or greyed out) when the capability is unsupported.
+
+```tsx
+<CapabilityGate cap="broker.canSyncTrades">
+  <Button onClick={syncFyersTrades}>Sync FYERS Trades</Button>
+</CapabilityGate>
+```
+
+### 3. Capability Domain Matrix
+| Domain | Properties Gated | UI Manifestations |
+| :--- | :--- | :--- |
+| **Broker** | `adapter`, `isFyers`, `isConnected`, `canSyncTrades`, `canSyncFunds`, `canExecuteLive`, `canLinkAccount`, `needsDailyLogin` | Header FYERS trade sync button, live funds card, quick-close broker exit toggle, hotkey execution badges (`[B]`, `[Space]`, `[K]`), Settings FYERS integration card. |
+| **Prop** | `isProp`, `showChallengePanel`, `showRuleAdvisories` | Prop Challenge status panel on Dashboard, daily drawdown advisories, risk rules strips. Hides personal risk guardrails when prop rules take precedence. |
+| **Fees** | `model`, `showStatutoryBreakdown`, `showCommissionSwap` | Statutory charges breakdown (brokerage, STT, turnover, GST, stamp duty) for Indian markets vs Commission & Swap readouts for Forex/Crypto/Prop. |
+| **Instruments** | `showLots`, `showMultiplier`, `showOptionsFields` | Lot stepper & multiplier inputs in trade forms & risk calculator; CE/PE strike and expiry selectors in trade forms. |
+| **Position Model** | `isNetting`, `isHedging` | Netting FIFO fill matching vs Hedging ticket-based position review. |
+| **Market Data** | `fyersHistory`, `angelOneFallback` | Live market chart widgets, automated execution chart generators, MFE/MAE excursion analytics, What-If simulator tabs. |
+| **Sessions** | `calendarKey`, `allowedSessions` | Session tag selector filtered strictly to sessions valid for the account's market (NSE vs Forex 24/5 vs Crypto 24/7). |
+| **Status Guards** | `isDemo`, `isArchived` | Demo accounts hide live execution calls. Archived accounts render strictly read-only (hiding trade creation, editing, closing, and cash flow operations). |
+
+
 
 

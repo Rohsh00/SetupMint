@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -16,6 +16,7 @@ import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import DangerousRoundedIcon from '@mui/icons-material/DangerousRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 
 export interface HotkeyCheatSheetDialogProps {
   open: boolean;
@@ -101,6 +102,7 @@ const HOTKEYS: HotkeyItem[] = [
 ];
 
 export const HotkeyCheatSheetDialog: React.FC<HotkeyCheatSheetDialogProps> = ({ open, onClose }) => {
+  const caps = useAccountCapabilities();
   return (
     <Dialog
       open={open}
@@ -162,61 +164,63 @@ export const HotkeyCheatSheetDialog: React.FC<HotkeyCheatSheetDialogProps> = ({ 
 
       <DialogContent sx={{ p: 2.5, maxHeight: 500, overflowY: 'auto' }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          {/* Quick Execution Hotkeys */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <FlashOnRoundedIcon sx={{ fontSize: 16, color: '#f59e0b' }} />
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Rapid Execution (Hold-to-Confirm)
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {HOTKEYS.filter((h) => h.category === 'EXECUTION').map((hk) => (
-                <Card
-                  key={hk.key}
-                  variant="outlined"
-                  sx={{
-                    p: 1.25,
-                    px: 1.75,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderRadius: 1.5,
-                    bgcolor: hk.danger ? 'rgba(239, 68, 68, 0.04)' : 'background.default',
-                    borderColor: hk.danger ? 'rgba(239, 68, 68, 0.3)' : 'divider',
-                  }}
-                >
-                  <Box sx={{ pr: 2 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
-                      {hk.action}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', display: 'block', mt: 0.25 }}>
-                      {hk.description}
-                    </Typography>
-                  </Box>
-                  <Box
+          {/* Quick Execution Hotkeys (Only shown when broker execution is supported) */}
+          {caps.broker.canExecuteLive && (
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <FlashOnRoundedIcon sx={{ fontSize: 16, color: '#f59e0b' }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Rapid Execution (Hold-to-Confirm)
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {HOTKEYS.filter((h) => h.category === 'EXECUTION').map((hk) => (
+                  <Card
+                    key={hk.key}
+                    variant="outlined"
                     sx={{
-                      px: 1.2,
-                      py: 0.5,
-                      borderRadius: 1,
-                      bgcolor: 'action.selected',
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      fontFamily: 'monospace',
-                      fontWeight: 800,
-                      fontSize: '0.82rem',
-                      color: hk.danger ? '#ef4444' : 'text.primary',
-                      minWidth: 32,
-                      textAlign: 'center',
-                      boxShadow: '0 2px 0 rgba(0,0,0,0.2)',
+                      p: 1.25,
+                      px: 1.75,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderRadius: 1.5,
+                      bgcolor: hk.danger ? 'rgba(239, 68, 68, 0.04)' : 'background.default',
+                      borderColor: hk.danger ? 'rgba(239, 68, 68, 0.3)' : 'divider',
                     }}
                   >
-                    {hk.key}
-                  </Box>
-                </Card>
-              ))}
+                    <Box sx={{ pr: 2 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                        {hk.action}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', display: 'block', mt: 0.25 }}>
+                        {hk.description}
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        px: 1.2,
+                        py: 0.5,
+                        borderRadius: 1,
+                        bgcolor: 'action.selected',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        fontFamily: 'monospace',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                        color: hk.danger ? '#ef4444' : 'text.primary',
+                        minWidth: 32,
+                        textAlign: 'center',
+                        boxShadow: '0 2px 0 rgba(0,0,0,0.2)',
+                      }}
+                    >
+                      {hk.key}
+                    </Box>
+                  </Card>
+                ))}
+              </Box>
             </Box>
-          </Box>
+          )}
 
           <Divider />
 

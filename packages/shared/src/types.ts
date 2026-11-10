@@ -491,6 +491,101 @@ export interface ITradingAccountProfile {
   capabilities: ITradingAccountCapabilities;
 }
 
+export interface IAccountUiCapabilities {
+  // Identity & Status
+  isDemo: boolean;
+  isArchived: boolean;
+  isMultiAccount: boolean;
+  activeAccountCount: number;
+
+  // Currency (never hardcoded)
+  currency: {
+    code: string;
+    symbol: string;
+    isSingleCurrency: boolean;
+    isMultiCurrency: boolean;
+    availableCurrencies: string[];
+  };
+
+  // Broker & live execution
+  broker: {
+    adapter: ExecutionAdapterKey | string;
+    isFyers: boolean;
+    isConnected: boolean;
+    canSyncTrades: boolean;
+    canSyncFunds: boolean;
+    canExecuteLive: boolean;
+    canLinkAccount: boolean;
+    needsDailyLogin: boolean;
+  };
+
+  // CSV Import & Export presets
+  csvImport: {
+    tradebook: boolean;
+    cashLedger: boolean;
+    brokerPresets: string[];
+  };
+
+  // Market Data
+  marketData: {
+    fyersHistory: boolean;
+    angelOneFallback: boolean;
+    canStreamQuotes: boolean;
+  };
+
+  // Fees & charges
+  fees: {
+    model: FeeModelKey | string;
+    showStatutoryBreakdown: boolean;
+    showCommissionSwap: boolean;
+  };
+
+  // Instruments & contract specs
+  instruments: {
+    showLots: boolean;
+    showMultiplier: boolean;
+    showOptionsFields: boolean;
+    showStrikeExpiry: boolean;
+  };
+
+  // Position accounting model
+  position: {
+    model: PositionModel;
+    isNetting: boolean;
+    isHedging: boolean;
+  };
+
+  // Sessions & calendar
+  sessions: {
+    calendarKey: SessionCalendarKey;
+    allowedSessions: TradingSession[];
+  };
+
+  // Live tactical features
+  live: {
+    watcher: boolean;
+    scalingLadder: boolean;
+    giveback: boolean;
+    telegramExecution: boolean;
+    killSwitch: boolean;
+  };
+
+  // Prop firm evaluation
+  prop: {
+    isProp: boolean;
+    firmKey?: string;
+    showChallengePanel: boolean;
+    showRuleAdvisories: boolean;
+  };
+
+  // Multi-account scope intersection & breakdown
+  multiAccountScope: {
+    mixedCurrency: boolean;
+    mixedBrokers: boolean;
+    byCurrency: string[];
+  };
+}
+
 export interface IMoney {
   amount: number;
   currency: string;

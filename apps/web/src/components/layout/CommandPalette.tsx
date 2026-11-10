@@ -39,7 +39,9 @@ import RateReviewRoundedIcon from '@mui/icons-material/RateReviewRounded';
 
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
-import { useAccountScope } from '../../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../../context/AccountScopeContext.js';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 
 export interface CommandPaletteProps {
   open: boolean;
@@ -64,6 +66,7 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { queryParams, activeAccount, selectedAccountId } = useAccountScope();
+  const caps = useAccountCapabilities();
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -121,73 +124,123 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
     }
   };
 
-  // Commands definition
-  const items: PaletteItem[] = useMemo(() => [
-    {
-      id: 'action-new-trade',
-      category: 'ACTIONS',
-      title: 'Log New Trade',
-      subtitle: 'Open the trade capture modal for fast logging',
-      icon: AddRoundedIcon,
-      shortcut: 'N',
-      keywords: ['new', 'trade', 'create', 'log', 'entry', 'buy', 'sell'],
-      action: () => {
-        onClose();
-        onOpenNewTrade();
+  // Commands definition (strictly account-driven)
+  const items: PaletteItem[] = useMemo(() => {
+    const actionList: PaletteItem[] = [];
+
+    if (!caps.isArchived) {
+      actionList.push(
+        {
+          id: 'action-new-trade',
+          category: 'ACTIONS',
+          title: 'Log New Trade',
+          subtitle: 'Open the trade capture modal for fast logging',
+          icon: AddRoundedIcon,
+          shortcut: 'N',
+          keywords: ['new', 'trade', 'create', 'log', 'entry', 'buy', 'sell'],
+          action: () => {
+            onClose();
+            onOpenNewTrade();
+          },
+        },
+        {
+          id: 'action-repeat-last',
+          category: 'ACTIONS',
+          title: 'Repeat Last Trade',
+          subtitle: 'Duplicate your most recent trade setup for fast re-entry',
+          icon: ContentCopyRoundedIcon,
+          shortcut: 'R',
+          keywords: ['repeat', 'last', 'duplicate', 'clone', 'copy', 're-entry'],
+          action: handleRepeatLastTrade,
+        }
+      );
+    }
+
+    if (caps.broker.canSyncTrades) {
+      actionList.push({
+        id: 'action-sync-fyers',
+        category: 'ACTIONS',
+        title: 'Sync Broker Trades',
+        subtitle: 'Fetch latest tradebook executions from FYERS',
+        icon: SyncRoundedIcon,
+        keywords: ['sync', 'fyers', 'broker', 'trades', 'fetch'],
+        action: async () => {
+          onClose();
+          try {
+            const res = await api.integrations.fyersSync();
+            queryClient.invalidateQueries({ queryKey: ['trades'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            toast.success(res?.message || 'Trades synchronized from FYERS.');
+          } catch (err: any) {
+            toast.error(err.message || 'Failed to sync trades');
+          }
+        },
+      });
+    }
+
+    if (caps.broker.canLinkAccount) {
+      actionList.push({
+        id: 'action-connect-fyers',
+        category: 'ACTIONS',
+        title: 'Connect FYERS Broker',
+        subtitle: 'Authorize 1-Click daily login with FYERS exchange gateway',
+        icon: LinkRoundedIcon,
+        keywords: ['connect', 'fyers', 'auth', 'login', 'broker'],
+        action: () => {
+          onClose();
+          navigate('/settings');
+        },
+      });
+    }
+
+    actionList.push(
+      {
+        id: 'action-jump-journal',
+        category: 'ACTIONS',
+        title: "Jump to Today's Journal",
+        subtitle: 'Open the trading journal reflection for today',
+        icon: CalendarMonthRoundedIcon,
+        shortcut: 'J',
+        keywords: ['journal', 'today', 'reflection', 'diary', 'calendar', 'psychology'],
+        action: () => {
+          onClose();
+          navigate('/journal');
+        },
       },
-    },
-    {
-      id: 'action-repeat-last',
-      category: 'ACTIONS',
-      title: 'Repeat Last Trade',
-      subtitle: 'Duplicate your most recent trade setup for fast re-entry',
-      icon: ContentCopyRoundedIcon,
-      shortcut: 'R',
-      keywords: ['repeat', 'last', 'duplicate', 'clone', 'copy', 're-entry'],
-      action: handleRepeatLastTrade,
-    },
-    {
-      id: 'action-jump-journal',
-      category: 'ACTIONS',
-      title: "Jump to Today's Journal",
-      subtitle: 'Open the trading journal reflection for today',
-      icon: CalendarMonthRoundedIcon,
-      shortcut: 'J',
-      keywords: ['journal', 'today', 'reflection', 'diary', 'calendar', 'psychology'],
-      action: () => {
-        onClose();
-        navigate('/journal');
-      },
-    },
-    {
-      id: 'action-risk-calc',
-      category: 'ACTIONS',
-      title: 'Open Risk & Position Size Calculator',
-      subtitle: 'Calculate exact position size and statutory charges preview',
-      icon: CalculateRoundedIcon,
-      shortcut: 'C',
-      keywords: ['risk', 'calculator', 'size', 'position', 'sizing', 'capital', 'r:r'],
-      action: () => {
-        onClose();
-        navigate('/risk-calculator');
-      },
-    },
-    {
-      id: 'action-trade-templates',
-      category: 'ACTIONS',
-      title: 'Apply Trade Setup Template',
-      subtitle: 'Pick a rule-driven setup (F&O, Stocks, Forex, Crypto, MCX) for fast prefill',
-      icon: AutoAwesomeRoundedIcon,
-      shortcut: 'T',
-      keywords: ['template', 'setup', 'orb', 'gap and go', 'breakout', 'rule', 'prefill', 'strategy'],
-      action: () => {
-        onClose();
-        onOpenNewTrade();
-      },
-    },
-    // Navigation
-    {
-      id: 'nav-overview',
+      {
+        id: 'action-risk-calc',
+        category: 'ACTIONS',
+        title: 'Open Risk & Position Size Calculator',
+        subtitle: 'Calculate exact position size and statutory charges preview',
+        icon: CalculateRoundedIcon,
+        shortcut: 'C',
+        keywords: ['risk', 'calculator', 'size', 'position', 'sizing', 'capital', 'r:r'],
+        action: () => {
+          onClose();
+          navigate('/risk-calculator');
+        },
+      }
+    );
+
+    if (!caps.isArchived) {
+      actionList.push({
+        id: 'action-trade-templates',
+        category: 'ACTIONS',
+        title: 'Apply Trade Setup Template',
+        subtitle: 'Pick a rule-driven setup for fast prefill',
+        icon: AutoAwesomeRoundedIcon,
+        shortcut: 'T',
+        keywords: ['template', 'setup', 'orb', 'gap and go', 'breakout', 'rule', 'prefill', 'strategy'],
+        action: () => {
+          onClose();
+          onOpenNewTrade();
+        },
+      });
+    }
+
+    const navList: PaletteItem[] = [
+      {
+        id: 'nav-overview',
       category: 'NAVIGATION',
       title: 'Go to Overview',
       subtitle: 'Dashboard KPI summary, win rate, and recent activity',
@@ -307,7 +360,10 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
         navigate('/settings');
       },
     },
-  ], [navigate, onClose, onOpenNewTrade]);
+  ];
+
+  return [...actionList, ...navList];
+}, [navigate, onClose, onOpenNewTrade, caps, queryClient]);
 
   // Filter items by query
   const filteredItems = useMemo(() => {

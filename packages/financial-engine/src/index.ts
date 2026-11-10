@@ -39,4 +39,5 @@ export * from './registries/adapter-registry.js';
 export * from './prop-guard.js';
 export * from './hedging.js';
 export * from './timezone.js';
+export * from './capabilities.js';
 

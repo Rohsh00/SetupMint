@@ -6,7 +6,9 @@ import {
   AccountScopeMode,
   ITradingAccountProfile,
   ITradingAccountCapabilities,
+  IAccountUiCapabilities,
 } from '@tradevault/shared';
+import { resolveAccountUiCapabilities } from '@tradevault/financial-engine';
 import { api } from '../lib/api.js';
 import { useAuth } from './AuthContext.js';
 
@@ -47,6 +49,7 @@ export interface AccountContextValue {
   currency: string; // ISO code or 'MULTI'
   timezone: string;
   capabilities: ITradingAccountCapabilities;
+  uiCapabilities: IAccountUiCapabilities;
   isSingleCurrency: boolean;
   isMultiCurrency: boolean;
   currencies: string[];
@@ -522,6 +525,10 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     return profile?.capabilities || activeAccount?.capabilities || defaultCapabilities;
   }, [profile, activeAccount]);
 
+  const uiCapabilities: IAccountUiCapabilities = useMemo(() => {
+    return resolveAccountUiCapabilities(scope, accounts);
+  }, [scope, accounts]);
+
   const value = useMemo(
     () => ({
       activeAccount,
@@ -530,6 +537,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       currency,
       timezone,
       capabilities,
+      uiCapabilities,
       isSingleCurrency,
       isMultiCurrency,
       currencies,
@@ -556,6 +564,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       currency,
       timezone,
       capabilities,
+      uiCapabilities,
       isSingleCurrency,
       isMultiCurrency,
       currencies,
@@ -589,6 +598,46 @@ export function useAccount() {
 
 export function useAccountScope() {
   return useAccount();
+}
+
+export function useAccountCapabilities(): IAccountUiCapabilities {
+  return useAccount().uiCapabilities;
+}
+
+function getDeepValue(obj: any, path: string): any {
+  if (!obj || !path) return undefined;
+  return path.split('.').reduce((acc, part) => (acc != null ? acc[part] : undefined), obj);
+}
+
+export function useCan(
+  cap: string | ((capabilities: IAccountUiCapabilities) => boolean)
+): boolean {
+  const { uiCapabilities } = useAccount();
+  if (!uiCapabilities) return false;
+  if (typeof cap === 'function') {
+    try {
+      return Boolean(cap(uiCapabilities));
+    } catch {
+      return false;
+    }
+  }
+  return Boolean(getDeepValue(uiCapabilities, cap));
+}
+
+export function CapabilityGate({
+  cap,
+  children,
+  fallback = null,
+}: {
+  cap: string | ((capabilities: IAccountUiCapabilities) => boolean);
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}): React.ReactNode {
+  const allowed = useCan(cap);
+  if (!allowed) {
+    return fallback ? <>{fallback}</> : null;
+  }
+  return <>{children}</>;
 }
 
 export const AccountScopeProvider = AccountProvider;

@@ -9,6 +9,7 @@ import {
   getPropFirmPreset,
   getAccountDayBoundaries,
   SessionCalendarRegistry,
+  resolveAccountUiCapabilities,
 } from '@tradevault/financial-engine';
 import {
   AccountTransaction,
@@ -535,6 +536,21 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     });
   });
 
+  // Get resolved UI capabilities for account scope
+  app.get('/capabilities', async (req: any, reply) => {
+    const scope = req.query?.scope
+      ? {
+          mode: req.query.scope,
+          accountId: req.query.accountId || req.query.account,
+          accountType: req.query.accountType || req.query.type,
+          firmKey: req.query.firmKey || req.query.firm,
+        }
+      : undefined;
+    const accounts = await TradingAccount.find({ userId: req.user!.id }).lean();
+    const caps = resolveAccountUiCapabilities(scope, accounts);
+    return reply.send({ success: true, data: caps });
+  });
+
   // Get account details
   app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const account = await TradingAccount.findOne({
@@ -995,12 +1011,13 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       });
     }
 
-    if (String(account.broker || '').toUpperCase() !== 'FYERS') {
+    const caps = resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: String(account._id) }, [account]);
+    if (!caps.broker.isFyers) {
       return reply.status(409).send({
         success: false,
         error: {
-          code: 'ACCOUNT_NOT_FYERS',
-          message: 'Only FYERS trading accounts can be linked to a FYERS client',
+          code: 'CAPABILITY_NOT_SUPPORTED',
+          message: 'Broker linking is only supported for accounts configured with the FYERS execution adapter',
         },
       });
     }
@@ -1111,6 +1128,28 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       return reply.status(503).send({
         success: false,
         error: { code: 'FUNDS_SYNC_DISABLED', message: 'FYERS funds sync is disabled' },
+      });
+    }
+
+    const targetAccount = await TradingAccount.findOne({
+      _id: req.params.id,
+      userId: req.user!.id,
+    });
+    if (!targetAccount) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    const caps = resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: String(targetAccount._id) }, [targetAccount]);
+    if (!caps.broker.canSyncFunds) {
+      return reply.status(409).send({
+        success: false,
+        error: {
+          code: 'CAPABILITY_NOT_SUPPORTED',
+          message: 'Live funds synchronization is not supported by this account or its execution adapter',
+        },
       });
     }
 

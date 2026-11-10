@@ -6,7 +6,8 @@ import {
   TRADING_SESSIONS,
   getPresetSpec,
 } from '@tradevault/shared';
-import { deriveSessionFromTime } from '@tradevault/financial-engine';
+import { deriveSessionFromTime, resolveAccountUiCapabilities } from '@tradevault/financial-engine';
+import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 import { toLocalIsoDateTime } from '../../../lib/utils.js';
 import { HelpHint } from '../../help/index.js';
 
@@ -32,7 +33,12 @@ export function TradeIdentityTab({
   const direction = watch('direction');
   const selectedAccountId = watch('accountId');
   const currentAccount = accounts.find((a) => (a._id || a.id) === selectedAccountId);
-  const fallbackCurrency = currentAccount?.profile?.baseCurrency || currentAccount?.baseCurrency || 'USD';
+  const scopeCaps = useAccountCapabilities();
+  const caps = React.useMemo(() => {
+    if (!currentAccount) return scopeCaps;
+    return resolveAccountUiCapabilities({ mode: 'ACCOUNT', accountId: currentAccount.id || currentAccount._id }, accounts);
+  }, [currentAccount, accounts, scopeCaps]);
+  const fallbackCurrency = caps.currency.code || currentAccount?.profile?.baseCurrency || currentAccount?.baseCurrency || 'USD';
 
   // When instrument is picked, auto-populate details
   const handleInstrumentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -329,7 +335,11 @@ export function TradeIdentityTab({
             {...register('session')}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
           >
-            {TRADING_SESSIONS.map((sess) => (
+            {TRADING_SESSIONS.filter((sess) =>
+              caps.sessions.allowedSessions.length > 0
+                ? caps.sessions.allowedSessions.includes(sess.value as any)
+                : true
+            ).map((sess) => (
               <option key={sess.value} value={sess.value}>
                 {sess.label}
               </option>

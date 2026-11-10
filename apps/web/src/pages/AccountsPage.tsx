@@ -48,6 +48,7 @@ import HelpOutlineRounded from '@mui/icons-material/HelpOutlineRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { formatCurrency } from '../lib/utils.js';
+import { resolveAccountUiCapabilities } from '@tradevault/financial-engine';
 import { HelpHint } from '../components/help/index.js';
 import { PropFirmAccountCard } from '../components/accounts/PropFirmAccountCard.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
@@ -644,6 +645,10 @@ export function AccountsPage() {
         ) : (
           displayedAccounts.map((acc: any) => {
             const isProfitable = (acc.realizedPnL || 0) >= 0;
+            const accCaps = resolveAccountUiCapabilities(
+              { mode: 'ACCOUNT', accountId: acc.id || acc._id },
+              accounts
+            );
 
             return (
               <Grid size={{ xs: 12, md: 6, lg: 4 }} key={acc.id}>
@@ -750,7 +755,7 @@ export function AccountsPage() {
                       )}
                     </Box>
 
-                    {String(acc.broker || '').toUpperCase() === 'FYERS' && (
+                    {accCaps.broker.canSyncFunds && (
                       <Box
                         sx={{
                           mt: 1.5,
@@ -905,20 +910,22 @@ export function AccountsPage() {
 
                   <CardActions sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'space-between' }}>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<PaidRounded sx={{ fontSize: 16 }} />}
-                        onClick={() => {
-                          setSelectedAccountForTx(acc);
-                          setIsTxModalOpen(true);
-                        }}
-                        sx={{ fontSize: '0.75rem', fontWeight: 600 }}
-                      >
-                        Cash Flow
-                      </Button>
+                      {!acc.isArchived && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<PaidRounded sx={{ fontSize: 16 }} />}
+                          onClick={() => {
+                            setSelectedAccountForTx(acc);
+                            setIsTxModalOpen(true);
+                          }}
+                          sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                        >
+                          Cash Flow
+                        </Button>
+                      )}
 
-                      {(String(acc.broker || '').toUpperCase() === 'FYERS' || acc.profile?.capabilities?.canSyncFunds) && (
+                      {accCaps.broker.canSyncFunds && (
                         <>
                           <Button
                             size="small"
@@ -950,24 +957,43 @@ export function AccountsPage() {
                     </Box>
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      {acc.brokerLink && (
-                        <Tooltip title="Remove the FYERS link from this account" arrow>
-                          <span>
-                            <Button
-                              size="small"
-                              color="error"
-                              disabled={unlinkBrokerMutation.isPending}
-                              onClick={() => {
-                                if (window.confirm(`Remove FYERS link ${acc.brokerLink.clientId} from ${acc.name}?`)) {
-                                  unlinkBrokerMutation.mutate(acc.id);
-                                }
-                              }}
-                              sx={{ fontSize: '0.75rem', minWidth: 0, px: 1 }}
-                            >
-                              Unlink
-                            </Button>
-                          </span>
-                        </Tooltip>
+                      {accCaps.broker.isFyers && (
+                        acc.brokerLink ? (
+                          <Tooltip title="Remove the FYERS link from this account" arrow>
+                            <span>
+                              <Button
+                                size="small"
+                                color="error"
+                                disabled={unlinkBrokerMutation.isPending}
+                                onClick={() => {
+                                  if (window.confirm(`Remove FYERS link ${acc.brokerLink.clientId} from ${acc.name}?`)) {
+                                    unlinkBrokerMutation.mutate(acc.id);
+                                  }
+                                }}
+                                sx={{ fontSize: '0.75rem', minWidth: 0, px: 1 }}
+                              >
+                                Unlink
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="Link your FYERS Client ID to this account" arrow>
+                            <span>
+                              <Button
+                                size="small"
+                                color="primary"
+                                onClick={() => {
+                                  setSelectedAccountForLink(acc);
+                                  setLinkClientId(acc.brokerLink?.clientId || '');
+                                  setIsLinkModalOpen(true);
+                                }}
+                                sx={{ fontSize: '0.75rem', minWidth: 0, px: 1 }}
+                              >
+                                Link FYERS
+                              </Button>
+                            </span>
+                          </Tooltip>
+                        )
                       )}
                       <Tooltip title="Authoritatively reconcile account balance and P&L from raw execution fills" arrow>
                         <span>

@@ -57,13 +57,14 @@ import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialo
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWatcher.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
   const { scope, isPropMode, queryParams, selectedAccountId, propAccounts } = useAccountScope();
+  const caps = useAccountCapabilities();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -375,23 +376,27 @@ export function TradesPage() {
           </Button>
 
           {/* New Trade button */}
-          <Button
-            variant="contained"
-            color="primary"
-            size="small"
-            onClick={() => setIsNewTradeModalOpen(true)}
-            startIcon={<AddIcon />}
-            sx={{ fontWeight: 700, fontSize: '0.8125rem', px: 2 }}
-          >
-            Log Trade
-          </Button>
+          {!caps.isArchived && (
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              onClick={() => setIsNewTradeModalOpen(true)}
+              startIcon={<AddIcon />}
+              sx={{ fontWeight: 700, fontSize: '0.8125rem', px: 2 }}
+            >
+              Log Trade
+            </Button>
+          )}
         </Box>
       </Box>
 
       {/* Live Open Trade Watcher */}
-      <LiveOpenTradeWatcher
-        accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
-      />
+      {caps.live.watcher && (
+        <LiveOpenTradeWatcher
+          accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+        />
+      )}
 
       {/* Filter and Search Bar */}
       <Card sx={{ p: 2 }}>
@@ -590,7 +595,7 @@ export function TradesPage() {
       </Card>
 
       {/* Bulk action notification bar */}
-      {selectedIds.length > 0 && (
+      {!caps.isArchived && selectedIds.length > 0 && (
         <Card
           sx={{
             p: 1.5,
@@ -667,14 +672,16 @@ export function TradesPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    size="small"
-                    indeterminate={selectedIds.length > 0 && selectedIds.length < trades.length}
-                    checked={trades.length > 0 && selectedIds.length === trades.length}
-                    onChange={toggleSelectAll}
-                  />
-                </TableCell>
+                {!caps.isArchived && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      size="small"
+                      indeterminate={selectedIds.length > 0 && selectedIds.length < trades.length}
+                      checked={trades.length > 0 && selectedIds.length === trades.length}
+                      onChange={toggleSelectAll}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   <TableSortLabel
                     active={sortBy === 'tradeDate' || sortBy === 'entryTime'}
@@ -830,15 +837,17 @@ export function TradesPage() {
                     <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.5, mb: 2 }}>
                       Adjust filters or log a new trade execution
                     </Typography>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      size="small"
-                      onClick={() => setIsNewTradeModalOpen(true)}
-                      startIcon={<AddIcon />}
-                    >
-                      Log Trade
-                    </Button>
+                    {!caps.isArchived && (
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        size="small"
+                        onClick={() => setIsNewTradeModalOpen(true)}
+                        startIcon={<AddIcon />}
+                      >
+                        Log Trade
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -857,13 +866,15 @@ export function TradesPage() {
                         '&:last-child td, &:last-child th': { border: 0 },
                       }}
                     >
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          size="small"
-                          checked={isSelected}
-                          onChange={() => toggleSelect(tradeId)}
-                        />
-                      </TableCell>
+                      {!caps.isArchived && (
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            size="small"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(tradeId)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, whiteSpace: 'nowrap' }}>
                         <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                           <Typography
@@ -1044,7 +1055,7 @@ export function TradesPage() {
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                          {(t.status === 'OPEN' || t.status === 'PLANNED') && (
+                          {!caps.isArchived && (t.status === 'OPEN' || t.status === 'PLANNED') && (
                             <Tooltip title="Quick Close Trade" arrow>
                               <IconButton
                                 size="small"
@@ -1072,46 +1083,50 @@ export function TradesPage() {
                               <VisibilityIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Edit Trade" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={() => setEditingTrade(t)}
-                              sx={{
-                                color: muiTheme.palette.text.secondary,
-                                '&:hover': { color: muiTheme.palette.primary.main },
-                              }}
-                            >
-                              <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Duplicate Setup" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={() => duplicateMutation.mutate(tradeId)}
-                              disabled={duplicateMutation.isPending}
-                              sx={{
-                                color: muiTheme.palette.text.secondary,
-                                '&:hover': { color: muiTheme.palette.primary.main },
-                              }}
-                            >
-                              <ContentCopyIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete Trade" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                setDeleteError(null);
-                                setDeleteConfirmId(tradeId);
-                              }}
-                              sx={{
-                                color: muiTheme.palette.text.secondary,
-                                '&:hover': { color: muiTheme.palette.error.main },
-                              }}
-                            >
-                              <DeleteOutlineIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {!caps.isArchived && (
+                            <>
+                              <Tooltip title="Edit Trade" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => setEditingTrade(t)}
+                                  sx={{
+                                    color: muiTheme.palette.text.secondary,
+                                    '&:hover': { color: muiTheme.palette.primary.main },
+                                  }}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Duplicate Setup" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => duplicateMutation.mutate(tradeId)}
+                                  disabled={duplicateMutation.isPending}
+                                  sx={{
+                                    color: muiTheme.palette.text.secondary,
+                                    '&:hover': { color: muiTheme.palette.primary.main },
+                                  }}
+                                >
+                                  <ContentCopyIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Delete Trade" arrow>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    setDeleteError(null);
+                                    setDeleteConfirmId(tradeId);
+                                  }}
+                                  sx={{
+                                    color: muiTheme.palette.text.secondary,
+                                    '&:hover': { color: muiTheme.palette.error.main },
+                                  }}
+                                >
+                                  <DeleteOutlineIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </>
+                          )}
                         </Box>
                       </TableCell>
                     </TableRow>

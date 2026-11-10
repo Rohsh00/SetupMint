@@ -44,7 +44,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency } from '../lib/utils.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { HelpHint } from '../components/help/index.js';
 
 export function ReportsPage() {
@@ -52,6 +52,7 @@ export function ReportsPage() {
   const queryClient = useQueryClient();
   const { startDate, endDate } = useDateRange();
   const { queryParams, scopedAccounts, selectedAccountId: scopeAccountId } = useAccountScope();
+  const caps = useAccountCapabilities();
   const { data: allAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts.list() });
   const accounts = scopedAccounts.length > 0 ? scopedAccounts : allAccounts;
 
@@ -60,6 +61,12 @@ export function ReportsPage() {
 
   // Import states
   const [importKind, setImportKind] = useState<'TRADES' | 'CASH_FLOWS'>('TRADES');
+
+  React.useEffect(() => {
+    if (!caps.csvImport.cashLedger && importKind === 'CASH_FLOWS') {
+      setImportKind('TRADES');
+    }
+  }, [caps.csvImport.cashLedger, importKind]);
   const [importMode, setImportMode] = useState<'FILE' | 'PASTE'>('FILE');
   const [pastedText, setPastedText] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -411,9 +418,11 @@ export function ReportsPage() {
                   <ToggleButton value="TRADES" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
                     Tradebook Import
                   </ToggleButton>
-                  <ToggleButton value="CASH_FLOWS" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
-                    Cash Ledger Import
-                  </ToggleButton>
+                  {caps.csvImport.cashLedger && (
+                    <ToggleButton value="CASH_FLOWS" sx={{ px: 2.5, py: 0.75, fontWeight: 600, textTransform: 'none' }}>
+                      Cash Ledger Import
+                    </ToggleButton>
+                  )}
                 </ToggleButtonGroup>
               </Box>
 
@@ -656,7 +665,11 @@ export function ReportsPage() {
                     onChange={(e) => setSelectedBroker(e.target.value)}
                     sx={{ minWidth: 150 }}
                   >
-                    {previewData.availableBrokers?.map((b: string) => (
+                    {(previewData.availableBrokers?.filter((b: string) =>
+                      b === 'CUSTOM' ||
+                      caps.csvImport.brokerPresets.length === 0 ||
+                      caps.csvImport.brokerPresets.includes(b)
+                    ) ?? []).map((b: string) => (
                       <MenuItem key={b} value={b}>
                         {b}
                       </MenuItem>

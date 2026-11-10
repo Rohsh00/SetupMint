@@ -33,8 +33,10 @@ import {
   TemplatePatch,
   ProvenanceSource,
   AssetClass,
+  IAccountUiCapabilities,
 } from '@tradevault/shared';
 import { rankTemplates, resolveTemplate } from '@tradevault/financial-engine';
+import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 
 export interface MarketTemplateBarProps {
   symbol?: string;
@@ -47,6 +49,7 @@ export interface MarketTemplateBarProps {
   contractMultiplier?: number;
   dirtyFields: Record<string, any>;
   strategies: any[];
+  capabilities?: IAccountUiCapabilities;
   onApplyTemplatePatch: (patch: TemplatePatch, template: ITradeTemplate) => void;
   onUndoTemplate?: () => void;
   hasAppliedTemplate: boolean;
@@ -65,6 +68,7 @@ export function MarketTemplateBar({
   contractMultiplier = 1,
   dirtyFields,
   strategies,
+  capabilities,
   onApplyTemplatePatch,
   onUndoTemplate,
   hasAppliedTemplate,
@@ -73,11 +77,22 @@ export function MarketTemplateBar({
 }: MarketTemplateBarProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const fallbackCaps = useAccountCapabilities();
+  const caps = capabilities || fallbackCaps;
 
-  // Merge built-in and user templates
+  // Merge built-in and user templates, filtered by account market capabilities
+  const isIndianMarket = caps.fees.showStatutoryBreakdown;
   const allTemplates = useMemo(() => {
-    return [...BUILT_IN_TEMPLATES, ...userTemplates];
-  }, [userTemplates]);
+    const raw = [...BUILT_IN_TEMPLATES, ...userTemplates];
+    return raw.filter((t) => {
+      if (!isIndianMarket) {
+        if (t.group === 'FNO' || t.group === 'MCX') return false;
+      } else {
+        if (caps.currency.code === 'INR' && t.group === 'FOREX_GOLD') return false;
+      }
+      return true;
+    });
+  }, [userTemplates, isIndianMarket, caps.currency.code]);
 
   // Context for ranking
   const rankingContext: TemplateContext = useMemo(() => {
@@ -546,11 +561,17 @@ export function MarketTemplateBar({
             sx={{ minHeight: 36 }}
           >
             <Tab label="All Ranked" value="ALL" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
-            <Tab label="F&O" value="FNO" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
-            <Tab label="Stocks" value="STOCKS" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
-            <Tab label="Forex & Gold" value="FOREX_GOLD" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
+            {isIndianMarket && (
+              <>
+                <Tab label="F&O" value="FNO" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
+                <Tab label="Stocks" value="STOCKS" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
+                <Tab label="MCX" value="MCX" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
+              </>
+            )}
+            {(!isIndianMarket || caps.currency.code !== 'INR') && (
+              <Tab label="Forex & Gold" value="FOREX_GOLD" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
+            )}
             <Tab label="Crypto" value="CRYPTO" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
-            <Tab label="MCX" value="MCX" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
             <Tab label="Price Action" value="PRICE_ACTION" sx={{ minHeight: 36, textTransform: 'none', fontSize: '0.8125rem', fontWeight: 700 }} />
           </Tabs>
         </Box>

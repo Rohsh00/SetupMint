@@ -38,9 +38,11 @@ import {
   TemplatePatch,
   ProvenanceSource,
   getPresetSpec,
+  IAccountUiCapabilities,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { formatCurrency, toLocalIsoDateTime } from '../../../lib/utils.js';
+import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
 import { MarketTemplateBar } from './MarketTemplateBar.js';
 
 interface TradeQuickSectionProps {
@@ -50,6 +52,7 @@ interface TradeQuickSectionProps {
   accounts: any[];
   instruments: any[];
   strategies: any[];
+  capabilities?: IAccountUiCapabilities;
   isAutoFees?: boolean;
   onToggleAutoFees?: (auto: boolean) => void;
   onResetAutoFees?: () => void;
@@ -74,6 +77,7 @@ export function TradeQuickSection({
   accounts,
   instruments,
   strategies,
+  capabilities,
   isAutoFees = true,
   onToggleAutoFees,
   onResetAutoFees,
@@ -92,6 +96,8 @@ export function TradeQuickSection({
 }: TradeQuickSectionProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const fallbackCaps = useAccountCapabilities();
+  const caps = capabilities || fallbackCaps;
   const [showItemizedFees, setShowItemizedFees] = useState(false);
 
   const selectedSymbol = watch('symbol') || '';
@@ -387,8 +393,8 @@ export function TradeQuickSection({
           />
         </Box>
 
-        {/* Options Specification Strip (when Asset Class is OPTIONS) */}
-        {watch('assetClass') === 'OPTIONS' && (
+        {/* Options Specification Strip (when Asset Class is OPTIONS and supported) */}
+        {caps.instruments.showOptionsFields && watch('assetClass') === 'OPTIONS' && (
           <Box
             sx={{
               display: 'flex',
@@ -521,6 +527,7 @@ export function TradeQuickSection({
             hasAppliedTemplate={hasAppliedTemplate}
             appliedTemplateName={appliedTemplateName}
             userTemplates={userTemplates}
+            capabilities={caps}
           />
         )}
       </Box>
@@ -528,7 +535,14 @@ export function TradeQuickSection({
       <Divider sx={{ my: 0.5 }} />
 
       {/* Row 3: Execution Prices, Lots & Quantity */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: '1.2fr 1.2fr 0.9fr 1.3fr 1fr' }, gap: 2 }}>
+      <Box sx={{
+        display: 'grid',
+        gridTemplateColumns: {
+          xs: '1fr 1fr',
+          sm: `1.2fr 1.2fr ${caps.instruments.showLots ? '0.9fr ' : ''}1.3fr${caps.instruments.showMultiplier ? ' 1fr' : ''}`,
+        },
+        gap: 2,
+      }}>
         <TextField
           label="Entry Price *"
           type="number"
@@ -558,16 +572,18 @@ export function TradeQuickSection({
         />
 
         {/* Lots Input */}
-        <TextField
-          label="Lots"
-          type="number"
-          size="small"
-          fullWidth
-          value={Number.isInteger(lotsValue) ? lotsValue : Number(lotsValue.toFixed(2))}
-          onChange={(e) => handleLotsChange(e.target.value)}
-          slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
-          helperText={lotSize > 1 ? `1 lot = ${lotSize}` : '1 lot = 1'}
-        />
+        {caps.instruments.showLots && (
+          <TextField
+            label="Lots"
+            type="number"
+            size="small"
+            fullWidth
+            value={Number.isInteger(lotsValue) ? lotsValue : Number(lotsValue.toFixed(2))}
+            onChange={(e) => handleLotsChange(e.target.value)}
+            slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
+            helperText={lotSize > 1 ? `1 lot = ${lotSize}` : '1 lot = 1'}
+          />
+        )}
 
         {/* Quantity with Lot Stepper */}
         <Box>
@@ -582,45 +598,51 @@ export function TradeQuickSection({
               onChange={(e) => setValue('simpleExecution.quantity', Number(e.target.value))}
               slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
             />
-            <Tooltip title={`Subtract 1 lot (${lotSize} units)`} arrow>
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() => handleStepQuantity(-1)}
-                  sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 0.75 }}
-                >
-                  <RemoveRounded sx={{ fontSize: 16 }} />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title={`Add 1 lot (${lotSize} units)`} arrow>
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() => handleStepQuantity(1)}
-                  sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 0.75 }}
-                >
-                  <AddRounded sx={{ fontSize: 16 }} />
-                </IconButton>
-              </span>
-            </Tooltip>
+            {caps.instruments.showLots && (
+              <>
+                <Tooltip title={`Subtract 1 lot (${lotSize} units)`} arrow>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleStepQuantity(-1)}
+                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 0.75 }}
+                    >
+                      <RemoveRounded sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title={`Add 1 lot (${lotSize} units)`} arrow>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleStepQuantity(1)}
+                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 0.75 }}
+                    >
+                      <AddRounded sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
+            )}
           </Box>
-          {lotSize > 1 && (
+          {caps.instruments.showLots && lotSize > 1 && (
             <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', color: 'text.secondary', fontSize: '0.6875rem', pl: 0.5, mt: 0.25, display: 'block' }}>
               = {Math.round(quantity / lotSize)} lot{Math.round(quantity / lotSize) !== 1 ? 's' : ''}
             </Typography>
           )}
         </Box>
 
-        <TextField
-          label="Contract Multiplier"
-          type="number"
-          size="small"
-          fullWidth
-          value={contractMultiplier}
-          onChange={(e) => setValue('simpleExecution.contractMultiplier', Number(e.target.value))}
-          slotProps={{ htmlInput: { step: 'any', min: 0.001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-        />
+        {caps.instruments.showMultiplier && (
+          <TextField
+            label="Contract Multiplier"
+            type="number"
+            size="small"
+            fullWidth
+            value={contractMultiplier}
+            onChange={(e) => setValue('simpleExecution.contractMultiplier', Number(e.target.value))}
+            slotProps={{ htmlInput: { step: 'any', min: 0.001, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+          />
+        )}
       </Box>
 
       {/* Row 4: Risk Parameters (Stop Loss & Target) */}
@@ -759,10 +781,14 @@ export function TradeQuickSection({
           label="Trading Session"
           size="small"
           fullWidth
-          value={watch('session') || 'NSE_REGULAR'}
+          value={watch('session') || (caps.sessions.allowedSessions[0] || 'NSE_REGULAR')}
           onChange={(e) => setValue('session', e.target.value)}
         >
-          {TRADING_SESSIONS.map((sess) => (
+          {TRADING_SESSIONS.filter((sess) =>
+            caps.sessions.allowedSessions.length > 0
+              ? caps.sessions.allowedSessions.includes(sess.value as any)
+              : true
+          ).map((sess) => (
             <MenuItem key={sess.value} value={sess.value}>
               {sess.label}
             </MenuItem>
@@ -1070,8 +1096,10 @@ export function TradeQuickSection({
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
               <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
                 {isAutoFees
-                  ? 'Charges auto-calculated based on account fee model (brokerage, exchange turnover, regulatory levies, and taxes)'
-                  : 'Manual fee overrides active. Click "Reset to auto" to restore statutory calculations.'}
+                  ? (caps.fees.showStatutoryBreakdown
+                      ? 'Charges auto-calculated based on Indian statutory fee model (brokerage, exchange turnover, regulatory levies, and taxes)'
+                      : 'Charges auto-calculated based on broker commission & swap schedule')
+                  : 'Manual fee overrides active. Click "Reset to auto" to restore fee calculations.'}
               </Typography>
               {!isAutoFees && onResetAutoFees && (
                 <Button
@@ -1089,12 +1117,14 @@ export function TradeQuickSection({
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr 1fr' },
+                gridTemplateColumns: caps.fees.showStatutoryBreakdown
+                  ? { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr 1fr' }
+                  : { xs: '1fr 1fr', sm: '1fr 1fr 1fr' },
                 gap: 2,
               }}
             >
               <TextField
-                label="Brokerage"
+                label={caps.fees.showStatutoryBreakdown ? "Brokerage" : "Commission"}
                 type="number"
                 size="small"
                 fullWidth
@@ -1105,42 +1135,60 @@ export function TradeQuickSection({
                 }}
                 slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
               />
-              <TextField
-                label="Exchange Fees"
-                type="number"
-                size="small"
-                fullWidth
-                value={watch('simpleExecution.exchangeFees') ?? 0}
-                onChange={(e) => {
-                  onToggleAutoFees?.(false);
-                  setValue('simpleExecution.exchangeFees', Number(e.target.value));
-                }}
-                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
-              <TextField
-                label="Regulatory (SEBI)"
-                type="number"
-                size="small"
-                fullWidth
-                value={watch('simpleExecution.regulatoryFees') ?? 0}
-                onChange={(e) => {
-                  onToggleAutoFees?.(false);
-                  setValue('simpleExecution.regulatoryFees', Number(e.target.value));
-                }}
-                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
-              <TextField
-                label="Taxes (GST/STT)"
-                type="number"
-                size="small"
-                fullWidth
-                value={watch('simpleExecution.taxes') ?? 0}
-                onChange={(e) => {
-                  onToggleAutoFees?.(false);
-                  setValue('simpleExecution.taxes', Number(e.target.value));
-                }}
-                slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-              />
+              {caps.fees.showStatutoryBreakdown ? (
+                <>
+                  <TextField
+                    label="Exchange Fees"
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={watch('simpleExecution.exchangeFees') ?? 0}
+                    onChange={(e) => {
+                      onToggleAutoFees?.(false);
+                      setValue('simpleExecution.exchangeFees', Number(e.target.value));
+                    }}
+                    slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                  />
+                  <TextField
+                    label="Regulatory (SEBI)"
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={watch('simpleExecution.regulatoryFees') ?? 0}
+                    onChange={(e) => {
+                      onToggleAutoFees?.(false);
+                      setValue('simpleExecution.regulatoryFees', Number(e.target.value));
+                    }}
+                    slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                  />
+                  <TextField
+                    label="Taxes (GST/STT)"
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={watch('simpleExecution.taxes') ?? 0}
+                    onChange={(e) => {
+                      onToggleAutoFees?.(false);
+                      setValue('simpleExecution.taxes', Number(e.target.value));
+                    }}
+                    slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                  />
+                </>
+              ) : (
+                <TextField
+                  label="Swap / Financing"
+                  type="number"
+                  size="small"
+                  fullWidth
+                  value={watch('simpleExecution.exchangeFees') ?? 0}
+                  onChange={(e) => {
+                    onToggleAutoFees?.(false);
+                    setValue('simpleExecution.exchangeFees', Number(e.target.value));
+                  }}
+                  slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                  helperText="Overnight rollover"
+                />
+              )}
               <TextField
                 label="Explicit Adjustments"
                 type="number"

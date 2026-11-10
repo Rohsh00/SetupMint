@@ -60,17 +60,25 @@ import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
-import { useAccountScope } from '../context/AccountScopeContext.js';
+import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 
 export function AnalyticsPage() {
   const { queryParams, isPropMode, scopeLabel, currency: scopeCurrency, activeAccount, isMultiCurrency, currencies } = useAccountScope();
+  const caps = useAccountCapabilities();
+  const hasMarketData = caps.marketData.fyersHistory || caps.marketData.angelOneFallback;
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate } = useDateRange();
-  const analyticsCurrency = activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
-  const currSym = getCurrencySymbol(analyticsCurrency);
+  const analyticsCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
+  const currSym = caps.currency.symbol || getCurrencySymbol(analyticsCurrency);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
+
+  React.useEffect(() => {
+    if (!hasMarketData && (activeTab === 'EXECUTION' || activeTab === 'WHAT_IF')) {
+      setActiveTab('OVERVIEW');
+    }
+  }, [hasMarketData, activeTab]);
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
   const [whatIfPrefill, setWhatIfPrefill] = useState<{ stopR?: number; targetR?: number } | null>(null);
   const [funnelMode, setFunnelMode] = useState<'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD'>('AUTO');
@@ -237,8 +245,12 @@ export function AnalyticsPage() {
             { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
             { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
             { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
-            { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
-            { id: 'WHAT_IF', label: 'Stops & Targets', icon: <TuneRoundedIcon fontSize="small" /> },
+            ...(hasMarketData
+              ? [
+                  { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
+                  { id: 'WHAT_IF', label: 'Stops & Targets', icon: <TuneRoundedIcon fontSize="small" /> },
+                ]
+              : []),
           ].map((tab) => (
             <Button
               key={tab.id}

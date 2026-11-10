@@ -13,6 +13,12 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters long'),
+});
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
 export const accountScopeSchema = z.object({
   mode: z.enum(['ALL', 'ACCOUNT', 'TYPE', 'PROP_FIRM']).default('ALL'),
   accountId: z.string().optional(),

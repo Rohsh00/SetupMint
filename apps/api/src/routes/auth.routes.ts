@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
-import { loginSchema, registerSchema, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
+import { loginSchema, registerSchema, forgotPasswordSchema, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
 import { Session, Trade, User } from '../db/models/index.js';
 import {
   clearSession,
@@ -230,6 +230,57 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           },
           token,
         },
+      });
+    }
+  );
+
+  // Forgot / Reset Password endpoint
+  app.post(
+    '/forgot-password',
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req, reply) => {
+      const parseResult = forgotPasswordSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid password reset request',
+            details: parseResult.error.format(),
+          },
+        });
+      }
+
+      const { email, newPassword } = parseResult.data;
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await User.findOne({ email: normalizedEmail });
+
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'No registered account found with this email address.',
+          },
+        });
+      }
+
+      user.passwordHash = await bcrypt.hash(newPassword, 10);
+      await user.save();
+
+      // Revoke all existing sessions for this user for security
+      await Session.deleteMany({ userId: user._id }).catch(() => {});
+
+      return reply.send({
+        success: true,
+        message: 'Password updated successfully. You can now sign in with your new password.',
       });
     }
   );

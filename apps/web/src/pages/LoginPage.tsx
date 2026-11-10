@@ -10,12 +10,22 @@ import {
   Alert,
   Divider,
   Link,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton,
+  InputAdornment,
   useTheme,
 } from '@mui/material';
 import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
 import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
-import LockRounded from '@mui/icons-material/LockRounded';
+import LockResetRounded from '@mui/icons-material/LockResetRounded';
+import CloseRounded from '@mui/icons-material/CloseRounded';
+import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
+import VisibilityOffRounded from '@mui/icons-material/VisibilityOffRounded';
 import { useAuth } from '../context/AuthContext.js';
+import { api } from '../lib/api.js';
 import { SetupMintLogo } from '../components/brand/SetupMintLogo.js';
 import { toast } from '../context/ToastContext.js';
 
@@ -28,6 +38,16 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Forgot / Reset Password state
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +87,61 @@ export function LoginPage() {
       toast.error(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenForgotDialog = () => {
+    setForgotEmail(email.trim());
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotError(null);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+    setForgotOpen(true);
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+
+    const targetEmail = forgotEmail.trim();
+    if (!targetEmail) {
+      setForgotError('Please enter your email address.');
+      return;
+    }
+
+    if (!forgotNewPassword) {
+      setForgotError('Please enter a new password.');
+      return;
+    }
+
+    if (forgotNewPassword.length < 8) {
+      setForgotError('New password must be at least 8 characters long.');
+      return;
+    }
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotError('Passwords do not match. Please verify and re-enter.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await api.auth.forgotPassword({
+        email: targetEmail,
+        newPassword: forgotNewPassword,
+      });
+
+      toast.success(res.message || 'Password updated successfully! Please sign in with your new password.');
+      setEmail(targetEmail);
+      setPassword(forgotNewPassword);
+      setError(null);
+      setForgotOpen(false);
+    } catch (err: any) {
+      const msg = err.message || 'Failed to reset password. Please check your email.';
+      setForgotError(msg);
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -139,9 +214,7 @@ export function LoginPage() {
                 component="button"
                 type="button"
                 variant="caption"
-                onClick={() => {
-                  toast.info('For local / self-hosted SetupMint, use seed credentials or reset your password in Settings.');
-                }}
+                onClick={handleOpenForgotDialog}
                 sx={{
                   color: 'text.secondary',
                   textDecoration: 'none',
@@ -197,6 +270,138 @@ export function LoginPage() {
           </Box>
         </CardContent>
       </Card>
+
+      {/* Reset Password Dialog */}
+      <Dialog
+        open={forgotOpen}
+        onClose={() => !forgotLoading && setForgotOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2,
+              p: 1,
+              boxShadow: muiTheme.palette.mode === 'dark' ? '0 24px 64px rgba(0,0,0,0.8)' : '0 16px 40px rgba(0,0,0,0.12)',
+            },
+          },
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LockResetRounded color="primary" />
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Reset Password
+            </Typography>
+          </Box>
+          <IconButton
+            size="small"
+            onClick={() => setForgotOpen(false)}
+            disabled={forgotLoading}
+            aria-label="close"
+          >
+            <CloseRounded fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <form onSubmit={handleForgotSubmit}>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Enter your registered account email and choose a new password.
+            </Typography>
+
+            {forgotError && (
+              <Alert severity="error" sx={{ py: 0.5 }}>
+                {forgotError}
+              </Alert>
+            )}
+
+            <TextField
+              label="Account Email"
+              type="email"
+              size="small"
+              required
+              fullWidth
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              autoComplete="email"
+            />
+
+            <TextField
+              label="New Password"
+              type={showNewPassword ? 'text' : 'password'}
+              size="small"
+              required
+              fullWidth
+              value={forgotNewPassword}
+              onChange={(e) => setForgotNewPassword(e.target.value)}
+              helperText="Must be at least 8 characters"
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => setShowNewPassword((prev) => !prev)}
+                        edge="end"
+                      >
+                        {showNewPassword ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+
+            <TextField
+              label="Confirm New Password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              size="small"
+              required
+              fullWidth
+              value={forgotConfirmPassword}
+              onChange={(e) => setForgotConfirmPassword(e.target.value)}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        edge="end"
+                      >
+                        {showConfirmPassword ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, pb: 2, pt: 1, gap: 1 }}>
+            <Button
+              type="button"
+              variant="text"
+              color="inherit"
+              disabled={forgotLoading}
+              onClick={() => setForgotOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              color="primary"
+              disabled={forgotLoading}
+              startIcon={<LockResetRounded />}
+              sx={{ fontWeight: 600 }}
+            >
+              {forgotLoading ? 'Updating...' : 'Update Password'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
     </Box>
   );
 }

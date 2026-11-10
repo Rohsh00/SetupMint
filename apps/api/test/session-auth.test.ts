@@ -348,6 +348,70 @@ describe('Persistent Sliding Sessions & Device Management Integration Tests', ()
     expect(currMe.statusCode).toBe(200);
   });
 
+  it('13. Forgot / Reset Password flow validates input, handles non-existent users, updates password, and revokes sessions', async () => {
+    // A. Validation failure on invalid email or short password
+    const invalidRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/forgot-password',
+      payload: { email: 'not-an-email', newPassword: 'short' },
+    });
+    expect(invalidRes.statusCode).toBe(400);
+
+    // B. Non-existent user returns 404
+    const notFoundRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/forgot-password',
+      payload: { email: 'nobody_exists_here@test.com', newPassword: 'BrandNewPassword123' },
+    });
+    expect(notFoundRes.statusCode).toBe(404);
+
+    // C. Existing user reset password
+    // Establish a session first
+    const sessionBefore = await createTestSession(testUser._id.toString());
+    const meBefore = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { cookie: sessionBefore.cookie },
+    });
+    expect(meBefore.statusCode).toBe(200);
+
+    // Reset password
+    const resetRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/forgot-password',
+      payload: { email: testUser.email, newPassword: 'UpdatedSecurePassword123' },
+    });
+    expect(resetRes.statusCode).toBe(200);
+    const resetBody = JSON.parse(resetRes.payload);
+    expect(resetBody.success).toBe(true);
+
+    // Old session must now be revoked
+    const meAfter = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { cookie: sessionBefore.cookie },
+    });
+    expect(meAfter.statusCode).toBe(401);
+
+    // Old password must fail login
+    const oldLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: testUser.email, password: 'Password@123' },
+    });
+    expect(oldLogin.statusCode).toBe(401);
+
+    // New password succeeds login
+    const newLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: testUser.email, password: 'UpdatedSecurePassword123' },
+    });
+    expect(newLogin.statusCode).toBe(200);
+    const newLoginBody = JSON.parse(newLogin.payload);
+    expect(newLoginBody.data.user.email).toBe(testUser.email);
+  });
+
   it('12. Production startup fails fast if SESSION_SECRET is missing or weak', () => {
     const originalEnv = process.env.NODE_ENV;
     const originalSecret = process.env.SESSION_SECRET;

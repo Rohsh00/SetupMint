@@ -674,10 +674,12 @@ async function main() {
   await disconnectDatabase();
 }
 
-main().catch(async (err) => {
-  console.error('\n❌ [Error]', err.message);
-  try {
-    await disconnectDatabase();
-  } catch {}
-  process.exit(1);
-});
+if (process.argv[1]?.includes('seed-komal-strategies')) {
+  main().catch(async (err) => {
+    console.error('\n❌ [Error]', err.message);
+    try {
+      await disconnectDatabase();
+    } catch {}
+    process.exit(1);
+  });
+}

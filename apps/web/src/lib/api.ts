@@ -104,6 +104,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(details),
       }),
+    forgotPassword: (data: { email: string; newPassword: string }) =>
+      request<{ success: boolean; message: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
     logout: () => request('/auth/logout', { method: 'POST' }),
     sessions: () =>
       request<

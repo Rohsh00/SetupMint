@@ -58,6 +58,9 @@ export function ExecuteLadderStepDialog({
   const [exitQty, setExitQty] = useState<number>(1);
   const [newStopLoss, setNewStopLoss] = useState<number>(0);
 
+  const isMt5 = Boolean((metric as any)?.isMt5 || /elefin|mt5/i.test((metric as any)?.accountBroker || ''));
+  const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
+
   // Data health check
   const effectiveDataHealth: ILiveDataHealth | undefined = dataHealth || metric?.dataHealth;
   const isBrokerExecutionBlocked = effectiveDataHealth ? !effectiveDataHealth.canExecuteBroker : false;
@@ -376,7 +379,7 @@ export function ExecuteLadderStepDialog({
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
-                Execute on FYERS Broker
+                Execute on {brokerLabel} Broker
               </Typography>
               <Chip
                 label={executeBroker ? 'LIVE BROKER' : 'JOURNAL ONLY'}
@@ -395,7 +398,7 @@ export function ExecuteLadderStepDialog({
               {isBrokerExecutionBlocked
                 ? brokerBlockReason || 'Broker execution is unavailable'
                 : executeBroker
-                ? 'Submits real market exit and trails SL on FYERS orderbook'
+                ? (isMt5 ? 'Submits real market exit and trails SL via MT5 bridge' : 'Submits real market exit and trails SL on FYERS orderbook')
                 : 'Simulates ladder step in SetupMint without broker order'}
             </Typography>
           </Box>

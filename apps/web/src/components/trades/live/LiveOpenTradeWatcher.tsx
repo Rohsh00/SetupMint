@@ -532,7 +532,7 @@ export function LiveOpenTradeWatcher({
     }
 
     toast.success(
-      `Saved custom ladder rules${rules.autoExecuteEnabled ? ' (⚡ Auto-Execution to FYERS Armed)' : ''}!`
+      `Saved custom ladder rules${rules.autoExecuteEnabled ? ' (⚡ Auto-Execution Armed)' : ''}!`
     );
     queryClient.invalidateQueries({ queryKey: ['live-open-trades-watcher'] });
   };
@@ -2619,7 +2619,7 @@ export function LiveOpenTradeWatcher({
                                 />
                               )}
                               {customRules?.autoExecuteEnabled && (
-                                <Tooltip title="Auto-Execution to FYERS Active" arrow>
+                                <Tooltip title={`Auto-Execution to ${pos.isMt5 ? 'MT5' : 'FYERS'} Active`} arrow>
                                   <Chip
                                     label="⚡ AUTO"
                                     size="small"
@@ -3300,7 +3300,7 @@ export function LiveOpenTradeWatcher({
                             )}
 
                             {customRules?.autoExecuteEnabled && (
-                              <Tooltip title="Auto-Execution to FYERS Active" arrow>
+                              <Tooltip title={`Auto-Execution to ${pos.isMt5 ? 'MT5' : 'FYERS'} Active`} arrow>
                                 <Chip
                                   label="⚡ AUTO"
                                   size="small"

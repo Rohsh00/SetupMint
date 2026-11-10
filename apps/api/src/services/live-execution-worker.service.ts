@@ -290,8 +290,9 @@ export class LiveExecutionWorker {
     const metric = await LiveWatcherService.getSingleTradeLiveMetric(user._id.toString(), tradeId);
     if (!metric) return;
 
+    const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
     // Safety Guard: Under no circumstances should simulated demo ticks trigger broker exits, broker SL updates, or Telegram risk alerts!
-    if (metric.provider === 'SIMULATED') return;
+    if (metric.provider === 'SIMULATED' && !isMt5) return;
 
     const watcherSettings = user.liveWatcherSettings;
     const rules = (trade.customLadderRules as any) || createLadderRulesFromSettings(watcherSettings, tradeId, metric.lotSize);
@@ -356,10 +357,21 @@ export class LiveExecutionWorker {
         if (!this.executedMilestones.has(givebackKey)) {
           this.executedMilestones.add(givebackKey);
           console.log(`[LiveExecutionWorker] Auto-exiting runner for ${metric.symbol} due to ${metric.giveback.givebackPercent}% profit giveback`);
-          await FyersService.executeBrokerExit(user._id, tradeId, {
-            exitQty: metric.quantity,
-            isFullClose: true,
-          });
+          const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+          if (isMt5 && ticket) {
+            await Mt5CommandService.queueClosePosition({
+              userId: user._id.toString(),
+              accountId: trade.accountId?.toString(),
+              tradeId: tradeId,
+              ticket,
+              volume: metric.quantity,
+            });
+          } else {
+            await FyersService.executeBrokerExit(user._id, tradeId, {
+              exitQty: metric.quantity,
+              isFullClose: true,
+            });
+          }
         }
       }
     }
@@ -458,11 +470,13 @@ export class LiveExecutionWorker {
 
       // 3. Telegram success alert
       if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+        const currSym = isMt5 ? '$' : '₹';
+        const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
         TelegramAlertService.sendAlert({
           botToken: watcherSettings.telegramBotToken,
           chatId: watcherSettings.telegramChatId,
           title: `⚡ Auto-Executed ${step.name}: ${metric.symbol}`,
-          body: `SetupMint auto-executed ${step.plannedExitQty} units exit and trailed SL to ₹${step.suggestedStopLoss} on FYERS exchange.`,
+          body: `SetupMint auto-executed ${step.plannedExitQty} units exit and trailed SL to ${currSym}${step.suggestedStopLoss} on ${brokerLabel}.`,
           severity: 'SUCCESS',
         }).catch(() => {});
       }

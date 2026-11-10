@@ -60,6 +60,9 @@ export function LiveCustomRulesDialog({
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
+  const isMt5 = Boolean((metric as any)?.isMt5 || /elefin|mt5/i.test((metric as any)?.accountBroker || ''));
+  const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
+
   const defaultLotSize = useMemo(() => {
     if (!metric) return 1;
     return metric.lotSize ?? (metric.contractMultiplier && metric.contractMultiplier > 1 ? metric.contractMultiplier : 1);
@@ -1195,11 +1198,11 @@ export function LiveCustomRulesDialog({
             </Box>
             <Box>
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                Auto-Execute Live on FYERS
+                Auto-Execute Live on {brokerLabel}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {autoExecute
-                  ? '⚡ ARMED: Automatic market partial exit and SL trailing to FYERS when target hit.'
+                  ? `⚡ ARMED: Automatic market partial exit and SL trailing to ${brokerLabel} when target hit.`
                   : 'Manual Mode: You click to execute ladder steps. (Toggle on to automate)'}
               </Typography>
             </Box>

@@ -2118,53 +2118,104 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // 1. If executing on broker, perform exit and SL adjustments
     if (executeBroker) {
-      const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
-      const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
-      if (!integration || !integration.accessToken || isExpired) {
-        if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
-        return reply.status(400).send({
-          success: false,
-          error: {
-            code: 'BROKER_EXECUTION_BLOCKED',
-            message: isExpired
-              ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
-              : 'Live broker execution blocked: FYERS broker is not connected.',
-          },
-        });
-      }
+      const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
 
-      // a. Partial or full exit order
-      if (requestedExitQty > 0) {
-        try {
-          brokerExitResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
-            exitQty: requestedExitQty,
-            isFullClose,
-          });
-        } catch (err: any) {
-          if (isLocked) IdempotencyService.reject(compositeKey, err);
-          req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step exit order failed');
+      if (isMt5) {
+        const ticket = Mt5CommandService.extractTicket(trade);
+        if (!ticket) {
+          if (isLocked) IdempotencyService.reject(compositeKey, new Error('MT5 ticket not found for trade'));
           return reply.status(400).send({
             success: false,
             error: {
-              code: 'BROKER_EXIT_ERROR',
-              message: `Failed to exit ${requestedExitQty} lots on FYERS: ${err.message || 'Broker error'}`,
+              code: 'MT5_TICKET_NOT_FOUND',
+              message: 'Live execution blocked: MT5 position ticket could not be resolved from trade tags.',
             },
           });
         }
-      }
 
-      // b. Trail Stop Loss order
-      if (newStopLoss && Number(newStopLoss) > 0 && !isFullClose) {
-        try {
-          brokerSlResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(newStopLoss));
-        } catch (err: any) {
-          req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step SL modification failed');
-          // Note: Exit already succeeded, so we inform user about SL warning
-          brokerSlResult = {
-            executedOnBroker: false,
-            warning: true,
-            message: `Exit executed, but trailing SL to ${newStopLoss} failed: ${err.message || 'Broker SL error'}`,
+        // a. Partial or full exit order
+        if (requestedExitQty > 0) {
+          const exitCmd = await Mt5CommandService.queueClosePosition({
+            userId: req.user!.id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            volume: requestedExitQty,
+          });
+          brokerExitResult = {
+            executedOnBroker: true,
+            action: 'QUEUED_TO_MT5',
+            message: `Market exit order (${requestedExitQty} lot) sent to MT5 Bridge (Ticket #${ticket})`,
+            commandId: exitCmd._id.toString(),
           };
+        }
+
+        // b. Trail Stop Loss order
+        if (newStopLoss && Number(newStopLoss) > 0 && !isFullClose) {
+          const slCmd = await Mt5CommandService.queueModifySl({
+            userId: req.user!.id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            stopLoss: Number(newStopLoss),
+          });
+          brokerSlResult = {
+            executedOnBroker: true,
+            action: 'QUEUED_TO_MT5',
+            message: `Stop Loss order (${newStopLoss}) sent to MT5 Bridge (Ticket #${ticket})`,
+            commandId: slCmd._id.toString(),
+          };
+        }
+      } else {
+        const integration = await BrokerIntegration.findOne({ userId: req.user!.id, broker: 'FYERS', status: 'CONNECTED' });
+        const isExpired = Boolean(integration?.tokenExpiresAt && new Date(integration.tokenExpiresAt) <= new Date());
+        if (!integration || !integration.accessToken || isExpired) {
+          if (isLocked) IdempotencyService.reject(compositeKey, new Error('Broker token expired or integration disconnected'));
+          return reply.status(400).send({
+            success: false,
+            error: {
+              code: 'BROKER_EXECUTION_BLOCKED',
+              message: isExpired
+                ? 'Live broker execution blocked: FYERS access token has expired. Please re-authenticate in Settings.'
+                : 'Live broker execution blocked: FYERS broker is not connected.',
+            },
+          });
+        }
+
+        // a. Partial or full exit order
+        if (requestedExitQty > 0) {
+          try {
+            brokerExitResult = await FyersService.executeBrokerExit(req.user!.id, trade._id.toString(), {
+              exitQty: requestedExitQty,
+              isFullClose,
+            });
+          } catch (err: any) {
+            if (isLocked) IdempotencyService.reject(compositeKey, err);
+            req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step exit order failed');
+            return reply.status(400).send({
+              success: false,
+              error: {
+                code: 'BROKER_EXIT_ERROR',
+                message: `Failed to exit ${requestedExitQty} lots on FYERS: ${err.message || 'Broker error'}`,
+              },
+            });
+          }
+        }
+
+        // b. Trail Stop Loss order
+        if (newStopLoss && Number(newStopLoss) > 0 && !isFullClose) {
+          try {
+            brokerSlResult = await FyersService.executeBrokerStopLoss(req.user!.id, trade._id.toString(), Number(newStopLoss));
+          } catch (err: any) {
+            req.log.error({ err, tradeId: trade._id }, 'FYERS ladder step SL modification failed');
+            // Note: Exit already succeeded, so we inform user about SL warning
+            brokerSlResult = {
+              executedOnBroker: false,
+              warning: true,
+              message: `Exit executed, but trailing SL to ${newStopLoss} failed: ${err.message || 'Broker SL error'}`,
+            };
+          }
         }
       }
     }

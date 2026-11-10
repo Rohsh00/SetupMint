@@ -1101,7 +1101,7 @@ export class FyersService {
 
     // For each symbol, match fills chronologically via FIFO
     for (const [cleanSymbol, execList] of executionsBySymbol.entries()) {
-      execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime() || a.index - b.index);
+      execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime() || b.index - a.index);
       const sample = execList[0];
       const {
         exchange,
@@ -1238,6 +1238,15 @@ export class FyersService {
           }
 
           if (existing) {
+            // Never mutate or overwrite authoritatively reconciled historical trades
+            if (
+              existing.tags?.includes('FYERS_TRADEBOOK_RECONCILED') ||
+              existing.importBatchId === 'fyers_official_pnl_20261110'
+            ) {
+              duplicateTradesCount++;
+              return;
+            }
+
             let updated = false;
             if (!existing.instrumentId || existing.instrumentId.toString() !== inst._id.toString()) {
               existing.instrumentId = inst._id;

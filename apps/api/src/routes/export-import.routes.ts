@@ -1550,7 +1550,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
       // For each symbol, match round-trip trades chronologically using FIFO
       for (const [symbol, execList] of executionsBySymbol.entries()) {
-        execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime() || a.rowIdx - b.rowIdx);
+        execList.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime() || b.rowIdx - a.rowIdx);
 
         const segmentVal = execList[0]?.segment;
         const { assetClass, marketSegment } = deriveInstrumentMeta(symbol, segmentVal);

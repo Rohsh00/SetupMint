@@ -5,6 +5,7 @@ import {
   TradeOutcome,
   IDateRange,
   buildDateRangeClause,
+  FeeModelKey,
 } from '@tradevault/shared';
 import {
   calculateFIFOExecution,
@@ -13,6 +14,7 @@ import {
   calculateSimpleExecutionPnL,
   normalizeUnderlying,
   sanitizeTradeFills,
+  FeeModelRegistry,
 } from '@tradevault/financial-engine';
 import { Instrument, IInstrumentDoc, Trade, ITradeDoc, CommodityMaster, AngelOneInstrument } from '../db/models/index.js';
 import { AccountService } from './account.service.js';
@@ -289,6 +291,10 @@ export class InstrumentService {
           body.symbol.includes('BTC'))) ||
       ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker);
 
+    const presetSpec = getPresetSpec(body.underlying || body.symbol);
+    const resolvedMult = Number(body.simpleExecution?.contractMultiplier || presetSpec?.contractMultiplier || 1);
+    const feeModelKey = (body.feeModelKey || body.accountId?.profile?.feeModelKey || (isForexOrUsd ? 'FOREX_COMMISSION' : 'INDIA_STATUTORY')) as FeeModelKey;
+
     if (isForexOrUsd && body.simpleExecution) {
       if (body.simpleExecution.brokerage === 40) {
         body.simpleExecution.brokerage = 0;
@@ -304,6 +310,33 @@ export class InstrumentService {
 
       grossPnL = res.grossPnLNumber;
       totalCosts = isForexOrUsd && res.totalCostsNumber === 40 ? 0 : res.totalCostsNumber;
+
+      // Auto-calculate fees if zero and valid execution prices exist
+      if (totalCosts === 0 && exec.entryPrice > 0 && exec.quantity > 0) {
+        const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
+          direction: body.direction,
+          assetClass: body.assetClass || (isForexOrUsd ? 'FOREX' : 'EQUITY'),
+          marketSegment: body.marketSegment || (isForexOrUsd ? 'FOREX' : 'NSE_EQ'),
+          entryPrice: exec.entryPrice,
+          exitPrice: exec.exitPrice,
+          quantity: exec.quantity,
+          contractMultiplier: resolvedMult,
+          currency: body.currency || (isForexOrUsd ? 'USD' : 'INR'),
+          broker: body.broker,
+          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
+        });
+        if (autoCharges.totalCosts > 0) {
+          totalCosts = autoCharges.totalCosts;
+          exec.brokerage = autoCharges.brokerage;
+          exec.exchangeFees = autoCharges.exchangeFees;
+          exec.regulatoryFees = autoCharges.regulatoryFees;
+          exec.taxes = feeModelKey === 'FOREX_COMMISSION' ? 0 : autoCharges.taxes;
+          if (feeModelKey === 'FOREX_COMMISSION' && autoCharges.taxes) {
+            exec.otherFees = autoCharges.taxes;
+          }
+        }
+      }
+
       netPnL = Number((grossPnL - totalCosts + (exec.explicitAdjustments || 0)).toFixed(2));
       outcome = body.status === 'OPEN' ? 'OPEN' : res.outcome;
       closedQty = exec.exitPrice ? exec.quantity : 0;
@@ -311,9 +344,8 @@ export class InstrumentService {
       avgEntry = exec.entryPrice;
       avgExit = exec.exitPrice;
     } else if (body.executionMode === 'ADVANCED' && body.fills && body.fills.length > 0) {
-      const mult = body.simpleExecution?.contractMultiplier || 1;
       const sanitized = sanitizeTradeFills(body.fills);
-      const fifo = calculateFIFOExecution(body.direction, sanitized.fills as any, mult);
+      const fifo = calculateFIFOExecution(body.direction, sanitized.fills as any, resolvedMult);
 
       grossPnL = Number(fifo.realizedGrossPnL.toFixed(2));
       const fifoCosts = Number(fifo.totalCosts.toFixed(2));
@@ -342,16 +374,18 @@ export class InstrumentService {
       } else if (simpleCosts > 0) {
         totalCosts = isForexOrUsd && simpleCosts === 40 ? 0 : simpleCosts;
       } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
-        const autoCharges = calculateIndianCharges({
+        const qtyForFees = closedQty > 0 ? closedQty : openQty;
+        const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
           direction: body.direction,
-          assetClass: body.assetClass,
-          marketSegment: body.marketSegment,
+          assetClass: body.assetClass || (isForexOrUsd ? 'FOREX' : 'EQUITY'),
+          marketSegment: body.marketSegment || (isForexOrUsd ? 'FOREX' : 'NSE_EQ'),
           entryPrice: avgEntry,
           exitPrice: avgExit,
-          quantity: closedQty > 0 ? closedQty : openQty,
-          contractMultiplier: mult,
-          currency: body.currency,
+          quantity: qtyForFees,
+          contractMultiplier: resolvedMult,
+          currency: body.currency || (isForexOrUsd ? 'USD' : 'INR'),
           broker: body.broker,
+          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
         });
         totalCosts = autoCharges.totalCosts;
         if (!body.simpleExecution) {
@@ -360,7 +394,10 @@ export class InstrumentService {
         body.simpleExecution.brokerage = autoCharges.brokerage;
         body.simpleExecution.exchangeFees = autoCharges.exchangeFees;
         body.simpleExecution.regulatoryFees = autoCharges.regulatoryFees;
-        body.simpleExecution.taxes = autoCharges.taxes;
+        body.simpleExecution.taxes = feeModelKey === 'FOREX_COMMISSION' ? 0 : autoCharges.taxes;
+        if (feeModelKey === 'FOREX_COMMISSION' && autoCharges.taxes) {
+          body.simpleExecution.otherFees = autoCharges.taxes;
+        }
       } else {
         totalCosts = 0;
       }
@@ -386,16 +423,42 @@ export class InstrumentService {
       }
     }
 
-    let plannedRisk = body.risk?.riskBudgetAmount || body.risk?.estimatedRiskAmount;
+    // Authoritative 1R Planned Risk & Realized R calculation:
+    // Physical risk at initial stop loss takes precedence over stale cached estimates
     const entryForRisk = body.risk?.plannedEntryPrice || avgEntry || body.simpleExecution?.entryPrice;
-    if (!plannedRisk && entryForRisk && body.risk?.initialStopLoss) {
-      const dist = Math.abs(entryForRisk - body.risk.initialStopLoss);
-      const qty = body.simpleExecution?.quantity || closedQty || 1;
-      const mult = body.simpleExecution?.contractMultiplier || 1;
-      plannedRisk = dist * qty * mult;
+    const slForRisk = body.risk?.initialStopLoss;
+    const qtyForRisk = body.simpleExecution?.quantity || closedQty || openQty || 1;
+    const multForRisk = resolvedMult;
+
+    let stopRisk: number | undefined;
+    if (entryForRisk && slForRisk && Number(slForRisk) > 0) {
+      const dist = Math.abs(entryForRisk - Number(slForRisk));
+      if (dist > 0) {
+        stopRisk = Number((dist * qtyForRisk * multForRisk).toFixed(2));
+      }
     }
 
-    const realizedRMultiple = calculateRealizedRMultiple(netPnL, plannedRisk);
+    let plannedRisk: number | undefined;
+    if (body.risk?.riskBudgetAmount && Number(body.risk.riskBudgetAmount) > 0) {
+      plannedRisk = Number(body.risk.riskBudgetAmount);
+    } else if (stopRisk !== undefined && stopRisk > 0) {
+      plannedRisk = stopRisk;
+    } else if (body.risk?.plannedRiskAmount && Number(body.risk.plannedRiskAmount) > 0) {
+      plannedRisk = Number(body.risk.plannedRiskAmount);
+    } else if (body.risk?.estimatedRiskAmount && Number(body.risk.estimatedRiskAmount) > 0) {
+      plannedRisk = Number(body.risk.estimatedRiskAmount);
+    }
+
+    if (body.risk && plannedRisk !== undefined && plannedRisk > 0) {
+      body.risk.plannedRiskAmount = plannedRisk;
+      body.risk.estimatedRiskAmount = plannedRisk;
+    }
+
+    const isClosed = body.status === 'CLOSED' || outcome !== 'OPEN' || Boolean(avgExit);
+    const realizedRMultiple = isClosed ? calculateRealizedRMultiple(netPnL, plannedRisk) : undefined;
+    if (body.risk) {
+      body.risk.realizedRMultiple = realizedRMultiple;
+    }
 
     return {
       grossPnL,

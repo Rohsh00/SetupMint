@@ -181,25 +181,27 @@ function buildInitialFormValues(
           (a: any) => a.id === (typeof initialValues.accountId === 'object' ? initialValues.accountId?.id || initialValues.accountId?._id : initialValues.accountId)
         );
         const brokerCode = matchedAcc?.broker || initialValues.accountId?.broker;
-        const autoCharges = IndianChargesCalculator.calculate(
-          initialAssetClass,
-          initialMarketSegment,
-          entryP,
-          exitP,
-          qty,
-          mult,
-          20,
-          brokerCode,
-          initialValues.direction,
-          matchedAcc?.baseCurrency || initialValues?.currency
-        );
+        const feeModelKey = matchedAcc?.profile?.feeModelKey || (matchedAcc?.baseCurrency === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
+        const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
+          assetClass: initialAssetClass,
+          marketSegment: initialMarketSegment,
+          entryPrice: entryP,
+          exitPrice: exitP,
+          quantity: qty,
+          contractMultiplier: mult,
+          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
+          broker: brokerCode,
+          direction: initialValues.direction,
+          currency: matchedAcc?.baseCurrency || initialValues?.currency,
+        });
         if (autoCharges) {
           initialExec = {
             ...initialExec,
             brokerage: autoCharges.brokerage,
             exchangeFees: autoCharges.exchangeFees,
             regulatoryFees: autoCharges.regulatoryFees,
-            taxes: autoCharges.taxes,
+            taxes: feeModelKey === 'FOREX_COMMISSION' ? 0 : autoCharges.taxes,
+            otherFees: feeModelKey === 'FOREX_COMMISSION' ? autoCharges.taxes : (initialExec.otherFees || 0),
             entryPrice: entryP,
             exitPrice: exitP,
             quantity: qty,
@@ -718,7 +720,7 @@ function TradeFormModalContent({
         exitPrice: exitP,
         quantity: qty,
         contractMultiplier: mult,
-        brokerFlatFeePerLeg: 20,
+        brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
         broker: selectedAccount?.broker,
         direction: watchedDirection,
         currency: selectedAccount?.currency || selectedAccount?.baseCurrency || initialValues?.currency || 'USD',
@@ -1301,6 +1303,13 @@ function TradeFormModalContent({
     const finalRisk = { ...data.risk };
     if (workflowMode === 'QUICK' && simpleExecPayload.entryPrice) {
       finalRisk.plannedEntryPrice = simpleExecPayload.entryPrice;
+    }
+    if (!finalRisk.riskBudgetAmount && plannedRiskAmount > 0) {
+      finalRisk.plannedRiskAmount = plannedRiskAmount;
+      finalRisk.estimatedRiskAmount = plannedRiskAmount;
+    }
+    if (liveRealizedR !== undefined) {
+      finalRisk.realizedRMultiple = liveRealizedR;
     }
 
     const finalEntryTime = data.entryTime

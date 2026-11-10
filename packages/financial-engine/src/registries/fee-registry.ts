@@ -49,9 +49,10 @@ export class ForexCommissionFeeModel implements IFeeModel {
     const legs = params.isSingleLeg ? 1 : 2;
 
     // Default $3.50 per leg per 1.0 standard lot ($7.00 round turn per lot)
+    const isUsdOrGlobal = params.currency === 'USD' || params.currency === 'EUR' || params.currency === 'GBP';
     const commPerLegPerLot = params.commissionPerLot !== undefined
       ? new Decimal(params.commissionPerLot).dividedBy(2)
-      : params.brokerFlatFeePerLeg !== undefined
+      : (params.brokerFlatFeePerLeg !== undefined && !isUsdOrGlobal)
       ? new Decimal(params.brokerFlatFeePerLeg)
       : new Decimal(3.5);
 

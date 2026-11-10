@@ -801,7 +801,8 @@ export class FyersService {
 
     const avgEntry = trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? 0;
     const totalQty = trade.simpleExecution?.quantity ?? trade.calculated?.closedQuantity ?? trade.calculated?.openQuantity ?? 0;
-    const multiplier = meta.multiplier ?? trade.simpleExecution?.contractMultiplier ?? 1;
+    const presetSpec = getPresetSpec(trade.underlying || trade.symbol);
+    const multiplier = meta.multiplier ?? trade.simpleExecution?.contractMultiplier ?? presetSpec?.contractMultiplier ?? 1;
 
     const matchResult = matchSLOrderFromOrderbook(
       {
@@ -835,7 +836,8 @@ export class FyersService {
       // Recompute planned risk and realized R-multiple
       if (avgEntry > 0) {
         const dist = Math.abs(avgEntry - matchResult.initialStop);
-        const plannedRisk = dist * totalQty * multiplier;
+        const plannedRisk = Number((dist * totalQty * multiplier).toFixed(2));
+        trade.risk.plannedRiskAmount = plannedRisk;
         trade.risk.estimatedRiskAmount = plannedRisk;
         const isClosed = trade.status === 'CLOSED' || (trade as any).isFullyClosed;
         if (isClosed) {

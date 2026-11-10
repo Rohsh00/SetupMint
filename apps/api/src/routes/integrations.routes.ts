@@ -10,6 +10,7 @@ import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto
 import { excursionBackfillSchema } from '@tradevault/shared';
 import { sanitizeTradeFills } from '@tradevault/financial-engine';
 import { InstrumentService } from '../services/instrument.service.js';
+import { AccountService } from '../services/account.service.js';
 import { config } from '../config.js';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -469,6 +470,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             if (item.close_time) trade.exitTime = new Date(item.close_time);
             if (trade.simpleExecution && exitPriceFinal > 0) {
               trade.simpleExecution.exitPrice = exitPriceFinal;
+              if (commission > 0) trade.simpleExecution.brokerage = commission;
+              if (swap > 0) trade.simpleExecution.otherFees = swap;
             }
             const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
             trade.calculated = recalced;
@@ -489,6 +492,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           trade.exitTime = item.close_time ? new Date(item.close_time) : new Date();
           if (trade.simpleExecution) {
             trade.simpleExecution.exitPrice = exitPriceFinal;
+            if (commission > 0) trade.simpleExecution.brokerage = commission;
+            if (swap > 0) trade.simpleExecution.otherFees = swap;
           }
 
           trade.fills.push({
@@ -497,7 +502,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             type: 'EXIT',
             price: exitPriceFinal,
             quantity: fillQty,
-            fee: 0,
+            fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
           } as any);
 
           const sanitizedAfter = sanitizeTradeFills(trade.fills);
@@ -634,6 +639,10 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           processedCount++;
         }
       }
+    }
+
+    if (processedCount > 0) {
+      await AccountService.recalculateAccountBalances(account._id, account.userId).catch(() => {});
     }
 
     return reply.send({

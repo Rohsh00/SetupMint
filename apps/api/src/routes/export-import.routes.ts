@@ -170,6 +170,7 @@ export function cleanId(val: any): string | undefined {
   if (!val) return undefined;
   let str = String(val).trim();
   str = str.replace(/^="?|"?$/g, '').replace(/^"|"$/g, '').trim();
+  str = str.replace(/\.0+$/, '');
   return str || undefined;
 }
 
@@ -1510,7 +1511,18 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             continue;
           }
 
-          const timestamp = parseFlexibleDate(row[mapping.tradeDate]);
+          const orderId = mapping.orderId ? cleanId(row[mapping.orderId]) : undefined;
+          const tradeId = mapping.tradeId ? cleanId(row[mapping.tradeId]) : undefined;
+          const rawDateStr = String(row[mapping.tradeDate] || '');
+          const isRollover = Boolean(
+            ((orderId && /^[CS]\d+$/.test(orderId)) || (tradeId && /^[CS]\d+$/.test(tradeId))) &&
+            rawDateStr.includes('12:00:00 AM')
+          );
+          if (isRollover) {
+            continue;
+          }
+
+          const timestamp = parseFlexibleDate(rawDateStr);
 
           parsedExecutions.push({
             rowIdx: i + 1,
@@ -1519,8 +1531,8 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             side: isBuy ? 'BUY' : 'SELL',
             price,
             quantity,
-            orderId: mapping.orderId ? cleanId(row[mapping.orderId]) : undefined,
-            tradeId: mapping.tradeId ? cleanId(row[mapping.tradeId]) : undefined,
+            orderId,
+            tradeId,
             segment: mapping.segment ? row[mapping.segment] : row['Segment'] || row['segment'],
           });
         } catch (err: any) {

@@ -216,6 +216,17 @@ export function SettingsPage() {
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
   const [sendingSampleAlert, setSendingSampleAlert] = useState(false);
+  const [testingGoldNewsAlert, setTestingGoldNewsAlert] = useState(false);
+  const [goldNewsReminderMinutes, setGoldNewsReminderMinutes] = useState(initialWatcher.goldNewsReminderMinutes ?? 15);
+  const [goldNewsLeadTimesMinutes, setGoldNewsLeadTimesMinutes] = useState<number[]>(
+    Array.isArray(initialWatcher.goldNewsLeadTimesMinutes) && initialWatcher.goldNewsLeadTimesMinutes.length > 0
+      ? initialWatcher.goldNewsLeadTimesMinutes
+      : [initialWatcher.goldNewsReminderMinutes ?? 15]
+  );
+  const [goldNewsImpactFilter, setGoldNewsImpactFilter] = useState<'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY'>(
+    initialWatcher.goldNewsImpactFilter ?? 'ALL_GOLD_MOVERS'
+  );
+  const [customLeadInput, setCustomLeadInput] = useState('');
   const [telegramAlertEvents, setTelegramAlertEvents] = useState({
     stopThreatCritical: true,
     givebackLeaking: true,
@@ -226,6 +237,7 @@ export function SettingsPage() {
     tradeOpened: true,
     tradeClosed: true,
     eodSummaryDigest: true,
+    goldNewsReminder: true,
     ...(initialWatcher.telegramAlertEvents || {}),
   });
 
@@ -286,6 +298,17 @@ export function SettingsPage() {
       setRequireHoldToConfirm(s.requireHoldToConfirm ?? true);
       setHardDisciplineLockoutEnabled(s.hardDisciplineLockoutEnabled ?? false);
       setHardDisciplineLockoutDurationMins(s.hardDisciplineLockoutDurationMins ?? 60);
+      if (s.goldNewsReminderMinutes !== undefined) {
+        setGoldNewsReminderMinutes(s.goldNewsReminderMinutes);
+      }
+      if (Array.isArray(s.goldNewsLeadTimesMinutes) && s.goldNewsLeadTimesMinutes.length > 0) {
+        setGoldNewsLeadTimesMinutes(s.goldNewsLeadTimesMinutes);
+      } else if (s.goldNewsReminderMinutes !== undefined) {
+        setGoldNewsLeadTimesMinutes([s.goldNewsReminderMinutes]);
+      }
+      if (s.goldNewsImpactFilter) {
+        setGoldNewsImpactFilter(s.goldNewsImpactFilter);
+      }
       if (s.telegramAlertEvents) {
         setTelegramAlertEvents({
           stopThreatCritical: true,
@@ -298,6 +321,7 @@ export function SettingsPage() {
           tradeClosed: true,
           eodSummaryDigest: true,
           ...s.telegramAlertEvents,
+          goldNewsReminder: s.telegramAlertEvents?.goldNewsReminder ?? true,
         });
       }
     }
@@ -395,6 +419,9 @@ export function SettingsPage() {
     setRequireHoldToConfirm(d.requireHoldToConfirm ?? true);
     setHardDisciplineLockoutEnabled(d.hardDisciplineLockoutEnabled ?? false);
     setHardDisciplineLockoutDurationMins(d.hardDisciplineLockoutDurationMins ?? 60);
+    setGoldNewsReminderMinutes(15);
+    setGoldNewsLeadTimesMinutes([15, 60]);
+    setGoldNewsImpactFilter('ALL_GOLD_MOVERS');
     setTelegramAlertEvents({
       stopThreatCritical: true,
       givebackLeaking: true,
@@ -406,6 +433,7 @@ export function SettingsPage() {
       tradeClosed: true,
       eodSummaryDigest: true,
       ...(d.telegramAlertEvents || {}),
+      goldNewsReminder: d.telegramAlertEvents?.goldNewsReminder ?? true,
     });
     setDisplaySettings({ ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS });
     toast.info('Reset live watcher settings to institutional defaults. Click "Save Execution Settings" to persist.');
@@ -492,6 +520,28 @@ export function SettingsPage() {
     }
   };
 
+  const handleTestGoldNewsAlert = async () => {
+    const tokenToTest = telegramBotToken || user?.liveWatcherSettings?.telegramBotToken;
+    const chatIdToTest = telegramChatId || user?.liveWatcherSettings?.telegramChatId;
+    if (!tokenToTest || !chatIdToTest) {
+      toast.error('Please configure and test your Telegram Bot Token and Chat ID first.');
+      return;
+    }
+    setTestingGoldNewsAlert(true);
+    try {
+      const res = await api.settings.testGoldNewsAlert();
+      if (res.success) {
+        toast.success(res.message || 'Gold (XAUUSD) catalyst alert delivered to Telegram!');
+      } else {
+        toast.error(res.error?.message || 'Failed to send Gold alert to Telegram.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error delivering Gold alert to Telegram.');
+    } finally {
+      setTestingGoldNewsAlert(false);
+    }
+  };
+
   const handleWatcherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const effectiveBotToken = telegramBotToken.trim() !== ''
@@ -544,6 +594,9 @@ export function SettingsPage() {
       telegramAttachLiveChart,
       telegramChartTimeframe,
       telegramAlertEvents,
+      goldNewsReminderMinutes: Number(goldNewsReminderMinutes),
+      goldNewsLeadTimesMinutes,
+      goldNewsImpactFilter,
       slippageGuardPercent: Number(slippageGuardPercent),
       snoozeDefaultMin: Number(snoozeDefaultMin),
       staleDataThresholdSeconds: Number(staleDataThresholdSeconds),
@@ -2118,7 +2171,176 @@ export function SettingsPage() {
                                     label={<Typography variant="caption" sx={{ fontWeight: 600 }}>📊 Daily EOD Session Digest (15:35 IST)</Typography>}
                                   />
                                 </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.goldNewsReminder !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsReminder: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#EAB308' }}>👑 Gold (XAUUSD) Catalyst News Reminder</Typography>}
+                                  />
+                                </Grid>
                               </Grid>
+                            </Box>
+
+                            {/* Dedicated Gold (XAUUSD) News & Custom Reminder Configuration */}
+                            <Box
+                              sx={{
+                                p: 2,
+                                borderRadius: 2,
+                                bgcolor: isDark ? 'rgba(234, 179, 8, 0.06)' : 'rgba(254, 240, 138, 0.25)',
+                                border: '1px solid',
+                                borderColor: isDark ? 'rgba(234, 179, 8, 0.3)' : 'rgba(234, 179, 8, 0.45)',
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Box
+                                    sx={{
+                                      width: 28,
+                                      height: 28,
+                                      borderRadius: '50%',
+                                      bgcolor: 'warning.main',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: '#000',
+                                      fontWeight: 900,
+                                      fontSize: '0.85rem',
+                                    }}
+                                  >
+                                    Au
+                                  </Box>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#FDE047' : '#854D0E' }}>
+                                    Gold (XAUUSD) Catalyst News Reminders &amp; Defense
+                                  </Typography>
+                                  <Chip
+                                    size="small"
+                                    label={telegramAlertEvents.goldNewsReminder !== false ? 'Enabled' : 'Disabled'}
+                                    color={telegramAlertEvents.goldNewsReminder !== false ? 'warning' : 'default'}
+                                    sx={{ fontWeight: 700, height: 20, fontSize: '0.68rem' }}
+                                  />
+                                </Box>
+
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="warning"
+                                  onClick={handleTestGoldNewsAlert}
+                                  disabled={testingGoldNewsAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
+                                  sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
+                                >
+                                  {testingGoldNewsAlert ? 'Delivering...' : '🔔 Test Gold Alert to Telegram'}
+                                </Button>
+                              </Box>
+
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.45 }}>
+                                Gold (XAUUSD) is denominated in US Dollars. Major US macro releases (CPI, Non-Farm Payrolls, FOMC Interest Decisions, Retail Sales, GDP) trigger immediate $20–$60 price sweeps and massive spread expansion. SetupMint scans the economic calendar 24/7 and delivers loud, off-screen Telegram reminders before the release.
+                              </Typography>
+
+                              {/* Reminder Lead Times Preset & Custom Picker */}
+                              <Box sx={{ mb: 1.5, p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.8)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
+                                  ⏰ Alert Lead Time (Select one or multiple notification stages before release):
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
+                                  {[5, 10, 15, 30, 45, 60, 120].map((mins) => {
+                                    const isSelected = goldNewsLeadTimesMinutes.includes(mins);
+                                    return (
+                                      <Chip
+                                        key={mins}
+                                        label={`${mins}m before`}
+                                        clickable
+                                        color={isSelected ? 'warning' : 'default'}
+                                        variant={isSelected ? 'filled' : 'outlined'}
+                                        size="small"
+                                        onClick={() => {
+                                          let nextTimes: number[];
+                                          if (isSelected) {
+                                            nextTimes = goldNewsLeadTimesMinutes.filter((m) => m !== mins);
+                                            if (nextTimes.length === 0) nextTimes = [15];
+                                          } else {
+                                            nextTimes = [...goldNewsLeadTimesMinutes, mins].sort((a, b) => b - a);
+                                          }
+                                          setGoldNewsLeadTimesMinutes(nextTimes);
+                                          setGoldNewsReminderMinutes(nextTimes[0] || 15);
+                                        }}
+                                        sx={{ fontWeight: isSelected ? 800 : 500 }}
+                                      />
+                                    );
+                                  })}
+                                </Box>
+
+                                {/* Custom minute entry */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                  <TextField
+                                    size="small"
+                                    type="number"
+                                    placeholder="Custom mins"
+                                    value={customLeadInput}
+                                    onChange={(e) => setCustomLeadInput(e.target.value)}
+                                    sx={{ width: 140 }}
+                                    slotProps={{ htmlInput: { min: 1, max: 720, style: { fontSize: '0.8rem', padding: '4px 8px' } } }}
+                                  />
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => {
+                                      const val = parseInt(customLeadInput, 10);
+                                      if (Number.isFinite(val) && val > 0 && val <= 720) {
+                                        if (!goldNewsLeadTimesMinutes.includes(val)) {
+                                          const nextTimes = [...goldNewsLeadTimesMinutes, val].sort((a, b) => b - a);
+                                          setGoldNewsLeadTimesMinutes(nextTimes);
+                                          setGoldNewsReminderMinutes(nextTimes[0] || 15);
+                                        }
+                                        setCustomLeadInput('');
+                                      }
+                                    }}
+                                    disabled={!customLeadInput}
+                                    sx={{ height: 30, fontWeight: 700, textTransform: 'none' }}
+                                  >
+                                    + Add Custom Time
+                                  </Button>
+
+                                  <Typography variant="caption" sx={{ color: 'text.secondary', ml: 'auto', fontSize: '0.72rem' }}>
+                                    Active Reminders: <strong>{goldNewsLeadTimesMinutes.map((m) => `${m}m`).join(' & ')}</strong> before news + 5m Blackout
+                                  </Typography>
+                                </Box>
+                              </Box>
+
+                              {/* Impact Filter Selector */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                                    Filter Intensity:
+                                  </Typography>
+                                  <Chip
+                                    label="All Gold Movers (CPI, NFP, FOMC, GDP, Retail, PMI)"
+                                    clickable
+                                    size="small"
+                                    color={goldNewsImpactFilter === 'ALL_GOLD_MOVERS' ? 'warning' : 'default'}
+                                    variant={goldNewsImpactFilter === 'ALL_GOLD_MOVERS' ? 'filled' : 'outlined'}
+                                    onClick={() => setGoldNewsImpactFilter('ALL_GOLD_MOVERS')}
+                                    sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                                  />
+                                  <Chip
+                                    label="High-Impact Only (Red-Folder Only)"
+                                    clickable
+                                    size="small"
+                                    color={goldNewsImpactFilter === 'HIGH_IMPACT_ONLY' ? 'warning' : 'default'}
+                                    variant={goldNewsImpactFilter === 'HIGH_IMPACT_ONLY' ? 'filled' : 'outlined'}
+                                    onClick={() => setGoldNewsImpactFilter('HIGH_IMPACT_ONLY')}
+                                    sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                                  />
+                                </Box>
+
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic', fontSize: '0.7rem' }}>
+                                  Direct Telegram control: <code>/newsremind 15</code> or <code>/news</code>
+                                </Typography>
+                              </Box>
                             </Box>
 
                             {/* Two-Way Bot Interactive Commands Cheatsheet */}
@@ -2127,19 +2349,27 @@ export function SettingsPage() {
                                 📱 Interactive Mobile Bot Commands (Send anytime in Telegram):
                               </Typography>
                               <Grid container spacing={1}>
-                                <Grid size={{ xs: 6, sm: 3 }}>
+                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
                                   <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/pnl</Typography>
                                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Live floating PnL, Net R &amp; Day total</Typography>
                                 </Grid>
-                                <Grid size={{ xs: 6, sm: 3 }}>
+                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
                                   <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/trades</Typography>
                                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Open positions with 1-tap Exit &amp; Lock BE</Typography>
                                 </Grid>
-                                <Grid size={{ xs: 6, sm: 3 }}>
+                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: '#EAB308' }}>/news</Typography>
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Gold catalysts, schedule &amp; countdowns</Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: '#EAB308' }}>/newsremind</Typography>
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Set reminder time (e.g. /newsremind 15)</Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
                                   <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/summary</Typography>
                                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Today's win rate, closed trades &amp; net R</Typography>
                                 </Grid>
-                                <Grid size={{ xs: 6, sm: 3 }}>
+                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
                                   <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'error.main' }}>/panic</Typography>
                                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Emergency market-exit for all positions</Typography>
                                 </Grid>

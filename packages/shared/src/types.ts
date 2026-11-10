@@ -2197,6 +2197,7 @@ export interface ILiveWatcherSettings {
     tradeOpened?: boolean;
     tradeClosed?: boolean;
     eodSummaryDigest?: boolean;
+    goldNewsReminder?: boolean;
   };
   lastDailyLossAlertDate?: string;
   lastDailyLossWarnDate?: string;
@@ -2224,6 +2225,9 @@ export interface ILiveWatcherSettings {
   displaySettings?: ILiveWatcherDisplaySettings;
   telegramAttachLiveChart?: boolean;
   telegramChartTimeframe?: '1' | '3' | '5' | '15' | '30' | '60' | 'D' | string;
+  goldNewsReminderMinutes?: number;
+  goldNewsLeadTimesMinutes?: number[];
+  goldNewsImpactFilter?: 'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY';
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
@@ -2275,7 +2279,11 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
     tradeOpened: true,
     tradeClosed: true,
     eodSummaryDigest: true,
+    goldNewsReminder: true,
   },
+  goldNewsReminderMinutes: 15,
+  goldNewsLeadTimesMinutes: [15, 60],
+  goldNewsImpactFilter: 'ALL_GOLD_MOVERS',
   hardDisciplineLockoutEnabled: false,
   hardDisciplineLockoutDurationMins: 60,
   staleDataThresholdSeconds: 10,
@@ -2879,5 +2887,41 @@ export interface ISystemStatusResponse {
   privacyMode: string;
   appVersion: string;
   backup: ISystemBackupStatus;
+}
+
+export interface IEconomicCalendarEvent {
+  id: string;
+  title: string;
+  country: string;
+  impact: 'HIGH' | 'MEDIUM';
+  isGoldMover: boolean;
+  timestamp: string;
+  istTimeStr: string;
+  countdownStr: string;
+  minutesUntil: number;
+  forecast: string;
+  previous: string;
+  status: 'BLACKOUT_NOW' | 'IMMINENT' | 'TODAY' | 'UPCOMING' | 'JUST_RELEASED';
+  goldImpactNote?: string;
+  goldBias?: 'BULLISH_IF_LOW' | 'BEARISH_IF_HIGH' | 'HIGH_VOLATILITY' | 'NEUTRAL';
+  recommendedAction?: string;
+}
+
+export interface IEconomicCalendarOverview {
+  source: 'FOREX_FACTORY_LIVE' | 'SCHEDULE_FALLBACK';
+  fetchedAt: string;
+  activeAlert: {
+    level: 'BLACKOUT' | 'IMMINENT' | 'TODAY' | 'CLEAR';
+    headline: string;
+    subtext: string;
+    eventTitle?: string;
+    minutesUntil?: number;
+  };
+  upcomingEvents: IEconomicCalendarEvent[];
+  goldNewsReminderSettings?: {
+    enabled: boolean;
+    leadTimesMinutes: number[];
+    impactFilter: 'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY';
+  };
 }
 

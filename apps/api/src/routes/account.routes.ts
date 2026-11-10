@@ -17,6 +17,7 @@ import {
   Instrument,
   Trade,
   TradingAccount,
+  User,
 } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
@@ -153,9 +154,51 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   // Get Live USD High-Impact Economic Calendar (ForexFactory / Faireconomy API with 2h cache)
-  app.get('/prop-economic-calendar', async (req, reply) => {
+  app.get('/prop-economic-calendar', async (req: any, reply) => {
     const calendar = await EconomicCalendarService.getCalendarOverview(new Date());
-    return reply.send({ success: true, data: calendar });
+    const user = await User.findById(req.user!.id).select('liveWatcherSettings').lean();
+    const settings = user?.liveWatcherSettings;
+    const isEnabled = settings?.telegramAlertsEnabled && settings?.telegramAlertEvents?.goldNewsReminder !== false;
+    const leadTimes = Array.isArray(settings?.goldNewsLeadTimesMinutes) && settings.goldNewsLeadTimesMinutes.length > 0
+      ? settings.goldNewsLeadTimesMinutes
+      : [settings?.goldNewsReminderMinutes || 15];
+
+    return reply.send({
+      success: true,
+      data: {
+        ...calendar,
+        goldNewsReminderSettings: {
+          enabled: Boolean(isEnabled),
+          leadTimesMinutes: leadTimes,
+          impactFilter: settings?.goldNewsImpactFilter || 'ALL_GOLD_MOVERS',
+        },
+      },
+    });
+  });
+
+  // Get Gold (XAUUSD) specific catalysts and active news radar
+  app.get('/gold-news', async (req: any, reply) => {
+    const calendar = await EconomicCalendarService.getCalendarOverview(new Date());
+    const upcomingGoldNews = await EconomicCalendarService.getUpcomingGoldNews(new Date(), 72);
+    const user = await User.findById(req.user!.id).select('liveWatcherSettings').lean();
+    const settings = user?.liveWatcherSettings;
+    const isEnabled = settings?.telegramAlertsEnabled && settings?.telegramAlertEvents?.goldNewsReminder !== false;
+    const leadTimes = Array.isArray(settings?.goldNewsLeadTimesMinutes) && settings.goldNewsLeadTimesMinutes.length > 0
+      ? settings.goldNewsLeadTimesMinutes
+      : [settings?.goldNewsReminderMinutes || 15];
+
+    return reply.send({
+      success: true,
+      data: {
+        ...calendar,
+        upcomingGoldNews,
+        goldNewsReminderSettings: {
+          enabled: Boolean(isEnabled),
+          leadTimesMinutes: leadTimes,
+          impactFilter: settings?.goldNewsImpactFilter || 'ALL_GOLD_MOVERS',
+        },
+      },
+    });
   });
 
   // Get Live Spot-Calibrated Prop Instrument Candles & Active Position Levels (XAUUSD, EURUSD, NAS100, US30, BTCUSD, ETHUSD)

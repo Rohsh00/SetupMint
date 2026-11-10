@@ -11,6 +11,9 @@ export interface IEconomicCalendarEvent {
   forecast: string;
   previous: string;
   status: 'BLACKOUT_NOW' | 'IMMINENT' | 'TODAY' | 'UPCOMING' | 'JUST_RELEASED';
+  goldImpactNote?: string;
+  goldBias?: 'BULLISH_IF_LOW' | 'BEARISH_IF_HIGH' | 'HIGH_VOLATILITY' | 'NEUTRAL';
+  recommendedAction?: string;
 }
 
 export interface IEconomicCalendarOverview {
@@ -24,6 +27,11 @@ export interface IEconomicCalendarOverview {
     minutesUntil?: number;
   };
   upcomingEvents: IEconomicCalendarEvent[];
+  goldNewsReminderSettings?: {
+    enabled: boolean;
+    leadTimesMinutes: number[];
+    impactFilter: 'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY';
+  };
 }
 
 interface RawForexFactoryEvent {
@@ -35,14 +43,18 @@ interface RawForexFactoryEvent {
   previous?: string;
 }
 
-const GOLD_MOVER_KEYWORDS = [
+export const GOLD_MOVER_KEYWORDS = [
   'cpi',
   'non-farm',
   'nfp',
   'unemployment',
   'fomc',
   'federal funds',
+  'interest rate',
+  'rate decision',
   'powell',
+  'fed chair',
+  'fed governor',
   'ism',
   'jolts',
   'pce',
@@ -51,12 +63,86 @@ const GOLD_MOVER_KEYWORDS = [
   'adp',
   'ppi',
   'consumer sentiment',
+  'michigan',
   'inflation',
   'payrolls',
   'hourly earnings',
+  'jobless claims',
+  'initial claims',
+  'durable goods',
+  'consumer confidence',
   'treasury',
+  'refunding',
+  'jackson hole',
+  'beige book',
+  'employment change',
+  'press conference',
   'election',
 ];
+
+export function getGoldImpactAnalysis(title: string, impact: string): {
+  goldImpactNote: string;
+  goldBias: 'BULLISH_IF_LOW' | 'BEARISH_IF_HIGH' | 'HIGH_VOLATILITY' | 'NEUTRAL';
+  recommendedAction: string;
+} {
+  const t = title.toLowerCase();
+
+  if (t.includes('cpi') || t.includes('inflation') || t.includes('pce') || t.includes('ppi')) {
+    return {
+      goldImpactNote: 'Directly influences Fed interest rate trajectory. Higher inflation/yields strengthen USD, putting sharp downward pressure on non-yielding Gold (XAUUSD). Softer inflation sparks rate-cut rallies in Gold.',
+      goldBias: 'BULLISH_IF_LOW',
+      recommendedAction: 'Tighten stops or lock Breakeven (BE). Extreme spread widening and slippage expected ±5m around release.',
+    };
+  }
+
+  if (
+    t.includes('fomc') ||
+    t.includes('federal funds') ||
+    t.includes('powell') ||
+    t.includes('rate decision') ||
+    t.includes('interest rate') ||
+    t.includes('fed chair')
+  ) {
+    return {
+      goldImpactNote: 'Highest-impact fundamental catalyst for Gold. Hawkish statements bolster the Dollar and crush Gold; dovish pauses or rate reductions trigger explosive multi-dollar surges.',
+      goldBias: 'HIGH_VOLATILITY',
+      recommendedAction: 'Strict caution: Lock Breakeven (BE) or flatten active positions before the statement and press conference.',
+    };
+  }
+
+  if (
+    t.includes('non-farm') ||
+    t.includes('nfp') ||
+    t.includes('unemployment') ||
+    t.includes('payrolls') ||
+    t.includes('adp') ||
+    t.includes('jobless claims') ||
+    t.includes('claims')
+  ) {
+    return {
+      goldImpactNote: 'Premier US labor market metric. High job creation strengthens the Greenback and dampens Gold demand; rising unemployment or cooling payrolls fuel safe-haven and rate cut bids for Gold.',
+      goldBias: 'BULLISH_IF_LOW',
+      recommendedAction: 'Severe two-way whip-saw risk. Avoid placing naked market orders at release time without adequate margin buffer.',
+    };
+  }
+
+  if (t.includes('gdp') || t.includes('retail sales') || t.includes('ism') || t.includes('pmi') || t.includes('durable goods')) {
+    return {
+      goldImpactNote: 'Key gauge of US economic momentum. Strong growth bolsters the US Dollar (bearish for XAUUSD); economic contraction or recession fears drive flight-to-safety into Gold.',
+      goldBias: 'BULLISH_IF_LOW',
+      recommendedAction: 'Monitor DXY reaction. Align technical setups with post-release order flow momentum.',
+    };
+  }
+
+  return {
+    goldImpactNote:
+      impact === 'High' || impact === 'HIGH'
+        ? 'High-impact USD catalyst. Highly likely to induce sharp volatility and rapid directional sweeps on XAUUSD.'
+        : 'Medium-impact USD data release. Capable of driving liquidity runs on Gold around intraday key levels.',
+    goldBias: 'HIGH_VOLATILITY',
+    recommendedAction: 'Check open trade stop-loss runway and observe the ±5 minute execution blackout buffer.',
+  };
+}
 
 let cachedRawEvents: RawForexFactoryEvent[] | null = null;
 let lastFetchedMs = 0;
@@ -135,9 +221,27 @@ function buildFallbackRawEvents(now: Date): RawForexFactoryEvent[] {
     const dow = d1.getUTCDay();
     if (dow === 0 || dow === 6) continue;
 
-    if (dow === 4) {
+    if (dow === 2) {
       events.push({
-        title: 'Unemployment Claims',
+        title: 'Core CPI m/m & y/y (Consumer Price Index)',
+        country: 'USD',
+        date: d1.toISOString(),
+        impact: 'High',
+        forecast: '0.3%',
+        previous: '0.3%',
+      });
+    } else if (dow === 3) {
+      events.push({
+        title: 'FOMC Rate Decision & Press Conference',
+        country: 'USD',
+        date: d1.toISOString(),
+        impact: 'High',
+        forecast: '5.00%',
+        previous: '5.25%',
+      });
+    } else if (dow === 4) {
+      events.push({
+        title: 'Unemployment Claims & PPI Final Demand',
         country: 'USD',
         date: d1.toISOString(),
         impact: 'High',
@@ -155,18 +259,18 @@ function buildFallbackRawEvents(now: Date): RawForexFactoryEvent[] {
       });
     } else {
       events.push({
-        title: 'US Core Macro Release (8:30 AM EST)',
+        title: 'US Retail Sales & Core PCE Price Index',
         country: 'USD',
         date: d1.toISOString(),
         impact: 'High',
-        forecast: '',
-        previous: '',
+        forecast: '0.4%',
+        previous: '0.1%',
       });
     }
 
     const d2 = new Date(Date.UTC(baseYear, baseMonth, baseDate + offset, 15, 0, 0));
     events.push({
-      title: 'ISM PMI / Consumer Sentiment (10:00 AM EST)',
+      title: 'ISM Manufacturing / Services PMI',
       country: 'USD',
       date: d2.toISOString(),
       impact: 'Medium',
@@ -246,6 +350,8 @@ export class EconomicCalendarService {
         status = 'TODAY';
       }
 
+      const goldImpact = getGoldImpactAnalysis(ev.title, ev.impact);
+
       relevant.push({
         id: `${ev.country}_${evDate.getTime()}_${i}`,
         title: ev.title,
@@ -259,11 +365,14 @@ export class EconomicCalendarService {
         forecast: ev.forecast || '—',
         previous: ev.previous || '—',
         status,
+        goldImpactNote: goldImpact.goldImpactNote,
+        goldBias: goldImpact.goldBias,
+        recommendedAction: goldImpact.recommendedAction,
       });
     }
 
     relevant.sort((a, b) => a.minutesUntil - b.minutesUntil);
-    const upcomingEvents = relevant.slice(0, 6);
+    const upcomingEvents = relevant.slice(0, 8);
 
     const blackoutEv = upcomingEvents.find((e) => e.status === 'BLACKOUT_NOW');
     const imminentEv = upcomingEvents.find((e) => e.status === 'IMMINENT');
@@ -317,6 +426,59 @@ export class EconomicCalendarService {
       activeAlert,
       upcomingEvents,
     };
+  }
+
+  /**
+   * Retrieves all upcoming Gold-moving news events sorted chronologically.
+   */
+  static async getUpcomingGoldNews(now: Date = new Date(), hoursAhead: number = 72): Promise<IEconomicCalendarEvent[]> {
+    const overview = await this.getCalendarOverview(now);
+    const maxMinutes = hoursAhead * 60;
+    return overview.upcomingEvents.filter(
+      (e) => e.isGoldMover && e.minutesUntil >= -15 && e.minutesUntil <= maxMinutes
+    );
+  }
+
+  /**
+   * Formats a Telegram alert card for a Gold (XAUUSD) catalyst reminder.
+   */
+  static formatGoldNewsTelegramAlert(
+    event: IEconomicCalendarEvent,
+    leadTimeMinutes: number
+  ): { text: string; buttons: any[][] } {
+    const isImminent = leadTimeMinutes <= 5;
+    const urgencyEmoji = isImminent ? '🚨' : leadTimeMinutes <= 15 ? '⚠️' : '⏰';
+    const impactEmoji = event.impact === 'HIGH' ? '🔴 HIGH (Red-Folder)' : '🟠 MEDIUM (Orange-Folder)';
+
+    const timeTitle = isImminent
+      ? `<b>LIVE BLACKOUT WINDOW (Releases in ${leadTimeMinutes} mins)</b>`
+      : `<b>Releases in ${leadTimeMinutes} mins</b> (${event.istTimeStr})`;
+
+    const text =
+      `${urgencyEmoji} <b>GOLD (XAUUSD) CATALYST ALERT</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `⏰ ${timeTitle}\n\n` +
+      `📊 <b>Event:</b> ${event.title}\n` +
+      `🌍 <b>Currency:</b> ${event.country} | <b>Impact:</b> ${impactEmoji}\n` +
+      `📈 <b>Forecast:</b> <code>${event.forecast}</code> | <b>Previous:</b> <code>${event.previous}</code>\n\n` +
+      `💡 <b>XAUUSD Market Impact:</b>\n` +
+      `${event.goldImpactNote || 'High volatility expected on Gold (XAUUSD). Watch USD reactions.'}\n\n` +
+      `🛡️ <b>Trading Safety Guidance:</b>\n` +
+      `${event.recommendedAction || 'Consider locking Breakeven (BE) or tightening stops on open positions.'}\n` +
+      `<i>Prop Challenge rule guard: Observe ±5m news blackout.</i>`;
+
+    const buttons = [
+      [
+        { text: '📈 Live XAUUSD Chart', callback_data: 'chart_xauusd' },
+        { text: '📋 Open Trades', callback_data: 'show_trades' },
+      ],
+      [
+        { text: '🔕 Mute News (1h)', callback_data: 'snooze_news_60' },
+        { text: '✅ Acknowledged', callback_data: 'ack_news' },
+      ],
+    ];
+
+    return { text, buttons };
   }
 }
 

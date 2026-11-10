@@ -740,6 +740,24 @@ export function PropChallengePanel() {
                               : 'text.secondary',
                         }}
                       />
+                      {acc.economicCalendar.goldNewsReminderSettings?.enabled && (
+                        <Chip
+                          size="small"
+                          icon={<NotificationsActiveRoundedIcon sx={{ fontSize: '12px !important', color: '#EAB308 !important' }} />}
+                          label={`Telegram Alerts: ${acc.economicCalendar.goldNewsReminderSettings.leadTimesMinutes.join(', ')}m before`}
+                          onClick={() => navigate('/settings')}
+                          title="Click to manage custom reminder timing in Settings"
+                          sx={{
+                            height: 18,
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            bgcolor: 'rgba(234, 179, 8, 0.15)',
+                            color: '#EAB308',
+                            border: '1px solid rgba(234, 179, 8, 0.3)',
+                            cursor: 'pointer',
+                          }}
+                        />
+                      )}
                     </Box>
                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
                       {acc.economicCalendar.activeAlert?.headline}
@@ -843,6 +861,24 @@ export function PropChallengePanel() {
                               Fcst: <strong>{ev.forecast || '—'}</strong> • Prev: {ev.previous || '—'}
                             </Typography>
                           </Box>
+                          {ev.goldImpactNote && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontSize: '0.66rem',
+                                color: isDark ? 'rgba(253, 224, 71, 0.9)' : '#854D0E',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 1,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                fontStyle: 'italic',
+                              }}
+                              title={ev.goldImpactNote}
+                            >
+                              💡 {ev.goldImpactNote}
+                            </Typography>
+                          )}
                         </Box>
                       );
                     })}

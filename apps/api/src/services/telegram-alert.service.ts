@@ -48,6 +48,7 @@ import { LiveWatcherService } from './live-watcher.service.js';
 import { AccountScopeService } from './account-scope.service.js';
 import { ChartGeneratorService } from './chart-generator.service.js';
 import { MarketDataService } from './market-data/index.js';
+import { EconomicCalendarService, IEconomicCalendarEvent } from './economic-calendar.service.js';
 import { ITradeCandle } from '@tradevault/shared';
 import sharp from 'sharp';
 
@@ -1121,6 +1122,25 @@ export class TelegramAlertService {
       await this.executePanicExit(user, botToken, chatId, messageId);
       return;
     }
+    if (data === 'chart_xauusd') {
+      await this.answerCallbackQuery(botToken, cq.id, '⏱️ Checking XAUUSD chart...');
+      await this.handleChartCommand(user, botToken, chatId, ['XAUUSD', '5']);
+      return;
+    }
+    if (data === 'show_trades') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading open trades...');
+      await this.handleTradesCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'snooze_news_60') {
+      await this.answerCallbackQuery(botToken, cq.id, '🔕 News alerts muted for 60m', true);
+      if (botToken) await this.handleMuteCommand(user, botToken, chatId, '60');
+      return;
+    }
+    if (data === 'ack_news') {
+      await this.answerCallbackQuery(botToken, cq.id, '✅ Acknowledged! Trade safe.', true);
+      return;
+    }
 
     // Parse structured callback format: x:<tradeId>:<actionCode>:<cardVersion>:<renderLtp>
     if (!data.startsWith('x:')) {
@@ -1680,6 +1700,8 @@ export class TelegramAlertService {
           `• <b>/trades</b> — List active open trades with live charts & 1-tap Exit\n` +
           `• <b>/chart [timeframe]</b> — Instant live candlestick chart (1m, 5m, 15m, 1h)\n` +
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
+          `• <b>/news</b> — Upcoming XAUUSD / Gold catalysts & countdown\n` +
+          `• <b>/newsremind &lt;mins&gt;</b> — Set custom alert reminder (e.g. <code>/newsremind 15</code> or <code>/newsremind off</code>)\n` +
           `• <b>/alerts</b> — List active alert states and snoozed trades\n` +
           `• <b>/snooze</b> — Snooze alerts for 15 minutes\n` +
           `• <b>/mute &lt;mins&gt;</b> — Mute audible notifications\n` +
@@ -1702,6 +1724,15 @@ export class TelegramAlertService {
 
       case '/summary':
         await this.handleSummaryCommand(user, botToken, chatId, args[0]);
+        break;
+
+      case '/news':
+      case '/goldnews':
+        await this.handleGoldNewsCommand(user, botToken, chatId);
+        break;
+
+      case '/newsremind':
+        await this.handleNewsRemindCommand(user, botToken, chatId, args);
         break;
 
       case '/alerts':
@@ -2776,5 +2807,179 @@ export class TelegramAlertService {
     ];
 
     await this.sendMessage(botToken, chatId, text, buttons);
+  }
+
+  /**
+   * Responds to /news or /goldnews command with upcoming Gold (XAUUSD) catalysts.
+   */
+  private static async handleGoldNewsCommand(user: any, botToken: string, chatId: string | number): Promise<void> {
+    try {
+      const events = await EconomicCalendarService.getUpcomingGoldNews(new Date(), 48);
+
+      if (!events || events.length === 0) {
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `✅ <b>No High-Impact Gold News Imminent</b>\n\n` +
+          `Clear technical execution window for XAUUSD over the next 48 hours.`
+        );
+        return;
+      }
+
+      let text = `👑 <b>XAUUSD (GOLD) CATALYST RADAR</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `High-impact USD macro events that directly influence Gold:\n\n`;
+
+      for (const ev of events.slice(0, 5)) {
+        const impactBadge = ev.impact === 'HIGH' ? '🔴 HIGH' : '🟠 MED';
+        text += `• <b>${ev.title}</b> (${impactBadge})\n` +
+          `  ⏰ <b>${ev.countdownStr}</b> • <i>${ev.istTimeStr}</i>\n` +
+          `  📊 Forecast: <code>${ev.forecast}</code> | Prev: <code>${ev.previous}</code>\n` +
+          `  💡 <i>${ev.goldImpactNote ? ev.goldImpactNote.slice(0, 100) + '...' : 'High XAUUSD volatility'}</i>\n\n`;
+      }
+
+      const configuredMinutes = user.liveWatcherSettings?.goldNewsReminderMinutes || 15;
+      const isEnabled = user.liveWatcherSettings?.telegramAlertEvents?.goldNewsReminder !== false;
+
+      text += `⚙️ <i>Reminder: ${isEnabled ? `Active (${configuredMinutes}m before)` : 'Disabled'} • Use <b>/newsremind &lt;mins&gt;</b> to adjust.</i>`;
+
+      const buttons = [
+        [
+          { text: '📈 Live XAUUSD Chart', callback_data: 'chart_xauusd' },
+          { text: '📋 Open Trades', callback_data: 'show_trades' },
+        ],
+      ];
+
+      await this.sendMessage(botToken, chatId, text, buttons);
+    } catch (err: any) {
+      await this.sendMessage(botToken, chatId, `❌ Failed to fetch gold news: ${err.message}`);
+    }
+  }
+
+  /**
+   * Responds to /newsremind command to dynamically change Gold news reminder lead times.
+   */
+  private static async handleNewsRemindCommand(
+    user: any,
+    botToken: string,
+    chatId: string | number,
+    args: string[] = []
+  ): Promise<void> {
+    const rawArg = (args[0] || '').trim().toLowerCase();
+
+    if (!rawArg) {
+      const currentMins = user.liveWatcherSettings?.goldNewsReminderMinutes || 15;
+      const isEnabled = user.liveWatcherSettings?.telegramAlertEvents?.goldNewsReminder !== false;
+      const leadTimes = user.liveWatcherSettings?.goldNewsLeadTimesMinutes || [currentMins];
+
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚙️ <b>Gold News Reminder Configuration</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `• Status: <b>${isEnabled ? '✅ ENABLED' : '❌ DISABLED'}</b>\n` +
+        `• Current Lead Time: <b>${leadTimes.join(', ')} minutes before news</b>\n\n` +
+        `<b>To change:</b>\n` +
+        `• <code>/newsremind 15</code> — Remind 15 mins before\n` +
+        `• <code>/newsremind 30</code> — Remind 30 mins before\n` +
+        `• <code>/newsremind 15,60</code> — Multi-stage reminder (60m & 15m)\n` +
+        `• <code>/newsremind off</code> — Turn off news reminders\n` +
+        `• <code>/newsremind on</code> — Turn on news reminders`
+      );
+      return;
+    }
+
+    if (rawArg === 'off' || rawArg === 'disable' || rawArg === '0') {
+      await User.findByIdAndUpdate(user._id, {
+        $set: { 'liveWatcherSettings.telegramAlertEvents.goldNewsReminder': false },
+      });
+      await this.sendMessage(botToken, chatId, `🔕 <b>Gold news reminders have been DISABLED.</b>\nType <code>/newsremind on</code> or <code>/newsremind 15</code> anytime to re-enable.`);
+      return;
+    }
+
+    if (rawArg === 'on' || rawArg === 'enable') {
+      await User.findByIdAndUpdate(user._id, {
+        $set: { 'liveWatcherSettings.telegramAlertEvents.goldNewsReminder': true },
+      });
+      const mins = user.liveWatcherSettings?.goldNewsReminderMinutes || 15;
+      await this.sendMessage(botToken, chatId, `🔔 <b>Gold news reminders are ENABLED!</b>\nYou will receive alerts <b>${mins} minutes</b> before high-impact XAUUSD catalysts.`);
+      return;
+    }
+
+    const parsedMinutes = rawArg
+      .split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0 && n <= 1440);
+
+    if (parsedMinutes.length === 0) {
+      await this.sendMessage(botToken, chatId, `⚠️ Please specify a valid reminder time in minutes (e.g. <code>/newsremind 15</code> or <code>/newsremind 30,60</code>).`);
+      return;
+    }
+
+    const primaryMins = parsedMinutes[0];
+    await User.findByIdAndUpdate(user._id, {
+      $set: {
+        'liveWatcherSettings.telegramAlertEvents.goldNewsReminder': true,
+        'liveWatcherSettings.goldNewsReminderMinutes': primaryMins,
+        'liveWatcherSettings.goldNewsLeadTimesMinutes': parsedMinutes,
+      },
+    });
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `✅ <b>Gold News Reminder Updated!</b>\n\n` +
+      `You will receive Telegram alerts <b>${parsedMinutes.join(' & ')} minutes</b> before major Gold-moving news releases.\n` +
+      `Check upcoming catalysts anytime with <b>/news</b>.`
+    );
+  }
+
+  /**
+   * Dispatches a Gold (XAUUSD) catalyst alert reminder to the user's Telegram.
+   */
+  static async sendGoldNewsReminder(
+    user: any,
+    event: IEconomicCalendarEvent,
+    leadTimeMinutes: number
+  ): Promise<boolean> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) {
+      return false;
+    }
+    if (settings.telegramAlertEvents && settings.telegramAlertEvents.goldNewsReminder === false) {
+      return false;
+    }
+
+    if (settings.goldNewsImpactFilter === 'HIGH_IMPACT_ONLY' && event.impact !== 'HIGH') {
+      return false;
+    }
+
+    const rawToken = settings.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    const chatId = settings.telegramChatId;
+    if (!botToken || !chatId) return false;
+
+    let disableNotification = false;
+    if (settings.quietHours?.enabled) {
+      const now = new Date();
+      const currentHhMm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const { start, end } = settings.quietHours;
+      if (start && end) {
+        if (start <= end) {
+          disableNotification = currentHhMm >= start && currentHhMm <= end;
+        } else {
+          disableNotification = currentHhMm >= start || currentHhMm <= end;
+        }
+      }
+    }
+
+    const { text, buttons } = EconomicCalendarService.formatGoldNewsTelegramAlert(event, leadTimeMinutes);
+    try {
+      await this.sendMessage(botToken, chatId, text, buttons, disableNotification);
+      return true;
+    } catch (err: any) {
+      console.warn(`[TelegramAlertService] sendGoldNewsReminder failed for user ${user._id}:`, err.message);
+      return false;
+    }
   }
 }

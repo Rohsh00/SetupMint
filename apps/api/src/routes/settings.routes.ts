@@ -13,6 +13,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { BackupStatusService } from '../services/backup-status.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { TelegramPollingService } from '../services/telegram-polling.service.js';
+import { EconomicCalendarService } from '../services/economic-calendar.service.js';
 import { encryptSecret, decryptSecret, safeDecryptSecret } from '../services/crypto.service.js';
 
 function maskLiveWatcherSettings(settings: any) {
@@ -132,6 +133,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'snoozeDefaultMin',
         'hardDisciplineLockoutDurationMins',
         'staleDataThresholdSeconds',
+        'goldNewsReminderMinutes',
       ] as const;
 
       for (const k of numberKeys) {
@@ -152,6 +154,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'ladderViewMode',
         'activePresetId',
         'telegramChartTimeframe',
+        'goldNewsImpactFilter',
       ] as const;
 
       for (const k of stringKeys) {
@@ -161,6 +164,11 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       }
 
       // 4. Arrays and objects
+      if (Array.isArray(liveWatcherSettings.goldNewsLeadTimesMinutes)) {
+        update['liveWatcherSettings.goldNewsLeadTimesMinutes'] = liveWatcherSettings.goldNewsLeadTimesMinutes
+          .map((v: any) => Number(v))
+          .filter((n: number) => Number.isFinite(n) && n > 0);
+      }
       if (Array.isArray(liveWatcherSettings.layoutPresets)) {
         update['liveWatcherSettings.layoutPresets'] = liveWatcherSettings.layoutPresets;
       }
@@ -351,6 +359,66 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     TelegramPollingService.startPollingForBot(botToken);
 
     return reply.send({ success: true, message: res.message, saved: true });
+  });
+
+  // Test Telegram Gold (XAUUSD) News Reminder Alert
+  app.post('/test-gold-news-alert', async (req: any, reply) => {
+    const user = await User.findById(req.user!.id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+
+    const settings = user.liveWatcherSettings;
+    const rawToken = settings?.telegramBotToken;
+    const botToken = rawToken ? safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken) : null;
+    const chatId = settings?.telegramChatId;
+
+    if (!botToken || !chatId) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Please connect your Telegram bot and enter your Chat ID in Settings first.',
+        },
+      });
+    }
+
+    const upcoming = await EconomicCalendarService.getUpcomingGoldNews(new Date(), 48);
+    const event = upcoming[0] || {
+      id: 'SAMPLE_GOLD_CPI',
+      title: 'US Core CPI m/m & y/y (Consumer Price Index)',
+      country: 'USD',
+      impact: 'HIGH' as const,
+      isGoldMover: true,
+      timestamp: new Date(Date.now() + 15 * 60000).toISOString(),
+      istTimeStr: 'Today 18:00 IST',
+      countdownStr: 'in 15m',
+      minutesUntil: 15,
+      forecast: '0.3%',
+      previous: '0.3%',
+      status: 'IMMINENT' as const,
+      goldImpactNote: 'Directly influences Fed interest rate expectations. Stronger inflation bolsters USD and yields, pressuring Gold (XAUUSD) downward.',
+      goldBias: 'BULLISH_IF_LOW' as const,
+      recommendedAction: 'Protect open XAUUSD positions. Expect extreme volatility and widened spreads ±5m around release.',
+    };
+
+    const leadTime = settings?.goldNewsReminderMinutes || 15;
+    const success = await TelegramAlertService.sendGoldNewsReminder(user, event, leadTime);
+
+    if (!success) {
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'DISPATCH_FAILED',
+          message: 'Failed to send Gold news alert to Telegram. Verify your bot token and chat ID.',
+        },
+      });
+    }
+
+    return reply.send({
+      success: true,
+      message: `Test Gold news reminder sent to Telegram (${event.title} • ${leadTime}m reminder)!`,
+    });
   });
 
   // Register Telegram Webhook URL for interactive buttons and two-way commands

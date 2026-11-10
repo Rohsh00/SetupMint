@@ -212,6 +212,8 @@ export const api = {
       const suffix = query.toString() ? `?${query.toString()}` : '';
       return request<any>(`/accounts/prop-overview${suffix}`);
     },
+    propEconomicCalendar: () => request<any>('/accounts/prop-economic-calendar'),
+    goldNews: () => request<any>('/accounts/gold-news'),
     propCandles: (params: {
       symbol?: string;
       resolution?: string;
@@ -850,6 +852,8 @@ export const api = {
       request<any>('/settings/register-telegram-webhook', { method: 'POST', body: JSON.stringify(data) }),
     sampleTelegramAlert: () =>
       request<any>('/settings/sample-alert', { method: 'POST' }),
+    testGoldNewsAlert: () =>
+      request<any>('/settings/test-gold-news-alert', { method: 'POST' }),
   },
 
   // Review Queue & Mistake Detection

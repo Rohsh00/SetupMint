@@ -801,14 +801,15 @@ export function AccountsPage() {
                         </Box>
 
                         {acc.liveBalance ? (
-                          <Box
-                            sx={{
-                              display: 'grid',
-                              gridTemplateColumns: '1fr 1fr',
-                              gap: 1.5,
-                              pt: 0.5,
-                            }}
-                          >
+                          <>
+                            <Box
+                              sx={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr',
+                                gap: 1.5,
+                                pt: 0.5,
+                              }}
+                            >
                             <Box>
                               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
                                 Clear Balance
@@ -841,7 +842,38 @@ export function AccountsPage() {
                               </Typography>
                             </Box>
                           </Box>
-                        ) : (
+
+                          {(() => {
+                            const unsettledProfit = Number(acc.currentBalance || 0) - Number(acc.liveBalance.clearBalance || 0);
+                            if (Math.abs(unsettledProfit) <= 0.05) return null;
+                            return (
+                              <Box sx={{ mt: 1.25, pt: 1, borderTop: '1px dashed', borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6875rem' }}>
+                                      Unsettled T+1 Profit (Holiday)
+                                    </Typography>
+                                    <Tooltip title="Recent closed trades are pending settlement/clearing by FYERS & exchange due to today's market holiday. Funds reflect in Clear Balance on the next settlement day (Wednesday, 11 Nov)." arrow>
+                                      <HelpOutlineRounded sx={{ fontSize: 13, color: 'text.secondary', cursor: 'pointer' }} />
+                                    </Tooltip>
+                                  </Box>
+                                  <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: unsettledProfit >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
+                                    {unsettledProfit >= 0 ? '+' : ''}{formatCurrency(unsettledProfit, acc.baseCurrency)}
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6875rem' }}>
+                                    Expected Settled Equity
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 800, color: 'text.primary' }}>
+                                    {formatCurrency(acc.currentBalance, acc.baseCurrency)}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            );
+                          })()}
+                        </>
+                      ) : (
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 0.5 }}>
                             <Typography variant="caption" color="text.secondary">
                               {isFyersConnected ? 'Live balance not yet fetched' : 'Connect FYERS to fetch live balance'}

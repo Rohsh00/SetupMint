@@ -14,5 +14,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": [
+    "src/scripts/check-*",
+    "src/scripts/debug-*",
+    "src/scripts/find-*",
+    "src/scripts/sim-*",
+    "src/scripts/verify-*"
+  ]
 }

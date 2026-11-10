@@ -52,6 +52,14 @@ SetupMint defines 22 core Mongoose models:
 | `riskSettings.maxOpenTrades` | `Number` | No | `3` | — | Max concurrent active positions |
 | `riskSettings.maxRiskPerTradePercent` | `Number` | No | `2.0` | — | Max risk % of account equity per trade |
 | `riskSettings.revengeTradingMinutes` | `Number` | No | `30` | — | Lookback window (minutes) after loss |
+| `liveWatcherSettings` | `Object` | No | Embedded | Subdocument | Execution defaults, scaling ladder rules & Telegram push settings |
+| `liveWatcherSettings.telegramAlertsEnabled` | `Boolean` | No | `false` | — | Master toggle for Telegram push alerting |
+| `liveWatcherSettings.telegramBotToken` | `String` | No | — | AES-256-GCM encrypted | Encrypted Telegram bot API token |
+| `liveWatcherSettings.telegramChatId` | `String` | No | — | — | Connected Telegram chat ID |
+| `liveWatcherSettings.telegramAlertEvents.goldNewsReminder` | `Boolean` | No | `true` | — | XAUUSD Gold catalyst reminder notification toggle |
+| `liveWatcherSettings.goldNewsReminderMinutes` | `Number` | No | `15` | — | Primary reminder lead time (minutes before release) |
+| `liveWatcherSettings.goldNewsLeadTimesMinutes` | `[Number]` | No | `[15, 60]` | — | Configurable multi-stage reminder lead times (e.g. 60m heads-up + 15m alert) |
+| `liveWatcherSettings.goldNewsImpactFilter` | `String` | No | `'ALL_GOLD_MOVERS'` | Enum: `['ALL_GOLD_MOVERS', 'HIGH_IMPACT_ONLY']` | Filter intensity for Gold catalyst notifications |
 | `createdAt` | `Date` | Auto | Current Time | — | Mongoose timestamp |
 | `updatedAt` | `Date` | Auto | Current Time | — | Mongoose timestamp |
 

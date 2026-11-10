@@ -691,9 +691,13 @@ This document provides a comprehensive, verified feature inventory of all module
     - `/pnl`: Live floating Gross/Net P&L, unrealized R-multiple, fees, realized today, and total day P&L monospace card.
     - `/trades`: Detailed breakdown of active open trades with current LTP, distance to SL, exposure, and action buttons.
     - `/summary`: Today's session performance digest (W/L ratio, win rate %, net P&L, harvested R).
+    - `/news` or `/goldnews`: Live XAUUSD (Gold) catalyst radar, upcoming US macro events, IST/UTC release times, forecasts, previous figures, and countdowns.
+    - `/newsremind <minutes>`: Set custom Telegram reminder lead time on the fly directly from mobile chat (e.g. `/newsremind 15`, `/newsremind 30,60`, `/newsremind off`).
     - `/panic`: Emergency killswitch request.
     - `/help`: Command documentation.
-  - **9 Configurable Alert Categories:** Selectable via Settings UI (`stopThreatCritical`, `givebackLeaking`, `ladderMilestoneReached`, `dailyLossBreached`, `nakedPositionWarning`, `tokenExpiryWarning`, `tradeOpened`, `tradeClosed`, `eodSummaryDigest`).
+  - **10 Configurable Alert Categories & Gold News Defense:**
+    - Subscribed alerts via Settings UI: `stopThreatCritical`, `givebackLeaking`, `ladderMilestoneReached`, `dailyLossBreached`, `nakedPositionWarning`, `tokenExpiryWarning`, `tradeOpened`, `tradeClosed`, `eodSummaryDigest`, and `goldNewsReminder`.
+    - **Gold (XAUUSD) Catalyst News Defense Daemon:** Background `GoldNewsAlertWorker` scanning US macro releases 24/7, sending customizable proactive reminders (`5m`, `15m`, `30m`, `45m`, `60m`, or custom minutes) + ±5m blackout alerts with inline buttons (`Live XAUUSD Chart`, `Open Trades`, `Mute 1h`, `Acknowledge`).
   - **Audible & Monospace Layout:** Strictly audible mobile notifications (`disable_notification: false`), monospace aligned tables, and visual ASCII progress bars (`[████████░░] 80%`).
 - **Frontend & Backend Components:**
   - Backend API: `telegram-alert.service.ts`, `integrations.routes.ts`, `settings.routes.ts`, `live-execution-worker.service.ts`.

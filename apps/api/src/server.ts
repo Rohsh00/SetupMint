@@ -36,6 +36,7 @@ import { InstrumentClassifier } from './services/instrument-classifier.service.j
 import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
 import { BrokerAutoSyncWorker } from './services/broker-auto-sync.service.js';
 import { TelegramPollingService } from './services/telegram-polling.service.js';
+import { GoldNewsAlertWorker } from './services/gold-news-alert.service.js';
 
 export async function buildApp() {
   // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
@@ -287,6 +288,7 @@ if (
       LiveExecutionWorker.start();
       BrokerAutoSyncWorker.start();
       await TelegramPollingService.start();
+      GoldNewsAlertWorker.start();
 
       await app.listen({ port: config.port, host: config.host });
       console.log(`\n======================================================`);
@@ -299,6 +301,7 @@ if (
         LiveExecutionWorker.stop();
         BrokerAutoSyncWorker.stop();
         TelegramPollingService.stop();
+        GoldNewsAlertWorker.stop();
         await app.close();
         await disconnectDatabase();
         process.exit(0);

@@ -12,6 +12,7 @@ import {
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
   normalizeUnderlying,
+  sanitizeTradeFills,
 } from '@tradevault/financial-engine';
 import { Instrument, IInstrumentDoc, Trade, ITradeDoc, CommodityMaster, AngelOneInstrument } from '../db/models/index.js';
 import { AccountService } from './account.service.js';
@@ -311,7 +312,8 @@ export class InstrumentService {
       avgExit = exec.exitPrice;
     } else if (body.executionMode === 'ADVANCED' && body.fills && body.fills.length > 0) {
       const mult = body.simpleExecution?.contractMultiplier || 1;
-      const fifo = calculateFIFOExecution(body.direction, body.fills, mult);
+      const sanitized = sanitizeTradeFills(body.fills);
+      const fifo = calculateFIFOExecution(body.direction, sanitized.fills as any, mult);
 
       grossPnL = Number(fifo.realizedGrossPnL.toFixed(2));
       const fifoCosts = Number(fifo.totalCosts.toFixed(2));

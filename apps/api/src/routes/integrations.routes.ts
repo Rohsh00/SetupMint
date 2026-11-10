@@ -8,6 +8,8 @@ import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { Mt5CommandService } from '../services/mt5-command.service.js';
 import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto.service.js';
 import { excursionBackfillSchema } from '@tradevault/shared';
+import { sanitizeTradeFills } from '@tradevault/financial-engine';
+import { InstrumentService } from '../services/instrument.service.js';
 import { config } from '../config.js';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -298,6 +300,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     for (const item of rawItems) {
       const ticketStr = String(item.ticket || item.id || item.ticket_id || item.order || '').trim();
+      const dealIdStr = String(item.deal_id || item.deal_ticket || item.dealTicket || '').trim();
       if (!ticketStr) continue;
 
       const rawSym = String(item.symbol || '').toUpperCase().trim();
@@ -332,6 +335,9 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       });
 
       if (isClose) {
+        const exitPriceFinal = closePrice || entryPrice;
+        const targetExitFillId = dealIdStr ? `mt5_deal_${dealIdStr}` : `mt5_${ticketStr}_exit`;
+
         if (!trade) {
           // Untracked trade closed: create closed record
           let instrument = await Instrument.findOne({ userId: account.userId, symbol });
@@ -354,7 +360,6 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             });
           }
 
-          const exitPriceFinal = closePrice || entryPrice;
           const priceDiff = direction === 'LONG' ? exitPriceFinal - entryPrice : entryPrice - exitPriceFinal;
           const grossPnL = profit !== 0 ? profit : Number((priceDiff * volume * spec.multiplier).toFixed(2));
           const totalCosts = Number((commission + swap).toFixed(2));
@@ -401,7 +406,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 fee: commission,
               },
               {
-                fillId: `mt5_${ticketStr}_exit`,
+                fillId: targetExitFillId,
                 timestamp: item.close_time ? new Date(item.close_time) : new Date(),
                 type: 'EXIT',
                 price: exitPriceFinal,
@@ -428,36 +433,79 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           });
         } else {
           // Existing trade closed
-          const exitPriceFinal = closePrice || entryPrice;
-          const entryP = trade.simpleExecution?.entryPrice || entryPrice;
-          const priceDiff = direction === 'LONG' ? exitPriceFinal - entryP : entryP - exitPriceFinal;
-          const grossPnL = profit !== 0 ? profit : Number((priceDiff * volume * spec.multiplier).toFixed(2));
-          const totalCosts = Number((commission + swap).toFixed(2));
-          const netPnL = Number((grossPnL - totalCosts).toFixed(2));
+          // 1. Sanitize any existing fills in case the trade already has duplicates from earlier syncs
+          const currentFills = Array.isArray(trade.fills) ? trade.fills : [];
+          const sanitizedCurrent = sanitizeTradeFills(currentFills);
+          if (sanitizedCurrent.hasChanges) {
+            trade.fills = sanitizedCurrent.fills as any;
+            trade.markModified('fills');
+          }
 
-          trade.status = 'CLOSED';
+          // 2. Check if this specific exit fill was already recorded
+          const alreadyHasThisFill = (trade.fills || []).some(
+            (f: any) =>
+              f.fillId === targetExitFillId ||
+              (dealIdStr && f.fillId === `mt5_${ticketStr}_exit_${dealIdStr}`) ||
+              (!dealIdStr && f.fillId === `mt5_${ticketStr}_exit`)
+          );
+
+          const totalEntryQty = (trade.fills || [])
+            .filter((f: any) => f.type === 'ENTRY')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          const totalExitQty = (trade.fills || [])
+            .filter((f: any) => f.type === 'EXIT')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+
+          const remainingOpenQty = Math.max(0, totalEntryQty - totalExitQty);
+
+          const isDuplicate =
+            alreadyHasThisFill ||
+            (trade.status === 'CLOSED' && totalExitQty >= totalEntryQty) ||
+            remainingOpenQty <= 0;
+
+          if (isDuplicate) {
+            // Already closed or duplicate exit webhook: do NOT push duplicate fills
+            trade.status = 'CLOSED';
+            if (item.close_time) trade.exitTime = new Date(item.close_time);
+            if (trade.simpleExecution && exitPriceFinal > 0) {
+              trade.simpleExecution.exitPrice = exitPriceFinal;
+            }
+            const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
+            trade.calculated = recalced;
+            trade.markModified('calculated');
+            trade.markModified('simpleExecution');
+            await trade.save();
+
+            results.push({ ticket: ticketStr, status: 'ALREADY_CLOSED', id: trade._id });
+            processedCount++;
+            continue;
+          }
+
+          // Legitimate close or partial close
+          const fillQty = Math.min(volume, remainingOpenQty > 0 ? remainingOpenQty : volume);
+          const isFullyClosed = totalExitQty + fillQty >= totalEntryQty;
+
+          trade.status = isFullyClosed ? 'CLOSED' : 'OPEN';
           trade.exitTime = item.close_time ? new Date(item.close_time) : new Date();
           if (trade.simpleExecution) {
             trade.simpleExecution.exitPrice = exitPriceFinal;
           }
+
           trade.fills.push({
-            fillId: `mt5_${ticketStr}_exit`,
+            fillId: targetExitFillId,
             timestamp: trade.exitTime,
             type: 'EXIT',
             price: exitPriceFinal,
-            quantity: volume,
+            quantity: fillQty,
             fee: 0,
           } as any);
 
-          if (!trade.calculated) trade.calculated = {} as any;
-          trade.calculated.averageExitPrice = exitPriceFinal;
-          trade.calculated.openQuantity = 0;
-          trade.calculated.closedQuantity = volume;
-          trade.calculated.grossPnL = grossPnL;
-          trade.calculated.netPnL = netPnL;
-          trade.calculated.outcome = netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN';
-
+          const sanitizedAfter = sanitizeTradeFills(trade.fills);
+          trade.fills = sanitizedAfter.fills as any;
           trade.markModified('fills');
+
+          const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
+          trade.calculated = recalced;
           trade.markModified('calculated');
           trade.markModified('simpleExecution');
           await trade.save();

@@ -9,6 +9,7 @@ import {
   calculateDrilldownAggregate,
   aggregateCandles,
   estimateFetchRange,
+  sanitizeTradeFills,
 } from '@tradevault/financial-engine';
 import {
   createTradeSchema,
@@ -473,6 +474,24 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       exclusionReasons.push('RISK_WIDENED');
     }
 
+    let formattedFills = t.fills;
+    let formattedCalculated = t.calculated;
+
+    if (t.executionMode === 'ADVANCED' && Array.isArray(t.fills) && t.fills.length > 0) {
+      const sanitized = sanitizeTradeFills(t.fills);
+      if (sanitized.hasChanges) {
+        formattedFills = sanitized.fills;
+        formattedCalculated = computeTradeCalculations({
+          ...(typeof t.toObject === 'function' ? t.toObject() : t),
+          fills: sanitized.fills,
+        });
+        Trade.updateOne(
+          { _id: t._id },
+          { $set: { fills: sanitized.fills, calculated: formattedCalculated } }
+        ).catch(() => {});
+      }
+    }
+
     return {
       id: t._id.toString(),
       userId: t.userId.toString(),
@@ -504,11 +523,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       templateId: t.templateId,
       executionMode: t.executionMode,
       simpleExecution: t.simpleExecution,
-      fills: t.fills,
+      fills: formattedFills,
       risk: t.risk,
       thesis: t.thesis,
       psychology: t.psychology,
-      calculated: t.calculated,
+      calculated: formattedCalculated,
       setup: t.setup,
       screenshotIds: (t.screenshotIds || []).map((id: any) => id.toString()),
       createdAt: t.createdAt ? t.createdAt.toISOString() : '',
@@ -1249,6 +1268,17 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
+    if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
+      const sanitized = sanitizeTradeFills(trade.fills);
+      if (sanitized.hasChanges) {
+        trade.fills = sanitized.fills as any;
+        trade.calculated = computeTradeCalculations(trade.toObject());
+        trade.markModified('fills');
+        trade.markModified('calculated');
+        await trade.save().catch(() => {});
+      }
+    }
+
     const attachments = await Attachment.find({ tradeId: trade._id, userId: req.user!.id }).sort({ createdAt: 1 });
     const formattedAttachments = attachments.map((att) => ({
       id: att._id.toString(),
@@ -1458,7 +1488,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       thesis: { ...existingTrade.thesis, ...parseResult.data.thesis },
       psychology: { ...existingTrade.psychology, ...parseResult.data.psychology },
       simpleExecution: mergedSimpleExecution,
-      fills: parseResult.data.fills || existingTrade.fills,
+      fills: sanitizeTradeFills(parseResult.data.fills || existingTrade.fills || []).fills as any,
     };
 
     const isForexOrUsd =

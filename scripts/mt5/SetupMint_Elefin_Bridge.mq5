@@ -20,6 +20,32 @@ input int      InpSyncTimerSec = 3;                           // Periodic Sync I
 datetime lastHistoryCheckTime = 0;
 CTrade   m_trade;
 
+//--- Deduplication Tracker for closed deals
+ulong    g_processedDeals[1024];
+int      g_processedCount = 0;
+
+bool IsDealProcessed(ulong ticket)
+{
+   for(int i = 0; i < g_processedCount; i++)
+   {
+      if(g_processedDeals[i] == ticket) return true;
+   }
+   return false;
+}
+
+void MarkDealProcessed(ulong ticket)
+{
+   if(g_processedCount >= 1024)
+   {
+      for(int i = 0; i < 1023; i++)
+      {
+         g_processedDeals[i] = g_processedDeals[i + 1];
+      }
+      g_processedCount = 1023;
+   }
+   g_processedDeals[g_processedCount++] = ticket;
+}
+
 // Forward declarations
 void ProcessSetupMintCommands(string responseJson);
 void SyncAllActivePositions();
@@ -306,9 +332,12 @@ void CheckClosedDeals()
       ulong dealTicket = HistoryDealGetTicket(i);
       if(dealTicket > 0)
       {
+         if(IsDealProcessed(dealTicket)) continue;
+
          ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
          if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT) // Position closed or reversed
          {
+            MarkDealProcessed(dealTicket);
             ulong posTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
             string sym = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
             ENUM_DEAL_TYPE dealType = (ENUM_DEAL_TYPE)HistoryDealGetInteger(dealTicket, DEAL_TYPE);
@@ -323,6 +352,7 @@ void CheckClosedDeals()
             json += "\"token\":\"" + InpToken + "\",";
             json += "\"action\":\"CLOSE\",";
             json += "\"ticket\":" + IntegerToString(posTicket > 0 ? posTicket : dealTicket) + ",";
+            json += "\"deal_id\":" + IntegerToString(dealTicket) + ",";
             json += "\"symbol\":\"" + sym + "\",";
             json += "\"type\":\"" + (dealType == DEAL_TYPE_SELL ? "BUY" : "SELL") + "\","; // Closed opposite side
             json += "\"volume\":" + DoubleToString(vol, 2) + ",";
@@ -350,7 +380,19 @@ int OnInit()
    m_trade.SetDeviationInPoints(30);
 
    EventSetTimer(InpSyncTimerSec);
-   lastHistoryCheckTime = TimeCurrent() - 3600; // Look back 1 hour
+   
+   // Seed already closed deals into deduplication buffer so restart never duplicates
+   datetime now = TimeCurrent();
+   if(HistorySelect(now - 7200, now))
+   {
+      int total = HistoryDealsTotal();
+      for(int i = 0; i < total; i++)
+      {
+         ulong dt = HistoryDealGetTicket(i);
+         if(dt > 0) MarkDealProcessed(dt);
+      }
+   }
+   lastHistoryCheckTime = now;
    
    // Ping SetupMint server
    string pingJson = "{\"token\":\"" + InpToken + "\",\"action\":\"PING\"}";

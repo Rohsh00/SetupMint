@@ -24,7 +24,8 @@ import CallMadeRounded from '@mui/icons-material/CallMadeRounded';
 import LayersRounded from '@mui/icons-material/LayersRounded';
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
-import { calculateFIFOExecution } from '@tradevault/financial-engine';
+import AutoFixHighRounded from '@mui/icons-material/AutoFixHighRounded';
+import { calculateFIFOExecution, sanitizeTradeFills } from '@tradevault/financial-engine';
 import { formatCurrency, toLocalIsoDateTime, currentLocalIsoDateTime } from '../../../lib/utils.js';
 import { HelpHint } from '../../help/index.js';
 
@@ -83,6 +84,12 @@ export function TradeAdvancedFills({
 
   const hasOversold = totalExits > totalEntries;
 
+  const handleAutoFixDuplicates = () => {
+    if (!setValue) return;
+    const sanitized = sanitizeTradeFills(watchedFills);
+    setValue('fills', sanitized.fills, { shouldValidate: true, shouldDirty: true });
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
       {/* Header & Add Fill Actions */}
@@ -126,7 +133,34 @@ export function TradeAdvancedFills({
 
       {/* Oversold Validation Alert */}
       {hasOversold && (
-        <Alert severity="error" icon={<WarningAmberRounded />} sx={{ py: 0.5, fontSize: '0.75rem', fontWeight: 600 }}>
+        <Alert
+          severity="error"
+          icon={<WarningAmberRounded />}
+          action={
+            setValue && (
+              <Button
+                color="inherit"
+                size="small"
+                startIcon={<AutoFixHighRounded sx={{ fontSize: 16 }} />}
+                onClick={handleAutoFixDuplicates}
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  textTransform: 'none',
+                  border: '1px solid',
+                  borderColor: 'error.main',
+                  bgcolor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.08)',
+                  '&:hover': {
+                    bgcolor: isDark ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.15)',
+                  },
+                }}
+              >
+                Auto-Fix Excess Fills
+              </Button>
+            )
+          }
+          sx={{ py: 0.5, fontSize: '0.75rem', fontWeight: 600, alignItems: 'center' }}
+        >
           Total exit quantity ({totalExits}) exceeds total entry quantity ({totalEntries}). An execution cannot exit more than entered.
         </Alert>
       )}

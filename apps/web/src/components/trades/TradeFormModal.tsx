@@ -45,6 +45,7 @@ import {
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
   calculateFIFOExecution,
+  sanitizeTradeFills,
   IndianChargesCalculator,
   resolveTemplate,
   rankTemplates,
@@ -96,9 +97,10 @@ function buildInitialFormValues(
       initialRisk.plannedEntryPrice = initialEntry;
     }
 
-    // Format fills timestamps properly for datetime-local input (YYYY-MM-DDTHH:mm)
-    const formattedFills = Array.isArray(initialValues.fills)
-      ? initialValues.fills.map((f: any) => ({
+    // Format fills timestamps properly for datetime-local input (YYYY-MM-DDTHH:mm), sanitizing any duplicate MT5 exit fills
+    const sanitizedInitialFills = sanitizeTradeFills(initialValues.fills || []).fills;
+    const formattedFills = Array.isArray(sanitizedInitialFills)
+      ? sanitizedInitialFills.map((f: any) => ({
           ...f,
           fee: f.fee ?? 0,
           timestamp: toLocalIsoDateTime(f.timestamp) || toLocalIsoDateTime(initialValues.entryTime) || currentLocalIsoDateTime(),
@@ -1294,8 +1296,8 @@ function TradeFormModalContent({
       ? fromLocalIsoDateTime(data.exitTime) || new Date(data.exitTime).toISOString()
       : undefined;
 
-    // Sanitize fills payloads
-    const sanitizedFills = Array.isArray(data.fills)
+    // Sanitize fills payloads and deduplicate excess exit fills
+    const mappedFills = Array.isArray(data.fills)
       ? data.fills.map((f: any) => ({
           ...f,
           fee: Number(f.fee) || 0,
@@ -1306,6 +1308,7 @@ function TradeFormModalContent({
             : finalEntryTime,
         }))
       : [];
+    const sanitizedFills = sanitizeTradeFills(mappedFills).fills;
 
     // Auto-harmonize exchange, marketSegment, and assetClass for MCX / Commodities
     let finalExchange = data.exchange || 'NSE';

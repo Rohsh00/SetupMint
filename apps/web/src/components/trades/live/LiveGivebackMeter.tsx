@@ -10,7 +10,8 @@ import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import { ILiveGivebackMetric, ILiveOpenTradeMetric } from '@tradevault/shared';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
+import { useAccountScope } from '../../../context/AccountScopeContext.js';
 import { HelpHint } from '../../help/index.js';
 
 interface LiveGivebackMeterProps {
@@ -28,6 +29,9 @@ export function LiveGivebackMeter({
 }: LiveGivebackMeterProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const { currency: activeScopeCurrency } = useAccountScope();
+  const tradeCurrency = (metric as any).currency || (activeScopeCurrency && activeScopeCurrency !== 'MULTI' ? activeScopeCurrency : 'USD');
+  const currSym = getCurrencySymbol(tradeCurrency);
 
   const {
     peakFloatingNetPnL,
@@ -137,10 +141,10 @@ export function LiveGivebackMeter({
             Peak MTM
           </Typography>
           <Typography variant="caption" sx={{ fontWeight: 800, color: '#10B981', fontSize: '0.75rem' }}>
-            +{formatCurrency(peakFloatingNetPnL, 'INR')}
+            +{formatCurrency(peakFloatingNetPnL, tradeCurrency)}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
-            +{peakUnrealizedR.toFixed(2)}R (@ ₹{peakLtp})
+            +{peakUnrealizedR.toFixed(2)}R (@ {currSym}{peakLtp})
           </Typography>
         </Box>
 
@@ -152,7 +156,7 @@ export function LiveGivebackMeter({
             {retentionPercent}%
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
-            +{formatCurrency(metric.floatingNetPnL, 'INR')} now
+            +{formatCurrency(metric.floatingNetPnL, tradeCurrency)} now
           </Typography>
         </Box>
 
@@ -168,7 +172,7 @@ export function LiveGivebackMeter({
               fontSize: '0.75rem',
             }}
           >
-            {givebackAmount > 0 ? `-${formatCurrency(givebackAmount, 'INR')}` : '₹0'}
+            {givebackAmount > 0 ? `-${formatCurrency(givebackAmount, tradeCurrency)}` : formatCurrency(0, tradeCurrency)}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.62rem', display: 'block' }}>
             {givebackPercent}% leaked
@@ -187,7 +191,7 @@ export function LiveGivebackMeter({
             overflow: 'hidden',
           }}
         >
-          <Tooltip title={`Retained: ${retentionPercent}% (+₹${metric.floatingNetPnL.toLocaleString('en-IN')})`} arrow>
+          <Tooltip title={`Retained: ${retentionPercent}% (+${formatCurrency(metric.floatingNetPnL, tradeCurrency)})`} arrow>
             <Box
               sx={{
                 width: `${retentionPercent}%`,
@@ -197,7 +201,7 @@ export function LiveGivebackMeter({
             />
           </Tooltip>
           {givebackPercent > 0 && (
-            <Tooltip title={`Given Back: ${givebackPercent}% (-₹${givebackAmount.toLocaleString('en-IN')})`} arrow>
+            <Tooltip title={`Given Back: ${givebackPercent}% (-${formatCurrency(givebackAmount, tradeCurrency)})`} arrow>
               <Box
                 sx={{
                   width: `${givebackPercent}%`,

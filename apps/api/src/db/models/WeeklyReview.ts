@@ -12,6 +12,7 @@ export interface IWeeklyReviewDoc extends Document {
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   accountId?: mongoose.Types.ObjectId | null;
+  currency?: string;
   snapshot: IWeeklyReviewSnapshot;
   generatedAt: Date;
   focusRule?: IFocusRule;
@@ -46,6 +47,10 @@ const WeeklyReviewSchema = new Schema<IWeeklyReviewDoc>(
       type: Schema.Types.ObjectId,
       ref: 'TradingAccount',
       default: null,
+    },
+    currency: {
+      type: String,
+      trim: true,
     },
     snapshot: {
       type: Schema.Types.Mixed,

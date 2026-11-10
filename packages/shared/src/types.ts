@@ -450,6 +450,66 @@ export interface IPropFirmHealthSummary {
   };
 }
 
+export type MarketRegion = 'IN' | 'US' | 'EU' | 'GLOBAL';
+export type FeeModelKey = 'INDIA_STATUTORY' | 'FOREX_COMMISSION' | 'NONE' | 'CUSTOM';
+export type ExecutionAdapterKey = 'FYERS' | 'ELEFIN_MT5' | 'PROP_SIM' | 'MANUAL';
+export type PositionModel = 'NETTING_FIFO' | 'HEDGING';
+export type SessionCalendarKey = 'NSE' | 'MCX' | 'FOREX_24_5' | 'CRYPTO_24_7';
+
+export interface ITradingAccountCapabilities {
+  canPlaceOrders: boolean;
+  canModifyStopLoss: boolean;
+  canExitPositions: boolean;
+  canScaleLadder: boolean;
+  canAutoExecute: boolean;
+  canSyncFunds: boolean;
+  canFetchHistory: boolean;
+  canStreamQuotes: boolean;
+}
+
+export interface IAccountRiskRules {
+  maxDailyLoss?: number;
+  maxRiskPerTradePercent?: number;
+  maxOpenTrades?: number;
+  maxDailyTrades?: number;
+  lotCap?: number;
+  maxLoss?: number;
+  prohibitNewsTrading?: boolean;
+  prohibitWeekendHolding?: boolean;
+  requireStopLoss?: boolean;
+}
+
+export interface ITradingAccountProfile {
+  marketRegion: MarketRegion;
+  baseCurrency: string;
+  timezone: string;
+  feeModelKey: FeeModelKey;
+  executionAdapterKey: ExecutionAdapterKey;
+  positionModel: PositionModel;
+  sessionCalendarKey: SessionCalendarKey;
+  riskRules?: IAccountRiskRules;
+  capabilities: ITradingAccountCapabilities;
+}
+
+export interface IMoney {
+  amount: number;
+  currency: string;
+}
+
+export type ByCurrency<T = number> = Record<string, T>;
+
+export interface IAccountContext {
+  accountIds: string[];
+  accounts: ITradingAccount[];
+  currencies: string[];
+  isSingleCurrency: boolean;
+  isMultiCurrency: boolean;
+  profiles: Record<string, ITradingAccountProfile>;
+  capabilities: ITradingAccountCapabilities;
+  primaryCurrency?: string;
+  primaryTimezone?: string;
+}
+
 export interface ITradingAccount {
   id: string;
   userId: string;
@@ -458,6 +518,7 @@ export interface ITradingAccount {
   accountNumber?: string;
   accountType: AccountType;
   baseCurrency: string;
+  profile: ITradingAccountProfile;
   initialBalance: number;
   currentBalance: number;
   realizedPnL: number;
@@ -574,6 +635,8 @@ export interface ITradeFill {
   exchangeFee?: number;
   taxes?: number;
   notes?: string;
+  matchedEntryFillId?: string;
+  ticket?: number | string;
 }
 
 export interface ISimpleExecution {

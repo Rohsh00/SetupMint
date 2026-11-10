@@ -5,7 +5,7 @@ import { Instrument, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { InstrumentService } from '../services/instrument.service.js';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
 const updateInstrumentRequestSchema = createInstrumentSchema.partial().extend({
   applyToTrades: z.boolean().optional(),
@@ -33,7 +33,8 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
     }
 
     const scope = AccountScopeService.parseAccountScope(req.query);
-    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
 
     if (scope.mode !== 'ALL' && accountIds.length === 0) {
       return reply.send({
@@ -47,18 +48,15 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
 
     let scopedInstruments = userInstruments;
     if (scope.mode !== 'ALL') {
-      const [allTimeScopedSummaries, allTimeGlobalSummaries, scopedAccounts] = await Promise.all([
+      const [allTimeScopedSummaries, allTimeGlobalSummaries] = await Promise.all([
         startDate || endDate
           ? InstrumentService.getTradedSummary(req.user!.id, undefined, accountIds)
           : Promise.resolve(tradedSummaries),
         InstrumentService.getTradedSummary(req.user!.id, undefined),
-        TradingAccount.find({ _id: { $in: accountIds }, userId: req.user!.id })
-          .select('baseCurrency')
-          .lean(),
       ]);
 
       const scopedCurrencies = new Set(
-        scopedAccounts.map((a: any) => String(a.baseCurrency || 'INR').toUpperCase())
+        accountCtx.currencies.map((c) => c.toUpperCase())
       );
 
       scopedInstruments = userInstruments.filter((inst) => {
@@ -69,7 +67,7 @@ export const instrumentRoutes: FastifyPluginAsync = async (app: FastifyInstance)
         // If never traded in ANY account, keep only if custom/untraded instrument matches scoped currency
         const globalCount = allTimeGlobalSummaries.get(idStr)?.tradeCount ?? 0;
         if (globalCount === 0) {
-          const instCurrency = String(inst.quoteCurrency || 'INR').toUpperCase();
+          const instCurrency = String(inst.quoteCurrency || accountCtx.primaryCurrency || 'USD').toUpperCase();
           return scopedCurrencies.size === 0 || scopedCurrencies.has(instCurrency);
         }
 

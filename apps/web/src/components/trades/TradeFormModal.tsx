@@ -47,6 +47,7 @@ import {
   calculateFIFOExecution,
   sanitizeTradeFills,
   IndianChargesCalculator,
+  FeeModelRegistry,
   resolveTemplate,
   rankTemplates,
   calculateContinuousTiltScore,
@@ -269,32 +270,35 @@ function buildInitialFormValues(
     accounts[0]?._id ||
     '';
 
+  const selectedAcc = accounts.find((a: any) => (a.id || a._id) === initialAccountId);
+  const isForex = selectedAcc?.baseCurrency === 'USD' || selectedAcc?.profile?.marketRegion === 'GLOBAL' || selectedAcc?.accountType === 'PROP_FIRM';
+
   return {
     values: {
       accountId: initialAccountId,
-      symbol: rememberedPrefs.preferredSymbol || 'NIFTY',
-      assetClass: 'FUTURES',
-      exchange: 'NSE',
-      marketSegment: 'NSE_FNO',
+      symbol: rememberedPrefs.preferredSymbol || (isForex ? 'EURUSD' : 'NIFTY'),
+      assetClass: isForex ? 'FOREX' : 'FUTURES',
+      exchange: isForex ? 'FOREX' : 'NSE',
+      marketSegment: isForex ? 'FOREX_SPOT' : 'NSE_FNO',
       direction: 'LONG',
       status: 'CLOSED',
       strategyId: rememberedPrefs.preferredStrategyId || '',
       tradeDate: new Date().toISOString().split('T')[0],
       entryTime: currentLocalIsoDateTime(),
       exitTime: currentLocalIsoDateTime(),
-      session: 'NSE_REGULAR',
+      session: isForex ? 'FOREX_LONDON_NY' : 'NSE_REGULAR',
       tradeTitle: '',
       tagsInput: '',
 
       simpleExecution: {
-        entryPrice: 24000,
-        exitPrice: 24100,
-        quantity: 25,
-        contractMultiplier: 1,
-        brokerage: 40,
-        exchangeFees: 30,
-        regulatoryFees: 5,
-        taxes: 80,
+        entryPrice: isForex ? 1.0850 : 24000,
+        exitPrice: isForex ? 1.0890 : 24100,
+        quantity: isForex ? 1.0 : 25,
+        contractMultiplier: isForex ? 100000 : 1,
+        brokerage: isForex ? 7 : 40,
+        exchangeFees: isForex ? 0 : 30,
+        regulatoryFees: isForex ? 0 : 5,
+        taxes: isForex ? 0 : 80,
         otherFees: 0,
         explicitAdjustments: 0,
       },
@@ -302,10 +306,10 @@ function buildInitialFormValues(
       fills: [],
 
       risk: {
-        plannedEntryPrice: 24000,
-        initialStopLoss: 23940,
-        plannedTarget: 24150,
-        riskBudgetAmount: 2500,
+        plannedEntryPrice: isForex ? 1.0850 : 24000,
+        initialStopLoss: isForex ? 1.0820 : 23940,
+        plannedTarget: isForex ? 1.0910 : 24150,
+        riskBudgetAmount: isForex ? 300 : 2500,
       },
 
       thesis: {
@@ -697,18 +701,19 @@ function TradeFormModalContent({
     }
 
     if (entryP > 0 && qty > 0) {
-      return IndianChargesCalculator.calculate(
-        watchedAssetClass || 'EQUITY',
-        watchedMarketSegment || 'NSE_EQ',
-        entryP,
-        exitP,
-        qty,
-        mult,
-        20,
-        selectedAccount?.broker,
-        watchedDirection,
-        selectedAccount?.currency || selectedAccount?.baseCurrency || initialValues?.currency
-      );
+      const feeModelKey = selectedAccount?.profile?.feeModelKey || (selectedAccount?.baseCurrency === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
+      return FeeModelRegistry.calculate(feeModelKey, {
+        assetClass: watchedAssetClass || 'EQUITY',
+        marketSegment: watchedMarketSegment || 'NSE_EQ',
+        entryPrice: entryP,
+        exitPrice: exitP,
+        quantity: qty,
+        contractMultiplier: mult,
+        brokerFlatFeePerLeg: 20,
+        broker: selectedAccount?.broker,
+        direction: watchedDirection,
+        currency: selectedAccount?.currency || selectedAccount?.baseCurrency || initialValues?.currency || 'USD',
+      });
     }
     return null;
   };
@@ -1605,6 +1610,7 @@ function TradeFormModalContent({
             totalCosts={liveCosts}
             netPnL={liveNet}
             outcome={liveOutcome}
+            currency={selectedAccount?.currency || selectedAccount?.baseCurrency || 'USD'}
             realizedR={liveRealizedR}
             plannedRisk={plannedRiskAmount}
             status={watchedStatus}

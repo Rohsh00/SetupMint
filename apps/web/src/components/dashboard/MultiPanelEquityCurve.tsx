@@ -39,7 +39,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 
 import { api } from '../../lib/api.js';
-import { formatCurrency, formatR, formatPercent, formatDate } from '../../lib/utils.js';
+import { formatCurrency, formatR, formatPercent, formatDate, getCurrencySymbol } from '../../lib/utils.js';
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { HelpHint } from '../help/index.js';
@@ -68,7 +68,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
 
   // Strategy picker popover
   const [strategyAnchorEl, setStrategyAnchorEl] = useState<null | HTMLElement>(null);
-  const { queryParams, isPropMode } = useAccountScope();
+  const { queryParams, isPropMode, currency: activeScopeCurrency } = useAccountScope();
 
   // Fetch full multi-panel dataset computed by Decimal.js
   const { data: curveData, isLoading, isError } = useQuery<IEquityCurvesResponse>({
@@ -83,7 +83,8 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
     staleTime: 60 * 1000,
   });
 
-  const currencySymbol = isPropMode ? '$' : '₹';
+  const resolvedCurrency = (curveData as any)?.currency || (activeScopeCurrency && activeScopeCurrency !== 'MULTI' ? activeScopeCurrency : 'USD');
+  const currencySymbol = getCurrencySymbol(resolvedCurrency);
   const moneyCurve = useMemo(() => curveData?.moneyCurve || [], [curveData]);
   const propLines = curveData?.propReferenceLines;
   const cumulativeRCurve = curveData?.cumulativeRCurve;
@@ -560,7 +561,7 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
               <RechartsTooltip
                 contentStyle={chartTooltipStyle}
                 formatter={(val: any, name: string) => {
-                  if (name === 'cumulativeEquity') return [formatCurrency(val), 'Cumulative Equity'];
+                  if (name === 'cumulativeEquity') return [formatCurrency(val, resolvedCurrency), 'Cumulative Equity'];
                   if (name === 'cumulativeR') return [formatR(val), 'Cumulative R'];
                   if (name.startsWith('strat_')) {
                     const sId = name.replace('strat_', '');

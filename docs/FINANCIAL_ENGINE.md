@@ -364,6 +364,32 @@ When score $\ge 61$, an advisory, non-blocking pre-trade warning is surfaced in 
 - Calculates distance in points, distance percentage, and progress percentage for each target.
 - Marks step status as `PENDING`, `IN_PROGRESS`, or `MET`, providing actionable execution flags for 1-click broker order submission.
 
+---
+
+## 15. Account-Driven Multi-Currency & Position Models
+
+### A. Money Structure & Zero Cross-Currency Aggregation (`money.ts`)
+- **Structure:** `Money = { amount: Decimal, currency: string }`
+- **Formatting:** `formatMoney(amount, currency, options)` formats using `Intl.NumberFormat` with ISO-4217 currency metadata.
+- **Invariant:** Never sum or compare money across different currencies. Multi-currency calculations return `byCurrency: Record<string, Decimal>` breakdowns. Unitless values ($R$, $\%$, Win Rate) combine without restriction.
+
+### B. Hedging Position Model (`hedging.ts`)
+- Supports non-FIFO ticket-based position accounting (standard for Forex, CFD, and MT5 accounts).
+- Allows concurrent long and short positions on the same instrument without forced netting.
+- Each ticket maintains independent fills, financing/swap costs, and realized P&L upon ticket closure.
+
+### C. Prop Challenge Pre-Trade Rule Guards (`prop-guard.ts`)
+- **Evaluation:** Pure Decimal.js rule guard evaluating candidate orders against prop challenge limits:
+  - $\text{Remaining Daily Loss} = \text{Daily Loss Limit} - \text{Realized Daily Loss} - \text{Floating Daily Loss}$
+  - $\text{Remaining Total Loss} = \text{Max Loss Limit} - \text{Cumulative Drawdown}$
+  - $\text{Max Allowable Lot Size} = \min(\text{Planned Lots}, \text{Max Lot Cap}, \frac{\text{Remaining Daily Loss}}{\text{Stop Distance} \times M})$
+- **Enforcement:** Automation halts and blocks executions if an order would breach risk buffers.
+
+### D. Typed Model Registries
+- **Fee Model Registry (`registries/fee-registry.ts`):** `INDIA_STATUTORY` (flat brokerage + STT + turnover + GST), `FOREX_COMMISSION` (commission per lot + spread + swap), `PROP_FIRM_COMMISSION`, and `ZERO_FEE`.
+- **Session Calendar Registry (`registries/calendar-registry.ts`):** `NSE`, `MCX`, `FOREX_24_5`, `CRYPTO_24_7`, and `US_EQUITIES` defining market open/close, trading sessions (Morning, Mid-Day, Afternoon, Close), and weekend boundaries.
+- **Timezone System (`timezone.ts`):** Exact canonical IANA timezone handling (`moment-timezone`) ensuring trading days and weekly review ISO boundaries align with the account's operational exchange timezone.
+
 
 
 

@@ -45,7 +45,7 @@ import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
-import { formatCurrency } from '../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../lib/utils.js';
 import { MISTAKE_TAGS } from '@tradevault/shared';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
@@ -54,7 +54,7 @@ import { HelpHint } from '../components/help/index.js';
 
 export function JournalCalendarPage() {
   const { openDrill } = useTradeDrilldown();
-  const { queryParams, isPropMode, scopeLabel, scopedAccounts, selectedAccountId: scopeAccountId } = useAccountScope();
+  const { queryParams, isPropMode, scopeLabel, scopedAccounts, selectedAccountId: scopeAccountId, currency: scopeCurrency, activeAccount } = useAccountScope();
   const queryClient = useQueryClient();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -62,7 +62,7 @@ export function JournalCalendarPage() {
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1-indexed
-  const [metricMode, setMetricMode] = useState<'INR' | 'R'>('INR');
+  const [metricMode, setMetricMode] = useState<'MONEY' | 'R'>('MONEY');
   const [selectedAccountId, setSelectedAccountId] = useState<string>(scopeAccountId || 'ALL');
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
@@ -85,6 +85,12 @@ export function JournalCalendarPage() {
   });
   const allAccounts = Array.isArray(accountsData) ? accountsData : (accountsData as any)?.accounts || [];
   const accounts = scopedAccounts.length > 0 ? scopedAccounts : allAccounts;
+
+  const activeCurrency =
+    (selectedAccountId !== 'ALL' ? accounts.find((a: any) => a.id === selectedAccountId)?.baseCurrency : null) ||
+    activeAccount?.baseCurrency ||
+    (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
+  const currencySym = getCurrencySymbol(activeCurrency);
 
   const { data: calendarData, isLoading } = useQuery({
     queryKey: ['journal-calendar', ymString, effectiveScopeParams],
@@ -242,7 +248,7 @@ export function JournalCalendarPage() {
   const sparklineData = days.map((d: any) => {
     runningCumulativePnL += d.netPnL || 0;
     runningCumulativeR += d.totalR || 0;
-    const currentVal = metricMode === 'INR' ? runningCumulativePnL : runningCumulativeR;
+    const currentVal = metricMode === 'MONEY' ? runningCumulativePnL : runningCumulativeR;
     if (currentVal > peakCumulative) peakCumulative = currentVal;
     return {
       day: d.dayNumber,
@@ -380,7 +386,7 @@ export function JournalCalendarPage() {
             </Select>
           </FormControl>
 
-          {/* Metric Mode Toggle (₹ Currency vs R-Multiple) */}
+          {/* Metric Mode Toggle (Currency vs R-Multiple) */}
           <ToggleButtonGroup
             size="small"
             value={metricMode}
@@ -405,7 +411,7 @@ export function JournalCalendarPage() {
               },
             }}
           >
-            <ToggleButton value="INR">₹ Currency</ToggleButton>
+            <ToggleButton value="MONEY">{currencySym} Currency</ToggleButton>
             <ToggleButton value="R">R Multiple</ToggleButton>
           </ToggleButtonGroup>
 
@@ -540,7 +546,7 @@ export function JournalCalendarPage() {
             <Grid container spacing={2}>
               <Grid size={{ xs: 6, sm: 3 }}>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-                  Month Net {metricMode === 'INR' ? 'P&L' : 'R'}
+                  Month Net {metricMode === 'MONEY' ? 'P&L' : 'R'}
                 </Typography>
                 <Typography
                   variant="h5"
@@ -551,14 +557,14 @@ export function JournalCalendarPage() {
                     mt: 0.5,
                   }}
                 >
-                  {metricMode === 'INR'
-                    ? formatCurrency(totalMonthlyNet)
+                  {metricMode === 'MONEY'
+                    ? formatCurrency(totalMonthlyNet, activeCurrency)
                     : `${totalMonthlyR >= 0 ? '+' : ''}${totalMonthlyR.toFixed(2)}R`}
                 </Typography>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.25 }}>
-                  {metricMode === 'INR'
+                  {metricMode === 'MONEY'
                     ? `${totalMonthlyR >= 0 ? '+' : ''}${totalMonthlyR.toFixed(2)}R`
-                    : formatCurrency(totalMonthlyNet)}
+                    : formatCurrency(totalMonthlyNet, activeCurrency)}
                 </Typography>
               </Grid>
 
@@ -645,9 +651,9 @@ export function JournalCalendarPage() {
                     Compounding Trajectory
                   </Typography>
                   <Typography variant="subtitle2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: totalMonthlyNet >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
-                    {metricMode === 'INR' ? formatCurrency(totalMonthlyNet) : `${totalMonthlyR >= 0 ? '+' : ''}${totalMonthlyR.toFixed(2)}R`}
+                    {metricMode === 'MONEY' ? formatCurrency(totalMonthlyNet, activeCurrency) : `${totalMonthlyR >= 0 ? '+' : ''}${totalMonthlyR.toFixed(2)}R`}
                     <Typography component="span" variant="caption" sx={{ ml: 1, color: muiTheme.palette.text.secondary, fontWeight: 600 }}>
-                      (Peak: {metricMode === 'INR' ? formatCurrency(peakCumulative) : `${peakCumulative.toFixed(2)}R`})
+                      (Peak: {metricMode === 'MONEY' ? formatCurrency(peakCumulative, activeCurrency) : `${peakCumulative.toFixed(2)}R`})
                     </Typography>
                   </Typography>
                 </Box>
@@ -688,10 +694,10 @@ export function JournalCalendarPage() {
                               Day {d.day} ({d.date})
                             </Typography>
                             <Typography variant="caption" sx={{ color: d.dailyPnL >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700, display: 'block' }}>
-                              Day: {metricMode === 'INR' ? formatCurrency(d.dailyPnL) : `${d.dailyR >= 0 ? '+' : ''}${d.dailyR.toFixed(2)}R`}
+                              Day: {metricMode === 'MONEY' ? formatCurrency(d.dailyPnL, activeCurrency) : `${d.dailyR >= 0 ? '+' : ''}${d.dailyR.toFixed(2)}R`}
                             </Typography>
                             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, display: 'block' }}>
-                              Cumulative: {metricMode === 'INR' ? formatCurrency(d.cumulativePnL) : `${d.cumulativeR >= 0 ? '+' : ''}${d.cumulativeR.toFixed(2)}R`}
+                              Cumulative: {metricMode === 'MONEY' ? formatCurrency(d.cumulativePnL, activeCurrency) : `${d.cumulativeR >= 0 ? '+' : ''}${d.cumulativeR.toFixed(2)}R`}
                             </Typography>
                           </Box>
                         );
@@ -928,8 +934,8 @@ export function JournalCalendarPage() {
                               color: isGreen ? muiTheme.palette.profit.main : isRed ? muiTheme.palette.loss.main : muiTheme.palette.text.secondary,
                             }}
                           >
-                            {metricMode === 'INR'
-                              ? formatCurrency(dayItem.netPnL)
+                            {metricMode === 'MONEY'
+                              ? formatCurrency(dayItem.netPnL, activeCurrency)
                               : `${(dayItem.totalR || 0) >= 0 ? '+' : ''}${(dayItem.totalR || 0).toFixed(2)}R`}
                           </Typography>
                           <Typography
@@ -1030,8 +1036,8 @@ export function JournalCalendarPage() {
                           color: week.summary.weekNet >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
                         }}
                       >
-                        {metricMode === 'INR'
-                          ? `${week.summary.weekNet >= 0 ? '+' : ''}${formatCurrency(week.summary.weekNet)}`
+                        {metricMode === 'MONEY'
+                          ? `${week.summary.weekNet >= 0 ? '+' : ''}${formatCurrency(week.summary.weekNet, activeCurrency)}`
                           : `${week.summary.weekR >= 0 ? '+' : ''}${week.summary.weekR.toFixed(2)}R`}
                       </Typography>
 

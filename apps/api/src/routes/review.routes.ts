@@ -9,6 +9,8 @@ import {
   evaluateFocusRule,
   WeeklyReviewTradeInput,
   ITradeSummaryForDetection,
+  getAccountDayBoundaries,
+  getAccountISOWeekBoundaries,
 } from '@tradevault/financial-engine';
 import {
   isoWeekToRange,
@@ -30,7 +32,7 @@ import {
 } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
 
 function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
@@ -109,6 +111,7 @@ function toWeeklyReviewTrade(t: any): WeeklyReviewTradeInput {
     grossPnL: t.calculated?.grossPnL,
     totalCosts: t.calculated?.totalCosts,
     realizedRMultiple: t.calculated?.realizedRMultiple,
+    currency: (t.currency || 'USD').toUpperCase(),
     plannedRiskAmount,
     psychology: {
       disciplineScore: t.psychology?.disciplineScore,
@@ -181,6 +184,10 @@ async function computeWeeklySnapshot(
   const riskSettings = scopedRisk.riskSettings;
 
   const previousFocusRule = prevReviewDoc?.focusRule || null;
+  const accountCtx = await resolveAccountContext(
+    uId,
+    scope || (targetAccountId ? { mode: 'ACCOUNT', accountId: targetAccountId.toString() } : { mode: 'ALL' })
+  );
 
   const snapshot = buildWeeklyReview({
     week,
@@ -201,6 +208,33 @@ async function computeWeeklySnapshot(
     })),
     previousFocusRule,
   });
+
+  if (accountCtx.isMultiCurrency) {
+    const byCurrency: Record<string, any> = {};
+    for (const curr of accountCtx.currencies) {
+      const currTrades = mappedTrades.filter((t: any) => t.currency === curr);
+      const currPrevTrades = mappedPrevTrades.filter((t: any) => t.currency === curr);
+      byCurrency[curr] = buildWeeklyReview({
+        week,
+        startDate,
+        endDate,
+        trades: currTrades,
+        previousWeekTrades: currPrevTrades,
+        riskSettings,
+        accountEquity: 0,
+        templates: templates.map((t) => ({ id: t._id.toString(), name: t.name })),
+        strategies: strategies.map((s) => ({ id: s._id.toString(), name: s.name })),
+        dailyJournals: [],
+        previousFocusRule,
+      });
+    }
+    (snapshot as any).byCurrency = byCurrency;
+    (snapshot as any).isMultiCurrency = true;
+    (snapshot as any).currencies = accountCtx.currencies;
+  } else {
+    (snapshot as any).currency = accountCtx.primaryCurrency;
+    (snapshot as any).isMultiCurrency = false;
+  }
 
   const previousFocusEvaluation = evaluateFocusRule(previousFocusRule, mappedTrades, riskSettings);
 
@@ -397,12 +431,15 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     // Sort queue with most recent trades first
     queue.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime());
 
-    // Check today's daily loss breach
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Check today's daily loss breach in account timezone
+    const accountCtx = await resolveAccountContext(userId, scope);
+    const { start: todayStart, end: todayEnd } = getAccountDayBoundaries(new Date(), accountCtx.primaryTimezone || 'UTC');
     const todayClosedTrades = tradeSummaries.filter(
       (t) =>
         t.status === 'CLOSED' &&
-        new Date(t.entryTime).toISOString().split('T')[0] === todayStr
+        t.entryTime &&
+        new Date(t.entryTime) >= todayStart &&
+        new Date(t.entryTime) <= todayEnd
     );
     const dailyLossBreach = checkDailyLossBreach(
       todayClosedTrades,
@@ -442,8 +479,11 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       user?.riskSettings
     );
 
-    const startOfDay = new Date(`${date}T00:00:00.000Z`);
-    const endOfDay = new Date(`${date}T23:59:59.999Z`);
+    const accountCtx = await resolveAccountContext(userId, scope);
+    const { start: startOfDay, end: endOfDay } = getAccountDayBoundaries(
+      new Date(`${date}T12:00:00Z`),
+      accountCtx.primaryTimezone || 'UTC'
+    );
 
     const trades = await Trade.find({
       userId,
@@ -794,6 +834,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const updateFields: any = {
       userId,
       week,
+      currency: (snapshotToSave as any)?.currency || 'USD',
       startDate: existing?.startDate || range.startDate,
       endDate: existing?.endDate || range.endDate,
       accountId: targetAccountId,

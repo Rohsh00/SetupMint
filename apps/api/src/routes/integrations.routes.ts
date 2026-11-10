@@ -824,7 +824,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         }
 
         const balanceMsg = fundsResult?.brokerBalance != null
-          ? ` and live balance (₹${fundsResult.brokerBalance.toFixed(2)})`
+          ? ` and live balance (${fundsResult.brokerBalance.toFixed(2)})`
           : '';
         const backfillMsg = tradeResult.backfilledClosedTradesCount
           ? ` (${tradeResult.backfilledClosedTradesCount} closed trade${tradeResult.backfilledClosedTradesCount > 1 ? 's' : ''} auto-backfilled with excursion & setup)`

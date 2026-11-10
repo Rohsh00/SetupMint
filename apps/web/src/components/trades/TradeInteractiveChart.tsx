@@ -43,6 +43,7 @@ import {
   ISeriesApi,
 } from 'lightweight-charts';
 import { api } from '../../lib/api.js';
+import { getCurrencySymbol } from '../../lib/utils.js';
 import { calculateRLadderLevels } from '@tradevault/financial-engine';
 import { IAttachment, ITradeFill, IStopLossMoveEvent } from '@tradevault/shared';
 
@@ -136,6 +137,7 @@ export function TradeInteractiveChart({
 }: TradeInteractiveChartProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const chartCurrSym = getCurrencySymbol(trade?.currency);
 
   // Determine initial resolution: trade duration <= 4h -> 5m, else 15m
   const defaultResolution = useMemo(() => {
@@ -416,6 +418,8 @@ export function TradeInteractiveChart({
 
       // 7. Markers: Entry, Exit, Fills, and MFE/MAE Excursion
       const markers: any[] = [];
+      const sym = getCurrencySymbol(trade.currency);
+      const numLocale = trade.currency === 'INR' ? 'en-IN' : 'en-US';
 
       // A. Primary Entry Marker
       if (overlays.entryExit && trade.entryTime && entryPrice > 0) {
@@ -427,7 +431,7 @@ export function TradeInteractiveChart({
             position: isLong ? 'belowBar' : 'aboveBar',
             color: '#10b981',
             shape: isLong ? 'arrowUp' : 'arrowDown',
-            text: `ENTRY @ ₹${Number(entryPrice).toLocaleString('en-IN')}`,
+            text: `ENTRY @ ${sym}${Number(entryPrice).toLocaleString(numLocale)}`,
           });
         }
       }
@@ -442,7 +446,7 @@ export function TradeInteractiveChart({
             position: isLong ? 'aboveBar' : 'belowBar',
             color: '#f43f5e',
             shape: isLong ? 'arrowDown' : 'arrowUp',
-            text: `EXIT @ ₹${Number(exitPrice).toLocaleString('en-IN')}`,
+            text: `EXIT @ ${sym}${Number(exitPrice).toLocaleString(numLocale)}`,
           });
         }
       }
@@ -473,7 +477,7 @@ export function TradeInteractiveChart({
               : 'belowBar',
             color: isFillEntry ? '#3b82f6' : '#f59e0b',
             shape: isFillEntry ? (isLong ? 'arrowUp' : 'arrowDown') : 'circle',
-            text: `${fill.type} ${fill.quantity} @ ₹${fill.price}`,
+            text: `${fill.type} ${fill.quantity} @ ${sym}${fill.price}`,
             size: sizeRel,
           });
         }
@@ -1228,16 +1232,16 @@ export function TradeInteractiveChart({
             </Typography>
             <Box sx={{ display: 'flex', gap: 1.5 }}>
               <Typography variant="caption" sx={{ fontFamily: 'inherit' }}>
-                O: <strong>₹{hoveredCandle.open}</strong>
+                O: <strong>{chartCurrSym}{hoveredCandle.open}</strong>
               </Typography>
               <Typography variant="caption" sx={{ fontFamily: 'inherit' }}>
-                H: <strong>₹{hoveredCandle.high}</strong>
+                H: <strong>{chartCurrSym}{hoveredCandle.high}</strong>
               </Typography>
               <Typography variant="caption" sx={{ fontFamily: 'inherit' }}>
-                L: <strong>₹{hoveredCandle.low}</strong>
+                L: <strong>{chartCurrSym}{hoveredCandle.low}</strong>
               </Typography>
               <Typography variant="caption" sx={{ fontFamily: 'inherit' }}>
-                C: <strong>₹{hoveredCandle.close}</strong>
+                C: <strong>{chartCurrSym}{hoveredCandle.close}</strong>
               </Typography>
               <Typography
                 variant="caption"

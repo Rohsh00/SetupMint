@@ -49,7 +49,6 @@ const UserSchema = new Schema<IUserDoc>(
     },
     baseCurrency: {
       type: String,
-      default: 'INR',
       trim: true,
     },
     theme: {

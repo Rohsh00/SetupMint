@@ -32,7 +32,7 @@ import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 
 import { api } from '../../../lib/api.js';
 import { toast } from '../../../context/ToastContext.js';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 import { generatePostTradeReviewSummary } from '@tradevault/financial-engine';
 
 export interface TradeFlightRecorderDialogProps {
@@ -50,6 +50,8 @@ export function TradeFlightRecorderDialog({ open, onClose, trade }: TradeFlightR
   const symbol = trade?.symbol || 'UNKNOWN';
   const direction = trade?.direction || 'LONG';
   const isLong = direction === 'LONG';
+  const tradeCurrency = trade?.currency || 'USD';
+  const currSym = getCurrencySymbol(tradeCurrency);
   const netPnL = Number(trade?.calculated?.netPnL ?? trade?.simpleExecution?.netPnL ?? 0);
   const grossPnL = Number(trade?.calculated?.grossPnL ?? trade?.simpleExecution?.grossPnL ?? netPnL);
   const totalFees = Number(trade?.calculated?.totalFees ?? trade?.simpleExecution?.totalFees ?? Math.max(0, grossPnL - netPnL));
@@ -183,19 +185,19 @@ export function TradeFlightRecorderDialog({ open, onClose, trade }: TradeFlightR
 🏁 SETUPMINT — TRADE FLIGHT RECORDER RECEIPT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Symbol:       ${symbol} (${direction})
-Time:         ${dateStr} IST
+Time:         ${dateStr}
 Duration:     ${durationStr}
-Execution:    ${quantity} Qty @ Entry ₹${entryPrice} ➔ Exit ₹${exitPrice}
+Execution:    ${quantity} Qty @ Entry ${currSym}${entryPrice} ➔ Exit ${currSym}${exitPrice}
 
 FINANCIAL OUTCOME:
-Net P&L:      ${isProfitable ? '+' : ''}₹${netPnL.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+Net P&L:      ${isProfitable ? '+' : ''}${formatCurrency(netPnL, tradeCurrency)}
 Realized R:   ${realizedR !== null ? `${realizedR >= 0 ? '+' : ''}${realizedR} R` : '—'}
 Execution:    Grade ${gradeInfo.grade} (${gradeInfo.label})
 
 EXCURSION TELEMETRY:
-Peak MFE:     +₹${peakMfePnl.toLocaleString('en-IN')} (${peakMfeR !== null ? `+${peakMfeR}R` : '—'})
+Peak MFE:     +${formatCurrency(peakMfePnl, tradeCurrency)} (${peakMfeR !== null ? `+${peakMfeR}R` : '—'})
 Captured:     ${mfeCaptureEfficiency}% of Peak Move
-Charges:      ₹${totalFees.toFixed(2)} (Brokerage & STT)
+Charges:      ${formatCurrency(totalFees, tradeCurrency)}
 Discipline:   ${selectedDiscipline === 'FOLLOWED_PLAN' ? 'Rule Followed (100%)' : 'Rules Broken'}
 Mindset:      ${selectedEmotion}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -356,7 +358,7 @@ Verified by SetupMint Private Journal`;
                 }}
               >
                 {isProfitable ? '+' : ''}
-                {formatCurrency(netPnL, 'INR')}
+                {formatCurrency(netPnL, tradeCurrency)}
               </Typography>
             </Box>
 
@@ -382,7 +384,7 @@ Verified by SetupMint Private Journal`;
           {/* Fill Prices & Duration */}
           <Divider sx={{ my: 0.25 }} />
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: 'text.secondary' }}>
-            <span>Entry: <strong style={{ color: muiTheme.palette.text.primary, fontFamily: 'monospace' }}>₹{entryPrice}</strong> ➔ Exit: <strong style={{ color: muiTheme.palette.text.primary, fontFamily: 'monospace' }}>₹{exitPrice}</strong></span>
+            <span>Entry: <strong style={{ color: muiTheme.palette.text.primary, fontFamily: 'monospace' }}>{currSym}{entryPrice}</strong> ➔ Exit: <strong style={{ color: muiTheme.palette.text.primary, fontFamily: 'monospace' }}>{currSym}{exitPrice}</strong></span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
               <AccessTimeRoundedIcon sx={{ fontSize: 13 }} />
               Duration: <strong style={{ color: muiTheme.palette.text.primary }}>{durationStr}</strong>
@@ -411,11 +413,11 @@ Verified by SetupMint Private Journal`;
                 {mfeCaptureEfficiency}%
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.64rem', display: 'block' }}>
-                Peak: +₹{peakMfePnl.toFixed(0)} ({peakMfeR !== null ? `+${peakMfeR}R` : '—'})
+                Peak: +{currSym}{peakMfePnl.toFixed(0)} ({peakMfeR !== null ? `+${peakMfeR}R` : '—'})
               </Typography>
               {reviewData.surrenderedGivebackPnl > 0 && (
                 <Typography variant="caption" sx={{ fontSize: '0.62rem', color: '#F59E0B', fontWeight: 700, display: 'block' }}>
-                  Giveback: -₹{reviewData.surrenderedGivebackPnl.toFixed(0)} ({reviewData.surrenderedGivebackPercent}%)
+                  Giveback: -{currSym}{reviewData.surrenderedGivebackPnl.toFixed(0)} ({reviewData.surrenderedGivebackPercent}%)
                 </Typography>
               )}
             </Box>
@@ -437,10 +439,10 @@ Verified by SetupMint Private Journal`;
                 Total Charges (Friction)
               </Typography>
               <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                {formatCurrency(totalFees, 'INR')}
+                {formatCurrency(totalFees, tradeCurrency)}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.64rem' }}>
-                Gross P&L: {formatCurrency(grossPnL, 'INR')}
+                Gross P&L: {formatCurrency(grossPnL, tradeCurrency)}
               </Typography>
             </Box>
           </Grid>

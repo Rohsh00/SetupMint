@@ -374,8 +374,8 @@ export class ChartGeneratorService {
     const timeframeDisplay = `${timeframeStr}${paddingStr}`;
     const tfChipWidth = Math.max(40, timeframeDisplay.length * 8 + 14);
 
-    const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
-    const symPrefix = isForex ? '$' : '₹';
+    const tradeCurrency = trade.currency || (trade.symbol?.startsWith('NSE:') || trade.symbol?.startsWith('BSE:') || trade.symbol?.startsWith('MCX:') ? 'INR' : 'USD');
+    const symPrefix = tradeCurrency === 'INR' ? '₹' : tradeCurrency === 'EUR' ? '€' : tradeCurrency === 'GBP' ? '£' : '$';
     const directionColor = direction === 'LONG' ? '#10b981' : '#f43f5e';
     const pnlColor = activePnl >= 0 ? '#10b981' : '#f43f5e';
     const pnlPrefix = activePnl >= 0 ? '+' : '';

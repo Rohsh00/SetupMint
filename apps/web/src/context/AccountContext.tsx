@@ -1,0 +1,595 @@
+import React, { createContext, useContext, useMemo, useCallback, useEffect } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import {
+  AccountScope,
+  AccountScopeMode,
+  ITradingAccountProfile,
+  ITradingAccountCapabilities,
+} from '@tradevault/shared';
+import { api } from '../lib/api.js';
+import { useAuth } from './AuthContext.js';
+
+const SCOPE_STORAGE_KEY = 'setupmint_account_scope';
+
+export const defaultCapabilities: ITradingAccountCapabilities = {
+  canPlaceOrders: false,
+  canModifyStopLoss: false,
+  canExitPositions: false,
+  canScaleLadder: false,
+  canAutoExecute: false,
+  canSyncFunds: false,
+  canFetchHistory: false,
+  canStreamQuotes: false,
+};
+
+function readStoredScopeValue(): string | null {
+  try {
+    return sessionStorage.getItem(SCOPE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredScopeValue(val: string): void {
+  try {
+    sessionStorage.setItem(SCOPE_STORAGE_KEY, val);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export interface AccountContextValue {
+  // Active Account & Profiles
+  activeAccount: any | null;
+  activeAccounts: any[];
+  profile: ITradingAccountProfile | null;
+  currency: string; // ISO code or 'MULTI'
+  timezone: string;
+  capabilities: ITradingAccountCapabilities;
+  isSingleCurrency: boolean;
+  isMultiCurrency: boolean;
+  currencies: string[];
+  refetchAccounts: () => void;
+
+  // Scope & Navigation
+  scope: AccountScope;
+  scopeLabel: string;
+  isPropMode: boolean;
+  selectedScopeValue: string;
+  setScopeValue: (val: string) => void;
+  setScope: (scope: Partial<AccountScope>) => void;
+  queryParams: Record<string, string>;
+  selectedAccountId?: string;
+
+  // Account Categories
+  accounts: any[];
+  scopedAccounts: any[];
+  propAccounts: any[];
+  personalAccounts: any[];
+  demoAccounts: any[];
+  propFirms: string[];
+}
+
+export type AccountScopeContextValue = AccountContextValue;
+
+const AccountContext = createContext<AccountContextValue | undefined>(undefined);
+
+export function AccountProvider({ children }: { children: React.ReactNode }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const { user, refreshUser } = useAuth();
+  const [manualScopeOverride, setManualScopeOverride] = React.useState<string | null>(null);
+
+  // Fetch accounts to resolve names, types, profiles, and prop firm keys
+  const { data: accounts = [], refetch: refetchAccounts } = useQuery<any[]>({
+    queryKey: ['accounts'],
+    queryFn: () => api.accounts.list(),
+    staleTime: 5 * 60 * 1000,
+    enabled: Boolean(user),
+  });
+
+  const propAccounts = useMemo(() => {
+    return accounts.filter(
+      (a: any) =>
+        a.accountType === 'PROP_FIRM' ||
+        Boolean(a.propFirm?.firmKey) ||
+        Boolean(a.propFirmConfig?.enabled)
+    );
+  }, [accounts]);
+
+  const personalAccounts = useMemo(() => {
+    return accounts.filter(
+      (a: any) =>
+        a.accountType !== 'PROP_FIRM' &&
+        a.accountType !== 'DEMO' &&
+        a.accountType !== 'SIMULATED' &&
+        !a.propFirm?.firmKey &&
+        !a.propFirmConfig?.enabled
+    );
+  }, [accounts]);
+
+  const demoAccounts = useMemo(() => {
+    return accounts.filter((a: any) => a.accountType === 'DEMO' || a.accountType === 'SIMULATED');
+  }, [accounts]);
+
+  const propFirms = useMemo(() => {
+    const firms = new Set<string>();
+    for (const a of propAccounts) {
+      const firmKey = a.propFirm?.firmKey || a.propFirmConfig?.firm;
+      if (firmKey) {
+        firms.add(firmKey.toLowerCase());
+      }
+    }
+    return Array.from(firms);
+  }, [propAccounts]);
+
+  // Read URL params
+  const rawScope = searchParams.get('scope');
+  const firmParam = searchParams.get('firm') || searchParams.get('firmKey');
+  const typeParam = searchParams.get('type') || searchParams.get('accountType');
+  const accountParam = searchParams.get('account') || searchParams.get('accountId');
+  const hasExplicitUrlScope = Boolean(rawScope || firmParam || typeParam || accountParam);
+
+  const { scope, scopeLabel, selectedScopeValue, isPropMode, selectedAccountId } = useMemo(() => {
+    let mode: AccountScopeMode = 'ALL';
+    let firmKey: string | undefined = undefined;
+    let accountType: string | undefined = undefined;
+    let accountId: string | undefined = undefined;
+
+    if (hasExplicitUrlScope) {
+      if (rawScope === 'PROP_FIRM' || rawScope === 'prop_firm' || (!rawScope && firmParam)) {
+        mode = 'PROP_FIRM';
+        if (firmParam && firmParam !== 'ALL') {
+          firmKey = firmParam.toLowerCase();
+        }
+        if (accountParam && accountParam !== 'ALL') {
+          accountId = accountParam;
+        }
+      } else if (rawScope === 'TYPE' || rawScope === 'type' || (!rawScope && typeParam)) {
+        mode = 'TYPE';
+        accountType = typeParam || 'LIVE';
+      } else if (rawScope === 'ACCOUNT' || rawScope === 'account' || (accountParam && !rawScope)) {
+        if (accountParam && accountParam !== 'ALL') {
+          mode = 'ACCOUNT';
+          accountId = accountParam;
+        } else {
+          mode = 'ALL';
+        }
+      } else {
+        mode = 'ALL';
+      }
+    } else {
+      const sessionVal = readStoredScopeValue();
+      const stored =
+        manualScopeOverride ||
+        (user?.defaultAccountScope && user.defaultAccountScope !== 'ALL'
+          ? user.defaultAccountScope
+          : sessionVal && sessionVal !== 'ALL'
+          ? sessionVal
+          : user?.defaultAccountScope || sessionVal || 'ALL');
+      if (stored === 'PROP_FIRM:ALL' || stored === 'PROP_FIRM') {
+        mode = 'PROP_FIRM';
+      } else if (stored.startsWith('PROP_FIRM:')) {
+        mode = 'PROP_FIRM';
+        firmKey = stored.slice('PROP_FIRM:'.length).toLowerCase();
+      } else if (stored === 'LIVE' || stored === 'PERSONAL') {
+        mode = 'TYPE';
+        accountType = 'LIVE';
+      } else if (stored.startsWith('TYPE:')) {
+        mode = 'TYPE';
+        accountType = stored.slice('TYPE:'.length) || 'LIVE';
+      } else if (stored.startsWith('ACCOUNT:')) {
+        mode = 'ACCOUNT';
+        accountId = stored.slice('ACCOUNT:'.length);
+      } else {
+        mode = 'ALL';
+      }
+    }
+
+    // Guard against stale accountId from another session
+    if (accountId && accounts.length > 0) {
+      const exists = accounts.some((a: any) => a.id === accountId || a._id === accountId);
+      if (!exists) {
+        accountId = undefined;
+        if (mode === 'ACCOUNT') {
+          mode = 'ALL';
+        }
+      }
+    }
+
+    if (mode === 'ACCOUNT' && accountId && accounts.length > 0) {
+      if (personalAccounts.length === 1 && (personalAccounts[0].id === accountId || personalAccounts[0]._id === accountId)) {
+        mode = 'TYPE';
+        accountType = 'LIVE';
+      } else if (propAccounts.length === 1 && (propAccounts[0].id === accountId || propAccounts[0]._id === accountId)) {
+        mode = 'PROP_FIRM';
+      }
+    }
+
+    if (mode === 'TYPE' && (accountType === 'LIVE' || !accountType) && personalAccounts.length === 1) {
+      accountId = personalAccounts[0].id || personalAccounts[0]._id;
+    } else if (mode === 'PROP_FIRM' && !accountId && propAccounts.length === 1) {
+      accountId = propAccounts[0].id || propAccounts[0]._id;
+    }
+
+    const currentScope: AccountScope = {
+      mode,
+      firmKey,
+      accountType: accountType as any,
+      accountId,
+    };
+
+    const selectedAcc = accountId ? accounts.find((a: any) => a.id === accountId || a._id === accountId) : null;
+    const selectedIsProp = Boolean(
+      selectedAcc &&
+        (selectedAcc.accountType === 'PROP_FIRM' ||
+          selectedAcc.propFirm?.firmKey ||
+          selectedAcc.propFirmConfig?.enabled)
+    );
+
+    const propModeActive = mode === 'PROP_FIRM' || selectedIsProp;
+
+    let scopeVal = 'ALL';
+    let label = 'All Accounts';
+    if (mode === 'PROP_FIRM') {
+      if (accountId && propAccounts.length > 1) {
+        scopeVal = `ACCOUNT:${accountId}`;
+        label = selectedAcc?.name || 'Prop Account';
+      } else if (firmKey && propFirms.length > 1) {
+        scopeVal = `PROP_FIRM:${firmKey}`;
+        label = `Prop Firm (${firmKey.toUpperCase()})`;
+      } else {
+        scopeVal = 'PROP_FIRM:ALL';
+        label = propAccounts.length === 1 ? propAccounts[0].name : 'All Prop Firms';
+      }
+    } else if (mode === 'TYPE') {
+      scopeVal = `TYPE:${accountType || 'LIVE'}`;
+      label =
+        accountType === 'DEMO'
+          ? 'Demo Accounts'
+          : personalAccounts.length === 1
+          ? personalAccounts[0].name
+          : 'Personal / Live Accounts';
+    } else if (mode === 'ACCOUNT' && accountId) {
+      scopeVal = `ACCOUNT:${accountId}`;
+      label = selectedAcc?.name || 'Account';
+    }
+
+    return {
+      scope: currentScope,
+      scopeLabel: label,
+      selectedScopeValue: scopeVal,
+      isPropMode: propModeActive,
+      selectedAccountId: accountId,
+    };
+  }, [hasExplicitUrlScope, rawScope, firmParam, typeParam, accountParam, accounts, personalAccounts, propAccounts, propFirms, user?.defaultAccountScope, manualScopeOverride]);
+
+  useEffect(() => {
+    if (hasExplicitUrlScope || user) {
+      writeStoredScopeValue(selectedScopeValue);
+    }
+
+    if (!hasExplicitUrlScope && selectedScopeValue !== 'ALL') {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (selectedScopeValue === 'PROP_FIRM:ALL') {
+            next.set('scope', 'PROP_FIRM');
+          } else if (selectedScopeValue.startsWith('PROP_FIRM:')) {
+            next.set('scope', 'PROP_FIRM');
+            next.set('firm', selectedScopeValue.slice('PROP_FIRM:'.length));
+          } else if (selectedScopeValue.startsWith('TYPE:')) {
+            next.set('scope', 'TYPE');
+            next.set('type', selectedScopeValue.slice('TYPE:'.length));
+          } else if (selectedScopeValue.startsWith('ACCOUNT:')) {
+            next.set('scope', 'ACCOUNT');
+            next.set('account', selectedScopeValue.slice('ACCOUNT:'.length));
+          }
+          return next;
+        },
+        { replace: true }
+      );
+    }
+  }, [selectedScopeValue, hasExplicitUrlScope, user, location.pathname, setSearchParams]);
+
+  const setScopeValue = useCallback(
+    (val: string) => {
+      setManualScopeOverride(val);
+      writeStoredScopeValue(val);
+      if (user) {
+        api.settings
+          .updateProfile({ defaultAccountScope: val })
+          .then(() => refreshUser())
+          .catch(() => {});
+      }
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (val === 'ALL') {
+            next.delete('scope');
+            next.delete('firm');
+            next.delete('firmKey');
+            next.delete('type');
+            next.delete('account');
+            next.delete('accountId');
+          } else if (val === 'PROP_FIRM:ALL') {
+            next.set('scope', 'PROP_FIRM');
+            next.delete('firm');
+            next.delete('firmKey');
+            next.delete('type');
+            next.delete('account');
+            next.delete('accountId');
+          } else if (val.startsWith('PROP_FIRM:')) {
+            const firmKey = val.slice('PROP_FIRM:'.length);
+            next.set('scope', 'PROP_FIRM');
+            next.set('firm', firmKey);
+            next.delete('type');
+            next.delete('account');
+            next.delete('accountId');
+          } else if (val.startsWith('TYPE:')) {
+            const type = val.slice('TYPE:'.length);
+            next.set('scope', 'TYPE');
+            next.set('type', type);
+            next.delete('firm');
+            next.delete('firmKey');
+            next.delete('account');
+            next.delete('accountId');
+          } else if (val.startsWith('ACCOUNT:')) {
+            const accId = val.slice('ACCOUNT:'.length);
+            next.set('scope', 'ACCOUNT');
+            next.set('account', accId);
+            next.delete('firm');
+            next.delete('firmKey');
+            next.delete('type');
+          }
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams, user, refreshUser]
+  );
+
+  const setScope = useCallback(
+    (newScope: Partial<AccountScope>) => {
+      let nextStored = 'ALL';
+      if (newScope.mode === 'PROP_FIRM') {
+        if (newScope.accountId) nextStored = `ACCOUNT:${newScope.accountId}`;
+        else if (newScope.firmKey) nextStored = `PROP_FIRM:${newScope.firmKey.toLowerCase()}`;
+        else nextStored = 'PROP_FIRM:ALL';
+      } else if (newScope.mode === 'TYPE') {
+        nextStored = `TYPE:${newScope.accountType || 'LIVE'}`;
+      } else if (newScope.mode === 'ACCOUNT' && newScope.accountId) {
+        nextStored = `ACCOUNT:${newScope.accountId}`;
+      }
+      writeStoredScopeValue(nextStored);
+
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (newScope.mode === 'ALL' || !newScope.mode) {
+            next.delete('scope');
+            next.delete('firm');
+            next.delete('firmKey');
+            next.delete('type');
+            next.delete('account');
+            next.delete('accountId');
+          } else if (newScope.mode === 'PROP_FIRM') {
+            next.set('scope', 'PROP_FIRM');
+            if (newScope.firmKey) next.set('firm', newScope.firmKey);
+            else next.delete('firm');
+            if (newScope.accountId) next.set('account', newScope.accountId);
+            else next.delete('account');
+            next.delete('type');
+          } else if (newScope.mode === 'TYPE') {
+            next.set('scope', 'TYPE');
+            if (newScope.accountType) next.set('type', newScope.accountType);
+            next.delete('firm');
+            next.delete('account');
+          } else if (newScope.mode === 'ACCOUNT') {
+            next.set('scope', 'ACCOUNT');
+            if (newScope.accountId) next.set('account', newScope.accountId);
+            next.delete('firm');
+            next.delete('type');
+          }
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const queryParams = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (scope.mode && scope.mode !== 'ALL') {
+      p.scope = scope.mode;
+    }
+    if (scope.firmKey) {
+      p.firmKey = scope.firmKey;
+    }
+    if (scope.accountType) {
+      p.accountType = scope.accountType;
+    }
+    if (scope.accountId) {
+      p.accountId = scope.accountId;
+    }
+    return p;
+  }, [scope]);
+
+  const scopedAccounts = useMemo(() => {
+    if (scope.accountId) {
+      return accounts.filter((a: any) => (a.id || a._id) === scope.accountId);
+    }
+    if (scope.mode === 'PROP_FIRM') {
+      if (scope.firmKey && scope.firmKey !== 'ALL') {
+        const target = scope.firmKey.toLowerCase();
+        return propAccounts.filter((a: any) => {
+          const fk = (
+            a.propFirm?.firmKey ||
+            (a.propFirmConfig?.enabled ? a.propFirmConfig?.firm : '') ||
+            a.broker ||
+            a.propFirmConfig?.firm ||
+            ''
+          ).toLowerCase();
+          return fk === target || (a.broker || '').toLowerCase() === target;
+        });
+      }
+      return propAccounts;
+    }
+    if (scope.mode === 'TYPE') {
+      if (String(scope.accountType || '').toUpperCase() === 'DEMO') {
+        return demoAccounts;
+      }
+      return personalAccounts;
+    }
+    return accounts;
+  }, [scope, accounts, propAccounts, personalAccounts, demoAccounts]);
+
+  // Derive activeAccount, currencies, and multi-currency metrics
+  const activeAccount = useMemo(() => {
+    if (scope.accountId) {
+      return accounts.find((a: any) => (a.id || a._id) === scope.accountId) || null;
+    }
+    if (scopedAccounts.length === 1) {
+      return scopedAccounts[0];
+    }
+    return scopedAccounts[0] || null;
+  }, [scope.accountId, accounts, scopedAccounts]);
+
+  const currencies = useMemo(() => {
+    const set = new Set<string>();
+    const list = scopedAccounts.length > 0 ? scopedAccounts : accounts;
+    for (const a of list) {
+      const c = (a.baseCurrency || a.currency || a.profile?.baseCurrency || 'USD').toUpperCase();
+      set.add(c);
+    }
+    return Array.from(set);
+  }, [scopedAccounts, accounts]);
+
+  const isMultiCurrency = currencies.length > 1;
+  const isSingleCurrency = !isMultiCurrency;
+
+  const currency = useMemo(() => {
+    if (isMultiCurrency) return 'MULTI';
+    if (currencies.length === 1) return currencies[0];
+    return activeAccount?.baseCurrency || activeAccount?.profile?.baseCurrency || 'USD';
+  }, [isMultiCurrency, currencies, activeAccount]);
+
+  const profile: ITradingAccountProfile | null = useMemo(() => {
+    if (activeAccount?.profile) {
+      return activeAccount.profile;
+    }
+    if (activeAccount) {
+      const isFyers = (activeAccount.broker || '').toUpperCase() === 'FYERS';
+      const isElefin = (activeAccount.broker || '').toUpperCase().includes('ELEFIN');
+      const isProp =
+        activeAccount.accountType === 'PROP_FIRM' ||
+        Boolean(activeAccount.propFirm?.firmKey) ||
+        Boolean(activeAccount.propFirmConfig?.enabled);
+
+      return {
+        marketRegion: isFyers ? 'IN' : isElefin ? 'GLOBAL' : isProp ? 'GLOBAL' : 'GLOBAL',
+        baseCurrency: activeAccount.baseCurrency || (isFyers ? 'INR' : 'USD'),
+        timezone: isFyers ? 'Asia/Kolkata' : 'UTC',
+        feeModelKey: isFyers ? 'INDIA_STATUTORY' : isElefin ? 'FOREX_COMMISSION' : isProp ? 'FOREX_COMMISSION' : 'NONE',
+        executionAdapterKey: isFyers ? 'FYERS' : isElefin ? 'ELEFIN_MT5' : isProp ? 'PROP_SIM' : 'MANUAL',
+        positionModel: isElefin ? 'HEDGING' : 'NETTING_FIFO',
+        sessionCalendarKey: isFyers ? 'NSE' : isElefin ? 'FOREX_24_5' : isProp ? 'FOREX_24_5' : 'FOREX_24_5',
+        capabilities: activeAccount.capabilities || {
+          canPlaceOrders: isFyers || isElefin || isProp,
+          canModifyStopLoss: isFyers || isElefin || isProp,
+          canExitPositions: isFyers || isElefin || isProp,
+          canScaleLadder: isFyers || isElefin || isProp,
+          canAutoExecute: isFyers || isElefin || isProp,
+          canSyncFunds: isFyers,
+          canFetchHistory: isFyers,
+          canStreamQuotes: isFyers || isElefin || isProp,
+        },
+      };
+    }
+    return null;
+  }, [activeAccount]);
+
+  const timezone = useMemo(() => {
+    if (profile?.timezone) return profile.timezone;
+    if (currency === 'INR') return 'Asia/Kolkata';
+    return 'UTC';
+  }, [profile, currency]);
+
+  const capabilities: ITradingAccountCapabilities = useMemo(() => {
+    return profile?.capabilities || activeAccount?.capabilities || defaultCapabilities;
+  }, [profile, activeAccount]);
+
+  const value = useMemo(
+    () => ({
+      activeAccount,
+      activeAccounts: scopedAccounts,
+      profile,
+      currency,
+      timezone,
+      capabilities,
+      isSingleCurrency,
+      isMultiCurrency,
+      currencies,
+      refetchAccounts,
+      scope,
+      scopeLabel,
+      isPropMode,
+      selectedScopeValue,
+      setScopeValue,
+      setScope,
+      queryParams,
+      selectedAccountId,
+      accounts,
+      scopedAccounts,
+      propAccounts,
+      personalAccounts,
+      demoAccounts,
+      propFirms,
+    }),
+    [
+      activeAccount,
+      scopedAccounts,
+      profile,
+      currency,
+      timezone,
+      capabilities,
+      isSingleCurrency,
+      isMultiCurrency,
+      currencies,
+      refetchAccounts,
+      scope,
+      scopeLabel,
+      isPropMode,
+      selectedScopeValue,
+      setScopeValue,
+      setScope,
+      queryParams,
+      selectedAccountId,
+      accounts,
+      propAccounts,
+      personalAccounts,
+      demoAccounts,
+      propFirms,
+    ]
+  );
+
+  return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
+}
+
+export function useAccount() {
+  const ctx = useContext(AccountContext);
+  if (!ctx) {
+    throw new Error('useAccount must be used within an AccountProvider');
+  }
+  return ctx;
+}
+
+export function useAccountScope() {
+  return useAccount();
+}
+
+export const AccountScopeProvider = AccountProvider;
+

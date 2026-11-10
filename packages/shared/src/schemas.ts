@@ -5,7 +5,7 @@ export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters long'),
   name: z.string().min(2, 'Name must be at least 2 characters long'),
-  baseCurrency: z.string().default('INR'),
+  baseCurrency: z.string().optional(),
 });
 
 export const loginSchema = z.object({
@@ -123,7 +123,42 @@ export const propFirmConfigSchema = z.object({
   status: z.enum(['ACTIVE', 'PASSED', 'BREACHED']).optional().default('ACTIVE'),
 });
 
-export const createAccountSchema = z.object({
+export const tradingAccountCapabilitiesSchema = z.object({
+  canPlaceOrders: z.boolean().default(false),
+  canModifyStopLoss: z.boolean().default(false),
+  canExitPositions: z.boolean().default(false),
+  canScaleLadder: z.boolean().default(false),
+  canAutoExecute: z.boolean().default(false),
+  canSyncFunds: z.boolean().default(false),
+  canFetchHistory: z.boolean().default(false),
+  canStreamQuotes: z.boolean().default(false),
+});
+
+export const accountRiskRulesSchema = z.object({
+  maxDailyLoss: z.number().optional(),
+  maxRiskPerTradePercent: z.number().optional(),
+  maxOpenTrades: z.number().optional(),
+  maxDailyTrades: z.number().optional(),
+  lotCap: z.number().optional(),
+  maxLoss: z.number().optional(),
+  prohibitNewsTrading: z.boolean().optional(),
+  prohibitWeekendHolding: z.boolean().optional(),
+  requireStopLoss: z.boolean().optional(),
+});
+
+export const tradingAccountProfileSchema = z.object({
+  marketRegion: z.enum(['IN', 'US', 'EU', 'GLOBAL']).default('GLOBAL'),
+  baseCurrency: z.string().min(1, 'Base currency is required'),
+  timezone: z.string().min(1, 'Timezone is required'),
+  feeModelKey: z.enum(['INDIA_STATUTORY', 'FOREX_COMMISSION', 'NONE', 'CUSTOM']).default('NONE'),
+  executionAdapterKey: z.enum(['FYERS', 'ELEFIN_MT5', 'PROP_SIM', 'MANUAL']).default('MANUAL'),
+  positionModel: z.enum(['NETTING_FIFO', 'HEDGING']).default('NETTING_FIFO'),
+  sessionCalendarKey: z.enum(['NSE', 'MCX', 'FOREX_24_5', 'CRYPTO_24_7']).default('FOREX_24_5'),
+  riskRules: accountRiskRulesSchema.optional(),
+  capabilities: tradingAccountCapabilitiesSchema,
+});
+
+export const createAccountObjectSchema = z.object({
   name: z.string().min(1, 'Account name is required'),
   broker: z.string().min(1, 'Broker name is required'),
   accountNumber: z.string().optional(),
@@ -137,8 +172,10 @@ export const createAccountSchema = z.object({
     'DEMO',
     'OTHER',
   ]),
-  baseCurrency: z.string().default('INR'),
+  baseCurrency: z.string().min(1, 'Base currency is required'),
+  currency: z.string().optional(),
   initialBalance: z.number().nonnegative('Initial balance cannot be negative'),
+  profile: tradingAccountProfileSchema.optional(),
   riskRules: z
     .object({
       maxDailyLoss: z.number().optional(),
@@ -150,6 +187,30 @@ export const createAccountSchema = z.object({
   propFirm: propFirmAccountDataSchema.optional(),
   notes: z.string().optional(),
 });
+
+export const createAccountSchema = z.preprocess(
+  (val: any) => {
+    if (val && typeof val === 'object') {
+      if (!val.baseCurrency && val.currency) {
+        return { ...val, baseCurrency: val.currency };
+      }
+    }
+    return val;
+  },
+  createAccountObjectSchema
+);
+
+export const updateAccountSchema = z.preprocess(
+  (val: any) => {
+    if (val && typeof val === 'object') {
+      if (!val.baseCurrency && val.currency) {
+        return { ...val, baseCurrency: val.currency };
+      }
+    }
+    return val;
+  },
+  createAccountObjectSchema.partial()
+);
 
 export const accountTransactionSourceSchema = z.enum([
   'MANUAL',
@@ -170,7 +231,7 @@ export const accountTransactionSchema = z
     accountId: z.string().min(1, 'Account is required'),
     type: z.enum(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER', 'ADJUSTMENT']),
     amount: z.number().refine((value) => value !== 0, 'Amount must not be zero'),
-    currency: z.string().default('INR'),
+    currency: z.string().min(1, 'Currency is required'),
     date: z.string().min(1, 'Date is required'),
     notes: z.string().optional(),
     source: accountTransactionSourceSchema.optional(),
@@ -220,7 +281,7 @@ export const createInstrumentSchema = z.object({
     'CME',
     'OTHER',
   ]),
-  quoteCurrency: z.string().default('INR'),
+  quoteCurrency: z.string().default('USD'),
   contractMultiplier: z.number().positive('Contract multiplier must be positive').default(1),
   lotSize: z.number().positive('Lot size must be positive').default(1),
   tickSize: z.number().positive('Tick size must be positive').default(0.05),
@@ -397,14 +458,14 @@ export const createTradeSchema = z.object({
     'CME',
     'OTHER',
   ]),
-  currency: z.string().default('INR'),
+  currency: z.string().min(1, 'Currency is required').optional(),
   direction: z.enum(['LONG', 'SHORT']),
   status: z.enum(['PLANNED', 'OPEN', 'CLOSED', 'CANCELLED']).default('CLOSED'),
   strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
   strategyName: z.preprocess(emptyStringToUndefined, z.string().optional()),
   tags: z.array(z.string()).default([]),
   tradeDate: z.string().min(1, 'Trade date is required'),
-  timeZone: z.string().default('Asia/Kolkata'),
+  timeZone: z.string().optional(),
   entryTime: z.string().min(1, 'Entry time is required'),
   exitTime: z.preprocess(emptyStringToUndefined, z.string().optional()),
   session: z

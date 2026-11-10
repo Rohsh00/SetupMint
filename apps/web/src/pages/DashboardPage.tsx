@@ -65,7 +65,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate, preset } = useDateRange();
-  const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts } = useAccountScope();
+  const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts, currency: scopeCurrency, isMultiCurrency, currencies } = useAccountScope();
   const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(false);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -96,7 +96,9 @@ export function DashboardPage() {
   });
 
   const activeCurrency = useMemo(() => {
-    const breakdownKeys = Object.keys(stats?.currencyBreakdown || {});
+    if (stats?.primaryCurrency) return stats.primaryCurrency;
+    if (scopeCurrency && scopeCurrency !== 'MULTI') return scopeCurrency;
+    const breakdownKeys = Object.keys(stats?.currencyBreakdown || stats?.byCurrency || {});
     if (breakdownKeys.length === 1) return breakdownKeys[0];
     if (selectedAccountId && selectedAccountId !== 'ALL') {
       const acc = accounts.find((a: any) => a.id === selectedAccountId || a._id === selectedAccountId);
@@ -105,8 +107,8 @@ export function DashboardPage() {
     if (isPropMode && propAccounts.length > 0) {
       return propAccounts[0]?.baseCurrency || 'USD';
     }
-    return 'INR';
-  }, [stats?.currencyBreakdown, selectedAccountId, accounts, isPropMode, propAccounts]);
+    return 'USD';
+  }, [stats?.primaryCurrency, stats?.currencyBreakdown, stats?.byCurrency, scopeCurrency, selectedAccountId, accounts, isPropMode, propAccounts]);
 
   const { data: recentTradesData } = useQuery({
     queryKey: ['recent-trades', queryParams],
@@ -314,7 +316,7 @@ export function DashboardPage() {
           }}
         >
           {reviewQueueData.dailyLossBreach.message ||
-            `Risk Rule Alert: Maximum daily loss limit of ₹${reviewQueueData.dailyLossBreach.maxDailyLoss?.toLocaleString()} breached! Click to inspect today's trades.`}
+            `Risk Rule Alert: Maximum daily loss limit of ${formatCurrency(reviewQueueData.dailyLossBreach.maxDailyLoss, reviewQueueData.dailyLossBreach.currency || activeCurrency)} breached! Click to inspect today's trades.`}
         </Alert>
       )}
 
@@ -500,17 +502,37 @@ export function DashboardPage() {
                 </Box>
               </Box>
 
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 800,
-                  fontFamily: `'JetBrains Mono', monospace`,
-                  color: isNetPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                  mb: 1.5,
-                }}
-              >
-                {formatCurrency(stats?.netPnL, activeCurrency)}
-              </Typography>
+              {stats?.byCurrency && Object.keys(stats.byCurrency).length > 1 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
+                  {Object.entries(stats.byCurrency).map(([curr, currStat]: [string, any]) => (
+                    <Box key={curr} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Chip label={curr} size="small" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontWeight: 800,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: currStat.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(currStat.netPnL, curr)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Typography
+                  variant="h4"
+                  sx={{
+                    fontWeight: 800,
+                    fontFamily: `'JetBrains Mono', monospace`,
+                    color: isNetPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                    mb: 1.5,
+                  }}
+                >
+                  {formatCurrency(stats?.netPnL, activeCurrency)}
+                </Typography>
+              )}
 
               <Divider sx={{ mb: 1.5 }} />
 

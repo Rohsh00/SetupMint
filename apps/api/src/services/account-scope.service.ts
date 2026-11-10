@@ -1,13 +1,42 @@
 import mongoose from 'mongoose';
-import { AccountScope, AccountScopeMode, IRiskSettings } from '@tradevault/shared';
-import { getPropFirmPreset, mergeRuleSetWithOverrides } from '@tradevault/financial-engine';
-import { TradingAccount } from '../db/models/TradingAccount.js';
+import {
+  AccountScope,
+  AccountScopeMode,
+  IRiskSettings,
+  ITradingAccountProfile,
+  ITradingAccountCapabilities,
+  FeeModelKey,
+  PositionModel,
+  SessionCalendarKey,
+} from '@tradevault/shared';
+import {
+  getPropFirmPreset,
+  mergeRuleSetWithOverrides,
+  BrokerAdapterRegistry,
+} from '@tradevault/financial-engine';
+import { TradingAccount, buildDefaultAccountProfile } from '../db/models/TradingAccount.js';
 
 export interface ScopedRiskContext {
   isPropScope: boolean;
   currency: string;
   currencySymbol: string;
   riskSettings: IRiskSettings & { maxDailyLoss: number };
+}
+
+export interface ResolvedAccountContext {
+  accountIds: mongoose.Types.ObjectId[];
+  accountIdsStr: string[];
+  accounts: any[];
+  currencies: string[];
+  isSingleCurrency: boolean;
+  isMultiCurrency: boolean;
+  profiles: Record<string, ITradingAccountProfile>;
+  capabilities: ITradingAccountCapabilities;
+  primaryCurrency?: string;
+  primaryTimezone?: string;
+  feeModelKey?: FeeModelKey;
+  positionModel?: PositionModel;
+  sessionCalendarKey?: SessionCalendarKey;
 }
 
 export class AccountScopeService {
@@ -128,8 +157,8 @@ export class AccountScopeService {
       };
     }
 
-    const currency = (accounts[0]?.baseCurrency || 'INR').toUpperCase();
-    const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : '₹';
+    const currency = (accounts[0]?.baseCurrency || 'USD').toUpperCase();
+    const currencySymbol = currency === 'INR' ? '₹' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : '$';
 
     return {
       isPropScope: false,
@@ -266,4 +295,101 @@ export class AccountScopeService {
       includeArchived,
     };
   }
+
+  /**
+   * One unified backend resolver returning complete account context,
+   * profiles, capabilities, currencies, and scope validation.
+   */
+  static async resolveAccountContext(
+    userId: string | mongoose.Types.ObjectId,
+    scope?: Partial<AccountScope> | null
+  ): Promise<ResolvedAccountContext> {
+    const userOid = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const accountIds = await this.resolveAccountScope(userOid, scope);
+
+    if (accountIds.length === 0) {
+      return {
+        accountIds: [],
+        accountIdsStr: [],
+        accounts: [],
+        currencies: [],
+        isSingleCurrency: true,
+        isMultiCurrency: false,
+        profiles: {},
+        capabilities: BrokerAdapterRegistry.getCapabilities('MANUAL'),
+        primaryCurrency: undefined,
+        primaryTimezone: undefined,
+      };
+    }
+
+    const accounts = await TradingAccount.find({
+      _id: { $in: accountIds },
+      userId: userOid,
+    }).lean();
+
+    const profiles: Record<string, ITradingAccountProfile> = {};
+    const currencySet = new Set<string>();
+
+    for (const acc of accounts) {
+      const accId = String(acc._id);
+      let profile = acc.profile as ITradingAccountProfile;
+      if (!profile || !profile.baseCurrency) {
+        profile = buildDefaultAccountProfile(acc);
+      }
+      profiles[accId] = profile;
+      currencySet.add((profile.baseCurrency || acc.baseCurrency || 'USD').toUpperCase());
+    }
+
+    const currencies = Array.from(currencySet);
+    const isSingleCurrency = currencies.length <= 1;
+    const isMultiCurrency = currencies.length > 1;
+    const primaryCurrency = currencies[0];
+
+    // Capabilities: if single account, use its profile capabilities.
+    // If multiple accounts, conservative intersection.
+    let capabilities: ITradingAccountCapabilities;
+    if (accounts.length === 1) {
+      capabilities = profiles[String(accounts[0]._id)]?.capabilities || BrokerAdapterRegistry.getCapabilities('MANUAL');
+    } else {
+      capabilities = {
+        canPlaceOrders: false, // Disallow bulk live orders across multiple accounts simultaneously
+        canModifyStopLoss: false,
+        canExitPositions: false,
+        canScaleLadder: false,
+        canAutoExecute: false,
+        canSyncFunds: accounts.every((a) => profiles[String(a._id)]?.capabilities?.canSyncFunds),
+        canFetchHistory: accounts.every((a) => profiles[String(a._id)]?.capabilities?.canFetchHistory),
+        canStreamQuotes: accounts.some((a) => profiles[String(a._id)]?.capabilities?.canStreamQuotes),
+      };
+    }
+
+    const firstProfile = profiles[String(accounts[0]._id)];
+
+    return {
+      accountIds,
+      accountIdsStr: accountIds.map((id) => id.toString()),
+      accounts,
+      currencies,
+      isSingleCurrency,
+      isMultiCurrency,
+      profiles,
+      capabilities,
+      primaryCurrency,
+      primaryTimezone: firstProfile?.timezone || 'UTC',
+      feeModelKey: firstProfile?.feeModelKey,
+      positionModel: firstProfile?.positionModel,
+      sessionCalendarKey: firstProfile?.sessionCalendarKey,
+    };
+  }
 }
+
+/**
+ * Global standalone resolver helper for routes and services.
+ */
+export async function resolveAccountContext(
+  userId: string | mongoose.Types.ObjectId,
+  scope?: Partial<AccountScope> | null
+): Promise<ResolvedAccountContext> {
+  return AccountScopeService.resolveAccountContext(userId, scope);
+}
+

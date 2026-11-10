@@ -55,7 +55,8 @@ import { useAccountScope } from '../context/AccountScopeContext.js';
 export function AccountsPage() {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
-  const { scope, selectedAccountId } = useAccountScope();
+  const { scope, selectedAccountId, activeAccount, currency: scopeCurrency } = useAccountScope();
+  const defaultCurr = activeAccount?.profile?.baseCurrency || scopeCurrency || 'USD';
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [selectedAccountForTx, setSelectedAccountForTx] = useState<any>(null);
@@ -74,8 +75,49 @@ export function AccountsPage() {
   const [broker, setBroker] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountType, setAccountType] = useState('EQUITY');
-  const [baseCurrency, setBaseCurrency] = useState('INR');
+  const [baseCurrency, setBaseCurrency] = useState(defaultCurr);
   const [initialBalance, setInitialBalance] = useState<number>(100000);
+
+  // Account Profile Wizard state
+  const [marketRegion, setMarketRegion] = useState<'IN' | 'US' | 'EU' | 'GLOBAL'>(defaultCurr === 'INR' ? 'IN' : 'US');
+  const [timezone, setTimezone] = useState<string>(defaultCurr === 'INR' ? 'Asia/Kolkata' : 'America/New_York');
+  const [feeModelKey, setFeeModelKey] = useState<string>(defaultCurr === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
+  const [executionAdapterKey, setExecutionAdapterKey] = useState<string>(defaultCurr === 'INR' ? 'FYERS' : 'ELEFIN_MT5');
+  const [positionModel, setPositionModel] = useState<'NETTING_FIFO' | 'HEDGING'>(defaultCurr === 'INR' ? 'NETTING_FIFO' : 'HEDGING');
+  const [sessionCalendarKey, setSessionCalendarKey] = useState<string>(defaultCurr === 'INR' ? 'NSE' : 'FOREX_24_5');
+
+  const handleRegionChange = (region: 'IN' | 'US' | 'EU' | 'GLOBAL') => {
+    setMarketRegion(region);
+    if (region === 'IN') {
+      setBaseCurrency('INR');
+      setTimezone('Asia/Kolkata');
+      setFeeModelKey('INDIA_STATUTORY');
+      setExecutionAdapterKey('FYERS');
+      setPositionModel('NETTING_FIFO');
+      setSessionCalendarKey('NSE');
+    } else if (region === 'US') {
+      setBaseCurrency('USD');
+      setTimezone('America/New_York');
+      setFeeModelKey('FOREX_COMMISSION');
+      setExecutionAdapterKey('MANUAL');
+      setPositionModel('NETTING_FIFO');
+      setSessionCalendarKey('FOREX_24_5');
+    } else if (region === 'GLOBAL') {
+      setBaseCurrency('USD');
+      setTimezone('UTC');
+      setFeeModelKey('FOREX_COMMISSION');
+      setExecutionAdapterKey(accountType === 'PROP_FIRM' ? 'PROP_SIM' : 'ELEFIN_MT5');
+      setPositionModel('HEDGING');
+      setSessionCalendarKey('FOREX_24_5');
+    } else {
+      setBaseCurrency('EUR');
+      setTimezone('Europe/London');
+      setFeeModelKey('FOREX_COMMISSION');
+      setExecutionAdapterKey('MANUAL');
+      setPositionModel('NETTING_FIFO');
+      setSessionCalendarKey('FOREX_24_5');
+    }
+  };
 
   // Prop firm form state
   const [selectedPresetKey, setSelectedPresetKey] = useState<string>('THE5ERS_SUMMER');
@@ -259,22 +301,23 @@ export function AccountsPage() {
     mutationFn: (accountId: string) => api.accounts.syncFunds(accountId),
     onSuccess: (result: any, accountId) => {
       refreshAccountData();
-      const brokerBal = result?.brokerBalance != null ? Number(result.brokerBalance).toLocaleString() : '';
+      const account = accounts.find((a: any) => a.id === accountId);
+      const curr = account?.profile?.baseCurrency || account?.baseCurrency || 'USD';
+      const brokerBalStr = result?.brokerBalance != null ? formatCurrency(result.brokerBalance, curr) : '';
       if (result?.suggestionCreated) {
-        const account = accounts.find((a: any) => a.id === accountId);
         if (account) {
           setSelectedAccountForPending(account);
           setIsPendingModalOpen(true);
         }
-        toast.info(`FYERS live balance fetched (₹${brokerBal}). Review the suggested adjustment.`);
+        toast.info(`Broker live balance fetched (${brokerBalStr}). Review the suggested adjustment.`);
       } else if (result?.skipReason === 'WITHIN_TOLERANCE') {
-        toast.success(`FYERS live balance updated: ₹${brokerBal}. Balances are in sync.`);
+        toast.success(`Broker live balance updated: ${brokerBalStr}. Balances are in sync.`);
       } else if (result?.skipReason === 'OPEN_OR_PLANNED_TRADES') {
-        toast.info(`FYERS live balance updated: ₹${brokerBal}. Suggestions paused during open trades.`);
+        toast.info(`Broker live balance updated: ${brokerBalStr}. Suggestions paused during open trades.`);
       } else if (result?.skipReason === 'PENDING_REVIEW_EXISTS') {
-        toast.info(`FYERS live balance updated: ₹${brokerBal}. Reconciliation suggestion already awaiting review.`);
+        toast.info(`Broker live balance updated: ${brokerBalStr}. Reconciliation suggestion already awaiting review.`);
       } else {
-        toast.success(`FYERS live balance updated: ₹${brokerBal}.`);
+        toast.success(`Broker live balance updated: ${brokerBalStr}.`);
       }
     },
     onError: (err: any) => {
@@ -372,6 +415,35 @@ export function AccountsPage() {
           }
         : undefined;
 
+    const profile = {
+      marketRegion,
+      baseCurrency,
+      timezone,
+      feeModelKey,
+      executionAdapterKey,
+      positionModel,
+      sessionCalendarKey,
+      riskRules: {
+        maxRiskPerTradePct: overrideMaxRiskPct !== '' ? Number(overrideMaxRiskPct) : 2.0,
+        dailyLossLimitPct: propDailyLossPercent || 3.0,
+        maxDrawdownPct: propMaxLossPercent || 10.0,
+        mandatoryStopLoss: overrideMandatorySL === 'YES',
+        allowWeekendHolding: overrideHoldWeekend !== 'NO',
+        allowNewsTrading: overrideNewsTrading !== 'RESTRICTED',
+        maxLotsOrContracts: overrideMaxLots !== '' ? Number(overrideMaxLots) : undefined,
+      },
+      capabilities: {
+        canPlaceOrders: executionAdapterKey !== 'MANUAL',
+        canModifyStopLoss: executionAdapterKey !== 'MANUAL',
+        canExitPositions: executionAdapterKey !== 'MANUAL',
+        canScaleLadder: executionAdapterKey === 'FYERS' || executionAdapterKey === 'ELEFIN_MT5',
+        canAutoExecute: executionAdapterKey === 'FYERS',
+        canSyncFunds: executionAdapterKey === 'FYERS',
+        canFetchHistory: executionAdapterKey === 'FYERS' || executionAdapterKey === 'ELEFIN_MT5',
+        canStreamQuotes: executionAdapterKey === 'FYERS' || executionAdapterKey === 'ELEFIN_MT5' || executionAdapterKey === 'PROP_SIM',
+      },
+    };
+
     createAccountMutation.mutate({
       name,
       broker,
@@ -379,6 +451,7 @@ export function AccountsPage() {
       accountType,
       baseCurrency,
       initialBalance: Number(initialBalance) || 0,
+      profile,
       propFirm,
       propFirmConfig,
     });
@@ -443,7 +516,7 @@ export function AccountsPage() {
   const currencyTotals = React.useMemo(() => {
     const map = new Map<string, { equity: number; pnl: number }>();
     for (const a of displayedAccounts) {
-      const curr = a.baseCurrency || 'INR';
+      const curr = a.profile?.baseCurrency || a.baseCurrency || 'USD';
       const entry = map.get(curr) || { equity: 0, pnl: 0 };
       entry.equity += a.currentBalance || 0;
       entry.pnl += a.realizedPnL || 0;
@@ -813,7 +886,7 @@ export function AccountsPage() {
                         Cash Flow
                       </Button>
 
-                      {String(acc.broker || '').toUpperCase() === 'FYERS' && (
+                      {(String(acc.broker || '').toUpperCase() === 'FYERS' || acc.profile?.capabilities?.canSyncFunds) && (
                         <>
                           <Button
                             size="small"
@@ -987,17 +1060,110 @@ export function AccountsPage() {
 
               <TextField
                 select
+                label="Market Region"
+                size="small"
+                fullWidth
+                value={marketRegion}
+                onChange={(e) => handleRegionChange(e.target.value as any)}
+              >
+                <MenuItem value="IN">India (NSE/MCX, IST)</MenuItem>
+                <MenuItem value="GLOBAL">Global Forex / CFD</MenuItem>
+                <MenuItem value="US">US Markets (EST)</MenuItem>
+                <MenuItem value="EU">European Markets</MenuItem>
+              </TextField>
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
+                select
                 label="Base Currency"
                 size="small"
                 fullWidth
                 value={baseCurrency}
                 onChange={(e) => setBaseCurrency(e.target.value)}
               >
-                <MenuItem value="INR">INR (₹)</MenuItem>
-                <MenuItem value="USD">USD ($)</MenuItem>
-                <MenuItem value="EUR">EUR (€)</MenuItem>
-                <MenuItem value="GBP">GBP (£)</MenuItem>
-                <MenuItem value="AED">AED</MenuItem>
+                <MenuItem value="INR">INR (Indian Rupee)</MenuItem>
+                <MenuItem value="USD">USD (US Dollar)</MenuItem>
+                <MenuItem value="EUR">EUR (Euro)</MenuItem>
+                <MenuItem value="GBP">GBP (British Pound)</MenuItem>
+                <MenuItem value="AED">AED (UAE Dirham)</MenuItem>
+                <MenuItem value="AUD">AUD (Australian Dollar)</MenuItem>
+                <MenuItem value="CAD">CAD (Canadian Dollar)</MenuItem>
+                <MenuItem value="JPY">JPY (Japanese Yen)</MenuItem>
+              </TextField>
+
+              <TextField
+                select
+                label="Timezone (IANA)"
+                size="small"
+                fullWidth
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+              >
+                <MenuItem value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</MenuItem>
+                <MenuItem value="America/New_York">America/New_York (EST/EDT)</MenuItem>
+                <MenuItem value="UTC">UTC (+0:00)</MenuItem>
+                <MenuItem value="Europe/London">Europe/London (GMT/BST)</MenuItem>
+                <MenuItem value="Asia/Dubai">Asia/Dubai (GST +4:00)</MenuItem>
+                <MenuItem value="Asia/Tokyo">Asia/Tokyo (JST +9:00)</MenuItem>
+              </TextField>
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
+                select
+                label="Execution Adapter"
+                size="small"
+                fullWidth
+                value={executionAdapterKey}
+                onChange={(e) => setExecutionAdapterKey(e.target.value)}
+              >
+                <MenuItem value="FYERS">FYERS Direct Live</MenuItem>
+                <MenuItem value="ELEFIN_MT5">Elefin MT5 Bridge</MenuItem>
+                <MenuItem value="PROP_SIM">Prop Firm Simulated</MenuItem>
+                <MenuItem value="MANUAL">Manual / Read-Only</MenuItem>
+              </TextField>
+
+              <TextField
+                select
+                label="Fee Model"
+                size="small"
+                fullWidth
+                value={feeModelKey}
+                onChange={(e) => setFeeModelKey(e.target.value)}
+              >
+                <MenuItem value="INDIA_STATUTORY">India Statutory (STT, GST, Stamp)</MenuItem>
+                <MenuItem value="FOREX_COMMISSION">Forex Commission ($7/rt, Swap, Spread)</MenuItem>
+                <MenuItem value="NONE">Zero Commission</MenuItem>
+                <MenuItem value="CUSTOM">Custom Flat Fee</MenuItem>
+              </TextField>
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <TextField
+                select
+                label="Position Model"
+                size="small"
+                fullWidth
+                value={positionModel}
+                onChange={(e) => setPositionModel(e.target.value as any)}
+              >
+                <MenuItem value="NETTING_FIFO">Netting FIFO (Single Position)</MenuItem>
+                <MenuItem value="HEDGING">Hedging (Ticket Isolation)</MenuItem>
+              </TextField>
+
+              <TextField
+                select
+                label="Session Calendar"
+                size="small"
+                fullWidth
+                value={sessionCalendarKey}
+                onChange={(e) => setSessionCalendarKey(e.target.value)}
+              >
+                <MenuItem value="NSE">NSE (09:15 - 15:30 IST)</MenuItem>
+                <MenuItem value="MCX">MCX (09:00 - 23:30 IST)</MenuItem>
+                <MenuItem value="FOREX_24_5">Forex (24/5 Asia/London/NY)</MenuItem>
+                <MenuItem value="CRYPTO_24_7">Crypto (24/7 Continuous)</MenuItem>
               </TextField>
             </Box>
 

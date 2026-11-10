@@ -100,10 +100,13 @@ export class TelegramAlertService {
    * Deterministic Currency Symbol resolver for trade alerts ($ for USD/FOREX/Metals/Prop, ₹ for INR).
    */
   static getTradeCurrencySymbol(trade: any): string {
-    if (!trade) return '₹';
-    if (trade.currency === 'USD' || trade.currency === 'EUR' || trade.currency === 'GBP') {
-      return trade.currency === 'USD' ? '$' : trade.currency === 'EUR' ? '€' : '£';
-    }
+    if (!trade) return '$';
+    const c = (trade.currency || (trade.accountId as any)?.baseCurrency || '').toUpperCase();
+    if (c === 'INR') return '₹';
+    if (c === 'EUR') return '€';
+    if (c === 'GBP') return '£';
+    if (c === 'JPY') return '¥';
+    if (c === 'USD') return '$';
     const isForex =
       trade.exchange === 'FOREX' ||
       (trade.symbol &&
@@ -113,7 +116,7 @@ export class TelegramAlertService {
           trade.symbol.includes('GBP') ||
           trade.symbol.includes('BTC'))) ||
       (Array.isArray(trade.tags) && (trade.tags.includes('ELEFIN') || trade.tags.includes('MT5')));
-    return isForex ? '$' : '₹';
+    return isForex ? '$' : (c || '$');
   }
 
   /**

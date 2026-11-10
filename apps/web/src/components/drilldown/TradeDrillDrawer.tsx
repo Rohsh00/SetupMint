@@ -56,7 +56,7 @@ export function TradeDrillDrawer() {
   const queryClient = useQueryClient();
 
   const { isOpen, descriptor, activeTradeId, closeDrill, setActiveTradeId } = useTradeDrilldown();
-  const { queryParams } = useAccountScope();
+  const { queryParams, activeAccount, currency: scopeCurrency } = useAccountScope();
 
   const [editModalTradeId, setEditModalTradeId] = useState<string | null>(null);
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
@@ -100,6 +100,8 @@ export function TradeDrillDrawer() {
     if (!activeTradeId) return null;
     return trades.find((t: any) => t.id === activeTradeId) || null;
   }, [trades, activeTradeId]);
+
+  const activeTradeCurrency = (activeTrade as any)?.currency || activeAccount?.profile?.baseCurrency || scopeCurrency || 'USD';
 
   const activeIndex = useMemo(() => {
     if (!activeTradeId) return -1;
@@ -495,7 +497,7 @@ export function TradeDrillDrawer() {
                           : 'text.primary',
                     }}
                   >
-                    {formatCurrency(activeTrade.calculated?.netPnL, (activeTrade as any).currency || 'INR')}
+                    {formatCurrency(activeTrade.calculated?.netPnL, activeTradeCurrency)}
                   </Typography>
                   <Typography
                     variant="caption"
@@ -526,7 +528,7 @@ export function TradeDrillDrawer() {
                       Entry Price
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.averageEntryPrice || (activeTrade as any).simpleExecution?.entryPrice, (activeTrade as any).currency || 'INR')}
+                      {formatCurrency(activeTrade.calculated?.averageEntryPrice || (activeTrade as any).simpleExecution?.entryPrice, activeTradeCurrency)}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -534,7 +536,7 @@ export function TradeDrillDrawer() {
                       Exit Price
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.averageExitPrice, (activeTrade as any).currency || 'INR')}
+                      {formatCurrency(activeTrade.calculated?.averageExitPrice, activeTradeCurrency)}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -550,7 +552,7 @@ export function TradeDrillDrawer() {
                       Stop Loss
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: 'error.main' }}>
-                      {formatCurrency(activeTrade.risk?.initialStopLoss, (activeTrade as any).currency || 'INR')}
+                      {formatCurrency(activeTrade.risk?.initialStopLoss, activeTradeCurrency)}
                     </Typography>
                   </Grid>
 
@@ -559,7 +561,7 @@ export function TradeDrillDrawer() {
                       Gross P&L
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.grossPnL, (activeTrade as any).currency || 'INR')}
+                      {formatCurrency(activeTrade.calculated?.grossPnL, activeTradeCurrency)}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -567,7 +569,7 @@ export function TradeDrillDrawer() {
                       Total Charges
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.calculated?.totalCosts, (activeTrade as any).currency || 'INR')}
+                      {formatCurrency(activeTrade.calculated?.totalCosts, activeTradeCurrency)}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -575,7 +577,7 @@ export function TradeDrillDrawer() {
                       Planned Risk (1R)
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
-                      {formatCurrency(activeTrade.risk?.riskBudgetAmount || activeTrade.risk?.estimatedRiskAmount, (activeTrade as any).currency || 'INR')}
+                      {formatCurrency(activeTrade.risk?.riskBudgetAmount || activeTrade.risk?.estimatedRiskAmount, activeTradeCurrency)}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3 }}>
@@ -602,7 +604,7 @@ export function TradeDrillDrawer() {
                       Max Favorable (MFE)
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: 'success.main' }}>
-                      {formatR(activeTrade.calculated?.excursion?.mfeR)} ({formatCurrency(activeTrade.calculated?.excursion?.mfeAmount, 'INR')})
+                      {formatR(activeTrade.calculated?.excursion?.mfeR)} ({formatCurrency(activeTrade.calculated?.excursion?.mfeAmount, activeTradeCurrency)})
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 4 }}>
@@ -610,7 +612,7 @@ export function TradeDrillDrawer() {
                       Max Adverse (MAE)
                     </Typography>
                     <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: 'error.main' }}>
-                      {formatR(activeTrade.calculated?.excursion?.maeR)} ({formatCurrency(activeTrade.calculated?.excursion?.maeAmount, 'INR')})
+                      {formatR(activeTrade.calculated?.excursion?.maeR)} ({formatCurrency(activeTrade.calculated?.excursion?.maeAmount, activeTradeCurrency)})
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 4 }}>

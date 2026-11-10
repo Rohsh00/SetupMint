@@ -25,14 +25,22 @@ export function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [baseCurrency, setBaseCurrency] = useState('INR');
+  const [accountPreset, setAccountPreset] = useState<'INDIA_EQUITIES_FNO' | 'FOREX_CFD' | 'PROP_FIRM' | 'CUSTOM'>('FOREX_CFD');
+  const [baseCurrency, setBaseCurrency] = useState('USD');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const handlePresetChange = (preset: 'INDIA_EQUITIES_FNO' | 'FOREX_CFD' | 'PROP_FIRM' | 'CUSTOM') => {
+    setAccountPreset(preset);
+    if (preset === 'INDIA_EQUITIES_FNO') setBaseCurrency('INR');
+    else if (preset === 'FOREX_CFD') setBaseCurrency('USD');
+    else if (preset === 'PROP_FIRM') setBaseCurrency('USD');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim() || !password) {
-      toast.warning('Please fill in all required fields.');
+    if (!name.trim() || !email.trim() || !password || !baseCurrency) {
+      toast.warning('Please fill in all required fields and choose your account profile.');
       return;
     }
     if (password.length < 8) {
@@ -135,16 +143,34 @@ export function RegisterPage() {
 
             <TextField
               select
-              label="Default Base Currency"
+              label="Primary Account Profile & Market"
               size="small"
               fullWidth
+              required
+              value={accountPreset}
+              onChange={(e) => handlePresetChange(e.target.value as any)}
+              helperText="Determines your market sessions, fee calculations, and base currency"
+            >
+              <MenuItem value="FOREX_CFD">Global Forex & CFD / Elefin (USD, 24/5 Calendar)</MenuItem>
+              <MenuItem value="INDIA_EQUITIES_FNO">Indian Equities & F&O / FYERS (INR, NSE/IST)</MenuItem>
+              <MenuItem value="PROP_FIRM">Prop Firm Challenge (USD, Pre-trade Risk Guards)</MenuItem>
+              <MenuItem value="CUSTOM">Custom Market & Base Currency</MenuItem>
+            </TextField>
+
+            <TextField
+              select
+              label="Account Base Currency"
+              size="small"
+              fullWidth
+              required
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
+              disabled={accountPreset !== 'CUSTOM'}
             >
-              <MenuItem value="INR">Indian Rupee (INR ₹)</MenuItem>
-              <MenuItem value="USD">US Dollar (USD $)</MenuItem>
-              <MenuItem value="EUR">Euro (EUR €)</MenuItem>
-              <MenuItem value="GBP">British Pound (GBP £)</MenuItem>
+              <MenuItem value="USD">US Dollar (USD)</MenuItem>
+              <MenuItem value="INR">Indian Rupee (INR)</MenuItem>
+              <MenuItem value="EUR">Euro (EUR)</MenuItem>
+              <MenuItem value="GBP">British Pound (GBP)</MenuItem>
               <MenuItem value="AED">UAE Dirham (AED)</MenuItem>
             </TextField>
 

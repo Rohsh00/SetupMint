@@ -41,7 +41,7 @@ import {
 import { ILiveDataHealth } from '@tradevault/shared';
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
-import { formatCurrency, currentLocalIsoDateTime } from '../../lib/utils.js';
+import { formatCurrency, currentLocalIsoDateTime, getCurrencySymbol } from '../../lib/utils.js';
 import { HoldToConfirmButton } from './live/HoldToConfirmButton.js';
 
 export interface QuickCloseTradeProps {
@@ -128,7 +128,8 @@ export function QuickCloseTradeDialog({
     trade?.assetClass === 'FOREX' ||
     isMt5Trade;
 
-  const currSym = isUsdTrade ? '$' : '₹';
+  const tradeCurrency = trade?.currency || (isUsdTrade ? 'USD' : 'INR');
+  const currSym = getCurrencySymbol(tradeCurrency);
 
   // Data health & provider guard check
   const effectiveDataHealth: ILiveDataHealth | undefined = dataHealth || trade?.dataHealth;
@@ -286,7 +287,7 @@ export function QuickCloseTradeDialog({
         20,
         accountBroker,
         direction,
-        isUsdTrade ? 'USD' : 'INR'
+        tradeCurrency
       );
     } catch {
       return null;
@@ -371,7 +372,7 @@ export function QuickCloseTradeDialog({
                 brokerage: autoCharges?.brokerage ?? 20,
                 exchangeFee: autoCharges?.exchangeFees ?? 0,
                 taxes: autoCharges?.taxes ?? 0,
-                notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
+                notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ${currSym}${numExitPrice})`,
               },
             ];
           } else {
@@ -397,7 +398,7 @@ export function QuickCloseTradeDialog({
                 brokerage: autoCharges?.brokerage ?? 20,
                 exchangeFee: autoCharges?.exchangeFees ?? 0,
                 taxes: autoCharges?.taxes ?? 0,
-                notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ₹${numExitPrice})`,
+                notes: `Live partial close (${selectedCloseQty} of ${totalOpenQuantity} qty @ ${currSym}${numExitPrice})`,
               },
             ];
           }
@@ -1126,15 +1127,15 @@ export function QuickCloseTradeDialog({
               Gross P&L ({selectedCloseQty} {isLotBased || isMt5Trade ? 'Lot' : 'Qty'} @ {currSym}{numExitPrice || 0})
             </Typography>
             <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
-              {isPriceValid ? formatCurrency(grossPnL, isUsdTrade ? 'USD' : 'INR') : '—'}
+              {isPriceValid ? formatCurrency(grossPnL, tradeCurrency) : '—'}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              {isUsdTrade ? 'Total Costs (Forex / Elefin: Spread-based)' : 'Total Costs & Taxes (STT, Stamp, Exchange, GST)'}
+              {tradeCurrency === 'USD' ? 'Total Costs (Forex / Elefin: Spread-based)' : 'Total Costs & Taxes (STT, Stamp, Exchange, GST)'}
             </Typography>
             <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary }}>
-              {isPriceValid ? formatCurrency(totalCosts, isUsdTrade ? 'USD' : 'INR') : '—'}
+              {isPriceValid ? formatCurrency(totalCosts, tradeCurrency) : '—'}
             </Typography>
           </Box>
           <Box
@@ -1162,7 +1163,7 @@ export function QuickCloseTradeDialog({
                   : muiTheme.palette.text.primary,
               }}
             >
-              {isPriceValid ? formatCurrency(netPnL, isUsdTrade ? 'USD' : 'INR') : `${currSym}0.00`}
+              {isPriceValid ? formatCurrency(netPnL, tradeCurrency) : `${currSym}0.00`}
             </Typography>
           </Box>
         </Card>

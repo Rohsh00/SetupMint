@@ -279,7 +279,7 @@ const TradeSchema = new Schema<ITradeDoc>(
       enum: ['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER'],
       required: true,
     },
-    currency: { type: String, default: 'INR' },
+    currency: { type: String, required: true, uppercase: true, trim: true },
     direction: {
       type: String,
       enum: ['LONG', 'SHORT'],
@@ -520,6 +520,22 @@ const TradeSchema = new Schema<ITradeDoc>(
   },
   { timestamps: true }
 );
+
+TradeSchema.pre('validate', async function () {
+  if (!this.currency && this.accountId) {
+    try {
+      const account = await mongoose.model('TradingAccount').findById(this.accountId).lean();
+      if (account) {
+        this.currency = (account as any).profile?.baseCurrency || (account as any).baseCurrency || 'USD';
+      }
+    } catch {
+      // ignore
+    }
+  }
+  if (!this.currency) {
+    this.currency = 'USD';
+  }
+});
 
 TradeSchema.index({ userId: 1, tradeDate: -1 });
 TradeSchema.index({ userId: 1, accountId: 1, tradeDate: -1 });

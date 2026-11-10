@@ -49,7 +49,8 @@ import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
 import { LiveWatcherService } from '../services/live-watcher.service.js';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
+import { ExecutionPipelineService } from '../services/execution-pipeline.service.js';
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { Mt5CommandService } from '../services/mt5-command.service.js';
@@ -552,7 +553,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     const { page, limit, sortBy, sortOrder } = queryResult.data;
     const scope = AccountScopeService.parseAccountScope(req.query);
-    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
     const filter = buildTradeMongooseFilter({ ...(queryResult.data as any), accountIds }, req.user!.id);
 
     const totalCount = await Trade.countDocuments(filter);
@@ -577,6 +579,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         totalCount,
         totalPages,
       },
+      currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
+      isMultiCurrency: accountCtx.isMultiCurrency,
+      currencies: accountCtx.currencies,
     });
   });
 

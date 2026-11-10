@@ -38,7 +38,7 @@ import {
   DEFAULT_LADDER_STRATEGY_PRESETS,
   ILadderStrategyPreset,
 } from '@tradevault/shared';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 
 export type TargetPlanningPreset = 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE' | 'T1_ONLY';
 
@@ -59,6 +59,7 @@ export function LiveCustomRulesDialog({
 }: LiveCustomRulesDialogProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const currSym = getCurrencySymbol(metric?.currency);
 
   const isMt5 = Boolean((metric as any)?.isMt5 || /elefin|mt5/i.test((metric as any)?.accountBroker || ''));
   const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
@@ -406,7 +407,7 @@ export function LiveCustomRulesDialog({
               Custom R1-R3 & Auto-Execution Rules
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {metric.symbol} ({metric.direction}) • Entry: ₹{metric.entryPrice} • 1R = {riskPts.toFixed(1)} pts
+              {metric.symbol} ({metric.direction}) • Entry: {currSym}{metric.entryPrice} • 1R = {riskPts.toFixed(1)} pts
             </Typography>
           </Box>
         </Box>
@@ -607,7 +608,7 @@ export function LiveCustomRulesDialog({
                   Fee-Adjusted Breakeven:
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 800, color: '#10B981' }}>
-                  ₹{trueBe} {metric.feeBufferPoints ? `(covers +₹${metric.estimatedCharges} fees)` : ''}
+                  {currSym}{trueBe} {metric.feeBufferPoints ? `(covers +${currSym}${metric.estimatedCharges} fees)` : ''}
                 </Typography>
               </Box>
             </Grid>
@@ -668,7 +669,7 @@ export function LiveCustomRulesDialog({
               </Typography>
             </Box>
             <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
-              @ ₹{t1Price}
+              @ {currSym}{t1Price}
             </Typography>
           </Box>
 
@@ -738,9 +739,9 @@ export function LiveCustomRulesDialog({
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.65rem' }}>
             Action: Book {isLotBased ? `${t1ExitLots} lot (${t1ExitUnits} units)` : `${t1ExitUnits} units`} &{' '}
             {t1TrailAction === 'TRUE_BE_WITH_FEES'
-              ? `move SL to True BE (₹${trueBe}, fees protected)`
+              ? `move SL to True BE (${currSym}${trueBe}, fees protected)`
               : t1TrailAction === 'NOMINAL_BE'
-              ? `move SL to Entry (₹${metric.entryPrice})`
+              ? `move SL to Entry (${currSym}${metric.entryPrice})`
               : t1TrailAction === 'CUSTOM_POINTS'
               ? `trail SL by +${t1TrailPoints} pts`
               : 'maintain current SL'}
@@ -783,7 +784,7 @@ export function LiveCustomRulesDialog({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {effectiveT2Enabled && (
                 <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
-                  @ ₹{t2Price}
+                  @ {currSym}{t2Price}
                 </Typography>
               )}
               {!isT1AllOut && (
@@ -844,7 +845,7 @@ export function LiveCustomRulesDialog({
                       label="Trailing SL Action"
                       onChange={(e) => setT2TrailAction(e.target.value as any)}
                     >
-                      <MenuItem value="TRAIL_T1">Trail to +1R (₹{t1Price})</MenuItem>
+                      <MenuItem value="TRAIL_T1">Trail to +1R ({currSym}{t1Price})</MenuItem>
                       <MenuItem value="CUSTOM_POINTS">Trail Custom Pts</MenuItem>
                       <MenuItem value="NONE">Don't Move SL</MenuItem>
                     </Select>
@@ -866,7 +867,7 @@ export function LiveCustomRulesDialog({
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.65rem' }}>
                 Action: Book {isLotBased ? `${t2ExitLots} lot (${t2ExitUnits} units)` : `${t2ExitUnits} units`} &{' '}
                 {t2TrailAction === 'TRAIL_T1'
-                  ? `trail SL to +1R (₹${t1Price})`
+                  ? `trail SL to +1R (${currSym}${t1Price})`
                   : t2TrailAction === 'CUSTOM_POINTS'
                   ? `trail SL by +${t2TrailPoints} pts`
                   : 'maintain current SL'}
@@ -920,7 +921,7 @@ export function LiveCustomRulesDialog({
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 {!isFreeRunner && (
                   <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
-                    @ ₹{t3Price}
+                    @ {currSym}{t3Price}
                   </Typography>
                 )}
                 <Box sx={{ display: 'flex', bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)', borderRadius: '6px', p: 0.25 }}>
@@ -1155,7 +1156,7 @@ export function LiveCustomRulesDialog({
                 Intraday MIS Auto-Square-Off Guard (15:14 IST)
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Auto-exits at 15:14 IST before FYERS levies ₹50+GST broker square-off penalties
+                Auto-exits before broker levies square-off penalties
               </Typography>
             </Box>
           </Box>

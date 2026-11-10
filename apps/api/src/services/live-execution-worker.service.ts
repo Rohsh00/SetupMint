@@ -6,6 +6,7 @@ import { TelegramAlertService } from './telegram-alert.service.js';
 import { BrokerAutoSyncWorker } from './broker-auto-sync.service.js';
 import { AccountScopeService } from './account-scope.service.js';
 import { Mt5CommandService } from './mt5-command.service.js';
+import { ExecutionPipelineService } from './execution-pipeline.service.js';
 import {
   calculateTargetLadder,
   evaluateGivebackAutoExit,
@@ -435,43 +436,41 @@ export class LiveExecutionWorker {
       const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
       const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
 
-      // 1. Partial Exit
+      // 1. Partial or Full Exit via universal execution pipeline
       if (step.plannedExitQty > 0) {
-        if (isMt5 && ticket) {
-          await Mt5CommandService.queueClosePosition({
-            userId: user._id.toString(),
-            accountId: trade.accountId?.toString(),
-            tradeId: tradeId,
-            ticket,
-            volume: step.plannedExitQty,
-          });
-        } else {
-          await FyersService.executeBrokerExit(user._id, tradeId, {
-            exitQty: step.plannedExitQty,
-            isFullClose: step.plannedExitQty >= metric.quantity,
-          });
-        }
+        await ExecutionPipelineService.execute({
+          userId: user._id.toString(),
+          accountId: trade.accountId,
+          tradeId: tradeId,
+          action: 'EXIT_POSITION',
+          executeBroker: true,
+          isAutomated: true,
+          payload: {
+            quantity: step.plannedExitQty,
+            exitReason: `Auto-Executed ${step.name}`,
+          },
+        });
       }
 
-      // 2. Trailing SL modification
+      // 2. Trailing SL modification via universal execution pipeline
       if (step.suggestedStopLoss && step.suggestedStopLoss > 0) {
-        if (isMt5 && ticket) {
-          await Mt5CommandService.queueModifySl({
-            userId: user._id.toString(),
-            accountId: trade.accountId?.toString(),
-            tradeId: tradeId,
-            ticket,
-            stopLoss: step.suggestedStopLoss,
-          });
-        } else {
-          await FyersService.executeBrokerStopLoss(user._id, tradeId, step.suggestedStopLoss);
-        }
+        await ExecutionPipelineService.execute({
+          userId: user._id.toString(),
+          accountId: trade.accountId,
+          tradeId: tradeId,
+          action: 'MODIFY_STOP_LOSS',
+          executeBroker: true,
+          isAutomated: true,
+          payload: {
+            stopPrice: step.suggestedStopLoss,
+          },
+        });
       }
 
       // 3. Telegram success alert
       if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-        const currSym = isMt5 ? '$' : '₹';
-        const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
+        const currSym = TelegramAlertService.getTradeCurrencySymbol(trade);
+        const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'Broker';
         TelegramAlertService.sendAlert({
           botToken: watcherSettings.telegramBotToken,
           chatId: watcherSettings.telegramChatId,

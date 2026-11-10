@@ -46,7 +46,8 @@ const AccountTransactionSchema = new Schema<IAccountTransactionDoc>(
     },
     currency: {
       type: String,
-      default: 'INR',
+      required: true,
+      trim: true,
     },
     date: {
       type: Date,

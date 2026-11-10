@@ -116,6 +116,16 @@ SetupMint defines 22 core Mongoose models:
 | `propFirm.ruleSetOverrides` | `Object` | No | — | Mixed | Per-account rule overrides (custom prop firm) |
 | `propFirmConfig` | `Object` | No | Embedded | Subdocument | Legacy configuration (synchronized for backward compatibility) |
 | `notes` | `String` | No | — | — | User notes |
+| `profile` | `Object` | **Yes** | Embedded | Subdocument | Authoritative operational profile for the account |
+| `profile.marketRegion` | `String` | **Yes** | `'INDIA'` | Enum: `['INDIA', 'GLOBAL', 'US']` | Geographic market region |
+| `profile.baseCurrency` | `String` | **Yes** | `'INR'` | Trim, ISO-4217 | Account base currency |
+| `profile.timezone` | `String` | **Yes** | `'Asia/Kolkata'` | Canonical IANA | Authoritative trading timezone |
+| `profile.feeModelKey` | `String` | **Yes** | `'INDIA_STATUTORY'` | Enum: `['INDIA_STATUTORY', 'FOREX_COMMISSION', 'PROP_FIRM_COMMISSION', 'ZERO_FEE', 'CUSTOM']` | Cost model identifier |
+| `profile.executionAdapterKey` | `String` | **Yes** | `'FYERS'` | Enum: `['FYERS', 'ELEFIN', 'PROP_BRIDGE', 'MANUAL']` | Broker/execution adapter |
+| `profile.positionModel` | `String` | **Yes** | `'NETTING_FIFO'` | Enum: `['NETTING_FIFO', 'HEDGING']` | Position accounting model |
+| `profile.sessionCalendarKey` | `String` | **Yes** | `'NSE'` | Enum: `['NSE', 'MCX', 'FOREX_24_5', 'CRYPTO_24_7', 'US_EQUITIES']` | Trading session schedule |
+| `profile.riskRules` | `Object` | No | Embedded | Subdocument | Per-account risk limits & challenge parameters |
+| `profile.capabilities` | `Object` | No | Embedded | Subdocument | Typed adapter execution capabilities |
 
 **Compound Indexes:**
 - `{ userId: 1, name: 1 }` (Unique constraint)
@@ -136,6 +146,16 @@ SetupMint defines 22 core Mongoose models:
 | `currency` | `String` | No | `'INR'` | — | Transaction currency |
 | `date` | `Date` | **Yes** | — | Indexed | Effective date |
 | `notes` | `String` | No | — | — | User notes |
+| `profile` | `Object` | **Yes** | Embedded | Subdocument | Authoritative operational profile for the account |
+| `profile.marketRegion` | `String` | **Yes** | `'INDIA'` | Enum: `['INDIA', 'GLOBAL', 'US']` | Geographic market region |
+| `profile.baseCurrency` | `String` | **Yes** | `'INR'` | Trim, ISO-4217 | Account base currency |
+| `profile.timezone` | `String` | **Yes** | `'Asia/Kolkata'` | Canonical IANA | Authoritative trading timezone |
+| `profile.feeModelKey` | `String` | **Yes** | `'INDIA_STATUTORY'` | Enum: `['INDIA_STATUTORY', 'FOREX_COMMISSION', 'PROP_FIRM_COMMISSION', 'ZERO_FEE', 'CUSTOM']` | Cost model identifier |
+| `profile.executionAdapterKey` | `String` | **Yes** | `'FYERS'` | Enum: `['FYERS', 'ELEFIN', 'PROP_BRIDGE', 'MANUAL']` | Broker/execution adapter |
+| `profile.positionModel` | `String` | **Yes** | `'NETTING_FIFO'` | Enum: `['NETTING_FIFO', 'HEDGING']` | Position accounting model |
+| `profile.sessionCalendarKey` | `String` | **Yes** | `'NSE'` | Enum: `['NSE', 'MCX', 'FOREX_24_5', 'CRYPTO_24_7', 'US_EQUITIES']` | Trading session schedule |
+| `profile.riskRules` | `Object` | No | Embedded | Subdocument | Per-account risk limits & challenge parameters |
+| `profile.capabilities` | `Object` | No | Embedded | Subdocument | Typed adapter execution capabilities |
 | `source` | `String` | No | `'MANUAL'` | Enum: `['MANUAL', 'BROKER_LEDGER_IMPORT', 'BROKER_SYNC']` | Transaction origin |
 | `status` | `String` | No | `'CONFIRMED'` | Enum: `['CONFIRMED', 'PENDING_REVIEW', 'REJECTED']` | Reconciliation status; legacy missing values are treated as confirmed |
 | `idempotencyKey` | `String` | No | — | Partial unique index | SHA-256 duplicate-prevention key |
@@ -442,6 +462,7 @@ Child variants are **fully user-defined**. The application contains no hardcoded
 | `_id` | `ObjectId` | Auto | Generated | Primary Key | Journal entry identifier |
 | `userId` | `ObjectId` | **Yes** | — | Ref: `'User'`, Indexed | Journal owner ID |
 | `date` | `String` | **Yes** | — | Format: `'YYYY-MM-DD'` | Trading session date string |
+| `scopeKey` | `String` | No | `'ALL'` | Indexed | Scope identifier (`'ALL'` or specific `accountId`) |
 | `marketConditions` | `String` | No | — | — | Session macro conditions |
 | `marketBias` | `String` | No | — | Enum: `['BULLISH', 'BEARISH', 'NEUTRAL']` | Daily trading bias |
 | `bestTradeId` | `ObjectId` | No | — | Ref: `'Trade'` | Best trade of the session |
@@ -454,7 +475,7 @@ Child variants are **fully user-defined**. The application contains no hardcoded
 | `notes` | `String` | No | — | — | General daily notes |
 
 **Compound Indexes:**
-- `{ userId: 1, date: 1 }` (Unique constraint: exactly one journal entry per user per date)
+- `{ userId: 1, date: 1, scopeKey: 1 }` (Unique constraint: exactly one journal entry per user per date per scope key)
 
 ---
 

@@ -24,7 +24,7 @@ import {
   calculatePreFlightExecutionPreview,
   IPreFlightExecutionPreviewResult,
 } from '@tradevault/financial-engine';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 import { HoldToConfirmButton } from './HoldToConfirmButton.js';
 
 interface ExecuteLadderStepDialogProps {
@@ -57,6 +57,7 @@ export function ExecuteLadderStepDialog({
 
   const [exitQty, setExitQty] = useState<number>(1);
   const [newStopLoss, setNewStopLoss] = useState<number>(0);
+  const currSym = getCurrencySymbol((metric as any)?.currency || 'USD');
 
   const isMt5 = Boolean((metric as any)?.isMt5 || /elefin|mt5/i.test((metric as any)?.accountBroker || ''));
   const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
@@ -190,10 +191,10 @@ export function ExecuteLadderStepDialog({
               TARGET OBJECTIVE
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 700 }}>
-              Target: ₹{step.targetPrice} (+{step.targetR}R)
+              Target: {currSym}{step.targetPrice} (+{step.targetR}R)
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Current LTP: ₹{metric.currentLtp} ({step.distancePoints > 0 ? `${step.distancePoints} pts away` : 'Target reached!'})
+              Current LTP: {currSym}{metric.currentLtp} ({step.distancePoints > 0 ? `${step.distancePoints} pts away` : 'Target reached!'})
             </Typography>
           </Box>
           <Chip
@@ -346,7 +347,7 @@ export function ExecuteLadderStepDialog({
               <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', pt: 0.5, borderTop: `1px dashed ${muiTheme.palette.divider}` }}>
                 <span style={{ color: muiTheme.palette.text.secondary }}>New Trailed SL:</span>
                 <strong style={{ color: '#10B981', fontFamily: `'JetBrains Mono', monospace` }}>
-                  ₹{newStopLoss.toFixed(2)} ({step.suggestedStopLabel || 'Locked'})
+                  {currSym}{newStopLoss.toFixed(2)} ({step.suggestedStopLabel || 'Locked'})
                 </strong>
               </Box>
             )}

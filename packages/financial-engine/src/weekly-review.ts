@@ -37,6 +37,8 @@ export interface WeeklyReviewTradeInput {
   quantity?: number;
   entryPrice?: number;
   exitPrice?: number | null;
+  currency?: string;
+  accountId?: string;
   calculated?: {
     netPnL?: number;
     grossPnL?: number;

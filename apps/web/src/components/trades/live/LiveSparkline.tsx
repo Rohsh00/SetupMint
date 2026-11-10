@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
 import { alpha } from '@mui/material/styles';
+import { getCurrencySymbol } from '../../../lib/utils.js';
 
 export interface LiveSparklinePulseCheck {
   timestamp: number | string | Date;
@@ -29,6 +30,7 @@ export interface LiveSparklineProps {
   width?: number;
   height?: number;
   isDark?: boolean;
+  currency?: string;
 }
 
 export function LiveSparkline({
@@ -37,7 +39,9 @@ export function LiveSparkline({
   width = 160,
   height = 36,
   isDark = true,
+  currency,
 }: LiveSparklineProps) {
+  const currSym = getCurrencySymbol(currency);
   if (!points || points.length < 2) {
     return null;
   }
@@ -106,23 +110,23 @@ export function LiveSparkline({
       title={
         <Box sx={{ p: 0.5, fontSize: '0.72rem' }}>
           <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', color: strokeColor }}>
-            Current: ₹{lastPt?.pnl.toFixed(2)} ({lastPt?.r >= 0 ? '+' : ''}{lastPt?.r.toFixed(2)}R)
+            Current: {currSym}{lastPt?.pnl.toFixed(2)} ({lastPt?.r >= 0 ? '+' : ''}{lastPt?.r.toFixed(2)}R)
           </Typography>
           {peakPt && (
             <Typography variant="caption" sx={{ display: 'block', color: '#F59E0B' }}>
-              Peak MFE: ₹{peakPt.pnl.toFixed(2)} (+{peakPt.r.toFixed(2)}R)
+              Peak MFE: {currSym}{peakPt.pnl.toFixed(2)} (+{peakPt.r.toFixed(2)}R)
             </Typography>
           )}
           {maePt && (
             <Typography variant="caption" sx={{ display: 'block', color: '#EF4444' }}>
-              Max Adverse: ₹{maePt.pnl.toFixed(2)} ({maePt.r.toFixed(2)}R)
+              Max Adverse: {currSym}{maePt.pnl.toFixed(2)} ({maePt.r.toFixed(2)}R)
             </Typography>
           )}
           {pulseCoords.length > 0 && (
             <Box sx={{ mt: 0.5, pt: 0.5, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               {pulseCoords.map((p, idx) => (
                 <Typography key={idx} variant="caption" sx={{ display: 'block', color: p.color, fontSize: '0.68rem', fontWeight: 700 }}>
-                  🧠 {p.emotion} {p.notes ? `("${p.notes}")` : ''} @ ₹{(p.floatingNetPnL ?? p.pnl ?? 0).toFixed(0)} ({p.unrealizedR !== undefined ? `${p.unrealizedR >= 0 ? '+' : ''}${p.unrealizedR.toFixed(1)}R` : ''})
+                  🧠 {p.emotion} {p.notes ? `("${p.notes}")` : ''} @ {currSym}{(p.floatingNetPnL ?? p.pnl ?? 0).toFixed(0)} ({p.unrealizedR !== undefined ? `${p.unrealizedR >= 0 ? '+' : ''}${p.unrealizedR.toFixed(1)}R` : ''})
                 </Typography>
               ))}
             </Box>

@@ -57,8 +57,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export function App() {
   return (
     <BrowserRouter>
-      <DateRangeProvider>
-        <AccountScopeProvider>
+      <AccountScopeProvider>
+        <DateRangeProvider>
           <TradeDrillProvider>
             <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -93,8 +93,8 @@ export function App() {
             </Routes>
           </Suspense>
         </TradeDrillProvider>
-      </AccountScopeProvider>
-    </DateRangeProvider>
+      </DateRangeProvider>
+    </AccountScopeProvider>
   </BrowserRouter>
   );
 }

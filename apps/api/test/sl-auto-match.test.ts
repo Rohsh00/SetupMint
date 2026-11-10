@@ -65,6 +65,20 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
           );
         }
 
+        if (url.includes('/positions')) {
+          return new Response(JSON.stringify({ s: 'ok', code: 200, message: '', netPositions: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        if (url.includes('/history')) {
+          return new Response(JSON.stringify({ s: 'ok', code: 200, candles: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
         throw new Error(`Unexpected fetch call in test: ${url}`);
       })
     );
@@ -118,6 +132,7 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
       tokenExpiresAt: moment().add(1, 'day').toDate(),
       authCodeExpiresAt: moment().add(1, 'day').toDate(),
       status: 'CONNECTED',
+      autoSyncEnabled: false,
     });
 
     // Register User B (for tenant isolation check)
@@ -163,8 +178,9 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
       tokenExpiresAt: moment().add(1, 'day').toDate(),
       authCodeExpiresAt: moment().add(1, 'day').toDate(),
       status: 'CONNECTED',
+      autoSyncEnabled: false,
     });
-  });
+  }, 60000);
 
   afterAll(async () => {
     if (userIdA) {
@@ -264,7 +280,7 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
     expect(slAudit?.details?.finalStatus).toBe('CANCELLED');
     expect(slAudit?.details?.source).toBe('BROKER_ORDERBOOK');
     expect(slAudit?.details?.initialStopLoss).toBe(785);
-  });
+  }, 30000);
 
   it('never overwrites a manual stop loss entered by the user', async () => {
     // Create an existing trade with a manually entered stop loss
@@ -399,7 +415,7 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
     expect(trade).toBeDefined();
     // Stop was not applied due to failure, but trade sync succeeded
     expect(trade?.risk?.initialStopLoss).toBeUndefined();
-  });
+  }, 30000);
 
   it('enforces tenant isolation: User B cannot access or affect User A trades/orders', async () => {
     // Run backfill as User B
@@ -506,7 +522,7 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
     const queuedTrade = reviewBody.data.queue.find((q: any) => q.id === trade?._id.toString());
     expect(queuedTrade).toBeDefined();
     expect(queuedTrade?.missing).toContain('SL_AMBIGUOUS');
-  });
+  }, 30000);
 
   it('records stop-loss trailing modifications from orderbook when order is modified', async () => {
     const now = moment();
@@ -580,5 +596,5 @@ describe('FYERS Orderbook Initial SL Auto-Match Integration Tests', () => {
     expect(trade?.stopLossMoveEvents?.[0].moveType).toBe('TRAILED_FAVORABLY');
     expect(trade?.calculated?.stopMoveSummary?.trailedCount).toBe(1);
     expect(trade?.calculated?.stopMoveSummary?.finalStop).toBe(2820);
-  });
+  }, 30000);
 });

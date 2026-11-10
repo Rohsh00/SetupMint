@@ -1721,7 +1721,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               direction,
               fills: [
                 {
-                  fillId: exec.tradeId || exec.orderId || `fill_${exec.rowIdx}`,
+                  fillId: (exec.tradeId || exec.orderId ? `${exec.tradeId || exec.orderId}_${exec.rowIdx}` : `fill_${exec.rowIdx}`),
                   type: 'ENTRY',
                   price: exec.price,
                   quantity: exec.quantity,
@@ -1740,7 +1740,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             if (isScaleIn) {
               // Add entry fill
               currentGroup.fills.push({
-                fillId: exec.tradeId || exec.orderId || `fill_${exec.rowIdx}`,
+                fillId: (exec.tradeId || exec.orderId ? `${exec.tradeId || exec.orderId}_${exec.rowIdx}` : `fill_${exec.rowIdx}`),
                 type: 'ENTRY',
                 price: exec.price,
                 quantity: exec.quantity,
@@ -1751,7 +1751,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               // Exit execution
               if (exec.quantity <= currentGroup.openQuantity) {
                 currentGroup.fills.push({
-                  fillId: exec.tradeId || exec.orderId || `fill_${exec.rowIdx}`,
+                  fillId: (exec.tradeId || exec.orderId ? `${exec.tradeId || exec.orderId}_${exec.rowIdx}` : `fill_${exec.rowIdx}`),
                   type: 'EXIT',
                   price: exec.price,
                   quantity: exec.quantity,
@@ -1770,7 +1770,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 const newOpenQty: number = exec.quantity - closeQty;
 
                 currentGroup.fills.push({
-                  fillId: (exec.tradeId || exec.orderId || `fill_${exec.rowIdx}`) + '_close',
+                  fillId: (exec.tradeId || exec.orderId ? `${exec.tradeId || exec.orderId}_${exec.rowIdx}` : `fill_${exec.rowIdx}`) + '_close',
                   type: 'EXIT',
                   price: exec.price,
                   quantity: closeQty,
@@ -1785,7 +1785,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                   direction: flippedDirection,
                   fills: [
                     {
-                      fillId: (exec.tradeId || exec.orderId || `fill_${exec.rowIdx}`) + '_open',
+                      fillId: (exec.tradeId || exec.orderId ? `${exec.tradeId || exec.orderId}_${exec.rowIdx}` : `fill_${exec.rowIdx}`) + '_open',
                       type: 'ENTRY',
                       price: exec.price,
                       quantity: newOpenQty,

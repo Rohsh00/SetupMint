@@ -5,44 +5,29 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/**
- * Format currency amount with symbol and appropriate regional notation
- */
+import { formatMoney } from '@tradevault/financial-engine';
+
 export function formatCurrency(
   amount: number | string | undefined | null,
-  currency = 'INR',
+  currency = 'USD',
   precision = 2
 ): string {
   if (amount === undefined || amount === null || isNaN(Number(amount))) {
     return '—';
   }
+  const curr = currency === 'MULTI' ? 'USD' : currency;
+  return formatMoney(amount, curr, { precision });
+}
 
-  const num = Number(amount);
-  const isNegative = num < 0;
-  const absNum = Math.abs(num);
-
-  let formattedNum = '';
-  if (currency.toUpperCase() === 'INR') {
-    formattedNum = absNum.toLocaleString('en-IN', {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
-    });
-    return `${isNegative ? '-' : ''}₹${formattedNum}`;
-  } else if (currency.toUpperCase() === 'USD' || currency.toUpperCase() === 'USDT') {
-    formattedNum = absNum.toLocaleString('en-US', {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
-    });
-    return `${isNegative ? '-' : ''}$${formattedNum}`;
-  } else if (currency.toUpperCase() === 'EUR') {
-    formattedNum = absNum.toLocaleString('de-DE', {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
-    });
-    return `${isNegative ? '-' : ''}€${formattedNum}`;
+export function getCurrencySymbol(currency = 'USD'): string {
+  try {
+    const curr = currency === 'MULTI' ? 'USD' : currency;
+    const parts = new Intl.NumberFormat('en-US', { style: 'currency', currency: curr, currencyDisplay: 'narrowSymbol' }).formatToParts(0);
+    const sym = parts.find((p) => p.type === 'currency')?.value;
+    return sym || curr;
+  } catch {
+    return currency;
   }
-
-  return `${isNegative ? '-' : ''}${currency} ${absNum.toFixed(precision)}`;
 }
 
 /**

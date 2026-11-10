@@ -19,6 +19,7 @@ import SearchIcon from '@mui/icons-material/SearchRounded';
 import CalculateIcon from '@mui/icons-material/CalculateRounded';
 import InfoIcon from '@mui/icons-material/InfoOutlined';
 import TrendingUpIcon from '@mui/icons-material/TrendingUpRounded';
+import { formatCurrency } from '../../lib/utils.js';
 
 export interface TradeInstrumentData {
   id?: string;
@@ -336,7 +337,7 @@ export function TradeInstrumentBadge({
         {/* Contract Multiplier Badge (if > 1) */}
         {showMultiplierBadge && multiplier > 1 && (
           <Tooltip
-            title={`Contract Multiplier: x${multiplier} • ₹${multiplier} net move per underlying point`}
+            title={`Contract Multiplier: x${multiplier} • ${formatCurrency(multiplier, trade.currency || 'USD')} net move per underlying point`}
             arrow
           >
             <Box

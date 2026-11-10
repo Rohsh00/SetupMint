@@ -26,7 +26,9 @@ import { ILiveWatcherSummary, ILiveDataHealth } from '@tradevault/shared';
 import { api } from '../../../lib/api.js';
 import { soundEngine } from '../../../lib/sound-engine.js';
 import { notificationService } from '../../../lib/notification-service.js';
-import { formatCurrency } from '../../../lib/utils.js';
+import TextField from '@mui/material/TextField';
+import { useAccountScope } from '../../../context/AccountScopeContext.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 import { HoldToConfirmButton } from './HoldToConfirmButton.js';
 
 export interface PanicKillSwitchDialogProps {
@@ -44,6 +46,11 @@ export function PanicKillSwitchDialog({
 }: PanicKillSwitchDialogProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const { activeAccount, isPropMode } = useAccountScope();
+  const [typedAccountConfirm, setTypedAccountConfirm] = useState('');
+  const isPropAccount = isPropMode || activeAccount?.accountType === 'PROP_FIRM';
+  const targetAccountName = activeAccount?.name || 'PROP';
+  const isConfirmMatch = !isPropAccount || typedAccountConfirm.trim().toLowerCase() === targetAccountName.toLowerCase();
 
   const dataHealth: ILiveDataHealth | undefined = summary?.dataHealth;
   const isBrokerBlocked = dataHealth ? !dataHealth.canExecuteBroker : false;
@@ -245,7 +252,7 @@ export function PanicKillSwitchDialog({
                       </Box>
                     </TableCell>
                     <TableCell align="right">{p.quantity}</TableCell>
-                    <TableCell align="right">₹{p.currentLtp.toFixed(2)}</TableCell>
+                    <TableCell align="right">{getCurrencySymbol((p as any).currency || activeAccount?.baseCurrency || 'USD')}{p.currentLtp.toFixed(2)}</TableCell>
                     <TableCell
                       align="right"
                       sx={{
@@ -253,7 +260,7 @@ export function PanicKillSwitchDialog({
                         color: p.floatingNetPnL >= 0 ? '#10B981' : '#EF4444',
                       }}
                     >
-                      {formatCurrency(p.floatingNetPnL)}
+                      {formatCurrency(p.floatingNetPnL, (p as any).currency || activeAccount?.baseCurrency || 'USD')}
                     </TableCell>
                     <TableCell align="center">
                       {status === 'PENDING' && <CircularProgress size={16} sx={{ color: '#EF4444' }} />}
@@ -313,6 +320,22 @@ export function PanicKillSwitchDialog({
             </span>
           </Tooltip>
         </Box>
+
+        {isPropAccount && (
+          <Box sx={{ mt: 2, p: 2, borderRadius: 2, bgcolor: alpha('#EF4444', 0.08), border: '1px solid', borderColor: '#EF4444' }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: '#EF4444', display: 'block', mb: 1 }}>
+              ⚠️ Prop Firm Challenge Protection: Type &quot;{targetAccountName}&quot; to confirm emergency liquidation
+            </Typography>
+            <TextField
+              size="small"
+              fullWidth
+              placeholder={`Type "${targetAccountName}" to confirm`}
+              value={typedAccountConfirm}
+              onChange={(e) => setTypedAccountConfirm(e.target.value)}
+              disabled={isExecuting}
+            />
+          </Box>
+        )}
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, gap: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -323,8 +346,8 @@ export function PanicKillSwitchDialog({
         <HoldToConfirmButton
           holdDurationMs={600}
           onConfirm={handleExecuteKillSwitch}
-          disabled={isExecuting || openCount === 0}
-          disabledReason={openCount === 0 ? 'No open positions to close' : undefined}
+          disabled={isExecuting || openCount === 0 || !isConfirmMatch}
+          disabledReason={openCount === 0 ? 'No open positions to close' : !isConfirmMatch ? `Type "${targetAccountName}" to unlock` : undefined}
           color="error"
           variant="contained"
           holdingText="FLATTENING ALL IN"

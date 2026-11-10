@@ -60,7 +60,7 @@ import {
   IFocusRuleEvaluation,
 } from '@tradevault/shared';
 import { api } from '../lib/api.js';
-import { formatCurrency, formatPercent, formatR, formatDate } from '../lib/utils.js';
+import { formatCurrency, formatPercent, formatR, formatDate, getCurrencySymbol } from '../lib/utils.js';
 import { toast } from '../context/ToastContext.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
@@ -112,7 +112,7 @@ export function WeeklyReviewPage() {
   const isDark = muiTheme.palette.mode === 'dark';
 
   // Global Account Scope
-  const { queryParams, isPropMode, scopeLabel } = useAccountScope();
+  const { queryParams, isPropMode, scopeLabel, currency: scopeCurrency, activeAccount, timezone } = useAccountScope();
 
   // URL Query Param '?week=YYYY-Www'
   const [searchParams, setSearchParams] = useSearchParams();
@@ -158,6 +158,10 @@ export function WeeklyReviewPage() {
   const previousFocusRule: IFocusRule | null = data?.previousFocusRule || null;
   const previousFocusEvaluation: IFocusRuleEvaluation | null =
     data?.previousFocusEvaluation || null;
+
+  const reviewCurrency = (review as any)?.currency || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
+  const reviewTz = timezone || activeAccount?.profile?.timezone || 'UTC';
+  const currSym = getCurrencySymbol(reviewCurrency);
 
   // Initialize/Sync Form State from API
   useEffect(() => {
@@ -341,7 +345,7 @@ export function WeeklyReviewPage() {
                 />
               </Box>
               <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                {formattedDateRange} (IST)
+                {formattedDateRange} ({reviewTz})
               </Typography>
             </Box>
           </Box>
@@ -786,14 +790,14 @@ export function WeeklyReviewPage() {
         )}
       </Card>
 
-      {/* 4. TOP MISTAKES BY ₹ COST */}
+      {/* 4. TOP MISTAKES BY COST */}
       <Card variant="outlined" sx={{ p: 2.5, borderRadius: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <PsychologyRoundedIcon sx={{ color: '#F43F5E', fontSize: 24 }} />
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                Top Mistakes by ₹ Loss
+                Top Mistakes by {currSym} Loss
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 Quantified total capital eroded by behavioural slip-ups this week
@@ -802,7 +806,7 @@ export function WeeklyReviewPage() {
           </Box>
           {mistakes.topMistake && (
             <Chip
-              label={`Biggest Leak: ${mistakes.topMistake.tag} (-${formatCurrency(mistakes.topMistake.totalLoss)})`}
+              label={`Biggest Leak: ${mistakes.topMistake.tag} (-${formatCurrency(mistakes.topMistake.totalLoss, reviewCurrency)})`}
               color="error"
               size="small"
               variant="outlined"
@@ -833,7 +837,7 @@ export function WeeklyReviewPage() {
                 <TableRow>
                   <TableCell sx={{ fontWeight: 700 }}>Mistake Tag</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>Trade Count</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>Total ₹ Loss</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Total {currSym} Loss</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>Action</TableCell>
                 </TableRow>
               </TableHead>
@@ -874,7 +878,7 @@ export function WeeklyReviewPage() {
                       {m.count}
                     </TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700, color: '#F43F5E', fontFamily: 'monospace' }}>
-                      -{formatCurrency(m.totalLoss)}
+                      -{formatCurrency(m.totalLoss, reviewCurrency)}
                     </TableCell>
                     <TableCell align="right">
                       <Button

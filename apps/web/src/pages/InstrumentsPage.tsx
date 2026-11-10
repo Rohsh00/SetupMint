@@ -77,7 +77,7 @@ const defaultFormData: InstrumentFormData = {
 
 export function InstrumentsPage() {
   const { openDrill } = useTradeDrilldown();
-  const { queryParams, scope, scopedAccounts } = useAccountScope();
+  const { queryParams, scope, scopedAccounts, activeAccount, currency: scopeCurrency } = useAccountScope();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
@@ -205,7 +205,7 @@ export function InstrumentsPage() {
       assetClass: inst.assetClass || 'EQUITY',
       exchange: inst.exchange || 'NSE',
       marketSegment: inst.marketSegment || 'NSE_EQ',
-      quoteCurrency: inst.quoteCurrency || 'INR',
+      quoteCurrency: inst.quoteCurrency || activeAccount?.profile?.baseCurrency || scopeCurrency || 'USD',
       contractMultiplier: inst.contractMultiplier ?? 1,
       lotSize: inst.lotSize ?? 1,
       tickSize: inst.tickSize ?? 0.05,
@@ -276,14 +276,14 @@ export function InstrumentsPage() {
   };
 
   const scopedCurrencies = React.useMemo(
-    () => new Set(scopedAccounts.map((a: any) => String(a.baseCurrency || 'INR').toUpperCase())),
+    () => new Set(scopedAccounts.map((a: any) => String(a.profile?.baseCurrency || a.baseCurrency || '').toUpperCase()).filter(Boolean)),
     [scopedAccounts]
   );
 
   const filtered = instruments.filter((i: any) => {
     if (scope.mode !== 'ALL') {
       const hasScopedTrades = (i.tradeCount ?? 0) > 0;
-      const instCurr = String(i.quoteCurrency || 'INR').toUpperCase();
+      const instCurr = String(i.quoteCurrency || '').toUpperCase();
       const matchesScopedCurrency = scopedCurrencies.size === 0 || scopedCurrencies.has(instCurr);
       if (!hasScopedTrades && !(i.source === 'CUSTOM' && matchesScopedCurrency)) {
         return false;

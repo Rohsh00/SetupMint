@@ -1,13 +1,19 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { InstrumentClassifier } from '../src/services/instrument-classifier.service.js';
 import { HolidayService } from '../src/services/holiday.service.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
 import { getNseHolidaysForYear } from '@tradevault/shared';
 import { isNseMonthlyExpiry, isNiftyWeeklyExpiry, isExpiryDay } from '@tradevault/financial-engine';
 
 describe('Dynamic Instrument Classification & Multi-Year Holidays', () => {
   beforeAll(async () => {
+    await connectDatabase();
     // Load dynamic commodity registry
     await InstrumentClassifier.loadCommodityRegistry();
+  }, 60000);
+
+  afterAll(async () => {
+    await disconnectDatabase();
   });
 
   describe('Dynamic Instrument Classification (Zero Hardcoded Symbols)', () => {

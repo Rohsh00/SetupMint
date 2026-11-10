@@ -48,6 +48,7 @@ import LogoutIcon from '@mui/icons-material/LogoutRounded';
 import SyncIcon from '@mui/icons-material/SyncRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
@@ -91,6 +92,9 @@ export function AppLayout() {
     demoAccounts,
     propFirms,
     queryParams,
+    isMultiCurrency,
+    currencies,
+    currency,
   } = useAccountScope();
 
   // Global Keyboard Shortcuts (Cmd+K palette, N for new trade)
@@ -607,7 +611,7 @@ export function AppLayout() {
                       fontWeight: 600,
                       backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(255, 255, 255, 0.9)',
                       borderRadius: 2,
-                      minWidth: { xs: 140, sm: 200 },
+                      minWidth: { xs: 140, sm: 220 },
                     }}
                   >
                     <MenuItem value="ALL">
@@ -651,22 +655,70 @@ export function AppLayout() {
                       </ListSubheader>,
                       ...(personalAccounts.length > 1 ? personalAccounts : []).map((acc: any) => (
                         <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
-                          💼 {acc.name} ({acc.baseCurrency})
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                            <span>💼 {acc.name}</span>
+                            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                              <Chip size="small" label={acc.baseCurrency} sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
+                              <Chip size="small" variant="outlined" label={acc.profile?.executionAdapterKey || acc.broker || 'MANUAL'} sx={{ height: 18, fontSize: '0.6rem' }} />
+                            </Box>
+                          </Box>
                         </MenuItem>
                       )),
                       ...(propAccounts.length > 1 ? propAccounts : []).map((acc: any) => (
                         <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
-                          🏆 {acc.name} ({acc.baseCurrency})
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                            <span>🏆 {acc.name}</span>
+                            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                              <Chip size="small" label={acc.baseCurrency} sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
+                              <Chip size="small" variant="outlined" label={acc.profile?.executionAdapterKey || acc.broker || 'MANUAL'} sx={{ height: 18, fontSize: '0.6rem' }} />
+                            </Box>
+                          </Box>
                         </MenuItem>
                       )),
                       ...(demoAccounts.length > 1 ? demoAccounts : []).map((acc: any) => (
                         <MenuItem key={acc.id} value={`ACCOUNT:${acc.id}`}>
-                          🧪 {acc.name} ({acc.baseCurrency})
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                            <span>🧪 {acc.name}</span>
+                            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                              <Chip size="small" label={acc.baseCurrency} sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
+                              <Chip size="small" variant="outlined" label={acc.profile?.executionAdapterKey || acc.broker || 'MANUAL'} sx={{ height: 18, fontSize: '0.6rem' }} />
+                            </Box>
+                          </Box>
                         </MenuItem>
                       )),
                     ]}
                   </Select>
                 </FormControl>
+                {isMultiCurrency ? (
+                  <Tooltip
+                    title={`Scope spans multiple currencies (${currencies.join(', ')}). Totals are displayed per currency to maintain financial accuracy.`}
+                    arrow
+                  >
+                    <Chip
+                      size="small"
+                      icon={<WarningAmberRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                      label={`Multi-Currency (${currencies.join(', ')})`}
+                      color="warning"
+                      variant="outlined"
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: '0.6875rem',
+                        height: 26,
+                      }}
+                    />
+                  </Tooltip>
+                ) : currency && currency !== 'MULTI' ? (
+                  <Chip
+                    size="small"
+                    label={currency}
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: '0.6875rem',
+                      height: 26,
+                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  />
+                ) : null}
                 {isPropMode && (
                   <Chip
                     size="small"

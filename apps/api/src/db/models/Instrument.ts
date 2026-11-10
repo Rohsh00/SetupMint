@@ -62,7 +62,9 @@ const InstrumentSchema = new Schema<IInstrumentDoc>(
     },
     quoteCurrency: {
       type: String,
-      default: 'INR',
+      required: true,
+      uppercase: true,
+      trim: true,
     },
     contractMultiplier: {
       type: Number,

@@ -34,7 +34,7 @@ import { getPresetSpec } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
-import { formatCurrency, formatPercent, currentLocalIsoDateTime } from '../lib/utils.js';
+import { formatCurrency, formatPercent, currentLocalIsoDateTime, getCurrencySymbol } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { HelpHint } from '../components/help/index.js';
 
@@ -82,6 +82,12 @@ export function RiskCalculatorPage() {
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>(scopeAccountId || '');
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
+
+  const selectedAccount = useMemo(() => {
+    return accounts.find((a: any) => (a.id || a._id) === selectedAccountId) || accounts[0];
+  }, [accounts, selectedAccountId]);
+  const calcCurrency = selectedAccount?.baseCurrency || 'USD';
+  const currSym = getCurrencySymbol(calcCurrency);
 
   // 1. Account & Risk Budget string states (for seamless live typing & clearing)
   const [accountEquityStr, setAccountEquityStr] = useState<string>('200000');
@@ -310,10 +316,6 @@ export function RiskCalculatorPage() {
   const nearestLots = Math.round(rawQuantity / lotSize);
   const nearestLotQuantity = nearestLots * lotSize;
   const cashShareQuantity = Math.floor(rawQuantity);
-
-  const selectedAccount = useMemo(() => {
-    return accounts.find((a: any) => (a.id || a._id) === selectedAccountId);
-  }, [accounts, selectedAccountId]);
 
   const isSelectedAccountProp = Boolean(
     selectedAccount &&
@@ -564,7 +566,7 @@ export function RiskCalculatorPage() {
 
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                  Account Equity (₹ / $)
+                  Account Equity ({currSym})
                 </Typography>
                 <TextField
                   fullWidth
@@ -626,7 +628,7 @@ export function RiskCalculatorPage() {
                   onClick={() => setRiskMode('FIXED')}
                   sx={{ fontWeight: 700 }}
                 >
-                  Fixed Cash Amount (₹ / $)
+                  Fixed Cash Amount ({currSym})
                 </Button>
               </ButtonGroup>
 
@@ -648,7 +650,7 @@ export function RiskCalculatorPage() {
                         }}
                       />
                       <Typography variant="body2" sx={{ color: muiTheme.palette.text.secondary }}>
-                        = <Box component="strong" sx={{ color: muiTheme.palette.text.primary, fontFamily: `'JetBrains Mono', monospace` }}>{formatCurrency(plannedBudget)}</Box> maximum risk budget
+                        = <Box component="strong" sx={{ color: muiTheme.palette.text.primary, fontFamily: `'JetBrains Mono', monospace` }}>{formatCurrency(plannedBudget, calcCurrency)}</Box> maximum risk budget
                       </Typography>
                     </Box>
                     {/* Quick Risk % presets */}
@@ -678,7 +680,7 @@ export function RiskCalculatorPage() {
                         placeholder="e.g. 1500"
                         slotProps={{
                           input: {
-                            startAdornment: <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mr: 0.5 }}>₹/$</Typography>,
+                            startAdornment: <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mr: 0.5 }}>{currSym}</Typography>,
                             sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
                           },
                         }}
@@ -964,7 +966,7 @@ export function RiskCalculatorPage() {
 
               <Grid size={{ xs: 4 }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                  Est. Costs (₹/$)
+                  Est. Costs ({currSym})
                 </Typography>
                 <TextField
                   fullWidth
@@ -1154,7 +1156,7 @@ export function RiskCalculatorPage() {
                   <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
                     <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Potential Reward</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
-                      {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNetReward) : (targetDistance > 0 && effectiveQuantity === 0 ? `(1 lot: ${formatCurrency(targetDistance * contractMultiplier * lotSize)})` : '₹0.00')}
+                      {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNetReward, calcCurrency) : (targetDistance > 0 && effectiveQuantity === 0 ? `(1 lot: ${formatCurrency(targetDistance * contractMultiplier * lotSize, calcCurrency)})` : formatCurrency(0, calcCurrency))}
                     </Typography>
                     <Typography variant="caption" sx={{ color: muiTheme.palette.profit.main, fontSize: '0.6875rem' }}>
                       {accountEquity > 0 && effectiveNetReward > 0 ? `+${((effectiveNetReward / accountEquity) * 100).toFixed(2)}% gain` : ''}
@@ -1168,7 +1170,7 @@ export function RiskCalculatorPage() {
                     <Box>
                       <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Total Trade Capital (Notional)</Typography>
                       <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
-                        {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNotionalCapital) : '₹0.00'}
+                        {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNotionalCapital, calcCurrency) : formatCurrency(0, calcCurrency)}
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'right' }}>

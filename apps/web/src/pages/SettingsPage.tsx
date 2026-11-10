@@ -90,6 +90,7 @@ import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
 import { api, BASE_URL } from '../lib/api.js';
+import { formatCurrency, getCurrencySymbol } from '../lib/utils.js';
 import { toast } from '../context/ToastContext.js';
 import { HelpHint } from '../components/help/index.js';
 
@@ -121,7 +122,9 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const { user, refreshUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
-  const { selectedScopeValue, setScopeValue, personalAccounts, propAccounts } = useAccountScope();
+  const { selectedScopeValue, setScopeValue, personalAccounts, propAccounts, currency, activeAccount } = useAccountScope();
+  const settingsCurrency = activeAccount?.baseCurrency || (currency && currency !== 'MULTI' ? currency : 'USD');
+  const currSym = getCurrencySymbol(settingsCurrency);
 
   // Active Tab state (0: Live Execution, 1: Risk Guardrails, 2: Market Structure, 3: Brokers, 4: Account & Security)
   const [activeTab, setActiveTab] = useState<number>(() => {
@@ -963,7 +966,7 @@ export function SettingsPage() {
   // 5. TRADER PROFILE & SECURITY STATE
   // =========================================================================
   const [name, setName] = useState(user?.name || '');
-  const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'INR');
+  const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'USD');
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -1638,7 +1641,7 @@ export function SettingsPage() {
                         ]}
                       />
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        If a trade peaks at ₹10,000 profit and retreats to ₹{10000 * (1 - givebackMaxPercent / 100)}, the radar triggers exit prompt.
+                        If a trade peaks at {formatCurrency(10000, settingsCurrency)} profit and retreats to {formatCurrency(10000 * (1 - givebackMaxPercent / 100), settingsCurrency)}, the radar triggers exit prompt.
                       </Typography>
                     </Box>
                   </Box>
@@ -2445,7 +2448,7 @@ export function SettingsPage() {
               <Grid container spacing={2.5}>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
-                    label="Max Daily Loss Limit (₹) *"
+                    label={`Max Daily Loss Limit (${currSym}) *`}
                     type="number"
                     size="small"
                     required
@@ -3383,10 +3386,10 @@ export function SettingsPage() {
                       value={baseCurrency}
                       onChange={(e) => setBaseCurrency(e.target.value)}
                     >
-                      <MenuItem value="INR">Indian Rupee (INR ₹)</MenuItem>
-                      <MenuItem value="USD">US Dollar (USD $)</MenuItem>
-                      <MenuItem value="EUR">Euro (EUR €)</MenuItem>
-                      <MenuItem value="GBP">British Pound (GBP £)</MenuItem>
+                      <MenuItem value="INR">Indian Rupee (INR)</MenuItem>
+                      <MenuItem value="USD">US Dollar (USD)</MenuItem>
+                      <MenuItem value="EUR">Euro (EUR)</MenuItem>
+                      <MenuItem value="GBP">British Pound (GBP)</MenuItem>
                       <MenuItem value="AED">UAE Dirham (AED)</MenuItem>
                     </TextField>
 

@@ -12,7 +12,7 @@ import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import { ILiveTargetLadder, ILiveTargetLadderStep, ILiveOpenTradeMetric } from '@tradevault/shared';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 
 interface LiveScalingLadderProps {
   ladder: ILiveTargetLadder;
@@ -31,6 +31,7 @@ export function LiveScalingLadder({
 }: LiveScalingLadderProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const currSym = getCurrencySymbol(metric.currency);
 
   const { steps, initialRiskPoints, initialRiskAmount } = ladder;
   const resolvedLotSize = ladder.lotSize ?? metric.lotSize ?? 1;
@@ -60,7 +61,7 @@ export function LiveScalingLadder({
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-            1R = {initialRiskPoints.toFixed(1)} pts ({formatCurrency(initialRiskAmount, 'INR')})
+            1R = {initialRiskPoints.toFixed(1)} pts ({formatCurrency(initialRiskAmount, metric.currency || 'USD')})
           </Typography>
 
           {onOpenCustomRules && (
@@ -135,7 +136,7 @@ export function LiveScalingLadder({
                     {step.name}
                   </Typography>
                   <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.72rem', color: isFree ? '#A855F7' : 'inherit' }}>
-                    {isFree ? '• Open Trail (No Cap)' : `@ ₹${step.targetPrice}`}
+                    {isFree ? '• Open Trail (No Cap)' : `@ ${currSym}${step.targetPrice}`}
                   </Typography>
                 </Box>
 
@@ -210,7 +211,7 @@ export function LiveScalingLadder({
                           color: isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)',
                         }}
                       >
-                        Action: Book {bookText} & {step.suggestedStopLabel || `Trail SL to ₹${step.suggestedStopLoss}`}
+                        Action: Book {bookText} & {step.suggestedStopLabel || `Trail SL to ${currSym}${step.suggestedStopLoss}`}
                       </Typography>
                     );
                   })()}

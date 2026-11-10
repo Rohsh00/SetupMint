@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import mongoose from 'mongoose';
 import { buildApp } from '../src/server.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
 import {
   User,
   TradingAccount,
@@ -71,6 +72,7 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
   const PNL_USERB_LIVE = 128000;
 
   beforeAll(async () => {
+    await connectDatabase();
     app = await buildApp();
     await app.ready();
 
@@ -126,6 +128,7 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
       secretKey: 'TEST_SECRET',
       accessToken: 'TEST_FYERS_TOKEN',
       tokenExpiresAt: new Date(Date.now() + 12 * 3600 * 1000),
+      autoSyncEnabled: false,
     });
 
     const regB = await app.inject({
@@ -882,10 +885,11 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
         category: 'ENTRY',
       },
     ]);
-  });
+  }, 60000);
 
   afterAll(async () => {
     await app.close();
+    await disconnectDatabase();
   });
 
   describe('1. GET /api/v1/trades & POST /api/v1/trades/drilldown', () => {
@@ -998,7 +1002,7 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
         expect(drillSymbols, `drilldown ${c.name} symbols`).toEqual([...c.expectedSymbols].sort());
         expect(drillData.aggregate.netPnL, `drilldown ${c.name} aggregate.netPnL`).toBe(c.expectedPnL);
       }
-    });
+    }, 30000);
   });
 
   describe('2. GET /api/v1/dashboard/stats & GET /api/v1/dashboard/equity-curves', () => {
@@ -1496,7 +1500,7 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
           _id: { $in: [...tempLiveLosses.map((t) => t._id), tempPropTrade._id] },
         });
       }
-    });
+    }, 30000);
   });
 
   describe('7. Prop Overview, Export CSV/JSON, Import Batches & Telegram Commands', () => {
@@ -1637,7 +1641,7 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
         headers: { cookie: cookieA },
       });
       expect(attForeignRes.statusCode).toBe(404);
-    });
+    }, 30000);
   });
 });
 

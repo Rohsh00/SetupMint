@@ -18,7 +18,7 @@ import {
 } from '@tradevault/shared';
 import { Trade, TradingAccount, AccountTransaction, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
 interface StartingEquityResult {
   startingEquity: number;
@@ -171,7 +171,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     }
 
     const scope = AccountScopeService.parseAccountScope(req.query);
-    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
 
     const filter: any = { userId: req.user!.id };
     filter.accountId = { $in: accountIds };
@@ -200,6 +201,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       tradeDate: t.tradeDate.toISOString().split('T')[0],
       symbol: t.symbol,
       underlying: t.underlying || t.symbol,
+      currency: (t.currency || 'USD').toUpperCase(),
       strategyId: t.strategyId?._id ? (t.strategyId as any)._id.toString() : undefined,
       strategyName: (t.strategyId as any)?.name || t.strategyName || 'Discretionary',
       status: t.status,
@@ -220,11 +222,25 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const stats = calculateDashboardMetrics(formattedTrades, startingEquity);
 
+    // Multi-currency handling: never blend money totals across distinct currencies
+    const byCurrency: Record<string, any> = {};
+    if (accountCtx.isMultiCurrency) {
+      for (const curr of accountCtx.currencies) {
+        const currTrades = formattedTrades.filter((t: any) => t.currency === curr);
+        const currStartingEquity = equityResult.currencyBreakdown[curr] || 0;
+        byCurrency[curr] = calculateDashboardMetrics(currTrades, currStartingEquity);
+      }
+    }
+
     return reply.send({
       success: true,
       data: {
         ...stats,
-        hasMultipleCurrencies: equityResult.hasMultipleCurrencies,
+        currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
+        isMultiCurrency: accountCtx.isMultiCurrency,
+        currencies: accountCtx.currencies,
+        byCurrency: accountCtx.isMultiCurrency ? byCurrency : undefined,
+        hasMultipleCurrencies: accountCtx.isMultiCurrency,
         currencyBreakdown: equityResult.currencyBreakdown,
       },
     });
@@ -258,7 +274,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     }
 
     const scope = AccountScopeService.parseAccountScope(req.query);
-    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
 
     const filter: any = { userId: req.user!.id };
     filter.accountId = { $in: accountIds };
@@ -299,6 +316,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       exitTime: t.exitTime,
       symbol: t.symbol,
       underlying: t.underlying || t.symbol,
+      currency: (t.currency || 'USD').toUpperCase(),
       strategyId: t.strategyId?._id ? (t.strategyId as any)._id.toString() : undefined,
       strategyName: (t.strategyId as any)?.name || t.strategyName || 'Discretionary',
       status: t.status,
@@ -326,6 +344,19 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     // 1. Money Equity Curve
     const dashboardStats = calculateDashboardMetrics(formattedTrades, startingEquity);
     const moneyCurve = dashboardStats.equityCurve;
+
+    // Multi-currency per-currency money curves
+    const byCurrencyCurves: Record<string, any> = {};
+    if (accountCtx.isMultiCurrency) {
+      for (const curr of accountCtx.currencies) {
+        const currTrades = formattedTrades.filter((t: any) => t.currency === curr);
+        const currStartEq = equityResult.currencyBreakdown[curr] || 0;
+        byCurrencyCurves[curr] = {
+          moneyCurve: calculateDashboardMetrics(currTrades, currStartEq).equityCurve,
+          startingEquity: currStartEq,
+        };
+      }
+    }
 
     // 2. Cumulative-R Curve
     const rResult = cumulativeRCurve(formattedTrades as any);
@@ -492,6 +523,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       eventMarkers,
       startingEquity,
       propReferenceLines,
+      currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
+      isMultiCurrency: accountCtx.isMultiCurrency,
+      currencies: accountCtx.currencies,
+      byCurrencyCurves: accountCtx.isMultiCurrency ? byCurrencyCurves : undefined,
       hasMultipleCurrencies: equityResult.hasMultipleCurrencies,
       currencyBreakdown: equityResult.currencyBreakdown,
     };

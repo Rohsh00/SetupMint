@@ -103,6 +103,9 @@ export function TradeQuickSection({
   const exitPrice = watch('simpleExecution.exitPrice') || 0;
   const stopLoss = watch('risk.initialStopLoss') || 0;
   const targetPrice = watch('risk.plannedTarget') || 0;
+  const selectedAccountId = watch('accountId');
+  const currentAccount = accounts.find((a: any) => (a._id || a.id) === selectedAccountId);
+  const fallbackCurrency = currentAccount?.profile?.baseCurrency || currentAccount?.baseCurrency || 'USD';
 
   // Active instrument metadata
   const currentInstrument = instruments.find(
@@ -134,7 +137,7 @@ export function TradeQuickSection({
       setValue('assetClass', found.assetClass, { shouldDirty: true });
       setValue('exchange', found.exchange, { shouldDirty: true });
       setValue('marketSegment', found.marketSegment, { shouldDirty: true });
-      setValue('currency', found.quoteCurrency || 'INR', { shouldDirty: true });
+      setValue('currency', found.quoteCurrency || fallbackCurrency, { shouldDirty: true });
       setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1, { shouldDirty: true });
       setValue('risk.lotSize', found.lotSize || 1, { shouldDirty: true });
       if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
@@ -150,7 +153,7 @@ export function TradeQuickSection({
         setValue('assetClass', preset.assetClass, { shouldDirty: true });
         setValue('exchange', preset.exchange, { shouldDirty: true });
         setValue('marketSegment', preset.marketSegment, { shouldDirty: true });
-        setValue('currency', preset.quoteCurrency || 'INR', { shouldDirty: true });
+        setValue('currency', preset.quoteCurrency || fallbackCurrency, { shouldDirty: true });
         setValue('simpleExecution.contractMultiplier', preset.contractMultiplier || 1, { shouldDirty: true });
         setValue('risk.lotSize', preset.lotSize || 1, { shouldDirty: true });
         if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
@@ -1067,7 +1070,7 @@ export function TradeQuickSection({
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
               <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
                 {isAutoFees
-                  ? 'Charges auto-calculated: Flat ₹20/leg brokerage, exchange turnover, STT/CTT, SEBI (₹10/cr), stamp duty, and 18% GST'
+                  ? 'Charges auto-calculated based on account fee model (brokerage, exchange turnover, regulatory levies, and taxes)'
                   : 'Manual fee overrides active. Click "Reset to auto" to restore statutory calculations.'}
               </Typography>
               {!isAutoFees && onResetAutoFees && (

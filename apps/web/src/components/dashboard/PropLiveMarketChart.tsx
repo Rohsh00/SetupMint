@@ -32,7 +32,7 @@ import {
   UTCTimestamp,
 } from 'lightweight-charts';
 import { api } from '../../lib/api.js';
-import { formatPrice } from '../../lib/utils.js';
+import { formatPrice, getCurrencySymbol } from '../../lib/utils.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { useAuth } from '../../context/AuthContext.js';
 
@@ -109,7 +109,7 @@ export function LiveMarketChart({
 }: LiveMarketChartProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
-  const { isPropMode } = useAccountScope();
+  const { isPropMode, currency: activeCurrency, activeAccount } = useAccountScope();
   const { user } = useAuth();
   const displayDefaults = user?.liveWatcherSettings?.displaySettings;
 
@@ -520,7 +520,7 @@ export function LiveMarketChart({
           {liveLtp > 0 && (
             <Chip
               size="small"
-              label={`${effectiveMode === 'NORMAL' ? '₹' : '$'}${formatPrice(liveLtp)} ${
+              label={`${getCurrencySymbol(activeAccount?.profile?.baseCurrency || activeAccount?.baseCurrency || (activeCurrency !== 'MULTI' ? activeCurrency : 'USD'))}${formatPrice(liveLtp)} ${
                 quote?.changePct !== undefined
                   ? `(${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%)`
                   : ''

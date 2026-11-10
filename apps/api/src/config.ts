@@ -54,7 +54,7 @@ export const config = {
   maxFileSizeMb: Number(process.env.MAX_FILE_SIZE_MB || 10),
 
   // Defaults
-  defaultBaseCurrency: process.env.DEFAULT_BASE_CURRENCY || 'INR',
+  defaultBaseCurrency: process.env.DEFAULT_BASE_CURRENCY || '',
 
   // Telegram Notifications
   telegramBotToken: process.env.TELEGRAM_DEFAULT_BOT_TOKEN || process.env.BACKUP_ALERT_TELEGRAM_BOT_TOKEN || '',

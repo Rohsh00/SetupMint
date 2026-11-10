@@ -6,9 +6,9 @@ import {
   updateTradeTemplateSchema,
   ITradeTemplate,
 } from '@tradevault/shared';
-import { TradeTemplate, Trade } from '../db/models/index.js';
+import { TradeTemplate, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
 export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -125,7 +125,8 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const userId = req.user!.id;
     const scope = AccountScopeService.parseAccountScope(req.query);
     const isScoped = scope.mode !== 'ALL';
-    const accountIds = await AccountScopeService.resolveAccountScope(userId, scope);
+    const accountCtx = await resolveAccountContext(userId, scope);
+    const accountIds = accountCtx.accountIds;
     const statsMap = await getTemplateStatsMap(userId, accountIds);
 
     // Fetch user templates
@@ -146,12 +147,35 @@ export const templateRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       return formatTemplateWithStats(b, true, stat, isScoped);
     });
 
-    // Custom/favorited templates first, followed by built-ins
-    const allTemplates = [...formattedUserTemplates, ...formattedBuiltIns];
+    // Account-aware template ranking based on profile marketRegion and sessionCalendar
+    const primaryProfile = accountCtx.profiles[0];
+    const region = primaryProfile?.marketRegion || 'GLOBAL';
+
+    let allTemplates = [...formattedUserTemplates, ...formattedBuiltIns];
+
+    if (region === 'IN') {
+      // Prioritize Indian/NSE/MCX templates and templates supporting Indian sessions
+      allTemplates.sort((a, b) => {
+        const aMatches = (a.markets || []).some((m: string) => /NSE|NIFTY|BANKNIFTY|MCX|INDIA/i.test(m)) ? 1 : 0;
+        const bMatches = (b.markets || []).some((m: string) => /NSE|NIFTY|BANKNIFTY|MCX|INDIA/i.test(m)) ? 1 : 0;
+        return bMatches - aMatches;
+      });
+    } else {
+      // For Forex / Global / Prop accounts, prioritize Global/Forex/CFD templates and deprioritize Indian expiry day templates
+      allTemplates.sort((a, b) => {
+        const aExpiry = a.expiryDayOnly ? -1 : 0;
+        const bExpiry = b.expiryDayOnly ? -1 : 0;
+        const aMatches = (a.markets || []).some((m: string) => /FOREX|GLOBAL|CRYPTO|XAU|GOLD|US/i.test(m)) ? 1 : 0;
+        const bMatches = (b.markets || []).some((m: string) => /FOREX|GLOBAL|CRYPTO|XAU|GOLD|US/i.test(m)) ? 1 : 0;
+        return (bMatches + bExpiry) - (aMatches + aExpiry);
+      });
+    }
 
     return reply.send({
       success: true,
       data: allTemplates,
+      currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
+      isMultiCurrency: accountCtx.isMultiCurrency,
     });
   });
 

@@ -24,6 +24,7 @@ interface TradeCalculationBannerProps {
   totalCosts: number;
   netPnL: number;
   outcome: TradeOutcome;
+  currency?: string;
   realizedR?: number;
   plannedRisk?: number;
   rewardRiskRatio?: number;
@@ -41,6 +42,7 @@ export function TradeCalculationBanner({
   totalCosts,
   netPnL,
   outcome,
+  currency = 'USD',
   realizedR,
   plannedRisk,
   rewardRiskRatio,
@@ -166,7 +168,7 @@ export function TradeCalculationBanner({
                     mt: 0.25,
                   }}
                 >
-                  {isClosed ? formatCurrency(netPnL) : 'Active / In Progress'}
+                  {isClosed ? formatCurrency(netPnL, currency) : 'Active / In Progress'}
                 </Typography>
               </Box>
             </Box>
@@ -265,7 +267,7 @@ export function TradeCalculationBanner({
                     color: grossPnL > 0 ? muiTheme.palette.profit.main : grossPnL < 0 ? muiTheme.palette.loss.main : 'text.primary',
                   }}
                 >
-                  {formatCurrency(grossPnL)}
+                  {formatCurrency(grossPnL, currency)}
                 </Typography>
               </Box>
 
@@ -298,7 +300,7 @@ export function TradeCalculationBanner({
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                   <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: 'text.secondary' }}>
-                    {formatCurrency(totalCosts)}
+                    {formatCurrency(totalCosts, currency)}
                   </Typography>
                   {isAutoFees === false && onResetAutoFees && (
                     <Typography
@@ -335,7 +337,7 @@ export function TradeCalculationBanner({
                     RISK AT STOP
                   </Typography>
                   <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: muiTheme.palette.loss.main }}>
-                    {formatCurrency(plannedRisk)}
+                    {formatCurrency(plannedRisk, currency)}
                   </Typography>
                 </Box>
               )}
@@ -379,7 +381,7 @@ export function TradeCalculationBanner({
                     EXPOSURE
                   </Typography>
                   <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: 'text.primary' }}>
-                    {formatCurrency(positionValue)}
+                    {formatCurrency(positionValue, currency)}
                   </Typography>
                 </Box>
               )}

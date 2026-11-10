@@ -2,8 +2,14 @@ import crypto from 'crypto';
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
-import { accountTransactionSchema, createAccountSchema } from '@tradevault/shared';
-import { evaluatePropFirmHealth, listPropFirmPresets, getPropFirmPreset } from '@tradevault/financial-engine';
+import { accountTransactionSchema, createAccountSchema, updateAccountSchema } from '@tradevault/shared';
+import {
+  evaluatePropFirmHealth,
+  listPropFirmPresets,
+  getPropFirmPreset,
+  getAccountDayBoundaries,
+  SessionCalendarRegistry,
+} from '@tradevault/financial-engine';
 import {
   AccountTransaction,
   BrokerFundsSnapshot,
@@ -127,6 +133,8 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         liveBalance,
         brokerLink: acc.brokerLink,
         status: acc.status,
+        profile: acc.profile,
+        capabilities: acc.profile?.capabilities,
         riskRules: acc.riskRules,
         propFirmConfig: acc.propFirmConfig,
         propFirm: acc.propFirm?.firmKey ? acc.propFirm : undefined,
@@ -226,11 +234,11 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     }).sort({ createdAt: 1 });
 
     const now = new Date();
-    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
     const economicCalendar = await EconomicCalendarService.getCalendarOverview(now);
 
     const data = await Promise.all(
       propAccounts.map(async (acc) => {
+        const { start: startOfToday } = getAccountDayBoundaries(now, acc.profile?.timezone || 'UTC');
         const trades = await Trade.find({
           accountId: acc._id,
           userId: req.user!.id,
@@ -388,6 +396,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       accountType,
       baseCurrency,
       initialBalance,
+      profile,
       riskRules,
       propFirmConfig,
       propFirm,
@@ -458,6 +467,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       totalDeposits: mongoose.Types.Decimal128.fromString('0.00'),
       totalWithdrawals: mongoose.Types.Decimal128.fromString('0.00'),
       status: 'ACTIVE',
+      profile,
       riskRules,
       propFirmConfig: resolvedPropFirmConfig,
       propFirm: resolvedPropFirm,
@@ -474,6 +484,8 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         baseCurrency: account.baseCurrency,
         initialBalance,
         currentBalance: initialBalance,
+        profile: account.profile,
+        capabilities: account.profile?.capabilities,
         propFirmConfig: account.propFirmConfig,
         propFirm: account.propFirm,
       },
@@ -522,6 +534,8 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         totalAdjustments: adjustments,
         brokerLink: account.brokerLink,
         status: account.status,
+        profile: account.profile,
+        capabilities: account.profile?.capabilities,
         riskRules: account.riskRules,
         propFirmConfig: account.propFirmConfig,
         propFirm: account.propFirm,
@@ -534,7 +548,7 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
   // Update account
   app.put('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
-    const parseResult = createAccountSchema.partial().safeParse(req.body);
+    const parseResult = updateAccountSchema.safeParse(req.body);
     if (!parseResult.success) {
       return reply.status(400).send({
         success: false,
@@ -617,9 +631,9 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       });
     }
 
-    // Determine today date boundary in UTC (00:00:00)
+    // Determine today date boundary in account timezone
     const now = new Date();
-    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+    const { start: startOfToday } = getAccountDayBoundaries(now, account.profile?.timezone || 'UTC');
 
     // Fetch trades for this account
     const trades = await Trade.find({
@@ -1486,10 +1500,10 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         direction,
         status: isClosed ? 'CLOSED' : 'OPEN',
         tradeDate: tradeDateDay,
-        timeZone: 'Asia/Kolkata',
+        timeZone: account.profile?.timezone || 'UTC',
         entryTime: entryDate,
         exitTime: isClosed && exitDate ? exitDate : undefined,
-        session: 'LONDON',
+        session: SessionCalendarRegistry.detectSession(entryDate, account.profile?.sessionCalendarKey || 'FOREX_24_5'),
         tradeTitle: `${symbol === 'XAUUSD' ? 'Gold' : symbol} ${direction === 'LONG' ? 'Long' : 'Short'} ${qty.toFixed(2)} Lots`,
         externalBrokerOrderRef: canonicalTicket,
         tags: ['THE5ERS', 'PROP_FIRM', 'TRADINGVIEW', symbol],

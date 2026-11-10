@@ -36,6 +36,7 @@ import {
   ISeriesApi,
 } from 'lightweight-charts';
 import { api } from '../../../lib/api.js';
+import { getCurrencySymbol } from '../../../lib/utils.js';
 
 export interface InteractiveTradingViewModalProps {
   open: boolean;
@@ -122,9 +123,10 @@ export function InteractiveTradingViewModal({
   // Format currency
   const formatCurrency = (val: number | undefined | null) => {
     if (val === undefined || val === null || isNaN(val)) return '—';
-    return new Intl.NumberFormat('en-IN', {
+    const c = tradeData?.currency || 'USD';
+    return new Intl.NumberFormat(c === 'INR' ? 'en-IN' : 'en-US', {
       style: 'currency',
-      currency: 'INR',
+      currency: c,
       maximumFractionDigits: 2,
     }).format(val);
   };
@@ -250,6 +252,7 @@ export function InteractiveTradingViewModal({
 
       // 5. Overlaid Markers for Entry and Exit
       const markers: any[] = [];
+      const sym = getCurrencySymbol(trade.currency);
       if (trade.entryTime && trade.entryPrice) {
         const entrySec = Math.floor(new Date(trade.entryTime).getTime() / 1000);
         const snappedTime = findClosestCandleTime(entrySec, candles);
@@ -259,7 +262,7 @@ export function InteractiveTradingViewModal({
             position: isLong ? 'belowBar' : 'aboveBar',
             color: '#10b981',
             shape: isLong ? 'arrowUp' : 'arrowDown',
-            text: `ENTRY @ ₹${trade.entryPrice}`,
+            text: `ENTRY @ ${sym}${trade.entryPrice}`,
           });
         }
       }
@@ -273,7 +276,7 @@ export function InteractiveTradingViewModal({
             position: isLong ? 'aboveBar' : 'belowBar',
             color: '#f43f5e',
             shape: isLong ? 'arrowDown' : 'arrowUp',
-            text: `EXIT @ ₹${trade.exitPrice}`,
+            text: `EXIT @ ${sym}${trade.exitPrice}`,
           });
         }
       }
@@ -960,37 +963,40 @@ export function InteractiveTradingViewModal({
         </Box>
 
         {/* Right: Trade Markers Legend */}
-        {tradeData && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            {tradeData.entryPrice && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#10b981' }} />
-                <span>Entry: ₹{tradeData.entryPrice}</span>
-              </Box>
-            )}
+        {tradeData && (() => {
+          const sym = getCurrencySymbol(tradeData.currency);
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+              {tradeData.entryPrice && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  <span>Entry: {sym}{tradeData.entryPrice}</span>
+                </Box>
+              )}
 
-            {tradeData.exitPrice && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f59e0b' }} />
-                <span>Exit: ₹{tradeData.exitPrice}</span>
-              </Box>
-            )}
+              {tradeData.exitPrice && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+                  <span>Exit: {sym}{tradeData.exitPrice}</span>
+                </Box>
+              )}
 
-            {tradeData.stopLoss && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 8, height: 2, backgroundColor: '#f43f5e' }} />
-                <span>SL: ₹{tradeData.stopLoss}</span>
-              </Box>
-            )}
+              {tradeData.stopLoss && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 8, height: 2, backgroundColor: '#f43f5e' }} />
+                  <span>SL: {sym}{tradeData.stopLoss}</span>
+                </Box>
+              )}
 
-            {tradeData.takeProfit && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 8, height: 2, backgroundColor: '#06b6d4' }} />
-                <span>Target: ₹{tradeData.takeProfit}</span>
-              </Box>
-            )}
-          </Box>
-        )}
+              {tradeData.takeProfit && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 8, height: 2, backgroundColor: '#06b6d4' }} />
+                  <span>Target: {sym}{tradeData.takeProfit}</span>
+                </Box>
+              )}
+            </Box>
+          );
+        })()}
       </Box>
 
       {/* 4. Main Chart Canvas Area */}

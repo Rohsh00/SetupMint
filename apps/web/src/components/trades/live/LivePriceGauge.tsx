@@ -4,6 +4,8 @@ import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 import { ILiveOpenTradeMetric } from '@tradevault/shared';
+import { useAccountScope } from '../../../context/AccountScopeContext.js';
+import { getCurrencySymbol } from '../../../lib/utils.js';
 
 export interface LivePriceGaugeProps {
   metric: ILiveOpenTradeMetric;
@@ -13,6 +15,8 @@ export interface LivePriceGaugeProps {
 export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const { currency: activeCurrency } = useAccountScope();
+  const currSym = getCurrencySymbol((metric as any).currency || (activeCurrency && activeCurrency !== 'MULTI' ? activeCurrency : 'USD'));
 
   const {
     direction,
@@ -139,7 +143,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
         />
 
         {/* Stop Loss Marker (Red) */}
-        <Tooltip title={`Stop Loss: ₹${effectiveStop.toFixed(2)}`} arrow placement="top">
+        <Tooltip title={`Stop Loss: ${currSym}${effectiveStop.toFixed(2)}`} arrow placement="top">
           <Box
             sx={{
               position: 'absolute',
@@ -156,7 +160,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
         </Tooltip>
 
         {/* Entry Price Marker (Blue) */}
-        <Tooltip title={`Entry Price: ₹${entryPrice.toFixed(2)}`} arrow placement="top">
+        <Tooltip title={`Entry Price: ${currSym}${entryPrice.toFixed(2)}`} arrow placement="top">
           <Box
             sx={{
               position: 'absolute',
@@ -175,7 +179,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
         {/* True Breakeven (Lock BE + Fees) Marker (Cyan) */}
         {metric.trueBreakevenPrice && metric.trueBreakevenPrice > 0 && (
           <Tooltip
-            title={`Fee-Protected True Breakeven: ₹${metric.trueBreakevenPrice.toFixed(2)} (${metric.feeBufferPoints ? `+${metric.feeBufferPoints.toFixed(2)}pts fee buffer` : 'fees covered'}) • Click to Lock BE`}
+            title={`Fee-Protected True Breakeven: ${currSym}${metric.trueBreakevenPrice.toFixed(2)} (${metric.feeBufferPoints ? `+${metric.feeBufferPoints.toFixed(2)}pts fee buffer` : 'fees covered'}) • Click to Lock BE`}
             arrow
             placement="top"
           >
@@ -199,7 +203,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
 
         {/* Peak MFE Diamond Marker (Amber) */}
         {peakPct !== currentPct && (
-          <Tooltip title={`Peak MFE reached: ₹${peakPrice.toFixed(2)}`} arrow placement="top">
+          <Tooltip title={`Peak MFE reached: ${currSym}${peakPrice.toFixed(2)}`} arrow placement="top">
             <Box
               sx={{
                 position: 'absolute',
@@ -217,7 +221,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
 
         {/* Target 1 Marker (Green) */}
         {t1Pct !== null && (
-          <Tooltip title={`Target 1: ₹${t1Price?.toFixed(2)}`} arrow placement="top">
+          <Tooltip title={`Target 1: ${currSym}${t1Price?.toFixed(2)}`} arrow placement="top">
             <Box
               sx={{
                 position: 'absolute',
@@ -236,7 +240,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
 
         {/* Target 2 Marker (Green) */}
         {t2Pct !== null && (
-          <Tooltip title={`Target 2: ₹${t2Price?.toFixed(2)}`} arrow placement="top">
+          <Tooltip title={`Target 2: ${currSym}${t2Price?.toFixed(2)}`} arrow placement="top">
             <Box
               sx={{
                 position: 'absolute',
@@ -254,7 +258,7 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
         )}
 
         {/* Live LTP Pulsing Indicator Point */}
-        <Tooltip title={`Current LTP: ₹${currentLtp.toFixed(2)}`} arrow placement="bottom">
+        <Tooltip title={`Current LTP: ${currSym}${currentLtp.toFixed(2)}`} arrow placement="bottom">
           <Box
             sx={{
               position: 'absolute',
@@ -277,16 +281,16 @@ export function LivePriceGauge({ metric, onQuickTrailSl }: LivePriceGaugeProps) 
       {/* Bottom Labels (SL, Entry, Target) */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
         <Typography variant="caption" sx={{ fontSize: '0.68rem', color: themeRed, fontWeight: 700 }}>
-          SL ₹{effectiveStop.toFixed(2)}
+          SL {currSym}{effectiveStop.toFixed(2)}
         </Typography>
 
         <Typography variant="caption" sx={{ fontSize: '0.68rem', color: themeBlue, fontWeight: 700 }}>
-          Entry ₹{entryPrice.toFixed(2)}
+          Entry {currSym}{entryPrice.toFixed(2)}
         </Typography>
 
         {t1Price && t1Price > 0 ? (
           <Typography variant="caption" sx={{ fontSize: '0.68rem', color: themeGreen, fontWeight: 700 }}>
-            T1 ₹{t1Price.toFixed(2)}
+            T1 {currSym}{t1Price.toFixed(2)}
           </Typography>
         ) : (
           <Typography variant="caption" sx={{ fontSize: '0.68rem', color: 'text.secondary', fontWeight: 600 }}>

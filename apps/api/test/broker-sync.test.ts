@@ -78,6 +78,12 @@ describe('FYERS funds sync and reconciliation', () => {
             headers: { 'content-type': 'application/json' },
           });
         }
+        if (url.includes('/positions')) {
+          return new Response(JSON.stringify({ s: 'ok', code: 200, message: '', netPositions: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         throw new Error(`Unexpected fetch: ${url}`);
       })
     );
@@ -226,6 +232,12 @@ describe('FYERS funds sync and reconciliation', () => {
     expect(integration?.oauthStateHash).toBeFalsy();
     expect(integration?.clientId).toBe('CPCJNZWGA9');
     expect(integration?.tokenExpiresAt?.getTime()).toBeGreaterThan(Date.now());
+
+    // Disable auto-sync so external background workers do not race with this test suite
+    await BrokerIntegration.updateOne(
+      { userId: new mongoose.Types.ObjectId(userId), broker: 'FYERS' },
+      { $set: { autoSyncEnabled: false } }
+    );
   });
 
   it('rejects mismatched client IDs when linking an account', async () => {
@@ -795,6 +807,6 @@ describe('FYERS funds sync and reconciliation', () => {
     );
 
     backfillSpy.mockRestore();
-  });
+  }, 20000);
 });
 

@@ -30,6 +30,9 @@ export function TradeIdentityTab({
   const selectedSymbol = watch('symbol');
   const selectedAssetClass = watch('assetClass');
   const direction = watch('direction');
+  const selectedAccountId = watch('accountId');
+  const currentAccount = accounts.find((a) => (a._id || a.id) === selectedAccountId);
+  const fallbackCurrency = currentAccount?.profile?.baseCurrency || currentAccount?.baseCurrency || 'USD';
 
   // When instrument is picked, auto-populate details
   const handleInstrumentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -43,7 +46,7 @@ export function TradeIdentityTab({
       setValue('assetClass', found.assetClass);
       setValue('exchange', found.exchange);
       setValue('marketSegment', found.marketSegment);
-      setValue('currency', found.quoteCurrency || 'INR');
+      setValue('currency', found.quoteCurrency || fallbackCurrency);
       setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1);
       setValue('risk.lotSize', found.lotSize || 1);
       if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
@@ -59,7 +62,7 @@ export function TradeIdentityTab({
         setValue('assetClass', preset.assetClass);
         setValue('exchange', preset.exchange);
         setValue('marketSegment', preset.marketSegment);
-        setValue('currency', preset.quoteCurrency || 'INR');
+        setValue('currency', preset.quoteCurrency || fallbackCurrency);
         setValue('simpleExecution.contractMultiplier', preset.contractMultiplier || 1);
         setValue('risk.lotSize', preset.lotSize || 1);
         if (!watch('simpleExecution.quantity') || watch('simpleExecution.quantity') === 1) {
@@ -82,7 +85,7 @@ export function TradeIdentityTab({
       setValue('assetClass', found.assetClass);
       setValue('exchange', found.exchange);
       setValue('marketSegment', found.marketSegment);
-      setValue('currency', found.quoteCurrency || 'INR');
+      setValue('currency', found.quoteCurrency || fallbackCurrency);
       setValue('simpleExecution.contractMultiplier', found.contractMultiplier || 1);
       setValue('risk.lotSize', found.lotSize || 1);
     } else {
@@ -91,7 +94,7 @@ export function TradeIdentityTab({
         setValue('assetClass', preset.assetClass);
         setValue('exchange', preset.exchange);
         setValue('marketSegment', preset.marketSegment);
-        setValue('currency', preset.quoteCurrency || 'INR');
+        setValue('currency', preset.quoteCurrency || fallbackCurrency);
         setValue('simpleExecution.contractMultiplier', preset.contractMultiplier || 1);
         setValue('risk.lotSize', preset.lotSize || 1);
       }

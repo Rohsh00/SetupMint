@@ -58,7 +58,8 @@ import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
-import { formatCurrency, formatPrice, formatR } from '../lib/utils.js';
+import { formatCurrency, formatPrice, formatR, getCurrencySymbol } from '../lib/utils.js';
+import { useCapabilities } from '../hooks/useCapabilities.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
 import { TradeInteractiveChart } from '../components/trades/TradeInteractiveChart.js';
@@ -91,6 +92,8 @@ export function TradeDetailPage() {
 
   const trade = (rawTrade as any)?.data || rawTrade;
   const isOpenTrade = trade?.status === 'OPEN';
+  const tradeCurrency = trade?.currency || trade?.accountId?.baseCurrency || 'USD';
+  const currSym = getCurrencySymbol(tradeCurrency);
 
   const {
     data: liveMetric,
@@ -443,7 +446,7 @@ export function TradeDetailPage() {
               startIcon={<CheckCircleRoundedIcon fontSize="small" />}
               sx={{ fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
             >
-              {liveMetric?.currentLtp ? `Close @ LTP (₹${liveMetric.currentLtp})` : 'Close Trade'}
+              {liveMetric?.currentLtp ? `Close @ LTP (${currSym}${liveMetric.currentLtp})` : 'Close Trade'}
             </Button>
           )}
           <Button
@@ -581,7 +584,7 @@ export function TradeDetailPage() {
                 onClick={() => setIsQuickCloseOpen(true)}
                 sx={{ fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
               >
-                Close @ LTP (₹{liveMetric.currentLtp})
+                Close @ LTP ({currSym}{liveMetric.currentLtp})
               </Button>
             </Box>
           </Box>
@@ -604,7 +607,7 @@ export function TradeDetailPage() {
                   gap: 0.5,
                 }}
               >
-                ₹{liveMetric.currentLtp}
+                {currSym}{liveMetric.currentLtp}
                 {liveMetric.priceDeltaPoints >= 0 ? (
                   <TrendingUpRoundedIcon fontSize="small" />
                 ) : (
@@ -630,7 +633,7 @@ export function TradeDetailPage() {
                   mt: 0.5,
                 }}
               >
-                {liveMetric.floatingNetPnL >= 0 ? '+' : ''}{formatCurrency(liveMetric.floatingNetPnL, 'INR')}
+                {liveMetric.floatingNetPnL >= 0 ? '+' : ''}{formatCurrency(liveMetric.floatingNetPnL, tradeCurrency)}
               </Typography>
               {liveMetric.unrealizedR !== null && (
                 <Typography variant="caption" sx={{ color: liveMetric.floatingNetPnL >= 0 ? '#10B981' : '#F43F5E', fontWeight: 700 }}>
@@ -665,7 +668,7 @@ export function TradeDetailPage() {
               </Typography>
               {liveMetric.distanceToStopTicks !== null && (
                 <Typography variant="caption" color="text.secondary">
-                  {liveMetric.distanceToStopTicks} ticks buffer (SL: ₹{liveMetric.stopLoss})
+                  {liveMetric.distanceToStopTicks} ticks buffer (SL: {currSym}{liveMetric.stopLoss})
                 </Typography>
               )}
             </Grid>
@@ -689,7 +692,7 @@ export function TradeDetailPage() {
               </Typography>
               {liveMetric.distanceToTargetTicks !== null && (
                 <Typography variant="caption" color="text.secondary">
-                  {Math.abs(liveMetric.distanceToTargetTicks)} ticks remaining (Target: ₹{liveMetric.target})
+                  {Math.abs(liveMetric.distanceToTargetTicks)} ticks remaining (Target: {currSym}{liveMetric.target})
                 </Typography>
               )}
             </Grid>
@@ -1537,6 +1540,7 @@ export function TradeDetailPage() {
                     width={560}
                     height={60}
                     isDark={isDark}
+                    currency={trade.currency}
                   />
                 </Box>
               </Box>
@@ -2041,7 +2045,7 @@ export function TradeDetailPage() {
               </DialogTitle>
               <DialogContent dividers>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Record the stop-loss levels you moved during this trade. Initial stop loss is anchored at ₹{initialStop != null ? Number(initialStop).toFixed(2) : '—'}.
+                  Record the stop-loss levels you moved during this trade. Initial stop loss is anchored at {currSym}{initialStop != null ? Number(initialStop).toFixed(2) : '—'}.
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {manualMovesList.map((move, idx) => (
@@ -2050,7 +2054,7 @@ export function TradeDetailPage() {
                         #{idx + 1}
                       </Typography>
                       <TextField
-                        label="Stop Price (₹)"
+                        label={`Stop Price (${currSym})`}
                         type="number"
                         size="small"
                         value={move.stopPrice}
@@ -2286,7 +2290,7 @@ export function TradeDetailPage() {
                               color: chk.floatingNetPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
                             }}
                           >
-                            {chk.floatingNetPnL >= 0 ? '+' : ''}₹{chk.floatingNetPnL.toLocaleString('en-IN')}
+                            {chk.floatingNetPnL >= 0 ? '+' : ''}{formatCurrency(chk.floatingNetPnL, tradeCurrency)}
                           </Typography>
                         )}
                         {chk.unrealizedR !== undefined && (
@@ -2296,7 +2300,7 @@ export function TradeDetailPage() {
                         )}
                         {chk.currentLtp !== undefined && (
                           <Typography variant="caption" sx={{ color: 'text.secondary', ml: 'auto', fontFamily: 'monospace' }}>
-                            LTP ₹{chk.currentLtp}
+                            LTP {currSym}{chk.currentLtp}
                           </Typography>
                         )}
                       </Box>

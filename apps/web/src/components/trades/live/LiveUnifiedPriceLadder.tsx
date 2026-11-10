@@ -17,7 +17,7 @@ import {
   ILiveTargetLadderStep,
   ILiveOpenTradeMetric,
 } from '@tradevault/shared';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 
 export interface LiveUnifiedPriceLadderProps {
   ladder?: ILiveTargetLadder;
@@ -38,6 +38,7 @@ export function LiveUnifiedPriceLadder({
 }: LiveUnifiedPriceLadderProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+  const currSym = getCurrencySymbol(metric.currency);
 
   const {
     direction,
@@ -212,7 +213,7 @@ export function LiveUnifiedPriceLadder({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {ladder?.initialRiskPoints ? (
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.66rem', fontWeight: 600 }}>
-              1R = {ladder.initialRiskPoints.toFixed(1)} pts ({formatCurrency(ladder.initialRiskAmount, 'INR')})
+              1R = {ladder.initialRiskPoints.toFixed(1)} pts ({formatCurrency(ladder.initialRiskAmount, metric.currency || 'USD')})
             </Typography>
           ) : null}
 
@@ -374,7 +375,7 @@ export function LiveUnifiedPriceLadder({
                     color: isLtp ? tier.color : 'text.primary',
                   }}
                 >
-                  ₹{tier.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {currSym}{tier.price.toLocaleString(metric.currency === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Typography>
               </Box>
             </Box>

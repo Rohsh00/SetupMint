@@ -7,6 +7,7 @@ import {
   isValidCalendarDate,
 } from '@tradevault/shared';
 import { formatDate } from '../lib/utils.js';
+import { useAccountScope } from './AccountScopeContext.js';
 
 export interface DateRangeState {
   preset: DateRangePreset;
@@ -41,6 +42,9 @@ const DateRangeContext = createContext<DateRangeState | undefined>(undefined);
 export function DateRangeProvider({ children }: { children: React.ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const { timezone: activeTimezone } = useAccountScope();
+  const tz = activeTimezone || 'UTC';
+
   const rangeParam = searchParams.get('range') as DateRangePreset | null;
   const fromParam = searchParams.get('from');
   const toParam = searchParams.get('to');
@@ -63,7 +67,7 @@ export function DateRangeProvider({ children }: { children: React.ReactNode }) {
           endDate: undefined,
         };
       } else {
-        const resolved = resolvePreset(rangeParam);
+        const resolved = resolvePreset(rangeParam, new Date(), tz);
         return {
           preset: rangeParam,
           startDate: fromParam || resolved.startDate,
@@ -107,7 +111,7 @@ export function DateRangeProvider({ children }: { children: React.ReactNode }) {
           } else if (nextPreset === 'CUSTOM') {
             next.set('range', 'CUSTOM');
           } else {
-            const resolved = resolvePreset(nextPreset);
+            const resolved = resolvePreset(nextPreset, new Date(), tz);
             next.set('range', nextPreset);
             if (resolved.startDate) {
               next.set('from', resolved.startDate);

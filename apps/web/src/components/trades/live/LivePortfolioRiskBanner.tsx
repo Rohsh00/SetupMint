@@ -7,7 +7,8 @@ import LinearProgress from '@mui/material/LinearProgress';
 import { alpha } from '@mui/material/styles';
 import { IPortfolioRiskResult, IRiskSettings, ILiveWatcherSummary } from '@tradevault/shared';
 import { HelpHint } from '../../help/index.js';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
+import { useAccountScope } from '../../../context/AccountScopeContext.js';
 
 export interface LivePortfolioRiskBannerProps {
   risk: IPortfolioRiskResult;
@@ -61,12 +62,11 @@ export function LivePortfolioRiskBanner({
   const netFloating = summary?.totalFloatingNetPnL ?? 0;
   const totalRiskCapital = summary?.totalRiskCapital ?? 0;
 
-  const isUsd =
-    isPropMode ||
-    Boolean(summary?.positions?.length && summary.positions.every((p: any) => p.currency === 'USD'));
-  const activeCurrency = isUsd ? 'USD' : 'INR';
-  const currSym = isUsd ? '$' : '₹';
-  const numLocale = isUsd ? 'en-US' : 'en-IN';
+  const { activeAccount, currency: scopeCurrency } = useAccountScope();
+  const positionCurrency = summary?.positions?.[0]?.currency;
+  const activeCurrency = positionCurrency || activeAccount?.profile?.baseCurrency || scopeCurrency || (isPropMode ? 'USD' : 'INR');
+  const currSym = getCurrencySymbol(activeCurrency);
+  const numLocale = activeCurrency === 'INR' ? 'en-IN' : 'en-US';
 
   const currentLoss = netFloating < 0 ? Math.abs(netFloating) : 0;
   const dayLossPercent = Math.min(100, maxDailyLoss > 0 ? (currentLoss / maxDailyLoss) * 100 : 0);

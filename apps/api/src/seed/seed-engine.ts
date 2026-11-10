@@ -4,6 +4,7 @@ import {
   calculateLinearPnL,
   calculateRealizedRMultiple,
   IndianChargesCalculator,
+  FeeModelRegistry,
 } from '@tradevault/financial-engine';
 import { Confluence, Emotion, MistakeTag, TradingSession } from '@tradevault/shared';
 import { AccountService } from '../services/account.service.js';
@@ -128,13 +129,14 @@ export class SetupMintSeedEngine {
     console.log(`[SeedEngine] Seeding ${profileDef.accounts.length} trading accounts...`);
     const createdAccounts: any[] = [];
     for (const accCfg of profileDef.accounts) {
+      const baseCurrency = accCfg.baseCurrency || 'INR';
       const acc = await TradingAccount.create({
         userId,
         name: accCfg.name,
         broker: accCfg.broker,
         accountNumber: accCfg.accountNumber,
         accountType: accCfg.accountType,
-        baseCurrency: 'INR',
+        baseCurrency,
         initialBalance: mongoose.Types.Decimal128.fromString(accCfg.initialBalance.toFixed(2)),
         currentBalance: mongoose.Types.Decimal128.fromString(accCfg.initialBalance.toFixed(2)),
         realizedPnL: mongoose.Types.Decimal128.fromString('0.00'),
@@ -142,6 +144,9 @@ export class SetupMintSeedEngine {
         totalWithdrawals: mongoose.Types.Decimal128.fromString('0.00'),
         status: 'ACTIVE',
         notes: accCfg.notes,
+        profile: accCfg.profile,
+        propFirm: accCfg.propFirm,
+        propFirmConfig: accCfg.propFirmConfig,
         riskRules: {
           maxDailyLoss: Math.round(accCfg.initialBalance * 0.03), // 3% max daily loss
           maxRiskPerTradePercent: 1.5,
@@ -270,28 +275,33 @@ export class SetupMintSeedEngine {
   ): Promise<number> {
     let count = 0;
     for (const acc of accounts) {
+      const curr = acc.baseCurrency || 'USD';
       // 1. Initial Deposit
       await AccountTransaction.create({
         userId,
         accountId: acc._id,
         type: 'DEPOSIT',
         amount: acc.initialBalance,
-        currency: 'INR',
+        currency: curr,
         date: new Date('2024-04-01T09:00:00.000Z'),
-        notes: 'Initial capital allocation via FYERS Net Banking',
+        notes: `Initial capital allocation via ${acc.broker} deposit`,
       });
       count++;
 
       // 2. Periodic Top-up or Milestone Withdrawal
-      if (acc.broker === 'FYERS') {
+      if (acc.broker === 'FYERS' || acc.broker === 'Elefin') {
+        const topupAmt = curr === 'INR' ? '50000.00' : '5000.00';
+        const withAmt = curr === 'INR' ? '25000.00' : '2000.00';
+        const adjAmt = curr === 'INR' ? '125.50' : '15.00';
+
         await AccountTransaction.create({
           userId,
           accountId: acc._id,
           type: 'DEPOSIT',
-          amount: mongoose.Types.Decimal128.fromString('50000.00'),
-          currency: 'INR',
+          amount: mongoose.Types.Decimal128.fromString(topupAmt),
+          currency: curr,
           date: new Date('2025-01-10T10:30:00.000Z'),
-          notes: 'Capital expansion for options margin requirements',
+          notes: 'Capital expansion for position margin requirements',
         });
         count++;
 
@@ -299,10 +309,10 @@ export class SetupMintSeedEngine {
           userId,
           accountId: acc._id,
           type: 'WITHDRAWAL',
-          amount: mongoose.Types.Decimal128.fromString('25000.00'),
-          currency: 'INR',
+          amount: mongoose.Types.Decimal128.fromString(withAmt),
+          currency: curr,
           date: new Date('2025-07-15T16:00:00.000Z'),
-          notes: 'Quarterly trading profit payout to bank account',
+          notes: 'Quarterly trading profit payout',
         });
         count++;
 
@@ -310,10 +320,10 @@ export class SetupMintSeedEngine {
           userId,
           accountId: acc._id,
           type: 'ADJUSTMENT',
-          amount: mongoose.Types.Decimal128.fromString('125.50'),
-          currency: 'INR',
+          amount: mongoose.Types.Decimal128.fromString(adjAmt),
+          currency: curr,
           date: new Date('2026-03-31T20:00:00.000Z'),
-          notes: 'FY annual interest credit on idle trading balance',
+          notes: 'Annual interest credit / fee adjustment on balance',
         });
         count++;
       }
@@ -415,6 +425,9 @@ export class SetupMintSeedEngine {
       if (account.accountType === 'COMMODITY') {
         const commoditySpecs = specPool.filter((x) => x.assetClass === 'COMMODITY');
         if (commoditySpecs.length > 0) spec = prng.pick(commoditySpecs);
+      } else if (account.accountType === 'FOREX' || account.accountType === 'PROP_FIRM') {
+        const forexSpecs = specPool.filter((x) => x.assetClass === 'FOREX');
+        if (forexSpecs.length > 0) spec = prng.pick(forexSpecs);
       } else if (account.accountType === 'FUTURES_OPTIONS') {
         const fnoSpecs = specPool.filter((x) => x.assetClass === 'FUTURES' || x.assetClass === 'OPTIONS');
         if (fnoSpecs.length > 0) spec = prng.pick(fnoSpecs);
@@ -647,14 +660,26 @@ export class SetupMintSeedEngine {
       }
 
       // Charges & Financial Calculations
-      const charges = IndianChargesCalculator.calculate(
-        inst.assetClass,
-        inst.marketSegment,
-        entryPrice,
-        status === 'CLOSED' ? exitPrice : entryPrice,
-        quantity,
-        inst.contractMultiplier
-      );
+      let charges: any;
+      if (inst.assetClass === 'FOREX' || account.baseCurrency !== 'INR') {
+        charges = FeeModelRegistry.calculateFees('FOREX_COMMISSION', {
+          assetClass: inst.assetClass,
+          entryPrice,
+          exitPrice: status === 'CLOSED' ? exitPrice : entryPrice,
+          quantity,
+          contractMultiplier: inst.contractMultiplier,
+          lots: quantity,
+        });
+      } else {
+        charges = IndianChargesCalculator.calculate(
+          inst.assetClass,
+          inst.marketSegment,
+          entryPrice,
+          status === 'CLOSED' ? exitPrice : entryPrice,
+          quantity,
+          inst.contractMultiplier
+        );
+      }
 
       const pnlRes = calculateLinearPnL({
         direction: direction as any,
@@ -853,12 +878,12 @@ export class SetupMintSeedEngine {
         strategyName: strategy.name,
         tags: [...strategy.tags, direction, spec.assetClass],
         tradeDate: new Date(dateStr),
-        timeZone: 'Asia/Kolkata',
+        timeZone: account.profile?.timezone || (account.baseCurrency === 'INR' ? 'Asia/Kolkata' : 'UTC'),
         entryTime,
         exitTime: status === 'CLOSED' ? exitTime : undefined,
         session,
         tradeTitle,
-        externalBrokerOrderRef: `FYERS-${dateStr.replace(/-/g, '')}-${i + 1000}`,
+        externalBrokerOrderRef: `${account.broker || 'BROKER'}-${dateStr.replace(/-/g, '')}-${i + 1000}`,
         executionMode,
         simpleExecution: {
           entryPrice,

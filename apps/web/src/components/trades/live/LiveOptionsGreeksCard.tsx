@@ -6,13 +6,16 @@ import Tooltip from '@mui/material/Tooltip';
 import { alpha } from '@mui/material/styles';
 import { IPositionGreeksSummary } from '@tradevault/shared';
 import { HelpHint } from '../../help/index.js';
+import { getCurrencySymbol } from '../../../lib/utils.js';
 
 export interface LiveOptionsGreeksCardProps {
   greeks: IPositionGreeksSummary;
   isDark?: boolean;
+  currency?: string;
 }
 
-export function LiveOptionsGreeksCard({ greeks, isDark = true }: LiveOptionsGreeksCardProps) {
+export function LiveOptionsGreeksCard({ greeks, isDark = true, currency }: LiveOptionsGreeksCardProps) {
+  const currSym = getCurrencySymbol(currency);
   const {
     unitGreeks,
     positionDelta,
@@ -76,13 +79,13 @@ export function LiveOptionsGreeksCard({ greeks, isDark = true }: LiveOptionsGree
       {/* Primary Metrics Grid */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, pt: 0.25 }}>
         {/* Net Delta Sensitivity */}
-        <Tooltip title="Rupee P&L sensitivity per 1-point move in underlying index" arrow>
+        <Tooltip title="P&L sensitivity per 1-point move in underlying index" arrow>
           <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? alpha('#1E293B', 0.5) : alpha('#F1F5F9', 0.7) }}>
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.62rem', fontWeight: 700, display: 'block' }}>
-              NET DELTA (₹/PT)
+              NET DELTA ({currSym}/PT)
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 800, color: cashDeltaSensitivity >= 0 ? '#10B981' : '#EF4444', fontSize: '0.78rem' }}>
-              {cashDeltaSensitivity >= 0 ? `+₹${cashDeltaSensitivity.toFixed(1)}` : `-₹${Math.abs(cashDeltaSensitivity).toFixed(1)}`}
+              {cashDeltaSensitivity >= 0 ? `+${currSym}${cashDeltaSensitivity.toFixed(1)}` : `-${currSym}${Math.abs(cashDeltaSensitivity).toFixed(1)}`}
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.58rem' }}>
               Δ {unitGreeks.delta >= 0 ? `+${unitGreeks.delta.toFixed(2)}` : unitGreeks.delta.toFixed(2)}
@@ -91,16 +94,16 @@ export function LiveOptionsGreeksCard({ greeks, isDark = true }: LiveOptionsGree
         </Tooltip>
 
         {/* Hourly Theta Decay */}
-        <Tooltip title="Total rupee time decay lost per market trading hour (6.25 hrs/day)" arrow>
+        <Tooltip title="Total time decay lost per market trading hour" arrow>
           <Box sx={{ p: 0.75, borderRadius: '6px', bgcolor: isDark ? alpha('#1E293B', 0.5) : alpha('#F1F5F9', 0.7) }}>
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.62rem', fontWeight: 700, display: 'block' }}>
-              THETA (₹/HR)
+              THETA ({currSym}/HR)
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 800, color: '#F59E0B', fontSize: '0.78rem' }}>
-              -₹{Math.abs(positionThetaHourly).toFixed(1)}/hr
+              -{currSym}{Math.abs(positionThetaHourly).toFixed(1)}/hr
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.58rem' }}>
-              -₹{Math.abs(positionThetaDaily).toFixed(0)}/day
+              -{currSym}{Math.abs(positionThetaDaily).toFixed(0)}/day
             </Typography>
           </Box>
         </Tooltip>
@@ -115,7 +118,7 @@ export function LiveOptionsGreeksCard({ greeks, isDark = true }: LiveOptionsGree
               {unitGreeks.impliedVolatility}%
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.58rem' }}>
-              ν ₹{Math.abs(greeks.positionVega).toFixed(1)}/1% IV
+              ν {currSym}{Math.abs(greeks.positionVega).toFixed(1)}/1% IV
             </Typography>
           </Box>
         </Tooltip>

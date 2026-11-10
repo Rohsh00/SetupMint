@@ -114,7 +114,17 @@ Trading Vault/
    - Deleting an instrument referenced by trades returns `409 Conflict`.
 5. **Soft-Delete Archival:** Deleting an account with existing trades sets `status = 'ARCHIVED'` to protect historical trade records.
 6. **Physical Storage Cleanup:** Deleting a trade or attachment physically removes the object from Cloudflare R2 via `storage.delete()`.
-7. **Market Data Fallback Chain:** Historical candles evaluate in order: `Cached Snapshot -> FYERS -> Angel One SmartAPI -> Underlying Fallback -> UNAVAILABLE`. SmartAPI is strictly market-data-only; zero trading methods or order manipulation.
+8. **Account-Driven Core Invariant:**
+   - The selected account (or scope) is the single source of truth across the entire platform.
+   - Currency, symbol precision, fee model, timezone (IANA), trading sessions, instrument specs, position model (netting FIFO vs hedging), broker adapter, and execution capabilities are **all** derived dynamically from the active account profile (`TradingAccount.profile`), never from user settings, global defaults, or constants.
+   - Outside of registries and broker adapters, zero hardcoded `₹`, `$`, `INR`, `USD`, `NSE`, or `FYERS` defaults exist anywhere in logic or UI.
+9. **Zero Cross-Currency Aggregation Invariant:**
+   - Money values are represented end-to-end as `{ amount: Decimal, currency: ISO-4217 }`.
+   - Never sum or compare money across different currencies. Multi-currency scopes strictly return and render `byCurrency` breakdowns.
+   - Unitless values (R-multiple, Win %, Profit Factor) may combine across currencies. Cross-currency totals are allowed only through an explicit user-managed exchange rate store.
+10. **Prop Firm Challenge Rule Guard Invariant:**
+    - For prop challenge accounts (`accountType: 'PROP_FIRM'`), the automated execution pipeline enforces pre-trade rule verification (daily loss limit buffer, maximum loss limit buffer, lot size caps, mandatory stop loss requirement, weekend hold rules, and news window restrictions).
+    - Automation never breaches a prop challenge rule; manual user overrides require explicit audited confirmation.
 
 ---
 
@@ -160,20 +170,29 @@ All monetary calculations reside in `@tradevault/financial-engine`:
 # Start dev servers (Fastify on 4000, Vite on 5173)
 npm run dev
 
-# Run all test suites across the monorepo (769 verified tests across 71 test suites)
+# Run all test suites across the monorepo
 npm run test
 
-# Run financial engine unit tests (379 tests across 33 test suites)
+# Run financial engine unit tests (425 verified unit tests across 36 test suites)
 npm run test:engine
 
 # Backfill and normalize instruments for existing trades
 npm run instruments:backfill
 
-# Run API integration and regression tests (390 tests across 38 test suites)
+# Backfill account profiles (idempotent, --yes to apply)
+npm run accounts:backfill
+
+# Backfill journal scope keys (idempotent, --yes to apply)
+npm run journals:backfill
+
+# Run API integration and regression tests
 npm run test:api
 
 # Typecheck all packages
 npm run typecheck
+
+# Build production bundles for all packages
+npm run build
 
 # Seed default active-trader demo data
 npm run db:seed

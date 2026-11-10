@@ -120,7 +120,7 @@ import {
   selectNextActionHint,
 } from '@tradevault/financial-engine';
 import { api } from '../../../lib/api.js';
-import { formatCurrency } from '../../../lib/utils.js';
+import { formatCurrency, getCurrencySymbol } from '../../../lib/utils.js';
 import { toast } from '../../../context/ToastContext.js';
 import { QuickCloseTradeDialog } from '../QuickCloseTradeDialog.js';
 import { TradeFlightRecorderDialog } from './TradeFlightRecorderDialog.js';
@@ -1036,12 +1036,15 @@ export function LiveOpenTradeWatcher({
       ).length;
 
       const netPnL = summary.totalFloatingNetPnL ?? 0;
-      const isUsdDom =
-        isPropMode ||
-        (summary.positions.length > 0 && summary.positions.every((p: any) => p.currency === 'USD'));
-      const sym = isUsdDom ? '$' : '₹';
+      const watcherCurr =
+        summary.positions?.[0]?.currency ||
+        (selectedAccount as any)?.profile?.baseCurrency ||
+        (selectedAccount as any)?.baseCurrency ||
+        (isPropMode ? 'USD' : 'INR');
+      const sym = getCurrencySymbol(watcherCurr);
+      const isUsdDom = watcherCurr === 'USD';
       const pnlPrefix = netPnL >= 0 ? `+${sym}` : `-${sym}`;
-      const absPnL = Math.abs(netPnL).toLocaleString(isUsdDom ? 'en-US' : 'en-IN', { maximumFractionDigits: 0 });
+      const absPnL = Math.abs(netPnL).toLocaleString(watcherCurr === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: 0 });
       const pnlStr = `${pnlPrefix}${absPnL}`;
 
       if (criticalCount > 0) {
@@ -1527,12 +1530,11 @@ export function LiveOpenTradeWatcher({
     (selectedAccount?.broker && ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(String(selectedAccount.broker).toUpperCase()));
 
   const watcherCurrency =
-    isPropMode ||
-    isUsdAccount ||
-    (summary?.positions?.length && summary.positions.some((p: any) => p.currency === 'USD' || p.symbol?.includes('USD') || p.symbol === 'XAUUSD'))
-      ? 'USD'
-      : 'INR';
-  const currSym = watcherCurrency === 'USD' ? '$' : '₹';
+    (selectedAccount as any)?.profile?.baseCurrency ||
+    (selectedAccount as any)?.baseCurrency ||
+    summary?.positions?.[0]?.currency ||
+    (isPropMode || isUsdAccount ? 'USD' : 'INR');
+  const currSym = getCurrencySymbol(watcherCurrency);
 
   return (
     <>
@@ -4211,7 +4213,7 @@ export function LiveOpenTradeWatcher({
                                 ) : activeTacticalTab === 'greeks' ? (
                                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                                     {pos.optionsGreeks && (
-                                      <LiveOptionsGreeksCard greeks={pos.optionsGreeks} isDark={isDark} />
+                                      <LiveOptionsGreeksCard greeks={pos.optionsGreeks} isDark={isDark} currency={pos.currency || watcherCurrency} />
                                     )}
                                     {pos.setupEdgeStats ? (
                                       <Box

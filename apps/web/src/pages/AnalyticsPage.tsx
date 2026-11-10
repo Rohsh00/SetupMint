@@ -55,7 +55,7 @@ import {
 } from 'recharts';
 import { EMOTION_LABEL_MAP, MISTAKE_LABEL_MAP } from '@tradevault/shared';
 import { api } from '../lib/api.js';
-import { formatCurrency, formatPercent } from '../lib/utils.js';
+import { formatCurrency, formatPercent, getCurrencySymbol } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
@@ -65,9 +65,11 @@ import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 
 export function AnalyticsPage() {
-  const { queryParams, isPropMode, scopeLabel } = useAccountScope();
+  const { queryParams, isPropMode, scopeLabel, currency: scopeCurrency, activeAccount, isMultiCurrency, currencies } = useAccountScope();
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate } = useDateRange();
+  const analyticsCurrency = activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
+  const currSym = getCurrencySymbol(analyticsCurrency);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
   const [whatIfPrefill, setWhatIfPrefill] = useState<{ stopR?: number; targetR?: number } | null>(null);
@@ -1576,7 +1578,7 @@ export function AnalyticsPage() {
                           <Tooltip title="Total peak unrealized profit surrendered across round-tripped trades">
                             <Chip
                               size="small"
-                              label={`Surrendered: ${formatCurrency(mfeReachFunnel.totalSurrenderedAmount, 'INR')}`}
+                              label={`Surrendered: ${formatCurrency(mfeReachFunnel.totalSurrenderedAmount, analyticsCurrency)}`}
                               sx={{
                                 fontWeight: 700,
                                 fontSize: '0.75rem',
@@ -1771,7 +1773,7 @@ export function AnalyticsPage() {
                       >
                         <LightbulbRoundedIcon sx={{ color: '#10B981', fontSize: 24, flexShrink: 0 }} />
                         <Typography variant="caption" sx={{ color: 'text.primary', fontSize: '0.75rem', lineHeight: 1.5 }}>
-                          <strong>Optimizer Insight:</strong> {mfeReachFunnel.roundTripLossCount} trades reached +1.0R but reversed into losses, surrendering {formatCurrency(mfeReachFunnel.totalSurrenderedAmount, 'INR')}. Moving your Stop Loss to Breakeven or booking 50% partial profit on the Live Watcher would protect ~{formatCurrency(mfeReachFunnel.totalSurrenderedAmount * 0.5, 'INR')} in capital.
+                          <strong>Optimizer Insight:</strong> {mfeReachFunnel.roundTripLossCount} trades reached +1.0R but reversed into losses, surrendering {formatCurrency(mfeReachFunnel.totalSurrenderedAmount, analyticsCurrency)}. Moving your Stop Loss to Breakeven or booking 50% partial profit on the Live Watcher would protect ~{formatCurrency(mfeReachFunnel.totalSurrenderedAmount * 0.5, analyticsCurrency)} in capital.
                         </Typography>
                       </Box>
                     )}
@@ -1784,7 +1786,7 @@ export function AnalyticsPage() {
                     <Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                         <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                          MAE vs MFE Scatter Analysis ({isModeR ? 'R-Multiple' : isModePoints ? 'Points' : '₹ Amount'})
+                          MAE vs MFE Scatter Analysis ({isModeR ? 'R-Multiple' : isModePoints ? 'Points' : `${currSym} Amount`})
                         </Typography>
                         <HelpHint hintKey="analytics.excursion.scatter" />
                       </Box>
@@ -1819,7 +1821,7 @@ export function AnalyticsPage() {
                             </Button>
                           </span>
                         </Tooltip>
-                        <Tooltip title="View excursion in Indian Rupee (₹) monetary drawdown and profit potential across all trades.">
+                        <Tooltip title={`View excursion in account monetary currency (${currSym}) drawdown and profit potential across all trades.`}>
                           <span>
                             <Button
                               variant={currentMode === 'AMOUNT' ? 'contained' : 'outlined'}
@@ -1827,20 +1829,20 @@ export function AnalyticsPage() {
                               size="small"
                               sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, px: 1.5, py: 0.25 }}
                             >
-                              Amount (₹)
+                              Amount ({currSym})
                             </Button>
                           </span>
                         </Tooltip>
                       </ButtonGroup>
 
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Tooltip title="Winning trades with Net P&L >= ₹0">
+                        <Tooltip title={`Winning trades with Net P&L >= ${currSym}0`}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'default' }}>
                             <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.profit.main }} />
                             <Typography variant="caption" sx={{ fontWeight: 600 }}>Winners ({winPoints.length})</Typography>
                           </Box>
                         </Tooltip>
-                        <Tooltip title="Losing trades with Net P&L < ₹0">
+                        <Tooltip title={`Losing trades with Net P&L < ${currSym}0`}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'default' }}>
                             <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: muiTheme.palette.loss.main }} />
                             <Typography variant="caption" sx={{ fontWeight: 600 }}>Losers ({lossPoints.length})</Typography>
@@ -1857,8 +1859,8 @@ export function AnalyticsPage() {
                         <XAxis
                           type="number"
                           dataKey={isModeR ? 'maeR' : isModePoints ? 'maePoints' : 'maeAmount'}
-                          name={isModeR ? 'MAE (R)' : isModePoints ? 'MAE (Points)' : 'MAE (₹)'}
-                          unit={isModeR ? 'R' : isModePoints ? ' pts' : ' ₹'}
+                          name={isModeR ? 'MAE (R)' : isModePoints ? 'MAE (Points)' : `MAE (${currSym})`}
+                          unit={isModeR ? 'R' : isModePoints ? ' pts' : ` ${currSym}`}
                           stroke={chartAxisColor}
                           fontSize={11}
                           domain={[0, 'dataMax + 0.5']}
@@ -1866,8 +1868,8 @@ export function AnalyticsPage() {
                         <YAxis
                           type="number"
                           dataKey={isModeR ? 'mfeR' : isModePoints ? 'mfePoints' : 'mfeAmount'}
-                          name={isModeR ? 'MFE (R)' : isModePoints ? 'MFE (Points)' : 'MFE (₹)'}
-                          unit={isModeR ? 'R' : isModePoints ? ' pts' : ' ₹'}
+                          name={isModeR ? 'MFE (R)' : isModePoints ? 'MFE (Points)' : `MFE (${currSym})`}
+                          unit={isModeR ? 'R' : isModePoints ? ' pts' : ` ${currSym}`}
                           stroke={chartAxisColor}
                           fontSize={11}
                           domain={[0, 'dataMax + 0.5']}
@@ -1897,20 +1899,20 @@ export function AnalyticsPage() {
                                       <strong>MAE:</strong>{' '}
                                       {d.maeR !== undefined ? `${d.maeR} R` : '—'}
                                       {d.maePoints !== undefined ? ` (${d.maePoints} pts)` : ''}
-                                      {d.maeAmount !== undefined ? ` • ₹${Math.abs(d.maeAmount).toLocaleString('en-IN')}` : ''}
+                                      {d.maeAmount !== undefined ? ` • ${formatCurrency(Math.abs(d.maeAmount), analyticsCurrency)}` : ''}
                                     </div>
                                     <div>
                                       <strong>MFE:</strong>{' '}
                                       {d.mfeR !== undefined ? `${d.mfeR} R` : '—'}
                                       {d.mfePoints !== undefined ? ` (${d.mfePoints} pts)` : ''}
-                                      {d.mfeAmount !== undefined ? ` • ₹${Math.abs(d.mfeAmount).toLocaleString('en-IN')}` : ''}
+                                      {d.mfeAmount !== undefined ? ` • ${formatCurrency(Math.abs(d.mfeAmount), analyticsCurrency)}` : ''}
                                     </div>
                                     <div>
                                       <strong>Exit Efficiency:</strong>{' '}
                                       {d.exitEfficiency !== undefined ? `${(d.exitEfficiency * 100).toFixed(1)}%` : '—'}
                                     </div>
                                     <div style={{ color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
-                                      <strong>Net P&L:</strong> {formatCurrency(d.netPnL)}
+                                      <strong>Net P&L:</strong> {formatCurrency(d.netPnL, analyticsCurrency)}
                                     </div>
                                     <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, fontStyle: 'italic' }}>
                                       Click dot to inspect trade details

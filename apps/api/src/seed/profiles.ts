@@ -6,9 +6,13 @@ export interface SeedAccountConfig {
   broker: string;
   accountNumber: string;
   accountType: AccountType;
+  baseCurrency?: string;
   initialBalance: number;
   notes: string;
   isPrimary?: boolean;
+  profile?: any;
+  propFirm?: any;
+  propFirmConfig?: any;
 }
 
 export interface ProfileDefinition {
@@ -80,20 +84,52 @@ export const SEED_PROFILES: Record<SeedProfileName, ProfileDefinition> = {
         broker: 'FYERS',
         accountNumber: 'FY-89240',
         accountType: 'FUTURES_OPTIONS',
+        baseCurrency: 'INR',
         initialBalance: 500000,
-        notes: 'Primary intraday F&O index execution account',
+        notes: 'Primary intraday F&O index execution account (NSE/MCX, IST)',
         isPrimary: true,
       },
       {
-        name: 'FYERS Positional Portfolio',
-        broker: 'FYERS',
-        accountNumber: 'FY-89241',
-        accountType: 'EQUITY',
-        initialBalance: 250000,
-        notes: 'Swing and momentum equity portfolio',
+        name: 'Elefin Markets (Global Forex & Metals)',
+        broker: 'Elefin',
+        accountNumber: 'EL-MT5-9012',
+        accountType: 'FOREX',
+        baseCurrency: 'USD',
+        initialBalance: 50000,
+        notes: 'Elefin MT5 2-way bridge account (Gold, FX pairs, CFD)',
+      },
+      {
+        name: 'The5ers $100K High Stakes',
+        broker: 'The5ers',
+        accountNumber: 'TF-100K-4421',
+        accountType: 'PROP_FIRM',
+        baseCurrency: 'USD',
+        initialBalance: 100000,
+        notes: 'Rule-bound prop challenge account (Phase 1, 10% target, 5% daily buffer)',
+        propFirm: {
+          firmKey: 'THE5ERS',
+          planKey: 'HIGH_STAKES_100K',
+          phase: 'PHASE_1',
+          startingBalance: 100000,
+          status: 'ACTIVE',
+        },
+        propFirmConfig: {
+          enabled: true,
+          firm: 'THE5ERS',
+          planName: 'The5ers $100K High Stakes',
+          phase: 'PHASE_1',
+          initialBalance: 100000,
+          targetProfitPercent: 10,
+          dailyLossLimitPercent: 5,
+          dailyLossReference: 'MAX_BALANCE_EQUITY_EOD',
+          maxLossLimitPercent: 10,
+          maxLossType: 'STATIC_FROM_INITIAL',
+          minTradingDays: 3,
+          status: 'ACTIVE',
+        },
       },
     ],
-    allowedAssetClasses: ['EQUITY', 'FUTURES', 'OPTIONS'],
+    allowedAssetClasses: ['EQUITY', 'FUTURES', 'OPTIONS', 'FOREX'],
     winRateTarget: 0.58,
     allowAdvancedFills: true,
     allowOpenTrades: true,
@@ -257,7 +293,7 @@ export const SEED_PROFILES: Record<SeedProfileName, ProfileDefinition> = {
         isPrimary: true,
       },
     ],
-    allowedAssetClasses: ['EQUITY', 'FUTURES', 'OPTIONS'],
+    allowedAssetClasses: ['EQUITY', 'FUTURES', 'OPTIONS', 'FOREX'],
     winRateTarget: 0.50,
     allowAdvancedFills: true,
     allowOpenTrades: true,

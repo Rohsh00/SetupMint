@@ -10,7 +10,7 @@ import { validateStrategyEdge, calculateVariantAnalytics } from '@tradevault/fin
 import { Strategy, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -34,7 +34,8 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     const dateClause = buildDateRangeClause({ startDate, endDate });
 
     const scope = AccountScopeService.parseAccountScope(req.query);
-    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
 
     const strategies = await Strategy.find({ userId: req.user!.id }).sort({ name: 1 });
 
@@ -50,14 +51,14 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       matchCriteria.tradeDate = dateClause.tradeDate;
     }
 
-    // Aggregate trade statistics grouped by strategyId
+    // Aggregate trade statistics grouped by strategyId and currency to prevent cross-currency summation
     const statsAgg = await Trade.aggregate([
       {
         $match: matchCriteria,
       },
       {
         $group: {
-          _id: '$strategyId',
+          _id: { strategyId: '$strategyId', currency: { $toUpper: { $ifNull: ['$currency', 'USD'] } } },
           totalTrades: { $sum: 1 },
           winTrades: {
             $sum: { $cond: [{ $gt: ['$calculated.netPnL', 0] }, 1, 0] },
@@ -73,9 +74,12 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       },
     ]);
 
-    const statsMap = new Map<string, any>();
+    const statsMap = new Map<string, any[]>();
     for (const stat of statsAgg) {
-      statsMap.set(stat._id.toString(), stat);
+      const sId = stat._id.strategyId.toString();
+      const list = statsMap.get(sId) || [];
+      list.push(stat);
+      statsMap.set(sId, list);
     }
 
     const closedTradesFilter: any = {
@@ -95,6 +99,7 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         _id: 1,
         strategyId: 1,
         tradeDate: 1,
+        currency: 1,
         'calculated.netPnL': 1,
         'calculated.realizedRMultiple': 1,
         'risk.realizedRMultiple': 1,
@@ -114,18 +119,33 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     const data = strategies.map((s) => {
-      const stat = statsMap.get(s._id.toString());
-      const totalTrades = stat ? stat.totalTrades : 0;
-      const winTrades = stat ? stat.winTrades : 0;
-      const netPnL = stat ? Number(stat.netPnL.toFixed(2)) : 0;
+      const statsList = statsMap.get(s._id.toString()) || [];
+      let totalTrades = 0;
+      let winTrades = 0;
+      let totalGrossWin = 0;
+      let totalGrossLoss = 0;
+      const byCurrency: Record<string, { netPnL: number; grossWin: number; grossLoss: number; totalTrades: number }> = {};
+
+      for (const stat of statsList) {
+        const curr = stat._id.currency;
+        totalTrades += stat.totalTrades;
+        winTrades += stat.winTrades;
+        totalGrossWin += stat.grossWin;
+        totalGrossLoss += stat.grossLoss;
+        byCurrency[curr] = {
+          netPnL: Number(stat.netPnL.toFixed(2)),
+          grossWin: Number(stat.grossWin.toFixed(2)),
+          grossLoss: Number(stat.grossLoss.toFixed(2)),
+          totalTrades: stat.totalTrades,
+        };
+      }
+
       const winRate = totalTrades > 0 ? Number(((winTrades / totalTrades) * 100).toFixed(1)) : 0;
       let profitFactor = 0;
-      if (stat) {
-        if (stat.grossLoss === 0) {
-          profitFactor = stat.grossWin > 0 ? 999.99 : 0;
-        } else {
-          profitFactor = Number((stat.grossWin / stat.grossLoss).toFixed(2));
-        }
+      if (totalGrossLoss === 0) {
+        profitFactor = totalGrossWin > 0 ? 999.99 : 0;
+      } else {
+        profitFactor = Number((totalGrossWin / totalGrossLoss).toFixed(2));
       }
 
       // Edge validation
@@ -141,6 +161,10 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         })),
         { seed: s._id.toString(), bootstrapIterations: 2000 }
       );
+
+      const singleCurrStat = (accountCtx.isSingleCurrency && accountCtx.primaryCurrency)
+        ? (byCurrency[accountCtx.primaryCurrency] || { netPnL: 0 })
+        : undefined;
 
       return {
         id: s._id.toString(),
@@ -161,7 +185,10 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         variants: s.variants || [],
         totalTrades,
         winRate,
-        netPnL,
+        netPnL: singleCurrStat ? singleCurrStat.netPnL : 0,
+        currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
+        isMultiCurrency: accountCtx.isMultiCurrency,
+        byCurrency: accountCtx.isMultiCurrency ? byCurrency : undefined,
         profitFactor,
         edge: {
           verdict: edge.verdict,
@@ -175,7 +202,12 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       };
     });
 
-    return reply.send({ success: true, data });
+    return reply.send({
+      success: true,
+      data,
+      isMultiCurrency: accountCtx.isMultiCurrency,
+      currencies: accountCtx.currencies,
+    });
   });
 
   // Create strategy

@@ -72,18 +72,54 @@ export class LiveExecutionWorker {
       const isServerWorkerEnabled = watcherSettings?.serverSideExecutionEnabled !== false;
       const isAutoExecuteArmed = Boolean(watcherSettings?.defaultAutoExecute);
 
-      // Check token expiration warning
-      if (broker.tokenExpiresAt) {
+      // Derive Indian Standard Time (Asia/Kolkata) calendar markers
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const istYear = nowIST.getFullYear();
+      const istMonth = nowIST.getMonth();
+      const istDate = nowIST.getDate();
+      const istDateKey = `${istYear}-${String(istMonth + 1).padStart(2, '0')}-${String(istDate).padStart(2, '0')}`;
+      const hours = nowIST.getHours();
+      const minutes = nowIST.getMinutes();
+      const dayOfWeek = nowIST.getDay();
+
+      // Check token expiration warning (30-minute window before expiry)
+      const isTokenExpiryAlertActive = watcherSettings?.telegramAlertEvents?.tokenExpiryWarning !== false;
+      if (
+        broker.tokenExpiresAt &&
+        isTokenExpiryAlertActive &&
+        watcherSettings?.telegramAlertsEnabled &&
+        watcherSettings?.telegramBotToken &&
+        watcherSettings?.telegramChatId
+      ) {
         const expiresAtMs = new Date(broker.tokenExpiresAt).getTime();
         const diffMins = Math.round((expiresAtMs - Date.now()) / (60 * 1000));
-        if (diffMins > 0 && diffMins <= 30 && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-          TelegramAlertService.sendAlert({
-            botToken: watcherSettings.telegramBotToken,
-            chatId: watcherSettings.telegramChatId,
-            title: 'FYERS Broker Session Expiring Soon',
-            body: `Your daily FYERS API session token expires in ${diffMins} minutes. Please re-authenticate on SetupMint to prevent automation interruption.`,
-            severity: 'WARNING',
-          }).catch(() => {});
+        if (diffMins > 0 && diffMins <= 30) {
+          const cooldownMs = 25 * 60 * 1000; // 25-minute cooldown ensures max 1 alert per 30m expiration window
+          const tokenWarnKey = `token_expiry_warn30:${user._id}:${Math.floor(expiresAtMs / (30 * 60 * 1000))}`;
+          if (!this.executedMilestones.has(tokenWarnKey)) {
+            this.executedMilestones.add(tokenWarnKey);
+
+            const updateResult = await User.updateOne(
+              {
+                _id: user._id,
+                $or: [
+                  { 'liveWatcherSettings.lastTokenExpiryAlertAt': { $exists: false } },
+                  { 'liveWatcherSettings.lastTokenExpiryAlertAt': { $lt: Date.now() - cooldownMs } },
+                ],
+              },
+              { $set: { 'liveWatcherSettings.lastTokenExpiryAlertAt': Date.now() } }
+            );
+
+            if (updateResult.modifiedCount > 0) {
+              TelegramAlertService.sendAlert({
+                botToken: watcherSettings.telegramBotToken,
+                chatId: watcherSettings.telegramChatId,
+                title: 'FYERS Broker Session Expiring Soon',
+                body: `Your daily FYERS API session token expires in ${diffMins} minutes. Please re-authenticate on SetupMint to prevent automation interruption.`,
+                severity: 'WARNING',
+              }).catch(() => {});
+            }
+          }
         }
       }
 
@@ -104,12 +140,6 @@ export class LiveExecutionWorker {
         watcherSettings?.telegramBotToken &&
         watcherSettings?.telegramChatId
       ) {
-        // Calculate start of current day in IST (Asia/Kolkata)
-        const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const istYear = nowIST.getFullYear();
-        const istMonth = nowIST.getMonth();
-        const istDate = nowIST.getDate();
-        const istDateKey = `${istYear}-${String(istMonth + 1).padStart(2, '0')}-${String(istDate).padStart(2, '0')}`;
         const istOffsetMs = 5.5 * 60 * 60 * 1000;
         const startOfIstDay = new Date(Date.UTC(istYear, istMonth, istDate, 0, 0, 0) - istOffsetMs);
 
@@ -164,39 +194,68 @@ export class LiveExecutionWorker {
       }
 
       // Pre-market 08:45 AM FYERS Session Check (Mon-Fri)
-      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-      const hours = nowIST.getHours();
-      const minutes = nowIST.getMinutes();
-      const dayOfWeek = nowIST.getDay();
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && hours === 8 && minutes >= 45 && minutes <= 50) {
-        const morningKey = `morning_token_check:${user._id}:${nowIST.toDateString()}`;
-        if (!this.executedMilestones.has(morningKey) && watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+      const isMorningCheckActive = watcherSettings?.telegramAlertEvents?.tokenExpiryWarning !== false;
+      if (
+        dayOfWeek >= 1 &&
+        dayOfWeek <= 5 &&
+        hours === 8 &&
+        minutes >= 45 &&
+        minutes <= 50 &&
+        isMorningCheckActive &&
+        watcherSettings?.telegramAlertsEnabled &&
+        watcherSettings?.telegramBotToken &&
+        watcherSettings?.telegramChatId
+      ) {
+        const morningKey = `morning_token_check:${user._id}:${istDateKey}`;
+        if (!this.executedMilestones.has(morningKey)) {
           this.executedMilestones.add(morningKey);
+
           const isExpired = !broker.tokenExpiresAt || new Date(broker.tokenExpiresAt).getTime() <= Date.now();
           if (isExpired) {
-            TelegramAlertService.sendAlert({
-              botToken: watcherSettings.telegramBotToken,
-              chatId: watcherSettings.telegramChatId,
-              title: '⏰ Pre-Market FYERS Session Expired',
-              body: 'Your FYERS 24h broker access token has expired. Re-authenticate on SetupMint before market opens at 09:15 AM to enable live tracking and automated trailing.',
-              severity: 'WARNING',
-            }).catch(() => {});
+            // Persistent database guard: atomically claim notification slot for this IST date across all cluster nodes
+            const updateResult = await User.updateOne(
+              { _id: user._id, 'liveWatcherSettings.lastMorningTokenAlertDate': { $ne: istDateKey } },
+              { $set: { 'liveWatcherSettings.lastMorningTokenAlertDate': istDateKey } }
+            );
+
+            if (updateResult.modifiedCount > 0) {
+              TelegramAlertService.sendAlert({
+                botToken: watcherSettings.telegramBotToken,
+                chatId: watcherSettings.telegramChatId,
+                title: '⏰ Pre-Market FYERS Session Expired',
+                body: 'Your FYERS 24h broker access token has expired. Re-authenticate on SetupMint before market opens at 09:15 AM to enable live tracking and automated trailing.',
+                severity: 'WARNING',
+              }).catch(() => {});
+            }
           }
         }
       }
 
       // Post-market 15:35 PM EOD Performance Digest (Mon-Fri)
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && hours === 15 && minutes >= 35 && minutes <= 40) {
-        const eodKey = `eod_digest:${user._id}:${nowIST.toDateString()}`;
-        if (
-          !this.executedMilestones.has(eodKey) &&
-          watcherSettings?.telegramAlertsEnabled &&
-          watcherSettings?.telegramBotToken &&
-          watcherSettings?.telegramChatId &&
-          watcherSettings?.telegramAlertEvents?.eodSummaryDigest !== false
-        ) {
+      if (
+        dayOfWeek >= 1 &&
+        dayOfWeek <= 5 &&
+        hours === 15 &&
+        minutes >= 35 &&
+        minutes <= 40 &&
+        watcherSettings?.telegramAlertsEnabled &&
+        watcherSettings?.telegramBotToken &&
+        watcherSettings?.telegramChatId &&
+        watcherSettings?.telegramAlertEvents?.eodSummaryDigest !== false
+      ) {
+        const eodKey = `eod_digest:${user._id}:${istDateKey}`;
+        if (!this.executedMilestones.has(eodKey)) {
           this.executedMilestones.add(eodKey);
-          TelegramAlertService.sendEodDigest(user).catch(() => {});
+
+          // Persistent database guard: atomically claim notification slot for this IST date
+          const updateResult = await User.updateOne(
+            { _id: user._id, 'liveWatcherSettings.lastEodDigestDate': { $ne: istDateKey } },
+            { $set: { 'liveWatcherSettings.lastEodDigestDate': istDateKey } }
+          );
+
+          if (updateResult.modifiedCount > 0) {
+            TelegramAlertService.sendEodDigest(user).catch(() => {});
+          }
         }
       }
 

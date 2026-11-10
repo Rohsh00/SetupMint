@@ -2420,7 +2420,10 @@ export class TelegramAlertService {
     const dedupeKey = `${chatId}:${title}:${body.slice(0, 30)}`;
     const now = Date.now();
     const lastSent = this.recentAlerts.get(dedupeKey);
-    if (lastSent && now - lastSent < this.DEBOUNCE_MS) {
+    // For session expiry / token expiration notices, enforce a 15-minute debounce to prevent alert spam
+    const isSessionOrExpiryAlert = title.includes('Expired') || title.includes('Expiring') || title.includes('Session');
+    const effectiveDebounceMs = isSessionOrExpiryAlert ? 15 * 60 * 1000 : this.DEBOUNCE_MS;
+    if (lastSent && now - lastSent < effectiveDebounceMs) {
       return false;
     }
     this.recentAlerts.set(dedupeKey, now);

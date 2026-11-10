@@ -2137,6 +2137,9 @@ export interface ILiveWatcherSettings {
   };
   lastDailyLossAlertDate?: string;
   lastDailyLossWarnDate?: string;
+  lastMorningTokenAlertDate?: string;
+  lastTokenExpiryAlertAt?: number;
+  lastEodDigestDate?: string;
   slippageGuardPercent?: number; // e.g. 0.5% max price deviation before confirmation
   snoozeDefaultMin?: number; // e.g. 10 minutes
   quietHours?: {

@@ -241,6 +241,11 @@ npm run db:reconcile
 7. **Verify Before Reporting Completion:**
    - Run `npm run typecheck` and `npm run test` after making meaningful code edits.
    - Report actual verified test output honestly. Never state a task is complete without running verification.
+8. **CRITICAL DATA SAFETY INVARIANT — NEVER DELETE REAL USER ACCOUNTS OR DATA:**
+   - The primary database on MongoDB Atlas contains real user trading data (including `komal@gmail.com` with real trade histories, journals, attachments, and accounts: FYERS, The5ers, Elefin).
+   - **ZERO BLANKET DELETES:** Never execute `User.deleteMany({})`, `TradingAccount.deleteMany({})`, `Trade.deleteMany({})`, or blanket collection drops anywhere in tests, seeders, or scripts.
+   - **STRICT TEST ISOLATION:** All integration tests must isolate and delete ONLY their own ephemeral test users (using `@test.local`, `@setupmint.internal`, or specific generated test IDs).
+   - **DEMO RESETS ONLY:** Demo resets (`npm run seed:reset`) must strictly isolate and delete ONLY `trader@tradevault.local`. Real user data must never be touched or cleared.
 
 ---
 

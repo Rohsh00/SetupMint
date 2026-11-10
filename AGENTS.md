@@ -12,6 +12,13 @@ It contains:
 - Exact financial calculation specifications in `@tradevault/financial-engine` with 30-digit Decimal.js precision and zero cross-currency aggregation.
 - Strict rules of engagement regarding financial accuracy, tenant isolation, local-first privacy, and testing requirements.
 
+> [!CAUTION]
+> **PERMANENT INVIOLABLE RULE — NEVER DELETE REAL USER ACCOUNTS OR DATA:**
+> The primary database contains real live accounts and data (including `komal@gmail.com`, 3 real accounts: FYERS, The5ers, Elefin, plus real trade history and journals).
+> 1. **ZERO GLOBAL WIPES:** NEVER call `User.deleteMany({})`, `TradingAccount.deleteMany({})`, or blanket collection drops anywhere in tests, seeders, or scripts.
+> 2. **STRICT TEST ISOLATION:** All integration tests MUST isolate and delete ONLY their own ephemeral test users (e.g. matching `@test.local`, `@setupmint.internal`, or specific generated ObjectIds).
+> 3. **DEMO-ONLY RESETS:** Scripts like `npm run seed:reset` only target `trader@tradevault.local`. Real user data must NEVER be touched, overwritten, or cleared.
+
 ### Quick Reference Commands:
 - `npm run dev` — Start Fastify backend (4000) and Vite frontend (5173).
 - `npm run test` — Run all unit and integration tests (425 financial engine + API test suites).

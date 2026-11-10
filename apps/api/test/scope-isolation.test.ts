@@ -76,19 +76,22 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
     app = await buildApp();
     await app.ready();
 
+    const testUsers = await User.find({ email: { $in: ['scope-audit-a@setupmint.local', 'scope-audit-b@setupmint.local'] } });
+    const testUserIds = testUsers.map((u) => u._id);
+
     await Promise.all([
-      User.deleteMany({}),
-      TradingAccount.deleteMany({}),
-      Trade.deleteMany({}),
-      Strategy.deleteMany({}),
-      TradeTemplate.deleteMany({}),
-      Instrument.deleteMany({}),
-      DailyJournal.deleteMany({}),
-      WeeklyReview.deleteMany({}),
-      AlertState.deleteMany({}),
-      Attachment.deleteMany({}),
-      BrokerIntegration.deleteMany({}),
-      AccountTransaction.deleteMany({}),
+      User.deleteMany({ _id: { $in: testUserIds } }),
+      TradingAccount.deleteMany({ userId: { $in: testUserIds } }),
+      Trade.deleteMany({ userId: { $in: testUserIds } }),
+      Strategy.deleteMany({ userId: { $in: testUserIds } }),
+      TradeTemplate.deleteMany({ userId: { $in: testUserIds } }),
+      Instrument.deleteMany({ userId: { $in: testUserIds } }),
+      DailyJournal.deleteMany({ userId: { $in: testUserIds } }),
+      WeeklyReview.deleteMany({ userId: { $in: testUserIds } }),
+      AlertState.deleteMany({ userId: { $in: testUserIds } }),
+      Attachment.deleteMany({ userId: { $in: testUserIds } }),
+      BrokerIntegration.deleteMany({ userId: { $in: testUserIds } }),
+      AccountTransaction.deleteMany({ userId: { $in: testUserIds } }),
     ]);
 
     // 1. Register User A & User B

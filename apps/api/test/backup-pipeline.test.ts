@@ -464,6 +464,32 @@ describe('Backup Pipeline Test Suite', () => {
       expect(result.skipped).toBe(1);
       expect(result.newCopied).toBe(0);
     });
+
+    it('gracefully handles missing keys in live S3 without throwing', async () => {
+      const statePath = path.join(tempTestDir, 'state-missing.json');
+      const missingKey = 'non-existent-file.png';
+
+      const mockLiveClient = {
+        send: vi.fn().mockRejectedValue(new Error('The specified key does not exist.')),
+      };
+      const mockBackupClient = {
+        send: vi.fn().mockRejectedValue(new Error('Source does not exist')),
+      };
+
+      const result = await syncScreenshotsIncremental({
+        liveS3Client: mockLiveClient as any,
+        backupS3Client: mockBackupClient as any,
+        liveBucket: 'live-bucket',
+        backupBucket: 'backup-bucket',
+        requiredKeys: [missingKey],
+        stateFilePath: statePath,
+        dryRun: false,
+      });
+
+      expect(result.newCopied).toBe(0);
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+      expect(state.missingKeys[missingKey]).toBeDefined();
+    });
   });
 
   // ============================================================================

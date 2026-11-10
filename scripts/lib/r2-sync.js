@@ -59,7 +59,13 @@ export function createS3Client(s3Config, systemClockOffset = 0) {
 export function loadScreenshotState(stateFilePath) {
   try {
     if (fs.existsSync(stateFilePath)) {
-      return JSON.parse(fs.readFileSync(stateFilePath, 'utf-8'));
+      const parsed = JSON.parse(fs.readFileSync(stateFilePath, 'utf-8'));
+      return {
+        copiedKeys: parsed.copiedKeys || {},
+        deletedKeys: parsed.deletedKeys || {},
+        missingKeys: parsed.missingKeys || {},
+        lastSyncAt: parsed.lastSyncAt || null,
+      };
     }
   } catch {
     // Ignored
@@ -67,6 +73,7 @@ export function loadScreenshotState(stateFilePath) {
   return {
     copiedKeys: {}, // key -> { copiedAt, sizeBytes }
     deletedKeys: {}, // key -> { deletedAt }
+    missingKeys: {}, // key -> { lastAttemptAt }
     lastSyncAt: null,
   };
 }
@@ -107,7 +114,7 @@ export async function syncScreenshotsIncremental(options) {
     fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
   }
 
-  const state = stateFilePath ? loadScreenshotState(stateFilePath) : { copiedKeys: {}, deletedKeys: {} };
+  const state = stateFilePath ? loadScreenshotState(stateFilePath) : { copiedKeys: {}, deletedKeys: {}, missingKeys: {} };
   let newCopiedCount = 0;
   let totalBytes = 0;
   let skippedCount = 0;
@@ -130,11 +137,17 @@ export async function syncScreenshotsIncremental(options) {
 
     const alreadyInBackup = Boolean(state.copiedKeys[key]);
     const alreadyInLocalCache = localCachedPath && fs.existsSync(localCachedPath);
+    const isKnownMissing = Boolean(state.missingKeys?.[key]);
 
     if (alreadyInBackup && alreadyInLocalCache) {
       skippedCount++;
       const cachedSize = fs.statSync(localCachedPath).size;
       totalBytes += cachedSize;
+      continue;
+    }
+
+    if (isKnownMissing && !alreadyInLocalCache) {
+      skippedCount++;
       continue;
     }
 
@@ -162,37 +175,53 @@ export async function syncScreenshotsIncremental(options) {
       }
 
       if (!copySuccess && liveS3Client) {
-        const getResp = await liveS3Client.send(
-          new GetObjectCommand({
-            Bucket: liveBucket,
-            Key: liveS3Key,
-          })
-        );
-        if (getResp.Body) {
-          const chunks = [];
-          for await (const chunk of getResp.Body) {
-            chunks.push(chunk);
-          }
-          const buf = Buffer.concat(chunks);
-          await backupS3Client.send(
-            new PutObjectCommand({
-              Bucket: backupBucket,
-              Key: backupS3Key,
-              Body: buf,
-              ContentType: getResp.ContentType || 'image/png',
+        try {
+          const getResp = await liveS3Client.send(
+            new GetObjectCommand({
+              Bucket: liveBucket,
+              Key: liveS3Key,
             })
           );
+          if (getResp.Body) {
+            const chunks = [];
+            for await (const chunk of getResp.Body) {
+              chunks.push(chunk);
+            }
+            const buf = Buffer.concat(chunks);
+            await backupS3Client.send(
+              new PutObjectCommand({
+                Bucket: backupBucket,
+                Key: backupS3Key,
+                Body: buf,
+                ContentType: getResp.ContentType || 'image/png',
+              })
+            );
+            copySuccess = true;
+          }
+        } catch (err) {
+          console.warn(`[Screenshot Sync Warning] Could not copy file "${key}" to backup bucket: ${err.message}`);
+          if (
+            err.name === 'NoSuchKey' ||
+            err.name === 'NotFound' ||
+            err.$metadata?.httpStatusCode === 404 ||
+            err.message?.includes('does not exist')
+          ) {
+            if (!state.missingKeys) state.missingKeys = {};
+            state.missingKeys[key] = { lastAttemptAt: new Date().toISOString() };
+          }
         }
       }
 
-      state.copiedKeys[key] = {
-        copiedAt: new Date().toISOString(),
-      };
-      newCopiedCount++;
+      if (copySuccess) {
+        state.copiedKeys[key] = {
+          copiedAt: new Date().toISOString(),
+        };
+        newCopiedCount++;
+      }
     }
 
     // 2. Download to local cache if local archive packaging needs it
-    if (localCachedPath && !alreadyInLocalCache && liveS3Client) {
+    if (localCachedPath && !alreadyInLocalCache && liveS3Client && !state.missingKeys?.[key]) {
       try {
         const resp = await liveS3Client.send(
           new GetObjectCommand({
@@ -206,7 +235,16 @@ export async function syncScreenshotsIncremental(options) {
           totalBytes += size;
         }
       } catch (err) {
-        console.warn(`[Screenshot Sync Warning] Could not cache file "${key}": ${err.message}`);
+        console.warn(`[Screenshot Sync Warning] Could not cache file "${key}" to local cache: ${err.message}`);
+        if (
+          err.name === 'NoSuchKey' ||
+          err.name === 'NotFound' ||
+          err.$metadata?.httpStatusCode === 404 ||
+          err.message?.includes('does not exist')
+        ) {
+          if (!state.missingKeys) state.missingKeys = {};
+          state.missingKeys[key] = { lastAttemptAt: new Date().toISOString() };
+        }
       }
     } else if (localCachedPath && alreadyInLocalCache) {
       totalBytes += fs.statSync(localCachedPath).size;

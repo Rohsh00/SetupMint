@@ -188,7 +188,7 @@ export const api = {
       }),
     importMt5Trades: (id: string, payload: { rawText: string; defaultRiskReward?: number }) =>
       request<{
-        success: boolean;
+        success?: boolean;
         insertedCount: number;
         updatedCount: number;
         totalProcessed: number;
@@ -201,26 +201,20 @@ export const api = {
       }),
     fetchMt5History: (id: string) =>
       request<{
-        success: boolean;
-        data: {
-          commandId: string;
-          queued: boolean;
-          eaActive: boolean;
-          lastActiveSecondsAgo: number | null;
-          message: string;
-        };
+        commandId: string;
+        queued: boolean;
+        eaActive: boolean;
+        lastActiveSecondsAgo: number | null;
+        message: string;
       }>(`/accounts/${id}/mt5-fetch-history`, {
         method: 'POST',
       }),
     getMt5Status: (id: string) =>
       request<{
-        success: boolean;
-        data: {
-          eaActive: boolean;
-          secondsAgo: number | null;
-          accountName: string;
-          broker: string;
-        };
+        eaActive: boolean;
+        secondsAgo: number | null;
+        accountName: string;
+        broker: string;
       }>(`/accounts/${id}/mt5-status`),
     updatePropLedger: (
       id: string,

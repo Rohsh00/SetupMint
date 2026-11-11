@@ -57,15 +57,16 @@ export function SyncMt5Modal({ open, onClose, accountId, accountName }: SyncMt5M
   const [lastImportResult, setLastImportResult] = useState<any>(null);
 
   // Fetch MT5 status
-  const { data: statusData, refetch: refetchStatus, isFetching: isCheckingStatus } = useQuery({
+  const { data: rawStatusData, refetch: refetchStatus, isFetching: isCheckingStatus } = useQuery({
     queryKey: ['mt5-status', accountId],
     queryFn: () => (accountId ? api.accounts.getMt5Status(accountId) : null),
     enabled: Boolean(open && accountId),
     refetchInterval: open ? 5000 : false,
   });
 
-  const eaActive = statusData?.data?.eaActive || false;
-  const secondsAgo = statusData?.data?.secondsAgo;
+  const statusData: any = (rawStatusData as any)?.data ?? rawStatusData;
+  const eaActive = Boolean(statusData?.eaActive);
+  const secondsAgo = statusData?.secondsAgo;
 
   // Remote fetch mutation
   const fetchMutation = useMutation({
@@ -73,13 +74,16 @@ export function SyncMt5Modal({ open, onClose, accountId, accountName }: SyncMt5M
       if (!accountId) throw new Error('Account ID is required');
       return api.accounts.fetchMt5History(accountId);
     },
-    onSuccess: (res) => {
-      toast.success(res.data.message || 'Fetch command queued to MT5 Bridge!');
+    onSuccess: (res: any) => {
+      const data = res?.data ?? res;
+      const msg = data?.message || res?.message || 'Fetch command queued to MT5 Bridge!';
+      toast.success(msg);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      refetchStatus();
     },
     onError: (err: any) => {
-      toast.error(err.message || 'Failed to dispatch fetch command to MT5 EA');
+      toast.error(err?.message || 'Failed to dispatch fetch command to MT5 EA');
     },
   });
 
@@ -92,20 +96,25 @@ export function SyncMt5Modal({ open, onClose, accountId, accountName }: SyncMt5M
         defaultRiskReward: defaultRr,
       });
     },
-    onSuccess: (res) => {
-      setLastImportResult(res);
+    onSuccess: (res: any) => {
+      const data = res?.data ?? res;
+      setLastImportResult(data);
       setRawText('');
-      toast.success(
-        res.message ||
-          `Synced ${res.totalProcessed} trade(s) (${res.insertedCount} new, ${res.updatedCount} updated)!`
-      );
+      const total = data?.totalProcessed ?? data?.trades?.length ?? 0;
+      const inserted = data?.insertedCount ?? 0;
+      const updated = data?.updatedCount ?? 0;
+      const msg =
+        data?.message ||
+        res?.message ||
+        `Synced ${total} trade(s) (${inserted} new, ${updated} updated)!`;
+      toast.success(msg);
       queryClient.invalidateQueries({ queryKey: ['trades'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['analytics'] });
     },
     onError: (err: any) => {
-      toast.error(err.message || 'Failed to import MT5 trade report');
+      toast.error(err?.message || 'Failed to import MT5 trade report');
     },
   });
 

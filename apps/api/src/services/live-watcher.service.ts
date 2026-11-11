@@ -64,10 +64,25 @@ export class LiveWatcherService {
       1
     );
 
-    let lotSize = Number(
-      trade.lotSize ??
-      inst?.lotSize ??
-      (contractMultiplier > 1 ? contractMultiplier : 1)
+    const isForexOrUsd =
+      trade.currency === 'USD' ||
+      inst?.quoteCurrency === 'USD' ||
+      trade.assetClass === 'FOREX' ||
+      trade.assetClass === 'COMMODITY' ||
+      trade.assetClass === 'CRYPTO' ||
+      Boolean(trade.symbol && /xau|eur|gbp|jpy|aud|cad|chf|nzd|btc|eth/i.test(trade.symbol));
+
+    let lotSize = isForexOrUsd
+      ? Number(trade.lotSize ?? inst?.lotSize ?? (quantity < 1 ? 0.01 : 1))
+      : Number(
+          trade.lotSize ??
+          inst?.lotSize ??
+          (contractMultiplier > 1 ? contractMultiplier : 1)
+        );
+
+    const quantityIncrement = Number(
+      inst?.quantityIncrement ??
+      (isForexOrUsd ? 0.01 : (lotSize > 1 ? lotSize : 1))
     );
 
     // Dynamic Indian index lot size resolution based on symbol & quantity divisibility
@@ -148,6 +163,7 @@ export class LiveWatcherService {
       quantity,
       contractMultiplier,
       lotSize,
+      quantityIncrement,
       tickSize,
       stopLoss,
       initialStopLoss: originalInitialStop,
@@ -627,6 +643,7 @@ export class LiveWatcherService {
         quantity: fields.quantity,
         contractMultiplier: fields.contractMultiplier,
         lotSize: fields.lotSize,
+        quantityIncrement: fields.quantityIncrement,
         stopLoss: fields.stopLoss,
         initialStopLoss: fields.initialStopLoss,
         target: fields.target,
@@ -1115,6 +1132,8 @@ export class LiveWatcherService {
       quantity: fields.quantity,
       contractMultiplier: fields.contractMultiplier,
       lotSize: fields.lotSize,
+      quantityIncrement: fields.quantityIncrement,
+      currency: trade.currency || 'USD',
       stopLoss: fields.stopLoss,
       initialStopLoss: fields.initialStopLoss,
       target: fields.target,

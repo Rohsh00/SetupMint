@@ -85,9 +85,27 @@ export function ExecuteLadderStepDialog({
 
   const totalOpenQty = metric?.quantity || 1;
   const lotSize = step?.lotSize ?? metric?.lotSize ?? 1;
-  const isLotBased = lotSize > 1;
-  const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQty / lotSize)) : totalOpenQty;
-  const selectedLots = isLotBased ? Math.max(1, Math.round(exitQty / lotSize)) : exitQty;
+  const isForexOrMt5 = Boolean(
+    isMt5 ||
+    (metric as any)?.currency === 'USD' ||
+    (metric as any)?.assetClass === 'FOREX' ||
+    (metric as any)?.assetClass === 'COMMODITY' ||
+    (metric as any)?.symbol === 'XAUUSD' ||
+    totalOpenQty < 1 ||
+    lotSize < 1
+  );
+
+  const isLotBased = !isForexOrMt5 && lotSize > 1;
+  const totalLots = isForexOrMt5
+    ? Number(totalOpenQty.toFixed(2))
+    : isLotBased
+    ? Math.max(1, Math.floor(totalOpenQty / lotSize))
+    : totalOpenQty;
+  const selectedLots = isForexOrMt5
+    ? Number(exitQty.toFixed(2))
+    : isLotBased
+    ? Math.max(1, Math.round(exitQty / lotSize))
+    : exitQty;
 
   // Pre-flight calculation
   const preFlightPreview: IPreFlightExecutionPreviewResult | null = useMemo(() => {
@@ -232,21 +250,58 @@ export function ExecuteLadderStepDialog({
             size="small"
             type="number"
             disabled={isLoading}
-            label={isLotBased ? `Quantity to Close (Lot Size: ${lotSize} units)` : 'Quantity to Close (Units)'}
+            label={isForexOrMt5 ? 'Lots to Close' : isLotBased ? `Quantity to Close (Lot Size: ${lotSize} units)` : 'Quantity to Close (Units)'}
             value={exitQty}
             onChange={(e) => {
               const val = Number(e.target.value);
-              setExitQty(Math.min(totalOpenQty, Math.max(1, isNaN(val) ? 1 : val)));
+              const minVal = isForexOrMt5 ? 0.01 : (isLotBased ? lotSize : 1);
+              setExitQty(Math.min(totalOpenQty, Math.max(minVal, isNaN(val) ? minVal : val)));
             }}
             helperText={
-              isLotBased
+              isForexOrMt5
+                ? `Exiting ${Number(exitQty.toFixed(2))} lots of ${Number(totalOpenQty.toFixed(2))} total lots (${Math.round((exitQty / totalOpenQty) * 100)}%) @ current LTP`
+                : isLotBased
                 ? `Exiting ${selectedLots} lot${selectedLots === 1 ? '' : 's'} (${exitQty} units) of ${totalLots} total lots (${totalOpenQty} units)`
                 : `Exiting ${exitQty} of ${totalOpenQty} open units (${Math.round((exitQty / totalOpenQty) * 100)}%) @ current LTP`
             }
             slotProps={{
-              htmlInput: { min: isLotBased ? lotSize : 1, max: totalOpenQty, step: isLotBased ? lotSize : 1 },
+              htmlInput: {
+                min: isForexOrMt5 ? 0.01 : isLotBased ? lotSize : 1,
+                max: totalOpenQty,
+                step: isForexOrMt5 ? 0.01 : isLotBased ? lotSize : 1,
+              },
             }}
           />
+
+          {isForexOrMt5 && totalOpenQty >= 0.02 && (
+            <Box sx={{ display: 'flex', gap: 0.75, mt: 1, flexWrap: 'wrap' }}>
+              {[0.5, 0.4, 0.33, 1.0].map((ratio) => {
+                const targetLot = ratio === 1.0
+                  ? totalOpenQty
+                  : Number(Math.max(0.01, Math.round((totalOpenQty * ratio) / 0.01) * 0.01).toFixed(2));
+                const label = `${Math.round(ratio * 100)}% (${targetLot} lots)`;
+                const isSelected = Math.abs(exitQty - targetLot) < 0.001;
+                return (
+                  <Chip
+                    key={ratio}
+                    label={label}
+                    size="small"
+                    clickable={!isLoading}
+                    onClick={() => setExitQty(targetLot)}
+                    sx={{
+                      height: 22,
+                      fontSize: '0.62rem',
+                      fontWeight: isSelected ? 800 : 600,
+                      bgcolor: isSelected ? alpha('#3B82F6', 0.2) : 'transparent',
+                      color: isSelected ? '#3B82F6' : 'text.secondary',
+                      border: '1px solid',
+                      borderColor: isSelected ? '#3B82F6' : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'),
+                    }}
+                  />
+                );
+              })}
+            </Box>
+          )}
 
           {isLotBased && totalLots > 1 && (
             <Box sx={{ display: 'flex', gap: 0.75, mt: 1 }}>

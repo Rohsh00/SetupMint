@@ -64,10 +64,22 @@ export function LiveCustomRulesDialog({
   const isMt5 = Boolean((metric as any)?.isMt5 || /elefin|mt5/i.test((metric as any)?.accountBroker || ''));
   const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'FYERS';
 
+  const isForexOrMt5 = Boolean(
+    (metric as any)?.isMt5 ||
+    /elefin|mt5/i.test((metric as any)?.accountBroker || '') ||
+    metric?.currency === 'USD' ||
+    (metric as any)?.assetClass === 'FOREX' ||
+    (metric as any)?.assetClass === 'COMMODITY' ||
+    (metric as any)?.symbol === 'XAUUSD' ||
+    (metric?.quantity && metric.quantity < 1) ||
+    (metric?.lotSize && metric.lotSize < 1)
+  );
+
   const defaultLotSize = useMemo(() => {
     if (!metric) return 1;
+    if (isForexOrMt5) return 0.01;
     return metric.lotSize ?? (metric.contractMultiplier && metric.contractMultiplier > 1 ? metric.contractMultiplier : 1);
-  }, [metric]);
+  }, [metric, isForexOrMt5]);
 
   const [lotSize, setLotSize] = useState<number>(defaultLotSize);
   const [autoExecute, setAutoExecute] = useState<boolean>(false);
@@ -216,8 +228,16 @@ export function LiveCustomRulesDialog({
 
   const totalQty = metric.quantity || 1;
   const isLong = metric.direction === 'LONG';
-  const isLotBased = lotSize > 1;
-  const totalLots = isLotBased ? Math.max(1, Math.floor(totalQty / lotSize)) : totalQty;
+  const isLotBased = !isForexOrMt5 && lotSize > 1;
+  const lotStep = isForexOrMt5 ? 0.01 : 1;
+  const totalLots = isForexOrMt5
+    ? Number(totalQty.toFixed(2))
+    : isLotBased
+    ? Math.max(1, Math.floor(totalQty / lotSize))
+    : totalQty;
+  const totalSteps = isForexOrMt5
+    ? Math.round(totalQty / lotStep)
+    : totalLots;
 
   const isT1AllOut = t1Ratio >= 1.0;
   const effectiveT2Enabled = !isT1AllOut && t2Enabled;
@@ -231,34 +251,68 @@ export function LiveCustomRulesDialog({
 
   // Exit lots calculation
   let t1ExitLots = 1;
+  let t1ExitUnits = totalQty;
   if (isT1AllOut) {
     t1ExitLots = totalLots;
+    t1ExitUnits = totalQty;
+  } else if (isForexOrMt5) {
+    if (totalSteps > 1) {
+      const exitSteps = Math.max(1, Math.min(totalSteps - 1, Math.round(totalSteps * t1Ratio)));
+      t1ExitLots = Number((exitSteps * lotStep).toFixed(2));
+      t1ExitUnits = t1ExitLots;
+    } else {
+      t1ExitLots = totalLots;
+      t1ExitUnits = totalQty;
+    }
   } else if (totalLots > 1) {
     t1ExitLots = Math.max(1, Math.min(totalLots - 1, Math.round(totalLots * t1Ratio)));
+    t1ExitUnits = isLotBased ? t1ExitLots * lotSize : Math.round(totalQty * t1Ratio);
+  } else {
+    t1ExitLots = 1;
+    t1ExitUnits = totalQty;
   }
-  const t1ExitUnits = isLotBased ? t1ExitLots * lotSize : Math.round(totalQty * t1Ratio);
 
-  const remLotsAfterT1 = Math.max(0, totalLots - t1ExitLots);
-  const remUnitsAfterT1 = Math.max(0, totalQty - t1ExitUnits);
+  const remLotsAfterT1 = isForexOrMt5
+    ? Number(Math.max(0, totalLots - t1ExitLots).toFixed(2))
+    : Math.max(0, totalLots - t1ExitLots);
+  const remUnitsAfterT1 = isForexOrMt5
+    ? remLotsAfterT1
+    : Math.max(0, totalQty - t1ExitUnits);
+  const remStepsAfterT1 = isForexOrMt5 ? Math.round(remLotsAfterT1 / lotStep) : remLotsAfterT1;
 
   let t2ExitLots = 0;
   let t2ExitUnits = 0;
-  if (effectiveT2Enabled && remLotsAfterT1 > 0) {
-    if (remLotsAfterT1 > 1) {
+  if (effectiveT2Enabled && remStepsAfterT1 > 0) {
+    if (isForexOrMt5) {
+      if (remStepsAfterT1 > 1) {
+        const exitSteps2 = Math.max(1, Math.min(remStepsAfterT1 - 1, Math.round(remStepsAfterT1 * t2Ratio)));
+        t2ExitLots = Number((exitSteps2 * lotStep).toFixed(2));
+        t2ExitUnits = t2ExitLots;
+      } else {
+        t2ExitLots = lotStep;
+        t2ExitUnits = lotStep;
+      }
+    } else if (remLotsAfterT1 > 1) {
       t2ExitLots = Math.max(1, Math.min(remLotsAfterT1 - 1, Math.round(remLotsAfterT1 * t2Ratio)));
+      t2ExitUnits = isLotBased ? t2ExitLots * lotSize : Math.round(remUnitsAfterT1 * t2Ratio);
     } else {
       t2ExitLots = 1;
+      t2ExitUnits = isLotBased ? lotSize : remUnitsAfterT1;
     }
-    t2ExitUnits = isLotBased ? t2ExitLots * lotSize : Math.round(remUnitsAfterT1 * t2Ratio);
   }
 
   let runnerLots = 0;
   let runnerUnits = 0;
   if (effectiveRunnerEnabled) {
-    runnerLots = Math.max(1, totalLots - t1ExitLots - (effectiveT2Enabled ? t2ExitLots : 0));
-    runnerUnits = isLotBased
-      ? runnerLots * lotSize
-      : Math.max(1, totalQty - t1ExitUnits - (effectiveT2Enabled ? t2ExitUnits : 0));
+    if (isForexOrMt5) {
+      runnerLots = Number(Math.max(lotStep, totalLots - t1ExitLots - (effectiveT2Enabled ? t2ExitLots : 0)).toFixed(2));
+      runnerUnits = runnerLots;
+    } else {
+      runnerLots = Math.max(1, totalLots - t1ExitLots - (effectiveT2Enabled ? t2ExitLots : 0));
+      runnerUnits = isLotBased
+        ? runnerLots * lotSize
+        : Math.max(1, totalQty - t1ExitUnits - (effectiveT2Enabled ? t2ExitUnits : 0));
+    }
   }
 
   const trueBe = metric.trueBreakevenPrice ?? metric.entryPrice;
@@ -630,20 +684,20 @@ export function LiveCustomRulesDialog({
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Chip
-              label={`T1: ${isLotBased ? `${t1ExitLots} lots` : `${t1ExitUnits} qty`} (${Math.round((t1ExitUnits / totalQty) * 100)}%)`}
+              label={`T1: ${isForexOrMt5 ? `${t1ExitLots} lots` : isLotBased ? `${t1ExitLots} lots` : `${t1ExitUnits} qty`} (${Math.round((t1ExitUnits / totalQty) * 100)}%)`}
               size="small"
               sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700, bgcolor: alpha('#10B981', 0.15), color: '#10B981', border: `1px solid ${alpha('#10B981', 0.3)}` }}
             />
             {effectiveT2Enabled && (
               <Chip
-                label={`T2: ${isLotBased ? `${t2ExitLots} lots` : `${t2ExitUnits} qty`} (${Math.round((t2ExitUnits / totalQty) * 100)}%)`}
+                label={`T2: ${isForexOrMt5 ? `${t2ExitLots} lots` : isLotBased ? `${t2ExitLots} lots` : `${t2ExitUnits} qty`} (${Math.round((t2ExitUnits / totalQty) * 100)}%)`}
                 size="small"
                 sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700, bgcolor: alpha('#3B82F6', 0.15), color: '#3B82F6', border: `1px solid ${alpha('#3B82F6', 0.3)}` }}
               />
             )}
             {effectiveRunnerEnabled && (
               <Chip
-                label={`Runner (${isFreeRunner ? 'Free Move' : `+${t3R}R`}): ${isLotBased ? `${runnerLots} lots` : `${runnerUnits} qty`} (${Math.round((runnerUnits / totalQty) * 100)}%)`}
+                label={`Runner (${isFreeRunner ? 'Free Move' : `+${t3R}R`}): ${isForexOrMt5 ? `${runnerLots} lots` : isLotBased ? `${runnerLots} lots` : `${runnerUnits} qty`} (${Math.round((runnerUnits / totalQty) * 100)}%)`}
                 size="small"
                 sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700, bgcolor: alpha('#8B5CF6', 0.15), color: '#8B5CF6', border: `1px solid ${alpha('#8B5CF6', 0.3)}` }}
               />
@@ -737,7 +791,7 @@ export function LiveCustomRulesDialog({
           )}
 
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.65rem' }}>
-            Action: Book {isLotBased ? `${t1ExitLots} lot (${t1ExitUnits} units)` : `${t1ExitUnits} units`} &{' '}
+            Action: Book {isForexOrMt5 ? `${t1ExitLots} lots` : isLotBased ? `${t1ExitLots} lot (${t1ExitUnits} units)` : `${t1ExitUnits} units`} &{' '}
             {t1TrailAction === 'TRUE_BE_WITH_FEES'
               ? `move SL to True BE (${currSym}${trueBe}, fees protected)`
               : t1TrailAction === 'NOMINAL_BE'
@@ -865,7 +919,7 @@ export function LiveCustomRulesDialog({
               )}
 
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontSize: '0.65rem' }}>
-                Action: Book {isLotBased ? `${t2ExitLots} lot (${t2ExitUnits} units)` : `${t2ExitUnits} units`} &{' '}
+                Action: Book {isForexOrMt5 ? `${t2ExitLots} lots` : isLotBased ? `${t2ExitLots} lot (${t2ExitUnits} units)` : `${t2ExitUnits} units`} &{' '}
                 {t2TrailAction === 'TRAIL_T1'
                   ? `trail SL to +1R (${currSym}${t1Price})`
                   : t2TrailAction === 'CUSTOM_POINTS'
@@ -969,7 +1023,7 @@ export function LiveCustomRulesDialog({
                   ✨ Open Trend Runner Active (No Target Price Cap)
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                  Remaining <strong>{isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong> will ride market momentum without an artificial ceiling. Trailing Stop Loss protects profits.
+                  Remaining <strong>{isForexOrMt5 ? `${runnerLots} lots` : isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong> will ride market momentum without an artificial ceiling. Trailing Stop Loss protects profits.
                 </Typography>
               </Box>
             ) : (
@@ -984,7 +1038,7 @@ export function LiveCustomRulesDialog({
                   sx={{ width: 140 }}
                 />
                 <Typography variant="caption" color="text.secondary">
-                  Exits remaining: <strong>{isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong>
+                  Exits remaining: <strong>{isForexOrMt5 ? `${runnerLots} lots` : isLotBased ? `${runnerLots} lot (${runnerUnits} units)` : `${runnerUnits} units`}</strong>
                 </Typography>
               </Box>
             )}

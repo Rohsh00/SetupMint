@@ -336,6 +336,126 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(t3.plannedExitQty).toBe(65);
     });
 
+    it('accurately calculates fractional lot ladder for XAUUSD (0.2 lot with 50% cut at 1:1 -> 0.10 lot)', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'xauusd-50pct',
+        symbol: 'XAUUSD',
+        direction: 'LONG',
+        entryPrice: 4060,
+        currentLtp: 4065, // 5 pts favorable (+1R)
+        quantity: 0.2, // 0.20 lots
+        contractMultiplier: 100,
+        stopLoss: 4055, // 5 pts risk = 1R ($100 risk)
+        currency: 'USD',
+        customRules: {
+          t1: {
+            targetR: 1.0,
+            exitRatio: 0.5, // 50% cut at 1:1
+          },
+          t2: {
+            enabled: true,
+            targetR: 2.0,
+            exitRatio: 0.5,
+          },
+          t3: {
+            enabled: true,
+            isFreeRunner: true,
+          },
+        },
+      });
+
+      expect(metric.targetLadder).toBeDefined();
+      const ladder = metric.targetLadder!;
+      expect(ladder.initialRiskPoints).toBe(5);
+      expect(ladder.lotSize).toBe(0.01);
+      expect(ladder.totalLots).toBe(0.2);
+
+      // T1 (+1.0R): 50% of 0.2 lot = 0.10 lot
+      const t1 = ladder.steps[0];
+      expect(t1.name).toBe('T1 (+1.0R)');
+      expect(t1.targetPrice).toBe(4065);
+      expect(t1.plannedExitQty).toBe(0.1);
+      expect(t1.plannedExitLots).toBe(0.1);
+      expect(t1.status).toBe('MET');
+
+      // T2 (+2.0R): 50% of remaining 0.10 lot = 0.05 lot
+      const t2 = ladder.steps[1];
+      expect(t2.name).toBe('T2 (+2.0R)');
+      expect(t2.targetPrice).toBe(4070);
+      expect(t2.plannedExitQty).toBe(0.05);
+      expect(t2.plannedExitLots).toBe(0.05);
+
+      // Runner: Remaining 0.05 lot
+      const t3 = ladder.steps[2];
+      expect(t3.name).toBe('Runner (Free Move)');
+      expect(t3.plannedExitQty).toBe(0.05);
+      expect(t3.plannedExitLots).toBe(0.05);
+    });
+
+    it('accurately calculates fractional lot ladder for XAUUSD (0.2 lot with 40% cut at 1:1 -> 0.08 lot)', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'xauusd-40pct',
+        symbol: 'XAUUSD',
+        direction: 'LONG',
+        entryPrice: 4060,
+        currentLtp: 4065, // +1R
+        quantity: 0.2, // 0.20 lots
+        contractMultiplier: 100,
+        stopLoss: 4055, // 5 pts risk = 1R
+        currency: 'USD',
+        customRules: {
+          t1: {
+            targetR: 1.0,
+            exitRatio: 0.4, // 40% cut at 1:1
+          },
+          t2: {
+            enabled: true,
+            targetR: 2.0,
+            exitRatio: 0.5,
+          },
+          t3: {
+            enabled: true,
+            isFreeRunner: true,
+          },
+        },
+      });
+
+      const ladder = metric.targetLadder!;
+      // T1 (+1.0R): 40% of 0.2 lot = 0.08 lot
+      const t1 = ladder.steps[0];
+      expect(t1.plannedExitQty).toBe(0.08);
+      expect(t1.plannedExitLots).toBe(0.08);
+
+      // T2: 50% of remaining 0.12 lot = 0.06 lot
+      const t2 = ladder.steps[1];
+      expect(t2.plannedExitQty).toBe(0.06);
+      expect(t2.plannedExitLots).toBe(0.06);
+
+      // Runner: Remaining 0.06 lot
+      const t3 = ladder.steps[2];
+      expect(t3.plannedExitQty).toBe(0.06);
+      expect(t3.plannedExitLots).toBe(0.06);
+    });
+
+    it('handles minimum 0.01 lot XAUUSD without fractional splitting (full exit)', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'xauusd-min-lot',
+        symbol: 'XAUUSD',
+        direction: 'LONG',
+        entryPrice: 4060,
+        currentLtp: 4062,
+        quantity: 0.01,
+        contractMultiplier: 100,
+        stopLoss: 4055,
+        currency: 'USD',
+      });
+
+      const ladder = metric.targetLadder!;
+      const t1 = ladder.steps[0];
+      expect(t1.plannedExitQty).toBe(0.01);
+      expect(t1.plannedExitRatio).toBe(1.0);
+    });
+
     it('supports custom R1, R2, R3 and True Breakeven fee-adjusted trailing', () => {
       const metric = calculateLiveOpenTradeMetric({
         tradeId: 'custom-rules-1',

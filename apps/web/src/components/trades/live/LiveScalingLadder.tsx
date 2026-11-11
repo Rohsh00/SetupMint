@@ -197,11 +197,26 @@ export function LiveScalingLadder({
                       : 'Target reached!'}
                   </Typography>
                   {(() => {
-                    const isLotBased = resolvedLotSize > 1;
-                    const lotCount = step.plannedExitLots ?? (isLotBased ? Math.max(1, Math.round(step.plannedExitQty / resolvedLotSize)) : 1);
-                    const bookText = isLotBased
-                      ? `${lotCount} ${lotCount === 1 ? 'lot' : 'lots'} (${step.plannedExitQty} units)`
-                      : `${step.plannedExitQty} units`;
+                    const isForexOrMt5 =
+                      metric.currency === 'USD' ||
+                      (metric as any)?.isMt5 ||
+                      (metric as any)?.assetClass === 'FOREX' ||
+                      (metric as any)?.assetClass === 'COMMODITY' ||
+                      (metric as any)?.symbol === 'XAUUSD' ||
+                      step.plannedExitQty < 1 ||
+                      resolvedLotSize < 1;
+
+                    const isLotBased = !isForexOrMt5 && resolvedLotSize > 1;
+                    let bookText: string;
+                    if (isForexOrMt5) {
+                      const lotStr = Number(step.plannedExitQty.toFixed(2));
+                      bookText = `${lotStr} ${lotStr === 1 ? 'lot' : 'lots'}`;
+                    } else if (isLotBased) {
+                      const lotCount = step.plannedExitLots ?? Math.max(1, Math.round(step.plannedExitQty / resolvedLotSize));
+                      bookText = `${lotCount} ${lotCount === 1 ? 'lot' : 'lots'} (${step.plannedExitQty} units)`;
+                    } else {
+                      bookText = `${step.plannedExitQty} units`;
+                    }
                     return (
                       <Typography
                         variant="caption"

@@ -54,6 +54,7 @@ export interface ILiveOpenTradeCalculationParams {
   quantity: number | string | Decimal;
   contractMultiplier?: number | string | Decimal;
   lotSize?: number | string | Decimal;
+  quantityIncrement?: number | string | Decimal;
   stopLoss?: number | string | Decimal | null;
   initialStopLoss?: number | string | Decimal | null;
   target?: number | string | Decimal | null;
@@ -225,6 +226,7 @@ export function calculateTargetLadder(params: {
   quantity?: Decimal | number;
   contractMultiplier?: Decimal | number;
   lotSize?: Decimal | number;
+  quantityIncrement?: Decimal | number | string;
   initialRiskAmount?: Decimal | number | null;
   initialStopLoss?: Decimal | number | null;
   stopLoss: Decimal | number | null;
@@ -234,6 +236,8 @@ export function calculateTargetLadder(params: {
   estimatedCharges?: Decimal | number;
   currency?: string;
   currencySymbol?: string;
+  assetClass?: string;
+  symbol?: string;
 }): ILiveTargetLadder | undefined {
   const sym = params.currencySymbol || (params.currency === 'USD' ? '$' : '₹');
   const isLong = params.direction === 'LONG';
@@ -247,11 +251,36 @@ export function calculateTargetLadder(params: {
     ? (params.contractMultiplier instanceof Decimal ? params.contractMultiplier : new Decimal(params.contractMultiplier))
     : new Decimal(1);
 
+  const dQtyInc = params.quantityIncrement !== undefined
+    ? (params.quantityIncrement instanceof Decimal ? params.quantityIncrement : new Decimal(params.quantityIncrement))
+    : undefined;
+
+  // Detect fractional lot-step trading (Forex, CFDs, Gold, MT5 or trades with fractional quantity < 1)
+  const isFractionalLot =
+    (dQtyInc && dQtyInc.lessThan(1) && dQtyInc.greaterThan(0)) ||
+    totalQty < 1 ||
+    (totalQty % 1 !== 0 && totalQty < 20) ||
+    params.currency === 'USD' ||
+    params.assetClass === 'FOREX' ||
+    Boolean(params.symbol && /xau|eur|gbp|jpy|aud|cad|chf|nzd|btc|eth/i.test(params.symbol)) ||
+    (params.lotSize !== undefined && Number(params.lotSize) < 1);
+
+  const lotStep = dQtyInc && dQtyInc.greaterThan(0)
+    ? dQtyInc.toNumber()
+    : isFractionalLot
+    ? 0.01
+    : 1;
+
   const dLotSize = params.lotSize
     ? (params.lotSize instanceof Decimal ? params.lotSize : new Decimal(params.lotSize))
     : new Decimal(1);
-  const lotSizeNum = Math.max(1, dLotSize.toNumber());
-  const totalLots = Math.max(1, Math.floor(totalQty / lotSizeNum));
+  const lotSizeNum = isFractionalLot ? lotStep : Math.max(1, dLotSize.toNumber());
+  const totalLots = isFractionalLot
+    ? Number(totalQty.toFixed(2))
+    : Math.max(1, Math.floor(totalQty / lotSizeNum));
+  const totalSteps = isFractionalLot
+    ? Math.round(totalQty / lotStep)
+    : totalLots;
   const dTick = params.tickSize
     ? (params.tickSize instanceof Decimal ? params.tickSize : new Decimal(params.tickSize))
     : new Decimal(0.05);
@@ -317,17 +346,42 @@ export function calculateTargetLadder(params: {
   const isT1Met = isLong ? dLtp.greaterThanOrEqualTo(t1Price) : dLtp.lessThanOrEqualTo(t1Price);
 
   let t1ExitLots = 1;
-  let t1ExitRatio = totalLots > 2 ? 0.33 : 0.5;
-  if (totalLots > 1) {
-    if (rules?.t1?.customLots && rules.t1.customLots > 0) {
-      t1ExitLots = Math.min(totalLots - 1, rules.t1.customLots);
-      t1ExitRatio = Number((t1ExitLots / totalLots).toFixed(2));
+  let t1ExitQty = totalQty;
+  let t1ExitRatio = totalSteps > 2 ? 0.33 : 0.5;
+
+  if (isFractionalLot) {
+    if (totalSteps > 1) {
+      let exitSteps: number;
+      if (rules?.t1?.customLots && rules.t1.customLots > 0) {
+        exitSteps = Math.min(totalSteps - 1, Math.max(1, Math.round(rules.t1.customLots / lotStep)));
+        t1ExitRatio = Number(((exitSteps * lotStep) / totalQty).toFixed(2));
+      } else {
+        t1ExitRatio = rules?.t1?.exitRatio ?? (totalSteps >= 3 ? 0.33 : 0.5);
+        exitSteps = Math.max(1, Math.min(totalSteps - 1, Math.round(totalSteps * t1ExitRatio)));
+      }
+      t1ExitQty = Number((exitSteps * lotStep).toFixed(4));
+      t1ExitLots = t1ExitQty;
     } else {
-      t1ExitRatio = rules?.t1?.exitRatio ?? (totalLots >= 3 ? 0.33 : 0.5);
-      t1ExitLots = Math.max(1, Math.min(totalLots - 1, Math.round(totalLots * t1ExitRatio)));
+      t1ExitQty = totalQty;
+      t1ExitLots = totalLots;
+      t1ExitRatio = 1.0;
+    }
+  } else {
+    if (totalLots > 1) {
+      if (rules?.t1?.customLots && rules.t1.customLots > 0) {
+        t1ExitLots = Math.min(totalLots - 1, rules.t1.customLots);
+        t1ExitRatio = Number((t1ExitLots / totalLots).toFixed(2));
+      } else {
+        t1ExitRatio = rules?.t1?.exitRatio ?? (totalLots >= 3 ? 0.33 : 0.5);
+        t1ExitLots = Math.max(1, Math.min(totalLots - 1, Math.round(totalLots * t1ExitRatio)));
+      }
+      t1ExitQty = t1ExitLots * lotSizeNum;
+    } else {
+      t1ExitQty = totalQty;
+      t1ExitLots = 1;
+      t1ExitRatio = 1.0;
     }
   }
-  const t1ExitQty = totalLots > 1 ? t1ExitLots * lotSizeNum : totalQty;
 
   const t1Dist = isLong ? t1Price.minus(dLtp) : dLtp.minus(t1Price);
   const t1Run = isLong ? dLtp.minus(dEntry) : dEntry.minus(dLtp);
@@ -358,22 +412,48 @@ export function calculateTargetLadder(params: {
   const t2Price = isLong ? dEntry.plus(t2RiskPoints) : dEntry.minus(t2RiskPoints);
   const isT2Met = isLong ? dLtp.greaterThanOrEqualTo(t2Price) : dLtp.lessThanOrEqualTo(t2Price);
 
-  const remLotsAfterT1 = Math.max(0, totalLots - t1ExitLots);
   let t2ExitLots = 0;
+  let t2ExitQty = 0;
   let t2ExitRatio = 0.5;
-  if (remLotsAfterT1 > 1) {
-    if (rules?.t2?.customLots && rules.t2.customLots > 0) {
-      t2ExitLots = Math.min(remLotsAfterT1 - 1, rules.t2.customLots);
-      t2ExitRatio = Number((t2ExitLots / remLotsAfterT1).toFixed(2));
-    } else {
-      t2ExitRatio = rules?.t2?.exitRatio ?? 0.5;
-      t2ExitLots = Math.max(1, Math.min(remLotsAfterT1 - 1, Math.round(remLotsAfterT1 * t2ExitRatio)));
+
+  if (isFractionalLot) {
+    const remQtyAfterT1 = Math.max(0, Number((totalQty - t1ExitQty).toFixed(4)));
+    const remStepsAfterT1 = Math.round(remQtyAfterT1 / lotStep);
+    if (remStepsAfterT1 > 1) {
+      let exitSteps2: number;
+      if (rules?.t2?.customLots && rules.t2.customLots > 0) {
+        exitSteps2 = Math.min(remStepsAfterT1 - 1, Math.max(1, Math.round(rules.t2.customLots / lotStep)));
+        t2ExitRatio = Number(((exitSteps2 * lotStep) / remQtyAfterT1).toFixed(2));
+      } else {
+        t2ExitRatio = rules?.t2?.exitRatio ?? 0.5;
+        exitSteps2 = Math.max(1, Math.min(remStepsAfterT1 - 1, Math.round(remStepsAfterT1 * t2ExitRatio)));
+      }
+      t2ExitQty = Number((exitSteps2 * lotStep).toFixed(4));
+      t2ExitLots = t2ExitQty;
+    } else if (remStepsAfterT1 === 1) {
+      t2ExitQty = lotStep;
+      t2ExitLots = lotStep;
+      t2ExitRatio = 1.0;
     }
-  } else if (remLotsAfterT1 === 1) {
-    t2ExitLots = 1;
-    t2ExitRatio = 1.0;
+  } else {
+    const remLotsAfterT1 = Math.max(0, totalLots - t1ExitLots);
+    if (remLotsAfterT1 > 1) {
+      if (rules?.t2?.customLots && rules.t2.customLots > 0) {
+        t2ExitLots = Math.min(remLotsAfterT1 - 1, rules.t2.customLots);
+        t2ExitRatio = Number((t2ExitLots / remLotsAfterT1).toFixed(2));
+      } else {
+        t2ExitRatio = rules?.t2?.exitRatio ?? 0.5;
+        t2ExitLots = Math.max(1, Math.min(remLotsAfterT1 - 1, Math.round(remLotsAfterT1 * t2ExitRatio)));
+      }
+      t2ExitQty = Math.max(1, t2ExitLots * lotSizeNum);
+    } else if (remLotsAfterT1 === 1) {
+      t2ExitLots = 1;
+      t2ExitRatio = 1.0;
+      t2ExitQty = Math.max(1, t2ExitLots * lotSizeNum);
+    } else {
+      t2ExitQty = totalQty;
+    }
   }
-  const t2ExitQty = totalLots > 1 ? Math.max(1, t2ExitLots * lotSizeNum) : totalQty;
 
   const t2Dist = isLong ? t2Price.minus(dLtp) : dLtp.minus(t2Price);
   const t2Progress = Math.min(100, Math.max(0, Number(t1Run.dividedBy(t2RiskPoints).times(100).toFixed(1))));
@@ -393,14 +473,22 @@ export function calculateTargetLadder(params: {
     ? dPlannedTarget
     : isLong ? dEntry.plus(t3RiskPoints) : dEntry.minus(t3RiskPoints);
   const isT3Met = isLong ? dLtp.greaterThanOrEqualTo(t3Price) : dLtp.lessThanOrEqualTo(t3Price);
-  const runnerLots = rules?.t3?.customLots && rules.t3.customLots > 0
-    ? rules.t3.customLots
-    : (t2Enabled
-      ? Math.max(1, totalLots - t1ExitLots - t2ExitLots)
-      : Math.max(1, totalLots - t1ExitLots));
-  const runnerQty = totalLots > 1
-    ? runnerLots * lotSizeNum
-    : Math.max(1, totalQty - t1ExitQty - (t2Enabled ? t2ExitQty : 0));
+
+  const runnerLots = isFractionalLot
+    ? (rules?.t3?.customLots && rules.t3.customLots > 0
+        ? rules.t3.customLots
+        : Number(Math.max(lotStep, totalQty - t1ExitQty - (t2Enabled ? t2ExitQty : 0)).toFixed(4)))
+    : (rules?.t3?.customLots && rules.t3.customLots > 0
+        ? rules.t3.customLots
+        : (t2Enabled
+          ? Math.max(1, totalLots - t1ExitLots - t2ExitLots)
+          : Math.max(1, totalLots - t1ExitLots)));
+
+  const runnerQty = isFractionalLot
+    ? runnerLots
+    : (totalLots > 1
+        ? runnerLots * lotSizeNum
+        : Math.max(1, totalQty - t1ExitQty - (t2Enabled ? t2ExitQty : 0)));
 
   const t3Dist = isLong ? t3Price.minus(dLtp) : dLtp.minus(t3Price);
   const t3PlannedRun = isLong ? t3Price.minus(dEntry).abs() : dEntry.minus(t3Price).abs();
@@ -418,7 +506,7 @@ export function calculateTargetLadder(params: {
     targetPrice: Number(t1Price.toFixed(2)),
     plannedExitRatio: t1ExitRatio,
     plannedExitQty: t1ExitQty,
-    plannedExitLots: totalLots > 1 ? t1ExitLots : 1,
+    plannedExitLots: isFractionalLot ? t1ExitLots : (totalLots > 1 ? t1ExitLots : 1),
     lotSize: lotSizeNum,
     suggestedStopLoss: t1StopLoss,
     suggestedStopLabel: t1StopLabel,
@@ -438,7 +526,7 @@ export function calculateTargetLadder(params: {
       targetPrice: Number(t2Price.toFixed(2)),
       plannedExitRatio: t2ExitRatio,
       plannedExitQty: t2ExitQty,
-      plannedExitLots: totalLots > 1 ? t2ExitLots : 1,
+      plannedExitLots: isFractionalLot ? t2ExitLots : (totalLots > 1 ? t2ExitLots : 1),
       lotSize: lotSizeNum,
       suggestedStopLoss: t2StopLoss,
       suggestedStopLabel: t2StopLabel,
@@ -460,7 +548,7 @@ export function calculateTargetLadder(params: {
         targetPrice: 0,
         plannedExitRatio: 1.0,
         plannedExitQty: runnerQty,
-        plannedExitLots: totalLots > 1 ? runnerLots : 1,
+        plannedExitLots: isFractionalLot ? runnerLots : (totalLots > 1 ? runnerLots : 1),
         lotSize: lotSizeNum,
         suggestedStopLoss: t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss,
         suggestedStopLabel: `Open Trail (SL: ${sym}${t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss})`,
@@ -479,7 +567,7 @@ export function calculateTargetLadder(params: {
         targetPrice: Number(t3Price.toFixed(2)),
         plannedExitRatio: 1.0,
         plannedExitQty: runnerQty,
-        plannedExitLots: totalLots > 1 ? runnerLots : 1,
+        plannedExitLots: isFractionalLot ? runnerLots : (totalLots > 1 ? runnerLots : 1),
         lotSize: lotSizeNum,
         suggestedStopLoss: Number(t2Price.toFixed(2)),
         suggestedStopLabel: `Trail Behind Swing (${sym}${Number(t2Price.toFixed(2))})`,
@@ -701,6 +789,7 @@ export function calculateLiveOpenTradeMetric(
       quantity: dQty,
       contractMultiplier: dMultiplier,
       lotSize: dLotSize,
+      quantityIncrement: params.quantityIncrement,
       initialRiskAmount,
       initialStopLoss: params.initialStopLoss !== undefined && params.initialStopLoss !== null ? new Decimal(params.initialStopLoss) : null,
       stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? new Decimal(params.stopLoss) : null,
@@ -709,7 +798,11 @@ export function calculateLiveOpenTradeMetric(
       customRules: params.customRules,
       estimatedCharges,
       currency: params.currency,
+      assetClass: params.assetClass,
+      symbol: params.symbol,
     });
+
+    const isFractional = targetLadder ? Boolean(targetLadder.lotSize && targetLadder.lotSize < 1) : dQty.toNumber() < 1;
 
     const metric: ILiveOpenTradeMetric = {
       tradeId: params.tradeId,
@@ -718,8 +811,8 @@ export function calculateLiveOpenTradeMetric(
       currency: params.currency,
       quantity: Number(dQty.toNumber()),
       contractMultiplier: Number(dMultiplier.toNumber()),
-      lotSize: lotSizeNum,
-      totalLots,
+      lotSize: isFractional ? (targetLadder?.lotSize ?? 0.01) : lotSizeNum,
+      totalLots: isFractional ? Number(dQty.toNumber().toFixed(2)) : totalLots,
       trueBreakevenPrice: beRes.trueBreakevenPrice,
       nominalBreakevenPrice: beRes.nominalBreakevenPrice,
       feeBufferPoints: beRes.feeBufferPoints,

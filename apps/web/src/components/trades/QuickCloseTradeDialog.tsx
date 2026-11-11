@@ -85,8 +85,25 @@ export function QuickCloseTradeDialog({
   const marketSegment = trade?.marketSegment || 'NSE_EQ';
   const assetClass = trade?.assetClass || 'EQUITY';
 
+  const isMt5Trade = Boolean(
+    (trade as any)?.isMt5 ||
+    (trade as any)?.tags?.some((t: string) => t.toUpperCase() === 'MT5' || t.toUpperCase() === 'ELEFIN' || t.startsWith('MT5_TICKET')) ||
+    trade?.importBatchId?.startsWith('MT5_') ||
+    (trade as any)?.accountBroker === 'Elefin' ||
+    (trade as any)?.accountBroker === 'MT5'
+  );
+
+  const isUsdTrade =
+    trade?.currency === 'USD' ||
+    trade?.symbol?.includes('USD') ||
+    trade?.symbol === 'XAUUSD' ||
+    trade?.assetClass === 'FOREX' ||
+    trade?.assetClass === 'COMMODITY' ||
+    isMt5Trade;
+
   // Dynamic instrument lot size resolution
   const lotSize = useMemo(() => {
+    if (isUsdTrade) return 1;
     if (trade?.lotSize && trade.lotSize > 0) return trade.lotSize;
     const sym = (trade?.symbol || '').toUpperCase();
     if (sym.includes('NIFTY') && !sym.includes('BANKNIFTY') && !sym.includes('FINNIFTY') && !sym.includes('MIDCPNIFTY')) {
@@ -114,18 +131,15 @@ export function QuickCloseTradeDialog({
     }
     if (contractMultiplier > 1) return contractMultiplier;
     return 1;
-  }, [trade, totalOpenQuantity, contractMultiplier]);
+  }, [trade, totalOpenQuantity, contractMultiplier, isUsdTrade]);
 
-  const isLotBased = lotSize > 1;
-  const totalLots = isLotBased ? Math.max(1, Math.floor(totalOpenQuantity / lotSize)) : totalOpenQuantity;
-
-  const isMt5Trade = Boolean(
-    (trade as any)?.isMt5 ||
-    (trade as any)?.tags?.some((t: string) => t.toUpperCase() === 'MT5' || t.toUpperCase() === 'ELEFIN' || t.startsWith('MT5_TICKET')) ||
-    trade?.importBatchId?.startsWith('MT5_') ||
-    (trade as any)?.accountBroker === 'Elefin' ||
-    (trade as any)?.accountBroker === 'MT5'
-  );
+  const isFractionalLot = isUsdTrade || totalOpenQuantity < 1;
+  const isLotBased = !isFractionalLot && lotSize > 1;
+  const totalLots = isFractionalLot
+    ? Number(totalOpenQuantity.toFixed(2))
+    : isLotBased
+    ? Math.max(1, Math.floor(totalOpenQuantity / lotSize))
+    : totalOpenQuantity;
 
   const { accounts } = useAccountScope();
   const scopeCaps = useAccountCapabilities();
@@ -140,13 +154,6 @@ export function QuickCloseTradeDialog({
 
   const canBrokerExecute = tradeCaps.broker.canExecuteLive;
 
-  const isUsdTrade =
-    trade?.currency === 'USD' ||
-    trade?.symbol?.includes('USD') ||
-    trade?.symbol === 'XAUUSD' ||
-    trade?.assetClass === 'FOREX' ||
-    isMt5Trade;
-
   const tradeCurrency = trade?.currency || tradeAccount?.baseCurrency || tradeCaps.currency.code || (isUsdTrade ? 'USD' : 'INR');
   const currSym = tradeCaps.currency.symbol || getCurrencySymbol(tradeCurrency);
 
@@ -158,12 +165,17 @@ export function QuickCloseTradeDialog({
   // State
   const [exitMode, setExitMode] = useState<'PARTIAL_50' | 'FULL' | 'CUSTOM'>(() => {
     if (defaultCloseRatio === 0.5) {
+      if (isFractionalLot && totalOpenQuantity >= 0.02) return 'PARTIAL_50';
       if (isLotBased && totalLots <= 1) return 'FULL';
       if (totalOpenQuantity > 1) return 'PARTIAL_50';
     }
     return 'FULL';
   });
   const [customQty, setCustomQty] = useState<string>(() => {
+    if (isFractionalLot) {
+      const half = totalOpenQuantity >= 0.02 ? Math.round((totalOpenQuantity * 0.5) / 0.01) * 0.01 : totalOpenQuantity;
+      return String(Number(half.toFixed(2)));
+    }
     if (isLotBased) {
       const halfLots = Math.max(1, Math.round(totalLots * 0.5));
       return String(halfLots * lotSize);
@@ -194,6 +206,13 @@ export function QuickCloseTradeDialog({
   // Determine actual quantity being closed
   const selectedCloseQty = useMemo(() => {
     if (exitMode === 'PARTIAL_50') {
+      if (isFractionalLot) {
+        if (totalOpenQuantity >= 0.02) {
+          const half = Math.round((totalOpenQuantity * 0.5) / 0.01) * 0.01;
+          return Number(Math.max(0.01, Math.min(totalOpenQuantity, half)).toFixed(2));
+        }
+        return totalOpenQuantity;
+      }
       if (isLotBased) {
         if (totalLots > 1) {
           const lotsToClose = Math.max(1, Math.round(totalLots * 0.5));
@@ -204,12 +223,15 @@ export function QuickCloseTradeDialog({
       return Math.max(1, Math.floor(totalOpenQuantity / 2));
     }
     if (exitMode === 'CUSTOM') {
-      const parsed = parseInt(customQty, 10);
-      if (isNaN(parsed) || parsed <= 0) return isLotBased ? lotSize : 1;
-      return Math.min(totalOpenQuantity, parsed);
+      const parsed = parseFloat(customQty);
+      const minStep = isFractionalLot ? 0.01 : (isLotBased ? lotSize : 1);
+      if (isNaN(parsed) || parsed <= 0) return minStep;
+      return isFractionalLot
+        ? Number(Math.min(totalOpenQuantity, Math.max(minStep, parsed)).toFixed(2))
+        : Math.min(totalOpenQuantity, Math.max(minStep, Math.floor(parsed)));
     }
     return totalOpenQuantity;
-  }, [exitMode, customQty, totalOpenQuantity, isLotBased, totalLots, lotSize]);
+  }, [exitMode, customQty, totalOpenQuantity, isLotBased, totalLots, lotSize, isFractionalLot]);
 
   const remainingQty = Math.max(0, totalOpenQuantity - selectedCloseQty);
   const isPartial = selectedCloseQty < totalOpenQuantity;
@@ -233,8 +255,14 @@ export function QuickCloseTradeDialog({
           : '';
       setExitPrice(initialPrice);
 
-      setExitMode(defaultCloseRatio === 0.5 && totalOpenQuantity > 1 ? 'PARTIAL_50' : 'FULL');
-      setCustomQty(String(Math.max(1, Math.floor(totalOpenQuantity / 2))));
+      if (isFractionalLot) {
+        const half = totalOpenQuantity >= 0.02 ? Math.round((totalOpenQuantity * 0.5) / 0.01) * 0.01 : totalOpenQuantity;
+        setCustomQty(String(Number(half.toFixed(2))));
+        setExitMode(defaultCloseRatio === 0.5 && totalOpenQuantity >= 0.02 ? 'PARTIAL_50' : 'FULL');
+      } else {
+        setExitMode(defaultCloseRatio === 0.5 && totalOpenQuantity > 1 ? 'PARTIAL_50' : 'FULL');
+        setCustomQty(String(Math.max(1, Math.floor(totalOpenQuantity / 2))));
+      }
 
       // Default exit time to current local time in ISO format for datetime-local
       setExitTime(currentLocalIsoDateTime());
@@ -911,17 +939,54 @@ export function QuickCloseTradeDialog({
               <TextField
                 size="small"
                 type="number"
-                label={isLotBased ? `Quantity to Exit (Lot Size: ${lotSize})` : 'Quantity to Exit'}
+                label={isFractionalLot ? 'Lots to Exit' : isLotBased ? `Quantity to Exit (Lot Size: ${lotSize})` : 'Quantity to Exit'}
                 value={customQty}
                 onChange={(e) => setCustomQty(e.target.value)}
                 slotProps={{
                   input: {
-                    inputProps: { min: isLotBased ? lotSize : 1, max: totalOpenQuantity, step: isLotBased ? lotSize : 1 },
+                    inputProps: {
+                      min: isFractionalLot ? 0.01 : isLotBased ? lotSize : 1,
+                      max: totalOpenQuantity,
+                      step: isFractionalLot ? 0.01 : isLotBased ? lotSize : 1,
+                    },
                     sx: { fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 },
                   },
                 }}
-                helperText={isLotBased ? `Enter multiples of ${lotSize} up to ${totalOpenQuantity}` : `Enter between 1 and ${totalOpenQuantity} quantity to exit`}
+                helperText={
+                  isFractionalLot
+                    ? `Enter lot size (0.01 to ${totalOpenQuantity}) to exit`
+                    : isLotBased
+                    ? `Enter multiples of ${lotSize} up to ${totalOpenQuantity}`
+                    : `Enter between 1 and ${totalOpenQuantity} quantity to exit`
+                }
               />
+
+              {isFractionalLot && totalOpenQuantity >= 0.02 && (
+                <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                  {[0.5, 0.4, 0.33, 1.0].map((ratio) => {
+                    const targetLot = ratio === 1.0
+                      ? totalOpenQuantity
+                      : Number(Math.max(0.01, Math.round((totalOpenQuantity * ratio) / 0.01) * 0.01).toFixed(2));
+                    const isSelected = Math.abs(Number(customQty) - targetLot) < 0.001;
+                    return (
+                      <Chip
+                        key={ratio}
+                        label={`${Math.round(ratio * 100)}% (${targetLot} lots)`}
+                        size="small"
+                        clickable
+                        onClick={() => setCustomQty(String(targetLot))}
+                        sx={{
+                          fontSize: '0.68rem',
+                          fontWeight: isSelected ? 800 : 500,
+                          color: isSelected ? '#3B82F6' : 'text.secondary',
+                          border: '1px solid',
+                          borderColor: isSelected ? '#3B82F6' : 'divider',
+                        }}
+                      />
+                    );
+                  })}
+                </Box>
+              )}
 
               {isLotBased && totalLots > 1 && (
                 <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>

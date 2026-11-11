@@ -372,8 +372,53 @@ export function TradeDetailPage() {
     );
   }
 
-  const isWin = (trade.calculated?.netPnL || 0) > 0;
-  const isLoss = (trade.calculated?.netPnL || 0) < 0;
+  const entryP = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice);
+  const exitP = Number(trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice);
+  const qty = Number(trade.simpleExecution?.quantity ?? trade.calculated?.closedQuantity ?? 1);
+  const mult = Number(trade.simpleExecution?.contractMultiplier || 1);
+  const costs = Number(trade.calculated?.totalCosts ?? 0);
+
+  let effectiveNetPnL = trade.calculated?.netPnL;
+  if (
+    trade.status === 'CLOSED' &&
+    entryP > 0 &&
+    exitP > 0 &&
+    entryP !== exitP &&
+    (trade.calculated?.grossPnL === 0 || trade.calculated?.closedQuantity === 0 || effectiveNetPnL === undefined)
+  ) {
+    const priceDiff = trade.direction === 'SHORT' ? entryP - exitP : exitP - entryP;
+    effectiveNetPnL = Number((priceDiff * qty * mult - costs).toFixed(2));
+  }
+
+  let effectiveGrossPnL = trade.calculated?.grossPnL;
+  if (
+    trade.status === 'CLOSED' &&
+    entryP > 0 &&
+    exitP > 0 &&
+    entryP !== exitP &&
+    (effectiveGrossPnL === 0 || effectiveGrossPnL === undefined)
+  ) {
+    const priceDiff = trade.direction === 'SHORT' ? entryP - exitP : exitP - entryP;
+    effectiveGrossPnL = Number((priceDiff * qty * mult).toFixed(2));
+  }
+
+  let effectiveRealizedR = trade.calculated?.realizedRMultiple;
+  if (
+    effectiveNetPnL !== undefined &&
+    (effectiveRealizedR === undefined || effectiveRealizedR === null || (effectiveRealizedR <= 0 && effectiveNetPnL > 0)) &&
+    entryP > 0 &&
+    trade.risk?.initialStopLoss &&
+    Number(trade.risk.initialStopLoss) > 0
+  ) {
+    const stopDist = Math.abs(entryP - Number(trade.risk.initialStopLoss));
+    const riskBudget = stopDist * qty * mult;
+    if (riskBudget > 0) {
+      effectiveRealizedR = Number((effectiveNetPnL / riskBudget).toFixed(2));
+    }
+  }
+
+  const isWin = (effectiveNetPnL || 0) > 0;
+  const isLoss = (effectiveNetPnL || 0) < 0;
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
@@ -739,7 +784,7 @@ export function TradeDetailPage() {
                 mt: 0.5,
               }}
             >
-              {formatCurrency(trade.calculated?.netPnL)}
+              {formatCurrency(effectiveNetPnL, trade.currency)}
             </Typography>
           </Grid>
 
@@ -748,7 +793,7 @@ export function TradeDetailPage() {
               Gross P&L
             </Typography>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
-              {formatCurrency(trade.calculated?.grossPnL)}
+              {formatCurrency(effectiveGrossPnL, trade.currency)}
             </Typography>
           </Grid>
 
@@ -760,7 +805,7 @@ export function TradeDetailPage() {
               <HelpHint hintKey="trade.fees.autoManual" />
             </Box>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, mt: 0.5 }}>
-              {formatCurrency(trade.calculated?.totalCosts)}
+              {formatCurrency(trade.calculated?.totalCosts, trade.currency)}
             </Typography>
           </Grid>
 
@@ -772,7 +817,7 @@ export function TradeDetailPage() {
               <HelpHint hintKey="metric.rMultiple" />
             </Box>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
-              {formatR(trade.calculated?.realizedRMultiple)}
+              {formatR(effectiveRealizedR)}
             </Typography>
           </Grid>
 

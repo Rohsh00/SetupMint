@@ -854,8 +854,43 @@ export function TradesPage() {
                 trades.map((t: any) => {
                   const tradeId = t.id || t._id;
                   const isSelected = selectedIds.includes(tradeId);
-                  const isWin = (t.calculated?.netPnL || 0) > 0;
-                  const isLoss = (t.calculated?.netPnL || 0) < 0;
+
+                  const entryP = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice);
+                  const exitP = Number(t.simpleExecution?.exitPrice ?? t.calculated?.averageExitPrice);
+                  const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.closedQuantity ?? 1);
+                  const mult = Number(t.simpleExecution?.contractMultiplier || 1);
+                  const costs = Number(t.calculated?.totalCosts ?? 0);
+
+                  // Resilient net PnL resolution: fallback to simple execution if calculated.grossPnL is 0 for a closed trade with valid exit
+                  let effectiveNetPnL = t.calculated?.netPnL;
+                  if (
+                    t.status === 'CLOSED' &&
+                    entryP > 0 &&
+                    exitP > 0 &&
+                    entryP !== exitP &&
+                    (t.calculated?.grossPnL === 0 || t.calculated?.closedQuantity === 0 || effectiveNetPnL === undefined)
+                  ) {
+                    const priceDiff = t.direction === 'SHORT' ? entryP - exitP : exitP - entryP;
+                    effectiveNetPnL = Number((priceDiff * qty * mult - costs).toFixed(2));
+                  }
+
+                  let effectiveRealizedR = t.calculated?.realizedRMultiple;
+                  if (
+                    effectiveNetPnL !== undefined &&
+                    (effectiveRealizedR === undefined || effectiveRealizedR === null || (effectiveRealizedR <= 0 && effectiveNetPnL > 0)) &&
+                    entryP > 0 &&
+                    t.risk?.initialStopLoss &&
+                    Number(t.risk.initialStopLoss) > 0
+                  ) {
+                    const stopDist = Math.abs(entryP - Number(t.risk.initialStopLoss));
+                    const riskBudget = stopDist * qty * mult;
+                    if (riskBudget > 0) {
+                      effectiveRealizedR = Number((effectiveNetPnL / riskBudget).toFixed(2));
+                    }
+                  }
+
+                  const isWin = (effectiveNetPnL || 0) > 0;
+                  const isLoss = (effectiveNetPnL || 0) < 0;
 
                   return (
                     <TableRow
@@ -1023,10 +1058,10 @@ export function TradesPage() {
                             : muiTheme.palette.text.secondary,
                         }}
                       >
-                        {formatCurrency(t.calculated?.netPnL, t.currency)}
+                        {formatCurrency(effectiveNetPnL, t.currency)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 600 }}>
-                        {formatR(t.calculated?.realizedRMultiple)}
+                        {formatR(effectiveRealizedR)}
                       </TableCell>
                       <TableCell align="center">
                         <Chip

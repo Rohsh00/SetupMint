@@ -1497,6 +1497,26 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       fills: sanitizeTradeFills(parseResult.data.fills || existingTrade.fills || []).fills as any,
     };
 
+    // If trade is CLOSED with a valid exit price, ensure an EXIT fill exists if fills array has entries
+    if (mergedData.status === 'CLOSED' && mergedSimpleExecution?.exitPrice && Number(mergedSimpleExecution.exitPrice) > 0) {
+      if (Array.isArray(mergedData.fills) && mergedData.fills.length > 0) {
+        const hasExit = mergedData.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
+        if (!hasExit) {
+          const totalEntry = mergedData.fills
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          mergedData.fills.push({
+            fillId: `exit_update_${existingTrade._id}_${Date.now()}`,
+            timestamp: mergedData.exitTime || new Date(),
+            type: 'EXIT',
+            price: Number(mergedSimpleExecution.exitPrice),
+            quantity: totalEntry || Number(mergedSimpleExecution.quantity) || 1,
+            fee: 0,
+          });
+        }
+      }
+    }
+
     const isForexOrUsd =
       mergedData.currency === 'USD' ||
       mergedData.currency === 'EUR' ||

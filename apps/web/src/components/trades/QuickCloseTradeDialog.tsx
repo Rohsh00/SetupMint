@@ -430,13 +430,42 @@ export function QuickCloseTradeDialog({
           clearTimeout(workingTimer);
           return res;
         } else {
+          let updatedFills = trade.fills;
+          if (Array.isArray(trade.fills) && trade.fills.length > 0) {
+            const totalEntry = trade.fills
+              .filter((f: any) => f.type === 'ENTRY')
+              .reduce((s: number, f: any) => s + (Number(f.quantity) || 0), 0);
+            const totalExit = trade.fills
+              .filter((f: any) => f.type === 'EXIT')
+              .reduce((s: number, f: any) => s + (Number(f.quantity) || 0), 0);
+            const neededExit = Math.max(0, totalEntry - totalExit) || selectedCloseQty;
+            if (neededExit > 0) {
+              updatedFills = [
+                ...trade.fills,
+                {
+                  fillId: `fill-exit-${Date.now()}`,
+                  type: 'EXIT',
+                  price: numExitPrice,
+                  quantity: neededExit,
+                  timestamp: exitIso,
+                  brokerage: autoCharges?.brokerage ?? (tradeCaps.position.isHedging ? 0 : 20),
+                  exchangeFee: autoCharges?.exchangeFees ?? 0,
+                  taxes: autoCharges?.taxes ?? 0,
+                  notes: `Full exit (${neededExit} qty @ ${currSym}${numExitPrice})`,
+                },
+              ];
+            }
+          }
+
           const res = await api.trades.update(trade.id || trade._id, {
             status: 'CLOSED',
             exitTime: exitIso,
+            executionMode: tradeCaps.position.isHedging ? 'SIMPLE' : (trade.executionMode || 'SIMPLE'),
             simpleExecution: {
               exitPrice: numExitPrice,
               ...feesToSave,
             },
+            ...(updatedFills ? { fills: updatedFills } : {}),
           });
           clearTimeout(workingTimer);
           return res;

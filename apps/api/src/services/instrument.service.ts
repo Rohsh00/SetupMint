@@ -292,6 +292,12 @@ export class InstrumentService {
           body.symbol.includes('BTC'))) ||
       ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker);
 
+    const isHedging =
+      body.accountId?.profile?.positionModel === 'HEDGING' ||
+      body.positionModel === 'HEDGING' ||
+      ['ELEFIN', 'MT5', 'THE5ERS', 'FTMO'].includes(normBroker) ||
+      (Array.isArray(body.tags) && (body.tags.includes('ELEFIN') || body.tags.includes('MT5') || body.tags.includes('THE5ERS')));
+
     const presetSpec = getPresetSpec(body.underlying || body.symbol);
     const resolvedMult = Number(body.simpleExecution?.contractMultiplier || presetSpec?.contractMultiplier || 1);
     const feeModelKey = (body.feeModelKey || body.accountId?.profile?.feeModelKey || (isForexOrUsd ? 'FOREX_COMMISSION' : 'INDIA_STATUTORY')) as FeeModelKey;
@@ -305,7 +311,9 @@ export class InstrumentService {
       body.simpleExecution.taxes = 0;
     }
 
-    if (body.executionMode === 'SIMPLE' && body.simpleExecution) {
+    const effectiveMode = isHedging ? 'SIMPLE' : (body.executionMode || (body.fills && body.fills.length > 0 ? 'ADVANCED' : 'SIMPLE'));
+
+    if (effectiveMode === 'SIMPLE' && body.simpleExecution) {
       const exec = body.simpleExecution;
       const res = calculateSimpleExecutionPnL(body.direction, exec);
 
@@ -344,7 +352,25 @@ export class InstrumentService {
       openQty = exec.exitPrice ? 0 : exec.quantity;
       avgEntry = exec.entryPrice;
       avgExit = exec.exitPrice;
-    } else if (body.executionMode === 'ADVANCED' && body.fills && body.fills.length > 0) {
+    } else if (effectiveMode === 'ADVANCED' && body.fills && body.fills.length > 0) {
+      // Auto-synthesize missing exit fill if trade is marked CLOSED with simpleExecution.exitPrice
+      if (body.status === 'CLOSED' && body.simpleExecution?.exitPrice && Number(body.simpleExecution.exitPrice) > 0) {
+        const hasExit = body.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
+        if (!hasExit) {
+          const totalEntry = body.fills
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          body.fills.push({
+            fillId: `exit_auto_${body._id || Date.now()}`,
+            timestamp: body.exitTime || new Date(),
+            type: 'EXIT',
+            price: Number(body.simpleExecution.exitPrice),
+            quantity: totalEntry || Number(body.simpleExecution.quantity) || 1,
+            fee: 0,
+          });
+        }
+      }
+
       const sanitized = sanitizeTradeFills(body.fills);
       const fifo = calculateFIFOExecution(body.direction, sanitized.fills as any, resolvedMult);
 
@@ -403,6 +429,30 @@ export class InstrumentService {
         totalCosts = 0;
       }
 
+      // Robust Fallback: If FIFO produced zero closed quantity for a CLOSED trade that has simpleExecution.exitPrice,
+      // fallback to calculateSimpleExecutionPnL so closed trades never display zero/negative-fee ghost PnL.
+      if (
+        closedQty === 0 &&
+        (body.status === 'CLOSED' || (body.simpleExecution?.exitPrice && Number(body.simpleExecution.exitPrice) > 0)) &&
+        body.simpleExecution &&
+        (body.simpleExecution.entryPrice || avgEntry)
+      ) {
+        const simpleFallback = calculateSimpleExecutionPnL(body.direction, {
+          ...body.simpleExecution,
+          entryPrice: body.simpleExecution.entryPrice || avgEntry,
+          exitPrice: body.simpleExecution.exitPrice,
+          quantity: body.simpleExecution.quantity || openQty || 1,
+          contractMultiplier: resolvedMult,
+        });
+
+        grossPnL = simpleFallback.grossPnLNumber;
+        closedQty = body.simpleExecution.quantity || openQty || 1;
+        openQty = 0;
+        avgExit = body.simpleExecution.exitPrice;
+        avgEntry = body.simpleExecution.entryPrice || avgEntry;
+        outcome = simpleFallback.outcome;
+      }
+
       netPnL = Number(
         new Decimal(grossPnL)
           .minus(totalCosts)
@@ -414,6 +464,18 @@ export class InstrumentService {
         else if (netPnL < 0) outcome = 'LOSS';
         else outcome = 'BREAKEVEN';
       }
+    } else if (body.simpleExecution) {
+      // Incomplete fills or unspecified mode: fallback to simple execution if present
+      const exec = body.simpleExecution;
+      const res = calculateSimpleExecutionPnL(body.direction, exec);
+      grossPnL = res.grossPnLNumber;
+      totalCosts = isForexOrUsd && res.totalCostsNumber === 40 ? 0 : res.totalCostsNumber;
+      netPnL = Number((grossPnL - totalCosts + (exec.explicitAdjustments || 0)).toFixed(2));
+      outcome = body.status === 'OPEN' ? 'OPEN' : res.outcome;
+      closedQty = exec.exitPrice ? exec.quantity : 0;
+      openQty = exec.exitPrice ? 0 : exec.quantity;
+      avgEntry = exec.entryPrice;
+      avgExit = exec.exitPrice;
     }
 
     let holdingTimeMinutes: number | undefined;

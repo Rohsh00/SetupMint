@@ -451,8 +451,26 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const exitPrice = openTrade.calculated?.liveMfeSummary?.peakLtp || openTrade.simpleExecution?.entryPrice || 0;
           openTrade.status = 'CLOSED';
           openTrade.exitTime = new Date();
+          openTrade.executionMode = 'SIMPLE';
           if (openTrade.simpleExecution && (!openTrade.simpleExecution.exitPrice || openTrade.simpleExecution.exitPrice === 0)) {
             openTrade.simpleExecution.exitPrice = exitPrice;
+          }
+          if (Array.isArray(openTrade.fills) && openTrade.fills.length > 0) {
+            const hasExit = openTrade.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
+            if (!hasExit) {
+              const totalEntry = openTrade.fills
+                .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+                .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+              openTrade.fills.push({
+                fillId: `mt5_${tradeTicket}_exit_auto`,
+                timestamp: openTrade.exitTime,
+                type: 'EXIT',
+                price: exitPrice,
+                quantity: totalEntry || openTrade.simpleExecution?.quantity || 0.01,
+                fee: 0,
+              } as any);
+              openTrade.markModified('fills');
+            }
           }
           openTrade.calculated = InstrumentService.computeTradeCalculations(openTrade.toObject());
           if (openTrade.calculated?.excursion?.status === 'PENDING') {
@@ -611,7 +629,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             exitTime: closeDate,
             tags: ['ELEFIN', 'MT5', ticketTag],
             importBatchId: `MT5_${ticketStr}`,
-            executionMode: 'ADVANCED',
+            executionMode: 'SIMPLE',
             simpleExecution: {
               contractMultiplier: spec.multiplier,
               entryPrice,
@@ -695,11 +713,29 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           if (isDuplicate) {
             // Already closed or duplicate exit webhook: do NOT push duplicate fills
             trade.status = 'CLOSED';
+            trade.executionMode = 'SIMPLE';
             if (item.close_time) trade.exitTime = new Date(item.close_time);
             if (trade.simpleExecution && exitPriceFinal > 0) {
               trade.simpleExecution.exitPrice = exitPriceFinal;
               if (commission > 0) trade.simpleExecution.brokerage = commission;
               if (swap > 0) trade.simpleExecution.otherFees = swap;
+            }
+            if (Array.isArray(trade.fills) && trade.fills.length > 0) {
+              const hasExit = trade.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
+              if (!hasExit) {
+                const totalEntry = trade.fills
+                  .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+                  .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+                trade.fills.push({
+                  fillId: targetExitFillId,
+                  timestamp: trade.exitTime || new Date(),
+                  type: 'EXIT',
+                  price: exitPriceFinal,
+                  quantity: totalEntry || trade.simpleExecution?.quantity || volume,
+                  fee: 0,
+                } as any);
+                trade.markModified('fills');
+              }
             }
             const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
             trade.calculated = recalced;
@@ -866,7 +902,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             entryTime: item.open_time ? new Date(item.open_time) : new Date(),
             tags: ['ELEFIN', 'MT5', ticketTag],
             importBatchId: `MT5_${ticketStr}`,
-            executionMode: 'ADVANCED',
+            executionMode: 'SIMPLE',
             simpleExecution: {
               contractMultiplier: spec.multiplier,
               entryPrice,

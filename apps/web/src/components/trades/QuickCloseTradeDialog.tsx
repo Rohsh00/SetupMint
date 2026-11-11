@@ -107,7 +107,11 @@ export function QuickCloseTradeDialog({
       return 25;
     }
     if (sym.includes('MIDCPNIFTY')) return 50;
-    if (sym.includes('SENSEX')) return 10;
+    if (sym.includes('SENSEX')) {
+      if (totalOpenQuantity % 20 === 0) return 20;
+      if (totalOpenQuantity % 10 === 0) return 10;
+      return 20;
+    }
     if (contractMultiplier > 1) return contractMultiplier;
     return 1;
   }, [trade, totalOpenQuantity, contractMultiplier]);

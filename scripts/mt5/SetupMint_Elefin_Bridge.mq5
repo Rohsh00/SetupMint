@@ -208,6 +208,11 @@ bool SendJsonToSetupMint(string jsonPayload, bool handleCommands = true)
       }
       return false;
    }
+   else if(res < 200 || res >= 300)
+   {
+      Print("[SetupMint] WebRequest HTTP response error: ", res);
+      return false;
+   }
 
    // Process inbound execution commands from SetupMint
    if(handleCommands && ArraySize(resultData) > 0)
@@ -412,31 +417,45 @@ void SyncAllActivePositions()
 void CheckClosedDeals()
 {
    datetime now = TimeCurrent();
-   datetime fromTime = lastHistoryCheckTime > 0 ? lastHistoryCheckTime : (now - 300);
+   datetime fromTime = lastHistoryCheckTime > 0 ? (lastHistoryCheckTime - 30) : (now - 600);
    
    if(!HistorySelect(fromTime, now)) return;
    
+   // 1. Collect closed deals first so subsequent HistorySelectByPosition does not invalidate the buffer
+   ulong closedDeals[];
+   int closedCount = 0;
    int totalDeals = HistoryDealsTotal();
    for(int i = 0; i < totalDeals; i++)
    {
       ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket > 0)
+      if(dealTicket > 0 && !IsDealProcessed(dealTicket))
       {
-         if(IsDealProcessed(dealTicket)) continue;
-
          ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-         if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT) // Position closed or reversed
+         if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT || entry == DEAL_ENTRY_OUT_BY) // Position closed or reversed
          {
-            MarkDealProcessed(dealTicket);
-            ulong posTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
-            string sym = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
-            ENUM_DEAL_TYPE dealType = (ENUM_DEAL_TYPE)HistoryDealGetInteger(dealTicket, DEAL_TYPE);
-            double vol = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
-            double closePrice = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
-            double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-            double fee = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
-            double swap = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
-            datetime closeTime = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
+            ArrayResize(closedDeals, closedCount + 1);
+            closedDeals[closedCount++] = dealTicket;
+         }
+      }
+   }
+
+   for(int i = 0; i < closedCount; i++)
+   {
+      ulong dealTicket = closedDeals[i];
+      if(IsDealProcessed(dealTicket)) continue;
+      MarkDealProcessed(dealTicket);
+
+      if(!HistoryDealSelect(dealTicket)) continue;
+
+      ulong posTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+      string sym = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
+      ENUM_DEAL_TYPE dealType = (ENUM_DEAL_TYPE)HistoryDealGetInteger(dealTicket, DEAL_TYPE);
+      double vol = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
+      double closePrice = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+      double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
+      double fee = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+      double swap = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
+      datetime closeTime = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
 
             // 1. Retrieve true opening deal & price for this position
             datetime openTime = 0;
@@ -554,8 +573,6 @@ void CheckClosedDeals()
             json += "}";
 
             SendJsonToSetupMint(json, false);
-         }
-      }
    }
    lastHistoryCheckTime = now;
 }

@@ -427,6 +427,74 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       ? [req.body]
       : [];
 
+    // Reconcile open MT5 trades if the EA provides an authoritative positions snapshot
+    if (Array.isArray(req.body?.positions)) {
+      const activeTicketSet = new Set(
+        rawItems
+          .map((item) => String(item.ticket || item.id || item.ticket_id || item.order || '').trim())
+          .filter(Boolean)
+      );
+
+      const orphanedOpenTrades = await Trade.find({
+        userId: account.userId,
+        accountId: account._id,
+        status: 'OPEN',
+        tags: 'MT5',
+      });
+
+      for (const openTrade of orphanedOpenTrades) {
+        const ticketTag = (openTrade.tags || []).find((t: string) => t.startsWith('MT5_TICKET_'));
+        const tradeTicket = ticketTag ? ticketTag.replace('MT5_TICKET_', '').trim() : '';
+
+        if (tradeTicket && !activeTicketSet.has(tradeTicket)) {
+          // This trade was closed on MT5! Reconcile and close it cleanly
+          const exitPrice = openTrade.calculated?.liveMfeSummary?.peakLtp || openTrade.simpleExecution?.entryPrice || 0;
+          openTrade.status = 'CLOSED';
+          openTrade.exitTime = new Date();
+          if (openTrade.simpleExecution && (!openTrade.simpleExecution.exitPrice || openTrade.simpleExecution.exitPrice === 0)) {
+            openTrade.simpleExecution.exitPrice = exitPrice;
+          }
+          openTrade.calculated = InstrumentService.computeTradeCalculations(openTrade.toObject());
+          if (openTrade.calculated?.excursion?.status === 'PENDING') {
+            const peakPnl = openTrade.calculated?.liveMfeSummary?.peakFloatingNetPnL || 0;
+            const livePts = openTrade.calculated?.liveMfeSummary?.peakLtp
+              ? Math.abs(openTrade.calculated.liveMfeSummary.peakLtp - (openTrade.simpleExecution?.entryPrice || 0))
+              : 0;
+            openTrade.calculated.excursion = {
+              status: 'COMPUTED',
+              computedAt: new Date(),
+              source: 'MT5_LIVE',
+              provider: 'MT5_LIVE',
+              isUnderlyingFallback: false,
+              resolution: '1',
+              isLowResolution: false,
+              excursionVersion: 2,
+              thresholdVersion: 'v2',
+              mfePoints: livePts,
+              maePoints: 0,
+              mfeAmount: peakPnl,
+              maeAmount: 0,
+              mfeR: 0,
+              maeR: 0,
+              exitEfficiency: 1,
+              stopEfficiency: 1,
+              entryQualityScore: 1,
+              maeBeforeMfe: false,
+              timeOrdering: 'SIMULTANEOUS',
+              stopHit: false,
+              reversedAfterStopHit: false,
+              candleCount: 1,
+              excursionFlags: [],
+              warnings: [],
+            };
+          }
+          openTrade.markModified('calculated');
+          openTrade.markModified('simpleExecution');
+          await openTrade.save();
+        }
+      }
+    }
+
     if (rawItems.length === 0) {
       return reply.send({ ok: true, processed: 0, message: 'No positions in payload', commands: pendingCommands });
     }

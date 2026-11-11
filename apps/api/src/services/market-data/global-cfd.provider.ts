@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { ITradeCandle } from '@tradevault/shared';
 import { CandleFetchParams, CandleProviderResult, ICandleProvider } from './types.js';
+import { Mt5CommandService } from '../mt5-command.service.js';
 
 export interface GlobalLiveQuote {
   symbol: string;
@@ -152,6 +153,27 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
     for (const raw of symbols) {
       const clean = normalizeCleanSymbol(raw);
       if (!clean) continue;
+
+      // 1. Direct MT5 EA live quote check (highest priority, 100% exact broker quote)
+      const mt5Quote = Mt5CommandService.getLiveQuote(clean);
+      if (mt5Quote) {
+        const q: GlobalLiveQuote = {
+          symbol: clean,
+          tvTicker: 'MT5:' + clean,
+          ltp: mt5Quote.ltp,
+          open: mt5Quote.ltp,
+          high: Math.max(mt5Quote.ltp, mt5Quote.ask),
+          low: Math.min(mt5Quote.ltp, mt5Quote.bid),
+          changePct: 0,
+          changeAbs: 0,
+          timestamp: mt5Quote.timestamp,
+        };
+        this.quoteCache.set(clean, { quote: q, expiresAt: Date.now() + 2000 });
+        result.set(raw, q);
+        result.set(clean, q);
+        continue;
+      }
+
       const cached = this.quoteCache.get(clean);
       if (cached && cached.expiresAt > now) {
         result.set(raw, cached.quote);

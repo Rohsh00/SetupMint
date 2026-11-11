@@ -14,7 +14,7 @@
 //--- Input parameters
 input string   InpSetupMintUrl = "http://13.205.58.162/api/v1/integrations/mt5/webhook"; // SetupMint Webhook URL
 input string   InpToken        = "6af1fa0735d0f0f584d918bf"; // Account Webhook Token (or 'elefin')
-input int      InpSyncTimerSec = 3;                           // Periodic Sync Interval (Seconds)
+input int      InpSyncTimerSec = 1;                           // Periodic Sync Interval (Seconds, 1s for instant live ticks)
 
 //--- Global Variables
 datetime lastHistoryCheckTime = 0;
@@ -360,7 +360,7 @@ void ProcessSetupMintCommands(string responseJson)
 }
 
 //+------------------------------------------------------------------+
-//| Sync all active open positions                                   |
+//| Sync all active open positions & live market quotes              |
 //+------------------------------------------------------------------+
 void SyncAllActivePositions()
 {
@@ -368,8 +368,50 @@ void SyncAllActivePositions()
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
 
-   string json = "{\"token\":\"" + InpToken + "\",\"balance\":" + DoubleToString(balance, 2) + ",\"equity\":" + DoubleToString(equity, 2) + ",\"positions\":[";
-   
+   string json = "{\"token\":\"" + InpToken + "\",\"balance\":" + DoubleToString(balance, 2) + ",\"equity\":" + DoubleToString(equity, 2);
+
+   // Collect unique symbols: current chart symbol + open position symbols (up to 16)
+   string trackedSymbols[16];
+   int trackedCount = 0;
+   trackedSymbols[trackedCount++] = _Symbol;
+   for(int i = 0; i < total && trackedCount < 16; i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket > 0)
+      {
+         string psym = PositionGetString(POSITION_SYMBOL);
+         bool exists = false;
+         for(int s = 0; s < trackedCount; s++)
+         {
+            if(trackedSymbols[s] == psym) { exists = true; break; }
+         }
+         if(!exists) trackedSymbols[trackedCount++] = psym;
+      }
+   }
+
+   // 1. Live market quotes block (exact broker bid/ask/ltp)
+   json += ",\"quotes\":[";
+   for(int s = 0; s < trackedCount; s++)
+   {
+      string qsym = trackedSymbols[s];
+      double qBid = SymbolInfoDouble(qsym, SYMBOL_BID);
+      double qAsk = SymbolInfoDouble(qsym, SYMBOL_ASK);
+      double qLtp = qBid > 0 ? qBid : qAsk;
+      int qDigits = (int)SymbolInfoInteger(qsym, SYMBOL_DIGITS);
+      if(qDigits <= 0) qDigits = 2;
+
+      if(s > 0) json += ",";
+      json += "{";
+      json += "\"symbol\":\"" + qsym + "\",";
+      json += "\"bid\":" + DoubleToString(qBid, qDigits) + ",";
+      json += "\"ask\":" + DoubleToString(qAsk, qDigits) + ",";
+      json += "\"ltp\":" + DoubleToString(qLtp, qDigits) + ",";
+      json += "\"time\":\"" + FormatIsoUtc(TimeCurrent()) + "\"";
+      json += "}";
+   }
+   json += "],\"positions\":[";
+
+   // 2. Open positions block with live cur_price, bid, and ask
    int added = 0;
    for(int i = 0; i < total; i++)
    {
@@ -380,6 +422,12 @@ void SyncAllActivePositions()
          ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
          double vol = PositionGetDouble(POSITION_VOLUME);
          double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+         double curPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+         double posBid = SymbolInfoDouble(sym, SYMBOL_BID);
+         double posAsk = SymbolInfoDouble(sym, SYMBOL_ASK);
+         int posDigits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+         if(posDigits <= 0) posDigits = 2;
+
          double sl = PositionGetDouble(POSITION_SL);
          double tp = PositionGetDouble(POSITION_TP);
          datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
@@ -398,16 +446,19 @@ void SyncAllActivePositions()
          json += "\"symbol\":\"" + sym + "\",";
          json += "\"type\":\"" + (type == POSITION_TYPE_BUY ? "BUY" : "SELL") + "\",";
          json += "\"volume\":" + DoubleToString(vol, 2) + ",";
-         json += "\"price\":" + DoubleToString(openPrice, 5) + ",";
-         json += "\"sl\":" + DoubleToString(sl, 5) + ",";
-         json += "\"tp\":" + DoubleToString(tp, 5) + ",";
+         json += "\"price\":" + DoubleToString(openPrice, posDigits) + ",";
+         json += "\"cur_price\":" + DoubleToString(curPrice, posDigits) + ",";
+         json += "\"bid\":" + DoubleToString(posBid, posDigits) + ",";
+         json += "\"ask\":" + DoubleToString(posAsk, posDigits) + ",";
+         json += "\"sl\":" + DoubleToString(sl, posDigits) + ",";
+         json += "\"tp\":" + DoubleToString(tp, posDigits) + ",";
          json += "\"profit\":" + DoubleToString(profit, 2) + ",";
          json += "\"swap\":" + DoubleToString(swap, 2) + ",";
          json += "\"open_time\":\"" + FormatIsoUtc(openTime) + "\"";
          if(trackerIdx >= 0)
          {
-            json += ",\"mfe_price\":" + DoubleToString(g_excursions[trackerIdx].peakPrice, 5);
-            json += ",\"mae_price\":" + DoubleToString(g_excursions[trackerIdx].worstPrice, 5);
+            json += ",\"mfe_price\":" + DoubleToString(g_excursions[trackerIdx].peakPrice, posDigits);
+            json += ",\"mae_price\":" + DoubleToString(g_excursions[trackerIdx].worstPrice, posDigits);
             json += ",\"peak_profit\":" + DoubleToString(g_excursions[trackerIdx].peakProfit, 2);
             json += ",\"max_drawdown\":" + DoubleToString(g_excursions[trackerIdx].maxDrawdown, 2);
          }

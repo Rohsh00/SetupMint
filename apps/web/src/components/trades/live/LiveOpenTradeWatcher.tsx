@@ -1395,16 +1395,43 @@ export function LiveOpenTradeWatcher({
   };
 
   const getDataHealthBadge = (health?: ILiveDataHealth, provider?: string) => {
+    const isRealLive = provider === 'FYERS' || provider === 'MT5_LIVE';
     if (!health) {
+      const isMt5 = provider === 'MT5_LIVE';
       return {
-        label: provider === 'FYERS' ? 'FYERS LIVE' : 'SIMULATION',
-        sublabel: '',
-        color: provider === 'FYERS' ? '#10B981' : '#F59E0B',
-        bg: alpha(provider === 'FYERS' ? '#10B981' : '#F59E0B', 0.12),
-        tooltip: 'Waiting for live connection data...',
-        isSimulated: provider !== 'FYERS',
+        label: isMt5 ? '⚡ MT5 LIVE' : provider === 'FYERS' ? 'FYERS LIVE' : 'SIMULATION',
+        sublabel: isMt5 ? 'MT5 DIRECT' : '',
+        color: isRealLive ? '#10B981' : '#F59E0B',
+        bg: alpha(isRealLive ? '#10B981' : '#F59E0B', 0.12),
+        tooltip: isMt5 ? 'Real-time broker ticks from connected MT5 terminal' : 'Waiting for live connection data...',
+        isSimulated: !isRealLive,
         isStale: false,
-        canExecuteBroker: provider === 'FYERS',
+        canExecuteBroker: isRealLive,
+      };
+    }
+
+    if (health.provider === 'MT5_LIVE') {
+      if (health.connectionState === 'STALE') {
+        return {
+          label: `⚠️ MT5 STALE (${health.tickAgeSeconds}s)`,
+          sublabel: 'CHECK MT5 EA',
+          color: '#EF4444',
+          bg: alpha('#EF4444', 0.12),
+          tooltip: 'MT5 EA heartbeat has not updated recently. Ensure MT5 is running with the SetupMint EA attached.',
+          isSimulated: false,
+          isStale: true,
+          canExecuteBroker: false,
+        };
+      }
+      return {
+        label: '⚡ MT5 LIVE',
+        sublabel: 'DIRECT BROKER',
+        color: '#10B981',
+        bg: alpha('#10B981', 0.12),
+        tooltip: `Streaming real-time ticks directly from your connected MT5 terminal. Age: ${health.tickAgeSeconds}s`,
+        isSimulated: false,
+        isStale: false,
+        canExecuteBroker: true,
       };
     }
 
@@ -2608,6 +2635,21 @@ export function LiveOpenTradeWatcher({
                                     }}
                                   />
                                 </Tooltip>
+                              )}
+                              {pos.dataHealth?.provider === 'MT5_LIVE' && (
+                                <Chip
+                                  label="MT5 LIVE"
+                                  size="small"
+                                  sx={{
+                                    height: 18,
+                                    fontSize: '0.55rem',
+                                    fontWeight: 800,
+                                    color: '#10B981',
+                                    bgcolor: alpha('#10B981', 0.15),
+                                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                                    borderRadius: '4px',
+                                  }}
+                                />
                               )}
                               {pos.dataHealth?.provider === 'SIMULATED' && !pos.dataHealth?.isStale && (
                                 <Chip

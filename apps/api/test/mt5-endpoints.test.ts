@@ -122,5 +122,83 @@ Time	Position	Symbol	Type	Volume	Price	S / L	T / P	Time	Price	Commission	Swap	Pr
     const updatedAccount = await TradingAccount.findById(accountId);
     expect(Number(updatedAccount?.currentBalance?.toString())).toBeCloseTo(521.5, 2);
   });
+
+  it('streams real-time MT5 quotes & position prices via webhook with zero latency', async () => {
+    // 1. Send live MT5 webhook payload with quotes and active position
+    const webhookRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        token: accountId,
+        balance: 521.5,
+        equity: 556.5,
+        quotes: [
+          {
+            symbol: 'XAUUSD',
+            bid: 4018.5,
+            ask: 4018.75,
+            ltp: 4018.5,
+            time: new Date().toISOString(),
+          },
+        ],
+        positions: [
+          {
+            ticket: 888123,
+            symbol: 'XAUUSD',
+            type: 'BUY',
+            volume: 0.1,
+            price: 4015.0,
+            cur_price: 4018.5,
+            bid: 4018.5,
+            ask: 4018.75,
+            profit: 35.0,
+            open_time: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+
+    expect(webhookRes.statusCode).toBe(200);
+    const webhookBody = JSON.parse(webhookRes.body);
+    expect(webhookBody.ok).toBe(true);
+
+    // 2. Verify in-memory store in Mt5CommandService
+    const { Mt5CommandService } = await import('../src/services/mt5-command.service.js');
+    const quote = Mt5CommandService.getLiveQuote('XAUUSD', accountId);
+    expect(quote).toBeDefined();
+    expect(quote?.ltp).toBe(4018.5);
+    expect(quote?.bid).toBe(4018.5);
+    expect(quote?.ask).toBe(4018.75);
+
+    const posQuote = Mt5CommandService.getPositionQuote(888123);
+    expect(posQuote).toBeDefined();
+    expect(posQuote?.curPrice).toBe(4018.5);
+    expect(posQuote?.profit).toBe(35.0);
+
+    // 3. Verify GlobalCfdCandleProvider.getLiveQuotes uses MT5 quote directly
+    const { GlobalCfdCandleProvider } = await import('../src/services/market-data/global-cfd.provider.js');
+    const quotesMap = await GlobalCfdCandleProvider.getLiveQuotes(['XAUUSD']);
+    const xauQuote = quotesMap.get('XAUUSD');
+    expect(xauQuote).toBeDefined();
+    expect(xauQuote?.ltp).toBe(4018.5);
+    expect(xauQuote?.tvTicker).toBe('MT5:XAUUSD');
+
+    // 4. Verify Live Watcher resolves with MT5_LIVE provider
+    const watcherRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/trades/live/watcher?accountId=${accountId}`,
+      headers: { cookie: authCookie },
+    });
+
+    expect(watcherRes.statusCode).toBe(200);
+    const watcherBody = JSON.parse(watcherRes.body);
+    expect(watcherBody.success).toBe(true);
+    expect(watcherBody.data.positions.length).toBe(1);
+    const openPos = watcherBody.data.positions[0];
+    expect(openPos.symbol).toBe('XAUUSD');
+    expect(openPos.currentLtp).toBe(4018.5);
+    expect(openPos.provider).toBe('MT5_LIVE');
+    expect(openPos.dataHealth?.canExecuteBroker).toBe(true);
+  });
 });
 

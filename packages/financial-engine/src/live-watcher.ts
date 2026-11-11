@@ -30,7 +30,7 @@ Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export type StopThreatLevel = 'SAFE' | 'ATTENTION' | 'CRITICAL' | 'BREACHED' | 'NO_STOP';
 
-export type LiveQuoteProvider = 'FYERS' | 'ANGEL_ONE' | 'SIMULATED' | 'MIXED';
+export type LiveQuoteProvider = 'FYERS' | 'ANGEL_ONE' | 'SIMULATED' | 'MIXED' | 'MT5_LIVE';
 
 export interface ILiveQuote {
   symbol: string;
@@ -1263,6 +1263,20 @@ export function evaluateDataHealth(params: IEvaluateDataHealthParams): ILiveData
   if (params.provider === 'SIMULATED') {
     connectionState = isMarketOpen ? 'LIVE' : 'MARKET_CLOSED';
     isStale = false;
+  } else if (params.provider === 'MT5_LIVE') {
+    if (!isMarketOpen) {
+      connectionState = 'MARKET_CLOSED';
+      isStale = false;
+    } else if (tickAgeMs > thresholdMs) {
+      connectionState = 'STALE';
+      isStale = true;
+    } else if (tickAgeMs > 3000) {
+      connectionState = 'DELAYED';
+      isStale = false;
+    } else {
+      connectionState = 'LIVE';
+      isStale = false;
+    }
   } else {
     // FYERS / Real Broker
     if (params.hasActiveBrokerConnection === false || isTokenExpired) {
@@ -1287,6 +1301,10 @@ export function evaluateDataHealth(params: IEvaluateDataHealthParams): ILiveData
   let brokerExecutionBlockedReason: string | null = null;
   if (params.provider === 'SIMULATED') {
     brokerExecutionBlockedReason = 'Broker execution blocked: Simulated demo quotes active (Journal mode only)';
+  } else if (params.provider === 'MT5_LIVE') {
+    if (isStale) {
+      brokerExecutionBlockedReason = `Broker execution blocked: MT5 EA tick feed is stale (${(tickAgeMs / 1000).toFixed(1)}s old > ${thresholdSec}s threshold)`;
+    }
   } else if (isTokenExpired) {
     brokerExecutionBlockedReason = 'Broker execution blocked: FYERS broker session token has expired';
   } else if (connectionState === 'DISCONNECTED') {

@@ -523,8 +523,21 @@ export class LiveWatcherService {
         Boolean(trade.strikePrice) ||
         /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
 
+      const isMt5 = Mt5CommandService.isMt5Trade(trade, acc);
+      const mt5Ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+      const mt5PosQuote = mt5Ticket ? Mt5CommandService.getPositionQuote(mt5Ticket) : null;
+      const mt5SymQuote = isMt5 ? Mt5CommandService.getLiveQuote(trade.symbol, trade.accountId?.toString()) : null;
+
       let currentLtp: number;
-      if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
+      if (mt5PosQuote && mt5PosQuote.curPrice > 0) {
+        currentLtp = mt5PosQuote.curPrice;
+        provider = 'MT5_LIVE';
+        quoteTimestamp = mt5PosQuote.timestamp;
+      } else if (mt5SymQuote && mt5SymQuote.ltp > 0) {
+        currentLtp = mt5SymQuote.ltp;
+        provider = 'MT5_LIVE';
+        quoteTimestamp = mt5SymQuote.timestamp;
+      } else if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
         currentLtp = quote.ltp;
         provider = 'FYERS';
         quoteTimestamp = quote.timestamp
@@ -609,8 +622,8 @@ export class LiveWatcherService {
         asOf: new Date(),
         isMarketOpen: isTradeMarketOpen,
         staleThresholdSeconds: staleThresholdSec,
-        tokenExpiresAt,
-        hasActiveBrokerConnection: effectiveHasBroker,
+        tokenExpiresAt: provider === 'MT5_LIVE' ? undefined : tokenExpiresAt,
+        hasActiveBrokerConnection: effectiveHasBroker || provider === 'MT5_LIVE',
       });
 
       if (Mt5CommandService.isMt5Trade(trade, trade.accountId)) {
@@ -682,7 +695,6 @@ export class LiveWatcherService {
       }
 
       await this.enrichLiveMetric(metric, trade, fields, uId);
-      const isMt5 = Mt5CommandService.isMt5Trade(trade, acc);
       (metric as any).currency = trade.currency || (isForexOrCfdTrade ? 'USD' : 'INR');
       (metric as any).accountBroker = acc?.broker || (trade.accountId as any)?.broker || '';
       (metric as any).tags = trade.tags || [];
@@ -693,8 +705,12 @@ export class LiveWatcherService {
 
     const summaryProvider: LiveQuoteProvider = positions.length === 0
       ? 'SIMULATED'
+      : positions.every((p) => p.provider === 'MT5_LIVE')
+      ? 'MT5_LIVE'
       : positions.every((p) => p.provider === 'FYERS')
       ? 'FYERS'
+      : positions.some((p) => p.provider === 'MT5_LIVE')
+      ? 'MT5_LIVE'
       : positions.some((p) => p.provider === 'FYERS')
       ? 'FYERS'
       : 'SIMULATED';
@@ -1043,6 +1059,11 @@ export class LiveWatcherService {
     let currentLtp: number;
     let provider: LiveQuoteProvider = 'FYERS';
 
+    const isMt5 = Mt5CommandService.isMt5Trade(trade, tradeAccount);
+    const mt5Ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+    const mt5PosQuote = mt5Ticket ? Mt5CommandService.getPositionQuote(mt5Ticket) : null;
+    const mt5SymQuote = isMt5 ? Mt5CommandService.getLiveQuote(trade.symbol, trade.accountId?.toString()) : null;
+
     let quote: any;
     if (isFyersEligible && fyersSym) {
       try {
@@ -1056,7 +1077,13 @@ export class LiveWatcherService {
       }
     }
 
-    if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
+    if (mt5PosQuote && mt5PosQuote.curPrice > 0) {
+      currentLtp = mt5PosQuote.curPrice;
+      provider = 'MT5_LIVE';
+    } else if (mt5SymQuote && mt5SymQuote.ltp > 0) {
+      currentLtp = mt5SymQuote.ltp;
+      provider = 'MT5_LIVE';
+    } else if (isFyersEligible && quote && typeof quote.ltp === 'number' && quote.ltp > 0) {
       currentLtp = quote.ltp;
       provider = 'FYERS';
     } else {

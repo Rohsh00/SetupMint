@@ -166,6 +166,7 @@ export function LiveMarketChart({
   const volSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priceLinesRef = useRef<any[]>([]);
   const isFirstFitRef = useRef<boolean>(true);
+  const prevCandlesRef = useRef<any[]>([]);
 
   useEffect(() => {
     if (initialSymbol) {
@@ -201,13 +202,13 @@ export function LiveMarketChart({
     }
   };
 
-  // Fetch on symbol/resolution change + 5-second live polling
+  // Fetch on symbol/resolution change + 2-second live polling for low-latency updates
   useEffect(() => {
     isFirstFitRef.current = true;
     fetchLiveCandles(false);
     const timer = setInterval(() => {
       fetchLiveCandles(true);
-    }, 5000);
+    }, 2000);
     return () => clearInterval(timer);
   }, [symbol, resolution, accountId]);
 
@@ -376,12 +377,28 @@ export function LiveMarketChart({
       color: Number(c.close) >= Number(c.open) ? 'rgba(16, 185, 129, 0.32)' : 'rgba(244, 63, 94, 0.32)',
     }));
 
-    candleSeriesRef.current.setData(candles);
-    if (showVolume) {
-      volSeriesRef.current.setData(volumes);
+    const prevCandles = prevCandlesRef.current;
+    const canIncrementalUpdate =
+      !isFirstFitRef.current &&
+      prevCandles.length > 0 &&
+      prevCandles.length === candles.length &&
+      prevCandles[0]?.time === candles[0]?.time;
+
+    if (canIncrementalUpdate) {
+      // Smooth real-time update of the forming candle tick
+      candleSeriesRef.current.update(candles[candles.length - 1]);
+      if (showVolume && volumes.length > 0) {
+        volSeriesRef.current.update(volumes[volumes.length - 1]);
+      }
     } else {
-      volSeriesRef.current.setData([]);
+      candleSeriesRef.current.setData(candles);
+      if (showVolume) {
+        volSeriesRef.current.setData(volumes);
+      } else {
+        volSeriesRef.current.setData([]);
+      }
     }
+    prevCandlesRef.current = candles;
 
     // Clear old price lines
     for (const pl of priceLinesRef.current) {

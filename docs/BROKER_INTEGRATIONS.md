@@ -367,3 +367,63 @@ SetupMint supports discretionary live trade management through authenticated FYE
    - Forces IPv4 DNS lookups (`family: 4`) to eliminate dual-stack IPv6 latency.
    - Cleans all order tags to alphanumeric-only (`[a-zA-Z0-9]`) complying with FYERS API v3 schema rules.
 
+---
+
+## 12. MetaTrader 5 (MT5) Real-Time Bridge & Live Quote Streaming
+
+SetupMint includes an automated 2-way execution and real-time live trade & market data bridge for MetaTrader 5 (MT5):
+[`scripts/mt5/SetupMint_Elefin_Bridge.mq5`](file:///Users/komal/projects/Trading%20Vault/scripts/mt5/SetupMint_Elefin_Bridge.mq5).
+
+### Architecture & Capabilities
+1. **Sub-Second Tick Streaming (`quotes`):**
+   - The EA runs on a customizable timer (`InpSyncTimerSec = 1`, 1-second ticks).
+   - In `SyncAllActivePositions()`, it broadcasts the live Bid, Ask, and LTP for the chart symbol (`_Symbol`, e.g. `XAUUSD`) and any active positions with native broker decimal precision.
+2. **Position-Level Live Excursion & Current Price:**
+   - Transmits `cur_price` (`POSITION_PRICE_CURRENT`), `posBid`, `posAsk`, and `profit` for every active ticket.
+   - SetupMint's Live Open Trade Watcher displays the exact broker prices with the `⚡ MT5 LIVE` badge, matching MT5 terminal P&L to the cent.
+3. **2-Way Execution & Remote Modification:**
+   - Supports inbound commands from SetupMint: `MODIFY_SL`, `MODIFY_TP`, `CLOSE_POSITION`, and `FETCH_HISTORY`.
+   - On-chart green `[ ⚡ Sync SetupMint ]` button allows instant 1-tap manual synchronization of all deals and positions.
+
+### Step-by-Step: How to Run the EA in MetaTrader 5
+
+1. **Locate the EA Script:**
+   - Path: `scripts/mt5/SetupMint_Elefin_Bridge.mq5` in this repository.
+2. **Copy into MT5 Experts Folder:**
+   - In MT5, click **File → Open Data Folder**.
+   - Navigate into the **`MQL5/Experts`** directory.
+   - Copy `SetupMint_Elefin_Bridge.mq5` into this folder.
+3. **Compile in MetaEditor:**
+   - In MT5, press **F4** to open **MetaEditor**.
+   - In the Navigator pane on the left, expand `Experts` and double-click `SetupMint_Elefin_Bridge.mq5`.
+   - Press **F7** (or click **Compile**).
+   - Verify that the bottom compiler pane shows: `0 errors, 0 warnings`. This generates the compiled `SetupMint_Elefin_Bridge.ex5` file.
+4. **Authorize WebRequest in MT5 Options:**
+   - In MT5, navigate to **Tools → Options → Expert Advisors** (or press `Ctrl + O`).
+   - Check **"Allow Algo Trading"**.
+   - Check **"Allow WebRequest for listed URL"**.
+   - Add your SetupMint Webhook URL:
+     ```text
+     http://13.205.58.162/api/v1/integrations/mt5/webhook
+     ```
+     *(Or `http://127.0.0.1:4000/api/v1/integrations/mt5/webhook` if running locally).*
+   - Click **OK**.
+5. **Attach EA to a Chart:**
+   - In MT5's Navigator (`Ctrl + N`), expand **Expert Advisors**.
+   - Drag and drop `SetupMint_Elefin_Bridge` onto any active chart (e.g. `XAUUSD` 1-minute or 5-minute chart).
+   - In the popup dialog:
+     - **Common Tab:** Check **"Allow Algo Trading"**.
+     - **Inputs Tab:**
+       - `InpSetupMintUrl`: `http://13.205.58.162/api/v1/integrations/mt5/webhook`
+       - `InpToken`: Enter your Account ID or `elefin`.
+       - `InpSyncTimerSec`: Set to `1` for 1-second live ticks.
+     - Click **OK**.
+6. **Verify Live Connection:**
+   - The top-right chart icon will show a blue hat/smiling face.
+   - The Experts log tab at the bottom of MT5 will display:
+     `[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.20...`
+   - In SetupMint, open the Dashboard or Trades page:
+     - The Live Open Trade Watcher will show **`⚡ MT5 LIVE`**.
+     - The XAUUSD chart and live quotes will stream directly from your MT5 terminal without lag.
+
+

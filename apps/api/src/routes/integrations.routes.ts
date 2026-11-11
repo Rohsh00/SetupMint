@@ -381,7 +381,13 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     }
     if (!account) {
       account = await TradingAccount.findOne({
-        $or: [{ broker: /elefin/i }, { name: /elefin/i }],
+        $or: [
+          { broker: /elefin/i },
+          { name: /elefin/i },
+          { broker: /mt5/i },
+          { name: /mt5/i },
+          { 'profile.executionAdapterKey': 'ELEFIN_MT5' },
+        ],
         status: 'ACTIVE',
       });
     }
@@ -393,6 +399,21 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     // Record heartbeat for MT5 Bridge EA connection status
     Mt5CommandService.recordHeartbeat(account._id);
+
+    // Record incoming real-time market quotes from MT5 EA
+    if (Array.isArray(req.body?.quotes)) {
+      for (const q of req.body.quotes) {
+        if (q && q.symbol) {
+          Mt5CommandService.recordQuote(account._id, {
+            symbol: q.symbol,
+            bid: Number(q.bid) || 0,
+            ask: Number(q.ask) || 0,
+            ltp: Number(q.ltp) || Number(q.bid) || Number(q.ask) || 0,
+            timestamp: q.time ? new Date(q.time) : new Date(),
+          });
+        }
+      }
+    }
 
     // Process command execution acknowledgements from MT5 EA
     if (Array.isArray(req.body?.commandResults)) {
@@ -547,6 +568,32 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       const commission = Math.abs(parseFloat(item.commission || item.fee || 0) || 0);
       const swap = Math.abs(parseFloat(item.swap || 0) || 0);
       const rawAction = String(item.action || '').toUpperCase();
+
+      const curPrice = parseFloat(item.cur_price ?? item.current_price ?? item.price_current ?? 0) || 0;
+      const bid = parseFloat(item.bid ?? 0) || 0;
+      const ask = parseFloat(item.ask ?? 0) || 0;
+
+      if (ticketStr && curPrice > 0) {
+        Mt5CommandService.recordPositionQuote(ticketStr, {
+          curPrice,
+          bid,
+          ask,
+          profit,
+          symbol,
+          accountId: account._id,
+          timestamp: item.open_time ? new Date(item.open_time) : new Date(),
+        });
+      }
+
+      if (symbol && (curPrice > 0 || bid > 0)) {
+        Mt5CommandService.recordQuote(account._id, {
+          symbol,
+          bid: bid || curPrice,
+          ask: ask || curPrice,
+          ltp: curPrice || bid || ask,
+          timestamp: new Date(),
+        });
+      }
 
       const isClose =
         rawAction === 'CLOSE' ||

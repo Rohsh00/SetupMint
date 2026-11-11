@@ -2060,7 +2060,7 @@ export interface IEquityCurvesResponse {
 
 export type StopThreatLevel = 'SAFE' | 'ATTENTION' | 'CRITICAL' | 'BREACHED' | 'NO_STOP';
 
-export type LiveQuoteProvider = 'FYERS' | 'ANGEL_ONE' | 'SIMULATED' | 'MIXED';
+export type LiveQuoteProvider = 'FYERS' | 'ANGEL_ONE' | 'SIMULATED' | 'MIXED' | 'MT5_LIVE';
 
 export interface ILiveQuote {
   symbol: string;

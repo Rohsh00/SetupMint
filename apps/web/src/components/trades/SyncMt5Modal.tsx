@@ -118,9 +118,20 @@ export function SyncMt5Modal({ open, onClose, accountId, accountName }: SyncMt5M
     },
   });
 
+  const defaultWebhookUrl = 'http://13.205.58.162/api/v1/integrations/mt5/webhook';
+  const effectiveWebhookUrl =
+    typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.origin.startsWith('http')
+      ? `${window.location.origin}/api/v1/integrations/mt5/webhook`
+      : defaultWebhookUrl;
+
   const handleCopyWebhookUrl = () => {
-    navigator.clipboard.writeText('http://13.205.58.162/api/v1/integrations/mt5/webhook');
+    navigator.clipboard.writeText(effectiveWebhookUrl);
     toast.info('Webhook URL copied to clipboard!');
+  };
+
+  const handleCopyToken = () => {
+    navigator.clipboard.writeText(accountId || 'elefin');
+    toast.info('Account Token copied to clipboard!');
   };
 
   return (
@@ -311,29 +322,52 @@ export function SyncMt5Modal({ open, onClose, accountId, accountName }: SyncMt5M
                 borderColor: 'divider',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                  📌 MT5 BRIDGE CONFIGURATION &amp; ON-CHART BUTTON
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', letterSpacing: '0.04em' }}>
+                  📌 MT5 LIVE BRIDGE SETUP &amp; REAL-TIME TICKS
                 </Typography>
-                <Button
-                  size="small"
-                  startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 13 }} />}
-                  onClick={handleCopyWebhookUrl}
-                  sx={{ textTransform: 'none', fontSize: '0.7rem', py: 0.2 }}
-                >
-                  Copy Webhook URL
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 13 }} />}
+                    onClick={handleCopyWebhookUrl}
+                    sx={{ textTransform: 'none', fontSize: '0.7rem', py: 0.2 }}
+                  >
+                    Copy Webhook URL
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 13 }} />}
+                    onClick={handleCopyToken}
+                    sx={{ textTransform: 'none', fontSize: '0.7rem', py: 0.2 }}
+                  >
+                    Copy Token
+                  </Button>
+                </Box>
               </Box>
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
-                • Inside MT5: Click <strong>Tools → Options → Expert Advisors</strong> → Enable{' '}
-                <strong>"Allow WebRequest for listed URL"</strong> and add{' '}
-                <code style={{ color: '#10B981', fontWeight: 600 }}>
-                  http://13.205.58.162/api/v1/integrations/mt5/webhook
-                </code>
-                <br />
-                • The EA now displays a green{' '}
-                <strong>[ ⚡ Sync SetupMint ]</strong> button directly on your MT5 chart for 1-tap manual sync anytime!
-              </Typography>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, fontSize: '0.75rem', color: 'text.secondary' }}>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5 }}>
+                  <strong>Step 1:</strong> Place <code>SetupMint_Elefin_Bridge.mq5</code> in your MT5 <code>MQL5/Experts</code> directory (in MT5: <em>File → Open Data Folder → MQL5 → Experts</em>).
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5 }}>
+                  <strong>Step 2:</strong> In MetaEditor (press <strong>F4</strong>), open the file and press <strong>F7 (Compile)</strong>.
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5 }}>
+                  <strong>Step 3:</strong> In MT5, go to <strong>Tools → Options → Expert Advisors</strong>, check <strong>"Allow WebRequest for listed URL"</strong> and add:
+                  <Box component="span" sx={{ display: 'block', mt: 0.3, p: 0.5, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', borderRadius: 1, fontFamily: 'monospace', color: '#10B981', fontWeight: 700 }}>
+                    {effectiveWebhookUrl}
+                  </Box>
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5 }}>
+                  <strong>Step 4:</strong> Attach the EA to any chart (e.g. <code>XAUUSD</code>). Under the <strong>Inputs</strong> tab, set <code>InpToken</code> to <code>{accountId || 'elefin'}</code> and <code>InpSyncTimerSec = 1</code> for 1-second live ticks.
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5, color: '#10B981', fontWeight: 600 }}>
+                  ⚡ When connected, the Live Watcher shows a green <strong>MT5 LIVE</strong> badge and streams prices directly from your MT5 terminal!
+                </Typography>
+              </Box>
             </Box>
           </Box>
         )}

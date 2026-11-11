@@ -1,8 +1,141 @@
 import mongoose from 'mongoose';
 import { Mt5Command, IMt5CommandDoc } from '../db/models/Mt5Command.js';
 
+export interface Mt5LiveQuote {
+  symbol: string;
+  bid: number;
+  ask: number;
+  ltp: number;
+  timestamp: Date;
+  accountId: string;
+}
+
+export interface Mt5PositionQuote {
+  ticket: string;
+  symbol: string;
+  curPrice: number;
+  bid: number;
+  ask: number;
+  profit: number;
+  timestamp: Date;
+  accountId: string;
+}
+
 export class Mt5CommandService {
   private static lastActiveMap = new Map<string, number>();
+  private static quoteMap = new Map<string, Mt5LiveQuote>();
+  private static positionQuoteMap = new Map<string, Mt5PositionQuote>();
+  private static readonly MT5_QUOTE_TTL_MS = 45000; // 45 seconds
+
+  /**
+   * Records a live symbol quote (bid, ask, ltp) pushed from MT5 EA.
+   */
+  static recordQuote(
+    accountId: string | mongoose.Types.ObjectId,
+    quote: { symbol: string; bid?: number; ask?: number; ltp?: number; timestamp?: Date }
+  ): void {
+    if (!quote || !quote.symbol) return;
+    const cleanSym = quote.symbol.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const ltp =
+      quote.ltp && quote.ltp > 0
+        ? quote.ltp
+        : quote.bid && quote.bid > 0
+        ? quote.bid
+        : quote.ask && quote.ask > 0
+        ? quote.ask
+        : 0;
+    if (ltp <= 0) return;
+
+    const accIdStr = accountId ? accountId.toString() : '';
+    const entry: Mt5LiveQuote = {
+      symbol: cleanSym,
+      bid: quote.bid && quote.bid > 0 ? quote.bid : ltp,
+      ask: quote.ask && quote.ask > 0 ? quote.ask : ltp,
+      ltp,
+      timestamp: quote.timestamp || new Date(),
+      accountId: accIdStr,
+    };
+
+    Mt5CommandService.quoteMap.set(cleanSym, entry);
+    if (accIdStr) {
+      Mt5CommandService.quoteMap.set(`${accIdStr}:${cleanSym}`, entry);
+    }
+    // Also map XAUUSD if symbol is e.g. XAUUSDm, XAUUSDpro, GOLD
+    if (cleanSym.includes('XAU') || cleanSym === 'GOLD') {
+      Mt5CommandService.quoteMap.set('XAUUSD', entry);
+      if (accIdStr) {
+        Mt5CommandService.quoteMap.set(`${accIdStr}:XAUUSD`, entry);
+      }
+    }
+  }
+
+  /**
+   * Records position-level live current price, bid, ask, and profit reported from MT5 EA.
+   */
+  static recordPositionQuote(
+    ticket: string | number,
+    data: {
+      curPrice: number;
+      bid?: number;
+      ask?: number;
+      profit?: number;
+      symbol?: string;
+      accountId: string | mongoose.Types.ObjectId;
+      timestamp?: Date;
+    }
+  ): void {
+    const tStr = String(ticket).trim();
+    if (!tStr || !data || typeof data.curPrice !== 'number' || data.curPrice <= 0) return;
+
+    const accIdStr = data.accountId ? data.accountId.toString() : '';
+    const sym = data.symbol ? data.symbol.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+    const entry: Mt5PositionQuote = {
+      ticket: tStr,
+      symbol: sym,
+      curPrice: data.curPrice,
+      bid: data.bid && data.bid > 0 ? data.bid : data.curPrice,
+      ask: data.ask && data.ask > 0 ? data.ask : data.curPrice,
+      profit: data.profit || 0,
+      timestamp: data.timestamp || new Date(),
+      accountId: accIdStr,
+    };
+
+    Mt5CommandService.positionQuoteMap.set(tStr, entry);
+  }
+
+  /**
+   * Retrieves active live quote for a symbol reported by MT5 EA (within TTL).
+   */
+  static getLiveQuote(symbol: string, accountId?: string | mongoose.Types.ObjectId): Mt5LiveQuote | null {
+    if (!symbol) return null;
+    const cleanSym = symbol.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const accIdStr = accountId ? accountId.toString() : undefined;
+    const now = Date.now();
+
+    let quote = accIdStr ? Mt5CommandService.quoteMap.get(`${accIdStr}:${cleanSym}`) : undefined;
+    if (!quote) quote = Mt5CommandService.quoteMap.get(cleanSym);
+    if (!quote && (cleanSym.includes('XAU') || cleanSym === 'GOLD')) {
+      quote = accIdStr ? Mt5CommandService.quoteMap.get(`${accIdStr}:XAUUSD`) : Mt5CommandService.quoteMap.get('XAUUSD');
+    }
+
+    if (quote && now - quote.timestamp.getTime() <= Mt5CommandService.MT5_QUOTE_TTL_MS) {
+      return quote;
+    }
+    return null;
+  }
+
+  /**
+   * Retrieves active position-level live quote for a ticket (within TTL).
+   */
+  static getPositionQuote(ticket: string | number): Mt5PositionQuote | null {
+    const tStr = String(ticket).trim();
+    if (!tStr) return null;
+    const quote = Mt5CommandService.positionQuoteMap.get(tStr);
+    if (quote && Date.now() - quote.timestamp.getTime() <= Mt5CommandService.MT5_QUOTE_TTL_MS) {
+      return quote;
+    }
+    return null;
+  }
 
   /**
    * Records a heartbeat / webhook check-in from the MT5 EA bridge.

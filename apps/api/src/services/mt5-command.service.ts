@@ -2,6 +2,54 @@ import mongoose from 'mongoose';
 import { Mt5Command, IMt5CommandDoc } from '../db/models/Mt5Command.js';
 
 export class Mt5CommandService {
+  private static lastActiveMap = new Map<string, number>();
+
+  /**
+   * Records a heartbeat / webhook check-in from the MT5 EA bridge.
+   */
+  static recordHeartbeat(accountId: string | mongoose.Types.ObjectId): void {
+    if (!accountId) return;
+    Mt5CommandService.lastActiveMap.set(accountId.toString(), Date.now());
+  }
+
+  /**
+   * Checks whether the MT5 EA bridge has checked in within the last 60 seconds.
+   */
+  static getLastActive(accountId: string | mongoose.Types.ObjectId): { isActive: boolean; secondsAgo: number | null } {
+    if (!accountId) return { isActive: false, secondsAgo: null };
+    const ts = Mt5CommandService.lastActiveMap.get(accountId.toString());
+    if (!ts) return { isActive: false, secondsAgo: null };
+    const secondsAgo = Math.round((Date.now() - ts) / 1000);
+    return { isActive: secondsAgo <= 60, secondsAgo };
+  }
+
+  /**
+   * Queues an on-demand history fetch command for the MT5 EA bridge.
+   */
+  static async queueFetchHistory(params: {
+    userId: string | mongoose.Types.ObjectId;
+    accountId: string | mongoose.Types.ObjectId;
+  }): Promise<IMt5CommandDoc> {
+    // Supersede any pending fetch commands
+    await Mt5Command.updateMany(
+      {
+        accountId: params.accountId,
+        action: 'FETCH_HISTORY',
+        status: 'PENDING',
+      },
+      { $set: { status: 'FAILED', resultMessage: 'Superseded by newer history fetch request' } }
+    );
+
+    const cmd = await Mt5Command.create({
+      userId: params.userId,
+      accountId: params.accountId,
+      ticket: 0,
+      action: 'FETCH_HISTORY',
+      status: 'PENDING',
+    });
+
+    return cmd;
+  }
   /**
    * Checks whether a trade belongs to an MT5 / Elefin account.
    */

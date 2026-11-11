@@ -55,6 +55,7 @@ import { useTheme } from '../../context/ThemeContext.js';
 import { useAccountScope, useAccountCapabilities } from '../../context/AccountScopeContext.js';
 import { api } from '../../lib/api.js';
 import { TradeFormModal } from '../trades/TradeFormModal.js';
+import { SyncMt5Modal } from '../trades/SyncMt5Modal.js';
 import { TradeDrillDrawer } from '../drilldown/TradeDrillDrawer.js';
 import { SetupMintLogo } from '../brand/SetupMintLogo.js';
 import { CommandPalette } from './CommandPalette.js';
@@ -181,6 +182,19 @@ export function AppLayout() {
 
   const [isSyncingFyers, setIsSyncingFyers] = useState(false);
   const [isConnectingFyers, setIsConnectingFyers] = useState(false);
+  const [isSyncMt5Open, setIsSyncMt5Open] = useState(false);
+
+  const currentAccount =
+    accounts.find((a: any) => (a.id || a._id) === selectedAccountId) ||
+    accounts.find((a: any) => /ELEFIN|MT5/i.test(a.broker || a.name || '')) ||
+    accounts[0];
+
+  const isMt5Account =
+    caps.broker.adapter === 'ELEFIN_MT5' ||
+    currentAccount?.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+    /ELEFIN|MT5/i.test(currentAccount?.broker || '') ||
+    /ELEFIN|MT5/i.test(currentAccount?.name || '') ||
+    accounts.some((a: any) => /ELEFIN|MT5/i.test(a.broker || a.name || ''));
 
   const handleQuickFyersConnect = async () => {
     if (!isFyersConfigured) {
@@ -832,6 +846,44 @@ export function AppLayout() {
                 )
               )}
 
+              {/* Dynamic MT5 Broker Sync / Import Button */}
+              {isMt5Account && (
+                <Tooltip title="MetaTrader 5 Connected. Click to sync today’s trades or paste trade report." arrow>
+                  <Button
+                    id="quick-mt5-sync-btn"
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setIsSyncMt5Open(true)}
+                    startIcon={
+                      <SyncIcon
+                        sx={{
+                          fontSize: 16,
+                          color: '#22c55e',
+                        }}
+                      />
+                    }
+                    sx={{
+                      height: 36,
+                      borderRadius: 2,
+                      borderColor: 'rgba(34, 197, 94, 0.4)',
+                      color: isDark ? '#4ade80' : '#16a34a',
+                      backgroundColor: isDark ? 'rgba(34, 197, 94, 0.08)' : 'rgba(34, 197, 94, 0.06)',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      textTransform: 'none',
+                      px: 1.5,
+                      display: { xs: 'none', sm: 'inline-flex' },
+                      '&:hover': {
+                        borderColor: 'rgba(34, 197, 94, 0.7)',
+                        backgroundColor: isDark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.12)',
+                      },
+                    }}
+                  >
+                    Sync MT5
+                  </Button>
+                </Tooltip>
+              )}
+
               {/* Command Palette Trigger */}
               <Tooltip title="Quick Commands & Search (Cmd+K)" arrow>
                 <Button
@@ -1223,6 +1275,14 @@ export function AppLayout() {
 
       {/* Universal Trade Drilldown Drawer */}
       <TradeDrillDrawer />
+
+      {/* MT5 Sync & Trade Report Importer Modal */}
+      <SyncMt5Modal
+        open={isSyncMt5Open}
+        onClose={() => setIsSyncMt5Open(false)}
+        accountId={currentAccount?.id || currentAccount?._id}
+        accountName={currentAccount?.name}
+      />
     </Box>
   );
 }

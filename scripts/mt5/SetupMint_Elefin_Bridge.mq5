@@ -127,6 +127,8 @@ void MarkDealProcessed(ulong ticket)
 void ProcessSetupMintCommands(string responseJson);
 void SyncAllActivePositions();
 void CheckClosedDeals();
+void SyncAllTodayClosedDeals();
+void CreateOnChartSyncButton();
 
 //+------------------------------------------------------------------+
 //| Helper string parsers for lightweight JSON decoding              |
@@ -262,12 +264,19 @@ void ProcessSetupMintCommands(string responseJson)
       double tp = ExtractJsonNumber(cmdObj, "takeProfit");
       double volume = ExtractJsonNumber(cmdObj, "volume");
       
-      if(ticket <= 0 || StringLen(action) == 0) continue;
+      if((ticket <= 0 && action != "FETCH_HISTORY") || StringLen(action) == 0) continue;
       
       bool success = false;
       string msg = "";
       
-      if(action == "MODIFY_SL")
+      if(action == "FETCH_HISTORY")
+      {
+         Print("[SetupMint] ⚡ FETCH_HISTORY command received from SetupMint! Syncing all today's closed deals...");
+         SyncAllTodayClosedDeals();
+         success = true;
+         msg = "All today's deals pushed to SetupMint";
+      }
+      else if(action == "MODIFY_SL")
       {
          if(PositionSelectByTicket(ticket))
          {
@@ -578,28 +587,63 @@ void CheckClosedDeals()
 }
 
 //+------------------------------------------------------------------+
+//| Force-sync all today's closed deals from MT5 Deal History        |
+//+------------------------------------------------------------------+
+void SyncAllTodayClosedDeals()
+{
+   datetime now = TimeCurrent();
+   MqlDateTime dt;
+   TimeToStruct(now, dt);
+   dt.hour = 0; dt.min = 0; dt.sec = 0;
+   datetime startOfDay = StructToTime(dt);
+   datetime fromTime = (now - 86400) < startOfDay ? (now - 86400) : startOfDay;
+
+   Print("[SetupMint] ⚡ Querying all closed deals since ", TimeToString(fromTime), "...");
+   lastHistoryCheckTime = fromTime;
+   CheckClosedDeals();
+}
+
+//+------------------------------------------------------------------+
+//| Create visual 1-click sync button on MT5 chart                   |
+//+------------------------------------------------------------------+
+void CreateOnChartSyncButton()
+{
+   string btnName = "SetupMint_SyncBtn";
+   ObjectDelete(0, btnName);
+   if(ObjectCreate(0, btnName, OBJ_BUTTON, 0, 0, 0))
+   {
+      ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, 20);
+      ObjectSetInteger(0, btnName, OBJPROP_YDISTANCE, 50);
+      ObjectSetInteger(0, btnName, OBJPROP_XSIZE, 175);
+      ObjectSetInteger(0, btnName, OBJPROP_YSIZE, 32);
+      ObjectSetString(0, btnName, OBJPROP_TEXT, "⚡ Sync SetupMint");
+      ObjectSetString(0, btnName, OBJPROP_FONT, "Segoe UI");
+      ObjectSetInteger(0, btnName, OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(0, btnName, OBJPROP_COLOR, clrWhite);
+      ObjectSetInteger(0, btnName, OBJPROP_BGCOLOR, C'34,197,94'); // Green
+      ObjectSetInteger(0, btnName, OBJPROP_BORDER_COLOR, C'22,163,74');
+      ObjectSetInteger(0, btnName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, btnName, OBJPROP_SELECTABLE, false);
+      ChartRedraw(0);
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.10 (MFE/MAE Zero-Discrepancy Engine)...");
+   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.20 (Zero-Discrepancy Engine)...");
    m_trade.SetExpertMagicNumber(1998);
    m_trade.SetDeviationInPoints(30);
 
    EventSetTimer(InpSyncTimerSec);
    
-   // Seed already closed deals into deduplication buffer so restart never duplicates
-   datetime now = TimeCurrent();
-   if(HistorySelect(now - 7200, now))
-   {
-      int total = HistoryDealsTotal();
-      for(int i = 0; i < total; i++)
-      {
-         ulong dt = HistoryDealGetTicket(i);
-         if(dt > 0) MarkDealProcessed(dt);
-      }
-   }
-   lastHistoryCheckTime = now;
+   // Query and sync all today's deals upon start/restart (ensures zero missed trades)
+   SyncAllTodayClosedDeals();
+   
+   // Create on-chart 1-Click Sync Button
+   CreateOnChartSyncButton();
    
    // Ping SetupMint server
    string pingJson = "{\"token\":\"" + InpToken + "\",\"action\":\"PING\"}";
@@ -617,6 +661,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   ObjectDelete(0, "SetupMint_SyncBtn");
    Print("[SetupMint] SetupMint Bridge EA stopped.");
 }
 
@@ -654,5 +699,23 @@ void OnTimer()
    UpdateExcursionTracking();
    SyncAllActivePositions();
    CheckClosedDeals();
+}
+
+//+------------------------------------------------------------------+
+//| Chart Event handler (1-Click On-Chart Sync Button)               |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id,
+                  const long &lparam,
+                  const double &dparam,
+                  const string &sparam)
+{
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == "SetupMint_SyncBtn")
+   {
+      Print("[SetupMint] ⚡ User clicked On-Chart 'Sync SetupMint' button! Syncing all today's deals & positions...");
+      SyncAllTodayClosedDeals();
+      SyncAllActivePositions();
+      ObjectSetInteger(0, "SetupMint_SyncBtn", OBJPROP_STATE, false);
+      ChartRedraw(0);
+   }
 }
 //+------------------------------------------------------------------+

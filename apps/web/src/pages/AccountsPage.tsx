@@ -51,6 +51,7 @@ import { formatCurrency } from '../lib/utils.js';
 import { resolveAccountUiCapabilities } from '@tradevault/financial-engine';
 import { HelpHint } from '../components/help/index.js';
 import { PropFirmAccountCard } from '../components/accounts/PropFirmAccountCard.js';
+import { SyncMt5Modal } from '../components/trades/SyncMt5Modal.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
 
 export function AccountsPage() {
@@ -70,6 +71,8 @@ export function AccountsPage() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [selectedAccountForPending, setSelectedAccountForPending] = useState<any>(null);
+  const [isSyncMt5Open, setIsSyncMt5Open] = useState(false);
+  const [selectedMt5Account, setSelectedMt5Account] = useState<any>(null);
 
   // New Account state
   const [name, setName] = useState('');
@@ -953,6 +956,25 @@ export function AccountsPage() {
                           </Button>
                           <HelpHint hintKey="account.pendingAdjustment" />
                         </>
+                      )}
+
+                      {(accCaps.broker.adapter === 'ELEFIN_MT5' ||
+                        acc.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+                        /ELEFIN|MT5/i.test(acc.broker || '') ||
+                        /ELEFIN|MT5/i.test(acc.name || '')) && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          startIcon={<SyncRounded sx={{ fontSize: 16 }} />}
+                          onClick={() => {
+                            setSelectedMt5Account(acc);
+                            setIsSyncMt5Open(true);
+                          }}
+                          sx={{ fontSize: '0.75rem', fontWeight: 600 }}
+                        >
+                          Sync MT5 Trades
+                        </Button>
                       )}
                     </Box>
 
@@ -1877,6 +1899,16 @@ export function AccountsPage() {
             </Button>
           </DialogActions>
         </Dialog>
+      )}
+
+      {/* Sync MT5 Modal */}
+      {selectedMt5Account && (
+        <SyncMt5Modal
+          open={isSyncMt5Open}
+          onClose={() => setIsSyncMt5Open(false)}
+          accountId={selectedMt5Account?.id}
+          accountName={selectedMt5Account?.name}
+        />
       )}
     </Box>
   );

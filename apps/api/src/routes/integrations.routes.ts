@@ -391,6 +391,9 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       return reply.status(404).send({ success: false, error: 'Trading account not found' });
     }
 
+    // Record heartbeat for MT5 Bridge EA connection status
+    Mt5CommandService.recordHeartbeat(account._id);
+
     // Process command execution acknowledgements from MT5 EA
     if (Array.isArray(req.body?.commandResults)) {
       await Mt5CommandService.processCommandResults(req.body.commandResults);
@@ -472,7 +475,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               openTrade.markModified('fills');
             }
           }
-          openTrade.calculated = InstrumentService.computeTradeCalculations(openTrade.toObject());
+          openTrade.calculated = InstrumentService.computeTradeCalculations({
+            ...openTrade.toObject(),
+            broker: account.broker,
+            positionModel: 'HEDGING',
+          });
           if (openTrade.calculated?.excursion?.status === 'PENDING') {
             const peakPnl = openTrade.calculated?.liveMfeSummary?.peakFloatingNetPnL || 0;
             const livePts = openTrade.calculated?.liveMfeSummary?.peakLtp
@@ -737,7 +744,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 trade.markModified('fills');
               }
             }
-            const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
+            const recalced = InstrumentService.computeTradeCalculations({
+              ...trade.toObject(),
+              broker: account.broker,
+              positionModel: 'HEDGING',
+            });
             trade.calculated = recalced;
             trade.markModified('calculated');
             trade.markModified('simpleExecution');
@@ -782,7 +793,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const closeDate = trade.exitTime || (item.close_time ? new Date(item.close_time) : new Date());
 
           const prevExcursion = trade.calculated?.excursion;
-          const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
+          const recalced = InstrumentService.computeTradeCalculations({
+            ...trade.toObject(),
+            broker: account.broker,
+            positionModel: 'HEDGING',
+          });
 
           const mt5Excursion = computeMt5LiveExcursion({
             direction: trade.direction,

@@ -22,6 +22,9 @@ import {
 } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
+import { InstrumentService } from '../services/instrument.service.js';
+import { Mt5CommandService } from '../services/mt5-command.service.js';
+import { parseMt5Report, getMt5ContractSpec, computeMt5LiveExcursion } from '../services/mt5-report-parser.js';
 import { AccountScopeService } from '../services/account-scope.service.js';
 import { EconomicCalendarService } from '../services/economic-calendar.service.js';
 import { PropMonteCarloService } from '../services/prop-monte-carlo.service.js';
@@ -1758,6 +1761,340 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         nextPayoutDate,
         netCareerRoi: Number((totalPayoutsReceived - evaluationFeePaid).toFixed(2)),
       },
+    });
+  });
+
+  // Request MT5 EA Bridge to fetch & sync today's deal history
+  app.post('/:id/mt5-fetch-history', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    const cmd = await Mt5CommandService.queueFetchHistory({
+      userId: req.user!.id,
+      accountId: account._id,
+    });
+
+    const status = Mt5CommandService.getLastActive(account._id);
+
+    return reply.send({
+      success: true,
+      data: {
+        commandId: cmd._id.toString(),
+        queued: true,
+        eaActive: status.isActive,
+        lastActiveSecondsAgo: status.secondsAgo,
+        message: status.isActive
+          ? 'History fetch command queued to connected MT5 EA. The EA will sync all today’s deals momentarily.'
+          : 'Command queued to MT5 Bridge. If MT5 is closed, please start MT5 with the SetupMint EA attached or paste the trades report below.',
+      },
+    });
+  });
+
+  // Get MT5 Bridge EA connection status
+  app.get('/:id/mt5-status', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    const status = Mt5CommandService.getLastActive(account._id);
+    return reply.send({
+      success: true,
+      data: {
+        eaActive: status.isActive,
+        secondsAgo: status.secondsAgo,
+        accountName: account.name,
+        broker: account.broker,
+      },
+    });
+  });
+
+  // 1-Click MetaTrader 5 (MT5) Trade & Report Importer
+  app.post('/:id/mt5-import-trades', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const account = await TradingAccount.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!account) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Account not found' },
+      });
+    }
+
+    const rawText = String(req.body?.rawText || '').trim();
+    const defaultRr = Number(req.body?.defaultRiskReward || 2) || 2;
+    if (!rawText) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'EMPTY_INPUT', message: 'Please paste MT5 trade history, HTML report, or CSV' },
+      });
+    }
+
+    const parsedTrades = parseMt5Report(rawText);
+    if (parsedTrades.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'PARSE_FAILED',
+          message: 'Could not detect any valid MT5 trade rows in the input. Ensure you copied rows from MT5 History or pasted an MT5 report.',
+        },
+      });
+    }
+
+    let insertedCount = 0;
+    let updatedCount = 0;
+    const processedTrades: any[] = [];
+
+    for (const item of parsedTrades) {
+      const ticketStr = item.ticket;
+      const symbol = item.symbol;
+      const direction = item.direction;
+      const volume = item.volume;
+      const entryPrice = item.entryPrice;
+      const exitPrice = item.exitPrice || entryPrice;
+      const profit = item.profit;
+      const commission = item.commission;
+      const swap = item.swap;
+      const isClosed = item.status === 'CLOSED';
+      const openDate = item.openTime;
+      const closeDate = item.closeTime || new Date();
+      const spec = getMt5ContractSpec(symbol);
+
+      let instrument = await Instrument.findOne({ userId: req.user!.id, symbol });
+      if (!instrument) {
+        instrument = await Instrument.create({
+          userId: req.user!.id,
+          symbol,
+          displayName: spec.displayName,
+          assetClass: spec.assetClass,
+          exchange: spec.exchange,
+          marketSegment: spec.marketSegment,
+          quoteCurrency: account.baseCurrency || 'USD',
+          contractMultiplier: spec.multiplier,
+          lotSize: spec.lotSize,
+          tickSize: spec.tickSize,
+          quantityIncrement: spec.lotSize,
+          pricePrecision: 2,
+          isActive: true,
+          source: 'AUTO',
+        });
+      }
+
+      const priceDiff = direction === 'LONG' ? exitPrice - entryPrice : entryPrice - exitPrice;
+      const grossPnL = profit !== 0 ? profit : Number((priceDiff * volume * spec.multiplier).toFixed(2));
+      const totalCosts = Number((commission + swap).toFixed(2));
+      const netPnL = Number((grossPnL - totalCosts).toFixed(2));
+
+      // Calculate SL & Target if missing
+      let stopLoss = item.stopLoss;
+      let takeProfit = item.takeProfit;
+
+      if (!stopLoss || stopLoss <= 0) {
+        if (!isClosed) {
+          const defaultRiskPts = Number((entryPrice * 0.001).toFixed(2));
+          stopLoss = Number((direction === 'LONG' ? entryPrice - defaultRiskPts : entryPrice + defaultRiskPts).toFixed(2));
+          takeProfit = Number((direction === 'LONG' ? entryPrice + defaultRiskPts * defaultRr : entryPrice - defaultRiskPts * defaultRr).toFixed(2));
+        } else if (netPnL <= 0) {
+          stopLoss = exitPrice;
+          const slDist = Math.max(0.01, Math.abs(exitPrice - entryPrice));
+          takeProfit = Number((direction === 'LONG' ? entryPrice + slDist * defaultRr : entryPrice - slDist * defaultRr).toFixed(2));
+        } else {
+          takeProfit = exitPrice;
+          const rewardDist = Math.max(0.02, Math.abs(exitPrice - entryPrice));
+          const slDist = rewardDist / defaultRr;
+          stopLoss = Number((direction === 'LONG' ? entryPrice - slDist : entryPrice + slDist).toFixed(2));
+        }
+      }
+
+      const mt5Excursion = computeMt5LiveExcursion({
+        direction,
+        entryPrice,
+        exitPrice,
+        initialStopLoss: stopLoss,
+        volume,
+        contractMultiplier: spec.multiplier,
+        netPnL,
+        openTime: openDate,
+        closeTime: closeDate,
+      });
+
+      const ticketTag = `MT5_TICKET_${ticketStr}`;
+      let trade = await Trade.findOne({
+        userId: req.user!.id,
+        accountId: account._id,
+        $or: [{ tags: ticketTag }, { importBatchId: `MT5_${ticketStr}` }],
+      });
+
+      if (!trade) {
+        // Create new trade
+        const fills: any[] = [
+          {
+            fillId: `mt5_${ticketStr}_entry`,
+            timestamp: openDate,
+            type: 'ENTRY',
+            price: entryPrice,
+            quantity: volume,
+            fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
+          },
+        ];
+        if (isClosed) {
+          fills.push({
+            fillId: `mt5_${ticketStr}_exit`,
+            timestamp: closeDate,
+            type: 'EXIT',
+            price: exitPrice,
+            quantity: volume,
+            fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
+          });
+        }
+
+        trade = await Trade.create({
+          userId: req.user!.id,
+          accountId: account._id,
+          instrumentId: instrument._id,
+          underlying: symbol,
+          symbol,
+          tradeTitle: `${symbol} ${direction} (Elefin #${ticketStr})`,
+          assetClass: spec.assetClass,
+          exchange: spec.exchange,
+          marketSegment: spec.marketSegment,
+          currency: account.baseCurrency || 'USD',
+          direction,
+          status: isClosed ? 'CLOSED' : 'OPEN',
+          tradeDate: openDate,
+          entryTime: openDate,
+          exitTime: isClosed ? closeDate : undefined,
+          tags: ['ELEFIN', 'MT5', ticketTag],
+          importBatchId: `MT5_${ticketStr}`,
+          executionMode: 'SIMPLE',
+          simpleExecution: {
+            contractMultiplier: spec.multiplier,
+            entryPrice,
+            exitPrice: isClosed ? exitPrice : undefined,
+            quantity: volume,
+            brokerage: commission,
+            taxes: 0,
+            exchangeFees: 0,
+            regulatoryFees: 0,
+            otherFees: swap,
+            explicitAdjustments: 0,
+          },
+          fills,
+          risk: {
+            initialStopLoss: stopLoss,
+            currentStopLoss: stopLoss,
+            plannedTarget: takeProfit,
+            riskRuleViolations: [],
+          },
+          calculated: {
+            averageEntryPrice: entryPrice,
+            averageExitPrice: isClosed ? exitPrice : undefined,
+            openQuantity: isClosed ? 0 : volume,
+            closedQuantity: isClosed ? volume : 0,
+            totalCosts,
+            grossPnL: isClosed ? grossPnL : 0,
+            netPnL: isClosed ? netPnL : 0,
+            outcome: isClosed ? (netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN') : 'OPEN',
+            excursion: isClosed ? mt5Excursion : undefined,
+          },
+        });
+        insertedCount++;
+      } else {
+        // Update existing trade
+        trade.status = isClosed ? 'CLOSED' : 'OPEN';
+        trade.exitTime = isClosed ? closeDate : undefined;
+        trade.executionMode = 'SIMPLE';
+        if (trade.simpleExecution) {
+          trade.simpleExecution.entryPrice = entryPrice;
+          if (isClosed) trade.simpleExecution.exitPrice = exitPrice;
+          trade.simpleExecution.quantity = volume;
+          if (commission > 0) trade.simpleExecution.brokerage = commission;
+          if (swap > 0) trade.simpleExecution.otherFees = swap;
+        }
+
+        const fills: any[] = [
+          {
+            fillId: `mt5_${ticketStr}_entry`,
+            timestamp: openDate,
+            type: 'ENTRY',
+            price: entryPrice,
+            quantity: volume,
+            fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
+          },
+        ];
+        if (isClosed) {
+          fills.push({
+            fillId: `mt5_${ticketStr}_exit`,
+            timestamp: closeDate,
+            type: 'EXIT',
+            price: exitPrice,
+            quantity: volume,
+            fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
+          });
+        }
+        trade.fills = fills as any;
+        trade.markModified('fills');
+
+        trade.risk = trade.risk || {};
+        if (stopLoss && (!trade.risk.initialStopLoss || trade.risk.initialStopLoss === 0)) {
+          trade.risk.initialStopLoss = stopLoss;
+          trade.risk.currentStopLoss = stopLoss;
+        }
+        if (takeProfit && (!trade.risk.plannedTarget || trade.risk.plannedTarget === 0)) {
+          trade.risk.plannedTarget = takeProfit;
+        }
+        trade.markModified('risk');
+
+        const recalced = InstrumentService.computeTradeCalculations({
+          ...trade.toObject(),
+          broker: account.broker,
+          positionModel: 'HEDGING',
+        });
+        trade.calculated = {
+          ...recalced,
+          excursion: isClosed ? mt5Excursion : trade.calculated?.excursion,
+        };
+        trade.markModified('calculated');
+        trade.markModified('simpleExecution');
+        await trade.save();
+        updatedCount++;
+      }
+
+      processedTrades.push({
+        id: trade._id.toString(),
+        ticket: ticketStr,
+        symbol,
+        direction,
+        volume,
+        entryPrice,
+        exitPrice,
+        profit: trade.calculated?.netPnL || netPnL,
+        status: trade.status,
+      });
+    }
+
+    // Authoritative balance recalculation
+    const summary = await AccountService.recalculateAccountBalances(account._id, account.userId);
+    const updatedAccount = await TradingAccount.findById(account._id).lean();
+
+    return reply.send({
+      success: true,
+      totalProcessed: parsedTrades.length,
+      insertedCount,
+      updatedCount,
+      trades: processedTrades,
+      balanceSummary: {
+        initialBalance: updatedAccount?.initialBalance,
+        currentBalance: updatedAccount?.currentBalance,
+        calculatedFrom: summary,
+      },
+      message: `Successfully processed ${parsedTrades.length} MT5 trade(s): ${insertedCount} new, ${updatedCount} updated. Balance reconciled: $${Number(updatedAccount?.currentBalance || 0).toFixed(2)}`,
     });
   });
 };

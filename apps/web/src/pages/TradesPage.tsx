@@ -45,6 +45,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRightRounded';
 import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 
@@ -53,6 +54,7 @@ import { toast } from '../context/ToastContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { formatCurrency, formatPercent, formatPrice, formatR } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
+import { SyncMt5Modal } from '../components/trades/SyncMt5Modal.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
@@ -63,11 +65,23 @@ import { HelpHint } from '../components/help/index.js';
 
 export function TradesPage() {
   const queryClient = useQueryClient();
-  const { scope, isPropMode, queryParams, selectedAccountId, propAccounts } = useAccountScope();
+  const { scope, isPropMode, queryParams, selectedAccountId, propAccounts, accounts } = useAccountScope();
   const caps = useAccountCapabilities();
   const { startDate, endDate } = useDateRange();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+
+  const [isSyncMt5Open, setIsSyncMt5Open] = useState(false);
+  const mt5TargetAccount =
+    (accounts || []).find((a: any) => (a.id || a._id) === selectedAccountId) ||
+    (accounts || []).find((a: any) => /ELEFIN|MT5/i.test(a.broker || a.name || '')) ||
+    (accounts || [])[0];
+  const hasMt5 =
+    caps.broker.adapter === 'ELEFIN_MT5' ||
+    mt5TargetAccount?.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+    /ELEFIN|MT5/i.test(mt5TargetAccount?.broker || '') ||
+    /ELEFIN|MT5/i.test(mt5TargetAccount?.name || '') ||
+    (accounts || []).some((a: any) => /ELEFIN|MT5/i.test(a.broker || a.name || ''));
 
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
@@ -344,6 +358,29 @@ export function TradesPage() {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          {/* Sync MT5 button */}
+          {hasMt5 && (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setIsSyncMt5Open(true)}
+              startIcon={<SyncRoundedIcon fontSize="small" sx={{ color: '#22c55e' }} />}
+              sx={{
+                fontWeight: 700,
+                fontSize: '0.8125rem',
+                borderColor: 'rgba(34, 197, 94, 0.4)',
+                color: isDark ? '#4ade80' : '#16a34a',
+                backgroundColor: isDark ? 'rgba(34, 197, 94, 0.08)' : 'rgba(34, 197, 94, 0.05)',
+                '&:hover': {
+                  borderColor: 'rgba(34, 197, 94, 0.7)',
+                  backgroundColor: isDark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)',
+                },
+              }}
+            >
+              Sync MT5
+            </Button>
+          )}
+
           {/* Import CSV button */}
           <Button
             component={RouterLink}
@@ -1235,6 +1272,14 @@ export function TradesPage() {
         isOpen={isNewTradeModalOpen}
         onClose={() => setIsNewTradeModalOpen(false)}
         defaultAccountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+      />
+
+      {/* Sync MT5 Modal */}
+      <SyncMt5Modal
+        open={isSyncMt5Open}
+        onClose={() => setIsSyncMt5Open(false)}
+        accountId={mt5TargetAccount?.id || mt5TargetAccount?._id}
+        accountName={mt5TargetAccount?.name}
       />
 
       {/* Edit Trade Modal */}

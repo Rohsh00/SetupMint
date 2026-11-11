@@ -404,13 +404,30 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     if (Array.isArray(req.body?.quotes)) {
       for (const q of req.body.quotes) {
         if (q && q.symbol) {
+          const bid = Number(q.bid) || 0;
+          const ask = Number(q.ask) || 0;
           Mt5CommandService.recordQuote(account._id, {
             symbol: q.symbol,
-            bid: Number(q.bid) || 0,
-            ask: Number(q.ask) || 0,
-            ltp: Number(q.ltp) || Number(q.bid) || Number(q.ask) || 0,
+            bid,
+            ask,
+            ltp: Number(q.ltp) || bid || ask || 0,
             timestamp: q.time ? new Date(q.time) : new Date(),
           });
+
+          // Gold Spread Spike & Rollover Warning Check
+          const isGold = (q.symbol || '').includes('XAU') || q.symbol === 'GOLD';
+          if (isGold && ask > 0 && bid > 0) {
+            const spreadPips = (ask - bid) / 0.10;
+            if (spreadPips >= 3.5) {
+              TelegramAlertService.checkAndDispatchSpreadWarning(
+                account.userId,
+                q.symbol,
+                spreadPips,
+                ask,
+                bid
+              ).catch(() => {});
+            }
+          }
         }
       }
     }
@@ -537,6 +554,15 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           openTrade.markModified('calculated');
           openTrade.markModified('simpleExecution');
           await openTrade.save();
+
+          const userDoc = await User.findById(account.userId).lean();
+          if (userDoc) {
+            TelegramAlertService.notifyTradeClosed(userDoc, openTrade, {
+              netPnL: openTrade.calculated?.netPnL || 0,
+              exitPrice,
+              exitReason: 'Closed on MT5 Terminal',
+            }).catch(() => {});
+          }
         }
       }
     }

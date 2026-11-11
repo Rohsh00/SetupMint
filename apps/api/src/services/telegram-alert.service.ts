@@ -77,6 +77,7 @@ export class TelegramAlertService {
   private static TELEGRAM_API_BASE = 'https://api.telegram.org';
   private static recentAlerts = new Map<string, number>();
   private static DEBOUNCE_MS = 10 * 1000; // 10s throttle for flat alerts
+  private static spreadWarningTimestamps = new Map<string, number>();
 
   /**
    * Deterministic Webhook Secret Token derived from server configuration.
@@ -928,6 +929,31 @@ export class TelegramAlertService {
 
     const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
 
+    const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+    const pipDiv = isGold ? 0.10 : (trade.exchange === 'FOREX' ? 0.0001 : 1.0);
+    const pipsInProfit = entryPrice > 0
+      ? (isLong ? (ltp - entryPrice) / pipDiv : (entryPrice - ltp) / pipDiv)
+      : 0;
+
+    // Stepped Pip Trailing buttons (🔒 +10p, 🔒 +20p, 🔒 +30p)
+    const trailButtons: ITelegramInlineButton[] = [];
+    if (pipsInProfit >= 10) {
+      trailButtons.push({ text: '🔒 +10p', callback_data: `x:${tradeId}:T10:${cardVersion}:${roundLtp}` });
+    }
+    if (pipsInProfit >= 20) {
+      trailButtons.push({ text: '🔒 +20p', callback_data: `x:${tradeId}:T20:${cardVersion}:${roundLtp}` });
+    }
+    if (pipsInProfit >= 30) {
+      trailButtons.push({ text: '🔒 +30p', callback_data: `x:${tradeId}:T30:${cardVersion}:${roundLtp}` });
+    }
+
+    // Fractional scale-outs (🎯 25%, 🎯 50%, 🎯 75%)
+    const partialScaleRow: ITelegramInlineButton[] = [
+      { text: '🎯 25%', callback_data: `x:${tradeId}:B25:${cardVersion}:${roundLtp}` },
+      { text: '🎯 50%', callback_data: `x:${tradeId}:B50:${cardVersion}:${roundLtp}` },
+      { text: '🎯 75%', callback_data: `x:${tradeId}:B75:${cardVersion}:${roundLtp}` },
+    ];
+
     if (type === 'STOP_THREAT') {
       const row1: ITelegramInlineButton[] = [
         { text: `🚨 Exit @~${sym}${roundLtp}`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
@@ -938,6 +964,7 @@ export class TelegramAlertService {
       }
       return [
         row1,
+        ...(trailButtons.length > 0 ? [trailButtons] : []),
         ...(includeTimeframes ? [tfRow] : []),
         [
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
@@ -947,16 +974,18 @@ export class TelegramAlertService {
     }
 
     if (type === 'GIVEBACK') {
-      const row1: ITelegramInlineButton[] = [
-        { text: '🎯 Book 50%', callback_data: `x:${tradeId}:B50:${cardVersion}:${roundLtp}` },
+      const row2: ITelegramInlineButton[] = [
+        { text: '🛡️ Trail to BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` },
         { text: `🚨 Exit @~${sym}${roundLtp}`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
       ];
       return [
-        row1,
+        partialScaleRow,
+        ...(trailButtons.length > 0 ? [trailButtons] : []),
+        row2,
         ...(includeTimeframes ? [tfRow] : []),
         [
-          { text: '🛡️ Trail to BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` },
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
+          { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
         ],
       ];
     }
@@ -967,6 +996,8 @@ export class TelegramAlertService {
           { text: '🎯 Scale Out T1', callback_data: `x:${tradeId}:L1:${cardVersion}:${roundLtp}` },
           { text: '🛡️ Lock True BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` },
         ],
+        partialScaleRow,
+        ...(trailButtons.length > 0 ? [trailButtons] : []),
         ...(includeTimeframes ? [tfRow] : []),
         [
           { text: `🚨 Market Exit`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
@@ -993,10 +1024,12 @@ export class TelegramAlertService {
           ? [{ text: '🛡️ Lock BE', callback_data: `x:${tradeId}:BE:${cardVersion}:${roundLtp}` }]
           : []),
       ],
+      partialScaleRow,
+      ...(trailButtons.length > 0 ? [trailButtons] : []),
       ...(includeTimeframes ? [tfRow] : []),
       [
-        { text: '🎯 Book 50%', callback_data: `x:${tradeId}:B50:${cardVersion}:${roundLtp}` },
         { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
+        { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
       ],
     ];
   }
@@ -1106,6 +1139,16 @@ export class TelegramAlertService {
     if (data === 'cmd_trades') {
       await this.answerCallbackQuery(botToken, cq.id, 'Loading open trades...');
       await this.handleTradesCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'cmd_risk') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading Prop Firm Risk Radar...');
+      await this.handleRiskCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'cmd_summary') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading Performance Summary...');
+      if (botToken) await this.handleSummaryCommand(user, botToken, chatId);
       return;
     }
     if (data === 'panic_prompt') {
@@ -1271,14 +1314,14 @@ export class TelegramAlertService {
       const currentLtp = renderLtp > 0 ? renderLtp : (trade.calculated?.liveMfeSummary?.peakLtp || trade.simpleExecution?.entryPrice || 0);
 
       if (
-        (actionCode === 'E' || actionCode === 'B50') &&
+        (actionCode === 'E' || actionCode === 'B25' || actionCode === 'B50' || actionCode === 'B75') &&
         renderLtp > 0 &&
         currentLtp > 0
       ) {
         const slippage = Math.abs(currentLtp - renderLtp) / renderLtp * 100;
         if (slippage > slippageGuardPct) {
           // Trigger slippage confirmation step
-          const confirmAction = actionCode === 'E' ? 'CONF_E' : 'CONF_B50';
+          const confirmAction = actionCode === 'E' ? 'CONF_E' : `CONF_${actionCode}`;
           const confirmText =
             (cq.message?.text || '') +
             `\n\n⚠️ <b>SLIPPAGE WARNING:</b> Price moved from ${sym}${renderLtp} to ${sym}${currentLtp} (${slippage.toFixed(2)}% > guard ${slippageGuardPct}%). Confirm execution?`;
@@ -1419,9 +1462,101 @@ export class TelegramAlertService {
         return;
       }
 
-      if (actionCode === 'B50' || actionCode === 'CONF_B50') {
-        const openQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1;
-        const halfQty = Math.max(1, Math.floor(openQty / 2));
+      // Stepped Pip Trailing for Gold & FX
+      if (actionCode === 'T10' || actionCode === 'T20' || actionCode === 'T30') {
+        const pips = actionCode === 'T10' ? 10 : actionCode === 'T20' ? 20 : 30;
+        const isLong = trade.direction === 'LONG';
+        const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
+        const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+        const pipValue = isGold ? 0.10 : (trade.exchange === 'FOREX' ? 0.0001 : 1.0);
+        const targetSl = Number((isLong ? entryPrice + (pips * pipValue) : entryPrice - (pips * pipValue)).toFixed(2));
+
+        if (isLong && currentLtp > 0 && targetSl >= currentLtp) {
+          await this.answerCallbackQuery(botToken, cq.id, `Cannot trail SL (${sym}${targetSl}) above market (${sym}${currentLtp})`, true);
+          return;
+        }
+        if (!isLong && currentLtp > 0 && targetSl <= currentLtp) {
+          await this.answerCallbackQuery(botToken, cq.id, `Cannot trail SL (${sym}${targetSl}) below market (${sym}${currentLtp})`, true);
+          return;
+        }
+
+        trade.risk = {
+          ...(trade.risk || {}),
+          initialStopLoss: trade.risk?.initialStopLoss || targetSl,
+          currentStopLoss: targetSl,
+        };
+
+        let brokerStatus = 'STORED';
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId: (account?._id || trade.accountId)!,
+            tradeId: trade._id,
+            ticket,
+            stopLoss: targetSl,
+          });
+          brokerStatus = `DISPATCHED TO MT5 (#${ticket})`;
+        } else {
+          try {
+            const fyersRes = await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), targetSl);
+            brokerStatus = fyersRes.executedOnBroker ? 'UPDATED ON BROKER' : 'STORED';
+          } catch {
+            brokerStatus = 'STORED';
+          }
+        }
+
+        trade.auditLog.push({
+          action: `TELEGRAM_TRAIL_${pips}P`,
+          timestamp: new Date(),
+          details: { text: `Trailed Stop Loss to +${pips} pips (${sym}${targetSl}) via Telegram button` },
+          changedBy: 'telegram',
+        });
+        await trade.save();
+
+        const updateText =
+          (cq.message?.text || '') +
+          `\n\n<b>[🔒 STOP LOSS TRAILED TO +${pips} PIPS]</b>\n` +
+          `New SL: ${sym}${targetSl.toFixed(2)} • Status: ${brokerStatus}`;
+
+        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+
+        if (alertState) {
+          alertState.cardVersion += 1;
+          await alertState.save();
+        }
+
+        await AlertEvent.create({
+          userId: user._id,
+          tradeId: trade._id,
+          type: (alertState?.type as any) || 'LADDER',
+          severity: 1,
+          action: 'SEND_NEW',
+          actionTaken: `TRAIL_${pips}P`,
+          latencyMs: Date.now() - startTime,
+          sentAt: alertState?.lastSentAt || new Date(),
+          actedAt: new Date(),
+        });
+        return;
+      }
+
+      // Fractional scale-outs (25%, 50%, 75%)
+      if (
+        actionCode === 'B25' || actionCode === 'CONF_B25' ||
+        actionCode === 'B50' || actionCode === 'CONF_B50' ||
+        actionCode === 'B75' || actionCode === 'CONF_B75'
+      ) {
+        const pct = parseInt(actionCode.replace('CONF_', '').replace('B', ''), 10) || 50;
+        const fraction = pct / 100;
+        const openQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? (trade as any).quantity ?? 1;
+
+        let closeQty: number;
+        if (isMt5) {
+          closeQty = Math.max(0.01, Number((openQty * fraction).toFixed(2)));
+          if (closeQty > openQty) closeQty = openQty;
+        } else {
+          closeQty = Math.max(1, Math.floor(openQty * fraction));
+          if (closeQty > openQty) closeQty = openQty;
+        }
 
         let res: any = { executedOnBroker: false, tradedPrice: currentLtp };
         if (isMt5 && ticket) {
@@ -1430,27 +1565,27 @@ export class TelegramAlertService {
             accountId: (account?._id || trade.accountId)!,
             tradeId: trade._id,
             ticket,
-            volume: halfQty,
+            volume: closeQty,
           });
           res = { executedOnBroker: true, tradedPrice: currentLtp };
         } else {
           res = await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
-            exitQty: halfQty,
-            isFullClose: false,
+            exitQty: closeQty,
+            isFullClose: closeQty >= openQty,
           });
         }
 
         const updateText =
           (cq.message?.text || '') +
-          `\n\n<b>[🎯 50% PARTIAL PROFIT BOOKED]</b>\n` +
-          `Qty Closed: ${halfQty} • Traded: ${sym}${res.tradedPrice || currentLtp}`;
+          `\n\n<b>[🎯 ${pct}% PARTIAL PROFIT BOOKED]</b>\n` +
+          `Qty Closed: ${closeQty} • Traded: ${sym}${res.tradedPrice || currentLtp}`;
 
         await this.editMessageText(botToken, chatId, messageId, updateText, []);
 
         trade.auditLog.push({
-          action: 'TELEGRAM_BOOK_50',
+          action: `TELEGRAM_BOOK_${pct}`,
           timestamp: new Date(),
-          details: { text: `Booked 50% partial (${halfQty} qty) via Telegram button` },
+          details: { text: `Booked ${pct}% partial (${closeQty} qty) via Telegram button` },
           changedBy: 'telegram',
         });
         await trade.save();
@@ -1466,7 +1601,7 @@ export class TelegramAlertService {
           type: (alertState?.type as any) || 'GIVEBACK',
           severity: alertState?.severity || 2,
           action: 'SEND_NEW',
-          actionTaken: 'BOOK_50',
+          actionTaken: `BOOK_${pct}`,
           latencyMs: Date.now() - startTime,
           sentAt: alertState?.lastSentAt || new Date(),
           actedAt: new Date(),
@@ -1480,7 +1615,9 @@ export class TelegramAlertService {
         const rules = (trade.customLadderRules as any) || {};
         const stepRule = stepNum === 1 ? rules.t1 : rules.t2;
         const exitRatio = stepRule?.exitRatio ?? (stepNum === 1 ? 0.5 : 0.25);
-        const exitQty = Math.max(1, Math.floor(openQty * exitRatio));
+        const exitQty = isMt5
+          ? Math.max(0.01, Number((openQty * exitRatio).toFixed(2)))
+          : Math.max(1, Math.floor(openQty * exitRatio));
 
         // Determine new trailed stop loss
         let newStopLoss: number | undefined;
@@ -1699,6 +1836,8 @@ export class TelegramAlertService {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `• <b>/pnl</b> — Live floating PnL, open R-multiple & day PnL\n` +
           `• <b>/trades</b> — List active open trades with live charts & 1-tap Exit\n` +
+          `• <b>/risk</b> — Prop firm drawdown gauge, daily loss runway & Elefin guardrails\n` +
+          `• <b>/sl &lt;price&gt;</b> — Set or trail Stop Loss directly (e.g. <code>/sl 4005.50</code> or reply with price)\n` +
           `• <b>/chart [timeframe]</b> — Instant live candlestick chart (1m, 5m, 15m, 1h)\n` +
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
           `• <b>/news</b> — Upcoming XAUUSD / Gold catalysts & countdown\n` +
@@ -1709,6 +1848,17 @@ export class TelegramAlertService {
           `• <b>/panic</b> — Two-step killswitch to market-exit all positions\n\n` +
           `<i>Connected account: ${user.name || user.email}</i>`
         );
+        break;
+
+      case '/risk':
+      case '/prop':
+      case '/drawdown':
+        await this.handleRiskCommand(user, botToken, chatId);
+        break;
+
+      case '/sl':
+      case 'sl':
+        await this.handleCustomStopLossCommand(user, botToken, chatId, args, msg);
         break;
 
       case '/pnl':
@@ -1758,12 +1908,23 @@ export class TelegramAlertService {
         );
         break;
 
-      default:
+      default: {
+        // Check if user sent a bare numeric price (e.g. "4005.50" or "$4005.5") or replied to an alert
+        const numericCandidate = text.replace('$', '').replace('₹', '').trim();
+        if (/^\d+(\.\d+)?$/.test(numericCandidate)) {
+          const numVal = parseFloat(numericCandidate);
+          if (numVal > 0) {
+            await this.handleCustomStopLossCommand(user, botToken, chatId, [numericCandidate], msg);
+            return;
+          }
+        }
+
         await this.sendMessage(
           botToken,
           chatId,
           `❓ Unknown command: <code>${command}</code>. Type <b>/help</b> for available commands.`
         );
+      }
     }
   }
 
@@ -2114,7 +2275,16 @@ export class TelegramAlertService {
       const defaultTf = user.liveWatcherSettings?.telegramChartTimeframe || '5';
 
       const buttons = this.buildContextualKeyboard(
-        { _id: pos.tradeId, direction: pos.direction, calculated: { trueBreakevenPrice: pos.trueBreakevenPrice } },
+        {
+          _id: pos.tradeId,
+          symbol: pos.symbol,
+          direction: pos.direction,
+          entryPrice: pos.entryPrice,
+          calculated: {
+            trueBreakevenPrice: pos.trueBreakevenPrice,
+            openQuantity: pos.quantity,
+          },
+        },
         'STOP_THREAT',
         pos.currentLtp,
         1,
@@ -2587,6 +2757,33 @@ export class TelegramAlertService {
 
     if (settings.telegramAlertEvents && settings.telegramAlertEvents.tradeClosed === false) return;
 
+    const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? trade.entryPrice ?? 0);
+    const exitPrice = outcome.exitPrice || Number(trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice ?? 0);
+    const isLong = trade.direction === 'LONG';
+    const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+    const pipDiv = isGold ? 0.10 : (trade.exchange === 'FOREX' ? 0.0001 : 1.0);
+
+    const harvestedPoints = isLong ? (exitPrice - entryPrice) : (entryPrice - exitPrice);
+    const harvestedPips = harvestedPoints / pipDiv;
+
+    const mfePoints = Number(trade.calculated?.excursion?.mfePoints ?? trade.calculated?.liveMfeSummary?.maxFavorablePoints ?? Math.max(0, harvestedPoints));
+    const maePoints = Number(trade.calculated?.excursion?.maePoints ?? trade.calculated?.liveMfeSummary?.maxDrawdownPoints ?? 0);
+    const mfePips = mfePoints / pipDiv;
+    const maePips = maePoints / pipDiv;
+
+    const peakPrice = isLong ? entryPrice + mfePoints : entryPrice - mfePoints;
+    const captureEfficiency = mfePoints > 0 ? Math.max(0, Math.min(100, (harvestedPoints / mfePoints) * 100)) : (harvestedPoints > 0 ? 100 : 0);
+
+    let rating = '🔵 BREAKEVEN / NEUTRAL';
+    if (outcome.netPnL > 0) {
+      if (captureEfficiency >= 75) rating = '🟢 EXCELLENT (Harvested 75%+ of Peak Run)';
+      else if (captureEfficiency >= 45) rating = '🟡 SOLID (Captured 45%+ of Peak Run)';
+      else rating = '🟠 GAVE BACK GAINS (Left >55% profit on table)';
+    } else if (outcome.netPnL < 0) {
+      if (Math.abs(harvestedPips) <= 35) rating = '🔵 CONTROLLED RISK (Disciplined Stop Loss)';
+      else rating = '🛑 HIGH LOSS (Exceeded Standard Risk Budget)';
+    }
+
     const isWin = outcome.netPnL > 0;
     const sign = outcome.netPnL >= 0 ? '+' : '';
     const rSign = (outcome.realizedR || 0) >= 0 ? '+' : '';
@@ -2595,16 +2792,27 @@ export class TelegramAlertService {
       botToken: settings.telegramBotToken,
       chatId: settings.telegramChatId,
       title: `${isWin ? '🏁 Trade Closed in Profit' : '🛑 Trade Closed in Loss'}: ${trade.symbol}`,
-      body: `Position closed at ${sym}${outcome.exitPrice}. Net outcome recorded in journal.`,
+      body: `<b>Post-Trade Efficiency Scorecard:</b>\n` +
+        `Harvested <b>${harvestedPips >= 0 ? '+' : ''}${harvestedPips.toFixed(1)} pips</b> (${captureEfficiency.toFixed(1)}% efficiency).\n` +
+        `Execution Rating: <b>${rating}</b>`,
       severity: isWin ? 'SUCCESS' : 'WARNING',
       metrics: {
         Symbol: trade.symbol,
-        Side: trade.direction,
-        ExitPrice: `${sym}${outcome.exitPrice}`,
-        NetPnL: `${sign}${sym}${outcome.netPnL.toFixed(2)}`,
-        RealizedR: `${rSign}${(outcome.realizedR || 0).toFixed(2)}R`,
-        ExitReason: outcome.exitReason || 'Manual / Broker Order',
+        Direction: trade.direction,
+        Result: `${sign}${sym}${outcome.netPnL.toFixed(2)} (${rSign}${(outcome.realizedR || 0).toFixed(2)}R)`,
+        EntryExit: `${sym}${entryPrice.toFixed(2)} → ${sym}${exitPrice.toFixed(2)}`,
+        Harvested: `${harvestedPips >= 0 ? '+' : ''}${harvestedPips.toFixed(1)} pips`,
+        PeakRunMFE: `+${mfePips.toFixed(1)} pips (${sym}${peakPrice.toFixed(2)})`,
+        MaxDrawdownMAE: `-${maePips.toFixed(1)} pips`,
+        Efficiency: `${captureEfficiency.toFixed(1)}% of potential`,
+        ExitReason: outcome.exitReason || 'Market Exit / TP / SL',
       },
+      buttons: [
+        [
+          { text: '📊 Daily Summary (/summary)', callback_data: 'cmd_summary' },
+          { text: '🛡️ Prop Risk (/risk)', callback_data: 'cmd_risk' },
+        ],
+      ],
     });
   }
 
@@ -2811,6 +3019,455 @@ export class TelegramAlertService {
   }
 
   /**
+   * Responds to /risk or /prop command with Elefin / Prop firm risk radar, daily loss runway and drawdowns.
+   */
+  private static async handleRiskCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<void> {
+    if (!botToken) return;
+
+    const accounts = await TradingAccount.find({
+      userId: user._id,
+      status: 'ACTIVE',
+    }).lean();
+
+    if (!accounts || accounts.length === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>No Active Accounts Found</b>\n\nPlease connect an account in SetupMint Settings.`
+      );
+      return;
+    }
+
+    const propAccounts = accounts.filter(
+      (a: any) =>
+        a.accountType === 'PROP_FIRM' ||
+        /ELEFIN|MT5/i.test(a.broker || '') ||
+        /ELEFIN|MT5/i.test(a.name || '')
+    );
+    const targetAccounts = propAccounts.length > 0 ? propAccounts : accounts;
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    for (const acc of targetAccounts) {
+      const sym = (acc.baseCurrency || 'USD') === 'INR' ? '₹' : '$';
+      const initialBalance = Number(acc.initialBalance || 10000);
+      const currentBalance = Number(acc.currentBalance || initialBalance);
+
+      const todayClosedTrades = await Trade.find({
+        userId: user._id,
+        accountId: acc._id,
+        status: 'CLOSED',
+        exitTime: { $gte: startOfDay },
+      }).lean();
+      const realizedToday = todayClosedTrades.reduce((sum, t) => sum + (t.calculated?.netPnL || 0), 0);
+
+      const openTrades = await Trade.find({
+        userId: user._id,
+        accountId: acc._id,
+        status: 'OPEN',
+      }).lean();
+      const floatingToday = openTrades.reduce(
+        (sum, t: any) => sum + (t.calculated?.floatingNetPnL ?? t.floatingNetPnL ?? 0),
+        0
+      );
+
+      const netDayPnL = realizedToday + floatingToday;
+      const dayPnLSign = netDayPnL >= 0 ? '+' : '';
+
+      const dailyLossLimitPct =
+        acc.riskRules?.maxDailyLoss ??
+        acc.propFirmConfig?.dailyLossLimitPercent ??
+        acc.propFirm?.ruleSetOverrides?.dailyLoss?.limitPercent ??
+        5.0;
+
+      const maxDDPct =
+        acc.propFirmConfig?.maxLossLimitPercent ??
+        acc.propFirm?.ruleSetOverrides?.maxDrawdown?.limitPercent ??
+        10.0;
+
+      const dailyLossCapAmount = initialBalance * (dailyLossLimitPct / 100);
+      const lossUsedToday = Math.max(0, -netDayPnL);
+      const dailyBufferRemaining = Math.max(0, dailyLossCapAmount - lossUsedToday);
+      const dailyRunwayPct = dailyLossCapAmount > 0
+        ? Math.max(0, Math.min(100, (dailyBufferRemaining / dailyLossCapAmount) * 100))
+        : 100;
+
+      const maxDDCapAmount = initialBalance * (maxDDPct / 100);
+      const overallLoss = Math.max(0, initialBalance - (currentBalance + floatingToday));
+      const overallBufferRemaining = Math.max(0, maxDDCapAmount - overallLoss);
+      const overallRunwayPct = maxDDCapAmount > 0
+        ? Math.max(0, Math.min(100, (overallBufferRemaining / maxDDCapAmount) * 100))
+        : 100;
+
+      const dailyProgressBar = TelegramAlertService.renderProgressBar(dailyRunwayPct, 10);
+      const overallProgressBar = TelegramAlertService.renderProgressBar(overallRunwayPct, 10);
+
+      const isBreached = dailyBufferRemaining <= 0 || overallBufferRemaining <= 0;
+      const isWarning = dailyRunwayPct <= 25 || overallRunwayPct <= 25;
+      const statusBadge = isBreached
+        ? '🛑 ACCOUNT DRAWDOWN LIMIT BREACHED'
+        : isWarning
+        ? '⚠️ DRAWDOWN THREAT LEVEL: ELEVATED'
+        : '🟢 SAFE / WELL WITHIN GUARDRAILS';
+
+      const accNumber = acc.accountNumber ? ` (#${acc.accountNumber})` : '';
+      const text =
+        `🛡️ <b>PROP FIRM RISK RADAR: ${acc.name}${accNumber}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Balance         : ${sym}${currentBalance.toFixed(2)}\n` +
+        `Equity          : ${sym}${(currentBalance + floatingToday).toFixed(2)}\n` +
+        `Open Positions  : ${openTrades.length} active\n` +
+        `Today's Net PnL : ${dayPnLSign}${sym}${netDayPnL.toFixed(2)}\n` +
+        `────────────────────────────\n` +
+        `Daily Loss Cap  : ${sym}${dailyLossCapAmount.toFixed(2)} (${dailyLossLimitPct.toFixed(1)}%)\n` +
+        `Daily Buffer    : ${sym}${dailyBufferRemaining.toFixed(2)} remaining\n` +
+        `Daily Runway    : ${dailyProgressBar}\n` +
+        `────────────────────────────\n` +
+        `Max DD Cap      : ${sym}${maxDDCapAmount.toFixed(2)} (${maxDDPct.toFixed(1)}%)\n` +
+        `Max DD Buffer   : ${sym}${overallBufferRemaining.toFixed(2)} remaining\n` +
+        `Overall Runway  : ${overallProgressBar}\n` +
+        `────────────────────────────\n` +
+        `Status          : ${statusBadge}\n` +
+        `</pre>\n` +
+        `<i>Monitored live by SetupMint Guardian • ${new Date().toLocaleTimeString('en-IN')} IST</i>`;
+
+      const buttons: ITelegramInlineButton[][] = [
+        [
+          { text: '🔄 Refresh Risk', callback_data: 'cmd_risk' },
+          { text: '📊 Open Trades', callback_data: 'cmd_trades' },
+        ],
+        [
+          { text: '🛑 Emergency Killswitch', callback_data: 'panic_prompt' },
+        ],
+      ];
+
+      await this.sendMessage(botToken, chatId, text, buttons);
+    }
+  }
+
+  /**
+   * Adjusts stop loss directly from Telegram text command (/sl <price>) or bare numeric price reply.
+   */
+  private static async handleCustomStopLossCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[],
+    msg?: any
+  ): Promise<void> {
+    if (!botToken) return;
+
+    let targetPriceStr: string | undefined;
+    let specifiedSymbol: string | undefined;
+
+    for (const arg of args) {
+      const clean = arg.replace('$', '').replace('₹', '').trim();
+      if (/^\d+(\.\d+)?$/.test(clean)) {
+        targetPriceStr = clean;
+      } else if (/^[A-Za-z0-9_]+$/.test(clean) && clean.toUpperCase() !== 'SL') {
+        specifiedSymbol = clean.toUpperCase();
+      }
+    }
+
+    if (!targetPriceStr) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Missing Stop Loss Price</b>\n\n` +
+        `Usage:\n` +
+        `• <code>/sl &lt;price&gt;</code> (e.g. <code>/sl 4005.50</code>)\n` +
+        `• <code>/sl &lt;symbol&gt; &lt;price&gt;</code> (e.g. <code>/sl XAUUSD 4005.50</code>)\n` +
+        `• Or reply directly to any trade alert with the target price number!`
+      );
+      return;
+    }
+
+    const targetPrice = parseFloat(targetPriceStr);
+    if (isNaN(targetPrice) || targetPrice <= 0) {
+      await this.sendMessage(botToken, chatId, `⚠️ Invalid price: <code>${targetPriceStr}</code>.`);
+      return;
+    }
+
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    let tradeQuery: any = {
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+    };
+
+    const repliedText = msg?.reply_to_message?.text || msg?.reply_to_message?.caption || '';
+    if (repliedText) {
+      const ticketMatch = repliedText.match(/Ticket\s*#?(\d+)/i) || repliedText.match(/MT5_TICKET_(\d+)/i);
+      if (ticketMatch && ticketMatch[1]) {
+        tradeQuery.tags = `MT5_TICKET_${ticketMatch[1]}`;
+      } else {
+        const symMatch = repliedText.match(/(XAUUSD|GOLD|[A-Z]{3,6})/);
+        if (symMatch && symMatch[1]) {
+          tradeQuery.symbol = symMatch[1];
+        }
+      }
+    } else if (specifiedSymbol) {
+      tradeQuery.symbol = specifiedSymbol;
+    }
+
+    let matchingTrades = await Trade.find(tradeQuery).sort({ entryTime: -1 });
+
+    if (matchingTrades.length === 0 && !tradeQuery.tags && !tradeQuery.symbol) {
+      matchingTrades = await Trade.find({
+        userId: user._id,
+        accountId: { $in: allActiveAccountIds },
+        status: 'OPEN',
+        symbol: { $regex: /XAU|GOLD/i },
+      }).sort({ entryTime: -1 });
+    }
+
+    if (matchingTrades.length === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `❌ <b>No Active Open Trade Found</b>\n\n` +
+        `There are currently no open positions matching your request to update Stop Loss to ${targetPrice}.`
+      );
+      return;
+    }
+
+    if (matchingTrades.length > 1 && !tradeQuery.tags && !specifiedSymbol) {
+      const tradeList = matchingTrades
+        .map((t: any) => `• <code>${t.symbol}</code> (${t.direction}) @ $${t.simpleExecution?.entryPrice || t.calculated?.averageEntryPrice || t.entryPrice || 0}`)
+        .join('\n');
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Multiple Open Positions Active</b>\n\n` +
+        `Please specify the symbol:\n` +
+        `<code>/sl &lt;symbol&gt; ${targetPrice}</code>\n\n` +
+        `Active positions:\n${tradeList}`
+      );
+      return;
+    }
+
+    const trade = matchingTrades[0];
+    const isLong = trade.direction === 'LONG';
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+    const currentLtp = (trade as any).currentLtp || trade.calculated?.liveMfeSummary?.peakLtp || trade.simpleExecution?.entryPrice || 0;
+
+    if (isLong && currentLtp > 0 && targetPrice >= currentLtp) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Invalid Stop Loss:</b>\n` +
+        `For a <b>LONG</b> position on ${trade.symbol}, Stop Loss (${sym}${targetPrice.toFixed(2)}) must be <b>below</b> the current market price (${sym}${currentLtp.toFixed(2)}).`
+      );
+      return;
+    }
+    if (!isLong && currentLtp > 0 && targetPrice <= currentLtp) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Invalid Stop Loss:</b>\n` +
+        `For a <b>SHORT</b> position on ${trade.symbol}, Stop Loss (${sym}${targetPrice.toFixed(2)}) must be <b>above</b> the current market price (${sym}${currentLtp.toFixed(2)}).`
+      );
+      return;
+    }
+
+    const oldSl = trade.risk?.currentStopLoss || trade.risk?.initialStopLoss;
+    trade.risk = {
+      ...(trade.risk || {}),
+      initialStopLoss: trade.risk?.initialStopLoss || targetPrice,
+      currentStopLoss: targetPrice,
+    };
+
+    const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+    const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
+    const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+
+    let brokerStatus = 'Stored in SetupMint Journal';
+    if (isMt5 && ticket) {
+      await Mt5CommandService.queueModifySl({
+        userId: user._id,
+        accountId: (account?._id || trade.accountId)!,
+        tradeId: trade._id,
+        ticket,
+        stopLoss: targetPrice,
+      });
+      brokerStatus = `⚡ Dispatched to MT5 Server Bridge (Ticket #${ticket})`;
+    } else {
+      try {
+        const res = await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), targetPrice);
+        brokerStatus = res.executedOnBroker ? '⚡ Updated directly on Broker Exchange' : 'Stored in SetupMint Journal';
+      } catch {
+        brokerStatus = 'Stored in SetupMint Journal';
+      }
+    }
+
+    trade.auditLog.push({
+      action: 'TELEGRAM_SET_SL',
+      timestamp: new Date(),
+      details: {
+        text: `Stop Loss updated to ${sym}${targetPrice.toFixed(2)} via Telegram command/reply`,
+        previousSl: oldSl,
+      },
+      changedBy: 'telegram',
+    });
+    await trade.save();
+
+    const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+    const pipDist = currentLtp > 0
+      ? (Math.abs(currentLtp - targetPrice) / (isGold ? 0.10 : 1.0)).toFixed(1)
+      : 'N/A';
+
+    const card =
+      `🔒 <b>STOP LOSS UPDATED</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Symbol   : ${trade.symbol} (${trade.direction})\n` +
+      `New SL   : ${sym}${targetPrice.toFixed(2)} (${pipDist} pips from LTP)\n` +
+      `Old SL   : ${oldSl ? `${sym}${oldSl.toFixed(2)}` : 'None (Naked)'}\n` +
+      `Market   : ${sym}${currentLtp.toFixed(2)}\n` +
+      `Status   : ${brokerStatus}\n` +
+      `</pre>\n` +
+      `<i>Updated at ${new Date().toLocaleTimeString('en-IN')} IST</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        { text: '🛡️ Lock True BE', callback_data: `x:${trade._id}:BE:1:${Number(currentLtp.toFixed(2))}` },
+        { text: '🚨 Exit Market', callback_data: `x:${trade._id}:E:1:${Number(currentLtp.toFixed(2))}` },
+      ],
+      [
+        { text: '📊 View Open Trades', callback_data: 'cmd_trades' },
+      ],
+    ];
+
+    await this.sendMessage(botToken, chatId, card, buttons);
+  }
+
+  /**
+   * Dispatches a stagnation / time-stop reminder when an open trade is flat for 45+ minutes.
+   */
+  static async sendStagnationReminder(
+    user: any,
+    trade: any,
+    metric: any,
+    ageMins: number,
+    pipDist: number
+  ): Promise<void> {
+    const watcherSettings = user.liveWatcherSettings;
+    if (!watcherSettings?.telegramAlertsEnabled || !watcherSettings?.telegramBotToken || !watcherSettings?.telegramChatId) {
+      return;
+    }
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+    const roundLtp = Number(metric.currentLtp.toFixed(2));
+    const tradeId = trade._id.toString();
+
+    await this.sendAlert({
+      botToken: watcherSettings.telegramBotToken,
+      chatId: watcherSettings.telegramChatId,
+      title: `⏱️ Trade Stagnation Reminder: ${metric.symbol}`,
+      body: `Your ${trade.direction} trade has been active for <b>${ageMins} minutes</b> but remains flat within <b>${pipDist.toFixed(1)} pips</b> of entry (${sym}${metric.entryPrice.toFixed(2)} → ${sym}${roundLtp}).\n` +
+        `Gold consolidation detected. Consider tightening stop loss to breakeven or exiting if momentum has stalled.`,
+      severity: 'WARNING',
+      metrics: {
+        Symbol: metric.symbol,
+        Direction: trade.direction,
+        Entry: `${sym}${metric.entryPrice.toFixed(2)}`,
+        LTP: `${sym}${roundLtp}`,
+        Age: `${ageMins} mins`,
+        NetPnL: `${metric.netPnL >= 0 ? '+' : ''}${sym}${metric.netPnL.toFixed(2)}`,
+      },
+      buttons: [
+        [
+          { text: '🛡️ Move SL to BE', callback_data: `x:${tradeId}:BE:1:${roundLtp}` },
+          { text: '🚨 Exit Market', callback_data: `x:${tradeId}:E:1:${roundLtp}` },
+        ],
+        [
+          { text: '💤 Snooze 30m', callback_data: `x:${tradeId}:SZ:1:${roundLtp}` },
+        ],
+      ],
+    });
+  }
+
+  /**
+   * Throttled spread spike detection for Gold (XAUUSD).
+   */
+  static async checkAndDispatchSpreadWarning(
+    userId: any,
+    symbol: string,
+    spreadPips: number,
+    ask: number,
+    bid: number
+  ): Promise<void> {
+    const throttleKey = `${userId}:${symbol}:spread`;
+    const lastSent = this.spreadWarningTimestamps.get(throttleKey) || 0;
+    const now = Date.now();
+    // Throttle to at most once per 15 minutes
+    if (now - lastSent < 15 * 60 * 1000) return;
+
+    const user = await User.findById(userId).lean();
+    if (!user) return;
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
+
+    this.spreadWarningTimestamps.set(throttleKey, now);
+
+    const spreadUsd = (ask - bid).toFixed(2);
+    await this.sendAlert({
+      botToken: settings.telegramBotToken,
+      chatId: settings.telegramChatId,
+      title: `⚠️ Gold Spread Spike Warning: ${symbol}`,
+      body: `Spread has expanded to <b>${spreadPips.toFixed(1)} pips</b> ($${spreadUsd}) on ${symbol}.\n` +
+        `<i>Normal spread is 1.0–2.0 pips. Wide spread during rollover or thin liquidity risks premature stop-out and high slippage.</i>`,
+      severity: 'WARNING',
+      metrics: {
+        Symbol: symbol,
+        Spread: `${spreadPips.toFixed(1)} pips ($${spreadUsd})`,
+        Bid: `$${bid.toFixed(2)}`,
+        Ask: `$${ask.toFixed(2)}`,
+      },
+      buttons: [
+        [
+          { text: '📊 Check Open Trades', callback_data: 'cmd_trades' },
+          { text: '🛑 Emergency Killswitch', callback_data: 'panic_prompt' },
+        ],
+      ],
+    });
+  }
+
+  /**
+   * Sends Gold major market session alerts (London Open, NY Open, London Fix).
+   */
+  static async sendGoldSessionAlert(
+    user: any,
+    sessionName: string,
+    description: string,
+    keyFocus: string
+  ): Promise<void> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
+
+    await this.sendAlert({
+      botToken: settings.telegramBotToken,
+      chatId: settings.telegramChatId,
+      title: `🔔 Gold Session Transition: ${sessionName}`,
+      body: `<b>${sessionName}</b> is now active.\n\n` +
+        `<b>Focus:</b> ${keyFocus}\n\n` +
+        `<i>${description}</i>`,
+      severity: 'INFO',
+      buttons: [
+        [
+          { text: '📊 Open Trades', callback_data: 'cmd_trades' },
+          { text: '🛡️ Check Risk (/risk)', callback_data: 'cmd_risk' },
+        ],
+      ],
+    });
+  }
+
+  /**
    * Responds to /news or /goldnews command with upcoming Gold (XAUUSD) catalysts.
    */
   private static async handleGoldNewsCommand(user: any, botToken: string, chatId: string | number): Promise<void> {
@@ -2975,8 +3632,40 @@ export class TelegramAlertService {
     }
 
     const { text, buttons } = EconomicCalendarService.formatGoldNewsTelegramAlert(event, leadTimeMinutes);
+
+    // Check if user has open Gold positions exposed to this news release
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    const openGoldTrades = await Trade.find({
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+      symbol: { $regex: /XAU|GOLD/i },
+    }).lean();
+
+    let finalText = text;
+    const finalButtons: ITelegramInlineButton[][] = [...buttons];
+
+    if (openGoldTrades && openGoldTrades.length > 0) {
+      finalText += `\n\n🚨 <b>ACTIVE GOLD EXPOSURE UNDER NEWS RISK:</b>\n`;
+      for (const t of openGoldTrades as any[]) {
+        const sym = TelegramAlertService.getTradeCurrencySymbol(t);
+        const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? t.entryPrice ?? 0);
+        const ltp = t.currentLtp || entry;
+        const pnl = Number(t.calculated?.floatingNetPnL ?? t.floatingNetPnL ?? 0);
+        const qty = t.calculated?.openQuantity ?? t.simpleExecution?.quantity ?? t.quantity ?? 0.01;
+        const pnlSign = pnl >= 0 ? '+' : '';
+        finalText += `• <code>${t.direction} ${qty} ${t.symbol}</code> @ ${sym}${entry.toFixed(2)} | Net: <b>${pnlSign}${sym}${pnl.toFixed(2)}</b>\n`;
+
+        finalButtons.unshift([
+          { text: `🛡️ Lock BE (${t.symbol})`, callback_data: `x:${t._id}:BE:1:${Number(ltp.toFixed(2))}` },
+          { text: `🚨 Close Position`, callback_data: `x:${t._id}:E:1:${Number(ltp.toFixed(2))}` },
+        ]);
+      }
+      finalText += `<i>Recommended: Lock Breakeven or reduce exposure prior to high-impact release.</i>`;
+    }
+
     try {
-      await this.sendMessage(botToken, chatId, text, buttons, disableNotification);
+      await this.sendMessage(botToken, chatId, finalText, finalButtons, disableNotification);
       return true;
     } catch (err: any) {
       console.warn(`[TelegramAlertService] sendGoldNewsReminder failed for user ${user._id}:`, err.message);

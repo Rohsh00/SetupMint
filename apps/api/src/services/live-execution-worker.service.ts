@@ -260,10 +260,11 @@ export class LiveExecutionWorker {
         }
       }
 
-      // Find open trades on active personal LIVE accounts for FYERS broker evaluation
+      // Find open trades on all active accounts (personal LIVE + prop firms like Elefin) for evaluation
+      const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
       const openTrades = await Trade.find({
         userId: user._id,
-        accountId: { $in: liveAccountIds },
+        accountId: { $in: allActiveAccountIds },
         status: 'OPEN',
       }).lean();
 
@@ -489,6 +490,21 @@ export class LiveExecutionWorker {
           body: `SetupMint auto-executed ${step.plannedExitQty} units exit and trailed SL to ${currSym}${step.suggestedStopLoss} on ${brokerLabel}.`,
           severity: 'SUCCESS',
         }).catch(() => {});
+      }
+    }
+
+    // 5. Gold Trade Stagnation / Time-Stop Reminder
+    const isGold = (metric.symbol || '').includes('XAU') || metric.symbol === 'GOLD';
+    const entryTimeMs = trade.entryTime ? new Date(trade.entryTime).getTime() : 0;
+    if (entryTimeMs > 0 && isGold && trade.status === 'OPEN') {
+      const ageMins = Math.round((Date.now() - entryTimeMs) / 60000);
+      const pipDist = Math.abs(metric.currentLtp - metric.entryPrice) / 0.10;
+      if (ageMins >= 45 && pipDist <= 8.0) {
+        const stagKey = `stagnation:${tradeId}`;
+        if (!this.executedMilestones.has(stagKey)) {
+          this.executedMilestones.add(stagKey);
+          TelegramAlertService.sendStagnationReminder(user, trade, metric, ageMins, pipDist).catch(() => {});
+        }
       }
     }
   }

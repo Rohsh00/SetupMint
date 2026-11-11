@@ -124,7 +124,60 @@ export class GoldNewsAlertWorker {
       }
     }
 
+    // Evaluate major Gold session transitions (London Open, NY Open, London Fix)
+    await this.checkGoldSessionTransitions(activeUsers, now);
+
     return { checkedUsers: activeUsers.length, alertsDispatched };
+  }
+
+  /**
+   * Checks for major Gold session transitions and dispatches timely notifications.
+   */
+  static async checkGoldSessionTransitions(activeUsers: any[], now: Date): Promise<void> {
+    const dayOfWeek = now.getUTCDay();
+    // Monday = 1, Friday = 5. Skip weekends.
+    if (dayOfWeek === 0 || dayOfWeek === 6) return;
+
+    const utcHours = now.getUTCHours();
+    const utcMinutes = now.getUTCMinutes();
+    const totalUtcMins = utcHours * 60 + utcMinutes;
+    const dateStr = now.toISOString().slice(0, 10);
+
+    const SESSIONS = [
+      {
+        id: 'LONDON_OPEN',
+        name: '🇬🇧 London Open (08:00 UTC / 13:30 IST)',
+        targetMinute: 8 * 60, // 08:00 UTC
+        description: 'Major European liquidity injection. Watch for breakout expansions, institutional retests, and initial direction setting.',
+        keyFocus: 'High volume surge; false breakout traps common at session open.',
+      },
+      {
+        id: 'NY_OPEN',
+        name: '🇺🇸 New York Open (13:30 UTC / 19:00 IST)',
+        targetMinute: 13 * 60 + 30, // 13:30 UTC
+        description: 'US equity and commodity cash open. Peak volatility window for XAUUSD with highest daily volume and trend acceleration.',
+        keyFocus: 'Aggressive trending moves and rapid stop sweeps.',
+      },
+      {
+        id: 'LONDON_FIX',
+        name: '🇬🇧 London PM Gold Fix (15:00 UTC / 20:30 IST)',
+        targetMinute: 15 * 60, // 15:00 UTC
+        description: 'Global benchmark pricing window by bullion banks. Large institutional order balancing occurs now.',
+        keyFocus: 'Sharp mean-reversion spikes and sudden liquidity withdrawals.',
+      },
+    ];
+
+    for (const session of SESSIONS) {
+      if (Math.abs(totalUtcMins - session.targetMinute) <= 1) {
+        for (const user of activeUsers) {
+          const key = `session:${user._id}:${session.id}:${dateStr}`;
+          if (!this.sentAlertKeys.has(key)) {
+            this.sentAlertKeys.set(key, now.getTime());
+            TelegramAlertService.sendGoldSessionAlert(user, session.name, session.description, session.keyFocus).catch(() => {});
+          }
+        }
+      }
+    }
   }
 
   /**

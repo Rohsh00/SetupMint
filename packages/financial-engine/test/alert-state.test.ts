@@ -349,6 +349,40 @@ describe('Alert State Machine & Hysteresis Decision Engine', () => {
       // For short: stop is higher than entry. Gross loss at SL = 50 * (24500 - 24600) = -5000
       expect(ctx.ifSlLossAmount.lessThan(-5000)).toBe(true);
     });
+
+    it('formats XAUUSD stop distance in pips and dollars', () => {
+      const ctx = buildAlertContext({
+        direction: 'LONG',
+        symbol: 'XAUUSD',
+        quantity: 1,
+        contractMultiplier: 100,
+        entryPrice: 2650.0,
+        currentLtp: 2650.0,
+        stopLoss: 2647.0, // 30 pips ($3.00)
+        currency: 'USD',
+        currencySymbol: '$',
+      });
+
+      expect(ctx.ltpStr).toBe('$2650.00');
+      expect(ctx.stopStr).toBe('$2647.00');
+      expect(ctx.ptsToStopStr).toBe('30.0 pips');
+      expect(ctx.ticksToStopStr).toBe('$3.00');
+      expect(ctx.cardText).toContain('30.0 pips · $3.00');
+    });
+
+    it('skips alert when bufferRatio is healthy (1.0 at entry)', () => {
+      const decision = evaluateAlert(null, {
+        type: 'STOP_THREAT',
+        severity: 0,
+        metricValue: new Decimal('1.0'), // 100% buffer remaining
+        now: baseTime,
+      });
+
+      expect(decision.action).toBe('SKIP');
+      if (decision.action === 'SKIP') {
+        expect(decision.reason).toBe('CONDITION_NOT_MET');
+      }
+    });
   });
 });
 

@@ -313,9 +313,20 @@ export class LiveExecutionWorker {
 
     // 2. Stop Loss Threat Telegram Alert via Pure State Machine
     if (metric.stopThreatLevel) {
-      const runwayPct = typeof metric.distanceToStopPercent === 'number'
-        ? metric.distanceToStopPercent
-        : 25;
+      // Use bufferRatio (fraction of initial stop loss buffer remaining, 0.0 to 1.0+)
+      // 1.0 = at entry (100% buffer remaining)
+      // 0.25 = CRITICAL (75% of stop loss eaten, only 25% buffer remaining)
+      // 0.00 = BREACHED
+      const bufferRatio = typeof metric.bufferRatio === 'number'
+        ? metric.bufferRatio
+        : (metric.stopThreatLevel === 'BREACHED'
+          ? 0
+          : metric.stopThreatLevel === 'CRITICAL'
+          ? 0.20
+          : metric.stopThreatLevel === 'ATTENTION'
+          ? 0.45
+          : 1.0);
+
       const severity = metric.stopThreatLevel === 'BREACHED'
         ? 3
         : metric.stopThreatLevel === 'CRITICAL'
@@ -327,7 +338,7 @@ export class LiveExecutionWorker {
       TelegramAlertService.dispatchRiskAlert(user, trade, {
         type: 'STOP_THREAT',
         severity,
-        metricValue: runwayPct,
+        metricValue: bufferRatio,
         ltp: metric.currentLtp,
       }).catch(() => {});
 

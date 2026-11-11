@@ -106,6 +106,7 @@ export interface ILiveOpenTradeMetric {
   distanceToStopPoints: number | null;
   distanceToStopTicks: number | null;
   distanceToStopPercent: number | null;
+  bufferRatio?: number | null;
   stopThreatLevel: StopThreatLevel;
   distanceToTargetPoints: number | null;
   distanceToTargetTicks: number | null;
@@ -709,6 +710,7 @@ export function calculateLiveOpenTradeMetric(
   let distanceToStopPoints: Decimal | null = null;
   let distanceToStopTicks: number | null = null;
   let distanceToStopPercent: Decimal | null = null;
+  let bufferRatioVal: Decimal | null = null;
   let stopThreatLevel: StopThreatLevel = 'NO_STOP';
 
   if (effectiveStopLoss !== undefined && effectiveStopLoss !== null) {
@@ -726,21 +728,31 @@ export function calculateLiveOpenTradeMetric(
       : buffer.abs().dividedBy(dLtp).times(100);
 
     // Initial stop distance
-    const initialDistance = isLong ? dEntry.minus(dStop) : dStop.minus(dEntry);
+    const effectiveInitialStop = params.initialStopLoss !== undefined && params.initialStopLoss !== null && Number(params.initialStopLoss) > 0
+      ? new Decimal(params.initialStopLoss)
+      : dStop;
+    let initialDistance = isLong ? dEntry.minus(effectiveInitialStop) : effectiveInitialStop.minus(dEntry);
+    if (initialDistance.lessThanOrEqualTo(0)) {
+      initialDistance = isLong ? dEntry.minus(dStop) : dStop.minus(dEntry);
+    }
 
     if (buffer.lessThanOrEqualTo(0)) {
       stopThreatLevel = 'BREACHED';
+      bufferRatioVal = new Decimal(0);
     } else if (initialDistance.greaterThan(0)) {
-      const bufferRatio = buffer.dividedBy(initialDistance);
-      if (bufferRatio.lessThanOrEqualTo('0.25')) {
+      const bRatio = buffer.dividedBy(initialDistance);
+      bufferRatioVal = bRatio;
+      if (bRatio.lessThanOrEqualTo('0.25')) {
         stopThreatLevel = 'CRITICAL';
-      } else if (bufferRatio.lessThanOrEqualTo('0.50')) {
+      } else if (bRatio.lessThanOrEqualTo('0.50')) {
         stopThreatLevel = 'ATTENTION';
       } else {
         stopThreatLevel = 'SAFE';
       }
     } else {
+      // Stop moved past entry (e.g. trailed into profit)
       stopThreatLevel = 'SAFE';
+      bufferRatioVal = new Decimal(1);
     }
   }
 
@@ -831,6 +843,7 @@ export function calculateLiveOpenTradeMetric(
       distanceToStopPoints: distanceToStopPoints !== null ? Number(distanceToStopPoints.toFixed(2)) : null,
       distanceToStopTicks,
       distanceToStopPercent: distanceToStopPercent !== null ? Number(distanceToStopPercent.toFixed(2)) : null,
+      bufferRatio: bufferRatioVal !== null ? Number(bufferRatioVal.toFixed(4)) : null,
       stopThreatLevel,
       distanceToTargetPoints: distanceToTargetPoints !== null ? Number(distanceToTargetPoints.toFixed(2)) : null,
       distanceToTargetTicks,

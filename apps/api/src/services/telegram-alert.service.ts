@@ -718,6 +718,7 @@ export class TelegramAlertService {
       unrealizedR: trade.calculated?.unrealizedR || 0,
       currency: trade.currency,
       currencySymbol: sym,
+      tickSize: trade.tickSize,
     });
 
     const isAudible = policy.audible && (alertInput.severity >= 2 || alertInput.type === 'NAKED_POSITION');

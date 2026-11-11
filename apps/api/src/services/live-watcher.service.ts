@@ -119,10 +119,12 @@ export class LiveWatcherService {
       }
     }
 
+    const isGold = Boolean(trade.symbol && /xau|gold/i.test(trade.symbol));
+    const defaultTick = isGold ? 0.01 : (isForexOrUsd ? 0.0001 : 0.05);
     const tickSize = Number(
       inst?.tickSize ??
       trade.tickSize ??
-      0.05
+      defaultTick
     );
 
     // Active stop loss for live tracking, buffer remaining, and threat level
@@ -919,8 +921,10 @@ export class LiveWatcherService {
             metric.distanceToStopPercent = metric.currentLtp > 0 ? Number(((Math.abs(bufferPts) / metric.currentLtp) * 100).toFixed(2)) : 0;
             if (bufferPts <= 0) {
               metric.stopThreatLevel = 'BREACHED';
+              metric.bufferRatio = 0;
             } else {
               metric.stopThreatLevel = 'SAFE';
+              metric.bufferRatio = 1.0;
             }
 
             // Also persist active currentStopLoss and record stop move event in trade document in DB

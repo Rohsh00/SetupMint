@@ -480,6 +480,7 @@ export interface IAlertContextInput {
   isStagnant?: boolean;
   currency?: string;
   currencySymbol?: string;
+  tickSize?: number;
 }
 
 export type IAlertContextParams = IAlertContextInput;
@@ -571,10 +572,34 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
 
     // Distance remaining to stop
     const distPts = isLong ? dLtp.minus(dStop) : dStop.minus(dLtp);
-    ptsToStopStr = `${distPts.toFixed(1)} pts`;
-    const tick = new Decimal('0.05');
-    const ticks = distPts.dividedBy(tick).round().toNumber();
-    ticksToStopStr = `${ticks} ticks`;
+
+    const isGold = Boolean(
+      params.symbol &&
+      (params.symbol.toUpperCase().includes('XAU') || params.symbol.toUpperCase().includes('GOLD'))
+    );
+    const isForex = Boolean(
+      params.assetClass === 'FOREX' ||
+      (params.symbol && /^[A-Z]{6}$/.test(params.symbol.toUpperCase()) && !isGold)
+    );
+
+    if (isGold) {
+      // 1 pip in XAUUSD = $0.10 (10 points of $0.01)
+      const pips = distPts.times(10).toFixed(1);
+      ptsToStopStr = `${pips} pips`;
+      ticksToStopStr = `$${distPts.toFixed(2)}`;
+    } else if (isForex) {
+      const symUpper = params.symbol?.toUpperCase() || '';
+      const isJpy = symUpper.includes('JPY');
+      const pipMultiplier = isJpy ? 100 : 10000;
+      const pips = distPts.times(pipMultiplier).toFixed(1);
+      ptsToStopStr = `${pips} pips`;
+      ticksToStopStr = distPts.toFixed(isJpy ? 3 : 5);
+    } else {
+      ptsToStopStr = `${distPts.toFixed(1)} pts`;
+      const tick = new Decimal(params.tickSize || '0.05');
+      const ticks = distPts.dividedBy(tick).round().toNumber();
+      ticksToStopStr = `${ticks} ticks`;
+    }
 
     // Exit now saves = (Loss at SL) - (Loss now)
     // Both are negative or relative. E.g. If SL = -3610 and Current = -2340: saves = 1270
@@ -618,7 +643,7 @@ export function buildAlertContext(params: IAlertContextInput): IAlertContextOutp
     deterministicHint = 'Profit leaking: consider locking True Breakeven to guarantee net positive outcome.';
   } else if (params.isStagnant) {
     deterministicHint = 'Momentum stalled: trade holding duration exceeds average with zero expansion.';
-  } else if (exitNowSaves.greaterThan(500)) {
+  } else if (exitNowSaves.greaterThan(isUsd ? 10 : 500)) {
     deterministicHint = `Exiting at market saves ~${currSym}${exitNowSaves.toFixed(0)} vs full stop out.`;
   }
 

@@ -2759,6 +2759,7 @@ export interface ILiveOpenTradeMetric {
   distanceToStopPoints: number | null;
   distanceToStopTicks: number | null;
   distanceToStopPercent: number | null;
+  bufferRatio?: number | null;
   stopThreatLevel: StopThreatLevel;
   distanceToTargetPoints: number | null;
   distanceToTargetTicks: number | null;

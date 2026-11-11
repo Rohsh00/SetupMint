@@ -26,6 +26,7 @@
     "seed:validate": "npm run seed:validate -w apps/api --",
     "sync:the5ers": "npx tsx apps/api/src/scripts/seed-the5ers-real-account.ts",
     "sync:elefin": "npx tsx apps/api/src/scripts/restore-all-elefin-trades.ts",
+    "heal:elefin": "npx tsx apps/api/src/scripts/heal-elefin-excursion.ts",
     "sync:fyers": "npx tsx apps/api/src/scripts/sync-komal-fyers-tradebook.ts",
     "instruments:backfill": "npm run instruments:backfill -w apps/api --",
     "accounts:backfill": "npm run accounts:backfill -w apps/api --",

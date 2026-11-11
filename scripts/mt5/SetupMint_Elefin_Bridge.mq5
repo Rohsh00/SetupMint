@@ -20,6 +20,83 @@ input int      InpSyncTimerSec = 3;                           // Periodic Sync I
 datetime lastHistoryCheckTime = 0;
 CTrade   m_trade;
 
+//--- Live Position Excursion Tracker (Zero Discrepancy MAE/MFE Capture)
+struct PositionExcursionTracker {
+   ulong    ticket;
+   double   openPrice;
+   double   peakPrice;     // Best favorable price
+   double   worstPrice;    // Deepest adverse price
+   double   peakProfit;    // Highest floating profit reached
+   double   maxDrawdown;   // Deepest floating drawdown reached
+   datetime openTime;
+};
+PositionExcursionTracker g_excursions[256];
+int g_excursionCount = 0;
+
+//--- Helper: Format ISO 8601 UTC timestamp
+string FormatIsoUtc(datetime tBroker)
+{
+   if(tBroker <= 0) return "";
+   int gmtOffset = (int)(TimeCurrent() - TimeGMT());
+   datetime tGmt = tBroker - gmtOffset;
+   string sDate = TimeToString(tGmt, TIME_DATE);
+   string sTime = TimeToString(tGmt, TIME_SECONDS);
+   StringReplace(sDate, ".", "-");
+   return sDate + "T" + sTime + ".000Z";
+}
+
+//--- Helper: Real-time update of live open position excursions
+void UpdateExcursionTracking()
+{
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+
+      double curPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+      double profit   = PositionGetDouble(POSITION_PROFIT);
+      double openP    = PositionGetDouble(POSITION_PRICE_OPEN);
+      ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      datetime openT  = (datetime)PositionGetInteger(POSITION_TIME);
+
+      int idx = -1;
+      for(int k = 0; k < g_excursionCount; k++)
+      {
+         if(g_excursions[k].ticket == ticket) { idx = k; break; }
+      }
+      if(idx == -1 && g_excursionCount < 256)
+      {
+         idx = g_excursionCount++;
+         g_excursions[idx].ticket = ticket;
+         g_excursions[idx].openPrice = openP;
+         g_excursions[idx].peakPrice = curPrice > 0 ? curPrice : openP;
+         g_excursions[idx].worstPrice = curPrice > 0 ? curPrice : openP;
+         g_excursions[idx].peakProfit = profit;
+         g_excursions[idx].maxDrawdown = profit;
+         g_excursions[idx].openTime = openT;
+      }
+      if(idx >= 0 && curPrice > 0)
+      {
+         if(profit > g_excursions[idx].peakProfit)
+            g_excursions[idx].peakProfit = profit;
+         if(profit < g_excursions[idx].maxDrawdown)
+            g_excursions[idx].maxDrawdown = profit;
+
+         if(type == POSITION_TYPE_BUY)
+         {
+            if(curPrice > g_excursions[idx].peakPrice)  g_excursions[idx].peakPrice = curPrice;
+            if(curPrice < g_excursions[idx].worstPrice) g_excursions[idx].worstPrice = curPrice;
+         }
+         else
+         {
+            if(curPrice < g_excursions[idx].peakPrice)  g_excursions[idx].peakPrice = curPrice;
+            if(curPrice > g_excursions[idx].worstPrice) g_excursions[idx].worstPrice = curPrice;
+         }
+      }
+   }
+}
+
 //--- Deduplication Tracker for closed deals
 ulong    g_processedDeals[1024];
 int      g_processedCount = 0;
@@ -295,6 +372,12 @@ void SyncAllActivePositions()
          double profit = PositionGetDouble(POSITION_PROFIT);
          double swap = PositionGetDouble(POSITION_SWAP);
 
+         int trackerIdx = -1;
+         for(int k = 0; k < g_excursionCount; k++)
+         {
+            if(g_excursions[k].ticket == ticket) { trackerIdx = k; break; }
+         }
+
          if(added > 0) json += ",";
          json += "{";
          json += "\"ticket\":" + IntegerToString(ticket) + ",";
@@ -306,7 +389,14 @@ void SyncAllActivePositions()
          json += "\"tp\":" + DoubleToString(tp, 5) + ",";
          json += "\"profit\":" + DoubleToString(profit, 2) + ",";
          json += "\"swap\":" + DoubleToString(swap, 2) + ",";
-         json += "\"open_time\":\"" + TimeToString(openTime, TIME_DATE|TIME_SECONDS) + "\"";
+         json += "\"open_time\":\"" + FormatIsoUtc(openTime) + "\"";
+         if(trackerIdx >= 0)
+         {
+            json += ",\"mfe_price\":" + DoubleToString(g_excursions[trackerIdx].peakPrice, 5);
+            json += ",\"mae_price\":" + DoubleToString(g_excursions[trackerIdx].worstPrice, 5);
+            json += ",\"peak_profit\":" + DoubleToString(g_excursions[trackerIdx].peakProfit, 2);
+            json += ",\"max_drawdown\":" + DoubleToString(g_excursions[trackerIdx].maxDrawdown, 2);
+         }
          json += "}";
          added++;
       }
@@ -348,19 +438,119 @@ void CheckClosedDeals()
             double swap = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
             datetime closeTime = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
 
+            // 1. Retrieve true opening deal & price for this position
+            datetime openTime = 0;
+            double openPrice = 0;
+            if(posTicket > 0 && HistorySelectByPosition(posTicket))
+            {
+               int posDeals = HistoryDealsTotal();
+               for(int k = 0; k < posDeals; k++)
+               {
+                  ulong d = HistoryDealGetTicket(k);
+                  if(d > 0 && (ENUM_DEAL_ENTRY)HistoryDealGetInteger(d, DEAL_ENTRY) == DEAL_ENTRY_IN)
+                  {
+                     openTime = (datetime)HistoryDealGetInteger(d, DEAL_TIME);
+                     openPrice = HistoryDealGetDouble(d, DEAL_PRICE);
+                     break;
+                  }
+               }
+            }
+            if(openTime <= 0) openTime = closeTime > 60 ? (closeTime - 60) : closeTime;
+            if(openPrice <= 0) openPrice = closePrice;
+
+            // 2. Retrieve live tracked excursion data
+            double trackedPeakPrice = 0;
+            double trackedWorstPrice = 0;
+            double trackedPeakProfit = profit;
+            double trackedMaxDrawdown = profit;
+            bool hasTracker = false;
+            for(int k = 0; k < g_excursionCount; k++)
+            {
+               if(g_excursions[k].ticket == posTicket)
+               {
+                  trackedPeakPrice = g_excursions[k].peakPrice;
+                  trackedWorstPrice = g_excursions[k].worstPrice;
+                  trackedPeakProfit = g_excursions[k].peakProfit;
+                  trackedMaxDrawdown = g_excursions[k].maxDrawdown;
+                  hasTracker = true;
+                  // Remove completed position from tracker array
+                  for(int m = k; m < g_excursionCount - 1; m++)
+                  {
+                     g_excursions[m] = g_excursions[m + 1];
+                  }
+                  g_excursionCount--;
+                  break;
+               }
+            }
+
+            // 3. Broker chart M1 candle bar confirmation (handles restarts & intermediate wicks)
+            double highs[];
+            double lows[];
+            ArraySetAsSeries(highs, false);
+            ArraySetAsSeries(lows, false);
+            int countH = CopyHigh(sym, PERIOD_M1, openTime, closeTime, highs);
+            int countL = CopyLow(sym, PERIOD_M1, openTime, closeTime, lows);
+            double barHigh = 0;
+            double barLow = 0;
+            if(countH > 0 && countL > 0)
+            {
+               barHigh = highs[ArrayMaximum(highs)];
+               barLow = lows[ArrayMinimum(lows)];
+            }
+
+            // 4. Resolve definitive broker MFE and MAE
+            bool isBuyPosition = (dealType == DEAL_TYPE_SELL); // Deal OUT was SELL -> Position was BUY
+            double finalMfePrice = closePrice;
+            double finalMaePrice = closePrice;
+
+            if(isBuyPosition)
+            {
+               // BUY (LONG): High is favorable, Low is adverse
+               finalMfePrice = MathMax(openPrice, closePrice);
+               if(barHigh > finalMfePrice) finalMfePrice = barHigh;
+               if(hasTracker && trackedPeakPrice > finalMfePrice) finalMfePrice = trackedPeakPrice;
+
+               finalMaePrice = MathMin(openPrice, closePrice);
+               if(barLow > 0 && barLow < finalMaePrice) finalMaePrice = barLow;
+               if(hasTracker && trackedWorstPrice > 0 && trackedWorstPrice < finalMaePrice) finalMaePrice = trackedWorstPrice;
+            }
+            else
+            {
+               // SELL (SHORT): Low is favorable, High is adverse
+               finalMfePrice = MathMin(openPrice, closePrice);
+               if(barLow > 0 && barLow < finalMfePrice) finalMfePrice = barLow;
+               if(hasTracker && trackedPeakPrice > 0 && trackedPeakPrice < finalMfePrice) finalMfePrice = trackedPeakPrice;
+
+               finalMaePrice = MathMax(openPrice, closePrice);
+               if(barHigh > finalMaePrice) finalMaePrice = barHigh;
+               if(hasTracker && trackedWorstPrice > finalMaePrice) finalMaePrice = trackedWorstPrice;
+            }
+
+            double finalPeakProfit = MathMax(profit, hasTracker ? trackedPeakProfit : profit);
+            if(profit > 0) finalPeakProfit = MathMax(finalPeakProfit, profit);
+
+            double finalMaxDrawdown = MathMin(profit, hasTracker ? trackedMaxDrawdown : profit);
+            if(profit < 0) finalMaxDrawdown = MathMin(finalMaxDrawdown, profit);
+
             string json = "{";
             json += "\"token\":\"" + InpToken + "\",";
             json += "\"action\":\"CLOSE\",";
             json += "\"ticket\":" + IntegerToString(posTicket > 0 ? posTicket : dealTicket) + ",";
             json += "\"deal_id\":" + IntegerToString(dealTicket) + ",";
             json += "\"symbol\":\"" + sym + "\",";
-            json += "\"type\":\"" + (dealType == DEAL_TYPE_SELL ? "BUY" : "SELL") + "\","; // Closed opposite side
+            json += "\"type\":\"" + (isBuyPosition ? "BUY" : "SELL") + "\",";
             json += "\"volume\":" + DoubleToString(vol, 2) + ",";
+            json += "\"open_price\":" + DoubleToString(openPrice, 5) + ",";
             json += "\"close_price\":" + DoubleToString(closePrice, 5) + ",";
             json += "\"profit\":" + DoubleToString(profit, 2) + ",";
             json += "\"commission\":" + DoubleToString(fee, 2) + ",";
             json += "\"swap\":" + DoubleToString(swap, 2) + ",";
-            json += "\"close_time\":\"" + TimeToString(closeTime, TIME_DATE|TIME_SECONDS) + "\"";
+            json += "\"open_time\":\"" + FormatIsoUtc(openTime) + "\",";
+            json += "\"close_time\":\"" + FormatIsoUtc(closeTime) + "\",";
+            json += "\"mfe_price\":" + DoubleToString(finalMfePrice, 5) + ",";
+            json += "\"mae_price\":" + DoubleToString(finalMaePrice, 5) + ",";
+            json += "\"peak_profit\":" + DoubleToString(finalPeakProfit, 2) + ",";
+            json += "\"max_drawdown\":" + DoubleToString(finalMaxDrawdown, 2) + "\"";
             json += "}";
 
             SendJsonToSetupMint(json, false);
@@ -375,7 +565,7 @@ void CheckClosedDeals()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.00...");
+   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.10 (MFE/MAE Zero-Discrepancy Engine)...");
    m_trade.SetExpertMagicNumber(1998);
    m_trade.SetDeviationInPoints(30);
 
@@ -398,7 +588,8 @@ int OnInit()
    string pingJson = "{\"token\":\"" + InpToken + "\",\"action\":\"PING\"}";
    SendJsonToSetupMint(pingJson, true);
    
-   // Initial sync
+   // Initial excursion tracking & sync
+   UpdateExcursionTracking();
    SyncAllActivePositions();
    return(INIT_SUCCEEDED);
 }
@@ -413,6 +604,14 @@ void OnDeinit(const int reason)
 }
 
 //+------------------------------------------------------------------+
+//| Expert tick function (Instant High-Precision Excursion Tracking) |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+   UpdateExcursionTracking();
+}
+
+//+------------------------------------------------------------------+
 //| Expert trade transaction function (Instant Execution Event)      |
 //+------------------------------------------------------------------+
 void OnTradeTransaction(const MqlTradeTransaction& trans,
@@ -424,6 +623,7 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
       trans.type == TRADE_TRANSACTION_ORDER_DELETE ||
       trans.type == TRADE_TRANSACTION_POSITION)
    {
+      UpdateExcursionTracking();
       SyncAllActivePositions();
       CheckClosedDeals();
    }
@@ -434,6 +634,7 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
 //+------------------------------------------------------------------+
 void OnTimer()
 {
+   UpdateExcursionTracking();
    SyncAllActivePositions();
    CheckClosedDeals();
 }

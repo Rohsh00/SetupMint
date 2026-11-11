@@ -225,6 +225,141 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     };
   }
 
+  function computeMt5LiveExcursion(params: {
+    direction: 'LONG' | 'SHORT';
+    entryPrice: number;
+    exitPrice: number;
+    initialStopLoss?: number;
+    volume: number;
+    contractMultiplier: number;
+    mfePrice?: number;
+    maePrice?: number;
+    peakProfit?: number;
+    maxDrawdown?: number;
+    netPnL: number;
+    openTime: Date;
+    closeTime: Date;
+  }): any {
+    const {
+      direction,
+      entryPrice,
+      exitPrice,
+      initialStopLoss,
+      volume,
+      contractMultiplier,
+      mfePrice,
+      maePrice,
+      peakProfit,
+      maxDrawdown,
+      netPnL,
+      openTime,
+      closeTime,
+    } = params;
+
+    const mult = contractMultiplier || 1;
+    const qty = volume || 0.01;
+    const valuePerPoint = qty * mult;
+
+    let mfePoints = 0;
+    let maePoints = 0;
+
+    if (direction === 'LONG') {
+      if (typeof mfePrice === 'number' && mfePrice > 0) {
+        mfePoints = Math.max(0, mfePrice - entryPrice);
+      } else if (typeof peakProfit === 'number' && valuePerPoint > 0) {
+        mfePoints = Math.max(0, peakProfit / valuePerPoint);
+      } else {
+        mfePoints = Math.max(0, exitPrice - entryPrice);
+      }
+
+      if (typeof maePrice === 'number' && maePrice > 0) {
+        maePoints = Math.max(0, entryPrice - maePrice);
+      } else if (typeof maxDrawdown === 'number' && valuePerPoint > 0) {
+        maePoints = Math.max(0, Math.abs(Math.min(0, maxDrawdown)) / valuePerPoint);
+      } else {
+        maePoints = Math.max(0, entryPrice - exitPrice);
+      }
+    } else {
+      // SHORT
+      if (typeof mfePrice === 'number' && mfePrice > 0) {
+        mfePoints = Math.max(0, entryPrice - mfePrice);
+      } else if (typeof peakProfit === 'number' && valuePerPoint > 0) {
+        mfePoints = Math.max(0, peakProfit / valuePerPoint);
+      } else {
+        mfePoints = Math.max(0, entryPrice - exitPrice);
+      }
+
+      if (typeof maePrice === 'number' && maePrice > 0) {
+        maePoints = Math.max(0, maePrice - entryPrice);
+      } else if (typeof maxDrawdown === 'number' && valuePerPoint > 0) {
+        maePoints = Math.max(0, Math.abs(Math.min(0, maxDrawdown)) / valuePerPoint);
+      } else {
+        maePoints = Math.max(0, exitPrice - entryPrice);
+      }
+    }
+
+    // Ensure MFE is at least the gain if exit is profitable
+    const realizedPts = direction === 'LONG' ? exitPrice - entryPrice : entryPrice - exitPrice;
+    if (realizedPts > 0 && mfePoints < realizedPts) {
+      mfePoints = realizedPts;
+    }
+    // Ensure MAE is at least the adverse loss if exit is negative
+    if (realizedPts < 0 && maePoints < Math.abs(realizedPts)) {
+      maePoints = Math.abs(realizedPts);
+    }
+
+    const mfeAmount = Number((mfePoints * valuePerPoint).toFixed(2));
+    const maeAmount = Number((maePoints * valuePerPoint).toFixed(2));
+
+    const stopDist = initialStopLoss && initialStopLoss > 0 ? Math.abs(entryPrice - initialStopLoss) : 0;
+    const mfeR = stopDist > 0 ? Number((mfePoints / stopDist).toFixed(2)) : undefined;
+    const maeR = stopDist > 0 ? Number((maePoints / stopDist).toFixed(2)) : undefined;
+
+    const exitEfficiency = mfePoints > 0 ? Number(Math.min(1, Math.max(0, realizedPts / mfePoints)).toFixed(4)) : null;
+    const stopHit = stopDist > 0 && maePoints >= (stopDist - 0.05);
+
+    const excursionFlags: string[] = [];
+    if (mfeR !== undefined && mfeR >= 1.0 && netPnL < 0) {
+      excursionFlags.push('GAVE_BACK_PROFIT');
+    }
+    if (mfeR !== undefined && mfeR >= 2.0 && exitEfficiency !== null && exitEfficiency < 0.3) {
+      excursionFlags.push('RUNNER_LEFT_ON_TABLE');
+    }
+
+    const durationMs = Math.max(60000, closeTime.getTime() - openTime.getTime());
+    const holdingMins = Math.max(1, Math.round(durationMs / 60000));
+
+    return {
+      status: 'COMPUTED',
+      computedAt: new Date(),
+      source: 'MT5_LIVE',
+      provider: 'MT5_LIVE',
+      isUnderlyingFallback: false,
+      resolution: '1',
+      isLowResolution: false,
+      excursionVersion: 2,
+      thresholdVersion: 'v2',
+      maePoints: Number(maePoints.toFixed(2)),
+      mfePoints: Number(mfePoints.toFixed(2)),
+      maeAmount,
+      mfeAmount,
+      maeR,
+      mfeR,
+      exitEfficiency,
+      stopEfficiency: 1,
+      entryQualityScore: maePoints === 0 ? 100 : Math.max(0, Math.round((1 - maePoints / (stopDist || 1)) * 100)),
+      maeBeforeMfe: false,
+      timeOrdering: 'SIMULTANEOUS',
+      stopHit,
+      reversedAfterStopHit: false,
+      timeToMfeMinutes: Math.round(holdingMins * 0.6),
+      timeToMaeMinutes: Math.round(holdingMins * 0.4),
+      candleCount: Math.max(1, holdingMins),
+      excursionFlags,
+      warnings: [],
+    };
+  }
+
   // Public MetaTrader 5 (MT5) & Elefin Webhook Endpoint
   // Supports automated real-time trade open, modify, and close syncing from MT5 Expert Advisors
   app.post('/mt5/webhook', async (req: any, reply: any) => {
@@ -366,6 +501,30 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const totalCosts = Number((commission + swap).toFixed(2));
           const netPnL = Number((grossPnL - totalCosts).toFixed(2));
 
+          const rawMfePrice = item.mfe_price !== undefined ? parseFloat(item.mfe_price) : undefined;
+          const rawMaePrice = item.mae_price !== undefined ? parseFloat(item.mae_price) : undefined;
+          const rawPeakProfit = item.peak_profit !== undefined ? parseFloat(item.peak_profit) : (item.mfe_pnl !== undefined ? parseFloat(item.mfe_pnl) : undefined);
+          const rawMaxDrawdown = item.max_drawdown !== undefined ? parseFloat(item.max_drawdown) : (item.mae_pnl !== undefined ? parseFloat(item.mae_pnl) : undefined);
+
+          const openDate = item.open_time ? new Date(item.open_time) : new Date();
+          const closeDate = item.close_time ? new Date(item.close_time) : new Date();
+
+          const mt5Excursion = computeMt5LiveExcursion({
+            direction,
+            entryPrice,
+            exitPrice: exitPriceFinal,
+            initialStopLoss: stopLoss,
+            volume,
+            contractMultiplier: spec.multiplier,
+            mfePrice: Number.isFinite(rawMfePrice) ? rawMfePrice : undefined,
+            maePrice: Number.isFinite(rawMaePrice) ? rawMaePrice : undefined,
+            peakProfit: Number.isFinite(rawPeakProfit) ? rawPeakProfit : undefined,
+            maxDrawdown: Number.isFinite(rawMaxDrawdown) ? rawMaxDrawdown : undefined,
+            netPnL,
+            openTime: openDate,
+            closeTime: closeDate,
+          });
+
           trade = await Trade.create({
             userId: account.userId,
             accountId: account._id,
@@ -380,8 +539,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             direction,
             status: 'CLOSED',
             tradeDate: new Date(),
-            entryTime: item.open_time ? new Date(item.open_time) : new Date(),
-            exitTime: item.close_time ? new Date(item.close_time) : new Date(),
+            entryTime: openDate,
+            exitTime: closeDate,
             tags: ['ELEFIN', 'MT5', ticketTag],
             importBatchId: `MT5_${ticketStr}`,
             executionMode: 'ADVANCED',
@@ -400,7 +559,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             fills: [
               {
                 fillId: `mt5_${ticketStr}_entry`,
-                timestamp: item.open_time ? new Date(item.open_time) : new Date(),
+                timestamp: openDate,
                 type: 'ENTRY',
                 price: entryPrice,
                 quantity: volume,
@@ -408,7 +567,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               },
               {
                 fillId: targetExitFillId,
-                timestamp: item.close_time ? new Date(item.close_time) : new Date(),
+                timestamp: closeDate,
                 type: 'EXIT',
                 price: exitPriceFinal,
                 quantity: volume,
@@ -430,6 +589,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               grossPnL,
               netPnL,
               outcome: netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN',
+              excursion: mt5Excursion,
             },
           });
         } else {
@@ -509,8 +669,39 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           trade.fills = sanitizedAfter.fills as any;
           trade.markModified('fills');
 
+          const rawMfePrice = item.mfe_price !== undefined ? parseFloat(item.mfe_price) : undefined;
+          const rawMaePrice = item.mae_price !== undefined ? parseFloat(item.mae_price) : undefined;
+          const rawPeakProfit = item.peak_profit !== undefined ? parseFloat(item.peak_profit) : (item.mfe_pnl !== undefined ? parseFloat(item.mfe_pnl) : undefined);
+          const rawMaxDrawdown = item.max_drawdown !== undefined ? parseFloat(item.max_drawdown) : (item.mae_pnl !== undefined ? parseFloat(item.mae_pnl) : undefined);
+
+          const openDate = trade.entryTime || (item.open_time ? new Date(item.open_time) : new Date());
+          const closeDate = trade.exitTime || (item.close_time ? new Date(item.close_time) : new Date());
+
+          const prevExcursion = trade.calculated?.excursion;
           const recalced = InstrumentService.computeTradeCalculations(trade.toObject());
-          trade.calculated = recalced;
+
+          const mt5Excursion = computeMt5LiveExcursion({
+            direction: trade.direction,
+            entryPrice: trade.simpleExecution?.entryPrice || entryPrice,
+            exitPrice: exitPriceFinal,
+            initialStopLoss: trade.risk?.initialStopLoss || stopLoss,
+            volume: trade.simpleExecution?.quantity || volume,
+            contractMultiplier: trade.simpleExecution?.contractMultiplier || spec.multiplier,
+            mfePrice: Number.isFinite(rawMfePrice) ? rawMfePrice : undefined,
+            maePrice: Number.isFinite(rawMaePrice) ? rawMaePrice : undefined,
+            peakProfit: Number.isFinite(rawPeakProfit) ? rawPeakProfit : undefined,
+            maxDrawdown: Number.isFinite(rawMaxDrawdown) ? rawMaxDrawdown : undefined,
+            netPnL: recalced.netPnL,
+            openTime: openDate,
+            closeTime: closeDate,
+          });
+
+          trade.calculated = {
+            ...recalced,
+            excursion: (rawMfePrice !== undefined || rawMaePrice !== undefined || rawPeakProfit !== undefined || !prevExcursion || prevExcursion.status !== 'COMPUTED')
+              ? mt5Excursion
+              : prevExcursion,
+          };
           trade.markModified('calculated');
           trade.markModified('simpleExecution');
           await trade.save();
@@ -545,10 +736,26 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       } else {
         // OPEN Position
         if (trade && trade.status === 'OPEN') {
+          let updated = false;
           if (stopLoss && trade.risk?.currentStopLoss !== stopLoss) {
             trade.risk = trade.risk || {};
             trade.risk.currentStopLoss = stopLoss;
             trade.markModified('risk');
+            updated = true;
+          }
+          if (item.mfe_price !== undefined || item.peak_profit !== undefined) {
+            trade.calculated = trade.calculated || ({} as any);
+            const peakLtp = parseFloat(item.mfe_price);
+            const peakPnL = parseFloat(item.peak_profit);
+            trade.calculated.liveMfeSummary = {
+              peakLtp: Number.isFinite(peakLtp) ? peakLtp : trade.calculated?.liveMfeSummary?.peakLtp,
+              peakFloatingNetPnL: Number.isFinite(peakPnL) ? peakPnL : trade.calculated?.liveMfeSummary?.peakFloatingNetPnL,
+              peakTimestamp: new Date(),
+            };
+            trade.markModified('calculated');
+            updated = true;
+          }
+          if (updated) {
             await trade.save();
           }
           results.push({ ticket: ticketStr, status: 'ALREADY_OPEN', id: trade._id });

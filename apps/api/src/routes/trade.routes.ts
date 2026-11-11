@@ -1553,7 +1553,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const classificationChanged = oldVariantKey !== newVariantKey || oldVariantStatus !== newVariantStatus;
 
     const oldNetPnL = existingTrade.calculated?.netPnL || 0;
-    const newCalculated = computeTradeCalculations(mergedData);
+    const baseCalculated = computeTradeCalculations(mergedData);
+    const newCalculated = {
+      ...baseCalculated,
+      excursion: existingTrade.calculated?.excursion,
+      liveMfeSummary: existingTrade.calculated?.liveMfeSummary,
+      stopMoveSummary: existingTrade.calculated?.stopMoveSummary,
+    };
     const isClosing = parseResult.data.status === 'CLOSED' && existingTrade.status !== 'CLOSED';
 
     const auditEntriesToPush: any[] = [

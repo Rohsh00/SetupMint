@@ -135,8 +135,8 @@ export interface ITradeDoc extends Document {
     excursion?: {
       status: 'PENDING' | 'COMPUTED' | 'UNAVAILABLE' | 'FAILED';
       computedAt?: Date;
-      source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK';
-      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
+      source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK' | 'MT5_LIVE' | 'MANUAL';
+      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'MT5_LIVE' | 'MANUAL';
       isUnderlyingFallback?: boolean;
       resolution?: string;
       isLowResolution?: boolean;
@@ -411,12 +411,12 @@ const TradeSchema = new Schema<ITradeDoc>(
         computedAt: { type: Date },
         source: {
           type: String,
-          enum: ['FYERS_HISTORY', 'ANGEL_ONE_HISTORY', 'UNDERLYING_FALLBACK'],
+          enum: ['FYERS_HISTORY', 'ANGEL_ONE_HISTORY', 'UNDERLYING_FALLBACK', 'MT5_LIVE', 'MANUAL'],
           default: 'FYERS_HISTORY',
         },
         provider: {
           type: String,
-          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC'],
+          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC', 'MT5_LIVE', 'MANUAL'],
           default: 'FYERS',
         },
         isUnderlyingFallback: { type: Boolean, default: false },

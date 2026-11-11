@@ -68,7 +68,7 @@ import { useDateRange } from '../context/DateRangeContext.js';
 export function AnalyticsPage() {
   const { queryParams, isPropMode, scopeLabel, currency: scopeCurrency, activeAccount, isMultiCurrency, currencies } = useAccountScope();
   const caps = useAccountCapabilities();
-  const hasMarketData = caps.marketData.fyersHistory || caps.marketData.angelOneFallback;
+  const hasMarketData = caps.marketData.fyersHistory || caps.marketData.angelOneFallback || Boolean(caps.marketData.hasExcursionCapability) || caps.broker.adapter === 'ELEFIN_MT5';
   const { openDrill } = useTradeDrilldown();
   const { startDate, endDate } = useDateRange();
   const analyticsCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');

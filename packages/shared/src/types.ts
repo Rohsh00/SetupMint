@@ -531,6 +531,7 @@ export interface IAccountUiCapabilities {
     fyersHistory: boolean;
     angelOneFallback: boolean;
     canStreamQuotes: boolean;
+    hasExcursionCapability?: boolean;
   };
 
   // Fees & charges
@@ -815,8 +816,8 @@ export type ExcursionFlag =
 export interface ITradeExcursion {
   status: ExcursionStatus;
   computedAt?: string;
-  source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK';
-  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
+  source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK' | 'MT5_LIVE' | 'MANUAL';
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'MT5_LIVE' | 'MANUAL';
   isUnderlyingFallback?: boolean;
   resolution?: string;
   isLowResolution?: boolean;

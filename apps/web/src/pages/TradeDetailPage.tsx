@@ -1713,7 +1713,7 @@ export function TradeDetailPage() {
                   </Box>
                 )}
               </Box>
-            ) : (caps.marketData.fyersHistory || caps.marketData.angelOneFallback) ? (
+            ) : (caps.marketData.fyersHistory || caps.marketData.angelOneFallback || caps.broker.adapter === 'ELEFIN_MT5' || Boolean(caps.marketData.hasExcursionCapability)) ? (
               <Box sx={{ p: 2.5, borderRadius: 2, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)', textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
                   Excursion metrics have not been computed yet for this trade. Compute now using market data historical candles to reveal your maximum potential vs captured profit.

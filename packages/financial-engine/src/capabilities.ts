@@ -190,6 +190,7 @@ function createEmptyCapabilities(): IAccountUiCapabilities {
       fyersHistory: false,
       angelOneFallback: false,
       canStreamQuotes: false,
+      hasExcursionCapability: false,
     },
     fees: {
       model: 'NONE',
@@ -412,8 +413,10 @@ export function resolveAccountUiCapabilities(
 
     const brokerPreset = resolveBrokerPreset(acc.broker || '');
     const isIndianMarket = profile.marketRegion === 'IN';
+    const isElefin = profile.executionAdapterKey === 'ELEFIN_MT5' || /ELEFIN|MT5/i.test(brokerStr);
     const fyersHistory = isIndianMarket || isFyers;
     const angelOneFallback = isIndianMarket;
+    const hasExcursionCapability = fyersHistory || angelOneFallback || isElefin || Boolean(profile.capabilities?.canStreamQuotes);
 
     const showStatutoryBreakdown = (profile.feeModelKey === 'INDIA_STATUTORY' || isIndianMarket) && !isProp;
     const showCommissionSwap = profile.feeModelKey === 'FOREX_COMMISSION' || profile.marketRegion === 'GLOBAL' || isProp;
@@ -475,6 +478,7 @@ export function resolveAccountUiCapabilities(
         fyersHistory,
         angelOneFallback,
         canStreamQuotes: Boolean(profile.capabilities?.canStreamQuotes),
+        hasExcursionCapability,
       },
       fees: {
         model: profile.feeModelKey,
@@ -572,6 +576,7 @@ export function resolveAccountUiCapabilities(
   const allFyersHistory = evaluatedItems.every((i) => i.capabilities.marketData.fyersHistory);
   const allAngelFallback = evaluatedItems.every((i) => i.capabilities.marketData.angelOneFallback);
   const allStreamQuotes = evaluatedItems.every((i) => i.capabilities.marketData.canStreamQuotes);
+  const anyExcursion = evaluatedItems.some((i) => i.capabilities.marketData.hasExcursionCapability);
   const allWatcher = evaluatedItems.every((i) => i.capabilities.live.watcher);
   const allCashLedger = evaluatedItems.every((i) => i.capabilities.csvImport.cashLedger);
 
@@ -639,6 +644,7 @@ export function resolveAccountUiCapabilities(
       fyersHistory: allFyersHistory,
       angelOneFallback: allAngelFallback,
       canStreamQuotes: allStreamQuotes,
+      hasExcursionCapability: anyExcursion,
     },
     fees: {
       model: commonFeeModel,

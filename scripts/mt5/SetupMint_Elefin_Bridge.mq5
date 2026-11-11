@@ -578,7 +578,7 @@ void CheckClosedDeals()
             json += "\"mfe_price\":" + DoubleToString(finalMfePrice, 5) + ",";
             json += "\"mae_price\":" + DoubleToString(finalMaePrice, 5) + ",";
             json += "\"peak_profit\":" + DoubleToString(finalPeakProfit, 2) + ",";
-            json += "\"max_drawdown\":" + DoubleToString(finalMaxDrawdown, 2) + "\"";
+            json += "\"max_drawdown\":" + DoubleToString(finalMaxDrawdown, 2);
             json += "}";
 
             SendJsonToSetupMint(json, false);

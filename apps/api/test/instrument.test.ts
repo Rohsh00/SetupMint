@@ -491,5 +491,39 @@ describe('Instrument Service & API Specifications Tests', () => {
       expect(calc.totalCosts).toBe(60.00);
       expect(calc.netPnL).toBe(890.00); // 1000 - 60 - 50
     });
+
+    it('correctly calculates execution slippage on trade calculations', () => {
+      // Planned entry 200, filled at 202 (+2 pts adverse)
+      // Planned exit (target) 300, filled at 298 (+2 pts adverse)
+      // Qty 10, contractMultiplier 1
+      // Total slippage drag = 4 pts * 10 = 40.00
+      const calc = InstrumentService.computeTradeCalculations({
+        direction: 'LONG',
+        status: 'CLOSED',
+        executionMode: 'SIMPLE',
+        assetClass: 'EQUITY',
+        marketSegment: 'NSE_EQ',
+        risk: {
+          plannedEntryPrice: 200,
+          plannedTarget: 300,
+        },
+        simpleExecution: {
+          entryPrice: 202,
+          exitPrice: 298,
+          quantity: 10,
+          contractMultiplier: 1,
+        },
+      });
+
+      expect(calc.slippage).toBeDefined();
+      expect(calc.slippage?.hasSlippageData).toBe(true);
+      expect(calc.slippage?.isEntryAdverse).toBe(true);
+      expect(calc.slippage?.entrySlippagePoints).toBe(2);
+      expect(calc.slippage?.entrySlippageCost).toBe(20);
+      expect(calc.slippage?.isExitAdverse).toBe(true);
+      expect(calc.slippage?.exitSlippagePoints).toBe(2);
+      expect(calc.slippage?.exitSlippageCost).toBe(20);
+      expect(calc.slippage?.totalSlippageCost).toBe(40);
+    });
   });
 });

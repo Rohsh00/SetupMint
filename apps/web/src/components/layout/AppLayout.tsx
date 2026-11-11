@@ -1039,9 +1039,171 @@ export function AppLayout() {
             flex: 1,
             overflowY: 'auto',
             p: { xs: 2, sm: 3, md: 4 },
+            pb: { xs: '84px', md: 4 },
           }}
         >
           <Outlet context={{ selectedAccountId, scope, isPropMode }} />
+        </Box>
+
+        {/* Mobile First Sticky Bottom Navigation */}
+        <Box
+          component="nav"
+          aria-label="Mobile Navigation"
+          sx={{
+            display: { xs: 'flex', md: 'none' },
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1100,
+            height: 'calc(62px + env(safe-area-inset-bottom, 0px))',
+            pb: 'env(safe-area-inset-bottom, 0px)',
+            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.94)',
+            backdropFilter: 'blur(16px)',
+            borderTop: `1px solid ${muiTheme.palette.divider}`,
+            alignItems: 'center',
+            justifyContent: 'space-around',
+            px: 1,
+            boxShadow: isDark
+              ? '0 -4px 20px rgba(0, 0, 0, 0.45)'
+              : '0 -4px 20px rgba(15, 23, 42, 0.08)',
+          }}
+        >
+          {/* 1. Overview */}
+          <Box
+            component={NavLink}
+            to={{ pathname: '/', search: preservedSearch }}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+              flex: 1,
+              py: 0.5,
+              color: location.pathname === '/' ? muiTheme.palette.primary.main : muiTheme.palette.text.secondary,
+              transition: 'all 0.15s ease',
+              '&:active': { transform: 'scale(0.95)' },
+            }}
+          >
+            <LayoutDashboardIcon sx={{ fontSize: 22 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.6875rem', fontWeight: location.pathname === '/' ? 700 : 500, mt: 0.25 }}>
+              Overview
+            </Typography>
+          </Box>
+
+          {/* 2. Trades */}
+          <Box
+            component={NavLink}
+            to={{ pathname: '/trades', search: preservedSearch }}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+              flex: 1,
+              py: 0.5,
+              color: location.pathname.startsWith('/trades') ? muiTheme.palette.primary.main : muiTheme.palette.text.secondary,
+              transition: 'all 0.15s ease',
+              '&:active': { transform: 'scale(0.95)' },
+            }}
+          >
+            <TableViewIcon sx={{ fontSize: 22 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.6875rem', fontWeight: location.pathname.startsWith('/trades') ? 700 : 500, mt: 0.25 }}>
+              Trades
+            </Typography>
+          </Box>
+
+          {/* 3. Floating Center Action Button (Log New Trade) */}
+          {!caps.isArchived && (
+            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+              <IconButton
+                aria-label="Log New Trade"
+                onClick={() => {
+                  prefetchTradeFormData();
+                  setIsTradeModalOpen(true);
+                }}
+                sx={{
+                  width: 48,
+                  height: 48,
+                  mt: -3,
+                  backgroundColor: muiTheme.palette.primary.main,
+                  color: '#FFFFFF',
+                  boxShadow: isDark
+                    ? '0 6px 18px rgba(16, 185, 129, 0.45)'
+                    : '0 6px 18px rgba(5, 150, 105, 0.35)',
+                  border: `3px solid ${isDark ? '#0B0F19' : '#FFFFFF'}`,
+                  transition: 'transform 0.15s ease, background-color 0.15s ease',
+                  '&:hover': {
+                    backgroundColor: isDark ? '#059669' : '#047857',
+                    transform: 'translateY(-2px)',
+                  },
+                  '&:active': {
+                    transform: 'scale(0.92)',
+                  },
+                }}
+              >
+                <AddIcon sx={{ fontSize: 26 }} />
+              </IconButton>
+            </Box>
+          )}
+
+          {/* 4. Journal Calendar */}
+          <Box
+            component={NavLink}
+            to={{ pathname: '/journal', search: preservedSearch }}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+              flex: 1,
+              py: 0.5,
+              color: location.pathname.startsWith('/journal') ? muiTheme.palette.primary.main : muiTheme.palette.text.secondary,
+              transition: 'all 0.15s ease',
+              '&:active': { transform: 'scale(0.95)' },
+            }}
+          >
+            <CalendarMonthIcon sx={{ fontSize: 22 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.6875rem', fontWeight: location.pathname.startsWith('/journal') ? 700 : 500, mt: 0.25 }}>
+              Journal
+            </Typography>
+          </Box>
+
+          {/* 5. More (Opens Full Drawer) */}
+          <Box
+            onClick={() => setMobileOpen(true)}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flex: 1,
+              py: 0.5,
+              color: [
+                '/review/weekly',
+                '/analytics',
+                '/strategies',
+                '/risk-calculator',
+                '/accounts',
+                '/instruments',
+                '/reports',
+                '/settings',
+              ].some((p) => location.pathname.startsWith(p))
+                ? muiTheme.palette.primary.main
+                : muiTheme.palette.text.secondary,
+              transition: 'all 0.15s ease',
+              '&:active': { transform: 'scale(0.95)' },
+            }}
+          >
+            <MenuIcon sx={{ fontSize: 22 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.6875rem', fontWeight: 500, mt: 0.25 }}>
+              Menu
+            </Typography>
+          </Box>
         </Box>
       </Box>
 

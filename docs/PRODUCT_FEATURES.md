@@ -735,6 +735,68 @@ This document provides a comprehensive, verified feature inventory of all module
   - API Routes: `GET /api/v1/accounts/prop-presets`, `GET /api/v1/accounts/prop-overview`, `GET /:id/prop-health`, `POST /:id/prop-advance-phase` in [`account.routes.ts`](file:///Users/komal/projects/Trading%20Vault/apps/api/src/routes/account.routes.ts).
   - Frontend Context & Components: [`AccountScopeContext.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/context/AccountScopeContext.tsx), [`PropChallengePanel.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/dashboard/PropChallengePanel.tsx), [`PropFirmAccountCard.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/accounts/PropFirmAccountCard.tsx), [`AppLayout.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/AppLayout.tsx), [`AccountsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AccountsPage.tsx).
 
+---
+
+### Module 21: Order Execution Slippage & Fill Latency Engine
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** Traders execute orders at market or on volatile momentum breakouts and frequently suffer hidden execution slippage (the spread and latency difference between planned entry/exit prices and the actual fill price). Without objective measurement, traders cannot distinguish between bad strategy edge and broker fill drag.
+- **Key Capabilities:**
+  - **Directional 30-Digit Decimal Math (`calculateExecutionSlippage`):**
+    - Long entry: adverse when $\text{actualEntry} > \text{plannedEntry}$; favorable (price improvement) when $\text{actualEntry} < \text{plannedEntry}$.
+    - Short entry: adverse when $\text{actualEntry} < \text{plannedEntry}$; favorable when $\text{actualEntry} > \text{plannedEntry}$.
+    - Exit slippage: measures actual exit against planned stop loss or target with lot size and contract multiplier weighting.
+  - **Monetary Drag & Percent Impact:**
+    - Computes exact monetary drag in native currency ($₹/\$$) and percentage deviation.
+    - Generates human-readable summary badges (e.g. `Entry adverse (+2.50 pts drag) • Exit improved (-1.00 pts saved)`).
+  - **Portfolio Aggregate Metrics (`aggregateSlippageMetrics`):**
+    - Calculates total cumulative slippage drag, average drag per trade, adverse vs favorable fill counts, and entry vs exit breakdowns.
+  - **Visual Integration:**
+    - Trade Details: Dedicated **Execution Slippage & Fill Quality** card in [`TradeDetailPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/TradeDetailPage.tsx) comparing planned vs actual fills, point delta, and monetary drag.
+    - Analytics: Order Execution Slippage & Fill Quality summary card in [`AnalyticsPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/AnalyticsPage.tsx) under the Execution Quality tab.
+- **Frontend & Backend Components:**
+  - Engine: `packages/financial-engine/src/slippage.ts`
+  - Shared: `IExecutionSlippage`, `ISlippageAggregate` in `packages/shared/src/types.ts`
+  - Backend: `apps/api/src/services/instrument.service.ts`, `apps/api/src/routes/analytics.routes.ts`
+  - Frontend: `TradeDetailPage.tsx`, `AnalyticsPage.tsx`
+
+---
+
+### Module 22: Mobile-First Sticky Bottom Navigation & Tactile Action FAB
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** Mobile traders reviewing trades on phones or tablets had to repeatedly reach up to the top header hamburger menu to navigate between views, inducing excessive touch fatigue.
+- **Key Capabilities:**
+  - **Ergonomic Sticky Bottom Bar:** Fixed navigation pinned to the bottom of the viewport with modern frosted glassmorphism (`backdropFilter: blur(16px)`), safe-area padding (`env(safe-area-inset-bottom)`), and border divider.
+  - **5 Primary Touch Targets:**
+    1. `Overview` (`/`): Performance overview and equity curve.
+    2. `Trades` (`/trades`): Master trade ledger.
+    3. `Floating Action FAB (+) `: Elevated 48px emerald action button floating above the bar edge with responsive haptic feedback, launching the Trade Logging Modal instantly.
+    4. `Journal` (`/journal`): Monthly calendar and daily reflection review.
+    5. `Menu`: Direct single-tap trigger to open the off-canvas drawer for deep modules (Weekly Review, Analytics, Strategies, Risk Calculator, Accounts, Settings).
+  - **Automatic Content Clearance:** Main workspace viewport automatically adds `84px` bottom padding on mobile viewports so content and action buttons are never obscured.
+- **Frontend Components:**
+  - [`AppLayout.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/layout/AppLayout.tsx)
+
+---
+
+### Module 23: Rich Markdown & Direct Clipboard Screenshot Paste for Reflections
+- **Status:** **COMPLETE & VERIFIED**
+- **Problem Solved:** End-of-day daily reflections and weekly debriefs were limited to plain multiline textareas. Traders could not format key takeaways with bold/italics, bulleted checklists, or embed chart screenshots directly into their notes.
+- **Key Capabilities:**
+  - **Lightweight Zero-Dependency Markdown Renderer (`MarkdownRenderer`):**
+    - Headings (`#`, `##`, `###`), bold (`**text**`), italic (`*text*`), styled blockquotes (`> `), bullet lists (`- `), interactive checklists (`- [ ]`, `- [x]`), inline code (`` `code` ``), and embedded chart screenshots.
+  - **Direct Clipboard Screenshot Paste (`Cmd+V` / `Ctrl+V`):**
+    - Seamlessly intercepts clipboard image data, optimizes/compresses images in-browser to lightweight WebP/JPEG data URLs, and automatically embeds `![Chart Screenshot - HH:MM](dataUrl)` directly at cursor position.
+  - **Drag-and-Drop Image Dropzone:**
+    - Drop screenshots directly onto the reflection editor to embed them instantly.
+  - **Fullscreen Image Lightbox:**
+    - Click any embedded chart thumbnail in reflection notes to open a high-resolution darkroom lightbox dialog.
+  - **Dual Mode (Write vs Live Preview):**
+    - Tabbed toggle switcher allowing the trader to write raw markdown or inspect the formatted reflection.
+- **Frontend Components:**
+  - [`RichMarkdownEditor.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/components/journal/RichMarkdownEditor.tsx)
+  - [`JournalCalendarPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/JournalCalendarPage.tsx)
+  - [`WeeklyReviewPage.tsx`](file:///Users/komal/projects/Trading%20Vault/apps/web/src/pages/WeeklyReviewPage.tsx)
+
 
 
 

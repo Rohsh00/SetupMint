@@ -12,6 +12,7 @@ import {
   calculateIndianCharges,
   calculateRealizedRMultiple,
   calculateSimpleExecutionPnL,
+  calculateExecutionSlippage,
   normalizeUnderlying,
   sanitizeTradeFills,
   FeeModelRegistry,
@@ -460,6 +461,19 @@ export class InstrumentService {
       body.risk.realizedRMultiple = realizedRMultiple;
     }
 
+    const slippage = calculateExecutionSlippage({
+      direction: body.direction,
+      quantity: closedQty || body.simpleExecution?.quantity || 1,
+      contractMultiplier: resolvedMult,
+      actualEntryPrice: avgEntry,
+      plannedEntryPrice: body.risk?.plannedEntryPrice,
+      actualExitPrice: avgExit,
+      plannedExitPrice: body.risk?.plannedExitPrice,
+      initialStopLoss: body.risk?.initialStopLoss,
+      plannedTarget: body.risk?.plannedTarget,
+      outcome,
+    });
+
     return {
       grossPnL,
       totalCosts,
@@ -472,6 +486,7 @@ export class InstrumentService {
       openQuantity: openQty,
       averageEntryPrice: avgEntry,
       averageExitPrice: avgExit,
+      slippage: slippage.hasSlippageData ? slippage : undefined,
     };
   }
 

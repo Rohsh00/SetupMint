@@ -752,6 +752,7 @@ export type InitialStopSource = 'MANUAL' | 'TEMPLATE' | 'BROKER_ORDERBOOK';
 
 export interface IRiskDetails {
   plannedEntryPrice?: number;
+  plannedExitPrice?: number;
   initialStopLoss?: number;
   initialStopSource?: InitialStopSource;
   slReviewReason?: string;
@@ -965,6 +966,33 @@ export interface IStopMoveSummary {
   detectedAt?: string;
 }
 
+export interface IExecutionSlippage {
+  hasSlippageData: boolean;
+  entrySlippagePoints?: number;
+  entrySlippagePercent?: number;
+  entrySlippageCost?: number;
+  isEntryAdverse?: boolean;
+  exitSlippagePoints?: number;
+  exitSlippagePercent?: number;
+  exitSlippageCost?: number;
+  isExitAdverse?: boolean;
+  totalSlippageCost?: number;
+  summaryText?: string;
+}
+
+export interface ISlippageAggregate {
+  totalSlippageCost: number;
+  avgSlippagePerTrade: number;
+  adverseTradesCount: number;
+  favorableTradesCount: number;
+  neutralTradesCount: number;
+  tradesWithSlippageCount: number;
+  adverseEntryCount: number;
+  favorableEntryCount: number;
+  adverseExitCount: number;
+  favorableExitCount: number;
+}
+
 export interface ICalculatedDetails {
   grossPnL: number;
   totalCosts: number;
@@ -978,6 +1006,7 @@ export interface ICalculatedDetails {
   averageExitPrice?: number;
   excursion?: ITradeExcursion;
   stopMoveSummary?: IStopMoveSummary;
+  slippage?: IExecutionSlippage;
 }
 
 export type AttachmentCategory =

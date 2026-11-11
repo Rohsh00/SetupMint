@@ -51,6 +51,7 @@ import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { HelpHint } from '../components/help/index.js';
+import { RichMarkdownEditor } from '../components/journal/RichMarkdownEditor.js';
 
 export function JournalCalendarPage() {
   const { openDrill } = useTradeDrilldown();
@@ -1426,30 +1427,22 @@ export function JournalCalendarPage() {
                 </Box>
 
                 <Box>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                    Lessons Learned & Psychological Feedback
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={3}
-                    size="small"
+                  <RichMarkdownEditor
+                    label="Lessons Learned & Psychological Feedback"
                     value={lessonsLearned}
-                    onChange={(e) => setLessonsLearned(e.target.value)}
-                    placeholder="What did the market do right? What emotional state did I experience?"
+                    onChange={(val) => setLessonsLearned(val)}
+                    placeholder="What did the market do right? What emotional state did I experience? Paste chart screenshots directly (Cmd+V)..."
+                    minRows={4}
                   />
                 </Box>
 
                 <Box>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                    Next Session Action Plan
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    size="small"
+                  <RichMarkdownEditor
+                    label="Next Session Action Plan"
                     value={nextDayPlan}
-                    onChange={(e) => setNextDayPlan(e.target.value)}
-                    placeholder="Key levels to monitor tomorrow, risk guardrails to enforce"
+                    onChange={(val) => setNextDayPlan(val)}
+                    placeholder="Key levels to monitor tomorrow, risk guardrails to enforce, checklist..."
+                    minRows={2}
                   />
                 </Box>
               </Box>

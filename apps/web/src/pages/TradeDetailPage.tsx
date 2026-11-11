@@ -1194,6 +1194,221 @@ export function TradeDetailPage() {
         </Grid>
       </Grid>
 
+      {/* Execution Slippage & Fill Quality Card */}
+      {(() => {
+        const slippage = trade.calculated?.slippage;
+        const hasData = Boolean(slippage?.hasSlippageData);
+        const totalDrag = slippage?.totalSlippageCost || 0;
+        const isNetAdverse = totalDrag > 0.01;
+        const isNetFavorable = totalDrag < -0.01;
+
+        return (
+          <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                pb: 2,
+                mb: 2,
+                borderBottom: `1px solid ${muiTheme.palette.divider}`,
+                flexWrap: 'wrap',
+                gap: 1.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                <TrackChangesRoundedIcon sx={{ color: 'primary.main', fontSize: 22 }} />
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                    Execution Slippage & Fill Quality
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Quantifies market execution latency and price fill divergence from pre-trade planned levels
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Chip
+                label={hasData ? (isNetAdverse ? `Adverse Drag: ${formatCurrency(totalDrag, tradeCurrency)}` : isNetFavorable ? `Price Improved: ${formatCurrency(Math.abs(totalDrag), tradeCurrency)}` : 'Zero Slippage') : 'No Planned Levels Logged'}
+                size="small"
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.6875rem',
+                  backgroundColor: !hasData
+                    ? (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)')
+                    : isNetAdverse
+                    ? muiTheme.palette.loss.bg
+                    : isNetFavorable
+                    ? muiTheme.palette.profit.bg
+                    : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)'),
+                  color: !hasData
+                    ? 'text.secondary'
+                    : isNetAdverse
+                    ? muiTheme.palette.loss.main
+                    : isNetFavorable
+                    ? muiTheme.palette.profit.main
+                    : 'text.primary',
+                }}
+              />
+            </Box>
+
+            {hasData ? (
+              <Grid container spacing={2.5}>
+                {/* Entry Slippage Column */}
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                      height: '100%',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase' }}>
+                        Entry Slippage
+                      </Typography>
+                      {slippage?.entrySlippagePoints !== undefined && (
+                        <Chip
+                          label={slippage.isEntryAdverse ? 'Adverse' : slippage.entrySlippagePoints < 0 ? 'Favorable' : 'Exact'}
+                          size="small"
+                          sx={{
+                            height: 18,
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            color: slippage.isEntryAdverse ? muiTheme.palette.loss.main : slippage.entrySlippagePoints < 0 ? muiTheme.palette.profit.main : 'text.secondary',
+                            backgroundColor: slippage.isEntryAdverse ? muiTheme.palette.loss.bg : slippage.entrySlippagePoints < 0 ? muiTheme.palette.profit.bg : 'transparent',
+                          }}
+                        />
+                      )}
+                    </Box>
+
+                    <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                      {slippage?.entrySlippageCost !== undefined
+                        ? formatCurrency(slippage.entrySlippageCost, tradeCurrency)
+                        : '—'}
+                    </Typography>
+
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                      {slippage?.entrySlippagePoints !== undefined
+                        ? `${slippage.entrySlippagePoints > 0 ? '+' : ''}${slippage.entrySlippagePoints} pts (${slippage.entrySlippagePercent ?? 0}%)`
+                        : 'Planned entry was not set'}
+                    </Typography>
+
+                    <Box sx={{ mt: 1.5, pt: 1, borderTop: `1px dashed ${muiTheme.palette.divider}`, fontSize: '0.75rem', color: 'text.secondary' }}>
+                      Planned: <strong>{trade.risk?.plannedEntryPrice ? `${currSym}${trade.risk.plannedEntryPrice}` : 'N/A'}</strong> • Fill: <strong>{currSym}{trade.calculated?.averageEntryPrice || trade.simpleExecution?.entryPrice}</strong>
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Exit Slippage Column */}
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                      height: '100%',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase' }}>
+                        Exit Slippage
+                      </Typography>
+                      {slippage?.exitSlippagePoints !== undefined && (
+                        <Chip
+                          label={slippage.isExitAdverse ? 'Adverse' : slippage.exitSlippagePoints < 0 ? 'Favorable' : 'Exact'}
+                          size="small"
+                          sx={{
+                            height: 18,
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            color: slippage.isExitAdverse ? muiTheme.palette.loss.main : slippage.exitSlippagePoints < 0 ? muiTheme.palette.profit.main : 'text.secondary',
+                            backgroundColor: slippage.isExitAdverse ? muiTheme.palette.loss.bg : slippage.exitSlippagePoints < 0 ? muiTheme.palette.profit.bg : 'transparent',
+                          }}
+                        />
+                      )}
+                    </Box>
+
+                    <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                      {slippage?.exitSlippageCost !== undefined
+                        ? formatCurrency(slippage.exitSlippageCost, tradeCurrency)
+                        : '—'}
+                    </Typography>
+
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                      {slippage?.exitSlippagePoints !== undefined
+                        ? `${slippage.exitSlippagePoints > 0 ? '+' : ''}${slippage.exitSlippagePoints} pts (${slippage.exitSlippagePercent ?? 0}%)`
+                        : trade.status === 'OPEN' ? 'Trade still open' : 'No planned stop/target'}
+                    </Typography>
+
+                    <Box sx={{ mt: 1.5, pt: 1, borderTop: `1px dashed ${muiTheme.palette.divider}`, fontSize: '0.75rem', color: 'text.secondary' }}>
+                      Plan Ref: <strong>{trade.risk?.initialStopLoss ? `SL ${currSym}${trade.risk.initialStopLoss}` : trade.risk?.plannedTarget ? `TP ${currSym}${trade.risk.plannedTarget}` : 'N/A'}</strong> • Fill: <strong>{trade.calculated?.averageExitPrice ? `${currSym}${trade.calculated.averageExitPrice}` : 'N/A'}</strong>
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Total Net Impact Column */}
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                      height: '100%',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase' }}>
+                        Net P&L Drag
+                      </Typography>
+                    </Box>
+
+                    <Typography
+                      variant="h6"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: isNetAdverse ? muiTheme.palette.loss.main : isNetFavorable ? muiTheme.palette.profit.main : 'text.primary',
+                      }}
+                    >
+                      {formatCurrency(totalDrag, tradeCurrency)}
+                    </Typography>
+
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+                      {slippage?.summaryText || (isNetAdverse ? 'Adverse execution cost' : isNetFavorable ? 'Net favorable execution' : 'Executed at exact planned prices')}
+                    </Typography>
+
+                    <Box sx={{ mt: 1.5, pt: 1, borderTop: `1px dashed ${muiTheme.palette.divider}`, fontSize: '0.75rem', color: 'text.secondary' }}>
+                      Units: <strong>{trade.simpleExecution?.quantity || trade.calculated?.closedQuantity || 1}</strong> • Mult: <strong>{trade.simpleExecution?.contractMultiplier || 1}</strong>
+                    </Box>
+                  </Box>
+                </Grid>
+              </Grid>
+            ) : (
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                }}
+              >
+                <TuneRoundedIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+                  No planned entry or stop loss price was set prior to fill. Provide planned prices during trade logging or when using setup templates to measure execution slippage.
+                </Typography>
+              </Box>
+            )}
+          </Card>
+        );
+      })()}
+
       {/* Excursion Analytics & Execution Quality Card */}
       {(() => {
         const exc = trade.calculated?.excursion;

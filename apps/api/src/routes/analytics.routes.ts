@@ -11,7 +11,7 @@ import {
 import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { computeWhatIf, WhatIfScopeTooLargeError } from '../services/what-if.service.js';
-import { calculateExcursionAggregates, ITradeForExcursionAnalytics } from '@tradevault/financial-engine';
+import { calculateExcursionAggregates, ITradeForExcursionAnalytics, aggregateSlippageMetrics } from '@tradevault/financial-engine';
 import { AccountScopeService } from '../services/account-scope.service.js';
 
 export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -229,11 +229,14 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       heatFirstPercent: result.summary.timeOrdering.heatFirstPercent,
     };
 
+    const slippageSummary = aggregateSlippageMetrics(allClosedTrades);
+
     return reply.send({
       success: true,
       data: {
         ...result,
         summary: legacySummary,
+        slippage: slippageSummary,
       },
     });
   });

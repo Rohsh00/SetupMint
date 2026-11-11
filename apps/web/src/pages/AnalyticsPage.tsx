@@ -34,6 +34,7 @@ import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 
 import {
   Area,
@@ -2006,6 +2007,104 @@ export function AnalyticsPage() {
                     </Tooltip>
                   </Box>
                 </Card>
+
+                {/* 5.5 EXECUTION SLIPPAGE & LATENCY DRAG SUMMARY */}
+                {(() => {
+                  const slip = (excursionData as any)?.slippage;
+                  if (!slip || slip.tradesWithSlippageCount === 0) return null;
+
+                  const totalDrag = slip.totalSlippageCost || 0;
+                  const isNetAdverse = totalDrag > 0.01;
+                  const isNetFavorable = totalDrag < -0.01;
+
+                  return (
+                    <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1.5 }}>
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <TrackChangesRoundedIcon sx={{ color: '#F59E0B', fontSize: 22 }} />
+                            Order Execution Slippage & Fill Quality
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                            Cumulative cost of broker execution latency and fill divergence from planned entry and exit orders
+                          </Typography>
+                        </Box>
+                        <Chip
+                          label={`${slip.tradesWithSlippageCount} Measured Trades`}
+                          size="small"
+                          sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                        />
+                      </Box>
+
+                      <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                          <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                              Total Slippage Impact
+                            </Typography>
+                            <Typography
+                              variant="h5"
+                              sx={{
+                                fontWeight: 800,
+                                fontFamily: `'JetBrains Mono', monospace`,
+                                color: isNetAdverse ? muiTheme.palette.loss.main : isNetFavorable ? muiTheme.palette.profit.main : 'text.primary',
+                              }}
+                            >
+                              {formatCurrency(totalDrag, analyticsCurrency)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                              {isNetAdverse ? 'Net monetary drag from execution delay' : isNetFavorable ? 'Net savings from price improvements' : 'Zero net slippage'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                          <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                              Avg Slippage per Trade
+                            </Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                              {formatCurrency(slip.avgSlippagePerTrade, analyticsCurrency)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                              Across {slip.tradesWithSlippageCount} trades with planned levels
+                            </Typography>
+                          </Box>
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                          <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                              Fill Ratio (Adverse vs Better)
+                            </Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                              <span style={{ color: muiTheme.palette.loss.main }}>{slip.adverseTradesCount}</span>
+                              {' / '}
+                              <span style={{ color: muiTheme.palette.profit.main }}>{slip.favorableTradesCount}</span>
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                              {slip.neutralTradesCount} trades filled at exact plan
+                            </Typography>
+                          </Box>
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                          <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                              Adverse Legs (Entry vs Exit)
+                            </Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                              {slip.adverseEntryCount} in • {slip.adverseExitCount} out
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                              Legs with worse execution price
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+                    </Card>
+                  );
+                })()}
 
                 {/* 6. COHORT COMPARISONS (PSYCHOLOGY & DISCIPLINE EXECUTION BRIDGES) */}
                 {cohorts.length > 0 && (

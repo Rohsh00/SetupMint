@@ -40,4 +40,5 @@ export * from './prop-guard.js';
 export * from './hedging.js';
 export * from './timezone.js';
 export * from './capabilities.js';
+export * from './slippage.js';
 

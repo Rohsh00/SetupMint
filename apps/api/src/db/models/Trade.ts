@@ -10,6 +10,7 @@ import {
   TradingSession,
   ITradeSetup,
   ICustomLadderRules,
+  IExecutionSlippage,
 } from '@tradevault/shared';
 
 export interface ITradeDoc extends Document {
@@ -186,6 +187,7 @@ export interface ITradeDoc extends Document {
       peakUnrealizedR?: number;
       peakTimestamp?: Date;
     };
+    slippage?: IExecutionSlippage;
   };
 
   setup?: ITradeSetup;
@@ -466,6 +468,19 @@ const TradeSchema = new Schema<ITradeDoc>(
         peakFloatingNetPnL: { type: Number },
         peakUnrealizedR: { type: Number },
         peakTimestamp: { type: Date },
+      },
+      slippage: {
+        hasSlippageData: { type: Boolean, default: false },
+        entrySlippagePoints: { type: Number },
+        entrySlippagePercent: { type: Number },
+        entrySlippageCost: { type: Number },
+        isEntryAdverse: { type: Boolean },
+        exitSlippagePoints: { type: Number },
+        exitSlippagePercent: { type: Number },
+        exitSlippageCost: { type: Number },
+        isExitAdverse: { type: Boolean },
+        totalSlippageCost: { type: Number },
+        summaryText: { type: String },
       },
     },
 

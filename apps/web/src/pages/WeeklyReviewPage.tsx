@@ -66,6 +66,7 @@ import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { HelpHint } from '../components/help/index.js';
+import { RichMarkdownEditor } from '../components/journal/RichMarkdownEditor.js';
 
 const COMMON_FOCUS_RULES = [
   {
@@ -1588,19 +1589,12 @@ export function WeeklyReviewPage() {
           </Box>
         </Box>
 
-        <TextField
-          fullWidth
-          multiline
-          rows={5}
+        <RichMarkdownEditor
           value={reflectionNotes}
-          onChange={(e) => setReflectionNotes(e.target.value.slice(0, 5000))}
-          placeholder="What went well this week? What market conditions caught you off guard? What adjustments are needed for next week?"
-          helperText={`${reflectionNotes.length}/5000 characters`}
-          slotProps={{
-            formHelperText: {
-              sx: { textAlign: 'right', fontWeight: 600 },
-            },
-          }}
+          onChange={(val) => setReflectionNotes(val)}
+          placeholder="What went well this week? What market conditions caught you off guard? What adjustments are needed for next week? Paste weekly charts (Cmd+V)..."
+          minRows={5}
+          maxLength={5000}
         />
       </Card>
 

@@ -42,9 +42,12 @@ export function detectAnomalies(currentManifest, previousManifest, maxDropPercen
         `Critical collection "${col}" dropped to 0 documents from previous count of ${prev}!`
       );
     } else if (prev > 0 && curr < prev) {
-      const dropPct = ((prev - curr) / prev) * 100;
+      const absDrop = prev - curr;
+      const dropPct = (absDrop / prev) * 100;
       comparison.dropPercent = parseFloat(dropPct.toFixed(2));
-      if (dropPct > maxDropPercent) {
+      // Require both percentage drop threshold AND an absolute drop of at least 15 records
+      // to avoid false alarms on small collections (e.g. 21 -> 11 after ephemeral test/demo cleanup)
+      if (dropPct > maxDropPercent && absDrop >= 15) {
         comparison.exceededThreshold = true;
         isSuspicious = true;
         reasons.push(

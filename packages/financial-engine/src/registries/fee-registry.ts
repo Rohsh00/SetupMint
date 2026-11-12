@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from '../decimal.js';
 import { FeeModelKey, AssetClass, MarketSegment, Direction } from '@tradevault/shared';
 import { calculateIndianCharges, ChargesBreakdown } from '../charges.js';
 
@@ -6,6 +6,9 @@ export interface FeeCalculationParams {
   direction?: Direction | 'LONG' | 'SHORT' | string;
   assetClass: AssetClass;
   marketSegment?: MarketSegment;
+  exchange?: string;
+  symbol?: string;
+  holdingType?: 'INTRADAY' | 'DELIVERY';
   entryPrice: number | string | Decimal;
   exitPrice?: number | string | Decimal | null;
   quantity: number | string | Decimal;
@@ -13,7 +16,15 @@ export interface FeeCalculationParams {
   brokerFlatFeePerLeg?: number | string | Decimal;
   broker?: string;
   currency?: string;
+  tradeDate?: Date | string;
   isSingleLeg?: boolean;
+  legSide?: 'BUY' | 'SELL';
+  entryOrdersCount?: number;
+  exitOrdersCount?: number;
+  isOptionExercise?: boolean;
+  isPhysicalSettlement?: boolean;
+  dpChargePerSell?: number | string | Decimal;
+  roundSttToInteger?: boolean;
   spreadPips?: number | string | Decimal;
   swapAmount?: number | string | Decimal;
   commissionPerLot?: number | string | Decimal;
@@ -45,7 +56,16 @@ export class ForexCommissionFeeModel implements IFeeModel {
     'Standard per-lot round-turn commission (default $7/lot, $3.50/leg), plus explicit spread costs and overnight swap financing.';
 
   calculateCharges(params: FeeCalculationParams): ChargesBreakdown {
-    const qty = new Decimal(params.quantity || 0);
+    // Support explicit `lots`; otherwise `quantity` is already expressed in broker lots for FOREX/CFD accounts.
+    // Guard against accidental raw base-currency quantities (e.g. qty >= 1000 with contractMultiplier === 1).
+    const rawQty = new Decimal(params.quantity || 0);
+    const mult = new Decimal(params.contractMultiplier || 1);
+    const qty =
+      params.lots !== undefined
+        ? new Decimal(params.lots)
+        : params.assetClass === 'FOREX' && mult.equals(1) && rawQty.gte(1000)
+        ? rawQty.dividedBy(100000)
+        : rawQty;
     const legs = params.isSingleLeg ? 1 : 2;
 
     // Default $3.50 per leg per 1.0 standard lot ($7.00 round turn per lot)

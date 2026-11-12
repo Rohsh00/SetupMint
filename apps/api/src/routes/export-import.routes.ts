@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import Decimal from 'decimal.js';
 import mongoose from 'mongoose';
 import {
+  CalcDecimal,
   calculateSimpleExecutionPnL,
   calculateFIFOExecution,
   calculateIndianCharges,
@@ -24,6 +25,7 @@ import {
   TransactionType,
   dateRangeSchema,
   buildDateRangeClause,
+  getPresetSpec,
 } from '@tradevault/shared';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountService } from '../services/account.service.js';
@@ -1330,15 +1332,21 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const multiplier = 1; // In broker tradebook CSVs, exported traded price * qty already equals turnover
 
           // Auto-calculate statutory charges via financial engine
+          const isOpenSingleLeg = !(exitPrice > 0);
           const charges = calculateIndianCharges({
             direction: direction as any,
             assetClass,
             marketSegment,
+            exchange,
+            symbol: symbolVal,
+            tradeDate,
             entryPrice,
             exitPrice: exitPrice > 0 ? exitPrice : undefined,
             quantity,
             contractMultiplier: multiplier,
             broker: account.broker,
+            isSingleLeg: isOpenSingleLeg,
+            legSide: isOpenSingleLeg ? (direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
           });
 
           const pnlRes = calculateSimpleExecutionPnL(direction as any, {
@@ -1590,9 +1598,12 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             );
 
             const tradeDate = group.entryTime;
-            const avgEntry = fifoSummary.weightedAvgEntryPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+            const pricePrec = getPresetSpec(symbol)?.pricePrecision ?? 2;
+            const avgEntry = fifoSummary.weightedAvgEntryPrice
+              .toDecimalPlaces(pricePrec, CalcDecimal.ROUND_HALF_UP)
+              .toNumber();
             const avgExit = fifoSummary.weightedAvgExitPrice
-              ? fifoSummary.weightedAvgExitPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
+              ? fifoSummary.weightedAvgExitPrice.toDecimalPlaces(pricePrec, CalcDecimal.ROUND_HALF_UP).toNumber()
               : undefined;
             const closedQty = fifoSummary.closedQuantity.toNumber();
             const openQty = fifoSummary.openQuantity.toNumber();
@@ -1621,18 +1632,23 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               direction: group.direction,
               assetClass,
               marketSegment,
+              exchange,
+              symbol,
+              tradeDate,
               entryPrice: avgEntry,
               exitPrice: avgExit,
               quantity: totalTradeQty,
               contractMultiplier: multiplier,
               broker: account.broker,
+              isSingleLeg: !fifoSummary.isFullyClosed,
+              legSide: !fifoSummary.isFullyClosed ? (group.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
             });
 
             const grossPnL = fifoSummary.realizedGrossPnL.toNumber();
             const totalCosts = fifoSummary.totalCosts.greaterThan(0)
               ? fifoSummary.totalCosts.toNumber()
               : charges.totalCosts;
-            const netPnL = Number(new Decimal(grossPnL).minus(totalCosts).toFixed(2));
+            const netPnL = Number(new CalcDecimal(grossPnL).minus(totalCosts).toFixed(2));
 
             const lastExitFill = group.fills
               .filter((f) => f.type === 'EXIT')
@@ -1696,7 +1712,13 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 grossPnL,
                 totalCosts,
                 netPnL,
-                outcome: fifoSummary.outcome,
+                outcome: !fifoSummary.isFullyClosed
+                  ? 'OPEN'
+                  : netPnL > 0
+                  ? 'WIN'
+                  : netPnL < 0
+                  ? 'LOSS'
+                  : 'BREAKEVEN',
                 closedQuantity: closedQty,
                 openQuantity: openQty,
                 averageEntryPrice: avgEntry,

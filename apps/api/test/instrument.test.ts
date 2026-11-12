@@ -129,7 +129,7 @@ describe('Instrument Service & API Specifications Tests', () => {
       expect(inst.symbol).toBe('NIFTY');
       expect(inst.source).toBe('AUTO');
       expect(inst.needsReview).toBe(false);
-      expect(inst.lotSize).toBe(25);
+      expect(inst.lotSize).toBe(65); // Eff. Jan 2026+ per NSE/FAOP/70616 (default asOfDate = today)
       expect(inst.contractMultiplier).toBe(1);
     });
 

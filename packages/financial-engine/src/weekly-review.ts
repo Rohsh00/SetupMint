@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import {
   IFocusRule,
   IFocusRuleEvaluation,
@@ -13,14 +13,13 @@ import {
   IWeeklyWeekdayItem,
   MistakeTag,
   isoWeekToRange,
+  RISK_AND_ALERT_THRESHOLDS,
+  MIN_RELIABLE_SAMPLE,
 } from '@tradevault/shared';
 import { calculateEmpiricalBayesShrinkage } from './edge.js';
 import { calculateDailyEventMarkers } from './events.js';
 import { checkDailyLossBreach } from './mistakes.js';
 import { computeTradeAggregates } from './reconciliation.js';
-
-// Configure Decimal precision (30 digits, ROUND_HALF_UP)
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface WeeklyReviewTradeInput {
   id: string;
@@ -409,14 +408,35 @@ export function buildWeeklyReview(input: BuildWeeklyReviewInput): IWeeklyReviewS
     templateGroupMap.set(key, group);
   }
 
-  // Population prior for empirical-Bayes
-  const globalPrior = avgRealizedR;
+  // Population priors separated strictly by unit (R-multiple prior vs ₹-per-trade prior)
+  const globalRPrior = avgRealizedR;
+  const globalCurrencyPrior =
+    closedTrades.length > 0
+      ? Number(
+          closedTrades
+            .reduce((acc, tr) => acc.plus(tr.calculated?.netPnL ?? tr.netPnL ?? 0), new Decimal(0))
+            .dividedBy(closedTrades.length)
+            .toFixed(2)
+        )
+      : 0;
 
   const templateItems: IWeeklyTemplateItem[] = Array.from(templateGroupMap.entries())
     .map(([key, group]) => {
       const n = group.trades.length;
-      const sampleMean = group.rCount > 0 ? Number(group.rSum.dividedBy(group.rCount).toFixed(4)) : (n > 0 ? Number(group.netPnL.dividedBy(n).toFixed(2)) : 0);
-      const shrunk = calculateEmpiricalBayesShrinkage(sampleMean, n, globalPrior, 10);
+      const usesRUnit = group.rCount > 0;
+      const sampleMean = usesRUnit
+        ? Number(group.rSum.dividedBy(group.rCount).toFixed(4))
+        : n > 0
+        ? Number(group.netPnL.dividedBy(n).toFixed(2))
+        : 0;
+      const prior = usesRUnit ? globalRPrior : globalCurrencyPrior;
+      const sampleSizeForShrink = usesRUnit ? group.rCount : n;
+      const shrunk = calculateEmpiricalBayesShrinkage(
+        sampleMean,
+        sampleSizeForShrink,
+        prior,
+        RISK_AND_ALERT_THRESHOLDS.EMPIRICAL_BAYES_K
+      );
       const winRate = n > 0 ? Number(new Decimal(group.wins).dividedBy(n).times(100).toFixed(1)) : 0;
 
       return {
@@ -424,7 +444,8 @@ export function buildWeeklyReview(input: BuildWeeklyReviewInput): IWeeklyReviewS
         name: group.name,
         n,
         shrunkExpectancy: shrunk,
-        sampleSizeWarning: n < 30,
+        expectancyUnit: (usesRUnit ? 'R' : 'CURRENCY') as 'R' | 'CURRENCY',
+        sampleSizeWarning: n < MIN_RELIABLE_SAMPLE,
         winRate,
         netPnL: Number(group.netPnL.toFixed(2)),
         tradeIds: group.trades.map((t) => t.id).filter(Boolean),
@@ -527,8 +548,17 @@ export function buildWeeklyReview(input: BuildWeeklyReviewInput): IWeeklyReviewS
   const sessionMap = new Map<string, { netPnL: Decimal; wins: number; tradeIds: string[] }>();
 
   for (const t of closedTrades) {
-    const d = new Date(t.entryTime || t.tradeDate);
-    const dayName = WEEKDAY_NAMES[d.getDay()] || 'Unknown';
+    const rawDate = t.entryTime || t.tradeDate;
+    const d =
+      typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+        ? new Date(`${rawDate}T06:00:00Z`)
+        : new Date(rawDate);
+    const dayName = isNaN(d.getTime())
+      ? 'Unknown'
+      : new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          weekday: 'long',
+        }).format(d);
     const net = new Decimal(t.calculated?.netPnL ?? t.netPnL ?? 0);
 
     const wRec = weekdayMap.get(dayName) || { netPnL: new Decimal(0), wins: 0, tradeIds: [] };

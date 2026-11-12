@@ -1,7 +1,6 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 
-// Configure 30-digit precision with standard half-up rounding
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
+// Uses isolated CalcDecimal (30-digit precision, standard ROUND_HALF_UP)
 
 export interface ICalculateSlippageParams {
   direction: 'LONG' | 'SHORT';

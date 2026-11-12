@@ -15,6 +15,7 @@ import {
 } from '../db/models/index.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
 import {
+  CalcDecimal,
   calculateFIFOExecution,
   calculateIndianCharges,
   calculateExcursion,
@@ -22,6 +23,7 @@ import {
   matchSLOrderFromOrderbook,
   INormalizedOrderbookRow,
   calculateRealizedRMultiple,
+  roundStopToTick,
 } from '@tradevault/financial-engine';
 import {
   IBrokerAuthTokens,
@@ -34,6 +36,7 @@ import {
   IExcursionBackfillResponse,
   CandleFallbackProvider,
   getPresetSpec,
+  getNseTickSize,
 } from '@tradevault/shared';
 import { AccountService } from './account.service.js';
 import { InstrumentService } from './instrument.service.js';
@@ -1174,31 +1177,39 @@ export class FyersService {
             multiplier
           );
 
-          const avgEntry = fifoSummary.weightedAvgEntryPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+          const pricePrec = getPresetSpec(formattedSymbol || cleanSymbol)?.pricePrecision ?? 2;
+          const avgEntry = fifoSummary.weightedAvgEntryPrice
+            .toDecimalPlaces(pricePrec, CalcDecimal.ROUND_HALF_UP)
+            .toNumber();
           const avgExit = fifoSummary.weightedAvgExitPrice
-            ? fifoSummary.weightedAvgExitPrice.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
+            ? fifoSummary.weightedAvgExitPrice.toDecimalPlaces(pricePrec, CalcDecimal.ROUND_HALF_UP).toNumber()
             : undefined;
           const closedQty = fifoSummary.closedQuantity.toNumber();
           const tradeDate = grp.entryTime;
           const totalTradeQty = grp.fills.filter((f) => f.type === 'ENTRY').reduce((sum, f) => sum + f.quantity, 0);
 
-          // Calculate Indian Statutory Charges with FYERS Flat ₹20 Brokerage
+          // Calculate Indian Statutory Charges with FYERS Flat ₹20 Brokerage & tradeDate/symbol awareness
           const charges = calculateIndianCharges({
             direction: grp.direction,
             assetClass,
             marketSegment,
+            exchange,
+            symbol: formattedSymbol || cleanSymbol,
+            tradeDate,
             entryPrice: avgEntry,
             exitPrice: avgExit,
             quantity: closedQty > 0 ? closedQty : totalTradeQty,
             contractMultiplier: multiplier,
             broker: 'FYERS',
+            isSingleLeg: closedQty === 0,
+            legSide: closedQty === 0 ? (grp.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
           });
 
           const grossPnL = fifoSummary.realizedGrossPnL.toNumber();
           const totalCosts = fifoSummary.totalCosts.greaterThan(0)
             ? fifoSummary.totalCosts.toNumber()
             : charges.totalCosts;
-          const netPnL = Number(new Decimal(grossPnL).minus(totalCosts).toFixed(2));
+          const netPnL = Number(new CalcDecimal(grossPnL).minus(totalCosts).toFixed(2));
           const lastExitFill = grp.fills.filter((f) => f.type === 'EXIT').slice(-1)[0];
           const exitTime = lastExitFill ? lastExitFill.timestamp : undefined;
 
@@ -3231,15 +3242,18 @@ export class FyersService {
         tick = 1.0;
       } else if (upperSym.includes('NATGAS') || upperSym.includes('NATURALGAS')) {
         tick = 0.1;
+      } else if (trade.marketSegment === 'NSE_EQ' || matchedPos.segment === 10) {
+        tick = getNseTickSize(newStopPrice, trade.assetClass || 'EQUITY', trade.marketSegment || 'NSE_EQ');
       }
     }
 
-    const tickDecimals = tick.toString().includes('.')
-      ? tick.toString().split('.')[1].length
-      : 0;
+    const tickDecimals = new CalcDecimal(tick).decimalPlaces();
     const decimals = Math.max(tickDecimals, pricePrecision ?? 2);
+    const stopDirection = matchedPos.netQty < 0 || trade.direction === 'SHORT' ? 'SHORT' : 'LONG';
 
-    const cleanStopPrice = Number((Math.round(newStopPrice / tick) * tick).toFixed(decimals));
+    const cleanStopPrice = Number(
+      roundStopToTick(new CalcDecimal(newStopPrice), tick, stopDirection).toFixed(decimals)
+    );
 
     // For SL-Limit (type 4):
     // Buy stop (side 1): limitPrice must be >= stopPrice

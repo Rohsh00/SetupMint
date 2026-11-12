@@ -57,7 +57,7 @@ const InstrumentSchema = new Schema<IInstrumentDoc>(
     },
     marketSegment: {
       type: String,
-      enum: ['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER'],
+      enum: ['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'BSE_FNO', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER'],
       required: true,
     },
     quoteCurrency: {

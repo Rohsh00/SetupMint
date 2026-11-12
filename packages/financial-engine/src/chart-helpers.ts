@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import { IExcursionCandle } from './excursion.js';
 import {
   NSE_HOLIDAYS_2026,
@@ -8,8 +8,6 @@ import {
   CHART_RESOLUTIONS,
   CHART_RESOLUTION_LABELS,
 } from '@tradevault/shared';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IAggregateCandlesResult {
   candles: IExcursionCandle[];
@@ -409,32 +407,43 @@ export function normalizeUnderlying(symbol: string): string {
 
   let clean = symbol.trim().toUpperCase();
 
-  // 1. Strip broker/exchange prefixes: NSE:, BSE:, MCX:, BINANCE:, FOREX:
-  clean = clean.replace(/^(NSE|BSE|MCX|BINANCE|FOREX):/i, '').trim();
+  // 1. Strip broker/exchange prefixes: NSE:, BSE:, MCX:, BINANCE:, FOREX:, GLOBAL:
+  clean = clean.replace(/^(NSE|BSE|MCX|BINANCE|FOREX|GLOBAL):/i, '').trim();
 
-  // 1b. Strip standard Indian cash equity series suffix: -EQ, -BE and Yahoo/broker .NS, .BO suffixes
-  clean = clean.replace(/-EQ|-BE$/i, '').replace(/\.(NS|BO)$/i, '').trim();
+  // 1b. Strip exchange suffixes (.NS, .BO, .NSE, .BSE) BEFORE cash series suffixes (-EQ, -BE, etc.)
+  clean = clean
+    .replace(/\.(NS|BO|NSE|BSE)$/i, '')
+    .replace(/-(EQ|BE|BZ|BL|SM|ST)$/i, '')
+    .trim();
 
-  // 2. Direct check against known preset symbols
+  // 2. Direct check against known preset symbols & canonical aliases
+  if (clean === 'NIFTY50' || clean === 'NIFTY 50') return 'NIFTY';
+  if (clean === 'NIFTYNEXT50' || clean === 'NIFTY NEXT 50') return 'NIFTYNXT50';
+  if (clean === 'CRUDEOILM') return 'CRUDEOILMINI';
+  if (clean === 'NATGAS') return 'NATURALGAS';
+
   const directPreset = getPresetSpec(clean);
   if (directPreset) {
     return directPreset.symbol;
   }
 
-  // 3. Known index roots & commodity prefixes check
+  // 3. Known index roots & commodity prefixes (ordered longest-first to avoid prefix collisions)
   const knownRoots: Array<{ root: string; standard: string }> = [
+    { root: 'NIFTYNXT50', standard: 'NIFTYNXT50' },
+    { root: 'NIFTYNEXT50', standard: 'NIFTYNXT50' },
     { root: 'BANKNIFTY', standard: 'BANKNIFTY' },
-    { root: 'FINNIFTY', standard: 'FINNIFTY' },
     { root: 'MIDCPNIFTY', standard: 'MIDCPNIFTY' },
+    { root: 'FINNIFTY', standard: 'FINNIFTY' },
     { root: 'NIFTY', standard: 'NIFTY' },
-    { root: 'BANKEX', standard: 'BANKEX' },
+    { root: 'SENSEX50', standard: 'SENSEX50' },
     { root: 'SENSEX', standard: 'SENSEX' },
+    { root: 'BANKEX', standard: 'BANKEX' },
     { root: 'CRUDEOILMINI', standard: 'CRUDEOILMINI' },
     { root: 'CRUDEOILM', standard: 'CRUDEOILMINI' },
     { root: 'CRUDEOIL', standard: 'CRUDEOIL' },
     { root: 'NATGASMINI', standard: 'NATGASMINI' },
-    { root: 'NATGAS', standard: 'NATURALGAS' },
     { root: 'NATURALGAS', standard: 'NATURALGAS' },
+    { root: 'NATGAS', standard: 'NATURALGAS' },
     { root: 'GOLDGUINEA', standard: 'GOLDGUINEA' },
     { root: 'GOLDPETAL', standard: 'GOLDPETAL' },
     { root: 'GOLDM', standard: 'GOLDM' },
@@ -443,34 +452,51 @@ export function normalizeUnderlying(symbol: string): string {
     { root: 'SILVERM', standard: 'SILVERM' },
     { root: 'SILVER', standard: 'SILVER' },
     { root: 'COPPER', standard: 'COPPER' },
+    { root: 'ZINCMINI', standard: 'ZINCMINI' },
     { root: 'ZINC', standard: 'ZINC' },
     { root: 'NICKEL', standard: 'NICKEL' },
+    { root: 'ALUMINI', standard: 'ALUMINI' },
     { root: 'ALUMINIUM', standard: 'ALUMINIUM' },
+    { root: 'LEADMINI', standard: 'LEADMINI' },
     { root: 'LEAD', standard: 'LEAD' },
   ];
+
+  // Match ONLY genuine derivative expiry/strike/FUT suffixes so equities/ETFs like NIFTYIT, NIFTYBEES,
+  // GOLDBEES, or GOLDENTOBC are never falsely collapsed into index/commodity roots.
+  const isDerivativeSuffix = (remainder: string): boolean => {
+    if (!remainder) return true;
+    return (
+      /^(FUT|FUTURES|CE|PE|CALL|PUT)$/i.test(remainder) ||
+      /^\d{2}[A-Z]{3}(?:\s*\d+(?:\.\d+)?\s*(?:CE|PE|CALL|PUT)|FUT|FUTURES)?$/i.test(remainder) ||
+      /^\d{2}[1-9OND]\d{2}\s*\d+(?:\.\d+)?\s*(?:CE|PE)$/i.test(remainder) ||
+      /^\d{3,}(?:\.\d+)?\s*(?:CE|PE|CALL|PUT)$/i.test(remainder) ||
+      /^\s+(?:(?:\d{1,2}\s+)?[A-Z]{3}(?:\s+\d{2,4})?\s+)?(?:(?:\d+(?:\.\d+)?\s*(?:CE|PE|CALL|PUT))|FUT|FUTURES)$/i.test(remainder)
+    );
+  };
 
   for (const { root, standard } of knownRoots) {
     if (clean === root) return standard;
     if (clean.startsWith(root)) {
-      const remainder = clean.slice(root.length).trim();
-      if (
-        remainder === '' ||
-        /^(\s*|\d{2}[A-Z]{3}|\d{2}[0-9OND]\d{2}|\d+).*(CE|PE|FUT|FUTURES)?$/i.test(remainder) ||
-        /^(FUT|CE|PE)$/i.test(remainder)
-      ) {
+      const nextChar = clean[root.length];
+      // Guard against word continuation like GOLD -> GOLDENTOBC, NIFTY -> NIFTYIT, NIFTYBEES
+      if (nextChar && /[A-Z]/.test(nextChar) && !/^(FUT|CE|PE|CALL|PUT)/i.test(clean.slice(root.length))) {
+        continue;
+      }
+      const remainder = clean.slice(root.length);
+      if (isDerivativeSuffix(remainder)) {
         return standard;
       }
     }
   }
 
   // 4. Common Indian Stock / Currency Derivative Patterns
-  // A) Standard Monthly Options: e.g. RELIANCE24OCT3000CE
+  // A) Standard Monthly Options: e.g. RELIANCE24OCT3000CE, USDINR26NOV84.50CE
   const monthlyOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[A-Z]{3})\s*(\d+(?:\.\d+)?)\s*(CE|PE)$/);
   if (monthlyOptionMatch && monthlyOptionMatch[1]) {
     return monthlyOptionMatch[1];
   }
 
-  // B) Weekly Options: e.g. RELIANCE24O173000CE
+  // B) Weekly Options (1-9 for Jan-Sep, O/N/D for Oct/Nov/Dec): e.g. RELIANCE24O173000CE
   const weeklyOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[1-9OND]\d{2})\s*(\d+(?:\.\d+)?)\s*(CE|PE)$/);
   if (weeklyOptionMatch && weeklyOptionMatch[1]) {
     return weeklyOptionMatch[1];
@@ -482,14 +508,14 @@ export function normalizeUnderlying(symbol: string): string {
     return spacedOptionMatch[1];
   }
 
-  // D) Futures contracts: e.g. TCS24OCTFUT, INFY24NOVFUT, RELIANCEFUT
+  // D) Futures contracts: e.g. TCS24OCTFUT, INFY24NOVFUT, RELIANCEFUT, USDINR26NOVFUT
   const futuresMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{2}[A-Z]{3})?\s*(FUT|FUTURES)$/);
   if (futuresMatch && futuresMatch[1]) {
     return futuresMatch[1];
   }
 
   // E) General Trailing Strike + Option Type
-  const trailingOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{4,})\s*(CE|PE)$/);
+  const trailingOptionMatch = clean.match(/^([A-Z0-9&-]+?)\s*(\d{4,}(?:\.\d+)?)\s*(CE|PE)$/);
   if (trailingOptionMatch && trailingOptionMatch[1]) {
     return trailingOptionMatch[1];
   }

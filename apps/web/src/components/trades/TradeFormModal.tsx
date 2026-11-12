@@ -124,16 +124,22 @@ function buildInitialFormValues(
       initialAssetClass = 'COMMODITY';
     }
 
+    const cleanSymNoPrefix = symUpper.replace(/^(NSE|BSE|MCX|CDS):/, '');
+    const isInrCurrDeriv = /^(USDINR|EURINR|GBPINR|JPYINR)/.test(cleanSymNoPrefix);
     const isForexOrUsd =
-      initialValues.currency === 'USD' ||
-      initialValues.currency === 'EUR' ||
-      initialValues.currency === 'GBP' ||
-      initialValues.assetClass === 'FOREX' ||
-      initialValues.marketSegment === 'FOREX' ||
-      symUpper.includes('XAU') ||
-      symUpper.includes('EUR') ||
-      symUpper.includes('GBP') ||
-      (Array.isArray(initialValues.tags) && (initialValues.tags.includes('ELEFIN') || initialValues.tags.includes('MT5')));
+      !isInrCurrDeriv &&
+      (initialValues.currency === 'USD' ||
+        initialValues.currency === 'EUR' ||
+        initialValues.currency === 'GBP' ||
+        initialValues.currency === 'USDT' ||
+        initialValues.assetClass === 'FOREX' ||
+        initialValues.assetClass === 'CRYPTO' ||
+        initialValues.marketSegment === 'FOREX' ||
+        initialValues.marketSegment === 'CRYPTO' ||
+        symUpper.includes('XAU') ||
+        symUpper.includes('EUR') ||
+        symUpper.includes('GBP') ||
+        (Array.isArray(initialValues.tags) && (initialValues.tags.includes('ELEFIN') || initialValues.tags.includes('MT5'))));
 
     if (isForexOrUsd) {
       initialExchange = 'FOREX';
@@ -181,18 +187,25 @@ function buildInitialFormValues(
           (a: any) => a.id === (typeof initialValues.accountId === 'object' ? initialValues.accountId?.id || initialValues.accountId?._id : initialValues.accountId)
         );
         const brokerCode = matchedAcc?.broker || initialValues.accountId?.broker;
+        const normBrokerCode = String(brokerCode || '').toUpperCase().replace(/[\s_-]/g, '');
         const feeModelKey = matchedAcc?.profile?.feeModelKey || (matchedAcc?.baseCurrency === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
+        const isInitialSingleOpen = initialValues.status === 'OPEN' && !exitP;
         const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
           assetClass: initialAssetClass,
           marketSegment: initialMarketSegment,
+          exchange: initialExchange,
+          symbol: initialValues.symbol,
+          tradeDate: initialValues.tradeDate,
           entryPrice: entryP,
           exitPrice: exitP,
           quantity: qty,
           contractMultiplier: mult,
-          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
+          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? (normBrokerCode === 'FINVASIA' ? 0 : 20) : undefined,
           broker: brokerCode,
           direction: initialValues.direction,
           currency: matchedAcc?.baseCurrency || initialValues?.currency,
+          isSingleLeg: isInitialSingleOpen,
+          legSide: isInitialSingleOpen ? (initialValues.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
         });
         if (autoCharges) {
           initialExec = {
@@ -522,6 +535,8 @@ function TradeFormModalContent({
   const watchedStrategyId = watch('strategyId');
   const watchedAssetClass = watch('assetClass');
   const watchedMarketSegment = watch('marketSegment');
+  const watchedExchange = watch('exchange');
+  const watchedTradeDate = watch('tradeDate');
 
   // Selected account for broker identification & UI capabilities
   const selectedAccount = useMemo(() => {
@@ -692,9 +707,8 @@ function TradeFormModalContent({
   // Auto statutory fee calculation
   const computeAutoCharges = () => {
     let entryP = Number(watchedSimple?.entryPrice) || 0;
-    let exitP = watchedStatus === 'CLOSED'
-      ? (Number(watchedSimple?.exitPrice) || entryP)
-      : entryP;
+    const rawExitP = Number(watchedSimple?.exitPrice) || 0;
+    let exitP: number | undefined = watchedStatus === 'CLOSED' ? (rawExitP || entryP) : (rawExitP > 0 ? rawExitP : undefined);
     let qty = Number(watchedSimple?.quantity) || 1;
     const mult = Number(watchedSimple?.contractMultiplier) || 1;
 
@@ -713,17 +727,24 @@ function TradeFormModalContent({
 
     if (entryP > 0 && qty > 0) {
       const feeModelKey = selectedAccount?.profile?.feeModelKey || (selectedAccount?.baseCurrency === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
+      const normBroker = String(selectedAccount?.broker || '').toUpperCase().replace(/[\s_-]/g, '');
+      const isSingleOpen = watchedStatus !== 'CLOSED' && !exitP;
       return FeeModelRegistry.calculate(feeModelKey, {
         assetClass: watchedAssetClass || 'EQUITY',
         marketSegment: watchedMarketSegment || 'NSE_EQ',
+        exchange: watchedExchange,
+        symbol: watchedSymbol,
+        tradeDate: watchedTradeDate,
         entryPrice: entryP,
         exitPrice: exitP,
         quantity: qty,
         contractMultiplier: mult,
-        brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
+        brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? (normBroker === 'FINVASIA' ? 0 : 20) : undefined,
         broker: selectedAccount?.broker,
         direction: watchedDirection,
         currency: selectedAccount?.currency || selectedAccount?.baseCurrency || initialValues?.currency || 'USD',
+        isSingleLeg: isSingleOpen,
+        legSide: isSingleOpen ? (watchedDirection === 'SHORT' ? 'SELL' : 'BUY') : undefined,
       });
     }
     return null;
@@ -772,6 +793,9 @@ function TradeFormModalContent({
     selectedAccount?.broker,
     watchedAssetClass,
     watchedMarketSegment,
+    watchedExchange,
+    watchedSymbol,
+    watchedTradeDate,
     watchedDirection,
     watchedSimple?.entryPrice,
     watchedSimple?.exitPrice,

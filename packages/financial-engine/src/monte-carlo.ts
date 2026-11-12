@@ -76,6 +76,8 @@ export interface MonteCarloResult {
 
 export interface KellyRecommendationInput {
   winProbability: number; // p in [0, 1.0] (e.g. from posterior mean win rate)
+  /** Optional explicit loss probability q in [0, 1 - p] when breakevens are non-zero. Defaults to 1 - p. */
+  lossProbability?: number;
   averageWinMagnitude: number; // W > 0
   averageLossMagnitude: number; // L > 0
   maxRiskPerTradePercent?: number; // User configured risk cap (default: 2.0%)
@@ -313,14 +315,17 @@ export function calculateFractionalKelly(
   input: KellyRecommendationInput
 ): KellyRecommendationResult {
   const p = Math.max(0, Math.min(1, input.winProbability));
-  const q = 1 - p;
+  const q =
+    input.lossProbability !== undefined && Number.isFinite(input.lossProbability)
+      ? Math.max(0, Math.min(1 - p, input.lossProbability))
+      : 1 - p;
   const w = input.averageWinMagnitude;
   const l = input.averageLossMagnitude;
   const maxCap = input.maxRiskPerTradePercent ?? 2.0;
   const verdict = input.edgeVerdict ?? 'UNPROVEN';
 
-  // 1. Payoff ratio check
-  if (w <= 0 || l <= 0 || !Number.isFinite(w) || !Number.isFinite(l)) {
+  // 1. Payoff ratio & outcome mass check
+  if (w <= 0 || l <= 0 || !Number.isFinite(w) || !Number.isFinite(l) || p + q <= 0) {
     return {
       recommendedRiskPercent: 0,
       unconstrainedKellyFraction: 0,
@@ -337,8 +342,9 @@ export function calculateFractionalKelly(
   const b = w / l;
   const payoffRatio = Number(b.toFixed(2));
 
-  // 2. Unconstrained Kelly: f* = p - q / b
-  const fStar = p - q / b;
+  // 2. Unconstrained 3-outcome Kelly (accounts for breakevens when p + q < 1):
+  // f* = (p * b - q) / (b * (p + q)), reducing to (p - q / b) when p + q = 1.
+  const fStar = (p * b - q) / (b * (p + q));
   const unconstrainedKellyFraction = Number(fStar.toFixed(4));
   const quarterKellyFraction = Number(Math.max(0, 0.25 * fStar).toFixed(4));
 

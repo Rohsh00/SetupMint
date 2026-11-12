@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import {
   IPropFirmConfig,
   IPropFirmHealthSummary,
@@ -20,8 +20,6 @@ export {
   mergeRuleSetWithOverrides,
   PROP_FIRM_PRESETS,
 } from './prop-firm-presets.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IPropFirmEvaluationParams {
   accountId?: string;

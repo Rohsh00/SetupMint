@@ -1,8 +1,6 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import { IWhatIfExcursionDistributionBucket } from '@tradevault/shared';
 import { IWhatIfEligibleTrade } from './types.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IComputedExcursionsResult {
   winnersMaeDistribution: IWhatIfExcursionDistributionBucket[];

@@ -887,13 +887,13 @@ All queries are enforced with strict tenant isolation (`userId: new Types.Object
 | `strategyId` | `strategyId: new Types.ObjectId(filter.strategyId)` |
 | `templateId` | `templateId: filter.templateId` (slug string or ID) |
 | `direction` | `direction: filter.direction` (`LONG` / `SHORT`) |
-| `outcome` | `outcome: filter.outcome` (`WIN`, `LOSS`, `BREAKEVEN`) |
-| `startDate` / `endDate` | `entryTime: { $gte: new Date(startDate), $lte: new Date(endDate) }` |
-| `netPnLMin` / `netPnLMax`| `netPnL: { $gte: netPnLMin, $lte: netPnLMax }` |
-| `mfeRMin` / `mfeRMax` | `'excursion.mfeR': { $gte: mfeRMin, $lte: mfeRMax }` |
-| `maeRMin` / `maeRMax` | `'excursion.maeR': { $gte: maeRMin, $lte: maeRMax }` |
-| `weekday` (1=Sun, 7=Sat) | `$expr: { $eq: [{ $dayOfWeek: '$entryTime' }, weekday] }` |
-| `session` | `tradingSession: session` |
+| `outcome` | `'calculated.outcome': filter.outcome` (`WIN`, `LOSS`, `BREAKEVEN`, `OPEN`) |
+| `startDate` / `endDate` | `tradeDate: { $gte: startUtc, $lte: endUtc }` (via `buildDateRangeClause` in `Asia/Kolkata` / account TZ) |
+| `netPnLMin` / `netPnLMax`| `'calculated.netPnL': { $gte: netPnLMin, $lte: netPnLMax }` |
+| `mfeRMin` / `mfeRMax` | `'calculated.excursion.mfeR': { $gte: mfeRMin, $lte: mfeRMax }` |
+| `maeRMin` / `maeRMax` | `'calculated.excursion.maeR': { $gte: maeRMin, $lte: maeRMax }` |
+| `weekday` (1=Sun, 7=Sat) | `$expr: { $eq: [{ $dayOfWeek: { date: '$tradeDate', timezone: 'Asia/Kolkata' } }, weekday] }` |
+| `session` | `session: session` |
 | `mistakeTag` | `'psychology.mistakes': mistakeTag` |
 | `emotion` | `$or: [{ 'psychology.emotionBefore': emotion }, { 'psychology.emotionDuring': emotion }, { 'psychology.emotionAfter': emotion }]` |
 | `disciplineScore` | `'psychology.disciplineScore': disciplineScore` |

@@ -130,12 +130,13 @@ export function LiveUnifiedPriceLadder({
   });
 
   // 4. True Breakeven (with fee buffer)
-  if (trueBreakevenPrice && trueBreakevenPrice > 0 && Math.abs(trueBreakevenPrice - entryPrice) > 0.05) {
+  if (trueBreakevenPrice && trueBreakevenPrice > 0 && Math.abs(trueBreakevenPrice - entryPrice) > 1e-6) {
     const canLockBe = isProfitable && onQuickTrailSl;
+    const ptsDec = feeBufferPoints && feeBufferPoints < 0.1 ? 5 : 2;
     tiers.push({
       id: 'true-be',
       label: 'True Breakeven (with fees)',
-      sublabel: feeBufferPoints ? `+${feeBufferPoints.toFixed(2)} pts charges cushion` : undefined,
+      sublabel: feeBufferPoints ? `+${feeBufferPoints.toFixed(ptsDec)} pts charges cushion` : undefined,
       price: trueBreakevenPrice,
       type: 'TRUE_BE',
       color: '#06B6D4',

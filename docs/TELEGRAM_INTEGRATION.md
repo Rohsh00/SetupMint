@@ -78,7 +78,7 @@ To eliminate alerting noise and notification flapping around volatile boundary p
 2. **GIVEBACK:**
    - **Enter LEAKING:** Floating profit gives back $\ge 35\%$ from peak MFE.
    - **Clear Threshold:** Giveback falls below $25\%$.
-   - **CRITICAL_REVERSAL:** Position reverses below $+0.5R$ after achieving $\ge +2.0R$ peak. Clears when current $R > 0.5$.
+   - **CRITICAL_REVERSAL:** Position reverses to current unrealized $R \le +0.2R$ after achieving $\ge +1.0R$ peak (canonical `RISK_AND_ALERT_THRESHOLDS` shared with `live-watcher.ts`). Clears above $+0.2R$ or upon position close.
 3. **Severity Escalation:** Only upward severity escalation ($0 \to 1 \to 2 \to 3$) emits audible notifications (`SEND_NEW`). Equal or downward severity updates the existing message silently (`EDIT_SILENT`).
 4. **Re-entry Enforcement (`minRearmMs`):** After a threat is `CLEARED`, a recurring breach before $180,000\text{ ms}$ (3 minutes) is suppressed (`SKIP`). Once the cooldown window passes, re-entry triggers `SEND_NEW` with `isRepeat = true` and `enterCount + 1`.
 5. **Persistence Re-pings:** For unacknowledged `CRITICAL` or `BREACHED` alerts, re-pings are dispatched at 2 minutes and 5 minutes, then every 5 minutes up to a maximum of 3 re-pings (`maxRepings = 3`), then ceases.
@@ -269,7 +269,7 @@ Traders can selectively toggle any of the **9 alert event categories** from **Se
 
 | Event Key | Label in Settings | Description & Trigger Threshold |
 | :--- | :--- | :--- |
-| **`stopThreatCritical`** | Stop Threat: Critical / Breached | Fires when distance between LTP and stop loss narrows to **CRITICAL** (top 15% of risk corridor) or **BREACHED**. Includes market exit and lock BE buttons. |
+| **`stopThreatCritical`** | Stop Threat: Critical / Breached | Fires when distance between LTP and stop loss narrows to **CRITICAL** (`bufferRatio <= 25%` of initial risk corridor) or **BREACHED** (`<= 0%`). Includes market exit and lock BE buttons. |
 | **`givebackLeaking`** | Profit Giveback: Leaking Radar | Fires when an open winner gives back significant peak MFE (e.g. retreating from +2.5R to +1.2R, crossing the `givebackThresholdPercent` setting). |
 | **`ladderMilestoneReached`** | Scaling Ladder: Milestones | Fires when price hits multi-target scaling ladder steps (Target 1 +1.0R, Target 2 +2.0R, or Runner +3.0R). |
 | **`dailyLossBreached`** | Daily Loss Limit Breached | Fires at 75% warning and 100% hard breach of configured `maxDailyLoss` limit, rendering a visual ASCII progress bar of risk exhausted. |

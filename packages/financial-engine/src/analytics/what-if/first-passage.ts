@@ -1,8 +1,6 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import { WhatIfPolicy, WhatIfFillModel, ITradeCandle } from '@tradevault/shared';
 import { IWhatIfReplayResult } from './types.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IStopFirstPassage {
   stopPrice: Decimal;

@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
 import {
   getPresetSpec,
+  getEffectiveLotSize,
+  getPairQuoteCurrency,
   TradeOutcome,
   IDateRange,
   buildDateRangeClause,
@@ -17,6 +19,8 @@ import {
   sanitizeTradeFills,
   FeeModelRegistry,
 } from '@tradevault/financial-engine';
+
+const CalcDecimal = Decimal.clone({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 import { Instrument, IInstrumentDoc, Trade, ITradeDoc, CommodityMaster, AngelOneInstrument } from '../db/models/index.js';
 import { AccountService } from './account.service.js';
 
@@ -98,6 +102,8 @@ export class InstrumentService {
     let createPayload: any;
 
     if (preset) {
+      const effectiveLotSize =
+        getEffectiveLotSize(underlying, tradeLike?.tradeDate) ?? preset.lotSize;
       createPayload = {
         userId: uId,
         symbol: underlying,
@@ -107,9 +113,12 @@ export class InstrumentService {
         marketSegment: preset.marketSegment,
         quoteCurrency: preset.quoteCurrency || 'INR',
         contractMultiplier: preset.contractMultiplier,
-        lotSize: preset.lotSize,
+        lotSize: effectiveLotSize,
         tickSize: preset.tickSize,
-        quantityIncrement: preset.quantityIncrement || preset.lotSize,
+        quantityIncrement:
+          preset.quantityIncrement && preset.quantityIncrement !== preset.lotSize
+            ? preset.quantityIncrement
+            : effectiveLotSize,
         pricePrecision: preset.pricePrecision ?? 2,
         isActive: true,
         source: 'AUTO',
@@ -275,32 +284,38 @@ export class InstrumentService {
     let avgEntry = 0;
     let avgExit: number | undefined = undefined;
 
+    const symUpper = (typeof body.symbol === 'string' ? body.symbol : '').toUpperCase().trim();
+    const cleanSymNoPrefix = symUpper.replace(/^(NSE|BSE|MCX|CDS):/, '');
+    const pairQuote = getPairQuoteCurrency(cleanSymNoPrefix);
+    const isInrCurrDeriv = /^(USDINR|EURINR|GBPINR|JPYINR)/.test(cleanSymNoPrefix);
     const normBroker = ((body.broker || body.accountId?.broker || '') as string).toUpperCase().replace(/[\s_-]/g, '');
+    const bodyCurr = (body.currency || '').toUpperCase();
     const isForexOrUsd =
-      body.currency === 'USD' ||
-      body.currency === 'EUR' ||
-      body.currency === 'GBP' ||
-      body.assetClass === 'FOREX' ||
-      body.assetClass === 'CRYPTO' ||
-      body.marketSegment === 'FOREX' ||
-      body.marketSegment === 'CRYPTO' ||
-      (typeof body.symbol === 'string' &&
-        (body.symbol.includes('XAU') ||
-          body.symbol.includes('EUR') ||
-          body.symbol.includes('USD') ||
-          body.symbol.includes('GBP') ||
-          body.symbol.includes('BTC'))) ||
-      ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker);
+      !isInrCurrDeriv &&
+      (bodyCurr === 'USD' ||
+        bodyCurr === 'EUR' ||
+        bodyCurr === 'GBP' ||
+        bodyCurr === 'USDT' ||
+        body.assetClass === 'FOREX' ||
+        body.assetClass === 'CRYPTO' ||
+        body.marketSegment === 'FOREX' ||
+        body.marketSegment === 'CRYPTO' ||
+        body.marketSegment === 'US_EQUITY' ||
+        body.marketSegment === 'CME' ||
+        (pairQuote !== undefined && pairQuote !== 'INR') ||
+        ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker));
 
+    const resolvedProfile = body._accountProfile || body.accountId?.profile;
     const isHedging =
-      body.accountId?.profile?.positionModel === 'HEDGING' ||
+      resolvedProfile?.positionModel === 'HEDGING' ||
       body.positionModel === 'HEDGING' ||
       ['ELEFIN', 'MT5', 'THE5ERS', 'FTMO'].includes(normBroker) ||
       (Array.isArray(body.tags) && (body.tags.includes('ELEFIN') || body.tags.includes('MT5') || body.tags.includes('THE5ERS')));
 
     const presetSpec = getPresetSpec(body.underlying || body.symbol);
     const resolvedMult = Number(body.simpleExecution?.contractMultiplier || presetSpec?.contractMultiplier || 1);
-    const feeModelKey = (body.feeModelKey || body.accountId?.profile?.feeModelKey || (isForexOrUsd ? 'FOREX_COMMISSION' : 'INDIA_STATUTORY')) as FeeModelKey;
+    const pricePrecision = presetSpec?.pricePrecision ?? (isForexOrUsd ? 5 : 2);
+    const feeModelKey = (body.feeModelKey || resolvedProfile?.feeModelKey || (isForexOrUsd ? 'FOREX_COMMISSION' : 'INDIA_STATUTORY')) as FeeModelKey;
 
     if (isForexOrUsd && body.simpleExecution) {
       if (body.simpleExecution.brokerage === 40) {
@@ -322,17 +337,24 @@ export class InstrumentService {
 
       // Auto-calculate fees if zero and valid execution prices exist
       if (totalCosts === 0 && exec.entryPrice > 0 && exec.quantity > 0) {
+        const isSingleOpen = body.status === 'OPEN' && !(exec.exitPrice && Number(exec.exitPrice) > 0);
         const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
           direction: body.direction,
           assetClass: body.assetClass || (isForexOrUsd ? 'FOREX' : 'EQUITY'),
           marketSegment: body.marketSegment || (isForexOrUsd ? 'FOREX' : 'NSE_EQ'),
+          exchange: body.exchange,
+          symbol: body.symbol,
+          holdingType: body.holdingType,
+          tradeDate: body.tradeDate,
           entryPrice: exec.entryPrice,
           exitPrice: exec.exitPrice,
           quantity: exec.quantity,
           contractMultiplier: resolvedMult,
           currency: body.currency || (isForexOrUsd ? 'USD' : 'INR'),
-          broker: body.broker,
-          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
+          broker: body.broker || body.accountId?.broker,
+          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? (normBroker === 'FINVASIA' ? 0 : 20) : undefined,
+          isSingleLeg: isSingleOpen,
+          legSide: isSingleOpen ? (body.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
         });
         if (autoCharges.totalCosts > 0) {
           totalCosts = autoCharges.totalCosts;
@@ -346,12 +368,28 @@ export class InstrumentService {
         }
       }
 
-      netPnL = Number((grossPnL - totalCosts + (exec.explicitAdjustments || 0)).toFixed(2));
-      outcome = body.status === 'OPEN' ? 'OPEN' : res.outcome;
-      closedQty = exec.exitPrice ? exec.quantity : 0;
-      openQty = exec.exitPrice ? 0 : exec.quantity;
-      avgEntry = exec.entryPrice;
-      avgExit = exec.exitPrice;
+      netPnL = Number(
+        new CalcDecimal(grossPnL)
+          .minus(totalCosts)
+          .plus(exec.explicitAdjustments || 0)
+          .toFixed(2)
+      );
+      if (body.status === 'OPEN' || !(exec.exitPrice && Number(exec.exitPrice) > 0)) {
+        outcome = body.status === 'CLOSED' && exec.exitPrice === 0 ? (netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN') : 'OPEN';
+      } else if (netPnL > 0) {
+        outcome = 'WIN';
+      } else if (netPnL < 0) {
+        outcome = 'LOSS';
+      } else {
+        outcome = 'BREAKEVEN';
+      }
+      closedQty = exec.exitPrice !== undefined && exec.exitPrice !== null ? exec.quantity : 0;
+      openQty = exec.exitPrice !== undefined && exec.exitPrice !== null ? 0 : exec.quantity;
+      avgEntry = Number(new CalcDecimal(exec.entryPrice || 0).toFixed(pricePrecision));
+      avgExit =
+        exec.exitPrice !== undefined && exec.exitPrice !== null
+          ? Number(new CalcDecimal(exec.exitPrice).toFixed(pricePrecision))
+          : undefined;
     } else if (effectiveMode === 'ADVANCED' && body.fills && body.fills.length > 0) {
       // Auto-synthesize missing exit fill if trade is marked CLOSED with simpleExecution.exitPrice
       if (body.status === 'CLOSED' && body.simpleExecution?.exitPrice && Number(body.simpleExecution.exitPrice) > 0) {
@@ -379,18 +417,17 @@ export class InstrumentService {
       outcome = body.status === 'OPEN' ? 'OPEN' : fifo.outcome;
       closedQty = fifo.closedQuantity.toNumber();
       openQty = fifo.openQuantity.toNumber();
-      avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(2));
-      avgExit = fifo.weightedAvgExitPrice ? Number(fifo.weightedAvgExitPrice.toFixed(2)) : undefined;
+      avgEntry = Number(fifo.weightedAvgEntryPrice.toFixed(pricePrecision));
+      avgExit = fifo.weightedAvgExitPrice ? Number(fifo.weightedAvgExitPrice.toFixed(pricePrecision)) : undefined;
 
       const simpleCosts = body.simpleExecution
         ? Number(
-            (
-              (body.simpleExecution.brokerage || 0) +
-              (body.simpleExecution.exchangeFees || 0) +
-              (body.simpleExecution.regulatoryFees || 0) +
-              (body.simpleExecution.taxes || 0) +
-              (body.simpleExecution.otherFees || 0)
-            ).toFixed(2)
+            new CalcDecimal(body.simpleExecution.brokerage || 0)
+              .plus(body.simpleExecution.exchangeFees || 0)
+              .plus(body.simpleExecution.regulatoryFees || 0)
+              .plus(body.simpleExecution.taxes || 0)
+              .plus(body.simpleExecution.otherFees || 0)
+              .toFixed(2)
           )
         : 0;
 
@@ -402,17 +439,28 @@ export class InstrumentService {
         totalCosts = isForexOrUsd && simpleCosts === 40 ? 0 : simpleCosts;
       } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
         const qtyForFees = closedQty > 0 ? closedQty : openQty;
+        const isSingleOpen = body.status === 'OPEN' && closedQty === 0;
+        const entryCount = sanitized.fills.filter((f: any) => f.type === 'ENTRY').length || 1;
+        const exitCount = sanitized.fills.filter((f: any) => f.type === 'EXIT').length;
         const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
           direction: body.direction,
           assetClass: body.assetClass || (isForexOrUsd ? 'FOREX' : 'EQUITY'),
           marketSegment: body.marketSegment || (isForexOrUsd ? 'FOREX' : 'NSE_EQ'),
+          exchange: body.exchange,
+          symbol: body.symbol,
+          holdingType: body.holdingType,
+          tradeDate: body.tradeDate,
           entryPrice: avgEntry,
           exitPrice: avgExit,
           quantity: qtyForFees,
           contractMultiplier: resolvedMult,
           currency: body.currency || (isForexOrUsd ? 'USD' : 'INR'),
-          broker: body.broker,
-          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? 20 : undefined,
+          broker: body.broker || body.accountId?.broker,
+          brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? (normBroker === 'FINVASIA' ? 0 : 20) : undefined,
+          isSingleLeg: isSingleOpen,
+          legSide: isSingleOpen ? (body.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
+          entryOrdersCount: entryCount,
+          exitOrdersCount: isSingleOpen ? 0 : Math.max(1, exitCount),
         });
         totalCosts = autoCharges.totalCosts;
         if (!body.simpleExecution) {
@@ -448,13 +496,13 @@ export class InstrumentService {
         grossPnL = simpleFallback.grossPnLNumber;
         closedQty = body.simpleExecution.quantity || openQty || 1;
         openQty = 0;
-        avgExit = body.simpleExecution.exitPrice;
-        avgEntry = body.simpleExecution.entryPrice || avgEntry;
+        avgExit = Number(new CalcDecimal(body.simpleExecution.exitPrice).toFixed(pricePrecision));
+        avgEntry = Number(new CalcDecimal(body.simpleExecution.entryPrice || avgEntry).toFixed(pricePrecision));
         outcome = simpleFallback.outcome;
       }
 
       netPnL = Number(
-        new Decimal(grossPnL)
+        new CalcDecimal(grossPnL)
           .minus(totalCosts)
           .plus(adjustments)
           .toFixed(2)
@@ -470,12 +518,12 @@ export class InstrumentService {
       const res = calculateSimpleExecutionPnL(body.direction, exec);
       grossPnL = res.grossPnLNumber;
       totalCosts = isForexOrUsd && res.totalCostsNumber === 40 ? 0 : res.totalCostsNumber;
-      netPnL = Number((grossPnL - totalCosts + (exec.explicitAdjustments || 0)).toFixed(2));
-      outcome = body.status === 'OPEN' ? 'OPEN' : res.outcome;
+      netPnL = Number(new CalcDecimal(grossPnL).minus(totalCosts).plus(exec.explicitAdjustments || 0).toFixed(2));
+      outcome = body.status === 'OPEN' ? 'OPEN' : netPnL > 0 ? 'WIN' : netPnL < 0 ? 'LOSS' : 'BREAKEVEN';
       closedQty = exec.exitPrice ? exec.quantity : 0;
       openQty = exec.exitPrice ? 0 : exec.quantity;
-      avgEntry = exec.entryPrice;
-      avgExit = exec.exitPrice;
+      avgEntry = Number(new CalcDecimal(exec.entryPrice || 0).toFixed(pricePrecision));
+      avgExit = exec.exitPrice ? Number(new CalcDecimal(exec.exitPrice).toFixed(pricePrecision)) : undefined;
     }
 
     let holdingTimeMinutes: number | undefined;
@@ -710,10 +758,12 @@ export class InstrumentService {
 
         const oldNetPnL = trade.calculated?.netPnL ?? 0;
         let needsRecompute = false;
+        const isClosedTrade = trade.status === 'CLOSED';
 
-        // Multiplier change or sync
+        // Multiplier change or sync (lotSize updates must NEVER rewrite historical trade quantities or closed P&L)
         const currentTradeMult = trade.simpleExecution?.contractMultiplier ?? 1;
-        if (newMultiplier !== oldMultiplier || currentTradeMult !== newMultiplier) {
+        const explicitMultUpdate = instrumentFields.contractMultiplier !== undefined;
+        if (explicitMultUpdate && (newMultiplier !== oldMultiplier || currentTradeMult !== newMultiplier)) {
           if (!trade.simpleExecution) {
             trade.simpleExecution = {} as any;
           }
@@ -730,8 +780,9 @@ export class InstrumentService {
           }
         }
 
-        // Recompute calculations
-        if (needsRecompute || recomputeAutoFees) {
+        // Recompute calculations ONLY when multiplier changed or recomputeAutoFees explicitly opted in;
+        // never rewrite historical closed-trade P&L or quantity on lotSize updates
+        if (needsRecompute || (recomputeAutoFees && !isClosedTrade)) {
           const tradeObj = trade.toObject();
           if (trade.simpleExecution) {
             tradeObj.simpleExecution = trade.simpleExecution;

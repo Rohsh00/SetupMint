@@ -291,7 +291,7 @@ When score $\ge 61$, an advisory, non-blocking pre-trade warning is surfaced in 
 ### C. Monte Carlo Expectancy Cone (`monte-carlo.ts`)
 - **Function:** `calculateMonteCarloBands(trades, options)`
 - **Behavior:**
-  - Evaluates edge qualification ($N \ge 30$, verdict $\neq$ `NO_EDGE` / `INSUFFICIENT_DATA`).
+  - Evaluates edge qualification ($N \ge 30$, verdict $\neq$ `NO_EDGE_NEGATIVE`).
   - Simulates 1,000 resampled paths of 50, 100, or 200 future trades using `Mulberry32PRNG`.
   - Yields deterministic per-step percentile envelopes (P5, P25, P50, P75, P95).
 

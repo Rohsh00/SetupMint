@@ -73,8 +73,8 @@ describe('Account-Driven Financial Engine Suite', () => {
   });
 
   describe('Fee Model Registry', () => {
-    it('calculates Indian statutory charges with flat fee, STT, and GST', () => {
-      const charges = FeeModelRegistry.calculate('INDIA_STATUTORY', {
+    it('calculates Indian statutory charges with 0.03% equity cap on small turnover and ₹20 cap on large turnover', () => {
+      const smallEquity = FeeModelRegistry.calculate('INDIA_STATUTORY', {
         assetClass: 'EQUITY',
         marketSegment: 'NSE_EQ',
         entryPrice: 100,
@@ -83,9 +83,20 @@ describe('Account-Driven Financial Engine Suite', () => {
         brokerFlatFeePerLeg: 20,
       });
 
-      expect(charges.brokerage).toBe(40); // 2 legs * 20
-      expect(charges.totalCosts).toBeGreaterThan(40);
-      expect(charges.gst).toBeGreaterThan(0);
+      // Turnover 10,000 + 11,000 -> 0.03% equity intraday brokerage cap = 3.00 + 3.30 = 6.30
+      expect(smallEquity.brokerage).toBe(6.30);
+      expect(smallEquity.totalCosts).toBeGreaterThan(6.30);
+      expect(smallEquity.gst).toBeGreaterThan(0);
+
+      const largeEquity = FeeModelRegistry.calculate('INDIA_STATUTORY', {
+        assetClass: 'EQUITY',
+        marketSegment: 'NSE_EQ',
+        entryPrice: 1000,
+        exitPrice: 1010,
+        quantity: 100,
+        brokerFlatFeePerLeg: 20,
+      });
+      expect(largeEquity.brokerage).toBe(40); // Capped at ₹20 * 2 legs above ₹66,667
     });
 
     it('calculates Forex / CFD commission model ($7/lot round turn)', () => {
@@ -156,14 +167,21 @@ describe('Account-Driven Financial Engine Suite', () => {
       expect(spec.minLot).toBe(0.01);
     });
 
-    it('resolves NIFTY with INR currency, lot size 25, and 0.05 tick size', () => {
-      const spec = InstrumentSpecRegistry.resolve('NIFTY', {
+    it('resolves NIFTY with INR currency, effective lot size (65 current / 25 Nov-2024), and 0.05 tick size', () => {
+      const currentSpec = InstrumentSpecRegistry.resolve('NIFTY', {
         marketRegion: 'IN',
         baseCurrency: 'INR',
       });
-      expect(spec.quoteCurrency).toBe('INR');
-      expect(spec.lotSize).toBe(25);
-      expect(spec.tickSize).toBe(0.05);
+      expect(currentSpec.quoteCurrency).toBe('INR');
+      expect(currentSpec.lotSize).toBe(65);
+      expect(currentSpec.tickSize).toBe(0.05);
+
+      const historicalSpec = InstrumentSpecRegistry.resolve(
+        'NIFTY',
+        { marketRegion: 'IN', baseCurrency: 'INR' },
+        '2024-11-10'
+      );
+      expect(historicalSpec.lotSize).toBe(25);
     });
   });
 

@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import {
   Direction,
   IRiskCalculationParams,
@@ -6,7 +6,13 @@ import {
 } from '@tradevault/shared';
 
 /**
- * Calculates position sizing, suggested quantity, lot rounding, and risk/reward.
+ * Calculates position sizing, suggested quantity (always floored to lot step), and risk/reward.
+ *
+ * Conventions:
+ * - `rewardRiskRatio`: pure structural geometry |T - E| / |E - S| (unit-invariant).
+ * - `costAdjustedRewardRiskRatio`: net ratio (grossReward - costs) / (stopLoss + costs) at valid size.
+ * - When `includeCostsInBudget` is true, `estimatedCosts` is subtracted from `plannedRiskAmount`
+ *   before dividing by `lossPerUnitAtStop` and flooring to `unitStep`.
  */
 export function calculateRiskAndPositionSize(
   params: IRiskCalculationParams
@@ -35,7 +41,10 @@ export function calculateRiskAndPositionSize(
       isDirectionValid = false;
       warnings.push('For LONG trades, initial stop-loss must be lower than the entry price.');
     }
-    if (params.targetPrice !== undefined && new Decimal(params.targetPrice).lessThanOrEqualTo(dEntry)) {
+    if (
+      params.targetPrice !== undefined &&
+      new Decimal(params.targetPrice).lessThanOrEqualTo(dEntry)
+    ) {
       warnings.push('For LONG trades, profit target should be higher than the entry price.');
     }
   } else {
@@ -44,7 +53,10 @@ export function calculateRiskAndPositionSize(
       isDirectionValid = false;
       warnings.push('For SHORT trades, initial stop-loss must be higher than the entry price.');
     }
-    if (params.targetPrice !== undefined && new Decimal(params.targetPrice).greaterThanOrEqualTo(dEntry)) {
+    if (
+      params.targetPrice !== undefined &&
+      new Decimal(params.targetPrice).greaterThanOrEqualTo(dEntry)
+    ) {
       warnings.push('For SHORT trades, profit target should be lower than the entry price.');
     }
   }
@@ -82,12 +94,23 @@ export function calculateRiskAndPositionSize(
   // Loss per unit at stop
   const lossPerUnitAtStop = stopDistance.times(dMultiplier);
 
+  // If costs are deducted from budget before sizing, ensure usable risk >= 0
+  const usableBudget = params.includeCostsInBudget
+    ? Decimal.max(0, plannedRiskAmount.minus(dCosts))
+    : plannedRiskAmount;
+
+  if (params.includeCostsInBudget && plannedRiskAmount.lte(dCosts) && dCosts.gt(0)) {
+    warnings.push(
+      `Estimated costs (${dCosts.toFixed(2)}) exceed or consume entire risk budget (${plannedRiskAmount.toFixed(2)}).`
+    );
+  }
+
   // Raw suggested quantity
   const rawSuggestedQuantity = lossPerUnitAtStop.isZero()
     ? new Decimal(0)
-    : plannedRiskAmount.dividedBy(lossPerUnitAtStop);
+    : usableBudget.dividedBy(lossPerUnitAtStop);
 
-  // Round down to valid lot size or increment
+  // Floor down to valid lot size or quantity increment (never round up)
   const unitStep = dIncrement.greaterThan(0) ? dIncrement : dLotSize;
   let roundedLotQuantity = rawSuggestedQuantity
     .dividedBy(unitStep)
@@ -104,8 +127,9 @@ export function calculateRiskAndPositionSize(
     );
   }
 
-  // Estimated monetary loss with valid quantity
-  const estimatedMonetaryLoss = roundedLotQuantity.times(lossPerUnitAtStop).plus(dCosts);
+  // Estimated monetary loss with valid quantity (gross stop loss + transaction costs)
+  const grossLossAtStop = roundedLotQuantity.times(lossPerUnitAtStop);
+  const estimatedMonetaryLoss = grossLossAtStop.plus(dCosts);
 
   const actualRiskPercentage = dEquity.isZero()
     ? new Decimal(0)
@@ -114,6 +138,7 @@ export function calculateRiskAndPositionSize(
   // Reward calculations if target provided
   let estimatedReward: number | undefined;
   let rewardRiskRatio: number | undefined;
+  let costAdjustedRewardRiskRatio: number | undefined;
   let estimatedNetReward: number | undefined;
 
   if (params.targetPrice !== undefined && params.targetPrice > 0) {
@@ -126,7 +151,14 @@ export function calculateRiskAndPositionSize(
     estimatedNetReward = Number(netReward.toFixed(2));
 
     if (!stopDistance.isZero()) {
+      // Geometric Planned R:R: |T - E| / |E - S|
       rewardRiskRatio = Number(rewardDistance.dividedBy(stopDistance).toFixed(2));
+    }
+
+    if (roundedLotQuantity.greaterThan(0) && estimatedMonetaryLoss.greaterThan(0)) {
+      costAdjustedRewardRiskRatio = Number(
+        netReward.dividedBy(estimatedMonetaryLoss).toFixed(2)
+      );
     }
   }
 
@@ -141,6 +173,7 @@ export function calculateRiskAndPositionSize(
     actualRiskPercentage: Number(actualRiskPercentage.toFixed(2)),
     estimatedReward,
     rewardRiskRatio,
+    costAdjustedRewardRiskRatio,
     estimatedNetReward,
     isDirectionValid,
     isStopDistanceZero: false,
@@ -150,6 +183,7 @@ export function calculateRiskAndPositionSize(
 
 /**
  * Calculates realized R-multiple: Net P&L / Initial Planned Risk
+ * Always anchored to initial planned risk (`|entry - initialStopLoss| * initialQty * multiplier`).
  */
 export function calculateRealizedRMultiple(
   realizedNetPnL: number | Decimal,

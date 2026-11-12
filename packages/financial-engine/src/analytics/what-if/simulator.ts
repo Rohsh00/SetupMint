@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import {
   IWhatIfCellResult,
   IWhatIfBaseline,
@@ -22,8 +22,6 @@ import { computePairedDifferencesAndVerdict } from './paired-difference.js';
 import { splitChronologicalHoldout, checkHoldsOutOfSample } from './holdout.js';
 import { runCalibrationCheck } from './calibration.js';
 import { computeWhatIfExcursionDistributions } from './excursion-distribution.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IRunWhatIfSimulationParams {
   trades: IWhatIfTradeInput[];

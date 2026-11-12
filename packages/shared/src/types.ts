@@ -11,6 +11,7 @@ export type MarketSegment =
   | 'NSE_EQ'
   | 'NSE_FNO'
   | 'BSE_EQ'
+  | 'BSE_FNO'
   | 'MCX'
   | 'FOREX'
   | 'CRYPTO'
@@ -1164,8 +1165,14 @@ export interface IDashboardStats {
   lossRate: number;
   avgWinningTrade: number;
   avgLosingTrade: number;
+  /** Net Profit Factor = Sum(Winning Trade Net P&L) / |Sum(Losing Trade Net P&L)| */
   profitFactor: number;
+  /** Gross Profit Factor = Sum(Winning Trade Gross P&L) / |Sum(Losing Trade Gross P&L)| */
+  grossProfitFactor?: number;
+  /** Expectancy in account currency per closed trade = Total Net P&L / Closed Count */
   expectancy: number;
+  /** Expectancy in R-multiples = (WinRate * AvgWinR) - (LossRate * AvgLossR) */
+  expectancyR?: number;
   avgRealizedR: number;
   maxDrawdownAmount: number;
   maxDrawdownPercent: number;
@@ -1253,6 +1260,8 @@ export interface IRiskCalculationParams {
   tickSize?: number;
   quantityIncrement?: number;
   estimatedCosts?: number;
+  /** When true, deduct estimatedCosts from usable risk budget before sizing quantity so worst-case stop loss + costs fits within budget */
+  includeCostsInBudget?: boolean;
 }
 
 export interface IRiskCalculationResult {
@@ -1265,7 +1274,10 @@ export interface IRiskCalculationResult {
   estimatedMonetaryLoss: number;
   actualRiskPercentage: number;
   estimatedReward?: number;
+  /** Structural geometric R:R = |Target - Entry| / |Entry - Stop| */
   rewardRiskRatio?: number;
+  /** Cost-adjusted R:R = (Gross Reward - Estimated Costs) / Estimated Monetary Loss */
+  costAdjustedRewardRiskRatio?: number;
   estimatedNetReward?: number;
   isDirectionValid: boolean;
   isStopDistanceZero: boolean;
@@ -2856,6 +2868,7 @@ export interface IWeeklyTemplateItem {
   name: string;
   n: number;
   shrunkExpectancy: number;
+  expectancyUnit?: 'R' | 'CURRENCY';
   sampleSizeWarning: boolean;
   winRate: number;
   netPnL: number;

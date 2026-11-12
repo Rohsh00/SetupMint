@@ -61,15 +61,15 @@ sequenceDiagram
 
     User->>Modal: Clicks "Log New Trade" (or + New Trade in Top Bar)
     Modal->>Modal: Loads remembered preferences (Account, Strategy, Symbol, Mode)
-    User->>Modal: Selects Instrument (e.g. NIFTY)
-    Modal->>Modal: Autofills exchange (NSE), segment (NSE_FNO), multiplier (1), lotSize (25)
+    User->>Modal: Selects Instrument (e.g. NIFTY, Oct 2024 historical lot 25 vs Jan 2026+ lot 65)
+    Modal->>Modal: Autofills exchange (NSE), segment (NSE_FNO), multiplier (1), date-effective lotSize (25 for Oct 2024)
     User->>Modal: Enters Lots (2) -> Auto-converts Quantity to 50
-    User->>Modal: Sets Entry Timestamp -> Auto-derives session (NSE_REGULAR)
+    User->>Modal: Sets Entry Timestamp (Oct 2024) -> Auto-derives session (NSE_REGULAR)
     User->>Modal: Inputs Entry Price (24,000), Exit Price (24,120)
-    Modal->>FE: calculateIndianCharges({ assetClass, prices, qty, broker })
-    FE-->>Modal: Auto-populates itemized Brokerage (₹40), Exchange, SEBI, STT, GST
+    Modal->>FE: calculateIndianCharges({ assetClass: 'FUTURES', symbol: 'NIFTY24OCTFUT', tradeDate, prices, qty: 50, broker: 'FYERS' })
+    FE-->>Modal: Auto-populates Brokerage (₹40.00), Exch+IPFT (₹44.03), SEBI (₹2.41), Stamp (₹24.00), STT 0.02% (₹241.20), GST (₹15.56)
     Modal->>FE: calculateSimpleExecutionPnL(direction, simpleExecution)
-    FE-->>Modal: Returns live Gross P&L (+₹6,000), Fees (₹207.82), Net P&L (+₹5,792.18)
+    FE-->>Modal: Returns live Gross P&L (+₹6,000), Fees (₹367.20), Net P&L (+₹5,632.80) [at 2026+ lot 65 & Apr-2026 0.05% STT: Gross +₹15,600, Fees ₹1,819.87]
     Modal->>Modal: Updates TradeCalculationBanner with live profit & AUTO fees badge
     User->>Modal: Selects Discipline Score (5/5), Emotion (CALM), Strategy Playbook
     User->>Modal: Clicks "Save Trade Entry"

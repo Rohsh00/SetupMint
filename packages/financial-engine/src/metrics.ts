@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import { ITrade, IDashboardStats, TradingSession } from '@tradevault/shared';
 
 export interface PerformanceInputTrade {
@@ -24,10 +24,35 @@ export interface PerformanceInputTrade {
   };
 }
 
+export interface DashboardCashFlowEvent {
+  date: string; // YYYY-MM-DD or ISO timestamp
+  signedAmount: number; // +deposit/+positive adjustment, -withdrawal/-negative adjustment
+}
+
+export interface DashboardMetricsOptions {
+  /** IANA timezone for weekday grouping (default 'Asia/Kolkata' for IST parity with DB queries) */
+  timezone?: string;
+  /** Optional confirmed external cash flows within the active window for cash-flow-safe drawdown */
+  cashFlows?: DashboardCashFlowEvent[];
+}
+
+function getWeekdayNameInTz(dateStr: string, timeZone: string): string {
+  const safe = /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+    ? new Date(`${dateStr}T06:00:00Z`)
+    : new Date(dateStr);
+  if (isNaN(safe.getTime())) return 'Unknown';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'long',
+  }).format(safe);
+}
+
 export function calculateDashboardMetrics(
   trades: PerformanceInputTrade[],
-  initialBalance = 0
+  initialBalance = 0,
+  options: DashboardMetricsOptions = {}
 ): IDashboardStats {
+  const timezone = options.timezone || 'Asia/Kolkata';
   // Filter only closed trades for closed performance metrics
   const closedTrades = trades
     .filter((t) => t.status === 'CLOSED')
@@ -45,6 +70,8 @@ export function calculateDashboardMetrics(
 
   let sumWinningPnL = new Decimal(0);
   let sumLosingPnL = new Decimal(0);
+  let sumWinningGrossPnL = new Decimal(0);
+  let sumLosingGrossPnL = new Decimal(0);
 
   let sumRealizedR = new Decimal(0);
   let rCount = 0;
@@ -70,7 +97,6 @@ export function calculateDashboardMetrics(
   // Track strategy performance
   const strategyMap = new Map<string, { name: string; netPnL: Decimal; count: number; wins: number; sumWin: Decimal; sumLoss: Decimal }>();
   // Track weekday
-  const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const weekdayMap = new Map<string, { netPnL: Decimal; count: number; wins: number }>();
   // Track session
   const sessionMap = new Map<TradingSession, { netPnL: Decimal; count: number; wins: number }>();
@@ -80,6 +106,15 @@ export function calculateDashboardMetrics(
   let peakEquity = runningEquity;
   let maxDrawdownAmount = new Decimal(0);
   let maxDrawdownPercent = new Decimal(0);
+
+  const sortedCashFlows = (options.cashFlows || [])
+    .map((cf) => ({
+      ts: new Date(cf.date).getTime(),
+      signedAmount: cf.signedAmount,
+    }))
+    .filter((cf) => Number.isFinite(cf.ts) && Number.isFinite(cf.signedAmount) && cf.signedAmount !== 0)
+    .sort((a, b) => a.ts - b.ts);
+  let cashFlowIdx = 0;
 
   const equityCurve: IDashboardStats['equityCurve'] = [
     {
@@ -92,6 +127,7 @@ export function calculateDashboardMetrics(
   ];
 
   for (const trade of closedTrades) {
+    const tradeTs = new Date(trade.tradeDate).getTime();
     const pnl = new Decimal(trade.calculated.netPnL ?? 0);
     const gross = new Decimal(trade.calculated.grossPnL ?? 0);
     const costs = new Decimal(trade.calculated.totalCosts ?? 0);
@@ -118,6 +154,12 @@ export function calculateDashboardMetrics(
       breakevenCount++;
     }
 
+    if (gross.greaterThan(0)) {
+      sumWinningGrossPnL = sumWinningGrossPnL.plus(gross);
+    } else if (gross.lessThan(0)) {
+      sumLosingGrossPnL = sumLosingGrossPnL.plus(gross.abs());
+    }
+
     // Streak status
     if (tempWinStreak > 0) currentStreak = tempWinStreak;
     else if (tempLossStreak > 0) currentStreak = -tempLossStreak;
@@ -139,7 +181,19 @@ export function calculateDashboardMetrics(
       rulesFollowedCount++;
     }
 
-    // Equity curve update
+    // Equity curve & cash-flow-safe drawdown tracking
+    // Apply any external cash flows occurring up through this trade date so withdrawals/deposits
+    // shift both runningEquity and peakEquity equally (zero artificial drawdown from withdrawals).
+    while (cashFlowIdx < sortedCashFlows.length && sortedCashFlows[cashFlowIdx].ts <= tradeTs) {
+      const flow = new Decimal(sortedCashFlows[cashFlowIdx].signedAmount || 0);
+      runningEquity = runningEquity.plus(flow);
+      peakEquity = Decimal.max(new Decimal(0), peakEquity.plus(flow));
+      if (runningEquity.greaterThan(peakEquity)) {
+        peakEquity = runningEquity;
+      }
+      cashFlowIdx++;
+    }
+
     runningEquity = runningEquity.plus(pnl);
     if (runningEquity.greaterThan(peakEquity)) {
       peakEquity = runningEquity;
@@ -232,9 +286,8 @@ export function calculateDashboardMetrics(
     }
     strategyMap.set(stratId, stratRecord);
 
-    // Weekday breakdown
-    const weekdayIdx = new Date(trade.tradeDate).getDay();
-    const weekdayName = weekdayNames[weekdayIdx] || 'Unknown';
+    // Weekday breakdown in configured timezone (IST default)
+    const weekdayName = getWeekdayNameInTz(trade.tradeDate, timezone);
     const wRecord = weekdayMap.get(weekdayName) ?? {
       netPnL: new Decimal(0),
       count: 0,
@@ -273,8 +326,16 @@ export function calculateDashboardMetrics(
     profitFactor = Number(sumWinningPnL.dividedBy(sumLosingPnL).toFixed(2));
   }
 
+  let grossProfitFactor = 0;
+  if (sumLosingGrossPnL.isZero()) {
+    grossProfitFactor = sumWinningGrossPnL.greaterThan(0) ? 999.99 : 0;
+  } else {
+    grossProfitFactor = Number(sumWinningGrossPnL.dividedBy(sumLosingGrossPnL).toFixed(2));
+  }
+
   const expectancy = closedCount > 0 ? Number(totalNetPnL.dividedBy(closedCount).toFixed(2)) : 0;
   const avgRealizedR = rCount > 0 ? Number(sumRealizedR.dividedBy(rCount).toFixed(2)) : 0;
+  const expectancyR = rCount > 0 ? Number(sumRealizedR.dividedBy(rCount).toFixed(4)) : undefined;
   const avgHoldingTimeMinutes = holdingCount > 0 ? Math.round(sumHoldingMinutes / holdingCount) : 0;
   const ruleAdherencePercent = closedCount > 0 ? Number(((rulesFollowedCount / closedCount) * 100).toFixed(2)) : 100;
 
@@ -409,7 +470,9 @@ export function calculateDashboardMetrics(
     avgWinningTrade: Number(avgWinningTrade.toFixed(2)),
     avgLosingTrade: Number(avgLosingTrade.toFixed(2)),
     profitFactor: Number(profitFactor.toFixed(2)),
+    grossProfitFactor: Number(grossProfitFactor.toFixed(2)),
     expectancy: Number(expectancy.toFixed(2)),
+    expectancyR,
     avgRealizedR: Number(avgRealizedR.toFixed(2)),
     maxDrawdownAmount: Number(maxDrawdownAmount.toFixed(2)),
     maxDrawdownPercent: Number(maxDrawdownPercent.toFixed(2)),

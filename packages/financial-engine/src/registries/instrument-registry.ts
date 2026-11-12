@@ -1,4 +1,10 @@
-import { ITradingAccountProfile } from '@tradevault/shared';
+import {
+  ITradingAccountProfile,
+  getEffectiveLotSize,
+  getNseTickSize,
+  getPresetSpec,
+} from '@tradevault/shared';
+import { normalizeUnderlying } from '../chart-helpers.js';
 
 export interface InstrumentSpec {
   symbol: string;
@@ -16,82 +22,12 @@ export interface InstrumentSpec {
   maxLot: number;
 }
 
-const GLOBAL_SPECS: Record<string, Partial<InstrumentSpec>> = {
-  XAUUSD: {
-    symbol: 'XAUUSD',
-    displayName: 'Gold / US Dollar',
-    assetClass: 'COMMODITY',
-    exchange: 'GLOBAL',
-    marketSegment: 'FOREX',
-    quoteCurrency: 'USD',
-    contractMultiplier: 100,
-    lotSize: 1,
-    tickSize: 0.01,
-    quantityIncrement: 0.01,
-    pricePrecision: 2,
-    minLot: 0.01,
-    maxLot: 100,
-  },
-  GOLD: {
-    symbol: 'GOLD',
-    displayName: 'MCX Gold Futures',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 100,
-    lotSize: 100,
-    tickSize: 1,
-    quantityIncrement: 100,
-    pricePrecision: 2,
-    minLot: 100,
-    maxLot: 10000,
-  },
-  GOLDM: {
-    symbol: 'GOLDM',
-    displayName: 'MCX Gold Mini Futures',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 10,
-    lotSize: 10,
-    tickSize: 1,
-    quantityIncrement: 10,
-    pricePrecision: 2,
-    minLot: 10,
-    maxLot: 5000,
-  },
-  EURUSD: {
-    symbol: 'EURUSD',
-    displayName: 'Euro / US Dollar',
-    assetClass: 'FOREX',
-    exchange: 'GLOBAL',
-    marketSegment: 'FOREX',
-    quoteCurrency: 'USD',
-    contractMultiplier: 100000,
-    lotSize: 1,
-    tickSize: 0.00001,
-    quantityIncrement: 0.01,
-    pricePrecision: 5,
-    minLot: 0.01,
-    maxLot: 100,
-  },
-  GBPUSD: {
-    symbol: 'GBPUSD',
-    displayName: 'British Pound / US Dollar',
-    assetClass: 'FOREX',
-    exchange: 'GLOBAL',
-    marketSegment: 'FOREX',
-    quoteCurrency: 'USD',
-    contractMultiplier: 100000,
-    lotSize: 1,
-    tickSize: 0.00001,
-    quantityIncrement: 0.01,
-    pricePrecision: 5,
-    minLot: 0.01,
-    maxLot: 100,
-  },
+/**
+ * Fallback CFD/spot specs not covered directly in PRESET_INSTRUMENTS.
+ * All MCX contracts use contractMultiplier for quote-unit conversion (e.g. 100 per 10g = 1kg)
+ * and lotSize = 1 so multipliers are never double-counted.
+ */
+const CFD_FALLBACK_SPECS: Record<string, Partial<InstrumentSpec>> = {
   US30: {
     symbol: 'US30',
     displayName: 'Dow Jones Industrial Average CFD',
@@ -100,7 +36,7 @@ const GLOBAL_SPECS: Record<string, Partial<InstrumentSpec>> = {
     marketSegment: 'CME',
     quoteCurrency: 'USD',
     contractMultiplier: 1,
-    lotSize: 1,
+    lotSize: 0.01,
     tickSize: 1,
     quantityIncrement: 0.01,
     pricePrecision: 2,
@@ -115,7 +51,7 @@ const GLOBAL_SPECS: Record<string, Partial<InstrumentSpec>> = {
     marketSegment: 'CME',
     quoteCurrency: 'USD',
     contractMultiplier: 1,
-    lotSize: 1,
+    lotSize: 0.01,
     tickSize: 0.1,
     quantityIncrement: 0.01,
     pricePrecision: 2,
@@ -130,66 +66,27 @@ const GLOBAL_SPECS: Record<string, Partial<InstrumentSpec>> = {
     marketSegment: 'FOREX',
     quoteCurrency: 'USD',
     contractMultiplier: 1000,
-    lotSize: 1,
+    lotSize: 0.01,
     tickSize: 0.01,
     quantityIncrement: 0.01,
     pricePrecision: 2,
     minLot: 0.01,
     maxLot: 100,
   },
-  CRUDEOIL: {
-    symbol: 'CRUDEOIL',
-    displayName: 'MCX Crude Oil Futures',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 100,
-    lotSize: 100,
-    tickSize: 1,
-    quantityIncrement: 100,
-    pricePrecision: 2,
-    minLot: 100,
-    maxLot: 5000,
-  },
-  NIFTY: {
-    symbol: 'NIFTY',
-    displayName: 'NIFTY 50 Index / F&O',
-    assetClass: 'INDEX',
-    exchange: 'NSE',
-    marketSegment: 'NSE_FNO',
-    quoteCurrency: 'INR',
-    contractMultiplier: 1,
-    lotSize: 25,
-    tickSize: 0.05,
-    quantityIncrement: 25,
-    pricePrecision: 2,
-    minLot: 25,
-    maxLot: 1800,
-  },
-  BANKNIFTY: {
-    symbol: 'BANKNIFTY',
-    displayName: 'NIFTY BANK Index / F&O',
-    assetClass: 'INDEX',
-    exchange: 'NSE',
-    marketSegment: 'NSE_FNO',
-    quoteCurrency: 'INR',
-    contractMultiplier: 1,
-    lotSize: 15,
-    tickSize: 0.05,
-    quantityIncrement: 15,
-    pricePrecision: 2,
-    minLot: 15,
-    maxLot: 900,
-  },
 };
 
 export class InstrumentSpecRegistry {
-  static resolve(symbol: string, profile?: Partial<ITradingAccountProfile> | null): InstrumentSpec {
+  static resolve(
+    symbol: string,
+    profile?: Partial<ITradingAccountProfile> | null,
+    asOfDate?: Date | string
+  ): InstrumentSpec {
     const rawSymbol = (symbol || '').toUpperCase().trim();
-    const cleanSymbol = rawSymbol.replace(/^NSE:|^MCX:|^GLOBAL:|\.FUT$|\.OPT$|\d{2}[A-Z]{3}FUT$/g, '');
+    const baseSymbol = normalizeUnderlying(rawSymbol);
+    const isOptionContract = /(CE|PE)$/i.test(rawSymbol) && /\d+(?:\.\d+)?\s*(?:CE|PE)$/i.test(rawSymbol);
 
-    const baseSpec = GLOBAL_SPECS[cleanSymbol] || GLOBAL_SPECS[rawSymbol];
+    // 1. Authoritative shared preset lookup (supports date-effective NSE/BSE index lot sizes)
+    const preset = getPresetSpec(baseSymbol, asOfDate) || getPresetSpec(rawSymbol, asOfDate);
 
     // Determine regional defaults from profile if spec not matched
     const isIndian =
@@ -199,6 +96,43 @@ export class InstrumentSpecRegistry {
 
     const defaultCurrency = profile?.baseCurrency || (isIndian ? 'INR' : 'USD');
 
+    if (preset) {
+      const effectiveLotSize =
+        getEffectiveLotSize(preset.symbol, asOfDate) ?? preset.lotSize ?? 1;
+      const effectiveIncrement =
+        preset.marketSegment === 'FOREX' || preset.marketSegment === 'CRYPTO'
+          ? preset.quantityIncrement ?? effectiveLotSize
+          : effectiveLotSize > 1
+          ? effectiveLotSize
+          : preset.quantityIncrement ?? 1;
+
+      const resolvedAssetClass = isOptionContract ? 'OPTIONS' : preset.assetClass;
+      const tickSize =
+        isOptionContract && (preset.marketSegment === 'NSE_FNO' || preset.marketSegment === 'BSE_FNO')
+          ? getNseTickSize(0, 'OPTIONS', preset.marketSegment, true)
+          : preset.tickSize;
+
+      return {
+        symbol: rawSymbol,
+        displayName: preset.displayName || rawSymbol,
+        assetClass: resolvedAssetClass,
+        exchange: preset.exchange,
+        marketSegment: preset.marketSegment,
+        quoteCurrency: preset.quoteCurrency || defaultCurrency,
+        contractMultiplier: preset.contractMultiplier ?? 1,
+        lotSize: effectiveLotSize,
+        tickSize,
+        quantityIncrement: effectiveIncrement,
+        pricePrecision: preset.pricePrecision ?? 2,
+        minLot: effectiveIncrement,
+        maxLot:
+          preset.marketSegment === 'FOREX' || preset.marketSegment === 'CRYPTO'
+            ? 100
+            : Math.max(1000, effectiveLotSize * 50),
+      };
+    }
+
+    const baseSpec = CFD_FALLBACK_SPECS[baseSymbol] || CFD_FALLBACK_SPECS[rawSymbol];
     if (baseSpec) {
       return {
         symbol: rawSymbol,
@@ -208,9 +142,9 @@ export class InstrumentSpecRegistry {
         marketSegment: baseSpec.marketSegment || (isIndian ? 'NSE_EQ' : 'FOREX'),
         quoteCurrency: baseSpec.quoteCurrency || defaultCurrency,
         contractMultiplier: baseSpec.contractMultiplier ?? 1,
-        lotSize: baseSpec.lotSize ?? 1,
+        lotSize: baseSpec.lotSize ?? 0.01,
         tickSize: baseSpec.tickSize ?? (isIndian ? 0.05 : 0.01),
-        quantityIncrement: baseSpec.quantityIncrement ?? 1,
+        quantityIncrement: baseSpec.quantityIncrement ?? 0.01,
         pricePrecision: baseSpec.pricePrecision ?? 2,
         minLot: baseSpec.minLot ?? (isIndian ? 1 : 0.01),
         maxLot: baseSpec.maxLot ?? 1000,
@@ -220,12 +154,12 @@ export class InstrumentSpecRegistry {
     return {
       symbol: rawSymbol,
       displayName: rawSymbol,
-      assetClass: isIndian ? 'EQUITY' : 'FOREX',
+      assetClass: isIndian ? (isOptionContract ? 'OPTIONS' : 'EQUITY') : 'FOREX',
       exchange: isIndian ? 'NSE' : 'GLOBAL',
-      marketSegment: isIndian ? 'NSE_EQ' : 'FOREX',
+      marketSegment: isIndian ? (isOptionContract ? 'NSE_FNO' : 'NSE_EQ') : 'FOREX',
       quoteCurrency: defaultCurrency,
       contractMultiplier: 1,
-      lotSize: 1,
+      lotSize: isIndian ? 1 : 0.01,
       tickSize: isIndian ? 0.05 : 0.01,
       quantityIncrement: isIndian ? 1 : 0.01,
       pricePrecision: 2,
@@ -234,4 +168,3 @@ export class InstrumentSpecRegistry {
     };
   }
 }
-

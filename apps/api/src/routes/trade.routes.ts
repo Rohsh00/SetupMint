@@ -23,6 +23,7 @@ import {
   chartGenerateOptionsSchema,
   generateChartSchema,
   TradeOutcome,
+  getPairQuoteCurrency,
 } from '@tradevault/shared';
 
 import {
@@ -777,8 +778,14 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
-    // Compute calculations
-    const calculated = computeTradeCalculations(body);
+    // Compute calculations with resolved account profile & broker without mutating body.accountId
+    const calculated = computeTradeCalculations({
+      ...body,
+      broker: (body as any).broker || account.broker,
+      _accountProfile: account.profile,
+      feeModelKey: (body as any).feeModelKey || account.profile?.feeModelKey,
+      positionModel: (body as any).positionModel || account.profile?.positionModel,
+    });
 
     const initialAuditLog: any[] = [
       {
@@ -1264,7 +1271,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Get trade details
   app.get('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id })
-      .populate('accountId', 'name broker baseCurrency')
+      .populate('accountId', 'name broker baseCurrency profile')
       .populate('strategyId', 'name checklist');
 
     if (!trade) {
@@ -1517,24 +1524,33 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
     }
 
+    const symUpper = (typeof mergedData.symbol === 'string' ? mergedData.symbol : '').toUpperCase().trim();
+    const cleanSymNoPrefix = symUpper.replace(/^(NSE|BSE|MCX|CDS):/, '');
+    const pairQuote = getPairQuoteCurrency(cleanSymNoPrefix);
+    const isInrCurrDeriv = /^(USDINR|EURINR|GBPINR|JPYINR)/.test(cleanSymNoPrefix);
+    const tradeAccount = mergedData.accountId
+      ? await TradingAccount.findById(mergedData.accountId).select('broker profile').lean()
+      : null;
+    const normBroker = (
+      ((existingTrade as any).broker || tradeAccount?.broker || (existingTrade.accountId as any)?.broker || '') as string
+    )
+      .toUpperCase()
+      .replace(/[\s_-]/g, '');
+    const mergedCurr = (mergedData.currency || '').toUpperCase();
     const isForexOrUsd =
-      mergedData.currency === 'USD' ||
-      mergedData.currency === 'EUR' ||
-      mergedData.currency === 'GBP' ||
-      mergedData.assetClass === 'FOREX' ||
-      mergedData.assetClass === 'CRYPTO' ||
-      mergedData.marketSegment === 'FOREX' ||
-      mergedData.marketSegment === 'CRYPTO' ||
-      (typeof mergedData.symbol === 'string' &&
-        (mergedData.symbol.includes('XAU') ||
-          mergedData.symbol.includes('EUR') ||
-          mergedData.symbol.includes('USD') ||
-          mergedData.symbol.includes('GBP'))) ||
-      ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(
-        (((existingTrade as any).broker || (existingTrade.accountId as any)?.broker || '') as string)
-          .toUpperCase()
-          .replace(/[\s_-]/g, '')
-      );
+      !isInrCurrDeriv &&
+      (mergedCurr === 'USD' ||
+        mergedCurr === 'EUR' ||
+        mergedCurr === 'GBP' ||
+        mergedCurr === 'USDT' ||
+        mergedData.assetClass === 'FOREX' ||
+        mergedData.assetClass === 'CRYPTO' ||
+        mergedData.marketSegment === 'FOREX' ||
+        mergedData.marketSegment === 'CRYPTO' ||
+        mergedData.marketSegment === 'US_EQUITY' ||
+        mergedData.marketSegment === 'CME' ||
+        (pairQuote !== undefined && pairQuote !== 'INR') ||
+        ['ELEFIN', 'MT5', 'FTMO', 'THE5ERS'].includes(normBroker));
 
     if (isForexOrUsd && mergedData.simpleExecution) {
       if (mergedData.simpleExecution.brokerage === 40) mergedData.simpleExecution.brokerage = 0;
@@ -1573,7 +1589,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const classificationChanged = oldVariantKey !== newVariantKey || oldVariantStatus !== newVariantStatus;
 
     const oldNetPnL = existingTrade.calculated?.netPnL || 0;
-    const baseCalculated = computeTradeCalculations(mergedData);
+    const baseCalculated = computeTradeCalculations({
+      ...mergedData,
+      broker: (mergedData as any).broker || tradeAccount?.broker,
+      _accountProfile: tradeAccount?.profile,
+      feeModelKey: (mergedData as any).feeModelKey || tradeAccount?.profile?.feeModelKey,
+      positionModel: (mergedData as any).positionModel || tradeAccount?.profile?.positionModel,
+    });
     const newCalculated = {
       ...baseCalculated,
       excursion: existingTrade.calculated?.excursion,
@@ -2048,16 +2070,25 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       : resolvedExitPrice;
     const slippagePoints = brokerResult.executedOnBroker ? (effectiveExitPrice - resolvedExitPrice) : 0;
 
+    const tradeAccount = trade.accountId
+      ? await TradingAccount.findById(trade.accountId).select('broker profile').lean()
+      : null;
+
     const exitLegCharges = calculateIndianCharges({
       direction: trade.direction,
       assetClass: trade.assetClass,
       marketSegment: trade.marketSegment,
+      exchange: trade.exchange,
+      symbol: trade.symbol,
+      holdingType: (trade as any).holdingType,
+      tradeDate: trade.tradeDate,
       entryPrice: effectiveExitPrice,
       quantity: exitQty,
       contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
       currency: trade.currency,
-      broker: (trade.accountId as any)?.broker,
+      broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
       isSingleLeg: true,
+      legSide: trade.direction === 'LONG' ? 'SELL' : 'BUY',
     });
 
     // Update trade record in MongoDB
@@ -2071,7 +2102,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           timestamp: new Date(),
           brokerage: exitLegCharges.brokerage,
           exchangeFee: exitLegCharges.exchangeFees,
-          taxes: exitLegCharges.taxes,
+          taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
           notes: brokerResult.executedOnBroker ? `FYERS execution (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
         });
       } else {
@@ -2095,6 +2126,35 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       // Partial close: ensure trade is ADVANCED
       trade.executionMode = 'ADVANCED';
       if (!Array.isArray(trade.fills) || trade.fills.length === 0) {
+        const hasSimpleFees =
+          (trade.simpleExecution?.brokerage || 0) +
+            (trade.simpleExecution?.exchangeFees || 0) +
+            (trade.simpleExecution?.regulatoryFees || 0) +
+            (trade.simpleExecution?.taxes || 0) >
+          0;
+        const entryLegCharges = hasSimpleFees
+          ? {
+              brokerage: trade.simpleExecution?.brokerage ?? 0,
+              exchangeFees: trade.simpleExecution?.exchangeFees ?? 0,
+              regulatoryFees: trade.simpleExecution?.regulatoryFees ?? 0,
+              taxes: trade.simpleExecution?.taxes ?? 0,
+            }
+          : calculateIndianCharges({
+              direction: trade.direction,
+              assetClass: trade.assetClass,
+              marketSegment: trade.marketSegment,
+              exchange: trade.exchange,
+              symbol: trade.symbol,
+              holdingType: (trade as any).holdingType,
+              tradeDate: trade.tradeDate,
+              entryPrice: trade.simpleExecution?.entryPrice || effectiveExitPrice,
+              quantity: currentOpenQty,
+              contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+              currency: trade.currency,
+              broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
+              isSingleLeg: true,
+              legSide: trade.direction === 'SHORT' ? 'SELL' : 'BUY',
+            });
         // Initial entry fill for original quantity
         trade.fills = [
           {
@@ -2103,9 +2163,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             price: trade.simpleExecution?.entryPrice || effectiveExitPrice,
             quantity: currentOpenQty,
             timestamp: trade.entryTime || new Date(),
-            brokerage: 20,
-            exchangeFee: 0,
-            taxes: 0,
+            brokerage: entryLegCharges.brokerage,
+            exchangeFee: entryLegCharges.exchangeFees,
+            taxes: Number((entryLegCharges.taxes + entryLegCharges.regulatoryFees).toFixed(2)),
           },
         ];
       }
@@ -2117,13 +2177,19 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         timestamp: new Date(),
         brokerage: exitLegCharges.brokerage,
         exchangeFee: exitLegCharges.exchangeFees,
-        taxes: exitLegCharges.taxes,
+        taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
         notes: brokerResult.executedOnBroker ? `FYERS partial exit (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
       });
       trade.status = 'OPEN';
     }
 
-    const recalculated = computeTradeCalculations(trade.toObject());
+    const recalculated = computeTradeCalculations({
+      ...trade.toObject(),
+      broker: tradeAccount?.broker,
+      _accountProfile: tradeAccount?.profile,
+      feeModelKey: tradeAccount?.profile?.feeModelKey,
+      positionModel: tradeAccount?.profile?.positionModel,
+    });
     trade.calculated = recalculated;
     trade.auditLog.push({
       action: isReallyFullClose ? 'CLOSED' : 'PARTIALLY_CLOSED',
@@ -2324,18 +2390,27 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       : resolvedExitPrice;
     const slippagePoints = brokerExitResult.executedOnBroker ? (effectiveExitPrice - resolvedExitPrice) : 0;
 
+    const tradeAccount = trade.accountId
+      ? await TradingAccount.findById(trade.accountId).select('broker profile').lean()
+      : null;
+
     // 2. Record partial exit fills in MongoDB
     if (requestedExitQty > 0) {
       const exitLegCharges = calculateIndianCharges({
         direction: trade.direction,
         assetClass: trade.assetClass,
         marketSegment: trade.marketSegment,
+        exchange: trade.exchange,
+        symbol: trade.symbol,
+        holdingType: (trade as any).holdingType,
+        tradeDate: trade.tradeDate,
         entryPrice: effectiveExitPrice,
         quantity: requestedExitQty,
         contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
         currency: trade.currency,
-        broker: (trade.accountId as any)?.broker,
+        broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
         isSingleLeg: true,
+        legSide: trade.direction === 'LONG' ? 'SELL' : 'BUY',
       });
 
       if (isFullClose) {
@@ -2348,7 +2423,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             timestamp: new Date(),
             brokerage: exitLegCharges.brokerage,
             exchangeFee: exitLegCharges.exchangeFees,
-            taxes: exitLegCharges.taxes,
+            taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
             notes: `${label}: Full exit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
           });
         } else {
@@ -2371,6 +2446,35 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       } else {
         trade.executionMode = 'ADVANCED';
         if (!Array.isArray(trade.fills) || trade.fills.length === 0) {
+          const hasSimpleFees =
+            (trade.simpleExecution?.brokerage || 0) +
+              (trade.simpleExecution?.exchangeFees || 0) +
+              (trade.simpleExecution?.regulatoryFees || 0) +
+              (trade.simpleExecution?.taxes || 0) >
+            0;
+          const entryLegCharges = hasSimpleFees
+            ? {
+                brokerage: trade.simpleExecution?.brokerage ?? 0,
+                exchangeFees: trade.simpleExecution?.exchangeFees ?? 0,
+                regulatoryFees: trade.simpleExecution?.regulatoryFees ?? 0,
+                taxes: trade.simpleExecution?.taxes ?? 0,
+              }
+            : calculateIndianCharges({
+                direction: trade.direction,
+                assetClass: trade.assetClass,
+                marketSegment: trade.marketSegment,
+                exchange: trade.exchange,
+                symbol: trade.symbol,
+                holdingType: (trade as any).holdingType,
+                tradeDate: trade.tradeDate,
+                entryPrice: trade.simpleExecution?.entryPrice || effectiveExitPrice,
+                quantity: currentOpenQty,
+                contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+                currency: trade.currency,
+                broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
+                isSingleLeg: true,
+                legSide: trade.direction === 'SHORT' ? 'SELL' : 'BUY',
+              });
           trade.fills = [
             {
               fillId: `entry_${Date.now()}`,
@@ -2378,9 +2482,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
               price: trade.simpleExecution?.entryPrice || effectiveExitPrice,
               quantity: currentOpenQty,
               timestamp: trade.entryTime || new Date(),
-              brokerage: 20,
-              exchangeFee: 0,
-              taxes: 0,
+              brokerage: entryLegCharges.brokerage,
+              exchangeFee: entryLegCharges.exchangeFees,
+              taxes: Number((entryLegCharges.taxes + entryLegCharges.regulatoryFees).toFixed(2)),
             },
           ];
         }
@@ -2392,7 +2496,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           timestamp: new Date(),
           brokerage: exitLegCharges.brokerage,
           exchangeFee: exitLegCharges.exchangeFees,
-          taxes: exitLegCharges.taxes,
+          taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
           notes: `${label}: Partial profit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
         });
         trade.status = 'OPEN';
@@ -2429,7 +2533,13 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
 
     // 4. Recalculate trade analytics
-    const recalculated = computeTradeCalculations(trade.toObject());
+    const recalculated = computeTradeCalculations({
+      ...trade.toObject(),
+      broker: tradeAccount?.broker,
+      _accountProfile: tradeAccount?.profile,
+      feeModelKey: tradeAccount?.profile?.feeModelKey,
+      positionModel: tradeAccount?.profile?.positionModel,
+    });
     trade.calculated = recalculated;
 
     trade.auditLog.push({
@@ -2537,7 +2647,16 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
     tradeObj.fills = [];
 
-    const newCalculated = computeTradeCalculations(tradeObj);
+    const dupAccount = tradeObj.accountId
+      ? await TradingAccount.findById(tradeObj.accountId).select('broker profile').lean()
+      : null;
+    const newCalculated = computeTradeCalculations({
+      ...tradeObj,
+      broker: dupAccount?.broker,
+      _accountProfile: dupAccount?.profile,
+      feeModelKey: dupAccount?.profile?.feeModelKey,
+      positionModel: dupAccount?.profile?.positionModel,
+    });
     tradeObj.calculated = newCalculated;
 
     const inst = await InstrumentService.ensureForTrade(req.user!.id, tradeObj);

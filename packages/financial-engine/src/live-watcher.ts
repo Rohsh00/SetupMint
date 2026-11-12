@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import {
   AssetClass,
   Direction,
@@ -18,6 +18,7 @@ import {
   IPostTradeReviewData,
   ISuggestedMistake,
   INormalizedPulseCheckIn,
+  RISK_AND_ALERT_THRESHOLDS,
 } from '@tradevault/shared';
 import { calculateLinearPnL } from './pnl.js';
 import { calculateIndianCharges, calculateTrueBreakevenPrice } from './charges.js';
@@ -25,8 +26,6 @@ import { calculateRealizedRMultiple } from './risk.js';
 import { IPositionGreeksSummary } from './options-greeks.js';
 import { ITradeStagnationMetric } from './stagnation.js';
 import { calculatePortfolioRisk, IPortfolioRiskResult } from './portfolio-risk.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export type StopThreatLevel = 'SAFE' | 'ATTENTION' | 'CRITICAL' | 'BREACHED' | 'NO_STOP';
 
@@ -197,13 +196,22 @@ export function calculateLiveGiveback(params: {
   let threatLevel: GivebackThreatLevel = 'SAFE';
   let alertMessage: string | undefined;
 
-  if (peakUnrealizedR >= 1.0 && curR <= 0.2) {
+  if (
+    peakUnrealizedR >= RISK_AND_ALERT_THRESHOLDS.CRITICAL_REVERSAL_PEAK_R &&
+    curR <= RISK_AND_ALERT_THRESHOLDS.CRITICAL_REVERSAL_CURRENT_R
+  ) {
     threatLevel = 'CRITICAL_REVERSAL';
     alertMessage = `🚨 Reversal Threat: Reached +${peakUnrealizedR.toFixed(2)}R (+₹${peakFloatingNetPnL.toLocaleString('en-IN')}), now dropped to +${curR.toFixed(2)}R. Protect capital!`;
-  } else if (peakUnrealizedR >= 1.0 && givebackPercent >= 35) {
+  } else if (
+    peakUnrealizedR >= RISK_AND_ALERT_THRESHOLDS.GIVEBACK_LEAKING_PEAK_R &&
+    givebackPercent >= RISK_AND_ALERT_THRESHOLDS.GIVEBACK_LEAKING_PERCENT
+  ) {
     threatLevel = 'LEAKING';
     alertMessage = `⚠️ Profit Leaking: Gave back ${givebackPercent}% (-₹${givebackAmount.toLocaleString('en-IN')}) from +${peakUnrealizedR.toFixed(2)}R peak. Consider booking profit!`;
-  } else if (peakUnrealizedR >= 0.8 && givebackPercent >= 20) {
+  } else if (
+    peakUnrealizedR >= RISK_AND_ALERT_THRESHOLDS.GIVEBACK_WATCH_PEAK_R &&
+    givebackPercent >= RISK_AND_ALERT_THRESHOLDS.GIVEBACK_WATCH_PERCENT
+  ) {
     threatLevel = 'WATCH';
     alertMessage = `👀 Pullback Watch: ${givebackPercent}% off peak (+${peakUnrealizedR.toFixed(2)}R).`;
   }
@@ -354,13 +362,20 @@ export function calculateTargetLadder(params: {
     if (totalSteps > 1) {
       let exitSteps: number;
       if (rules?.t1?.customLots && rules.t1.customLots > 0) {
-        exitSteps = Math.min(totalSteps - 1, Math.max(1, Math.round(rules.t1.customLots / lotStep)));
-        t1ExitRatio = Number(((exitSteps * lotStep) / totalQty).toFixed(2));
+        exitSteps = Math.min(totalSteps - 1, Math.max(1, new Decimal(rules.t1.customLots).dividedBy(lotStep).floor().toNumber()));
+        t1ExitRatio = Number(new Decimal(exitSteps).times(lotStep).dividedBy(totalQty).toFixed(2));
       } else {
-        t1ExitRatio = rules?.t1?.exitRatio ?? (totalSteps >= 3 ? 0.33 : 0.5);
-        exitSteps = Math.max(1, Math.min(totalSteps - 1, Math.round(totalSteps * t1ExitRatio)));
+        t1ExitRatio =
+          rules?.t1?.exitRatio ??
+          (totalSteps >= 3
+            ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
+            : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP);
+        exitSteps = Math.max(
+          1,
+          Math.min(totalSteps - 1, new Decimal(totalSteps).times(t1ExitRatio).floor().toNumber())
+        );
       }
-      t1ExitQty = Number((exitSteps * lotStep).toFixed(4));
+      t1ExitQty = Number(new Decimal(exitSteps).times(lotStep).toFixed(4));
       t1ExitLots = t1ExitQty;
     } else {
       t1ExitQty = totalQty;
@@ -373,11 +388,19 @@ export function calculateTargetLadder(params: {
         t1ExitLots = Math.min(totalLots - 1, rules.t1.customLots);
         t1ExitRatio = Number((t1ExitLots / totalLots).toFixed(2));
       } else {
-        t1ExitRatio = rules?.t1?.exitRatio ?? (totalLots >= 3 ? 0.33 : 0.5);
-        t1ExitLots = Math.max(1, Math.min(totalLots - 1, Math.round(totalLots * t1ExitRatio)));
+        t1ExitRatio =
+          rules?.t1?.exitRatio ??
+          (totalLots >= 3
+            ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
+            : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP);
+        t1ExitLots = Math.max(
+          1,
+          Math.min(totalLots - 1, new Decimal(totalLots).times(t1ExitRatio).floor().toNumber())
+        );
       }
       t1ExitQty = t1ExitLots * lotSizeNum;
     } else {
+      // Single lot cannot scale partially; T1 closes 100% of position
       t1ExitQty = totalQty;
       t1ExitLots = 1;
       t1ExitRatio = 1.0;
@@ -418,18 +441,24 @@ export function calculateTargetLadder(params: {
   let t2ExitRatio = 0.5;
 
   if (isFractionalLot) {
-    const remQtyAfterT1 = Math.max(0, Number((totalQty - t1ExitQty).toFixed(4)));
+    const remQtyAfterT1 = Math.max(0, new Decimal(totalQty).minus(t1ExitQty).toNumber());
     const remStepsAfterT1 = Math.round(remQtyAfterT1 / lotStep);
     if (remStepsAfterT1 > 1) {
       let exitSteps2: number;
       if (rules?.t2?.customLots && rules.t2.customLots > 0) {
-        exitSteps2 = Math.min(remStepsAfterT1 - 1, Math.max(1, Math.round(rules.t2.customLots / lotStep)));
-        t2ExitRatio = Number(((exitSteps2 * lotStep) / remQtyAfterT1).toFixed(2));
+        exitSteps2 = Math.min(
+          remStepsAfterT1 - 1,
+          Math.max(1, new Decimal(rules.t2.customLots).dividedBy(lotStep).floor().toNumber())
+        );
+        t2ExitRatio = Number(new Decimal(exitSteps2).times(lotStep).dividedBy(remQtyAfterT1).toFixed(2));
       } else {
-        t2ExitRatio = rules?.t2?.exitRatio ?? 0.5;
-        exitSteps2 = Math.max(1, Math.min(remStepsAfterT1 - 1, Math.round(remStepsAfterT1 * t2ExitRatio)));
+        t2ExitRatio = rules?.t2?.exitRatio ?? RISK_AND_ALERT_THRESHOLDS.LADDER_T2_RATIO;
+        exitSteps2 = Math.max(
+          1,
+          Math.min(remStepsAfterT1 - 1, new Decimal(remStepsAfterT1).times(t2ExitRatio).floor().toNumber())
+        );
       }
-      t2ExitQty = Number((exitSteps2 * lotStep).toFixed(4));
+      t2ExitQty = Number(new Decimal(exitSteps2).times(lotStep).toFixed(4));
       t2ExitLots = t2ExitQty;
     } else if (remStepsAfterT1 === 1) {
       t2ExitQty = lotStep;
@@ -443,8 +472,11 @@ export function calculateTargetLadder(params: {
         t2ExitLots = Math.min(remLotsAfterT1 - 1, rules.t2.customLots);
         t2ExitRatio = Number((t2ExitLots / remLotsAfterT1).toFixed(2));
       } else {
-        t2ExitRatio = rules?.t2?.exitRatio ?? 0.5;
-        t2ExitLots = Math.max(1, Math.min(remLotsAfterT1 - 1, Math.round(remLotsAfterT1 * t2ExitRatio)));
+        t2ExitRatio = rules?.t2?.exitRatio ?? RISK_AND_ALERT_THRESHOLDS.LADDER_T2_RATIO;
+        t2ExitLots = Math.max(
+          1,
+          Math.min(remLotsAfterT1 - 1, new Decimal(remLotsAfterT1).times(t2ExitRatio).floor().toNumber())
+        );
       }
       t2ExitQty = Math.max(1, t2ExitLots * lotSizeNum);
     } else if (remLotsAfterT1 === 1) {
@@ -656,6 +688,8 @@ export function calculateLiveOpenTradeMetric(
         direction: params.direction,
         assetClass: params.assetClass || 'EQUITY',
         marketSegment: params.marketSegment || 'NSE_EQ',
+        symbol: params.symbol,
+        tradeDate: asOfDate,
         entryPrice: dEntry,
         exitPrice: dLtp,
         quantity: dQty,
@@ -742,9 +776,9 @@ export function calculateLiveOpenTradeMetric(
     } else if (initialDistance.greaterThan(0)) {
       const bRatio = buffer.dividedBy(initialDistance);
       bufferRatioVal = bRatio;
-      if (bRatio.lessThanOrEqualTo('0.25')) {
+      if (bRatio.lessThanOrEqualTo(RISK_AND_ALERT_THRESHOLDS.STOP_CRITICAL_BUFFER_RATIO)) {
         stopThreatLevel = 'CRITICAL';
-      } else if (bRatio.lessThanOrEqualTo('0.50')) {
+      } else if (bRatio.lessThanOrEqualTo(RISK_AND_ALERT_THRESHOLDS.STOP_ATTENTION_BUFFER_RATIO)) {
         stopThreatLevel = 'ATTENTION';
       } else {
         stopThreatLevel = 'SAFE';
@@ -785,6 +819,9 @@ export function calculateLiveOpenTradeMetric(
     const lotSizeNum = Math.max(1, dLotSize.toNumber());
     const totalLots = Math.max(1, Math.floor(dQty.toNumber() / lotSizeNum));
 
+    const inferredTickDecimals = dTick.decimalPlaces();
+    const pricePrecision = Math.max(2, inferredTickDecimals);
+
     const beRes = calculateTrueBreakevenPrice({
       direction: params.direction,
       entryPrice: dEntry,
@@ -792,6 +829,13 @@ export function calculateLiveOpenTradeMetric(
       contractMultiplier: dMultiplier,
       estimatedCharges,
       tickSize: dTick,
+      pricePrecision,
+      assetClass: params.assetClass,
+      marketSegment: params.marketSegment,
+      symbol: params.symbol,
+      broker: params.broker,
+      currency: params.currency,
+      tradeDate: asOfDate,
     });
 
     const targetLadder = calculateTargetLadder({
@@ -828,27 +872,27 @@ export function calculateLiveOpenTradeMetric(
       trueBreakevenPrice: beRes.trueBreakevenPrice,
       nominalBreakevenPrice: beRes.nominalBreakevenPrice,
       feeBufferPoints: beRes.feeBufferPoints,
-      entryPrice: Number(dEntry.toFixed(2)),
-      currentLtp: Number(dLtp.toFixed(2)),
-      priceDeltaPoints: Number(priceDeltaPoints.toFixed(2)),
+      entryPrice: Number(dEntry.toFixed(pricePrecision)),
+      currentLtp: Number(dLtp.toFixed(pricePrecision)),
+      priceDeltaPoints: Number(priceDeltaPoints.toFixed(pricePrecision)),
       priceDeltaPercent: Number(priceDeltaPercent.toFixed(2)),
       floatingGrossPnL: Number(floatingGrossPnL.toFixed(2)),
       estimatedCharges: Number(estimatedCharges.toFixed(2)),
       floatingNetPnL: Number(floatingNetPnL.toFixed(2)),
       initialRiskAmount: initialRiskAmount ? Number(initialRiskAmount.toFixed(2)) : null,
-      initialStopLoss: params.initialStopLoss !== undefined && params.initialStopLoss !== null ? Number(new Decimal(params.initialStopLoss).toFixed(2)) : null,
+      initialStopLoss: params.initialStopLoss !== undefined && params.initialStopLoss !== null ? Number(new Decimal(params.initialStopLoss).toFixed(pricePrecision)) : null,
       unrealizedR,
-      stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? Number(new Decimal(params.stopLoss).toFixed(2)) : null,
-      target: params.target !== undefined && params.target !== null ? Number(new Decimal(params.target).toFixed(2)) : null,
-      distanceToStopPoints: distanceToStopPoints !== null ? Number(distanceToStopPoints.toFixed(2)) : null,
+      stopLoss: params.stopLoss !== undefined && params.stopLoss !== null ? Number(new Decimal(params.stopLoss).toFixed(pricePrecision)) : null,
+      target: params.target !== undefined && params.target !== null ? Number(new Decimal(params.target).toFixed(pricePrecision)) : null,
+      distanceToStopPoints: distanceToStopPoints !== null ? Number(distanceToStopPoints.toFixed(pricePrecision)) : null,
       distanceToStopTicks,
       distanceToStopPercent: distanceToStopPercent !== null ? Number(distanceToStopPercent.toFixed(2)) : null,
       bufferRatio: bufferRatioVal !== null ? Number(bufferRatioVal.toFixed(4)) : null,
       stopThreatLevel,
-      distanceToTargetPoints: distanceToTargetPoints !== null ? Number(distanceToTargetPoints.toFixed(2)) : null,
+      distanceToTargetPoints: distanceToTargetPoints !== null ? Number(distanceToTargetPoints.toFixed(pricePrecision)) : null,
       distanceToTargetTicks,
       targetProgressPercent,
-      tickSize: Number(dTick.toFixed(4)),
+      tickSize: Number(dTick.toFixed(Math.max(4, pricePrecision))),
       provider,
       asOf: asOfDate,
       giveback: calculateLiveGiveback({

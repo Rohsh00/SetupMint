@@ -1,8 +1,7 @@
-import Decimal from 'decimal.js';
+import Decimal, { roundHalfUp } from './decimal.js';
 import { Direction, ISimpleExecution, TradeOutcome } from '@tradevault/shared';
 
-// Configure Decimal.js with 30 digits precision and bankers rounding
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
+// Uses isolated CalcDecimal (30-digit precision, standard ROUND_HALF_UP)
 
 export interface LinearPnLParams {
   direction: Direction;
@@ -35,11 +34,17 @@ export interface LinearPnLResult {
  * Long gross P&L = (Exit price - Entry price) * Quantity * Multiplier
  * Short gross P&L = (Entry price - Exit price) * Quantity * Multiplier
  * Net P&L = Gross P&L - Total Costs + Explicit Adjustments
+ *
+ * All currency outputs are rounded to `precision` decimal places (default 2) with ROUND_HALF_UP
+ * before outcome classification so netPnL === 0.00 is consistently classified as 'BREAKEVEN'.
  */
 export function calculateLinearPnL(params: LinearPnLParams): LinearPnLResult {
   const dEntry = new Decimal(params.entryPrice);
   const dQty = new Decimal(params.quantity);
-  const dMultiplier = params.contractMultiplier ? new Decimal(params.contractMultiplier) : new Decimal(1);
+  const dMultiplier = params.contractMultiplier
+    ? new Decimal(params.contractMultiplier)
+    : new Decimal(1);
+  const precision = params.precision ?? 2;
 
   if (dQty.isNegative()) {
     throw new Error('Quantity cannot be negative');
@@ -52,16 +57,19 @@ export function calculateLinearPnL(params: LinearPnLParams): LinearPnLResult {
   const dOther = new Decimal(params.otherFees ?? 0);
   const dAdjustments = new Decimal(params.explicitAdjustments ?? 0);
 
-  const totalCosts = dBrokerage.plus(dExchange).plus(dRegulatory).plus(dTaxes).plus(dOther);
+  const rawCosts = dBrokerage.plus(dExchange).plus(dRegulatory).plus(dTaxes).plus(dOther);
+  const totalCosts = roundHalfUp(rawCosts, precision);
 
   if (params.exitPrice === undefined || params.exitPrice === null) {
+    const rawOpenNet = new Decimal(0).minus(rawCosts).plus(dAdjustments);
+    const openNet = roundHalfUp(rawOpenNet, precision);
     return {
       grossPnL: new Decimal(0),
       totalCosts,
-      netPnL: new Decimal(0).minus(totalCosts).plus(dAdjustments),
+      netPnL: openNet,
       grossPnLNumber: 0,
       totalCostsNumber: totalCosts.toNumber(),
-      netPnLNumber: new Decimal(0).minus(totalCosts).plus(dAdjustments).toNumber(),
+      netPnLNumber: openNet.toNumber(),
       outcome: 'OPEN',
       isClosed: false,
     };
@@ -69,14 +77,15 @@ export function calculateLinearPnL(params: LinearPnLParams): LinearPnLResult {
 
   const dExit = new Decimal(params.exitPrice);
 
-  let grossPnL: Decimal;
+  let rawGrossPnL: Decimal;
   if (params.direction === 'LONG') {
-    grossPnL = dExit.minus(dEntry).times(dQty).times(dMultiplier);
+    rawGrossPnL = dExit.minus(dEntry).times(dQty).times(dMultiplier);
   } else {
-    grossPnL = dEntry.minus(dExit).times(dQty).times(dMultiplier);
+    rawGrossPnL = dEntry.minus(dExit).times(dQty).times(dMultiplier);
   }
 
-  const netPnL = grossPnL.minus(totalCosts).plus(dAdjustments);
+  const grossPnL = roundHalfUp(rawGrossPnL, precision);
+  const netPnL = roundHalfUp(rawGrossPnL.minus(rawCosts).plus(dAdjustments), precision);
 
   let outcome: TradeOutcome = 'BREAKEVEN';
   if (netPnL.greaterThan(0)) {
@@ -85,15 +94,13 @@ export function calculateLinearPnL(params: LinearPnLParams): LinearPnLResult {
     outcome = 'LOSS';
   }
 
-  const precision = params.precision ?? 2;
-
   return {
     grossPnL,
     totalCosts,
     netPnL,
-    grossPnLNumber: Number(grossPnL.toFixed(precision)),
-    totalCostsNumber: Number(totalCosts.toFixed(precision)),
-    netPnLNumber: Number(netPnL.toFixed(precision)),
+    grossPnLNumber: grossPnL.toNumber(),
+    totalCostsNumber: totalCosts.toNumber(),
+    netPnLNumber: netPnL.toNumber(),
     outcome,
     isClosed: true,
   };

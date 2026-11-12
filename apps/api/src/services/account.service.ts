@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Decimal from 'decimal.js';
 import { AccountTransaction, Trade, TradingAccount } from '../db/models/index.js';
 
+const CalcDecimal = Decimal.clone({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
+
 export interface AccountBalanceSummary {
   accountId: string;
   initialBalance: number;
@@ -9,6 +11,7 @@ export interface AccountBalanceSummary {
   totalDeposits: number;
   totalWithdrawals: number;
   totalAdjustments: number;
+  totalTransfers?: number;
   currentBalance: number;
   closedTradesCount: number;
   openTradesCount: number;
@@ -35,23 +38,22 @@ export class AccountService {
       return null;
     }
 
-    // 1. Aggregate Realized P&L from all closed trades for this account
-    const tradeStats = await Trade.aggregate([
-      {
-        $match: {
-          accountId: accId,
-          userId: uId,
-          status: 'CLOSED',
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalNetPnL: { $sum: '$calculated.netPnL' },
-          closedTradesCount: { $sum: 1 },
-        },
-      },
-    ]);
+    // 1. Sum Realized P&L using 30-digit CalcDecimal at 2dp per closed trade (zero IEEE-754 drift)
+    const closedTrades = await Trade.find({
+      accountId: accId,
+      userId: uId,
+      status: 'CLOSED',
+    })
+      .select('calculated.netPnL')
+      .lean();
+
+    let realizedPnL = new CalcDecimal(0);
+    for (const t of closedTrades) {
+      const val = Number(t.calculated?.netPnL ?? 0);
+      if (Number.isFinite(val)) {
+        realizedPnL = realizedPnL.plus(new CalcDecimal(val.toFixed(2)));
+      }
+    }
 
     const openTradesCount = await Trade.countDocuments({
       accountId: accId,
@@ -59,43 +61,37 @@ export class AccountService {
       status: 'OPEN',
     });
 
-    // 2. Aggregate Transactions (Deposits, Withdrawals, Adjustments)
-    const transactionStats = await AccountTransaction.aggregate([
-      {
-        $match: {
-          accountId: accId,
-          userId: uId,
-          $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
-        },
-      },
-      {
-        $group: {
-          _id: '$type',
-          totalAmount: { $sum: '$amount' },
-        },
-      },
-    ]);
+    // 2. Sum Confirmed Transactions (Deposits, Withdrawals, Adjustments; exclude PENDING_REVIEW/REJECTED)
+    const confirmedTxs = await AccountTransaction.find({
+      accountId: accId,
+      userId: uId,
+      $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
+    })
+      .select('type amount')
+      .lean();
 
-    let totalDeposits = new Decimal(0);
-    let totalWithdrawals = new Decimal(0);
-    let totalAdjustments = new Decimal(0);
+    let totalDeposits = new CalcDecimal(0);
+    let totalWithdrawals = new CalcDecimal(0);
+    let totalAdjustments = new CalcDecimal(0);
+    let totalTransfers = new CalcDecimal(0);
 
-    for (const stat of transactionStats) {
-      const amountDec = new Decimal(stat.totalAmount.toString());
-      if (stat._id === 'DEPOSIT') {
+    for (const tx of confirmedTxs) {
+      const amountDec = new CalcDecimal(tx.amount.toString());
+      if (tx.type === 'DEPOSIT') {
         totalDeposits = totalDeposits.plus(amountDec);
-      } else if (stat._id === 'WITHDRAWAL') {
+      } else if (tx.type === 'WITHDRAWAL') {
         totalWithdrawals = totalWithdrawals.plus(amountDec);
-      } else if (stat._id === 'ADJUSTMENT') {
+      } else if (tx.type === 'ADJUSTMENT') {
         totalAdjustments = totalAdjustments.plus(amountDec);
+      } else if (tx.type === 'TRANSFER') {
+        // TRANSFER lacks directional counterparty sign in AccountTransactionSchema; tracked separately as neutral memo
+        totalTransfers = totalTransfers.plus(amountDec);
       }
     }
 
-    const rawNetPnL = tradeStats.length > 0 ? tradeStats[0].totalNetPnL : 0;
-    const realizedPnL = new Decimal(rawNetPnL ?? 0);
-    const initialBalance = new Decimal(account.initialBalance.toString());
+    const initialBalance = new CalcDecimal(account.initialBalance.toString());
 
-    // Current balance = Initial + Realized P&L + Deposits - Withdrawals + Adjustments
+    // Current balance = Initial + Realized P&L + Deposits - Withdrawals + Confirmed Adjustments
     const currentBalance = initialBalance
       .plus(realizedPnL)
       .plus(totalDeposits)
@@ -118,8 +114,9 @@ export class AccountService {
       totalDeposits: Number(totalDeposits.toFixed(2)),
       totalWithdrawals: Number(totalWithdrawals.toFixed(2)),
       totalAdjustments: Number(totalAdjustments.toFixed(2)),
+      totalTransfers: Number(totalTransfers.toFixed(2)),
       currentBalance: Number(currentBalance.toFixed(2)),
-      closedTradesCount: tradeStats.length > 0 ? tradeStats[0].closedTradesCount : 0,
+      closedTradesCount: closedTrades.length,
       openTradesCount,
     };
   }

@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 
 export interface ISanitizeFillsResult<T = any> {
   fills: T[];

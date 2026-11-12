@@ -1,7 +1,5 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import { Direction, ITradeFill, TradeOutcome } from '@tradevault/shared';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface HedgedTicketMatchResult {
   entryTicket: string;

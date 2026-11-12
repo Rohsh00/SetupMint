@@ -1,3 +1,4 @@
+export * from './decimal.js';
 export * from './pnl.js';
 export * from './fifo.js';
 export * from './risk.js';

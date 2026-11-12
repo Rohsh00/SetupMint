@@ -1,10 +1,8 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import { CALIBRATION_MIN_AGREEMENT, IWhatIfCalibration } from '@tradevault/shared';
 import { IWhatIfEligibleTrade, IWhatIfEngineOptions } from './types.js';
 import { computeLevels } from './levels.js';
 import { replayTrade } from './replay.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 /**
  * Data-quality calibration gate ("identity check").

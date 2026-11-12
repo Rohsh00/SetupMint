@@ -79,23 +79,23 @@ SetupMint explicitly models the differing contract mechanisms across global asse
    - Lot Size = `1`
    - Tick Size = `0.05`
    - STT applied on sell-side turnover (0.025% intraday).
-2. **Index Futures & Options Underlyings (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX):**
-   - NIFTY: Lot Size `25` (or current exchange lot), Multiplier `1`, Tick Size `0.05`.
-   - BANKNIFTY: Lot Size `15`, Multiplier `1`, Tick Size `0.05`.
-   - FINNIFTY: Lot Size `25`, Multiplier `1`, Tick Size `0.05`.
-   - MIDCPNIFTY: Lot Size `50`, Multiplier `1`, Tick Size `0.05`.
-   - SENSEX: Lot Size `10`, Multiplier `1`, Tick Size `0.05`.
-   - BANKEX: Lot Size `15`, Multiplier `1`, Tick Size `0.05`.
-   - Point value change = Points $\times$ Multiplier $\times$ Quantity.
-3. **MCX Commodities (Physical multi-unit multiplier contracts):**
-   - **CRUDEOIL:** Quoted per barrel; 1 lot = 100 barrels. Contract Multiplier = **`100`**. A ₹1 move in Crude equals ₹100 per lot.
-   - **NATURALGAS:** Quoted per mmBtu; 1 lot = 1,250 mmBtu. Contract Multiplier = **`1250`**. A ₹1 move equals ₹1,250 per lot.
-   - **GOLD (1KG):** Quoted per 10 grams. Contract Multiplier = **`1`** (relative to 100 base units per 1kg).
-   - **SILVER:** Quoted per kg; 1 lot = 30 kg. Contract Multiplier = **`30`**.
+2. **Index Futures & Options Underlyings (Effective Jan 2026+ per `NSE/FAOP/70616` & BSE Notice `20241025-17`, date-effective history preserved via `INDEX_LOT_SIZE_HISTORY`):**
+   - `NIFTY`: Current Lot Size **`65`** (eff. Jan 2026; was `75` Nov 2024–Dec 2025, `25` Apr–Nov 2024), Multiplier `1`, Tick Size `0.05`.
+   - `BANKNIFTY`: Current Lot Size **`30`** (eff. Jan 2026; was `35` Apr–Dec 2025, `15` pre-Nov 2024), Multiplier `1`, Tick Size `0.05`.
+   - `FINNIFTY`: Current Lot Size **`60`** (eff. Jan 2026; was `65` Nov 2024–Dec 2025, `25` earlier), Multiplier `1`, Tick Size `0.05`.
+   - `MIDCPNIFTY`: Current Lot Size **`120`** (eff. Jan 2026; was `140` Nov 2024–Dec 2025, `50` earlier), Multiplier `1`, Tick Size `0.05`.
+   - `SENSEX`: Lot Size **`20`**, Multiplier `1`, Tick Size `0.05`.
+   - `BANKEX`: Lot Size **`30`**, Multiplier `1`, Tick Size `0.05`.
+   - Point value change = Points $\times$ Multiplier $\times$ Quantity. Note: Changing an instrument's `lotSize` never rewrites closed historical trade quantities or P&L.
+3. **MCX Commodities (Quoted-unit vs. contract-size multiplier contracts):**
+   - **CRUDEOIL:** Quoted per barrel; 1 lot = 100 barrels. Contract Multiplier = **`100`** (`CRUDEOILMINI`: 10 BBL, multiplier **`10`**). A ₹1 move in Crude equals ₹100 per lot.
+   - **NATURALGAS:** Quoted per mmBtu; 1 lot = 1,250 mmBtu. Contract Multiplier = **`1250`** (`NATGASMINI`: 250 mmBtu, multiplier **`250`**). A ₹1 move equals ₹1,250 per lot.
+   - **GOLD (1KG):** Quoted per **10 grams**; 1 lot = 1 kg (1,000 g). Contract Multiplier = **`100`** (`1000g / 10g`). Note: `GOLDM` (100 g quoted per 10 g) has multiplier **`10`**; `GOLDGUINEA` (8 g quoted per 8 g) & `GOLDPETAL` (1 g quoted per 1 g) have multiplier **`1`**. (When importing CSVs whose quantity already represents quoted 10 g units, multiplier is overridden to `1` on import.)
+   - **SILVER:** Quoted per kg; 1 lot = 30 kg. Contract Multiplier = **`30`** (`SILVERM` 5 kg -> **`5`**; `SILVERMIC` 1 kg -> **`1`**).
    - **COPPER:** Quoted per kg; 1 lot = 2,500 kg (2.5 MT). Contract Multiplier = **`2500`**. A ₹1 move equals ₹2,500 per lot.
 4. **Forex & Crypto:**
-   - EUR/USD: Pip precision 5 decimal places (`0.00001`), lot size `1,000`.
-   - BTC/USDT: Lot size `0.001`, tick size `0.10`, quoted in USDT.
+   - EUR/USD: Pip precision 5 decimal places (`0.00001`), MT5 standard contract multiplier **`100,000`** base units per `1.00` lot (`min lot step = 0.01` micro-lot = `$1,000` notional). Quoted in USD; never silently assumed 1:1 with INR.
+   - BTC/USDT: Min step / lot size `0.001`, tick size `0.10`, contract multiplier `1`, quoted in USDT.
 
 
 ---
@@ -333,12 +333,12 @@ When initiating daily reflection review (`/journal/:date` or `/review/prefill/:d
 - **Suggested Best Trade:** Closed trade with maximum positive net P&L ($\max(\text{NetPnL}) > 0$).
 - **Suggested Worst Trade:** Closed trade with lowest negative net P&L ($\min(\text{NetPnL}) < 0$).
 - **Aggregated Mistakes:** Union of trader-tagged mistakes and rule-detected suggestions.
-- **Discipline Rating Scoring Matrix (1 to 5):**
-  - **Rating 5 (Flawless Execution):** 0 rule breaks, positive or controlled P&L, full risk compliance.
-  - **Rating 4 (Good Execution):** Negative P&L but zero risk rule violations; losses kept strictly within planned stops.
-  - **Rating 3 (Hesitant / Rule Drift):** Minor mistakes logged (e.g. `CHASED_MARKET`, `PREMATURE_EXIT`).
-  - **Rating 2 (Rule Violation):** Sizing limit exceeded (`SIZE_VIOLATION`) or daily frequency cap exceeded (`OVERTRADING`).
-  - **Rating 1 (Severe Tilt / Breach):** Max daily loss breached or revenge trading pattern detected.
+- **Canonical Rule-Based Discipline Score (`mistakes.ts`):** `max(1, min(5, 5 - Penalties))` starting at **5/5** (`-2` daily loss breach, `-1` revenge trading, `-1` overtrading, `-1` position-size/risk violation). Descriptive mapping:
+  - **Rating 5 (Flawless Execution):** 0 penalties.
+  - **Rating 4 (Good Execution):** Minor loss or 1 minor penalty (`5 - 1`).
+  - **Rating 3 (Hesitant / Rule Drift):** 2 penalty points (`5 - 2`).
+  - **Rating 2 (Rule Violation):** 3 penalty points (`5 - 3`).
+  - **Rating 1 (Severe Tilt / Breach):** $\ge 4$ penalty points (e.g. daily loss breach + multiple violations).
 
 ---
 
@@ -361,11 +361,12 @@ When logging a trade, SetupMint evaluates all available templates and surfaces t
 - **Session Alignment (+20 pts):** Matches the current market session (`NSE_REGULAR`, `LONDON`, `NEW_YORK`, `MCX_EVENING`).
 - **Historical Frequency (+1 pt per use, max +20 pts):** Prioritizes frequently utilized user workflows.
 
-### 3. NSE 2026 Expiry Calendar & Shift Rules
-For Indian F&O derivatives, SetupMint accounts for exchange holiday schedules:
-- **Weekly Expiry:** Standard Tuesday for Nifty (`isNiftyWeeklyExpiry`).
-- **Monthly Expiry:** Last Thursday of the calendar month (`isNseMonthlyExpiry`).
-- **Holiday Shift Invariant:** If the scheduled expiry date falls on an official NSE holiday according to `NSE_HOLIDAYS_2026` (e.g. Dussehra on Tuesday Oct 20, 2026; Guru Nanak Jayanti on Tuesday Nov 24, 2026), the expiry day shifts backwards to the preceding trading day (Monday). Verified through comprehensive unit tests.
+### 3. NSE & BSE 2025–2026 Expiry Calendar & Shift Rules (`SEBI/HO/MRD/TPD-1/P/CIR/2025/76` & `NSE/FAOP/68744`)
+For Indian F&O derivatives, SetupMint accounts for exchange expiry schedules (effective Sep 1, 2025 onward; pre-Sep-2025 historical dates preserve Thursday expiry):
+- **NSE Weekly Expiry:** **Tuesday** for `NIFTY` (`isNiftyWeeklyExpiry`); `BANKNIFTY`, `FINNIFTY`, and `MIDCPNIFTY` weekly contracts are **discontinued** (monthly only).
+- **NSE Monthly Expiry:** **Last Tuesday** of the calendar month eff. Sep 2025+ (was Last Thursday pre-Sep 2025).
+- **BSE Weekly & Monthly Expiry:** **Thursday** (`SENSEX` weekly & monthly; `BANKEX` monthly Last Thursday eff. Sep 2025+).
+- **Holiday Shift Invariant:** If the scheduled expiry date falls on an official NSE holiday according to `NSE_TRADING_HOLIDAYS_BY_YEAR[year]` (e.g. Dussehra on Tuesday Oct 20, 2026; Guru Nanak Jayanti on Tuesday Nov 24, 2026), the expiry day shifts backwards to the preceding trading day. Verified through comprehensive unit tests.
 
 ### 4. Pure Decimal.js Stop-Loss & Target Mathematical Resolution (`resolveTemplate`)
 Calculations are executed inside `@tradevault/financial-engine` using `decimal.js` (30 digits precision, `ROUND_HALF_UP`) with zero component floating-point inaccuracies:
@@ -405,7 +406,7 @@ When a trader modifies or trails a stop loss on an open position (via 1-click br
 ### 2. Multi-Target Scaling Ladder & Atomic Execution
 For open positions with a valid initial risk distance, SetupMint computes a 3-tier scaling ladder:
 - **Step 1 (T1 at +1.0R):** Exits 50% of open quantity and locks stop loss to Breakeven ($P_{\text{entry}}$).
-- **Step 2 (T2 at +2.0R):** Exits 33% of remaining quantity and trails stop loss to $+1.0R$ ($P_{T1}$).
+- **Step 2 (T2 at +2.0R):** Exits 50% of remaining quantity (`floor(remaining * 0.5)`, whole-lot rounded; merged when 1 lot remains) and trails stop loss to $+1.0R$ ($P_{T1}$).
 - **Step 3 (Runner at +3.0R or Planned Target):** Exits 100% of remaining quantity and trails stop behind swing structure ($P_{T2}$).
 - Executing a ladder step (`POST /api/v1/trades/:id/broker-ladder-step`) atomically transitions the trade to `ADVANCED` FIFO execution mode (if partial), records the exit fill, updates `currentStopLoss`, appends a `TRAILED_FAVORABLY` event to `stopLossMoveEvents`, logs `LADDER_STEP_<n>` in `auditLog`, and reconciles the trading account balance.
 

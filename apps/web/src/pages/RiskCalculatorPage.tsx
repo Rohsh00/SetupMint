@@ -104,12 +104,12 @@ export function RiskCalculatorPage() {
   const [targetPriceStr, setTargetPriceStr] = useState<string>(() => caps.currency.code === 'INR' ? '24150' : '1.0910');
 
   // 3. Contract & Execution parameters
-  const [lotSizeStr, setLotSizeStr] = useState<string>(() => caps.instruments.showLots ? (caps.currency.code === 'INR' ? '25' : '100000') : '1');
-  const [contractMultiplierStr, setContractMultiplierStr] = useState<string>('1');
+  const [lotSizeStr, setLotSizeStr] = useState<string>(() => caps.instruments.showLots ? (caps.currency.code === 'INR' ? String(getPresetSpec('NIFTY')?.lotSize ?? 65) : '0.01') : '1');
+  const [contractMultiplierStr, setContractMultiplierStr] = useState<string>(() => caps.instruments.showLots && caps.currency.code !== 'INR' ? '100000' : '1');
   const [estimatedCostsStr, setEstimatedCostsStr] = useState<string>('50');
 
-  // 4. Sizing Mode: Conservative Floor vs Nearest Lot vs Cash Single Shares
-  const [sizingMode, setSizingMode] = useState<'FLOOR' | 'NEAREST' | 'CASH_1'>(() => caps.instruments.showLots ? 'FLOOR' : 'CASH_1');
+  // 4. Sizing Mode: Strict Conservative Floor vs Cash Single Shares (never round up above risk budget)
+  const [sizingMode, setSizingMode] = useState<'FLOOR' | 'CASH_1'>(() => caps.instruments.showLots ? 'FLOOR' : 'CASH_1');
 
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [prefilledTradeData, setPrefilledTradeData] = useState<any>(null);
@@ -273,13 +273,13 @@ export function RiskCalculatorPage() {
   const stopLossPrice = parseFloat(stopLossPriceStr) || 0;
   const targetPrice = parseFloat(targetPriceStr) || 0;
   const accountEquity = parseFloat(accountEquityStr) || 0;
-  const contractMultiplier = Math.max(1, parseFloat(contractMultiplierStr) || 1);
-  const lotSize = Math.max(1, parseFloat(lotSizeStr) || 1);
+  const contractMultiplier = Math.max(0.0001, parseFloat(contractMultiplierStr) || 1);
+  const lotSize = Math.max(0.0001, parseFloat(lotSizeStr) || 1);
   const estimatedCosts = Math.max(0, parseFloat(estimatedCostsStr) || 0);
   const riskPercent = parseFloat(riskPercentStr) || 0;
   const fixedRiskAmount = parseFloat(fixedRiskAmountStr) || 0;
 
-  // Perform deterministic financial calculation via financial engine
+  // Perform deterministic financial calculation via financial engine (deduct estimated costs from risk budget)
   const calcResult = calculateRiskAndPositionSize({
     accountEquity: accountEquity > 0 ? accountEquity : 1,
     riskPercent: riskMode === 'PERCENT' ? (riskPercent > 0 ? riskPercent : 0.01) : undefined,
@@ -292,6 +292,7 @@ export function RiskCalculatorPage() {
     lotSize,
     quantityIncrement: lotSize, // Synchronized with lot size
     estimatedCosts,
+    includeCostsInBudget: true,
   });
 
   // Setup geometric metrics (always live)
@@ -311,12 +312,10 @@ export function RiskCalculatorPage() {
     : true;
   const isGeometryValid = isDirectionValid && !isZeroStopDistance && entryPrice > 0 && stopLossPrice > 0;
 
-  // Multi-tier lot sizing options
+  // Multi-tier lot sizing options (floor to lot step, never round up above risk budget)
   const rawQuantity = calcResult.rawSuggestedQuantity || 0;
   const floorLotQuantity = calcResult.roundedLotQuantity || 0;
-  const nearestLots = Math.round(rawQuantity / lotSize);
-  const nearestLotQuantity = nearestLots * lotSize;
-  const cashShareQuantity = Math.floor(rawQuantity);
+  const cashShareQuantity = lotSize < 1 ? floorLotQuantity : Math.floor(rawQuantity);
 
   const isSelectedAccountProp = Boolean(
     selectedAccount &&
@@ -403,8 +402,6 @@ export function RiskCalculatorPage() {
   let baseEffectiveQuantity = floorLotQuantity;
   if (sizingMode === 'CASH_1') {
     baseEffectiveQuantity = cashShareQuantity;
-  } else if (sizingMode === 'NEAREST') {
-    baseEffectiveQuantity = nearestLotQuantity;
   }
 
   const effectiveQuantity =
@@ -1016,9 +1013,7 @@ export function RiskCalculatorPage() {
                     !isGeometryValid
                       ? 'INVALID PRICE LEVELS'
                       : isBudgetDeficit && sizingMode === 'FLOOR'
-                      ? `BUDGET BELOW 1 LOT (GAP: ${formatCurrency(budgetGap)})`
-                      : sizingMode === 'NEAREST' && effectiveRiskMonetary > plannedBudget
-                      ? 'NEAREST LOT SIZED (OVERRUN)'
+                      ? `BUDGET BELOW 1 LOT (GAP: ${formatCurrency(budgetGap, calcCurrency)})`
                       : 'OPTIMAL RISK PROFILE'
                   }
                   size="small"
@@ -1027,8 +1022,6 @@ export function RiskCalculatorPage() {
                       ? 'error'
                       : isBudgetDeficit && sizingMode === 'FLOOR'
                       ? 'warning'
-                      : sizingMode === 'NEAREST' && effectiveRiskMonetary > plannedBudget
-                      ? 'info'
                       : 'success'
                   }
                   sx={{ fontWeight: 800, fontSize: '0.6875rem' }}
@@ -1085,24 +1078,14 @@ export function RiskCalculatorPage() {
                 {isGeometryValid && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.75, mt: 1.5, flexWrap: 'wrap' }}>
                     {caps.instruments.showLots && (
-                      <>
-                        <Chip
-                          label={`Strict Floor (${floorLotQuantity}u)`}
-                          size="small"
-                          onClick={() => setSizingMode('FLOOR')}
-                          color={sizingMode === 'FLOOR' ? 'primary' : 'default'}
-                          variant={sizingMode === 'FLOOR' ? 'filled' : 'outlined'}
-                          sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
-                        />
-                        <Chip
-                          label={`Nearest Lot (${nearestLotQuantity}u)`}
-                          size="small"
-                          onClick={() => setSizingMode('NEAREST')}
-                          color={sizingMode === 'NEAREST' ? 'info' : 'default'}
-                          variant={sizingMode === 'NEAREST' ? 'filled' : 'outlined'}
-                          sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
-                        />
-                      </>
+                      <Chip
+                        label={`Strict Floor (${floorLotQuantity}u)`}
+                        size="small"
+                        onClick={() => setSizingMode('FLOOR')}
+                        color={sizingMode === 'FLOOR' ? 'primary' : 'default'}
+                        variant={sizingMode === 'FLOOR' ? 'filled' : 'outlined'}
+                        sx={{ height: 22, fontSize: '0.625rem', fontWeight: 700, cursor: 'pointer' }}
+                      />
                     )}
                     {(!caps.instruments.showLots || lotSize > 1) && (
                       <Chip
@@ -1138,7 +1121,7 @@ export function RiskCalculatorPage() {
                   <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
                     <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Estimated Total Risk</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
-                      {isGeometryValid ? formatCurrency(effectiveRiskMonetary) : '—'}
+                      {isGeometryValid ? formatCurrency(effectiveRiskMonetary, calcCurrency) : '—'}
                     </Typography>
                     <Typography variant="caption" sx={{ color: muiTheme.palette.loss.main, fontSize: '0.6875rem' }}>
                       {isGeometryValid ? `${effectiveRiskPercent.toFixed(2)}% of equity` : ''}
@@ -1156,8 +1139,14 @@ export function RiskCalculatorPage() {
                     <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
                       {structuralRR !== undefined ? `1 : ${structuralRR.toFixed(2)}` : '—'}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem' }}>
-                      {targetDistance > 0 ? `+${targetDistance.toFixed(2)} pts target` : 'Set target price'}
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem', display: 'block' }}>
+                      {targetDistance > 0
+                        ? `+${targetDistance.toFixed(2)} pts target${
+                            calcResult.costAdjustedRewardRiskRatio !== undefined && estimatedCosts > 0
+                              ? ` · Cost-adj 1 : ${calcResult.costAdjustedRewardRiskRatio.toFixed(2)}`
+                              : ''
+                          }`
+                        : 'Set target price'}
                     </Typography>
                   </Box>
                 </Grid>

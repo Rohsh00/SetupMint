@@ -115,7 +115,7 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       // Buffer to SL = 50,200 - 49,600 = 600 pts (12,000 ticks)
       // Remaining to Target = 49,600 - 49,200 = 400 pts (8,000 ticks)
       // Target progress = 400 / 800 * 100 = 50%
-      const shortResult = calculateLiveOpenTradeMetric({
+      const shortHistorical = calculateLiveOpenTradeMetric({
         tradeId: 'short-1',
         symbol: 'BANKNIFTY',
         direction: 'SHORT',
@@ -128,20 +128,40 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
         assetClass: 'FUTURES',
         marketSegment: 'NSE_FNO',
         provider: 'ANGEL_ONE',
+        asOf: '2025-10-01T10:00:00Z',
       });
 
-      expect(shortResult.direction).toBe('SHORT');
-      expect(shortResult.priceDeltaPoints).toBe(400); // Positive delta because favorable
-      expect(shortResult.floatingGrossPnL).toBe(12000);
-      expect(shortResult.initialRiskAmount).toBe(6000); // 200 * 30
-      expect(shortResult.unrealizedR).toBeGreaterThan(1.9); // ~1.98R
-      expect(shortResult.distanceToStopPoints).toBe(600);
-      expect(shortResult.distanceToStopTicks).toBe(12000);
-      expect(shortResult.stopThreatLevel).toBe('SAFE');
-      expect(shortResult.distanceToTargetPoints).toBe(400);
-      expect(shortResult.distanceToTargetTicks).toBe(8000);
-      expect(shortResult.targetProgressPercent).toBe(50);
-      expect(shortResult.provider).toBe('ANGEL_ONE');
+      expect(shortHistorical.direction).toBe('SHORT');
+      expect(shortHistorical.priceDeltaPoints).toBe(400); // Positive delta because favorable
+      expect(shortHistorical.floatingGrossPnL).toBe(12000);
+      expect(shortHistorical.initialRiskAmount).toBe(6000); // 200 * 30
+      expect(shortHistorical.unrealizedR).toBeGreaterThan(1.9); // ~1.93R under Oct-2024 0.02% Futures STT
+      expect(shortHistorical.distanceToStopPoints).toBe(600);
+      expect(shortHistorical.distanceToStopTicks).toBe(12000);
+      expect(shortHistorical.stopThreatLevel).toBe('SAFE');
+      expect(shortHistorical.distanceToTargetPoints).toBe(400);
+      expect(shortHistorical.distanceToTargetTicks).toBe(8000);
+      expect(shortHistorical.targetProgressPercent).toBe(50);
+      expect(shortHistorical.provider).toBe('ANGEL_ONE');
+
+      // Finance Act 2026 (eff. 2026-04-01) raises Futures STT to 0.05%, increasing estimated sell STT
+      const shortApr2026 = calculateLiveOpenTradeMetric({
+        tradeId: 'short-2',
+        symbol: 'BANKNIFTY',
+        direction: 'SHORT',
+        entryPrice: 50000,
+        currentLtp: 49600,
+        quantity: 30,
+        stopLoss: 50200,
+        target: 49200,
+        tickSize: 0.05,
+        assetClass: 'FUTURES',
+        marketSegment: 'NSE_FNO',
+        provider: 'ANGEL_ONE',
+        asOf: '2026-04-15T10:00:00Z',
+      });
+      expect(shortApr2026.estimatedCharges).toBeGreaterThan(shortHistorical.estimatedCharges);
+      expect(shortApr2026.unrealizedR).toBe(1.85);
     });
 
     it('handles trade with no stop loss and no target gracefully', () => {

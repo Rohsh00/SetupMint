@@ -9,6 +9,61 @@ export interface ISessionCalendar {
   getDayResetBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date };
 }
 
+/**
+ * Extracts local day-of-week (0=Sun..6=Sat) and minutes-from-midnight in an IANA timezone
+ * so DST transitions (America/New_York EDT/EST, Europe/London BST/GMT) are always exact.
+ */
+function getLocalClock(date: Date, timeZone: string): { dayOfWeek: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  const weekdayStr = parts.find((p) => p.type === 'weekday')?.value ?? 'Mon';
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  return {
+    dayOfWeek: weekdayMap[weekdayStr] ?? 1,
+    minutes: hour * 60 + minute,
+  };
+}
+
+function buildIstDayBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date } {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const istOffsetMs = 330 * 60 * 1000;
+  const istDate = new Date(d.getTime() + istOffsetMs);
+  const y = istDate.getUTCFullYear();
+  const m = istDate.getUTCMonth();
+  const day = istDate.getUTCDate();
+
+  const startOfDay = new Date(Date.UTC(y, m, day, 0, 0, 0) - istOffsetMs);
+  const endOfDay = new Date(Date.UTC(y, m, day, 23, 59, 59, 999) - istOffsetMs);
+  return { startOfDay, endOfDay };
+}
+
+function buildUtcDayBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date } {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const day = d.getUTCDate();
+  const startOfDay = new Date(Date.UTC(y, m, day, 0, 0, 0));
+  const endOfDay = new Date(Date.UTC(y, m, day, 23, 59, 59, 999));
+  return { startOfDay, endOfDay };
+}
+
 export class NseSessionCalendar implements ISessionCalendar {
   readonly key: SessionCalendarKey = 'NSE';
   readonly name = 'NSE Indian Equities & Derivatives';
@@ -19,12 +74,10 @@ export class NseSessionCalendar implements ISessionCalendar {
     const date = typeof entryTime === 'string' ? new Date(entryTime) : entryTime;
     if (isNaN(date.getTime())) return 'NSE_REGULAR';
 
-    const day = date.getUTCDay();
-    if (day === 0 || day === 6) return 'OFF_HOURS';
+    const { dayOfWeek, minutes: istMinutes } = getLocalClock(date, 'Asia/Kolkata');
+    if (dayOfWeek === 0 || dayOfWeek === 6) return 'OFF_HOURS';
 
-    // IST is UTC + 5:30 (330 min)
-    const istMinutes = (date.getUTCHours() * 60 + date.getUTCMinutes() + 330) % 1440;
-    // 09:15 IST (555 min) - 15:30 IST (930 min)
+    // 09:00 IST (pre-open 540 min) - 16:00 IST (post-close 960 min)
     if (istMinutes >= 540 && istMinutes <= 960) {
       return 'NSE_REGULAR';
     }
@@ -33,25 +86,14 @@ export class NseSessionCalendar implements ISessionCalendar {
 
   isMarketOpen(date: string | Date): boolean {
     const d = typeof date === 'string' ? new Date(date) : date;
-    const day = d.getUTCDay();
-    if (day === 0 || day === 6) return false;
-    const istMinutes = (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+    if (isNaN(d.getTime())) return false;
+    const { dayOfWeek, minutes: istMinutes } = getLocalClock(d, 'Asia/Kolkata');
+    if (dayOfWeek === 0 || dayOfWeek === 6) return false;
     return istMinutes >= 555 && istMinutes <= 930;
   }
 
   getDayResetBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date } {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    // Convert to IST calendar date
-    const istOffsetMs = 330 * 60 * 1000;
-    const istDate = new Date(d.getTime() + istOffsetMs);
-    const y = istDate.getUTCFullYear();
-    const m = istDate.getUTCMonth();
-    const day = istDate.getUTCDate();
-
-    // Midnight IST in UTC
-    const startOfDay = new Date(Date.UTC(y, m, day, 0, 0, 0) - istOffsetMs);
-    const endOfDay = new Date(Date.UTC(y, m, day, 23, 59, 59, 999) - istOffsetMs);
-    return { startOfDay, endOfDay };
+    return buildIstDayBoundary(date);
   }
 }
 
@@ -60,43 +102,46 @@ export class McxSessionCalendar implements ISessionCalendar {
   readonly name = 'MCX Indian Commodities';
   readonly defaultTimezone = 'Asia/Kolkata';
 
+  private getMcxCloseMinutesIst(date: Date): number {
+    // MCX non-agri evening closes at 23:30 IST during US EDT, 23:55 IST during US EST
+    const nyOffsetParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'shortOffset',
+    }).formatToParts(date);
+    const tzName = nyOffsetParts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT-5';
+    const isEdt = tzName.includes('-4');
+    return isEdt ? 23 * 60 + 30 : 23 * 60 + 55;
+  }
+
   deriveSession(entryTime: string | Date | null | undefined): TradingSession {
     if (!entryTime) return 'MCX_EVENING';
     const date = typeof entryTime === 'string' ? new Date(entryTime) : entryTime;
     if (isNaN(date.getTime())) return 'MCX_EVENING';
 
-    const day = date.getUTCDay();
-    if (day === 0 || day === 6) return 'OFF_HOURS';
+    // Evaluate day-of-week strictly in IST (prevents Friday UTC rollover false positives)
+    const { dayOfWeek, minutes: istMinutes } = getLocalClock(date, 'Asia/Kolkata');
+    if (dayOfWeek === 0 || dayOfWeek === 6) return 'OFF_HOURS';
 
-    const istMinutes = (date.getUTCHours() * 60 + date.getUTCMinutes() + 330) % 1440;
+    const closeMin = this.getMcxCloseMinutesIst(date);
     if (istMinutes >= 540 && istMinutes <= 1020) {
-      return 'NSE_REGULAR'; // Morning commodity session
+      return 'NSE_REGULAR'; // Morning commodity session (09:00 - 17:00 IST)
     }
-    if (istMinutes > 1020 && istMinutes <= 1435) {
-      return 'MCX_EVENING';
+    if (istMinutes > 1020 && istMinutes <= closeMin) {
+      return 'MCX_EVENING'; // Evening commodity session (17:00 - 23:30/23:55 IST)
     }
     return 'OFF_HOURS';
   }
 
   isMarketOpen(date: string | Date): boolean {
     const d = typeof date === 'string' ? new Date(date) : date;
-    const day = d.getUTCDay();
-    if (day === 0 || day === 6) return false;
-    const istMinutes = (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
-    return istMinutes >= 540 && istMinutes <= 1435;
+    if (isNaN(d.getTime())) return false;
+    const { dayOfWeek, minutes: istMinutes } = getLocalClock(d, 'Asia/Kolkata');
+    if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+    return istMinutes >= 540 && istMinutes <= this.getMcxCloseMinutesIst(d);
   }
 
   getDayResetBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date } {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    const istOffsetMs = 330 * 60 * 1000;
-    const istDate = new Date(d.getTime() + istOffsetMs);
-    const y = istDate.getUTCFullYear();
-    const m = istDate.getUTCMonth();
-    const day = istDate.getUTCDate();
-
-    const startOfDay = new Date(Date.UTC(y, m, day, 0, 0, 0) - istOffsetMs);
-    const endOfDay = new Date(Date.UTC(y, m, day, 23, 59, 59, 999) - istOffsetMs);
-    return { startOfDay, endOfDay };
+    return buildIstDayBoundary(date);
   }
 }
 
@@ -110,49 +155,42 @@ export class Forex24_5SessionCalendar implements ISessionCalendar {
     const date = typeof entryTime === 'string' ? new Date(entryTime) : entryTime;
     if (isNaN(date.getTime())) return 'LONDON';
 
-    const day = date.getUTCDay(); // 0 Sun, 5 Fri, 6 Sat
-    const hour = date.getUTCHours();
+    const ny = getLocalClock(date, 'America/New_York');
+    const london = getLocalClock(date, 'Europe/London');
 
-    // Weekend: Friday 22:00 UTC to Sunday 21:00 UTC
-    if (day === 6 || (day === 5 && hour >= 22) || (day === 0 && hour < 21)) {
+    // Weekend closure anchored to New York 17:00 Friday -> 17:00 Sunday
+    if (
+      ny.dayOfWeek === 6 ||
+      (ny.dayOfWeek === 5 && ny.minutes >= 17 * 60) ||
+      (ny.dayOfWeek === 0 && ny.minutes < 17 * 60)
+    ) {
       return 'OFF_HOURS';
     }
 
-    // Asian Session (Tokyo/Sydney): 00:00 - 08:00 UTC
-    if (hour >= 0 && hour < 8) {
-      return 'ASIA';
-    }
-    // London Session: 08:00 - 13:00 UTC (primary) / 13:00 - 16:30 (overlap)
-    if (hour >= 8 && hour < 13) {
-      return 'LONDON';
-    }
-    // New York Session: 13:00 - 21:00 UTC
-    if (hour >= 13 && hour < 21) {
+    // DST-aware session mapping:
+    // New York cash/core window: 08:00 - 17:00 America/New_York
+    if (ny.minutes >= 8 * 60 && ny.minutes < 17 * 60) {
       return 'NEW_YORK';
     }
-
+    // London window: 08:00 Europe/London until NY open (08:00 NY)
+    if (london.minutes >= 8 * 60 && london.minutes < 17 * 60) {
+      return 'LONDON';
+    }
     return 'ASIA';
   }
 
   isMarketOpen(date: string | Date): boolean {
     const d = typeof date === 'string' ? new Date(date) : date;
-    const day = d.getUTCDay();
-    const hour = d.getUTCHours();
-    if (day === 6) return false;
-    if (day === 5 && hour >= 22) return false;
-    if (day === 0 && hour < 21) return false;
+    if (isNaN(d.getTime())) return false;
+    const ny = getLocalClock(d, 'America/New_York');
+    if (ny.dayOfWeek === 6) return false;
+    if (ny.dayOfWeek === 5 && ny.minutes >= 17 * 60) return false;
+    if (ny.dayOfWeek === 0 && ny.minutes < 17 * 60) return false;
     return true;
   }
 
   getDayResetBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date } {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    // Prop accounts usually reset at 17:00 EST / 21:00 or 00:00 UTC
-    const y = d.getUTCFullYear();
-    const m = d.getUTCMonth();
-    const day = d.getUTCDate();
-    const startOfDay = new Date(Date.UTC(y, m, day, 0, 0, 0));
-    const endOfDay = new Date(Date.UTC(y, m, day, 23, 59, 59, 999));
-    return { startOfDay, endOfDay };
+    return buildUtcDayBoundary(date);
   }
 }
 
@@ -176,13 +214,7 @@ export class Crypto24_7SessionCalendar implements ISessionCalendar {
   }
 
   getDayResetBoundary(date: string | Date): { startOfDay: Date; endOfDay: Date } {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    const y = d.getUTCFullYear();
-    const m = d.getUTCMonth();
-    const day = d.getUTCDate();
-    const startOfDay = new Date(Date.UTC(y, m, day, 0, 0, 0));
-    const endOfDay = new Date(Date.UTC(y, m, day, 23, 59, 59, 999));
-    return { startOfDay, endOfDay };
+    return buildUtcDayBoundary(date);
   }
 }
 

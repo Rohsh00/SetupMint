@@ -7,11 +7,9 @@
  * Pure mathematical functions only. Zero side-effects, zero I/O, zero external framework imports.
  */
 
-import Decimal from 'decimal.js';
-import { Direction } from '@tradevault/shared';
+import Decimal from './decimal.js';
+import { Direction, RISK_AND_ALERT_THRESHOLDS } from '@tradevault/shared';
 import { calculateIndianCharges } from './charges.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export type AlertType =
   | 'STOP_THREAT'
@@ -91,8 +89,8 @@ export type AlertDecision =
 export const DEFAULT_ALERT_POLICIES: Record<AlertType, AlertPolicy> = {
   STOP_THREAT: {
     type: 'STOP_THREAT',
-    enterThreshold: new Decimal('0.25'), // bufferRatio <= 25% (CRITICAL)
-    clearThreshold: new Decimal('0.40'), // bufferRatio > 40% (CLEARED)
+    enterThreshold: new Decimal(RISK_AND_ALERT_THRESHOLDS.STOP_CRITICAL_BUFFER_RATIO), // bufferRatio <= 25% (CRITICAL)
+    clearThreshold: new Decimal(RISK_AND_ALERT_THRESHOLDS.STOP_CLEAR_BUFFER_RATIO), // bufferRatio > 40% (CLEARED)
     minRearmMs: 180000, // 3 minutes re-arm gap
     minEditIntervalMs: 10000, // 10 seconds min between edits
     maxRepings: 3,
@@ -102,8 +100,8 @@ export const DEFAULT_ALERT_POLICIES: Record<AlertType, AlertPolicy> = {
   },
   GIVEBACK: {
     type: 'GIVEBACK',
-    enterThreshold: new Decimal('35'), // givebackPercent >= 35% (LEAKING)
-    clearThreshold: new Decimal('25'), // givebackPercent < 25% (CLEARED)
+    enterThreshold: new Decimal(RISK_AND_ALERT_THRESHOLDS.GIVEBACK_LEAKING_PERCENT), // givebackPercent >= 35% (LEAKING)
+    clearThreshold: new Decimal(RISK_AND_ALERT_THRESHOLDS.GIVEBACK_CLEAR_PERCENT), // givebackPercent < 25% (CLEARED)
     minRearmMs: 180000,
     minEditIntervalMs: 10000,
     maxRepings: 2,

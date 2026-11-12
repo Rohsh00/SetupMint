@@ -226,11 +226,11 @@ export function buildTradeMongooseFilter(
     filter['calculated.excursion.excursionFlags'] = excursionFlag;
   }
 
-  // Weekday filter
+  // Weekday filter in IST (matching calculateDashboardMetrics / Weekly Review day boundaries)
   if (weekday) {
     const mongoDay = WEEKDAY_TO_MONGO_DAY[weekday.toLowerCase().trim()];
     if (mongoDay) {
-      filter.$expr = { $eq: [{ $dayOfWeek: '$tradeDate' }, mongoDay] };
+      filter.$expr = { $eq: [{ $dayOfWeek: { date: '$tradeDate', timezone: 'Asia/Kolkata' } }, mongoDay] };
     }
   }
 

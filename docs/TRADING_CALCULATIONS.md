@@ -6,12 +6,15 @@ This document provides the definitive mathematical specifications, exact algorit
 
 ## 1. Mathematical Arithmetic Precision Standard
 
-SetupMint executes **all monetary arithmetic using Decimal.js** configured with **30 digits of precision** and banker's rounding (`ROUND_HALF_UP`):
+SetupMint executes **all monetary arithmetic using an isolated Decimal.js instance** (`CalcDecimal` in [`packages/financial-engine/src/decimal.ts`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/decimal.ts)) configured with **30 digits of precision** and **standard financial half-up rounding (`ROUND_HALF_UP`)** — avoiding global `Decimal.set()` mutation:
 
 ```typescript
-// packages/financial-engine/src/pnl.ts, packages/financial-engine/src/charges.ts
-import Decimal from 'decimal.js';
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
+// packages/financial-engine/src/decimal.ts
+import BaseDecimal from 'decimal.js';
+export const CalcDecimal = BaseDecimal.clone({
+  precision: 30,
+  rounding: BaseDecimal.ROUND_HALF_UP,
+});
 ```
 
 This completely eliminates IEEE-754 binary floating-point round-off inaccuracies (such as `0.1 + 0.2 = 0.30000000000000004`) from trade calculations and ledger balances.
@@ -100,22 +103,23 @@ Turnover is strictly direction-aware to ensure STT/CTT and Stamp Duty attach to 
 
 $$\text{Total Turnover} = \text{Buy Turnover} + \text{Sell Turnover}$$
 
-| Fee Component | Market Segment | Rate Formula |
+| Fee Component | Market Segment | Rate Formula (Date-Effective by `tradeDate`: `PRE_OCT_2024`, `OCT_2024_TO_MAR_2026`, `APR_2026_ONWARD`) |
 | :--- | :--- | :--- |
-| **Brokerage** | FYERS / Zerodha / Angel One | Flat ₹20 per executed leg = **₹40.00 round-trip** (customizable per-broker flat fee, e.g. ₹0 for Finvasia) |
-| **Exchange Turnover Fee** | NSE Cash Equities | $0.00297\%$ of Total Turnover ($\text{Turnover} \times 0.0000297$) |
-| | NSE Index/Stock Futures | $0.00173\%$ of Total Turnover ($\text{Turnover} \times 0.0000173$) |
-| | NSE Options (on Premium) | $0.035\%$ of Premium Turnover ($\text{Turnover} \times 0.00035$) |
-| | MCX Non-Agri Commodities | $0.0021\%$ of Total Turnover ($\text{Turnover} \times 0.000021$) |
-| **STT / CTT** | NSE Cash Intraday | $0.025\%$ on Sell Turnover ($\text{Sell Turnover} \times 0.00025$) |
-| | NSE Futures | $0.02\%$ on Sell Turnover ($\text{Sell Turnover} \times 0.0002$) |
-| | NSE Options | $0.10\%$ on Sell Premium Turnover ($\text{Sell Turnover} \times 0.001$) |
-| | MCX Commodities (CTT) | $0.01\%$ on Sell Turnover ($\text{Sell Turnover} \times 0.0001$) |
-| **Stamp Duty** | Cash Equities | $0.003\%$ on Buy Turnover ($\text{Buy Turnover} \times 0.00003$) |
-| | Futures & Commodities | $0.002\%$ on Buy Turnover ($\text{Buy Turnover} \times 0.00002$) |
-| | Options | $0.003\%$ on Buy Premium Turnover ($\text{Buy Turnover} \times 0.00003$) |
-| **SEBI Turnover Fee** | All Segments | ₹10 per crore = $0.0001\%$ ($\text{Total Turnover} \times 0.000001$) |
-| **GST** | All Segments | **$18\%$** on $(\text{Brokerage} + \text{Exchange Turnover Fee} + \text{SEBI Fee})$ |
+| **Brokerage** | FYERS / Zerodha / Angel One / Finvasia | Equity (Intraday & Delivery): `min(₹20, 0.03% of Leg Turnover)` capped per executed order (configurable flat cap; `₹0` for Finvasia). F&O & MCX: Flat ₹20 per executed leg = **₹40.00 round-trip** (`₹0` zero-brokerage brokers). |
+| **Exchange Turnover Fee** | NSE Cash Equities (`NSE_EQ`) | $0.00297\%$ of Total Turnover (BSE Cash `BSE_EQ`: $0.00375\%$) |
+| | NSE Index/Stock Futures | $0.00173\%$ (eff. Oct 2024; $0.00188\%$ pre-Oct 2024; BSE Futures: $0\%$) |
+| | NSE Options (`NSE_FNO`, on Premium) | $0.03503\%$ of Premium Turnover (eff. Oct 2024; $0.0495\%$ pre-Oct 2024; BSE Options `BSE_FNO`: $0.0325\%$) |
+| | MCX Commodities (Non-Agri) | MCX Futures: $0.0021\%$ of Total Turnover; MCX Options: $0.0418\%$ of Premium Turnover |
+| | NSE Currency Derivatives | Futures: $0.00035\%$; Options: $0.0311\%$ of Premium Turnover |
+| **STT / CTT** | Cash Equities Intraday | $0.025\%$ on Sell Turnover |
+| | Cash Equities Delivery | $0.10\%$ on **both Buy and Sell** Turnover (plus `dpCharges` only when explicitly provided/applicable on sell delivery) |
+| | NSE / BSE Futures | **$0.05\%$** on Sell Turnover eff. **Apr 1, 2026** (Finance Act 2026; was $0.02\%$ Oct 2024–Mar 2026, $0.0125\%$ pre-Oct 2024) |
+| | NSE / BSE Options | **$0.15\%$** on Sell Premium Turnover eff. **Apr 1, 2026** (Finance Act 2026; was $0.10\%$ Oct 2024–Mar 2026, $0.0625\%$ pre-Oct 2024; `0.125%` on intrinsic value at physical/ITM exercise settlement when applicable) |
+| | MCX Commodities (CTT) | Futures: $0.01\%$ on Sell Turnover; Options: **$0.15\%$** on Sell Premium Turnover eff. Apr 1, 2026 (Finance Act 2026, was $0.05\%$ earlier; $0.0001\%$ on exercise) |
+| **IPFT (NSE)** | Equities / Eq Futures | ₹10/cr ($0.0001\%$, baseline eff. Mar 1, 2026 per `NSE/FA/73061`; NSE Eq Options: ₹50/cr = $0.0005\%$; Currency Fut ₹0.05/L; Currency Opt ₹2/L; MCX client IPFT = ₹0) |
+| **Stamp Duty** | Cash Intraday / Futures / MCX / Options | Intraday & Options Buy: $0.003\%$; Cash Delivery Buy: **$0.015\%$**; Equity/Commodity Futures Buy: $0.002\%$; Currency Deriv Buy: $0.0001\%$ |
+| **SEBI Turnover Fee** | All Indian Segments | ₹10 per crore = $0.0001\%$ ($\text{Total Turnover} \times 0.000001$) |
+| **GST** | All Indian Segments | **$18\%$** on $(\text{Brokerage} + \text{Exchange Turnover Fee} + \text{IPFT} + \text{SEBI Fee})$ (STT/CTT and Stamp Duty are exempt from GST). Components rounded per Indian contract notes. |
 
 ---
 
@@ -161,13 +165,15 @@ All performance metrics are calculated over **closed trades** ($N_{\text{closed}
 $$\text{Win Rate \%} = \frac{N_{\text{win}}}{N_{\text{closed}}} \times 100 \quad \text{where } \text{Net P&L} > 0$$
 $$\text{Loss Rate \%} = \frac{N_{\text{loss}}}{N_{\text{closed}}} \times 100 \quad \text{where } \text{Net P&L} < 0$$
 
-### 2. Profit Factor
-$$\text{Profit Factor} = \frac{\sum_{i=1}^{N_{\text{win}}} \text{Net P&L}_i}{\sum_{j=1}^{N_{\text{loss}}} |\text{Net P&L}_j|}$$
+### 2. Profit Factor (`profitFactor` = Net, `grossProfitFactor` = Gross)
+SetupMint defaults `profitFactor` to **net realized trade P&L** and also surfaces `grossProfitFactor` explicitly:
+$$\text{Net Profit Factor} = \frac{\sum_{i=1}^{N_{\text{win}}} \text{Net P&L}_i}{\sum_{j=1}^{N_{\text{loss}}} |\text{Net P&L}_j|}, \qquad \text{Gross Profit Factor} = \frac{\sum_{\text{Gross}_i > 0} \text{Gross P&L}_i}{\sum_{\text{Gross}_j < 0} |\text{Gross P&L}_j|}$$
 
 **Zero Loss Edge Case:** If $\sum |\text{Losses}| == 0$ and $\sum \text{Gains} > 0$, SetupMint returns **`999.99`** instead of dividing by zero or outputting `Infinity`. If both gains and losses are zero, it returns `0.00`.
 
-### 3. Expectancy
-$$\text{Expectancy} = \frac{\sum_{i=1}^{N_{\text{closed}}} \text{Net P&L}_i}{N_{\text{closed}}}$$
+### 3. Expectancy (`expectancy` in Currency, `expectancyR` in R)
+$$\text{Expectancy (Currency)} = \frac{\sum_{i=1}^{N_{\text{closed}}} \text{Net P&L}_i}{N_{\text{closed}}}, \qquad \text{Expectancy (R)} = (W \times \bar{R}_{\text{win}}) - (L \times |\bar{R}_{\text{loss}}|)$$
+*(Where $W + L \le 1$ when breakeven trades are present; equivalently equal to the arithmetic mean of realized R-multiples across closed R-evaluable trades.)*
 
 ### 4. Peak-to-Trough Drawdown & Equity Curve
 Given starting equity $E_0$ and chronological trades $1 \dots n$:
@@ -292,11 +298,10 @@ Daily journal discipline ratings (1 to 5 stars) are computed automatically based
 ### Code Location:
 [`packages/financial-engine/src/templates.ts:31-150`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/templates.ts#L31-L150)
 
-$$\text{Shrunk Expectancy} = \frac{n \cdot \bar{R} + k \cdot \mu_{\text{global}}}{n + k}$$
-- $n$: Template sample size.
-- $\bar{R}$: Observed template mean expectancy in R.
-- $k$: Shrinkage strength (default: 10).
-- $\mu_{\text{global}}$: Compatible population prior mean (default: 0.0).
+$$\text{Shrunk Expectancy} = \frac{n \cdot \bar{X} + k \cdot \mu_{\text{global}}}{n + k}$$
+- $n$: Sample size (`closedTrades` or `tradeCount`).
+- $\bar{X}$: Observed mean expectancy. **Unit contract:** `templates.ts` (`rankTemplates`) operates in **R-multiples** (`expectancyUnit = 'R'`, $\mu_{\text{global}} = 0.0$), whereas `weekly-review.ts` setup ranking operates in **account currency** (`expectancyUnit = 'CURRENCY'`, $\mu_{\text{global}} = \text{Week Net P&L} / n_{\text{week}}$).
+- $k$: Shrinkage strength (default: 10 in `RISK_AND_ALERT_THRESHOLDS.EMPIRICAL_BAYES_K`, smoothing small samples toward the prior).
 
 ---
 
@@ -331,7 +336,7 @@ $$\text{Tilt Score} = 0.30 S_{\text{streak}} + 0.25 S_{\text{size}} + 0.25 S_{\t
 ### Code Location:
 [`packages/financial-engine/src/excursion.ts:1-260`](file:///Users/komal/projects/Trading%20Vault/packages/financial-engine/src/excursion.ts)
 
-Excursion analytics evaluate the quality of trade execution and trade management by measuring the maximum adverse price move (heat endured) and maximum favorable price move (potential unrealized peak) using FYERS 1-minute historical candlestick data strictly within the trade's active lifecycle ($T_{\text{entry}}$ to $T_{\text{exit}}$). All calculations use `Decimal.js` with 30 digits of precision and banker's rounding (`ROUND_HALF_UP`), with `moment` powering strict time handling.
+Excursion analytics evaluate the quality of trade execution and trade management by measuring the maximum adverse price move (heat endured) and maximum favorable price move (potential unrealized peak) using FYERS 1-minute historical candlestick data overlapping the trade's active lifecycle ($T_{\text{entry}}$ to $T_{\text{exit}}$). Boundary bars whose open/close window strictly contains `entryTime` or `exitTime` include full candle H/L range; entries outside the boundary bar's `[L, H]` trigger an `ENTRY_OUTSIDE_CANDLE` warning flag. All calculations use isolated `CalcDecimal` (30 digits, standard `ROUND_HALF_UP`), with `moment` powering strict time handling.
 
 ### Mathematical Formulas:
 
@@ -592,7 +597,7 @@ Projects statistical forward dispersion cones over $S \in \{50, 100, 200\}$ futu
 
 #### 1. Eligibility Gate:
 - Historical sample size $N \ge 30$.
-- Edge verdict from `evaluateEdge()` must not be `'NO_EDGE'` or `'INSUFFICIENT_DATA'`. If ineligible, the cone is omitted with an informative status.
+- Edge verdict from `evaluateEdge()` must be `'LIKELY_EDGE' | 'UNPROVEN'` (never `'NO_EDGE_NEGATIVE'`). When ineligible ($N < 30$ or `'NO_EDGE_NEGATIVE'`), the cone is omitted with an explicit reason (`NEGATIVE_EDGE` or `INSUFFICIENT_SAMPLE`).
 
 #### 2. Resampling & Mulberry32 PRNG:
 Generates $M = 1,000$ simulation runs using a deterministic 32-bit PRNG (`Mulberry32`) seeded from historical sample attributes:
@@ -794,7 +799,7 @@ The engine configures a 3-tier scaling ladder:
    - **Suggested Trailing Stop:** Breakeven lock ($P_{\text{entry}}$).
 2. **Target 2 (T2: +2.0R):**
    $$P_{T2} = \begin{cases} P_{\text{entry}} + 2 \times \Delta P_{\text{risk}} & \text{if LONG} \\ P_{\text{entry}} - 2 \times \Delta P_{\text{risk}} & \text{if SHORT} \end{cases}$$
-   - **Planned Exit Ratio:** $33\%$ of remaining position ($\text{exitQty} = \max(1, \lfloor (Q - Q_{T1}) \times 0.5 \rfloor)$).
+   - **Planned Exit Ratio:** $50\%$ of remaining position ($\text{exitQty} = \text{floor}(\text{remaining} \times 0.5)$ rounded down to whole lots when lotSize $\ge 1$, i.e. 25% of original quantity when $Q \ge 4$; omitted/merged when only 1 lot remains since 1 lot cannot split).
    - **Suggested Trailing Stop:** Trail to $+1.0R$ price level ($P_{T1}$).
 3. **Target 3 / Runner (T3: +3.0R or Planned Target):**
    $$P_{T3} = \begin{cases} P_{\text{plannedTarget}} & \text{if plannedTarget is defined} \\ P_{\text{entry}} \pm 3 \times \Delta P_{\text{risk}} & \text{otherwise} \end{cases}$$

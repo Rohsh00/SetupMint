@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import { WhatIfExclusionReason } from '@tradevault/shared';
 import {
   IWhatIfTradeInput,
@@ -6,8 +6,6 @@ import {
   IWhatIfEligibleTrade,
   IWhatIfEngineOptions,
 } from './types.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export type EligibilityResult =
   | { eligible: true; input: IWhatIfEligibleTrade }

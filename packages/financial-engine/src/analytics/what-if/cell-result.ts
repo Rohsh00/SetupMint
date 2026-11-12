@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import { calculateIndianCharges } from '../../charges.js';
 import { computeLevels } from './levels.js';
 import { replayTrade } from './replay.js';
@@ -8,8 +8,6 @@ import {
   IWhatIfTradeCellSimulation,
   IWhatIfEngineOptions,
 } from './types.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface ISimulateTradeCellParams {
   trade: IWhatIfEligibleTrade;

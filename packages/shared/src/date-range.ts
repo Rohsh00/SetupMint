@@ -261,14 +261,58 @@ export function resolvePreset(
   }
 }
 
+function getTimezoneOffsetMsForDateStr(dateStr: string, timezone: string): number {
+  if (timezone === 'Asia/Kolkata' || timezone === 'IST') {
+    return 330 * 60 * 1000; // Fixed UTC+05:30 (no DST)
+  }
+  if (timezone === 'UTC') {
+    return 0;
+  }
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const approxUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(approxUtc);
+
+  let py = y, pm = m, pd = d, ph = 12, pmin = 0;
+  for (const p of parts) {
+    if (p.type === 'year') py = parseInt(p.value, 10);
+    else if (p.type === 'month') pm = parseInt(p.value, 10);
+    else if (p.type === 'day') pd = parseInt(p.value, 10);
+    else if (p.type === 'hour') ph = parseInt(p.value, 10) % 24;
+    else if (p.type === 'minute') pmin = parseInt(p.value, 10);
+  }
+  const tzAsUtcMs = Date.UTC(py, pm - 1, pd, ph, pmin, 0);
+  return tzAsUtcMs - approxUtc.getTime();
+}
+
 /**
- * Converts a YYYY-MM-DD date range into inclusive UTC boundaries computed from IST.
- * Start: YYYY-MM-DDT00:00:00.000+05:30 (e.g. previous day 18:30:00.000Z)
- * End:   YYYY-MM-DDT23:59:59.999+05:30 (e.g. same day 18:29:59.999Z)
+ * Returns the exact number of ISO 8601 weeks (52 or 53) in the given ISO year.
+ * An ISO year has 53 weeks iff Jan 1 or Dec 31 falls on a Thursday (i.e. Dec 28 belongs to W53).
+ */
+export function getIsoWeeksInYear(isoYear: number): number {
+  const jan1Dow = new Date(Date.UTC(isoYear, 0, 1)).getUTCDay(); // 0=Sun..6=Sat
+  const dec31Dow = new Date(Date.UTC(isoYear, 11, 31)).getUTCDay();
+  return jan1Dow === 4 || dec31Dow === 4 ? 53 : 52;
+}
+
+/**
+ * Converts a YYYY-MM-DD date range into inclusive UTC boundaries computed from the specified timezone (default IST +05:30).
+ * Start: YYYY-MM-DDT00:00:00.000 in target timezone
+ * End:   YYYY-MM-DDT23:59:59.999 in target timezone
  *
  * This prevents any timezone day-shift across database queries.
  */
-export function normalizeRange(range: IDateRange = {}): INormalizedDateRange {
+export function normalizeRange(
+  range: IDateRange = {},
+  timezone = 'Asia/Kolkata'
+): INormalizedDateRange {
   const { startDate, endDate } = range;
 
   if (startDate && endDate && startDate > endDate) {
@@ -284,14 +328,18 @@ export function normalizeRange(range: IDateRange = {}): INormalizedDateRange {
     if (!isValidCalendarDate(startDate)) {
       throw new Error(`Invalid calendar startDate: ${startDate}`);
     }
-    startUtc = new Date(`${startDate}T00:00:00.000+05:30`);
+    const [y, m, d] = startDate.split('-').map(Number);
+    const offsetMs = getTimezoneOffsetMsForDateStr(startDate, timezone);
+    startUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0) - offsetMs);
   }
 
   if (endDate) {
     if (!isValidCalendarDate(endDate)) {
       throw new Error(`Invalid calendar endDate: ${endDate}`);
     }
-    endUtc = new Date(`${endDate}T23:59:59.999+05:30`);
+    const [y, m, d] = endDate.split('-').map(Number);
+    const offsetMs = getTimezoneOffsetMsForDateStr(endDate, timezone);
+    endUtc = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999) - offsetMs);
   }
 
   return {
@@ -305,14 +353,17 @@ export function normalizeRange(range: IDateRange = {}): INormalizedDateRange {
 }
 
 /**
- * Builds a MongoDB query clause for `tradeDate` using inclusive UTC boundaries computed from IST.
+ * Builds a MongoDB query clause for `tradeDate` using inclusive UTC boundaries computed from IST (or specified account timezone).
  * Returns `{ tradeDate: { $gte?: Date, $lte?: Date } }` or `{}` if range is unconstrained.
  */
-export function buildDateRangeClause(range?: IDateRange): {
+export function buildDateRangeClause(
+  range?: IDateRange,
+  timezone = 'Asia/Kolkata'
+): {
   tradeDate?: { $gte?: Date; $lte?: Date };
 } {
   if (!range) return {};
-  const { startUtc, endUtc } = normalizeRange(range);
+  const { startUtc, endUtc } = normalizeRange(range, timezone);
   const tradeDateClause: { $gte?: Date; $lte?: Date } = {};
   if (startUtc) tradeDateClause.$gte = startUtc;
   if (endUtc) tradeDateClause.$lte = endUtc;
@@ -322,10 +373,12 @@ export function buildDateRangeClause(range?: IDateRange): {
 
 /**
  * Converts an ISO 8601 week string (e.g. '2026-W43') into IST-inclusive startDate and endDate (ISO Monday to Sunday).
+ * Validates 52 vs 53 week ISO years cleanly (e.g. rejects '2025-W53', accepts '2026-W53').
  * Returns { startDate, endDate, startUtc, endUtc, start, end }.
  */
 export function isoWeekToRange(
-  weekStr: string
+  weekStr: string,
+  timezone = 'Asia/Kolkata'
 ): INormalizedDateRange & { startDate: string; endDate: string } {
   const match = weekStr?.match(/^(\d{4})-W(0[1-9]|[1-4]\d|5[0-3])$/);
   if (!match) {
@@ -334,6 +387,10 @@ export function isoWeekToRange(
 
   const year = parseInt(match[1], 10);
   const week = parseInt(match[2], 10);
+  const maxWeeks = getIsoWeeksInYear(year);
+  if (week > maxWeeks) {
+    throw new Error(`Invalid ISO week ${weekStr}: ISO year ${year} only has ${maxWeeks} weeks.`);
+  }
 
   // In ISO 8601, January 4 is always in week 1.
   const jan4 = new Date(Date.UTC(year, 0, 4));
@@ -350,8 +407,7 @@ export function isoWeekToRange(
 
   const startDate = toYmd(monTarget.getUTCFullYear(), monTarget.getUTCMonth() + 1, monTarget.getUTCDate());
   const endDate = toYmd(sunTarget.getUTCFullYear(), sunTarget.getUTCMonth() + 1, sunTarget.getUTCDate());
-
-  const normalized = normalizeRange({ startDate, endDate });
+  const normalized = normalizeRange({ startDate, endDate }, timezone);
 
   return {
     ...normalized,

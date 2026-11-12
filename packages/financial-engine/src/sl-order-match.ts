@@ -1,7 +1,5 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import moment from 'moment';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export type SLOrderSide = 'BUY' | 'SELL';
 export type SLOrderFinalStatus = 'FILLED' | 'CANCELLED' | 'OPEN' | 'REJECTED';

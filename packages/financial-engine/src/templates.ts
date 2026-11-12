@@ -1,4 +1,4 @@
-import { Decimal } from 'decimal.js';
+import Decimal from './decimal.js';
 import {
   AssetClass,
   BUILT_IN_TEMPLATES,
@@ -11,9 +11,7 @@ import {
   getNseHolidaysForYear,
 } from '@tradevault/shared';
 import { calculateEmpiricalBayesShrinkage } from './edge.js';
-
-// Configure Decimal precision (30 digits, ROUND_HALF_UP)
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
+import { normalizeUnderlying } from './chart-helpers.js';
 
 /**
  * Helper to extract IST (UTC+5:30) date components and date string 'YYYY-MM-DD'.
@@ -89,24 +87,14 @@ export function getIstDateComponents(dateInput?: Date | string | null): {
  * - If the last Tuesday is a weekend or an official NSE trading holiday, the expiry moves backward
  *   to the immediately preceding trading day (e.g. Monday). Consecutive holidays shift further back.
  */
-export function isNseMonthlyExpiry(
-  dateInput: Date | string,
+/**
+ * Shifts a scheduled expiry date backward to the immediately preceding non-holiday trading day.
+ */
+function resolveHolidayShiftedDateStr(
+  candidateUtcDate: Date,
   holidays?: readonly string[]
-): boolean {
-  const parsed = getIstDateComponents(dateInput);
-  const { year, month } = parsed;
-
-  // Find the last day of the month in IST
-  const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-
-  // Find the last Tuesday of this month
-  let candidateDay = lastDayOfMonth;
-  while (new Date(Date.UTC(year, month, candidateDay)).getUTCDay() !== 2) {
-    candidateDay--;
-  }
-
-  // Check for holidays or weekends and shift backward
-  let cur = new Date(Date.UTC(year, month, candidateDay));
+): string {
+  let cur = candidateUtcDate;
   while (true) {
     const y = cur.getUTCFullYear();
     const m = cur.getUTCMonth();
@@ -118,66 +106,122 @@ export function isNseMonthlyExpiry(
     const isHoliday = yearHolidays.includes(curStr);
 
     if (!isWeekend && !isHoliday) {
-      return curStr === parsed.dateStr;
+      return curStr;
     }
-    // Shift backward by 1 calendar day
     cur = new Date(cur.getTime() - 24 * 60 * 60 * 1000);
   }
 }
 
 /**
+ * Checks if a date is the last `targetWeekday` (0=Sun..6=Sat) monthly expiry in IST,
+ * shifting backward on exchange holidays/weekends.
+ */
+function isLastWeekdayMonthlyExpiry(
+  dateInput: Date | string,
+  targetWeekday: number,
+  holidays?: readonly string[]
+): boolean {
+  const parsed = getIstDateComponents(dateInput);
+  const { year, month } = parsed;
+  const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+  let candidateDay = lastDayOfMonth;
+  while (new Date(Date.UTC(year, month, candidateDay)).getUTCDay() !== targetWeekday) {
+    candidateDay--;
+  }
+
+  return (
+    resolveHolidayShiftedDateStr(new Date(Date.UTC(year, month, candidateDay)), holidays) ===
+    parsed.dateStr
+  );
+}
+
+/**
+ * Checks if a date matches any weekly `targetWeekday` (0=Sun..6=Sat) expiry in that month
+ * after holiday shifting.
+ */
+function isWeeklyWeekdayExpiry(
+  dateInput: Date | string,
+  targetWeekday: number,
+  holidays?: readonly string[]
+): boolean {
+  const parsed = getIstDateComponents(dateInput);
+  const { year, month } = parsed;
+  const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+  for (let d = 1; d <= lastDayOfMonth; d++) {
+    const checkDate = new Date(Date.UTC(year, month, d));
+    if (checkDate.getUTCDay() === targetWeekday) {
+      if (resolveHolidayShiftedDateStr(checkDate, holidays) === parsed.dateStr) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Checks if the given date is the NSE Monthly F&O Expiry Day.
+ *
+ * Domain Rules (NSE/FAOP/68589 & NSE/FAOP/68747, eff. Sep 1, 2025):
+ * - Last TUESDAY of the month (previously Last Thursday before Sep 1, 2025).
+ * - If that Tuesday falls on a weekend/NSE holiday, expiry shifts backward to the preceding trading day.
+ */
+export function isNseMonthlyExpiry(
+  dateInput: Date | string,
+  holidays?: readonly string[]
+): boolean {
+  const parsed = getIstDateComponents(dateInput);
+  const targetWeekday = parsed.dateStr < '2025-09-01' ? 4 : 2; // Thu pre-Sep-2025, Tue Sep-2025+
+  return isLastWeekdayMonthlyExpiry(dateInput, targetWeekday, holidays);
+}
+
+/**
  * Checks if the given date is a NIFTY 50 Weekly Options Expiry Day.
  *
- * Domain Rules (Verified Oct 2026):
- * - ONLY Nifty 50 has weekly index options on NSE, expiring every TUESDAY.
- * - Bank Nifty, FinNifty, Midcap Select, Nifty Next 50 are MONTHLY only.
- * - If any weekly Tuesday falls on an NSE holiday or weekend, expiry moves backward to the previous trading day.
- * - The monthly expiry Tuesday is also a valid weekly expiry for Nifty.
+ * Domain Rules (NSE/FAOP/68589 eff. Sep 1, 2025):
+ * - ONLY Nifty 50 has weekly index options on NSE, expiring every TUESDAY (Thursday pre-Sep-2025).
+ * - Bank Nifty, FinNifty, Midcap Select, Nifty Next 50, and Stock F&O are MONTHLY only.
  */
 export function isNiftyWeeklyExpiry(
   dateInput: Date | string,
   holidays?: readonly string[]
 ): boolean {
   const parsed = getIstDateComponents(dateInput);
-  const { year, month } = parsed;
+  const targetWeekday = parsed.dateStr < '2025-09-01' ? 4 : 2;
+  return isWeeklyWeekdayExpiry(dateInput, targetWeekday, holidays);
+}
 
-  const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+/**
+ * Checks if the given date is BSE Monthly Index Expiry (Last THURSDAY per BSE Notice 20250623-59 eff. Sep 1, 2025).
+ */
+export function isBseMonthlyExpiry(
+  dateInput: Date | string,
+  holidays?: readonly string[]
+): boolean {
+  const parsed = getIstDateComponents(dateInput);
+  const targetWeekday = parsed.dateStr < '2025-09-01' ? 2 : 4; // Tue Jan-Aug 2025, Thu Sep 2025+
+  return isLastWeekdayMonthlyExpiry(dateInput, targetWeekday, holidays);
+}
 
-  // Inspect each Tuesday of the month
-  for (let d = 1; d <= lastDayOfMonth; d++) {
-    const checkDate = new Date(Date.UTC(year, month, d));
-    if (checkDate.getUTCDay() === 2) {
-      // Shift backward if this Tuesday is a holiday
-      let cur = checkDate;
-      while (true) {
-        const y = cur.getUTCFullYear();
-        const m = cur.getUTCMonth();
-        const dayNum = cur.getUTCDate();
-        const curStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-        const dayOfWeek = cur.getUTCDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const yearHolidays = holidays ?? getNseHolidaysForYear(y);
-        const isHoliday = yearHolidays.includes(curStr);
-
-        if (!isWeekend && !isHoliday) {
-          if (curStr === parsed.dateStr) {
-            return true;
-          }
-          break;
-        }
-        cur = new Date(cur.getTime() - 24 * 60 * 60 * 1000);
-      }
-    }
-  }
-
-  return false;
+/**
+ * Checks if the given date is BSE SENSEX Weekly Expiry (Every THURSDAY per BSE Notice 20250623-59 eff. Sep 1, 2025).
+ */
+export function isSensexWeeklyExpiry(
+  dateInput: Date | string,
+  holidays?: readonly string[]
+): boolean {
+  const parsed = getIstDateComponents(dateInput);
+  const targetWeekday = parsed.dateStr < '2025-09-01' ? 2 : 4;
+  return isWeeklyWeekdayExpiry(dateInput, targetWeekday, holidays);
 }
 
 /**
  * Evaluates whether the given symbol on the specified date is on an active expiry day.
- * - Nifty 50: true on weekly Tuesdays (or shifted holiday dates) and monthly expiry.
- * - Other NSE instruments (Bank Nifty, Stocks, etc.): true ONLY on monthly expiry day.
- * - Non-NSE / Global symbols (Forex, Crypto): returns false.
+ * - NIFTY (Nifty 50): NSE weekly Tuesdays + monthly last Tuesday. Excludes NIFTYNXT50/BANKNIFTY/etc.
+ * - BANKNIFTY, FINNIFTY, MIDCPNIFTY, NIFTYNXT50, Stock F&O: NSE monthly last Tuesday only.
+ * - SENSEX: BSE weekly Thursdays + monthly last Thursday.
+ * - BANKEX, SENSEX50: BSE monthly last Thursday only.
  */
 export function isExpiryDay(
   symbol: string | undefined,
@@ -185,31 +229,60 @@ export function isExpiryDay(
   holidays?: readonly string[]
 ): boolean {
   if (!symbol) return false;
-  const sym = symbol.toUpperCase().trim();
+  const underlying = normalizeUnderlying(symbol);
 
-  // Strict check: only NIFTY 50 has weekly expiry.
-  // Symbols like BANKNIFTY, FINNIFTY, MIDCPNIFTY are monthly only.
-  const isNifty50 =
-    sym === 'NIFTY' ||
-    sym === 'NIFTY50' ||
-    sym === 'NIFTY 50' ||
-    (sym.startsWith('NIFTY') && !sym.includes('BANK') && !sym.includes('FIN') && !sym.includes('MID') && !sym.includes('NEXT'));
-
-  if (isNifty50) {
+  if (underlying === 'NIFTY') {
     return isNiftyWeeklyExpiry(dateInput, holidays) || isNseMonthlyExpiry(dateInput, holidays);
   }
+  if (underlying === 'SENSEX') {
+    return isSensexWeeklyExpiry(dateInput, holidays) || isBseMonthlyExpiry(dateInput, holidays);
+  }
+  if (underlying === 'BANKEX' || underlying === 'SENSEX50') {
+    return isBseMonthlyExpiry(dateInput, holidays);
+  }
 
-  // Other Indian F&O contracts expire strictly monthly
   return isNseMonthlyExpiry(dateInput, holidays);
 }
 
 /**
- * Rounds a price to the instrument's tick size using Decimal.js.
+ * Rounds a price to the nearest tick increment using ROUND_HALF_UP.
  */
 export function roundToTick(price: Decimal, tickSize: number | Decimal = 0.05): Decimal {
   const tick = new Decimal(tickSize);
   if (tick.lte(0)) return price;
   return price.dividedBy(tick).round().times(tick);
+}
+
+/**
+ * Rounds a stop-loss price toward safety (never looser than the configured rule distance):
+ * - LONG stop is below entry -> ceil toward entry so actual stop distance <= rule distance.
+ * - SHORT stop is above entry -> floor toward entry so actual stop distance <= rule distance.
+ */
+export function roundStopToTick(
+  price: Decimal,
+  tickSize: number | Decimal = 0.05,
+  direction: Direction = 'LONG'
+): Decimal {
+  const tick = new Decimal(tickSize);
+  if (tick.lte(0)) return price;
+  const ticks = price.dividedBy(tick);
+  return (direction === 'LONG' ? ticks.ceil() : ticks.floor()).times(tick);
+}
+
+/**
+ * Rounds a target price conservatively toward entry so fills require <= target distance:
+ * - LONG target is above entry -> floor toward entry.
+ * - SHORT target is below entry -> ceil toward entry.
+ */
+export function roundTargetToTick(
+  price: Decimal,
+  tickSize: number | Decimal = 0.05,
+  direction: Direction = 'LONG'
+): Decimal {
+  const tick = new Decimal(tickSize);
+  if (tick.lte(0)) return price;
+  const ticks = price.dividedBy(tick);
+  return (direction === 'LONG' ? ticks.floor() : ticks.ceil()).times(tick);
 }
 
 /**
@@ -513,15 +586,22 @@ export function resolveTemplate(
         rawTarget = entry.minus(dist.times(rr));
       }
 
-      const roundedSL = roundToTick(rawSL, tick);
-      const roundedTarget = roundToTick(rawTarget, tick);
+      const roundedSL = roundStopToTick(rawSL, tick, resolvedDirection);
+      let roundedTarget = roundTargetToTick(rawTarget, tick, resolvedDirection);
 
-      // Skip if stop loss is less than or equal to zero
+      // Option premium cannot trade at or below zero; clamp SHORT option target to minimum 1 tick
+      if (ctx.assetClass === 'OPTIONS' && roundedTarget.lte(0)) {
+        roundedTarget = tick.gt(0) ? tick : new Decimal('0.05');
+      }
+
+      // Skip if stop loss is less than or equal to zero or target is non-positive
       if (roundedSL.gt(0)) {
         riskPatch.initialStopLoss = roundedSL.toNumber();
-        riskPatch.plannedTarget = roundedTarget.toNumber();
+        if (roundedTarget.gt(0)) {
+          riskPatch.plannedTarget = roundedTarget.toNumber();
+          provenance['risk.plannedTarget'] = 'RULE';
+        }
         provenance['risk.initialStopLoss'] = 'RULE';
-        provenance['risk.plannedTarget'] = 'RULE';
       }
     }
   }

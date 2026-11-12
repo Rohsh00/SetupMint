@@ -173,7 +173,7 @@ Formula: nEval = nEligible - nCensored
 **Detailed Explanation:** A rule that works well on historical trades often fails in live markets. To guard against this, we test the same stop/target level on the recent holdout window.
 
 > [!WARNING]
-> **Caveat:** A cell holds out-of-sample only if the holdout verdict agrees in direction with in-sample and has at least 15 evaluable trades.
+> **Caveat:** A rule holds out-of-sample (`holdsOutOfSample`) iff the in-sample verdict is `BETTER_ROBUST`, holdout has at least 10 evaluable trades ($n_{\text{holdout}} \ge 10$), and holdout mean paired improvement is strictly positive ($\bar{d}_{\text{holdout}} > 0$).
 
 **See Also:** `analytics.whatIf.verdicts`, `analytics.whatIf.multipleComparisons`
 
@@ -358,15 +358,16 @@ Formula: Planned R:R = |Target - Entry| / |Entry - Stop Loss|
 
 ---
 
-### Mathematical Expectancy (in R)
+### Mathematical Expectancy (`expectancyR` in R / `expectancy` in Currency)
 *Registry Key:* `metric.expectancy`
 
-**Summary:** The average amount of R you expect to win or lose on every trade over a large sample.
+**Summary:** The average amount expected to be won or lost per trade — reported both in currency per closed trade (`expectancy`) and in R-multiples (`expectancyR`).
 
-**Detailed Explanation:** Combines win rate, average win size, and average loss size into a single expected value per trade.
+**Detailed Explanation:** Combines win rate, average win size, and average loss size into a single expected value per trade (`R` or account currency). When breakeven trades exist ($W + L < 1$), breakevens stay in the trade count denominator with $0\text{R}$ contribution.
 
 ```text
-Formula: Expectancy = (Win Rate * Avg Win R) - (Loss Rate * Avg Loss R)
+Expectancy (Currency) = Total Net P&L / Total Closed Trades
+Expectancy (R)        = (Win Rate * Avg Win R) - (Loss Rate * |Avg Loss R|)
 ```
 
 > **Example:** With 50% win rate, 2R average win, and 1R average loss, Expectancy = (0.50 * 2) - (0.50 * 1) = +0.50R.
@@ -380,15 +381,16 @@ Formula: Expectancy = (Win Rate * Avg Win R) - (Loss Rate * Avg Loss R)
 
 ---
 
-### Profit Factor
+### Profit Factor (`profitFactor` Net / `grossProfitFactor` Gross)
 *Registry Key:* `metric.profitFactor`
 
-**Summary:** Gross winning profits divided by absolute gross losing amounts.
+**Summary:** Total winning trade P&L divided by the absolute total losing trade P&L (`profitFactor` uses net P&L after fees; `grossProfitFactor` uses gross P&L).
 
-**Detailed Explanation:** Measures strategy efficiency. A profit factor above 1.50 represents a solid edge; above 2.00 is exceptional.
+**Detailed Explanation:** Measures strategy efficiency. A net profit factor above 1.50 represents a solid edge; above 2.00 is exceptional. Both Net Profit Factor (default) and Gross Profit Factor are computed so fee drag is transparent.
 
 ```text
-Formula: Profit Factor = Gross Profits / Gross Losses
+Net Profit Factor   = Sum(Winning Net P&L) / |Sum(Losing Net P&L)|
+Gross Profit Factor = Sum(Winning Gross P&L) / |Sum(Losing Gross P&L)|
 ```
 
 > **Example:** ₹1,50,000 in gross wins divided by ₹75,000 in gross losses yields a Profit Factor of 2.00.
@@ -620,7 +622,7 @@ Formula: Reversal After Stop % = (Count of Stopped Trades Reversing to Target / 
 
 **Detailed Explanation:** For Indian F&O contracts, entering lot count automatically computes total quantity based on the instrument specification.
 
-> **Example:** For NIFTY (lot size 25), 2 lots = 50 total quantity.
+> **Example:** For NIFTY (effective lot size 65 as of Jan 2026 per NSE/FAOP/70616), 2 lots = 130 total quantity (historical Oct 2024 contracts used lot size 25 = 50 qty).
 
 **See Also:** `trade.form.multiplier`
 
@@ -852,7 +854,7 @@ Formula: Current = Initial Balance + Sum(Closed Trade Net P&L) + Deposits - With
 
 **Summary:** Validates whether a strategy exhibits a statistically proven edge over random chance.
 
-**Detailed Explanation:** Verdict: LIKELY_EDGE (90% bootstrap confidence interval / 5th percentile lower bound of win rate > 50% and positive expectancy), NO_EDGE_NEGATIVE (statistically unprofitable), or UNPROVEN (insufficient trades).
+**Detailed Explanation:** Verdict: `LIKELY_EDGE` ($N \ge 30$, 90% bootstrap 5th percentile lower bound of R-expectancy $> 0$, and $P(E > 0) \ge 0.90$), `NO_EDGE_NEGATIVE` ($N \ge 30$, 95th percentile upper bound $< 0$, and $P(E > 0) \le 0.10$), or `UNPROVEN` ($N < 30$ or interval spans zero). Note: Bayesian win rate (`LIKELY_EDGE` badge checks expectancy bootstrap) excludes exact breakeven trades from Beta alpha/beta counts while surfacing breakeven % separately.
 
 > [!WARNING]
 > **Caveat:** Requires at least 30 closed trades before a strategy can be confirmed as having an edge.
@@ -879,12 +881,12 @@ Formula: Current = Initial Balance + Sum(Closed Trade Net P&L) + Deposits - With
 ### Discipline Score & Penalties
 *Registry Key:* `journal.disciplineScore`
 
-**Summary:** Daily rating starting at 100%, penalized by behavioural mistakes like chasing or moving stop loss.
+**Summary:** Canonical 1-to-5 daily rating starting at 5, deducting objective rule-violation penalties (`mistakes.ts`).
 
-**Detailed Explanation:** Reinforces process over outcome. A winning day with poor discipline receives a low score, highlighting rule violations.
+**Detailed Explanation:** Reinforces process over outcome. Starts at `5 / 5`, subtracts 2 for a daily loss limit breach and 1 each for revenge trading, overtrading, or position sizing violations (clamped to `[1, 5]`).
 
 ```text
-Formula: Score = 100 - Sum(Mistake Penalties)
+Formula: Discipline Score = max(1, min(5, 5 - Sum(Penalties)))
 ```
 
 **Documentation Reference:** [docs/TRADING_CALCULATIONS.md#discipline-scoring](docs/TRADING_CALCULATIONS.md#discipline-scoring)
@@ -926,7 +928,7 @@ Formula: Score = 100 - Sum(Mistake Penalties)
 
 **Summary:** 3-tier profit-taking structure that systematically scales out of a position at pre-calculated R-multiple targets while progressively trailing the stop loss.
 
-**Detailed Explanation:** Target 1 (+1.0R): Exit 50% of position and lock stop to breakeven. Target 2 (+2.0R): Exit 33% of remaining and trail stop to +1.0R. Target 3 / Runner (+3.0R or planned target): Exit 100% of remaining runner position. Each step displays real-time distance, progress percentage, and an actionable execution badge that triggers FYERS broker orders when clicked.
+**Detailed Explanation:** Target 1 (+1.0R): Exit 50% of position and lock stop to breakeven. Target 2 (+2.0R): Exit 50% of remaining (`floor(remaining * 0.5)`, whole-lot rounded; merged when 1 lot remains) and trail stop to +1.0R. Target 3 / Runner (+3.0R or planned target): Exit 100% of remaining runner position. Each step displays real-time distance, progress percentage, and an actionable execution badge that triggers FYERS broker orders when clicked.
 
 **See Also:** `metric.unrealizedR`, `risk.currentStopLoss`, `risk.initialStopLoss`
 

@@ -24,6 +24,7 @@ export const MARKET_SEGMENTS: { value: MarketSegment; label: string }[] = [
   { value: 'NSE_EQ', label: 'NSE Equity' },
   { value: 'NSE_FNO', label: 'NSE Futures & Options' },
   { value: 'BSE_EQ', label: 'BSE Equity' },
+  { value: 'BSE_FNO', label: 'BSE Futures & Options' },
   { value: 'MCX', label: 'MCX Commodities' },
   { value: 'FOREX', label: 'Forex Spot / Futures' },
   { value: 'CRYPTO', label: 'Crypto Spot / Perps' },
@@ -31,6 +32,45 @@ export const MARKET_SEGMENTS: { value: MarketSegment; label: string }[] = [
   { value: 'CME', label: 'CME Futures' },
   { value: 'OTHER', label: 'Other Market' },
 ];
+
+/**
+ * Single Source of Truth: Unified Risk, Alert Hysteresis, Scaling Ladder & Statistical Thresholds.
+ * Referenced across @tradevault/financial-engine, API alerts, Telegram cards, and help content.
+ */
+export const RISK_AND_ALERT_THRESHOLDS = {
+  // Live Watcher & Telegram Stop Threat hysteresis (fraction of initial SL corridor remaining)
+  STOP_CRITICAL_BUFFER_RATIO: 0.25, // <= 25% of initial SL buffer remaining = CRITICAL (75% consumed)
+  STOP_ATTENTION_BUFFER_RATIO: 0.50, // <= 50% of initial SL buffer remaining = ATTENTION
+  STOP_CLEAR_BUFFER_RATIO: 0.40, // > 40% recovers -> CLEARED
+
+  // Live Watcher & Telegram Profit Giveback hysteresis
+  CRITICAL_REVERSAL_PEAK_R: 1.0, // Reached >= +1.0R peak MFE
+  CRITICAL_REVERSAL_CURRENT_R: 0.2, // Dropped to <= +0.2R current
+  CRITICAL_REVERSAL_CLEAR_R: 0.5, // Clears when current R recovers > +0.5R
+  GIVEBACK_WATCH_PEAK_R: 0.8,
+  GIVEBACK_WATCH_PERCENT: 20,
+  GIVEBACK_LEAKING_PEAK_R: 1.0,
+  GIVEBACK_LEAKING_PERCENT: 35,
+  GIVEBACK_CLEAR_PERCENT: 25,
+
+  // Multi-Target Scaling Ladder ratios (whole-lot conservative floor rounding)
+  LADDER_T1_RATIO_2STEP: 0.5, // 50% at T1 (+1.0R) for 2-lot positions
+  LADDER_T1_RATIO_3STEP: 0.33, // 33% at T1 (+1.0R) for 3+ lot positions
+  LADDER_T2_RATIO: 0.5, // 50% of remaining lots at T2 (+2.0R)
+
+  // Statistical Edge & What-If thresholds
+  MIN_RELIABLE_SAMPLE: 30,
+  HOLDOUT_FRACTION: 0.30,
+  MIN_HOLDOUT_SAMPLE: 15,
+  CALIBRATION_MIN_AGREEMENT: 0.90,
+  EMPIRICAL_BAYES_K: 10,
+  MONTE_CARLO_DEFAULT_ITERATIONS: 10000,
+  MONTE_CARLO_API_PREVIEW_ITERATIONS: 1000,
+
+  // Canonical Discipline Score scale (1 to 5 stars, deterministic deductions from 5)
+  DISCIPLINE_MIN: 1,
+  DISCIPLINE_MAX: 5,
+} as const;
 
 export type EmotionCategory = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
 
@@ -677,7 +717,156 @@ export const TRADING_SESSIONS: { value: TradingSession; label: string; timing: s
   { value: 'OFF_HOURS', label: 'Weekend / 24/7 Crypto', timing: 'Anytime' },
 ];
 
+/**
+ * Effective-dated NSE & BSE Index F&O Contract Lot Size Schedule.
+ * Sources:
+ *  - SEBI Circular SEBI/HO/MRD/TPD-1/P/CIR/2024/160 (minimum contract value ₹15–20L)
+ *  - NSE Circular NSE/FAOP/61630 (Apr 26, 2024: NIFTY -> 25, FINNIFTY -> 25 eff. Jul 2024)
+ *  - NSE Circular NSE/FAOP/64312 (Oct 2024 / eff. Nov 20, 2024: NIFTY -> 75, BANKNIFTY -> 30/35, FINNIFTY -> 65, MIDCPNIFTY -> 140)
+ *  - NSE Circular NSE/FAOP/70616 (Oct 28, 2025 / eff. Dec 31, 2025 – Jan 2026: NIFTY -> 65, BANKNIFTY -> 30, FINNIFTY -> 60, MIDCPNIFTY -> 120, NIFTYNXT50 -> 25)
+ *  - BSE Notice 20241025-17 (eff. Nov 22, 2024: SENSEX -> 20, BANKEX -> 30)
+ */
+export interface ILotSizeScheduleEntry {
+  effectiveFrom: string; // Inclusive YYYY-MM-DD (IST)
+  lotSize: number;
+  source: string;
+}
+
+export const INDEX_LOT_SIZE_HISTORY: Record<string, readonly ILotSizeScheduleEntry[]> = {
+  NIFTY: [
+    { effectiveFrom: '1900-01-01', lotSize: 50, source: 'NSE pre-Apr 2024' },
+    { effectiveFrom: '2024-04-26', lotSize: 25, source: 'NSE/FAOP/61630 (eff. Apr 26, 2024)' },
+    { effectiveFrom: '2024-11-20', lotSize: 75, source: 'NSE/FAOP/64312 (eff. Nov 20, 2024)' },
+    { effectiveFrom: '2026-01-01', lotSize: 65, source: 'NSE/FAOP/70616 (eff. Jan 2026)' },
+  ],
+  BANKNIFTY: [
+    { effectiveFrom: '1900-01-01', lotSize: 15, source: 'NSE pre-Nov 2024' },
+    { effectiveFrom: '2024-11-20', lotSize: 30, source: 'NSE/FAOP/64312 (eff. Nov 20, 2024)' },
+    { effectiveFrom: '2025-04-25', lotSize: 35, source: 'NSE lot revision Apr 2025' },
+    { effectiveFrom: '2026-01-01', lotSize: 30, source: 'NSE/FAOP/70616 (eff. Jan 2026)' },
+  ],
+  FINNIFTY: [
+    { effectiveFrom: '1900-01-01', lotSize: 40, source: 'NSE pre-Jul 2024' },
+    { effectiveFrom: '2024-07-01', lotSize: 25, source: 'NSE/FAOP/61630 (eff. Jul 2024)' },
+    { effectiveFrom: '2024-11-20', lotSize: 65, source: 'NSE/FAOP/64312 (eff. Nov 20, 2024)' },
+    { effectiveFrom: '2026-01-01', lotSize: 60, source: 'NSE/FAOP/70616 (eff. Jan 2026)' },
+  ],
+  MIDCPNIFTY: [
+    { effectiveFrom: '1900-01-01', lotSize: 75, source: 'NSE pre-Jul 2024' },
+    { effectiveFrom: '2024-07-01', lotSize: 50, source: 'NSE/FAOP/61630 (eff. Jul 2024)' },
+    { effectiveFrom: '2024-11-20', lotSize: 140, source: 'NSE/FAOP/64312 (eff. Nov 20, 2024)' },
+    { effectiveFrom: '2026-01-01', lotSize: 120, source: 'NSE/FAOP/70616 (eff. Jan 2026)' },
+  ],
+  NIFTYNXT50: [
+    { effectiveFrom: '1900-01-01', lotSize: 10, source: 'NSE pre-Nov 2024' },
+    { effectiveFrom: '2024-11-20', lotSize: 25, source: 'NSE/FAOP/64312 / NSE/FAOP/70616' },
+  ],
+  SENSEX: [
+    { effectiveFrom: '1900-01-01', lotSize: 10, source: 'BSE pre-Nov 2024' },
+    { effectiveFrom: '2024-11-22', lotSize: 20, source: 'BSE Notice 20241025-17 (eff. Nov 22, 2024)' },
+  ],
+  BANKEX: [
+    { effectiveFrom: '1900-01-01', lotSize: 15, source: 'BSE pre-Nov 2024' },
+    { effectiveFrom: '2024-11-22', lotSize: 30, source: 'BSE Notice 20241025-17 (eff. Nov 22, 2024)' },
+  ],
+  SENSEX50: [
+    { effectiveFrom: '1900-01-01', lotSize: 25, source: 'BSE pre-Nov 2024' },
+    { effectiveFrom: '2024-11-22', lotSize: 60, source: 'BSE Notice 20241025-17 (eff. Nov 22, 2024)' },
+  ],
+};
+
+function toIstYmdForSchedule(dateInput?: Date | string): string {
+  if (!dateInput) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  }
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateInput)) {
+    return dateInput.slice(0, 10);
+  }
+  const parsed = new Date(dateInput);
+  if (Number.isNaN(parsed.getTime())) {
+    return toIstYmdForSchedule();
+  }
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(parsed);
+}
+
+/**
+ * Resolves the effective regulatory lot size for Indian index derivatives on `asOfDate`.
+ * Falls back to current `PRESET_INSTRUMENTS` lot size for non-indexed symbols.
+ */
+export function getEffectiveLotSize(symbol: string, asOfDate?: Date | string): number | undefined {
+  const clean = (symbol || '').trim().toUpperCase().replace(/^(NSE:|BSE:|MCX:|NFO:|BFO:)/i, '');
+  const schedule = INDEX_LOT_SIZE_HISTORY[clean];
+  if (schedule && schedule.length > 0) {
+    const targetYmd = toIstYmdForSchedule(asOfDate);
+    let resolved = schedule[0].lotSize;
+    for (const entry of schedule) {
+      if (targetYmd >= entry.effectiveFrom) {
+        resolved = entry.lotSize;
+      }
+    }
+    return resolved;
+  }
+  const preset = PRESET_INSTRUMENTS.find((p) => p.symbol === clean);
+  return preset?.lotSize;
+}
+
+/**
+ * Returns exchange-compliant tick size by price band for Indian markets.
+ * Sources:
+ *  - NSE Equity / Stock Futures (NSE/CMTR & NSE/FAOP/67134-67135, eff. Apr 15, 2025):
+ *    < ₹250 -> 0.01; ₹250-1000 -> 0.05; > ₹1000-5000 -> 0.10; > ₹5000-10000 -> 0.50; > ₹10000-20000 -> 1.00; > ₹20000 -> 5.00
+ *  - NSE Index Options: 0.05; Stock Options (NSE/FAOP/70382, eff. Nov 03, 2025): < ₹250 -> 0.01 else 0.05
+ *  - NSE Index Futures: 0-15,000 -> 0.05; > 15,000-30,000 -> 0.10; > 30,000 -> 0.20 (FYERS standard F&O min tick remains 0.05 on options)
+ */
+export function getPairQuoteCurrency(symbol?: string): string | undefined {
+  if (!symbol) return undefined;
+  const clean = symbol
+    .toUpperCase()
+    .replace(/^(FX:|FOREX:|CRYPTO:|BINANCE:|GLOBAL:|NSE:|BSE:|CDS:|MCX:)/, '')
+    .replace(/[^A-Z]/g, '');
+  const m = clean.match(/^[A-Z]{3}(USD|EUR|GBP|JPY|INR|USDT|USDC|CHF|CAD|AUD|NZD)$/);
+  return m ? m[1] : undefined;
+}
+
+export function getNseTickSize(
+  price: number,
+  assetClass: AssetClass,
+  marketSegment?: MarketSegment,
+  isIndexDerivative = false
+): number {
+  const p = Math.abs(Number(price) || 0);
+  if (assetClass === 'OPTIONS') {
+    if (!isIndexDerivative && marketSegment !== 'BSE_FNO' && p > 0 && p < 250) {
+      return 0.01; // Stock options < ₹250 per NSE/FAOP/70382
+    }
+    return 0.05;
+  }
+  if (assetClass === 'FUTURES' && isIndexDerivative) {
+    if (p > 30000) return 0.2;
+    if (p > 15000) return 0.1;
+    return 0.05;
+  }
+  // Equity Cash / Stock Futures banded tick schedule (NSE eff. Apr 15, 2025)
+  if (p > 0 && p < 250) return 0.01;
+  if (p <= 1000) return 0.05;
+  if (p <= 5000) return 0.1;
+  if (p <= 10000) return 0.5;
+  if (p <= 20000) return 1.0;
+  return 5.0;
+}
+
 export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
+  // NSE / BSE Index Derivatives (Effective Jan 2026+ per NSE/FAOP/70616 & BSE Notice 20241025-17)
   {
     symbol: 'NIFTY',
     displayName: 'Nifty 50',
@@ -686,12 +875,12 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     marketSegment: 'NSE_FNO',
     quoteCurrency: 'INR',
     contractMultiplier: 1,
-    lotSize: 25,
+    lotSize: 65, // NSE/FAOP/70616 (eff. Jan 2026; was 75 Nov 2024-Dec 2025, 25 Apr-Nov 2024)
     tickSize: 0.05,
-    quantityIncrement: 25,
+    quantityIncrement: 65,
     pricePrecision: 2,
     isActive: true,
-    description: 'National Stock Exchange 50 benchmark index future contract',
+    description: 'National Stock Exchange Nifty 50 Index F&O (current lot 65)',
   },
   {
     symbol: 'BANKNIFTY',
@@ -701,16 +890,46 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     marketSegment: 'NSE_FNO',
     quoteCurrency: 'INR',
     contractMultiplier: 1,
-    lotSize: 15,
+    lotSize: 30, // NSE/FAOP/70616 (eff. Jan 2026; was 35 Apr-Dec 2025, 15 pre-Nov 2024)
     tickSize: 0.05,
-    quantityIncrement: 15,
+    quantityIncrement: 30,
     pricePrecision: 2,
     isActive: true,
-    description: 'Nifty Bank Index futures contract',
+    description: 'Nifty Bank Index F&O contract (current lot 30)',
   },
   {
     symbol: 'FINNIFTY',
     displayName: 'Fin Nifty',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 60, // NSE/FAOP/70616 (eff. Jan 2026; was 65 Nov 2024-Dec 2025, 25/40 earlier)
+    tickSize: 0.05,
+    quantityIncrement: 60,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'Nifty Financial Services Index F&O contract (current lot 60)',
+  },
+  {
+    symbol: 'MIDCPNIFTY',
+    displayName: 'Nifty Midcap Select',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 120, // NSE/FAOP/70616 (eff. Jan 2026; was 140 Nov 2024-Dec 2025, 50/75 earlier)
+    tickSize: 0.05,
+    quantityIncrement: 120,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'Nifty Midcap Select Index F&O contract (current lot 120)',
+  },
+  {
+    symbol: 'NIFTYNXT50',
+    displayName: 'Nifty Next 50',
     assetClass: 'FUTURES',
     exchange: 'NSE',
     marketSegment: 'NSE_FNO',
@@ -721,8 +940,54 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quantityIncrement: 25,
     pricePrecision: 2,
     isActive: true,
-    description: 'Financial services sectoral future',
+    description: 'Nifty Next 50 Index F&O contract',
   },
+  {
+    symbol: 'SENSEX',
+    displayName: 'BSE Sensex',
+    assetClass: 'FUTURES',
+    exchange: 'BSE',
+    marketSegment: 'BSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 20, // BSE Notice 20241025-17 (eff. Nov 22, 2024)
+    tickSize: 0.05,
+    quantityIncrement: 20,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'BSE Sensex Index F&O contract (lot 20)',
+  },
+  {
+    symbol: 'BANKEX',
+    displayName: 'BSE Bankex',
+    assetClass: 'FUTURES',
+    exchange: 'BSE',
+    marketSegment: 'BSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 30, // BSE Notice 20241025-17 (eff. Nov 22, 2024)
+    tickSize: 0.05,
+    quantityIncrement: 30,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'BSE Bankex Index F&O contract (lot 30)',
+  },
+  {
+    symbol: 'SENSEX50',
+    displayName: 'BSE Sensex 50',
+    assetClass: 'FUTURES',
+    exchange: 'BSE',
+    marketSegment: 'BSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 60,
+    tickSize: 0.05,
+    quantityIncrement: 60,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'BSE Sensex 50 Index F&O contract',
+  },
+  // NSE Equities (Cash)
   {
     symbol: 'RELIANCE',
     displayName: 'Reliance Industries Ltd',
@@ -732,7 +997,7 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quoteCurrency: 'INR',
     contractMultiplier: 1,
     lotSize: 1,
-    tickSize: 0.05,
+    tickSize: 0.1,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
@@ -746,7 +1011,7 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quoteCurrency: 'INR',
     contractMultiplier: 1,
     lotSize: 1,
-    tickSize: 0.05,
+    tickSize: 0.1,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
@@ -760,19 +1025,20 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     quoteCurrency: 'INR',
     contractMultiplier: 1,
     lotSize: 1,
-    tickSize: 0.05,
+    tickSize: 0.01,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
   },
+  // MCX Commodities (Quoted unit vs trading unit multipliers per MCX contract specifications)
   {
     symbol: 'CRUDEOIL',
-    displayName: 'Crude Oil Futures',
+    displayName: 'Crude Oil Futures (100 BBL)',
     assetClass: 'COMMODITY',
     exchange: 'MCX',
     marketSegment: 'MCX',
     quoteCurrency: 'INR',
-    contractMultiplier: 100, // 100 barrels per lot
+    contractMultiplier: 100, // Quoted per 1 BBL; 1 lot = 100 BBL
     lotSize: 1,
     tickSize: 1.0,
     quantityIncrement: 1,
@@ -781,19 +1047,49 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     description: 'MCX Crude Oil 100 BBL contract',
   },
   {
-    symbol: 'NATURALGAS',
-    displayName: 'Natural Gas Futures',
+    symbol: 'CRUDEOILMINI',
+    displayName: 'Crude Oil Mini (10 BBL)',
     assetClass: 'COMMODITY',
     exchange: 'MCX',
     marketSegment: 'MCX',
     quoteCurrency: 'INR',
-    contractMultiplier: 1250, // 1250 mmBtu per lot
+    contractMultiplier: 10, // Quoted per 1 BBL; 1 lot = 10 BBL
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Crude Oil Mini 10 BBL contract',
+  },
+  {
+    symbol: 'NATURALGAS',
+    displayName: 'Natural Gas Futures (1250 mmBtu)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1250, // Quoted per 1 mmBtu; 1 lot = 1250 mmBtu
     lotSize: 1,
     tickSize: 0.1,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
-    description: 'MCX Natural Gas contract',
+    description: 'MCX Natural Gas 1250 mmBtu contract',
+  },
+  {
+    symbol: 'NATGASMINI',
+    displayName: 'Natural Gas Mini (250 mmBtu)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 250, // Quoted per 1 mmBtu; 1 lot = 250 mmBtu
+    lotSize: 1,
+    tickSize: 0.1,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Natural Gas Mini 250 mmBtu contract',
   },
   {
     symbol: 'GOLD',
@@ -802,22 +1098,112 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     exchange: 'MCX',
     marketSegment: 'MCX',
     quoteCurrency: 'INR',
-    contractMultiplier: 1, // Per 10 grams quoted, 1kg = 100 units
+    contractMultiplier: 100, // 1 KG contract quoted per 10g -> 1000g / 10g = 100x P&L per 1 INR quote move
     lotSize: 1,
     tickSize: 1.0,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
-    description: 'MCX Gold standard contract',
+    description: 'MCX Gold 1kg contract (quoted per 10 grams -> multiplier 100)',
   },
   {
-    symbol: 'COPPER',
-    displayName: 'Copper Futures',
+    symbol: 'GOLDM',
+    displayName: 'Gold Mini (100g)',
     assetClass: 'COMMODITY',
     exchange: 'MCX',
     marketSegment: 'MCX',
     quoteCurrency: 'INR',
-    contractMultiplier: 2500, // 2500 kg per lot
+    contractMultiplier: 10, // 100g contract quoted per 10g -> 100g / 10g = 10x
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Gold Mini 100g contract (quoted per 10 grams -> multiplier 10)',
+  },
+  {
+    symbol: 'GOLDGUINEA',
+    displayName: 'Gold Guinea (8g)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1, // Quoted per 8g; 1 lot = 8g -> multiplier 1
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Gold Guinea 8g contract (quoted per 8 grams -> multiplier 1)',
+  },
+  {
+    symbol: 'GOLDPETAL',
+    displayName: 'Gold Petal (1g)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1, // Quoted per 1g; 1 lot = 1g -> multiplier 1
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Gold Petal 1g contract (quoted per 1 gram -> multiplier 1)',
+  },
+  {
+    symbol: 'SILVER',
+    displayName: 'Silver 30KG Futures',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 30, // 30 kg quoted per 1 kg -> multiplier 30
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Silver standard 30kg contract',
+  },
+  {
+    symbol: 'SILVERM',
+    displayName: 'Silver Mini (5KG)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 5, // 5 kg quoted per 1 kg -> multiplier 5
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Silver Mini 5kg contract',
+  },
+  {
+    symbol: 'SILVERMIC',
+    displayName: 'Silver Micro (1KG)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1, // 1 kg quoted per 1 kg -> multiplier 1
+    lotSize: 1,
+    tickSize: 1.0,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+    description: 'MCX Silver Micro 1kg contract',
+  },
+  {
+    symbol: 'COPPER',
+    displayName: 'Copper Futures (2.5 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 2500, // 2500 kg per lot quoted per 1 kg
     lotSize: 1,
     tickSize: 0.05,
     quantityIncrement: 1,
@@ -826,16 +1212,159 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     description: 'MCX Copper 2.5 MT contract',
   },
   {
+    symbol: 'ZINC',
+    displayName: 'Zinc Futures (5 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 5000,
+    lotSize: 1,
+    tickSize: 0.05,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'ZINCMINI',
+    displayName: 'Zinc Mini Futures (1 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1000,
+    lotSize: 1,
+    tickSize: 0.05,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'ALUMINIUM',
+    displayName: 'Aluminium Futures (5 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 5000,
+    lotSize: 1,
+    tickSize: 0.05,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'ALUMINI',
+    displayName: 'Aluminium Mini Futures (1 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1000,
+    lotSize: 1,
+    tickSize: 0.05,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'LEAD',
+    displayName: 'Lead Futures (5 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 5000,
+    lotSize: 1,
+    tickSize: 0.05,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'LEADMINI',
+    displayName: 'Lead Mini Futures (1 MT)',
+    assetClass: 'COMMODITY',
+    exchange: 'MCX',
+    marketSegment: 'MCX',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1000,
+    lotSize: 1,
+    tickSize: 0.05,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  // NSE Currency Derivatives (INR settled, 1000 unit lots; JPYINR quoted per 100 JPY -> 1000 * 100 JPY = 100,000 JPY notional)
+  {
+    symbol: 'USDINR',
+    displayName: 'NSE USD/INR Currency Derivative',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 1000,
+    tickSize: 0.0025,
+    quantityIncrement: 1000,
+    pricePrecision: 4,
+    isActive: true,
+    description: 'NSE CDS USD/INR Futures & Options (1 lot = 1,000 USD)',
+  },
+  {
+    symbol: 'EURINR',
+    displayName: 'NSE EUR/INR Currency Derivative',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 1000,
+    tickSize: 0.0025,
+    quantityIncrement: 1000,
+    pricePrecision: 4,
+    isActive: true,
+  },
+  {
+    symbol: 'GBPINR',
+    displayName: 'NSE GBP/INR Currency Derivative',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1,
+    lotSize: 1000,
+    tickSize: 0.0025,
+    quantityIncrement: 1000,
+    pricePrecision: 4,
+    isActive: true,
+  },
+  {
+    symbol: 'JPYINR',
+    displayName: 'NSE JPY/INR Currency Derivative',
+    assetClass: 'FUTURES',
+    exchange: 'NSE',
+    marketSegment: 'NSE_FNO',
+    quoteCurrency: 'INR',
+    contractMultiplier: 1, // NSE reports qty as 1000 (100-JPY units) per lot matching quote per 100 JPY
+    lotSize: 1000,
+    tickSize: 0.0025,
+    quantityIncrement: 1000,
+    pricePrecision: 4,
+    isActive: true,
+  },
+  // Global Forex (MT5 standard: 1.00 lot = 100,000 base units, min step 0.01 micro-lot = 1,000 units)
+  {
     symbol: 'EURUSD',
-    displayName: 'Euro / US Dollar Spot/Futures',
+    displayName: 'Euro / US Dollar Spot CFD',
     assetClass: 'FOREX',
     exchange: 'FOREX',
     marketSegment: 'FOREX',
     quoteCurrency: 'USD',
-    contractMultiplier: 1,
-    lotSize: 1000,
+    contractMultiplier: 100000, // 1.00 standard lot = 100,000 EUR -> 1 pip (0.0001) = $10/lot
+    lotSize: 0.01,
     tickSize: 0.00001,
-    quantityIncrement: 1000,
+    quantityIncrement: 0.01,
     pricePrecision: 5,
     isActive: true,
   },
@@ -846,13 +1375,13 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     exchange: 'FOREX',
     marketSegment: 'FOREX',
     quoteCurrency: 'USD',
-    contractMultiplier: 1,
-    lotSize: 1000,
+    contractMultiplier: 100000,
+    lotSize: 0.01,
     tickSize: 0.00001,
-    quantityIncrement: 1000,
+    quantityIncrement: 0.01,
     pricePrecision: 5,
     isActive: true,
-    description: 'British Pound vs US Dollar spot/futures',
+    description: 'British Pound vs US Dollar spot CFD (100,000 units/lot)',
   },
   {
     symbol: 'USDJPY',
@@ -861,13 +1390,13 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     exchange: 'FOREX',
     marketSegment: 'FOREX',
     quoteCurrency: 'JPY',
-    contractMultiplier: 1,
-    lotSize: 1000,
+    contractMultiplier: 100000, // Raw price difference is in JPY; requires JPY->account conversion!
+    lotSize: 0.01,
     tickSize: 0.001,
-    quantityIncrement: 1000,
+    quantityIncrement: 0.01,
     pricePrecision: 3,
     isActive: true,
-    description: 'US Dollar vs Japanese Yen spot/futures',
+    description: 'US Dollar vs Japanese Yen spot CFD (P&L in JPY -> convert to USD)',
   },
   {
     symbol: 'XAUUSD',
@@ -876,15 +1405,29 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     exchange: 'FOREX',
     marketSegment: 'FOREX',
     quoteCurrency: 'USD',
-    // 1 standard lot = 100 troy ounces. Default multiplier 100 for PnL calculations
-    contractMultiplier: 100,
-    lotSize: 1,
+    contractMultiplier: 100, // 1 standard lot = 100 troy ounces
+    lotSize: 0.01,
     tickSize: 0.01,
     quantityIncrement: 0.01,
     pricePrecision: 2,
     isActive: true,
     description: 'Spot Gold vs US Dollar (100 oz per standard contract lot)',
   },
+  {
+    symbol: 'XAGUSD',
+    displayName: 'Silver / US Dollar Spot CFD',
+    assetClass: 'FOREX',
+    exchange: 'FOREX',
+    marketSegment: 'FOREX',
+    quoteCurrency: 'USD',
+    contractMultiplier: 5000, // 1 standard lot = 5,000 troy ounces
+    lotSize: 0.01,
+    tickSize: 0.001,
+    quantityIncrement: 0.01,
+    pricePrecision: 3,
+    isActive: true,
+  },
+  // Global Crypto
   {
     symbol: 'BTCUSDT',
     displayName: 'Bitcoin / Tether Perpetual',
@@ -929,110 +1472,133 @@ export const PRESET_INSTRUMENTS: Omit<IInstrument, 'id'>[] = [
     isActive: true,
     description: 'Solana vs Tether Perpetual Futures',
   },
+  // US Equities (SEC Reg NMS Rule 612: $0.01 tick >= $1.00)
   {
-    symbol: 'SILVER',
-    displayName: 'Silver 30KG Futures',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 30,
+    symbol: 'SPY',
+    displayName: 'SPDR S&P 500 ETF Trust',
+    assetClass: 'EQUITY',
+    exchange: 'NYSE',
+    marketSegment: 'US_EQUITY',
+    quoteCurrency: 'USD',
+    contractMultiplier: 1,
     lotSize: 1,
-    tickSize: 1.0,
+    tickSize: 0.01,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
-    description: 'MCX Silver standard 30kg contract',
   },
   {
-    symbol: 'SENSEX',
-    displayName: 'BSE Sensex',
-    assetClass: 'FUTURES',
-    exchange: 'BSE',
-    marketSegment: 'BSE_EQ',
-    quoteCurrency: 'INR',
+    symbol: 'QQQ',
+    displayName: 'Invesco QQQ Trust',
+    assetClass: 'EQUITY',
+    exchange: 'NASDAQ',
+    marketSegment: 'US_EQUITY',
+    quoteCurrency: 'USD',
     contractMultiplier: 1,
-    lotSize: 20,
-    tickSize: 0.05,
-    quantityIncrement: 10,
-    pricePrecision: 2,
-    isActive: true,
-    description: 'BSE Sensex Index contract',
-  },
-  {
-    symbol: 'BANKEX',
-    displayName: 'BSE Bankex',
-    assetClass: 'FUTURES',
-    exchange: 'BSE',
-    marketSegment: 'BSE_EQ',
-    quoteCurrency: 'INR',
-    contractMultiplier: 1,
-    lotSize: 15,
-    tickSize: 0.05,
-    quantityIncrement: 15,
-    pricePrecision: 2,
-    isActive: true,
-    description: 'BSE Bankex Index contract',
-  },
-  {
-    symbol: 'MIDCPNIFTY',
-    displayName: 'Nifty Midcap Select',
-    assetClass: 'FUTURES',
-    exchange: 'NSE',
-    marketSegment: 'NSE_FNO',
-    quoteCurrency: 'INR',
-    contractMultiplier: 1,
-    lotSize: 50,
-    tickSize: 0.05,
-    quantityIncrement: 50,
-    pricePrecision: 2,
-    isActive: true,
-    description: 'Nifty Midcap Select Index contract',
-  },
-  {
-    symbol: 'CRUDEOILMINI',
-    displayName: 'Crude Oil Mini',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 10, // 10 barrels per lot
     lotSize: 1,
-    tickSize: 1.0,
+    tickSize: 0.01,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
-    description: 'MCX Crude Oil Mini 10 BBL contract',
   },
   {
-    symbol: 'NATGASMINI',
-    displayName: 'Natural Gas Mini',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 250, // 250 mmBtu per lot
+    symbol: 'AAPL',
+    displayName: 'Apple Inc.',
+    assetClass: 'EQUITY',
+    exchange: 'NASDAQ',
+    marketSegment: 'US_EQUITY',
+    quoteCurrency: 'USD',
+    contractMultiplier: 1,
+    lotSize: 1,
+    tickSize: 0.01,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  // CME Group Futures
+  {
+    symbol: 'ES',
+    displayName: 'E-mini S&P 500 Futures',
+    assetClass: 'FUTURES',
+    exchange: 'CME',
+    marketSegment: 'CME',
+    quoteCurrency: 'USD',
+    contractMultiplier: 50,
+    lotSize: 1,
+    tickSize: 0.25,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'MES',
+    displayName: 'Micro E-mini S&P 500 Futures',
+    assetClass: 'FUTURES',
+    exchange: 'CME',
+    marketSegment: 'CME',
+    quoteCurrency: 'USD',
+    contractMultiplier: 5,
+    lotSize: 1,
+    tickSize: 0.25,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'NQ',
+    displayName: 'E-mini Nasdaq-100 Futures',
+    assetClass: 'FUTURES',
+    exchange: 'CME',
+    marketSegment: 'CME',
+    quoteCurrency: 'USD',
+    contractMultiplier: 20,
+    lotSize: 1,
+    tickSize: 0.25,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'MNQ',
+    displayName: 'Micro E-mini Nasdaq-100 Futures',
+    assetClass: 'FUTURES',
+    exchange: 'CME',
+    marketSegment: 'CME',
+    quoteCurrency: 'USD',
+    contractMultiplier: 2,
+    lotSize: 1,
+    tickSize: 0.25,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'CL',
+    displayName: 'WTI Crude Oil Futures (NYMEX)',
+    assetClass: 'FUTURES',
+    exchange: 'CME',
+    marketSegment: 'CME',
+    quoteCurrency: 'USD',
+    contractMultiplier: 1000,
+    lotSize: 1,
+    tickSize: 0.01,
+    quantityIncrement: 1,
+    pricePrecision: 2,
+    isActive: true,
+  },
+  {
+    symbol: 'GC',
+    displayName: 'COMEX Gold Futures',
+    assetClass: 'FUTURES',
+    exchange: 'CME',
+    marketSegment: 'CME',
+    quoteCurrency: 'USD',
+    contractMultiplier: 100,
     lotSize: 1,
     tickSize: 0.1,
     quantityIncrement: 1,
     pricePrecision: 2,
     isActive: true,
-    description: 'MCX Natural Gas Mini 250 mmBtu contract',
-  },
-  {
-    symbol: 'GOLDM',
-    displayName: 'Gold Mini',
-    assetClass: 'COMMODITY',
-    exchange: 'MCX',
-    marketSegment: 'MCX',
-    quoteCurrency: 'INR',
-    contractMultiplier: 10, // 10 grams per point / 100g lot
-    lotSize: 1,
-    tickSize: 1.0,
-    quantityIncrement: 1,
-    pricePrecision: 2,
-    isActive: true,
-    description: 'MCX Gold Mini 100g contract',
   },
 ];
 
@@ -1040,28 +1606,56 @@ export type PresetInstrumentSpec = Omit<IInstrument, 'id'>;
 
 /**
  * Internal spec lookup for known underlying symbols (lot size, tick size, multiplier, exchange, segment).
- * Never listed directly in the UI or API list response. Used only to prefill specs when auto-creating an instrument.
+ * Supports optional `asOfDate` for historical index lot-size resolution.
  */
-export function getPresetSpec(symbol: string): PresetInstrumentSpec | undefined {
+export function getPresetSpec(symbol: string, asOfDate?: Date | string): PresetInstrumentSpec | undefined {
   if (!symbol) return undefined;
-  const clean = symbol.trim().toUpperCase().replace(/^(NSE:|BSE:|MCX:)/i, '');
-  const direct = PRESET_INSTRUMENTS.find(
+  const clean = symbol.trim().toUpperCase().replace(/^(NSE:|BSE:|MCX:|NFO:|BFO:|CDS:|BINANCE:)/i, '');
+  let base: PresetInstrumentSpec | undefined = PRESET_INSTRUMENTS.find(
     (p) => p.symbol === clean || p.symbol === symbol.trim().toUpperCase()
   );
-  if (direct) return direct;
-  if (clean === 'CRUDEOILM' || clean === 'CRUDEOILMINI') {
-    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'CRUDEOILMINI');
+  if (!base) {
+    if (clean === 'CRUDEOILM' || clean === 'CRUDEOILMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'CRUDEOILMINI');
+    } else if (clean === 'NATGASMINI' || clean === 'NATURALGASMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATGASMINI');
+    } else if (clean === 'NATGAS') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATURALGAS');
+    } else if (clean === 'GOLDM' || clean === 'GOLDMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'GOLDM');
+    } else if (clean === 'SILVERM' || clean === 'SILVERMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'SILVERM');
+    } else if (clean === 'SILVERMIC' || clean === 'SILVERMICRO') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'SILVERMIC');
+    } else if (clean === 'GOLDGUINEA') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'GOLDGUINEA');
+    } else if (clean === 'GOLDPETAL') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'GOLDPETAL');
+    } else if (clean === 'ZINCMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'ZINCMINI');
+    } else if (clean === 'ALUMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'ALUMINI');
+    } else if (clean === 'LEADMINI') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'LEADMINI');
+    } else if (clean === 'NIFTY50' || clean === 'NIFTY 50') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'NIFTY');
+    } else if (clean === 'NIFTYBANK' || clean === 'NIFTY BANK') {
+      base = PRESET_INSTRUMENTS.find((p) => p.symbol === 'BANKNIFTY');
+    }
   }
-  if (clean === 'NATGASMINI') {
-    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATGASMINI');
+  if (!base) return undefined;
+
+  if (INDEX_LOT_SIZE_HISTORY[base.symbol]) {
+    const datedLotSize = getEffectiveLotSize(base.symbol, asOfDate);
+    if (datedLotSize && datedLotSize !== base.lotSize) {
+      return {
+        ...base,
+        lotSize: datedLotSize,
+        quantityIncrement: datedLotSize,
+      };
+    }
   }
-  if (clean === 'NATGAS') {
-    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'NATURALGAS');
-  }
-  if (clean === 'GOLDM') {
-    return PRESET_INSTRUMENTS.find((p) => p.symbol === 'GOLDM');
-  }
-  return undefined;
+  return base;
 }
 
 
@@ -1183,20 +1777,24 @@ export const NSE_TRADING_HOLIDAYS_BY_YEAR: Record<number, readonly string[]> = {
     '2025-11-05', // Guru Nanak Jayanti
     '2025-12-25', // Christmas
   ],
+  // Official NSE 2026 Trading Holidays — Source: NSE Circular NSE/CMTR/71775 + Jan 15 Municipal Election holiday
+  // Weekend holidays excluded per NSE calendar: Mahashivratri (Feb 15 Sun), Id-ul-Fitr (Mar 21 Sat), Independence Day (Aug 15 Sat), Diwali Laxmi Pujan (Nov 08 Sun)
   2026: [
+    '2026-01-15', // Municipal Corporation Election (Maharashtra)
     '2026-01-26', // Republic Day
-    '2026-02-16', // Mahashivratri
     '2026-03-03', // Holi
-    '2026-03-20', // Id-ul-Fitr (Ramzan Id)
+    '2026-03-26', // Shri Ram Navami
+    '2026-03-31', // Shri Mahavir Jayanti
     '2026-04-03', // Good Friday
     '2026-04-14', // Dr. Baba Saheb Ambedkar Jayanti
     '2026-05-01', // Maharashtra Day
-    '2026-05-27', // Bakri Id
+    '2026-05-28', // Bakri Id
     '2026-06-26', // Muharram
+    '2026-09-14', // Ganesh Chaturthi
     '2026-10-02', // Mahatma Gandhi Jayanti
     '2026-10-20', // Dussehra (Tuesday holiday -> shifts Nifty weekly expiry to Mon 2026-10-19)
-    '2026-11-10', // Diwali Balipratipada
-    '2026-11-24', // Guru Nanak Jayanti (Last Tuesday holiday -> shifts NSE monthly expiry to Mon 2026-11-23)
+    '2026-11-10', // Diwali-Balipratipada
+    '2026-11-24', // Prakash Gurpurb Sri Guru Nanak Dev (Last Tuesday holiday -> shifts NSE monthly expiry to Mon 2026-11-23)
     '2026-12-25', // Christmas
   ],
   2027: [

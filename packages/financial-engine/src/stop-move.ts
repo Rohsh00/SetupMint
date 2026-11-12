@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import moment from 'moment';
 import {
   StopMoveType,
@@ -6,8 +6,6 @@ import {
   IStopMoveSummary,
   MistakeTag,
 } from '@tradevault/shared';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IRawStopModification {
   stopPrice: number | string | Decimal;

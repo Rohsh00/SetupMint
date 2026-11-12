@@ -20,6 +20,8 @@ import { Trade, TradingAccount, AccountTransaction, User } from '../db/models/in
 import { requireAuth } from '../middleware/auth.js';
 import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
+const CalcDecimal = Decimal.clone({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
+
 interface StartingEquityResult {
   startingEquity: number;
   currencies: string[];
@@ -50,26 +52,26 @@ async function computeStartingEquity(
   );
   const hasMultipleCurrencies = currencies.length > 1;
 
-  let initialBalance = new Decimal(0);
+  let initialBalance = new CalcDecimal(0);
   for (const acc of accounts) {
     const c = (acc.baseCurrency || acc.currency || 'USD').toUpperCase();
     accountCurrencyMap.set(acc._id.toString(), c);
-    const bal = new Decimal((acc.initialBalance || 0).toString());
-    currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(bal).toNumber();
+    const bal = new CalcDecimal((acc.initialBalance || 0).toString());
+    currencyBreakdown[c] = new CalcDecimal(currencyBreakdown[c] || 0).plus(bal).toNumber();
     initialBalance = initialBalance.plus(bal);
   }
 
   // If no startUtc, starting equity is initial balance
   if (!startUtc) {
     return {
-      startingEquity: initialBalance.toNumber(),
+      startingEquity: Number(initialBalance.toFixed(2)),
       currencies,
       hasMultipleCurrencies,
       currencyBreakdown,
     };
   }
 
-  // Aggregate closed trades P&L strictly before startUtc
+  // Sum closed trades P&L strictly before startUtc using isolated 30-digit CalcDecimal
   const tradeMatch: any = {
     userId: uId,
     status: 'CLOSED',
@@ -79,21 +81,23 @@ async function computeStartingEquity(
     tradeMatch.accountId = { $in: accountIds };
   }
 
-  const priorTradesAgg = await Trade.aggregate([
-    { $match: tradeMatch },
-    { $group: { _id: '$accountId', totalNetPnL: { $sum: '$calculated.netPnL' } } },
-  ]);
-  let priorPnL = new Decimal(0);
-  for (const row of priorTradesAgg) {
-    const pnlDec = new Decimal(row.totalNetPnL || 0);
+  const priorTrades = await Trade.find(tradeMatch)
+    .select('accountId calculated.netPnL')
+    .lean();
+
+  let priorPnL = new CalcDecimal(0);
+  for (const row of priorTrades) {
+    const raw = Number(row.calculated?.netPnL ?? 0);
+    if (!Number.isFinite(raw)) continue;
+    const pnlDec = new CalcDecimal(raw.toFixed(2));
     priorPnL = priorPnL.plus(pnlDec);
-    const c = row._id ? accountCurrencyMap.get(row._id.toString()) : undefined;
+    const c = row.accountId ? accountCurrencyMap.get(row.accountId.toString()) : undefined;
     if (c) {
-      currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(pnlDec).toNumber();
+      currencyBreakdown[c] = Number(new CalcDecimal(currencyBreakdown[c] || 0).plus(pnlDec).toFixed(2));
     }
   }
 
-  // Aggregate cash flows strictly before startUtc
+  // Sum confirmed cash flows strictly before startUtc (exclude PENDING_REVIEW/REJECTED and neutral TRANSFER)
   const txMatch: any = {
     userId: uId,
     date: { $lt: startUtc },
@@ -103,43 +107,39 @@ async function computeStartingEquity(
     txMatch.accountId = { $in: accountIds };
   }
 
-  const priorTxAgg = await AccountTransaction.aggregate([
-    { $match: txMatch },
-    {
-      $group: {
-        _id: { accountId: '$accountId', type: '$type' },
-        totalAmount: { $sum: '$amount' },
-      },
-    },
-  ]);
+  const priorTxs = await AccountTransaction.find(txMatch)
+    .select('accountId type amount')
+    .lean();
 
-  let priorDeposits = new Decimal(0);
-  let priorWithdrawals = new Decimal(0);
-  let priorAdjustments = new Decimal(0);
+  let priorDeposits = new CalcDecimal(0);
+  let priorWithdrawals = new CalcDecimal(0);
+  let priorAdjustments = new CalcDecimal(0);
 
-  for (const stat of priorTxAgg) {
-    const amountDec = new Decimal(stat.totalAmount.toString());
-    const txType = stat._id?.type;
-    const accIdStr = stat._id?.accountId ? stat._id.accountId.toString() : undefined;
+  for (const stat of priorTxs) {
+    const amountDec = new CalcDecimal(stat.amount.toString());
+    const txType = stat.type;
+    const accIdStr = stat.accountId ? stat.accountId.toString() : undefined;
     const c = accIdStr ? accountCurrencyMap.get(accIdStr) : undefined;
     if (txType === 'DEPOSIT') {
       priorDeposits = priorDeposits.plus(amountDec);
-      if (c) currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(amountDec).toNumber();
+      if (c) currencyBreakdown[c] = Number(new CalcDecimal(currencyBreakdown[c] || 0).plus(amountDec).toFixed(2));
     } else if (txType === 'WITHDRAWAL') {
       priorWithdrawals = priorWithdrawals.plus(amountDec);
-      if (c) currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).minus(amountDec).toNumber();
+      if (c) currencyBreakdown[c] = Number(new CalcDecimal(currencyBreakdown[c] || 0).minus(amountDec).toFixed(2));
     } else if (txType === 'ADJUSTMENT') {
       priorAdjustments = priorAdjustments.plus(amountDec);
-      if (c) currencyBreakdown[c] = new Decimal(currencyBreakdown[c] || 0).plus(amountDec).toNumber();
+      if (c) currencyBreakdown[c] = Number(new CalcDecimal(currencyBreakdown[c] || 0).plus(amountDec).toFixed(2));
     }
   }
 
-  const startingEquity = initialBalance
-    .plus(priorPnL)
-    .plus(priorDeposits)
-    .minus(priorWithdrawals)
-    .plus(priorAdjustments)
-    .toNumber();
+  const startingEquity = Number(
+    initialBalance
+      .plus(priorPnL)
+      .plus(priorDeposits)
+      .minus(priorWithdrawals)
+      .plus(priorAdjustments)
+      .toFixed(2)
+  );
 
   return {
     startingEquity,
@@ -182,8 +182,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (direction) filter.direction = direction;
     if (session) filter.session = session;
 
-    const { startUtc } = normalizeRange({ startDate, endDate });
-    const dateClause = buildDateRangeClause({ startDate, endDate });
+    const { startUtc, endUtc } = normalizeRange({ startDate, endDate }, accountCtx.primaryTimezone || 'Asia/Kolkata');
+    const dateClause = buildDateRangeClause({ startDate, endDate }, accountCtx.primaryTimezone || 'Asia/Kolkata');
     if (dateClause.tradeDate) {
       filter.tradeDate = dateClause.tradeDate;
     }
@@ -192,13 +192,39 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const equityResult = await computeStartingEquity(req.user!.id, accountIds, startUtc);
     const startingEquity = equityResult.startingEquity;
 
+    const txRangeFilter: any = {
+      userId: req.user!.id,
+      accountId: { $in: accountIds },
+      $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
+    };
+    if (startUtc || endUtc) {
+      txRangeFilter.date = {};
+      if (startUtc) txRangeFilter.date.$gte = startUtc;
+      if (endUtc) txRangeFilter.date.$lte = endUtc;
+    }
+    const rangeCashFlowDocs = await AccountTransaction.find(txRangeFilter)
+      .select('type amount currency date')
+      .lean();
+    const mappedCashFlows = rangeCashFlowDocs
+      .filter((tx) => tx.type === 'DEPOSIT' || tx.type === 'WITHDRAWAL' || tx.type === 'ADJUSTMENT')
+      .map((tx) => ({
+        date: new Date(tx.date).toISOString().split('T')[0],
+        signedAmount:
+          tx.type === 'WITHDRAWAL'
+            ? -Math.abs(Number(tx.amount.toString()))
+            : Number(tx.amount.toString()),
+        currency: (tx.currency || 'USD').toUpperCase(),
+      }));
+
+    const metricsTimezone = accountCtx.primaryTimezone || 'Asia/Kolkata';
+
     const trades = await Trade.find(filter)
       .sort({ tradeDate: 1 })
       .populate('strategyId', 'name');
 
     const formattedTrades = trades.map((t) => ({
       id: t._id.toString(),
-      tradeDate: t.tradeDate.toISOString().split('T')[0],
+      tradeDate: t.tradeDate.toISOString(),
       symbol: t.symbol,
       underlying: t.underlying || t.symbol,
       currency: (t.currency || 'USD').toUpperCase(),
@@ -220,15 +246,22 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       },
     }));
 
-    const stats = calculateDashboardMetrics(formattedTrades, startingEquity);
+    const stats = calculateDashboardMetrics(formattedTrades, startingEquity, {
+      timezone: metricsTimezone,
+      cashFlows: mappedCashFlows,
+    });
 
     // Multi-currency handling: never blend money totals across distinct currencies
     const byCurrency: Record<string, any> = {};
     if (accountCtx.isMultiCurrency) {
       for (const curr of accountCtx.currencies) {
         const currTrades = formattedTrades.filter((t: any) => t.currency === curr);
+        const currCashFlows = mappedCashFlows.filter((cf) => cf.currency === curr);
         const currStartingEquity = equityResult.currencyBreakdown[curr] || 0;
-        byCurrency[curr] = calculateDashboardMetrics(currTrades, currStartingEquity);
+        byCurrency[curr] = calculateDashboardMetrics(currTrades, currStartingEquity, {
+          timezone: metricsTimezone,
+          cashFlows: currCashFlows,
+        });
       }
     }
 
@@ -238,6 +271,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         ...stats,
         currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
         isMultiCurrency: accountCtx.isMultiCurrency,
+        isCrossCurrencyWarning: accountCtx.isMultiCurrency,
         currencies: accountCtx.currencies,
         byCurrency: accountCtx.isMultiCurrency ? byCurrency : undefined,
         hasMultipleCurrencies: accountCtx.isMultiCurrency,
@@ -285,8 +319,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (direction) filter.direction = direction;
     if (session) filter.session = session;
 
-    const { startUtc } = normalizeRange({ startDate, endDate });
-    const dateClause = buildDateRangeClause({ startDate, endDate });
+    const metricsTimezone = accountCtx.primaryTimezone || 'Asia/Kolkata';
+    const { startUtc, endUtc } = normalizeRange({ startDate, endDate }, metricsTimezone);
+    const dateClause = buildDateRangeClause({ startDate, endDate }, metricsTimezone);
     if (dateClause.tradeDate) {
       filter.tradeDate = dateClause.tradeDate;
     }
@@ -294,6 +329,30 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     // Determine starting equity: initial balance + all closed P&L and cash flows BEFORE startDate
     const equityResult = await computeStartingEquity(req.user!.id, accountIds, startUtc);
     const startingEquity = equityResult.startingEquity;
+
+    const eqTxRangeFilter: any = {
+      userId: req.user!.id,
+      accountId: { $in: accountIds },
+      $or: [{ status: 'CONFIRMED' }, { status: { $exists: false } }],
+    };
+    if (startUtc || endUtc) {
+      eqTxRangeFilter.date = {};
+      if (startUtc) eqTxRangeFilter.date.$gte = startUtc;
+      if (endUtc) eqTxRangeFilter.date.$lte = endUtc;
+    }
+    const eqCashFlowDocs = await AccountTransaction.find(eqTxRangeFilter)
+      .select('type amount currency date')
+      .lean();
+    const eqCashFlows = eqCashFlowDocs
+      .filter((tx) => tx.type === 'DEPOSIT' || tx.type === 'WITHDRAWAL' || tx.type === 'ADJUSTMENT')
+      .map((tx) => ({
+        date: new Date(tx.date).toISOString().split('T')[0],
+        signedAmount:
+          tx.type === 'WITHDRAWAL'
+            ? -Math.abs(Number(tx.amount.toString()))
+            : Number(tx.amount.toString()),
+        currency: (tx.currency || 'USD').toUpperCase(),
+      }));
 
     // Fetch user's risk settings and resolve scope-appropriate daily loss limit
     const userDoc = await User.findById(req.user!.id).select('riskSettings');
@@ -341,8 +400,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       },
     }));
 
-    // 1. Money Equity Curve
-    const dashboardStats = calculateDashboardMetrics(formattedTrades, startingEquity);
+    // 1. Money Equity Curve (cash-flow-safe drawdown + configured timezone)
+    const dashboardStats = calculateDashboardMetrics(formattedTrades, startingEquity, {
+      timezone: metricsTimezone,
+      cashFlows: eqCashFlows,
+    });
     const moneyCurve = dashboardStats.equityCurve;
 
     // Multi-currency per-currency money curves
@@ -350,9 +412,13 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (accountCtx.isMultiCurrency) {
       for (const curr of accountCtx.currencies) {
         const currTrades = formattedTrades.filter((t: any) => t.currency === curr);
+        const currCashFlows = eqCashFlows.filter((cf) => cf.currency === curr);
         const currStartEq = equityResult.currencyBreakdown[curr] || 0;
         byCurrencyCurves[curr] = {
-          moneyCurve: calculateDashboardMetrics(currTrades, currStartEq).equityCurve,
+          moneyCurve: calculateDashboardMetrics(currTrades, currStartEq, {
+            timezone: metricsTimezone,
+            cashFlows: currCashFlows,
+          }).equityCurve,
           startingEquity: currStartEq,
         };
       }

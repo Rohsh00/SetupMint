@@ -1,9 +1,7 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import { Mulberry32PRNG } from './prng.js';
 import { calculateEmpiricalBayesShrinkage } from './edge.js';
 import { MIN_RELIABLE_SAMPLE } from '@tradevault/shared';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export interface IExcursionSummaryStatistics {
   count: number;

@@ -278,7 +278,7 @@ const TradeSchema = new Schema<ITradeDoc>(
     exchange: { type: String, required: true },
     marketSegment: {
       type: String,
-      enum: ['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER'],
+      enum: ['NSE_EQ', 'NSE_FNO', 'BSE_EQ', 'BSE_FNO', 'MCX', 'FOREX', 'CRYPTO', 'US_EQUITY', 'CME', 'OTHER'],
       required: true,
     },
     currency: { type: String, required: true, uppercase: true, trim: true },

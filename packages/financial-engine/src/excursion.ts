@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import moment from 'moment';
 import type {
   ExcursionFlag,
@@ -7,8 +7,6 @@ import type {
 import {
   DEFAULT_EXCURSION_SETTINGS,
 } from '@tradevault/shared';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 export type { ExcursionFlag };
 

@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal.js';
 import {
   IRiskSettings,
   MistakeTag,
@@ -145,15 +145,18 @@ export function detectMistakeSuggestions(params: IDetectMistakesParams): IMistak
 
   // Parse and sort trades chronologically by entryTime
   const sorted = [...trades].sort((a, b) => {
-    const timeA = new Date(a.entryTime).getTime();
-    const timeB = new Date(b.entryTime).getTime();
-    return timeA - timeB;
+    const timeA = a.entryTime ? new Date(a.entryTime).getTime() : 0;
+    const timeB = b.entryTime ? new Date(b.entryTime).getTime() : 0;
+    return (Number.isFinite(timeA) ? timeA : 0) - (Number.isFinite(timeB) ? timeB : 0);
   });
 
-  // Track daily trades map by YYYY-MM-DD
+  // Track daily trades map by YYYY-MM-DD (skip invalid timestamps safely)
   const dailyTradesMap = new Map<string, ITradeSummaryForDetection[]>();
   for (const t of sorted) {
-    const dStr = new Date(t.entryTime).toISOString().split('T')[0];
+    if (!t.entryTime) continue;
+    const parsed = new Date(t.entryTime);
+    if (isNaN(parsed.getTime())) continue;
+    const dStr = parsed.toISOString().split('T')[0];
     const list = dailyTradesMap.get(dStr) || [];
     list.push(t);
     dailyTradesMap.set(dStr, list);

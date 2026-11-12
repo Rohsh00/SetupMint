@@ -1,8 +1,6 @@
-import Decimal from 'decimal.js';
+import Decimal from '../../decimal.js';
 import { IWhatIfCellStats } from '@tradevault/shared';
 import { IWhatIfTradeCellSimulation } from './types.js';
-
-Decimal.set({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
 /**
  * Aggregates simulation results across all in-scope trades for a single cell.

@@ -26,7 +26,34 @@ export class Mt5CommandService {
   private static quoteMap = new Map<string, Mt5LiveQuote>();
   private static positionQuoteMap = new Map<string, Mt5PositionQuote>();
   private static missingTicketMap = new Map<string, { count: number; firstSeenAt: number }>();
+  private static accountWebhookLockMap = new Map<string, Promise<void>>();
   private static readonly MT5_QUOTE_TTL_MS = 45000; // 45 seconds
+
+  /**
+   * Serializes MT5 webhook state mutations per trading account so concurrent
+   * OnTradeTransaction + OnTimer requests for the same ticket cannot race past
+   * findOne() and create duplicate Trade documents.
+   */
+  static async withAccountWebhookLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {
+    const key = String(accountId || '').trim();
+    if (!key) return fn();
+    const prev = Mt5CommandService.accountWebhookLockMap.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((res) => {
+      release = res;
+    });
+    const tail = prev.then(() => next, () => next);
+    Mt5CommandService.accountWebhookLockMap.set(key, tail);
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (Mt5CommandService.accountWebhookLockMap.get(key) === tail) {
+        Mt5CommandService.accountWebhookLockMap.delete(key);
+      }
+    }
+  }
 
   /**
    * Tracks a trade ticket that is missing from an active MT5 positions snapshot.

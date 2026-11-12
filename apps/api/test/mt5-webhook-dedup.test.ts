@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import mongoose from 'mongoose';
 import { buildApp } from '../src/server.js';
@@ -347,5 +347,201 @@ describe('MetaTrader 5 / Elefin Webhook Duplicate Fill Prevention & Self-Healing
     expect(tradeWithSl?.risk?.initialStopLoss).toBe(3975.00);
     expect(tradeWithSl?.risk?.currentStopLoss).toBe(3975.00);
     expect(tradeWithSl?.fills?.length).toBe(1);
+  });
+
+  it('serializes concurrent MT5 OPEN webhooks so duplicate Trade docs are never created for the same ticket', async () => {
+    const raceTicket = '14746901';
+    const openPayload = {
+      positions: [
+        {
+          ticket: raceTicket,
+          symbol: 'XAUUSD',
+          type: 'BUY',
+          volume: 0.04,
+          price: 3938.55,
+          cur_price: 3939.00,
+          open_time: '2026-11-12 09:39:28',
+        },
+      ],
+    };
+
+    // Simulate OnTradeTransaction + OnTimer arriving concurrently milliseconds apart
+    const [res1, res2] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+        payload: openPayload,
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+        payload: openPayload,
+      }),
+    ]);
+
+    expect(res1.statusCode).toBe(200);
+    expect(res2.statusCode).toBe(200);
+
+    const docs = await Trade.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: new mongoose.Types.ObjectId(accountId),
+      tags: `MT5_TICKET_${raceTicket}`,
+    });
+    expect(docs.length).toBe(1);
+    expect(docs[0].status).toBe('OPEN');
+
+    // Clean up via CLOSE so subsequent empty-snapshot tests remain isolated
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        action: 'CLOSE',
+        ticket: raceTicket,
+        deal_id: '21213901',
+        symbol: 'XAUUSD',
+        type: 'BUY',
+        volume: 0.04,
+        open_price: 3938.55,
+        close_price: 3940.55,
+        profit: 8.0,
+        close_time: '2026-11-12 09:42:00',
+      },
+    });
+  });
+
+  it('closes orphaned OPEN trade after persistent empty positions:[] (>= 5 cycles & >= 15s) and removes duplicate OPEN shells when closed sibling exists', async () => {
+    const orphanTicket = '14746902';
+    const dupTicket = '14746422';
+
+    // Open orphanTicket via webhook
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        positions: [
+          {
+            ticket: orphanTicket,
+            symbol: 'XAUUSD',
+            type: 'BUY',
+            volume: 0.02,
+            price: 3940.0,
+            cur_price: 3941.0,
+            open_time: '2026-11-12 09:40:00',
+          },
+        ],
+      },
+    });
+
+    // Also simulate a legacy pre-existing duplicate pair for dupTicket:
+    // one CLOSED trade and one orphaned OPEN duplicate with the same MT5_TICKET tag
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        action: 'CLOSE',
+        ticket: dupTicket,
+        deal_id: '21213198',
+        symbol: 'XAUUSD',
+        type: 'BUY',
+        volume: 0.04,
+        open_price: 3938.55,
+        close_price: 3942.34,
+        profit: 15.16,
+        close_time: '2026-11-12 09:44:15',
+      },
+    });
+
+    await Trade.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: new mongoose.Types.ObjectId(accountId),
+      symbol: 'XAUUSD',
+      assetClass: 'FOREX',
+      exchange: 'FOREX',
+      marketSegment: 'FOREX',
+      currency: 'USD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tags: ['ELEFIN', 'MT5', `MT5_TICKET_${dupTicket}`],
+      tradeDate: new Date('2026-11-12T09:39:28Z'),
+      entryTime: new Date('2026-11-12T09:39:28Z'),
+      executionMode: 'SIMPLE',
+      simpleExecution: {
+        entryPrice: 3938.55,
+        quantity: 0.04,
+        contractMultiplier: 100,
+        brokerage: 0,
+        exchangeFees: 0,
+        regulatoryFees: 0,
+        taxes: 0,
+        otherFees: 0,
+        explicitAdjustments: 0,
+      },
+      fills: [
+        {
+          fillId: `mt5_${dupTicket}_entry`,
+          timestamp: new Date('2026-11-12T09:39:28Z'),
+          type: 'ENTRY',
+          price: 3938.55,
+          quantity: 0.04,
+          fee: 0,
+        },
+      ],
+      calculated: {
+        averageEntryPrice: 3938.55,
+        openQuantity: 0.04,
+        closedQuantity: 0,
+        totalCosts: 0,
+        grossPnL: 0,
+        netPnL: 0,
+        outcome: 'OPEN',
+      },
+    });
+
+    let fakeNow = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow);
+    try {
+      // Send 4 empty snapshots within < 15s -> must NOT close yet (debounce holds!)
+      for (let i = 0; i < 4; i++) {
+        fakeNow += 2000;
+        const r = await app.inject({
+          method: 'POST',
+          url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+          payload: { positions: [] },
+        });
+        expect(r.statusCode).toBe(200);
+      }
+
+      const midOrphan = await Trade.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        tags: `MT5_TICKET_${orphanTicket}`,
+      });
+      expect(midOrphan?.status).toBe('OPEN');
+
+      // 5th+ snapshot past 15s elapsed -> confirmed missing -> reconciles!
+      fakeNow += 10000;
+      const finalRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+        payload: { positions: [] },
+      });
+      expect(finalRes.statusCode).toBe(200);
+
+      const resolvedOrphan = await Trade.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        tags: `MT5_TICKET_${orphanTicket}`,
+      });
+      expect(resolvedOrphan?.status).toBe('CLOSED');
+
+      // Duplicate ticket must have ONLY the canonical CLOSED record left, NEVER 2 closed records!
+      const dupDocs = await Trade.find({
+        userId: new mongoose.Types.ObjectId(userId),
+        tags: `MT5_TICKET_${dupTicket}`,
+      });
+      expect(dupDocs.length).toBe(1);
+      expect(dupDocs[0].status).toBe('CLOSED');
+      expect(dupDocs[0].calculated?.netPnL).toBe(15.16);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

@@ -451,6 +451,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       });
     }
 
+    return Mt5CommandService.withAccountWebhookLock(account._id.toString(), async () => {
     // Update account balance if provided in payload
     if (req.body?.balance !== undefined) {
       const bal = Number(req.body.balance);
@@ -468,12 +469,14 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       ? [req.body]
       : [];
 
-    // Reconcile open MT5 trades ONLY if the EA provides an authoritative, non-empty positions snapshot.
-    // CRITICAL FIX: An empty array (positions: []) must NEVER auto-close trades!
-    // During MT5 order modification (e.g. user setting SL on mobile app), the MT5 server removes the previous
-    // SL order structure from the book, which can cause a transient empty position enumeration in the terminal
-    // for 50-300ms. Blanket auto-closing on empty positions causes false "Trade Closed in Loss" alerts.
-    if (Array.isArray(req.body?.positions) && rawItems.length > 0) {
+    let processedCount = 0;
+    const results: any[] = [];
+
+    // Reconcile open MT5 trades whenever the EA provides a positions snapshot (including empty positions: []).
+    // Single/transient empty arrays during mobile SL modifications are STILL protected because
+    // Mt5CommandService.recordMissingTicket requires >= 5 consecutive missing heartbeats AND >= 15 seconds
+    // elapsed before confirming closure or cleaning an orphaned duplicate.
+    if (Array.isArray(req.body?.positions)) {
       const activeTicketSet = new Set(
         rawItems
           .map((item) => String(item.ticket || item.id || item.ticket_id || item.order || '').trim())
@@ -505,6 +508,28 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             continue;
           }
           Mt5CommandService.clearMissingTicket(tradeTicket);
+
+          // If another trade with the same MT5 ticket is already CLOSED (duplicate created by earlier race),
+          // delete the orphaned OPEN duplicate instead of closing it again and double-counting P&L.
+          if (ticketTag) {
+            const closedSibling = await Trade.findOne({
+              userId: account.userId,
+              accountId: account._id,
+              _id: { $ne: openTrade._id },
+              tags: ticketTag,
+              status: 'CLOSED',
+            })
+              .select('_id')
+              .lean();
+            if (closedSibling) {
+              await Trade.deleteOne({ _id: openTrade._id });
+              req.log.warn(
+                `[MT5Webhook] Removed orphaned duplicate OPEN trade ${openTrade._id} (ticket ${tradeTicket}) already closed by ${closedSibling._id}`
+              );
+              processedCount++;
+              continue;
+            }
+          }
 
           // This trade was legitimately closed on MT5! Reconcile and close it cleanly
           const exitPrice = openTrade.calculated?.liveMfeSummary?.peakLtp || openTrade.simpleExecution?.entryPrice || 0;
@@ -576,6 +601,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           openTrade.markModified('simpleExecution');
           await openTrade.save();
 
+          processedCount++;
           const userDoc = await User.findById(account.userId).lean();
           if (userDoc) {
             TelegramAlertService.notifyTradeClosed(userDoc, openTrade, {
@@ -589,11 +615,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     }
 
     if (rawItems.length === 0) {
-      return reply.send({ ok: true, processed: 0, message: 'No positions in payload', commands: pendingCommands });
+      if (processedCount > 0) {
+        await AccountService.recalculateAccountBalances(account._id, account.userId).catch(() => {});
+      }
+      return reply.send({ ok: true, processed: processedCount, message: 'No positions in payload', commands: pendingCommands });
     }
-
-    let processedCount = 0;
-    const results: any[] = [];
 
     for (const item of rawItems) {
       const ticketStr = String(item.ticket || item.id || item.ticket_id || item.order || '').trim();
@@ -649,15 +675,39 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
       const isModify = rawAction === 'MODIFY' && !isClose;
 
-      // Locate existing trade record by ticket tag
+      // Locate existing trade record(s) by ticket tag and self-heal any race duplicates
       const ticketTag = `MT5_TICKET_${ticketStr}`;
-      let trade = await Trade.findOne({
+      const matchingTrades = await Trade.find({
         userId: account.userId,
         accountId: account._id,
         tags: ticketTag,
-      });
+      }).sort({ createdAt: 1 });
+      let trade =
+        matchingTrades.find(
+          (t) => t.status === 'CLOSED' || (t.fills?.length || 0) > 1 || (t.auditLog?.length || 0) > 0
+        ) ||
+        matchingTrades[0] ||
+        null;
+      if (matchingTrades.length > 1 && trade) {
+        const redundantOpenIds = matchingTrades
+          .filter(
+            (t) =>
+              t._id.toString() !== trade!._id.toString() &&
+              t.status === 'OPEN' &&
+              (t.fills?.length || 0) <= 1 &&
+              (t.auditLog?.length || 0) === 0
+          )
+          .map((t) => t._id);
+        if (redundantOpenIds.length > 0) {
+          await Trade.deleteMany({ _id: { $in: redundantOpenIds } });
+          req.log.warn(
+            `[MT5Webhook] Cleaned ${redundantOpenIds.length} duplicate OPEN trade(s) for ticket ${ticketStr}`
+          );
+        }
+      }
 
       if (isClose) {
+        Mt5CommandService.clearMissingTicket(ticketStr);
         const exitPriceFinal = closePrice || entryPrice;
         const targetExitFillId = dealIdStr ? `mt5_deal_${dealIdStr}` : `mt5_${ticketStr}_exit`;
 
@@ -1047,7 +1097,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
           // Self-Healing / Reviving: If the trade was prematurely marked CLOSED by an auto-exit,
           // but the MT5 broker confirms the position is STILL OPEN in the active terminal list:
-          if (trade.status === 'CLOSED') {
+          // Never revive if an authoritative broker EXIT deal (mt5_deal_*) already closed this trade.
+          const hasBrokerDealExit =
+            Array.isArray(trade.fills) &&
+            trade.fills.some((f: any) => String(f.fillId || '').startsWith('mt5_deal_'));
+          if (trade.status === 'CLOSED' && !hasBrokerDealExit) {
             req.log.warn(
               `[MT5Webhook] Reviving prematurely closed trade ${trade._id} (ticket ${ticketStr}) - position is still active on MT5`
             );
@@ -1209,6 +1263,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       broker: account.broker,
       results,
       commands: pendingCommands,
+    });
     });
   });
 

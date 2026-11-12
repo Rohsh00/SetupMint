@@ -414,4 +414,35 @@ describe('SetupMint Telegram Alerting Engine Integration Tests', () => {
     );
     expect(hasTfRow).toBe(true);
   });
+
+  it('12. notifyTradeClosed is idempotent and never dispatches duplicate notifications for the same closed trade', async () => {
+    await AlertState.deleteMany({ userId: userA._id, tradeId: tradeA._id, type: 'TRADE_CLOSED' });
+    const sendAlertSpy = vi.spyOn(TelegramAlertService, 'sendAlert' as any).mockResolvedValue(undefined);
+
+    // First call for tradeA: should send alert and record TRADE_CLOSED AlertState
+    await TelegramAlertService.notifyTradeClosed(userA, tradeA, {
+      netPnL: 250.0,
+      realizedR: 1.25,
+      exitPrice: 105.0,
+    });
+    expect(sendAlertSpy).toHaveBeenCalledTimes(1);
+
+    const closedAlert = await AlertState.findOne({
+      userId: userA._id,
+      tradeId: tradeA._id,
+      type: 'TRADE_CLOSED',
+    });
+    expect(closedAlert).toBeDefined();
+    expect(closedAlert?.state).toBe('RESOLVED');
+
+    // Second call for the same trade (e.g. from background sync or backfill): MUST be suppressed!
+    await TelegramAlertService.notifyTradeClosed(userA, tradeA, {
+      netPnL: 250.0,
+      realizedR: 1.25,
+      exitPrice: 105.0,
+    });
+    expect(sendAlertSpy).toHaveBeenCalledTimes(1);
+
+    sendAlertSpy.mockRestore();
+  });
 });

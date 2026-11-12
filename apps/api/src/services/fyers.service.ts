@@ -1101,7 +1101,8 @@ export class FyersService {
 
     let syncedTradesCount = 0;
     let duplicateTradesCount = 0;
-    const closedTradeIds = new Set<string>();
+    const newlyClosedTradeIds = new Set<string>();
+    const backfillTradeIds = new Set<string>();
     const batchId = `fyers_sync_${Date.now()}`;
 
     // For each symbol, match fills chronologically via FIFO
@@ -1414,7 +1415,10 @@ export class FyersService {
               await existing.save();
               syncedTradesCount++;
               if (fifoSummary.isFullyClosed) {
-                closedTradeIds.add(existing._id.toString());
+                if (isClosing) {
+                  newlyClosedTradeIds.add(existing._id.toString());
+                }
+                backfillTradeIds.add(existing._id.toString());
               }
               return;
             }
@@ -1444,7 +1448,7 @@ export class FyersService {
               const needsSetup =
                 !existing.setup?.variantStatus || existing.setup?.variantStatus === 'UNCLASSIFIED';
               if (needsExcursion || needsSetup) {
-                closedTradeIds.add(existing._id.toString());
+                backfillTradeIds.add(existing._id.toString());
               }
             }
 
@@ -1530,7 +1534,8 @@ export class FyersService {
           const createdTrade = await Trade.create(tradePayload);
 
           if (fifoSummary.isFullyClosed) {
-            closedTradeIds.add(createdTrade._id.toString());
+            newlyClosedTradeIds.add(createdTrade._id.toString());
+            backfillTradeIds.add(createdTrade._id.toString());
           }
 
           syncedTradesCount++;
@@ -1765,7 +1770,8 @@ export class FyersService {
               openTrade.markModified('simpleExecution');
               await openTrade.save();
 
-              closedTradeIds.add(openTrade._id.toString());
+              newlyClosedTradeIds.add(openTrade._id.toString());
+              backfillTradeIds.add(openTrade._id.toString());
               syncedTradesCount++;
               console.log(`[FYERS Sync] Reconciled trade ${openTrade._id} (${openTrade.symbol}) to CLOSED via broker netPositions`);
             }
@@ -1786,28 +1792,30 @@ export class FyersService {
     // 2. 1m/5m historical excursion (MFE, MAE, R left on table, exit efficiency)
     // 3. Strategy setup variant pattern recognition (4H trend + 5M setup)
     // 4. Multi-resolution SVG chart snapshot attachments
-    const closedTradeList = Array.from(closedTradeIds);
+    const backfillList = Array.from(backfillTradeIds);
     let backfilledClosedTradesCount = 0;
 
-    if (closedTradeList.length > 0) {
+    if (backfillList.length > 0) {
       // Synchronously backfill the primary batch (up to 10 trades) at the time of trade fetch
-      const inlineBatch = closedTradeList.slice(0, 10);
+      const inlineBatch = backfillList.slice(0, 10);
       for (const tId of inlineBatch) {
         try {
           await this.backfillSingleClosedTrade(tId, uId, { normalizedOrders });
           backfilledClosedTradesCount++;
 
-          // Send Telegram Trade Closed notification
-          const closedDoc = await Trade.findById(tId).lean();
-          if (closedDoc && closedDoc.calculated) {
-            const userDoc = await User.findById(uId).lean();
-            if (userDoc) {
-              TelegramAlertService.notifyTradeClosed(userDoc, closedDoc, {
-                netPnL: closedDoc.calculated.netPnL || 0,
-                realizedR: closedDoc.calculated.realizedRMultiple,
-                exitPrice: closedDoc.calculated.averageExitPrice || 0,
-                exitReason: 'FYERS Broker Exit',
-              }).catch(() => {});
+          // Send Telegram Trade Closed notification ONLY for trades newly closed in this sync cycle
+          if (newlyClosedTradeIds.has(tId)) {
+            const closedDoc = await Trade.findById(tId).lean();
+            if (closedDoc && closedDoc.calculated) {
+              const userDoc = await User.findById(uId).lean();
+              if (userDoc) {
+                TelegramAlertService.notifyTradeClosed(userDoc, closedDoc, {
+                  netPnL: closedDoc.calculated.netPnL || 0,
+                  realizedR: closedDoc.calculated.realizedRMultiple,
+                  exitPrice: closedDoc.calculated.averageExitPrice || 0,
+                  exitReason: 'FYERS Broker Exit',
+                }).catch(() => {});
+              }
             }
           }
         } catch (err: any) {
@@ -1816,12 +1824,26 @@ export class FyersService {
       }
 
       // If more than 10 closed trades were returned, process remainder in background with pacing
-      if (closedTradeList.length > 10) {
-        const remainingBatch = closedTradeList.slice(10);
+      if (backfillList.length > 10) {
+        const remainingBatch = backfillList.slice(10);
         (async () => {
           for (const tId of remainingBatch) {
             try {
               await this.backfillSingleClosedTrade(tId, uId, { normalizedOrders });
+              if (newlyClosedTradeIds.has(tId)) {
+                const closedDoc = await Trade.findById(tId).lean();
+                if (closedDoc && closedDoc.calculated) {
+                  const userDoc = await User.findById(uId).lean();
+                  if (userDoc) {
+                    TelegramAlertService.notifyTradeClosed(userDoc, closedDoc, {
+                      netPnL: closedDoc.calculated.netPnL || 0,
+                      realizedR: closedDoc.calculated.realizedRMultiple,
+                      exitPrice: closedDoc.calculated.averageExitPrice || 0,
+                      exitReason: 'FYERS Broker Exit',
+                    }).catch(() => {});
+                  }
+                }
+              }
             } catch (err: any) {
               console.warn(`[FYERS Sync Background] Auto-backfill failed for trade ${tId}:`, err?.message || err);
             }

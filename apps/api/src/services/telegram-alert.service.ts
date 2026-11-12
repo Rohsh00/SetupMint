@@ -2757,6 +2757,14 @@ export class TelegramAlertService {
 
     if (settings.telegramAlertEvents && settings.telegramAlertEvents.tradeClosed === false) return;
 
+    // Deduplication Guard: Check if a TRADE_CLOSED notification was already sent for this trade
+    const existingClosedAlert = await AlertState.findOne({
+      userId: user._id,
+      tradeId: trade._id,
+      type: 'TRADE_CLOSED',
+    });
+    if (existingClosedAlert) return;
+
     const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? trade.entryPrice ?? 0);
     const exitPrice = outcome.exitPrice || Number(trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice ?? 0);
     const isLong = trade.direction === 'LONG';
@@ -2814,6 +2822,25 @@ export class TelegramAlertService {
         ],
       ],
     });
+
+    // Persist idempotency marker so repeated sync/backfill passes never re-send this closed alert
+    if (trade._id) {
+      await AlertState.updateOne(
+        { userId: user._id, tradeId: trade._id, type: 'TRADE_CLOSED' },
+        {
+          $setOnInsert: {
+            userId: user._id,
+            tradeId: trade._id,
+            type: 'TRADE_CLOSED',
+            state: 'RESOLVED',
+            severity: isWin ? 0 : 2,
+            chatId: String(chatId),
+            resolvedAt: new Date(),
+          },
+        },
+        { upsert: true }
+      ).catch(() => {});
+    }
   }
 
   /**

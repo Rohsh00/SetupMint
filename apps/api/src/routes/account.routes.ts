@@ -2054,7 +2054,10 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const recalced = InstrumentService.computeTradeCalculations({
           ...trade.toObject(),
           broker: account.broker,
-          positionModel: 'HEDGING',
+          _accountProfile: account.profile,
+          feeModelKey: account.profile?.feeModelKey,
+          positionModel: account.profile?.positionModel || 'HEDGING',
+          _authoritativeFees: true,
         });
         trade.calculated = {
           ...recalced,

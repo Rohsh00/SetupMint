@@ -312,6 +312,11 @@ export class InstrumentService {
       ['ELEFIN', 'MT5', 'THE5ERS', 'FTMO'].includes(normBroker) ||
       (Array.isArray(body.tags) && (body.tags.includes('ELEFIN') || body.tags.includes('MT5') || body.tags.includes('THE5ERS')));
 
+    const isMt5Synced =
+      resolvedProfile?.executionAdapterKey === 'ELEFIN_MT5' ||
+      body._authoritativeFees === true ||
+      (Array.isArray(body.tags) && (body.tags.includes('ELEFIN') || body.tags.includes('MT5')));
+
     const presetSpec = getPresetSpec(body.underlying || body.symbol);
     const resolvedMult = Number(body.simpleExecution?.contractMultiplier || presetSpec?.contractMultiplier || 1);
     const pricePrecision = presetSpec?.pricePrecision ?? (isForexOrUsd ? 5 : 2);
@@ -326,7 +331,17 @@ export class InstrumentService {
       body.simpleExecution.taxes = 0;
     }
 
-    const effectiveMode = isHedging ? 'SIMPLE' : (body.executionMode || (body.fills && body.fills.length > 0 ? 'ADVANCED' : 'SIMPLE'));
+    const hasPartialOrMultiFills =
+      Array.isArray(body.fills) &&
+      body.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT') &&
+      (body.status === 'OPEN' ||
+        body.fills.filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT').length > 1 ||
+        body.fills.filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY').length > 1);
+    const effectiveMode = hasPartialOrMultiFills
+      ? 'ADVANCED'
+      : isHedging
+      ? 'SIMPLE'
+      : (body.executionMode || (body.fills && body.fills.length > 0 ? 'ADVANCED' : 'SIMPLE'));
 
     if (effectiveMode === 'SIMPLE' && body.simpleExecution) {
       const exec = body.simpleExecution;
@@ -335,8 +350,8 @@ export class InstrumentService {
       grossPnL = res.grossPnLNumber;
       totalCosts = isForexOrUsd && res.totalCostsNumber === 40 ? 0 : res.totalCostsNumber;
 
-      // Auto-calculate fees if zero and valid execution prices exist
-      if (totalCosts === 0 && exec.entryPrice > 0 && exec.quantity > 0) {
+      // Auto-calculate fees only for non-MT5 accounts with non-NONE fee models when zero fees were supplied
+      if (totalCosts === 0 && exec.entryPrice > 0 && exec.quantity > 0 && feeModelKey !== 'NONE' && !isMt5Synced) {
         const isSingleOpen = body.status === 'OPEN' && !(exec.exitPrice && Number(exec.exitPrice) > 0);
         const autoCharges = FeeModelRegistry.calculate(feeModelKey, {
           direction: body.direction,
@@ -437,7 +452,7 @@ export class InstrumentService {
         totalCosts = fifoCosts;
       } else if (simpleCosts > 0) {
         totalCosts = isForexOrUsd && simpleCosts === 40 ? 0 : simpleCosts;
-      } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0)) {
+      } else if (avgEntry > 0 && (closedQty > 0 || openQty > 0) && feeModelKey !== 'NONE' && !isMt5Synced) {
         const qtyForFees = closedQty > 0 ? closedQty : openQty;
         const isSingleOpen = body.status === 'OPEN' && closedQty === 0;
         const entryCount = sanitized.fills.filter((f: any) => f.type === 'ENTRY').length || 1;

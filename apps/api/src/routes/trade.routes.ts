@@ -2073,29 +2073,34 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const tradeAccount = trade.accountId
       ? await TradingAccount.findById(trade.accountId).select('broker profile').lean()
       : null;
+    const isMt5Exit =
+      tradeAccount?.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+      Mt5CommandService.isMt5Trade(trade, tradeAccount);
 
-    const exitLegCharges = calculateIndianCharges({
-      direction: trade.direction,
-      assetClass: trade.assetClass,
-      marketSegment: trade.marketSegment,
-      exchange: trade.exchange,
-      symbol: trade.symbol,
-      holdingType: (trade as any).holdingType,
-      tradeDate: trade.tradeDate,
-      entryPrice: effectiveExitPrice,
-      quantity: exitQty,
-      contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
-      currency: trade.currency,
-      broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
-      isSingleLeg: true,
-      legSide: trade.direction === 'LONG' ? 'SELL' : 'BUY',
-    });
+    const exitLegCharges = isMt5Exit || tradeAccount?.profile?.feeModelKey !== 'INDIA_STATUTORY'
+      ? { brokerage: 0, exchangeFees: 0, regulatoryFees: 0, taxes: 0 }
+      : calculateIndianCharges({
+          direction: trade.direction,
+          assetClass: trade.assetClass,
+          marketSegment: trade.marketSegment,
+          exchange: trade.exchange,
+          symbol: trade.symbol,
+          holdingType: (trade as any).holdingType,
+          tradeDate: trade.tradeDate,
+          entryPrice: effectiveExitPrice,
+          quantity: exitQty,
+          contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+          currency: trade.currency,
+          broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
+          isSingleLeg: true,
+          legSide: trade.direction === 'LONG' ? 'SELL' : 'BUY',
+        });
 
     // Update trade record in MongoDB
     if (isReallyFullClose) {
       if ((trade.executionMode === 'ADVANCED' || (Array.isArray(trade.fills) && trade.fills.length > 1)) && Array.isArray(trade.fills) && trade.fills.length > 0) {
         trade.fills.push({
-          fillId: `exit_${Date.now()}`,
+          fillId: isMt5Exit ? `mt5_pending_exit_${Date.now()}` : `exit_${Date.now()}`,
           type: 'EXIT',
           price: effectiveExitPrice,
           quantity: exitQty,
@@ -2103,7 +2108,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           brokerage: exitLegCharges.brokerage,
           exchangeFee: exitLegCharges.exchangeFees,
           taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
-          notes: brokerResult.executedOnBroker ? `FYERS execution (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
+          notes: isMt5Exit
+            ? 'Pending MT5 exit (queued)'
+            : brokerResult.executedOnBroker
+            ? `FYERS execution (Slippage: ${slippagePoints.toFixed(2)} pts)`
+            : undefined,
         });
       } else {
         trade.simpleExecution = {
@@ -2139,6 +2148,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
               regulatoryFees: trade.simpleExecution?.regulatoryFees ?? 0,
               taxes: trade.simpleExecution?.taxes ?? 0,
             }
+          : isMt5Exit || tradeAccount?.profile?.feeModelKey !== 'INDIA_STATUTORY'
+          ? { brokerage: 0, exchangeFees: 0, regulatoryFees: 0, taxes: 0 }
           : calculateIndianCharges({
               direction: trade.direction,
               assetClass: trade.assetClass,
@@ -2158,7 +2169,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         // Initial entry fill for original quantity
         trade.fills = [
           {
-            fillId: `entry_${Date.now()}`,
+            fillId: isMt5Exit ? `mt5_pending_entry_${Date.now()}` : `entry_${Date.now()}`,
             type: 'ENTRY',
             price: trade.simpleExecution?.entryPrice || effectiveExitPrice,
             quantity: currentOpenQty,
@@ -2170,7 +2181,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         ];
       }
       trade.fills.push({
-        fillId: `exit_${Date.now()}`,
+        fillId: isMt5Exit ? `mt5_pending_exit_${Date.now()}` : `exit_${Date.now()}`,
         type: 'EXIT',
         price: effectiveExitPrice,
         quantity: exitQty,
@@ -2178,7 +2189,11 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         brokerage: exitLegCharges.brokerage,
         exchangeFee: exitLegCharges.exchangeFees,
         taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
-        notes: brokerResult.executedOnBroker ? `FYERS partial exit (Slippage: ${slippagePoints.toFixed(2)} pts)` : undefined,
+        notes: isMt5Exit
+          ? 'Pending MT5 partial exit (queued)'
+          : brokerResult.executedOnBroker
+          ? `FYERS partial exit (Slippage: ${slippagePoints.toFixed(2)} pts)`
+          : undefined,
       });
       trade.status = 'OPEN';
     }
@@ -2189,6 +2204,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       _accountProfile: tradeAccount?.profile,
       feeModelKey: tradeAccount?.profile?.feeModelKey,
       positionModel: tradeAccount?.profile?.positionModel,
+      _authoritativeFees: isMt5Exit,
     });
     trade.calculated = recalculated;
     trade.auditLog.push({
@@ -2393,30 +2409,35 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const tradeAccount = trade.accountId
       ? await TradingAccount.findById(trade.accountId).select('broker profile').lean()
       : null;
+    const isMt5Ladder =
+      tradeAccount?.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+      Mt5CommandService.isMt5Trade(trade, tradeAccount);
 
     // 2. Record partial exit fills in MongoDB
     if (requestedExitQty > 0) {
-      const exitLegCharges = calculateIndianCharges({
-        direction: trade.direction,
-        assetClass: trade.assetClass,
-        marketSegment: trade.marketSegment,
-        exchange: trade.exchange,
-        symbol: trade.symbol,
-        holdingType: (trade as any).holdingType,
-        tradeDate: trade.tradeDate,
-        entryPrice: effectiveExitPrice,
-        quantity: requestedExitQty,
-        contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
-        currency: trade.currency,
-        broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
-        isSingleLeg: true,
-        legSide: trade.direction === 'LONG' ? 'SELL' : 'BUY',
-      });
+      const exitLegCharges = isMt5Ladder || tradeAccount?.profile?.feeModelKey !== 'INDIA_STATUTORY'
+        ? { brokerage: 0, exchangeFees: 0, regulatoryFees: 0, taxes: 0 }
+        : calculateIndianCharges({
+            direction: trade.direction,
+            assetClass: trade.assetClass,
+            marketSegment: trade.marketSegment,
+            exchange: trade.exchange,
+            symbol: trade.symbol,
+            holdingType: (trade as any).holdingType,
+            tradeDate: trade.tradeDate,
+            entryPrice: effectiveExitPrice,
+            quantity: requestedExitQty,
+            contractMultiplier: trade.simpleExecution?.contractMultiplier ?? 1,
+            currency: trade.currency,
+            broker: tradeAccount?.broker || (trade.accountId as any)?.broker,
+            isSingleLeg: true,
+            legSide: trade.direction === 'LONG' ? 'SELL' : 'BUY',
+          });
 
       if (isFullClose) {
         if ((trade.executionMode === 'ADVANCED' || (Array.isArray(trade.fills) && trade.fills.length > 1)) && Array.isArray(trade.fills) && trade.fills.length > 0) {
           trade.fills.push({
-            fillId: `ladder_exit_${Date.now()}`,
+            fillId: isMt5Ladder ? `mt5_pending_ladder_${Date.now()}` : `ladder_exit_${Date.now()}`,
             type: 'EXIT',
             price: effectiveExitPrice,
             quantity: requestedExitQty,
@@ -2424,7 +2445,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
             brokerage: exitLegCharges.brokerage,
             exchangeFee: exitLegCharges.exchangeFees,
             taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
-            notes: `${label}: Full exit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
+            notes: isMt5Ladder
+              ? `${label}: Pending MT5 full exit (queued)`
+              : `${label}: Full exit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
           });
         } else {
           trade.simpleExecution = {
@@ -2459,6 +2482,8 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
                 regulatoryFees: trade.simpleExecution?.regulatoryFees ?? 0,
                 taxes: trade.simpleExecution?.taxes ?? 0,
               }
+            : isMt5Ladder || tradeAccount?.profile?.feeModelKey !== 'INDIA_STATUTORY'
+            ? { brokerage: 0, exchangeFees: 0, regulatoryFees: 0, taxes: 0 }
             : calculateIndianCharges({
                 direction: trade.direction,
                 assetClass: trade.assetClass,
@@ -2477,7 +2502,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
               });
           trade.fills = [
             {
-              fillId: `entry_${Date.now()}`,
+              fillId: isMt5Ladder ? `mt5_pending_entry_${Date.now()}` : `entry_${Date.now()}`,
               type: 'ENTRY',
               price: trade.simpleExecution?.entryPrice || effectiveExitPrice,
               quantity: currentOpenQty,
@@ -2489,7 +2514,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           ];
         }
         trade.fills.push({
-          fillId: `ladder_step_${targetIndex}_${Date.now()}`,
+          fillId: isMt5Ladder ? `mt5_pending_ladder_${targetIndex}_${Date.now()}` : `ladder_step_${targetIndex}_${Date.now()}`,
           type: 'EXIT',
           price: effectiveExitPrice,
           quantity: requestedExitQty,
@@ -2497,7 +2522,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           brokerage: exitLegCharges.brokerage,
           exchangeFee: exitLegCharges.exchangeFees,
           taxes: Number((exitLegCharges.taxes + exitLegCharges.regulatoryFees).toFixed(2)),
-          notes: `${label}: Partial profit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
+          notes: isMt5Ladder
+            ? `${label}: Pending MT5 partial exit (queued)`
+            : `${label}: Partial profit booked${brokerExitResult.executedOnBroker ? ` (Slippage: ${slippagePoints.toFixed(2)} pts)` : ''}`,
         });
         trade.status = 'OPEN';
       }
@@ -2539,6 +2566,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       _accountProfile: tradeAccount?.profile,
       feeModelKey: tradeAccount?.profile?.feeModelKey,
       positionModel: tradeAccount?.profile?.positionModel,
+      _authoritativeFees: isMt5Ladder,
     });
     trade.calculated = recalculated;
 

@@ -534,7 +534,10 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           openTrade.calculated = InstrumentService.computeTradeCalculations({
             ...openTrade.toObject(),
             broker: account.broker,
-            positionModel: 'HEDGING',
+            _accountProfile: account.profile,
+            feeModelKey: account.profile?.feeModelKey,
+            positionModel: account.profile?.positionModel || 'HEDGING',
+            _authoritativeFees: true,
           });
           if (openTrade.calculated?.excursion?.status === 'PENDING') {
             const peakPnl = openTrade.calculated?.liveMfeSummary?.peakFloatingNetPnL || 0;
@@ -794,6 +797,36 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               (!dealIdStr && f.fillId === `mt5_${ticketStr}_exit`)
           );
 
+          // If the UI queued an optimistic pending MT5 exit fill matching this execution, upgrade it in-place
+          // instead of appending a duplicate exit fill that prematurely consumes remaining open quantity.
+          let replacedPendingFill = false;
+          if (!alreadyHasThisFill && Array.isArray(trade.fills)) {
+            const pendingIdx = trade.fills.findIndex((f: any) => {
+              if (String(f.type || '').toUpperCase() !== 'EXIT') return false;
+              const fid = String(f.fillId || '');
+              const notes = String(f.notes || '');
+              const isPlaceholder =
+                fid.startsWith('mt5_pending_') ||
+                fid.includes('_exit_auto') ||
+                notes.includes('Pending MT5') ||
+                notes.includes('FYERS partial exit');
+              return isPlaceholder && Math.abs((Number(f.quantity) || 0) - volume) < 1e-6;
+            });
+            if (pendingIdx >= 0) {
+              const closeTs = item.close_time ? new Date(item.close_time) : new Date();
+              trade.fills[pendingIdx] = {
+                fillId: targetExitFillId,
+                timestamp: closeTs,
+                type: 'EXIT',
+                price: exitPriceFinal,
+                quantity: Number(trade.fills[pendingIdx].quantity) || volume,
+                fee: commission > 0 ? Number(commission.toFixed(2)) : 0,
+              } as any;
+              trade.markModified('fills');
+              replacedPendingFill = true;
+            }
+          }
+
           const totalEntryQty = (trade.fills || [])
             .filter((f: any) => f.type === 'ENTRY')
             .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
@@ -801,20 +834,26 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             .filter((f: any) => f.type === 'EXIT')
             .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
 
-          const remainingOpenQty = Math.max(0, totalEntryQty - totalExitQty);
+          const remainingOpenQty = Math.max(0, Number((totalEntryQty - totalExitQty).toFixed(8)));
+          const exitFillCount = (trade.fills || []).filter(
+            (f: any) => String(f.type || '').toUpperCase() === 'EXIT'
+          ).length;
 
           const isDuplicate =
-            alreadyHasThisFill ||
-            (trade.status === 'CLOSED' && totalExitQty >= totalEntryQty) ||
-            remainingOpenQty <= 0;
+            !replacedPendingFill &&
+            (alreadyHasThisFill ||
+              (trade.status === 'CLOSED' && totalExitQty >= totalEntryQty) ||
+              remainingOpenQty <= 0);
 
           if (isDuplicate) {
             // Already closed or duplicate exit webhook: do NOT push duplicate fills
             trade.status = 'CLOSED';
-            trade.executionMode = 'SIMPLE';
+            trade.executionMode = exitFillCount > 1 ? 'ADVANCED' : 'SIMPLE';
             if (item.close_time) trade.exitTime = new Date(item.close_time);
             if (trade.simpleExecution && exitPriceFinal > 0) {
-              trade.simpleExecution.exitPrice = exitPriceFinal;
+              if (exitFillCount <= 1) {
+                trade.simpleExecution.exitPrice = exitPriceFinal;
+              }
               if (commission > 0) trade.simpleExecution.brokerage = commission;
               if (swap > 0) trade.simpleExecution.otherFees = swap;
             }
@@ -849,12 +888,28 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
                 }
               }
             }
+            const rawDupExc = trade.calculated?.excursion as any;
+            const prevDupExc =
+              rawDupExc && typeof rawDupExc.toObject === 'function'
+                ? rawDupExc.toObject()
+                : rawDupExc && typeof rawDupExc === 'object'
+                ? { ...rawDupExc }
+                : undefined;
             const recalced = InstrumentService.computeTradeCalculations({
               ...trade.toObject(),
               broker: account.broker,
-              positionModel: 'HEDGING',
+              _accountProfile: account.profile,
+              feeModelKey: account.profile?.feeModelKey,
+              positionModel: account.profile?.positionModel || 'HEDGING',
+              _authoritativeFees: true,
             });
-            trade.calculated = recalced;
+            if (trade.simpleExecution && recalced.averageExitPrice && exitFillCount > 1) {
+              trade.simpleExecution.exitPrice = recalced.averageExitPrice;
+            }
+            trade.calculated = {
+              ...recalced,
+              ...(prevDupExc ? { excursion: prevDupExc } : {}),
+            };
             trade.markModified('calculated');
             trade.markModified('simpleExecution');
             await trade.save();
@@ -864,30 +919,43 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             continue;
           }
 
-          // Legitimate close or partial close
-          const fillQty = Math.min(volume, remainingOpenQty > 0 ? remainingOpenQty : volume);
-          const isFullyClosed = totalExitQty + fillQty >= totalEntryQty;
-
-          trade.status = isFullyClosed ? 'CLOSED' : 'OPEN';
-          trade.exitTime = item.close_time ? new Date(item.close_time) : new Date();
-          if (trade.simpleExecution) {
-            trade.simpleExecution.exitPrice = exitPriceFinal;
-            if (commission > 0) trade.simpleExecution.brokerage = commission;
-            if (swap > 0) trade.simpleExecution.otherFees = swap;
+          // Legitimate close or partial close (or upgraded pending fill)
+          if (!replacedPendingFill) {
+            const fillQty = Math.min(volume, remainingOpenQty > 0 ? remainingOpenQty : volume);
+            trade.fills.push({
+              fillId: targetExitFillId,
+              timestamp: item.close_time ? new Date(item.close_time) : new Date(),
+              type: 'EXIT',
+              price: exitPriceFinal,
+              quantity: fillQty,
+              fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
+            } as any);
           }
-
-          trade.fills.push({
-            fillId: targetExitFillId,
-            timestamp: trade.exitTime,
-            type: 'EXIT',
-            price: exitPriceFinal,
-            quantity: fillQty,
-            fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
-          } as any);
 
           const sanitizedAfter = sanitizeTradeFills(trade.fills);
           trade.fills = sanitizedAfter.fills as any;
           trade.markModified('fills');
+
+          const totalExitedAfter = (trade.fills || [])
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          const exitCountAfter = (trade.fills || [])
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT')
+            .length;
+          const isFullyClosed = totalExitedAfter >= totalEntryQty - 1e-8;
+
+          trade.status = isFullyClosed ? 'CLOSED' : 'OPEN';
+          trade.executionMode = !isFullyClosed || exitCountAfter > 1 ? 'ADVANCED' : 'SIMPLE';
+          if (isFullyClosed) {
+            trade.exitTime = item.close_time ? new Date(item.close_time) : new Date();
+          }
+          if (trade.simpleExecution) {
+            if (isFullyClosed && exitCountAfter <= 1 && exitPriceFinal > 0) {
+              trade.simpleExecution.exitPrice = exitPriceFinal;
+            }
+            if (commission > 0) trade.simpleExecution.brokerage = commission;
+            if (swap > 0) trade.simpleExecution.otherFees = swap;
+          }
 
           const rawMfePrice = item.mfe_price !== undefined ? parseFloat(item.mfe_price) : undefined;
           const rawMaePrice = item.mae_price !== undefined ? parseFloat(item.mae_price) : undefined;
@@ -897,17 +965,29 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const openDate = trade.entryTime || (item.open_time ? new Date(item.open_time) : new Date());
           const closeDate = trade.exitTime || (item.close_time ? new Date(item.close_time) : new Date());
 
-          const prevExcursion = trade.calculated?.excursion;
+          const rawPrevExcursion = trade.calculated?.excursion as any;
+          const prevExcursion =
+            rawPrevExcursion && typeof rawPrevExcursion.toObject === 'function'
+              ? rawPrevExcursion.toObject()
+              : rawPrevExcursion && typeof rawPrevExcursion === 'object'
+              ? { ...rawPrevExcursion }
+              : undefined;
           const recalced = InstrumentService.computeTradeCalculations({
             ...trade.toObject(),
             broker: account.broker,
-            positionModel: 'HEDGING',
+            _accountProfile: account.profile,
+            feeModelKey: account.profile?.feeModelKey,
+            positionModel: account.profile?.positionModel || 'HEDGING',
+            _authoritativeFees: true,
           });
+          if (trade.simpleExecution && recalced.averageExitPrice) {
+            trade.simpleExecution.exitPrice = recalced.averageExitPrice;
+          }
 
           const mt5Excursion = computeMt5LiveExcursion({
             direction: trade.direction,
             entryPrice: trade.simpleExecution?.entryPrice || entryPrice,
-            exitPrice: exitPriceFinal,
+            exitPrice: recalced.averageExitPrice || exitPriceFinal,
             initialStopLoss: trade.risk?.initialStopLoss || stopLoss,
             volume: trade.simpleExecution?.quantity || volume,
             contractMultiplier: trade.simpleExecution?.contractMultiplier || spec.multiplier,
@@ -920,11 +1000,14 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             closeTime: closeDate,
           });
 
+          const nextExcursion =
+            rawMfePrice !== undefined || rawMaePrice !== undefined || rawPeakProfit !== undefined || !prevExcursion || prevExcursion.status !== 'COMPUTED'
+              ? mt5Excursion
+              : prevExcursion;
+
           trade.calculated = {
             ...recalced,
-            excursion: (rawMfePrice !== undefined || rawMaePrice !== undefined || rawPeakProfit !== undefined || !prevExcursion || prevExcursion.status !== 'COMPUTED')
-              ? mt5Excursion
-              : prevExcursion,
+            ...(nextExcursion ? { excursion: nextExcursion } : {}),
           };
           trade.markModified('calculated');
           trade.markModified('simpleExecution');
@@ -1017,7 +1100,10 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             trade.calculated = InstrumentService.computeTradeCalculations({
               ...trade.toObject(),
               broker: account.broker,
-              positionModel: 'HEDGING',
+              _accountProfile: account.profile,
+              feeModelKey: account.profile?.feeModelKey,
+              positionModel: account.profile?.positionModel || 'HEDGING',
+              _authoritativeFees: true,
             });
             trade.markModified('calculated');
             trade.markModified('simpleExecution');

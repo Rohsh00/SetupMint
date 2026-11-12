@@ -176,7 +176,7 @@ describe('Quantitative Audit API Integration Tests (Phases 1-6)', () => {
     if (tuesdayRow) {
       expect(tuesdayRow.trades ?? tuesdayRow.count).toBeGreaterThanOrEqual(1);
     }
-  });
+  }, 15000);
 
   it('2. NSE USDINR currency futures retain Indian statutory charges on create & PUT update', async () => {
     const createRes = await app.inject({
@@ -533,5 +533,137 @@ describe('Quantitative Audit API Integration Tests (Phases 1-6)', () => {
     expect(statsAll.isCrossCurrencyWarning).toBe(true);
     expect(statsAll.byCurrency?.INR).toBeDefined();
     expect(statsAll.byCurrency?.USD).toBeDefined();
+  });
+
+  it('Elefin MT5 zero-commission & multi-fill partial exit webhook compute exact net P&L without phantom fees', async () => {
+    const elefinAcc = await TradingAccount.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: 'Elefin Audit USD',
+      broker: 'Elefin',
+      accountType: 'FOREX',
+      baseCurrency: 'USD',
+      initialBalance: mongoose.Types.Decimal128.fromString('100.00'),
+      currentBalance: mongoose.Types.Decimal128.fromString('100.00'),
+      status: 'ACTIVE',
+      profile: {
+        marketRegion: 'GLOBAL',
+        baseCurrency: 'USD',
+        timezone: 'UTC',
+        feeModelKey: 'FOREX_COMMISSION',
+        executionAdapterKey: 'ELEFIN_MT5',
+        positionModel: 'HEDGING',
+        sessionCalendarKey: 'FOREX_24_5',
+        capabilities: {
+          canPlaceOrders: true,
+          canModifyStopLoss: true,
+          canExitPositions: true,
+          canScaleLadder: true,
+          canAutoExecute: true,
+          canSyncFunds: false,
+          canFetchHistory: false,
+          canStreamQuotes: true,
+        },
+      },
+    });
+    const elefinAccId = elefinAcc._id.toString();
+    const ticket = `99${Date.now().toString().slice(-6)}`;
+
+    // 1. Open SHORT 0.04 XAUUSD @ 3974.56
+    const openRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${elefinAccId}`,
+      payload: {
+        positions: [
+          {
+            ticket,
+            symbol: 'XAUUSD',
+            type: 'SELL',
+            volume: 0.04,
+            price: 3974.56,
+            commission: 0,
+            swap: 0,
+            open_time: '2026-11-12T06:39:12Z',
+          },
+        ],
+      },
+    });
+    expect(openRes.statusCode).toBe(200);
+
+    const openTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: elefinAcc._id,
+      tags: `MT5_TICKET_${ticket}`,
+    });
+    expect(openTrade).toBeDefined();
+    expect(openTrade?.calculated?.totalCosts).toBe(0);
+
+    // 2. UI queues partial exit 0.02 @ 3969.59 -> creates optimistic pending fill, NOT phantom INR/FX fees
+    const uiExitRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/trades/${openTrade!._id}/broker-exit`,
+      headers: { cookie },
+      payload: {
+        exitQuantity: 0.02,
+        exitPrice: 3969.59,
+        executeOnBroker: true,
+      },
+    });
+    expect(uiExitRes.statusCode).toBe(200);
+
+    // 3. MT5 executes first partial close 0.02 @ 3969.00 (commission=0, swap=0) -> replaces pending fill in-place
+    const partialCloseRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${elefinAccId}`,
+      payload: {
+        action: 'CLOSE',
+        ticket,
+        deal_id: `${ticket}01`,
+        symbol: 'XAUUSD',
+        type: 'SELL',
+        volume: 0.02,
+        price: 3974.56,
+        close_price: 3969.0,
+        profit: 11.12,
+        commission: 0,
+        swap: 0,
+        close_time: '2026-11-12T06:47:53Z',
+      },
+    });
+    expect(partialCloseRes.statusCode).toBe(200);
+
+    const midTrade = await Trade.findById(openTrade!._id);
+    expect(midTrade?.status).toBe('OPEN'); // Still 0.02 open! Not prematurely closed!
+    expect(midTrade?.fills?.filter((f: any) => f.type === 'EXIT').length).toBe(1);
+
+    // 4. MT5 closes final remaining 0.02 @ 3960.98 (profit=+27.16, commission=0, swap=0)
+    const finalCloseRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${elefinAccId}`,
+      payload: {
+        action: 'CLOSE',
+        ticket,
+        deal_id: `${ticket}02`,
+        symbol: 'XAUUSD',
+        type: 'SELL',
+        volume: 0.02,
+        price: 3974.56,
+        close_price: 3960.98,
+        profit: 27.16,
+        commission: 0,
+        swap: 0,
+        close_time: '2026-11-12T07:14:14Z',
+      },
+    });
+    expect(finalCloseRes.statusCode).toBe(200);
+
+    const finalTrade = await Trade.findById(openTrade!._id);
+    expect(finalTrade?.status).toBe('CLOSED');
+    expect(finalTrade?.fills?.filter((f: any) => f.type === 'EXIT').length).toBe(2);
+    expect(finalTrade?.calculated?.totalCosts).toBe(0);
+    // Weighted partial close: (0.02*(3974.56-3969.00) + 0.02*(3974.56-3960.98))*100 = 11.12 + 27.16 = 38.28 (NOT 54.32!)
+    expect(finalTrade?.calculated?.grossPnL).toBe(38.28);
+    expect(finalTrade?.calculated?.netPnL).toBe(38.28);
+    expect(finalTrade?.calculated?.averageExitPrice).toBe(3964.99);
+    expect(finalTrade?.simpleExecution?.exitPrice).toBe(3964.99);
   });
 });

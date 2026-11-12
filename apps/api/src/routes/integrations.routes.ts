@@ -468,13 +468,22 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       ? [req.body]
       : [];
 
-    // Reconcile open MT5 trades if the EA provides an authoritative positions snapshot
-    if (Array.isArray(req.body?.positions)) {
+    // Reconcile open MT5 trades ONLY if the EA provides an authoritative, non-empty positions snapshot.
+    // CRITICAL FIX: An empty array (positions: []) must NEVER auto-close trades!
+    // During MT5 order modification (e.g. user setting SL on mobile app), the MT5 server removes the previous
+    // SL order structure from the book, which can cause a transient empty position enumeration in the terminal
+    // for 50-300ms. Blanket auto-closing on empty positions causes false "Trade Closed in Loss" alerts.
+    if (Array.isArray(req.body?.positions) && rawItems.length > 0) {
       const activeTicketSet = new Set(
         rawItems
           .map((item) => String(item.ticket || item.id || item.ticket_id || item.order || '').trim())
           .filter(Boolean)
       );
+
+      // Clear missing debounce state for any ticket actively reported by the EA
+      for (const t of activeTicketSet) {
+        Mt5CommandService.clearMissingTicket(t);
+      }
 
       const orphanedOpenTrades = await Trade.find({
         userId: account.userId,
@@ -488,7 +497,16 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         const tradeTicket = ticketTag ? ticketTag.replace('MT5_TICKET_', '').trim() : '';
 
         if (tradeTicket && !activeTicketSet.has(tradeTicket)) {
-          // This trade was closed on MT5! Reconcile and close it cleanly
+          // Debounce: Require the trade to be missing for at least 5 consecutive sync cycles
+          // AND at least 15 seconds before concluding it was closed on MT5.
+          const isConfirmedMissing = Mt5CommandService.recordMissingTicket(tradeTicket, 15000, 5);
+          if (!isConfirmedMissing) {
+            req.log.debug(`[MT5Webhook] Ticket #${tradeTicket} missing from snapshot - debouncing (not closing yet)`);
+            continue;
+          }
+          Mt5CommandService.clearMissingTicket(tradeTicket);
+
+          // This trade was legitimately closed on MT5! Reconcile and close it cleanly
           const exitPrice = openTrade.calculated?.liveMfeSummary?.peakLtp || openTrade.simpleExecution?.entryPrice || 0;
           openTrade.status = 'CLOSED';
           openTrade.exitTime = new Date();
@@ -801,20 +819,34 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               if (swap > 0) trade.simpleExecution.otherFees = swap;
             }
             if (Array.isArray(trade.fills) && trade.fills.length > 0) {
-              const hasExit = trade.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
-              if (!hasExit) {
-                const totalEntry = trade.fills
-                  .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
-                  .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
-                trade.fills.push({
+              const autoExitIdx = trade.fills.findIndex((f: any) => String(f.fillId || '').includes('_exit_auto'));
+              if (autoExitIdx >= 0) {
+                // Upgrade placeholder _exit_auto fill to authoritative MT5 deal exit fill
+                trade.fills[autoExitIdx] = {
                   fillId: targetExitFillId,
                   timestamp: trade.exitTime || new Date(),
                   type: 'EXIT',
                   price: exitPriceFinal,
-                  quantity: totalEntry || trade.simpleExecution?.quantity || volume,
-                  fee: 0,
-                } as any);
+                  quantity: trade.fills[autoExitIdx].quantity || volume,
+                  fee: commission > 0 ? Number((commission / 2).toFixed(2)) : 0,
+                } as any;
                 trade.markModified('fills');
+              } else {
+                const hasExit = trade.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
+                if (!hasExit) {
+                  const totalEntry = trade.fills
+                    .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+                    .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+                  trade.fills.push({
+                    fillId: targetExitFillId,
+                    timestamp: trade.exitTime || new Date(),
+                    type: 'EXIT',
+                    price: exitPriceFinal,
+                    quantity: totalEntry || trade.simpleExecution?.quantity || volume,
+                    fee: 0,
+                  } as any);
+                  trade.markModified('fills');
+                }
               }
             }
             const recalced = InstrumentService.computeTradeCalculations({
@@ -926,12 +958,46 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           processedCount++;
         }
       } else {
-        // OPEN Position
-        if (trade && trade.status === 'OPEN') {
+        // OPEN Position reported in live positions snapshot
+        if (trade) {
           let updated = false;
-          if (stopLoss && trade.risk?.currentStopLoss !== stopLoss) {
+
+          // Self-Healing / Reviving: If the trade was prematurely marked CLOSED by an auto-exit,
+          // but the MT5 broker confirms the position is STILL OPEN in the active terminal list:
+          if (trade.status === 'CLOSED') {
+            req.log.warn(
+              `[MT5Webhook] Reviving prematurely closed trade ${trade._id} (ticket ${ticketStr}) - position is still active on MT5`
+            );
+            trade.status = 'OPEN';
+            trade.exitTime = undefined;
+            if (trade.simpleExecution) {
+              trade.simpleExecution.exitPrice = undefined;
+            }
+            if (Array.isArray(trade.fills)) {
+              // Strip away the premature auto-exit fill
+              trade.fills = trade.fills.filter(
+                (f: any) => !String(f.fillId || '').includes('_exit_auto')
+              ) as any;
+              trade.markModified('fills');
+            }
+            updated = true;
+          }
+
+          if (stopLoss) {
             trade.risk = trade.risk || {};
-            trade.risk.currentStopLoss = stopLoss;
+            if (!trade.risk.initialStopLoss || trade.risk.initialStopLoss === 0) {
+              trade.risk.initialStopLoss = stopLoss;
+              updated = true;
+            }
+            if (trade.risk.currentStopLoss !== stopLoss) {
+              trade.risk.currentStopLoss = stopLoss;
+              trade.markModified('risk');
+              updated = true;
+            }
+          }
+          if (takeProfit && trade.risk?.plannedTarget !== takeProfit) {
+            trade.risk = trade.risk || {};
+            trade.risk.plannedTarget = takeProfit;
             trade.markModified('risk');
             updated = true;
           }
@@ -948,6 +1014,13 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             updated = true;
           }
           if (updated) {
+            trade.calculated = InstrumentService.computeTradeCalculations({
+              ...trade.toObject(),
+              broker: account.broker,
+              positionModel: 'HEDGING',
+            });
+            trade.markModified('calculated');
+            trade.markModified('simpleExecution');
             await trade.save();
           }
           results.push({ ticket: ticketStr, status: 'ALREADY_OPEN', id: trade._id });

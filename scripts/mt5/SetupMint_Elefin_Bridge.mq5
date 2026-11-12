@@ -433,6 +433,7 @@ void SyncAllActivePositions()
          datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
          double profit = PositionGetDouble(POSITION_PROFIT);
          double swap = PositionGetDouble(POSITION_SWAP);
+         ulong posId = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
 
          int trackerIdx = -1;
          for(int k = 0; k < g_excursionCount; k++)
@@ -443,6 +444,10 @@ void SyncAllActivePositions()
          if(added > 0) json += ",";
          json += "{";
          json += "\"ticket\":" + IntegerToString(ticket) + ",";
+         if(posId > 0 && posId != ticket)
+         {
+            json += "\"id\":\"" + IntegerToString(posId) + "\",";
+         }
          json += "\"symbol\":\"" + sym + "\",";
          json += "\"type\":\"" + (type == POSITION_TYPE_BUY ? "BUY" : "SELL") + "\",";
          json += "\"volume\":" + DoubleToString(vol, 2) + ",";
@@ -464,6 +469,60 @@ void SyncAllActivePositions()
          }
          json += "}";
          added++;
+      }
+   }
+
+   // Safety Fallback: If PositionsTotal() is 0 but we have active positions tracked in g_excursions,
+   // verify them directly with PositionSelectByTicket to guarantee zero false empty payloads during order updates
+   if(added == 0 && g_excursionCount > 0)
+   {
+      for(int k = 0; k < g_excursionCount; k++)
+      {
+         ulong exTicket = g_excursions[k].ticket;
+         if(exTicket > 0 && PositionSelectByTicket(exTicket))
+         {
+            string sym = PositionGetString(POSITION_SYMBOL);
+            ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            double vol = PositionGetDouble(POSITION_VOLUME);
+            double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+            double curPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+            double posBid = SymbolInfoDouble(sym, SYMBOL_BID);
+            double posAsk = SymbolInfoDouble(sym, SYMBOL_ASK);
+            int posDigits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+            if(posDigits <= 0) posDigits = 2;
+            double sl = PositionGetDouble(POSITION_SL);
+            double tp = PositionGetDouble(POSITION_TP);
+            datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
+            double profit = PositionGetDouble(POSITION_PROFIT);
+            double swap = PositionGetDouble(POSITION_SWAP);
+            ulong posId = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+
+            if(added > 0) json += ",";
+            json += "{";
+            json += "\"ticket\":" + IntegerToString(exTicket) + ",";
+            if(posId > 0 && posId != exTicket)
+            {
+               json += "\"id\":\"" + IntegerToString(posId) + "\",";
+            }
+            json += "\"symbol\":\"" + sym + "\",";
+            json += "\"type\":\"" + (type == POSITION_TYPE_BUY ? "BUY" : "SELL") + "\",";
+            json += "\"volume\":" + DoubleToString(vol, 2) + ",";
+            json += "\"price\":" + DoubleToString(openPrice, posDigits) + ",";
+            json += "\"cur_price\":" + DoubleToString(curPrice, posDigits) + ",";
+            json += "\"bid\":" + DoubleToString(posBid, posDigits) + ",";
+            json += "\"ask\":" + DoubleToString(posAsk, posDigits) + ",";
+            json += "\"sl\":" + DoubleToString(sl, posDigits) + ",";
+            json += "\"tp\":" + DoubleToString(tp, posDigits) + ",";
+            json += "\"profit\":" + DoubleToString(profit, 2) + ",";
+            json += "\"swap\":" + DoubleToString(swap, 2) + ",";
+            json += "\"open_time\":\"" + FormatIsoUtc(openTime) + "\"";
+            json += ",\"mfe_price\":" + DoubleToString(g_excursions[k].peakPrice, posDigits);
+            json += ",\"mae_price\":" + DoubleToString(g_excursions[k].worstPrice, posDigits);
+            json += ",\"peak_profit\":" + DoubleToString(g_excursions[k].peakProfit, 2);
+            json += ",\"max_drawdown\":" + DoubleToString(g_excursions[k].maxDrawdown, 2);
+            json += "}";
+            added++;
+         }
       }
    }
    json += "]}";
@@ -731,9 +790,13 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
                         const MqlTradeRequest& request,
                         const MqlTradeResult& result)
 {
-   // When a deal or order executes, trigger instant sync
+   // Only trigger instant sync on real deal execution (entry/exit) or position modification (SL/TP adjusted).
+   // CRITICAL: NEVER sync on TRADE_TRANSACTION_ORDER_DELETE!
+   // When modifying Stop Loss or Take Profit on MT5 (mobile or desktop), MT5 deletes the old SL order structure
+   // before registering the new one. Triggering a position sync during ORDER_DELETE occurs while the terminal
+   // is in a transient order-updating state where PositionsTotal() can temporarily return 0, leading to false
+   // auto-closure of open positions.
    if(trans.type == TRADE_TRANSACTION_DEAL_ADD ||
-      trans.type == TRADE_TRANSACTION_ORDER_DELETE ||
       trans.type == TRADE_TRANSACTION_POSITION)
    {
       UpdateExcursionTracking();

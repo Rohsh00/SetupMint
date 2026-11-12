@@ -25,7 +25,39 @@ export class Mt5CommandService {
   private static lastActiveMap = new Map<string, number>();
   private static quoteMap = new Map<string, Mt5LiveQuote>();
   private static positionQuoteMap = new Map<string, Mt5PositionQuote>();
+  private static missingTicketMap = new Map<string, { count: number; firstSeenAt: number }>();
   private static readonly MT5_QUOTE_TTL_MS = 45000; // 45 seconds
+
+  /**
+   * Tracks a trade ticket that is missing from an active MT5 positions snapshot.
+   * Returns true ONLY if the ticket has been missing for at least requiredCount consecutive snapshots
+   * AND at least minDurationMs time (default: 5 consecutive snapshots across >= 15 seconds).
+   * This prevents transient glitches during order modification (like setting Stop Loss on mobile)
+   * from erroneously auto-closing open positions.
+   */
+  static recordMissingTicket(ticket: string, minDurationMs: number = 15000, requiredCount: number = 5): boolean {
+    const tStr = String(ticket).trim();
+    if (!tStr) return false;
+    const now = Date.now();
+    const existing = Mt5CommandService.missingTicketMap.get(tStr);
+    if (!existing) {
+      Mt5CommandService.missingTicketMap.set(tStr, { count: 1, firstSeenAt: now });
+      return false;
+    }
+    existing.count += 1;
+    const elapsed = now - existing.firstSeenAt;
+    return existing.count >= requiredCount && elapsed >= minDurationMs;
+  }
+
+  /**
+   * Clears the missing tracking state for a ticket when it appears active.
+   */
+  static clearMissingTicket(ticket: string): void {
+    const tStr = String(ticket).trim();
+    if (tStr) {
+      Mt5CommandService.missingTicketMap.delete(tStr);
+    }
+  }
 
   /**
    * Records a live symbol quote (bid, ask, ltp) pushed from MT5 EA.

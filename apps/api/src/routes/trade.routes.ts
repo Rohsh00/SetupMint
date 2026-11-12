@@ -479,7 +479,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     let formattedFills = t.fills;
     let formattedCalculated = t.calculated;
 
-    if (t.executionMode === 'ADVANCED' && Array.isArray(t.fills) && t.fills.length > 0) {
+    if ((t.executionMode === 'ADVANCED' || (Array.isArray(t.fills) && t.fills.length > 1)) && Array.isArray(t.fills) && t.fills.length > 0) {
       const sanitized = sanitizeTradeFills(t.fills);
       if (sanitized.hasChanges) {
         formattedFills = sanitized.fills;
@@ -1274,7 +1274,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
     }
 
-    if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
+    if ((trade.executionMode === 'ADVANCED' || (Array.isArray(trade.fills) && trade.fills.length > 1)) && Array.isArray(trade.fills) && trade.fills.length > 0) {
       const sanitized = sanitizeTradeFills(trade.fills);
       if (sanitized.hasChanges) {
         trade.fills = sanitized.fills as any;
@@ -2062,7 +2062,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     // Update trade record in MongoDB
     if (isReallyFullClose) {
-      if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
+      if ((trade.executionMode === 'ADVANCED' || (Array.isArray(trade.fills) && trade.fills.length > 1)) && Array.isArray(trade.fills) && trade.fills.length > 0) {
         trade.fills.push({
           fillId: `exit_${Date.now()}`,
           type: 'EXIT',
@@ -2339,7 +2339,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       });
 
       if (isFullClose) {
-        if (trade.executionMode === 'ADVANCED' && Array.isArray(trade.fills) && trade.fills.length > 0) {
+        if ((trade.executionMode === 'ADVANCED' || (Array.isArray(trade.fills) && trade.fills.length > 1)) && Array.isArray(trade.fills) && trade.fills.length > 0) {
           trade.fills.push({
             fillId: `ladder_exit_${Date.now()}`,
             type: 'EXIT',

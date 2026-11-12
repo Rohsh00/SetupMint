@@ -267,4 +267,85 @@ describe('MetaTrader 5 / Elefin Webhook Duplicate Fill Prevention & Self-Healing
     expect(closedTradeAfter?.calculated?.openQuantity).toBe(0);
     expect(closedTradeAfter?.calculated?.closedQuantity).toBe(0.02);
   });
+
+  it('does NOT close an open position when receiving an empty positions payload (mobile SL modification glitch)', async () => {
+    const slTicket = '14688656';
+
+    // 1. Open trade with no stop loss (naked trade, exactly reproducing user scenario)
+    const openRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        positions: [
+          {
+            ticket: slTicket,
+            symbol: 'XAUUSD',
+            type: 'BUY',
+            volume: 0.02,
+            price: 3982.23,
+            cur_price: 3982.23,
+            sl: 0,
+            open_time: '2026-11-12 09:27:09',
+          },
+        ],
+      },
+    });
+    expect(openRes.statusCode).toBe(200);
+
+    const openTrade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${slTicket}`,
+    });
+    expect(openTrade).toBeDefined();
+    expect(openTrade?.status).toBe('OPEN');
+    expect(openTrade?.fills?.length).toBe(1);
+
+    // 2. User modifies SL on mobile MT5 -> transient order deletion causes empty positions: []
+    const emptyPayloadRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        positions: [],
+      },
+    });
+    expect(emptyPayloadRes.statusCode).toBe(200);
+
+    // Trade MUST STILL BE OPEN! Not auto-closed!
+    const tradeAfterEmpty = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${slTicket}`,
+    });
+    expect(tradeAfterEmpty?.status).toBe('OPEN');
+    expect(tradeAfterEmpty?.fills?.length).toBe(1);
+
+    // 3. Milliseconds later: MT5 reports the position with the new Stop Loss set on mobile
+    const slSetRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        positions: [
+          {
+            ticket: slTicket,
+            symbol: 'XAUUSD',
+            type: 'BUY',
+            volume: 0.02,
+            price: 3982.23,
+            cur_price: 3982.20,
+            sl: 3975.00,
+            open_time: '2026-11-12 09:27:09',
+          },
+        ],
+      },
+    });
+    expect(slSetRes.statusCode).toBe(200);
+
+    const tradeWithSl = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${slTicket}`,
+    });
+    expect(tradeWithSl?.status).toBe('OPEN');
+    expect(tradeWithSl?.risk?.initialStopLoss).toBe(3975.00);
+    expect(tradeWithSl?.risk?.currentStopLoss).toBe(3975.00);
+    expect(tradeWithSl?.fills?.length).toBe(1);
+  });
 });

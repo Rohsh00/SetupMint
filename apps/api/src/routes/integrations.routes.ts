@@ -477,11 +477,13 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     // Mt5CommandService.recordMissingTicket requires >= 5 consecutive missing heartbeats AND >= 15 seconds
     // elapsed before confirming closure or cleaning an orphaned duplicate.
     if (Array.isArray(req.body?.positions)) {
-      const activeTicketSet = new Set(
-        rawItems
-          .map((item) => String(item.ticket || item.id || item.ticket_id || item.order || '').trim())
-          .filter(Boolean)
-      );
+      const activeTicketSet = new Set<string>();
+      for (const item of rawItems) {
+        if (item.ticket) activeTicketSet.add(String(item.ticket).trim());
+        if (item.id) activeTicketSet.add(String(item.id).trim());
+        if (item.ticket_id) activeTicketSet.add(String(item.ticket_id).trim());
+        if (item.order) activeTicketSet.add(String(item.order).trim());
+      }
 
       // Clear missing debounce state for any ticket actively reported by the EA
       for (const t of activeTicketSet) {
@@ -535,25 +537,33 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const exitPrice = openTrade.calculated?.liveMfeSummary?.peakLtp || openTrade.simpleExecution?.entryPrice || 0;
           openTrade.status = 'CLOSED';
           openTrade.exitTime = new Date();
-          openTrade.executionMode = 'SIMPLE';
-          if (openTrade.simpleExecution && (!openTrade.simpleExecution.exitPrice || openTrade.simpleExecution.exitPrice === 0)) {
-            openTrade.simpleExecution.exitPrice = exitPrice;
+
+          const totalEntry = (openTrade.fills || [])
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          const totalExit = (openTrade.fills || [])
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          const unexitedQty = Math.max(0, Number((totalEntry - totalExit).toFixed(8)));
+
+          if (unexitedQty > 1e-8) {
+            openTrade.fills = openTrade.fills || [];
+            openTrade.fills.push({
+              fillId: `mt5_${tradeTicket}_exit_auto`,
+              timestamp: openTrade.exitTime,
+              type: 'EXIT',
+              price: exitPrice,
+              quantity: unexitedQty,
+              fee: 0,
+            } as any);
+            openTrade.markModified('fills');
           }
-          if (Array.isArray(openTrade.fills) && openTrade.fills.length > 0) {
-            const hasExit = openTrade.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT');
-            if (!hasExit) {
-              const totalEntry = openTrade.fills
-                .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
-                .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
-              openTrade.fills.push({
-                fillId: `mt5_${tradeTicket}_exit_auto`,
-                timestamp: openTrade.exitTime,
-                type: 'EXIT',
-                price: exitPrice,
-                quantity: totalEntry || openTrade.simpleExecution?.quantity || 0.01,
-                fee: 0,
-              } as any);
-              openTrade.markModified('fills');
+
+          const exitCount = (openTrade.fills || []).filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT').length;
+          openTrade.executionMode = exitCount > 1 ? 'ADVANCED' : 'SIMPLE';
+          if (openTrade.simpleExecution) {
+            if (exitCount <= 1 && (!openTrade.simpleExecution.exitPrice || openTrade.simpleExecution.exitPrice === 0)) {
+              openTrade.simpleExecution.exitPrice = exitPrice;
             }
           }
           openTrade.calculated = InstrumentService.computeTradeCalculations({
@@ -708,6 +718,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
       if (isClose) {
         Mt5CommandService.clearMissingTicket(ticketStr);
+        let isFullyClosed = true;
         const exitPriceFinal = closePrice || entryPrice;
         const targetExitFillId = dealIdStr ? `mt5_deal_${dealIdStr}` : `mt5_${ticketStr}_exit`;
 
@@ -892,16 +903,21 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const isDuplicate =
             !replacedPendingFill &&
             (alreadyHasThisFill ||
-              (trade.status === 'CLOSED' && totalExitQty >= totalEntryQty) ||
+              (trade.status === 'CLOSED' && totalExitQty >= totalEntryQty - 1e-8) ||
               remainingOpenQty <= 0);
 
           if (isDuplicate) {
             // Already closed or duplicate exit webhook: do NOT push duplicate fills
-            trade.status = 'CLOSED';
-            trade.executionMode = exitFillCount > 1 ? 'ADVANCED' : 'SIMPLE';
-            if (item.close_time) trade.exitTime = new Date(item.close_time);
+            const isFullyClosed = totalExitQty >= totalEntryQty - 1e-8 && totalEntryQty > 0;
+            trade.status = isFullyClosed ? 'CLOSED' : 'OPEN';
+            trade.executionMode = !isFullyClosed || exitFillCount > 1 ? 'ADVANCED' : 'SIMPLE';
+            if (isFullyClosed) {
+              if (item.close_time) trade.exitTime = new Date(item.close_time);
+            } else {
+              trade.exitTime = undefined;
+            }
             if (trade.simpleExecution && exitPriceFinal > 0) {
-              if (exitFillCount <= 1) {
+              if (isFullyClosed && exitFillCount <= 1) {
                 trade.simpleExecution.exitPrice = exitPriceFinal;
               }
               if (commission > 0) trade.simpleExecution.brokerage = commission;
@@ -992,12 +1008,14 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           const exitCountAfter = (trade.fills || [])
             .filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT')
             .length;
-          const isFullyClosed = totalExitedAfter >= totalEntryQty - 1e-8;
+          isFullyClosed = totalExitedAfter >= totalEntryQty - 1e-8 && totalEntryQty > 0;
 
           trade.status = isFullyClosed ? 'CLOSED' : 'OPEN';
           trade.executionMode = !isFullyClosed || exitCountAfter > 1 ? 'ADVANCED' : 'SIMPLE';
           if (isFullyClosed) {
             trade.exitTime = item.close_time ? new Date(item.close_time) : new Date();
+          } else {
+            trade.exitTime = undefined;
           }
           if (trade.simpleExecution) {
             if (isFullyClosed && exitCountAfter <= 1 && exitPriceFinal > 0) {
@@ -1065,14 +1083,14 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         }
 
         const userDoc = await User.findById(account.userId).lean();
-        if (userDoc && trade) {
+        if (userDoc && trade && isFullyClosed) {
           TelegramAlertService.notifyTradeClosed(userDoc, trade, {
             netPnL: trade.calculated?.netPnL || 0,
             exitPrice: trade.calculated?.averageExitPrice || closePrice || entryPrice,
           }).catch(() => {});
         }
 
-        results.push({ ticket: ticketStr, status: 'CLOSED', id: trade._id });
+        results.push({ ticket: ticketStr, status: isFullyClosed ? 'CLOSED' : 'PARTIALLY_CLOSED', id: trade?._id });
         processedCount++;
       } else if (isModify) {
         if (trade && trade.status === 'OPEN') {
@@ -1095,15 +1113,21 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         if (trade) {
           let updated = false;
 
-          // Self-Healing / Reviving: If the trade was prematurely marked CLOSED by an auto-exit,
+          // Self-Healing / Reviving: If the trade was prematurely marked CLOSED,
           // but the MT5 broker confirms the position is STILL OPEN in the active terminal list:
-          // Never revive if an authoritative broker EXIT deal (mt5_deal_*) already closed this trade.
-          const hasBrokerDealExit =
-            Array.isArray(trade.fills) &&
-            trade.fills.some((f: any) => String(f.fillId || '').startsWith('mt5_deal_'));
-          if (trade.status === 'CLOSED' && !hasBrokerDealExit) {
+          // Revive if the trade is not fully exited OR if the broker actively reports volume > 0!
+          const totalEntryQty = (trade.fills || [])
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          const totalExitQty = (trade.fills || [])
+            .filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT')
+            .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0);
+          const isFullyExited = totalExitQty >= totalEntryQty - 1e-8 && totalEntryQty > 0;
+          const reportedVolume = Number(item.volume) || 0;
+
+          if (trade.status === 'CLOSED' && (!isFullyExited || reportedVolume > 0)) {
             req.log.warn(
-              `[MT5Webhook] Reviving prematurely closed trade ${trade._id} (ticket ${ticketStr}) - position is still active on MT5`
+              `[MT5Webhook] Reviving prematurely closed trade ${trade._id} (ticket ${ticketStr}, reported vol ${reportedVolume}) - position is still active on MT5`
             );
             trade.status = 'OPEN';
             trade.exitTime = undefined;
@@ -1117,6 +1141,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               ) as any;
               trade.markModified('fills');
             }
+            const exitCount = (trade.fills || []).filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT').length;
+            trade.executionMode = exitCount > 0 ? 'ADVANCED' : 'SIMPLE';
             updated = true;
           }
 

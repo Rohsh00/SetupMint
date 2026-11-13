@@ -331,10 +331,23 @@ export class InstrumentService {
       body.simpleExecution.taxes = 0;
     }
 
+    const totalEntryQty = Array.isArray(body.fills)
+      ? body.fills
+          .filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY')
+          .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0)
+      : 0;
+    const totalExitQty = Array.isArray(body.fills)
+      ? body.fills
+          .filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT')
+          .reduce((sum: number, f: any) => sum + (Number(f.quantity) || 0), 0)
+      : 0;
+    const isPartialFill = totalExitQty > 0 && totalExitQty < totalEntryQty - 1e-8;
+
     const hasPartialOrMultiFills =
       Array.isArray(body.fills) &&
       body.fills.some((f: any) => String(f.type || '').toUpperCase() === 'EXIT') &&
       (body.status === 'OPEN' ||
+        isPartialFill ||
         body.fills.filter((f: any) => String(f.type || '').toUpperCase() === 'EXIT').length > 1 ||
         body.fills.filter((f: any) => String(f.type || '').toUpperCase() === 'ENTRY').length > 1);
     const effectiveMode = hasPartialOrMultiFills

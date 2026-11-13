@@ -544,4 +544,161 @@ describe('MetaTrader 5 / Elefin Webhook Duplicate Fill Prevention & Self-Healing
       nowSpy.mockRestore();
     }
   });
+
+  it('correctly handles partial close (0.05 lot -> 0.03 exit): remains OPEN with 0.02 lot, ignores duplicate close webhook, and revives premature closures when MT5 reports remaining volume', async () => {
+    const partialTicket = '14968419';
+
+    // 1. Initial position opened in MT5 with 0.05 lot
+    const openRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        positions: [
+          {
+            ticket: partialTicket,
+            symbol: 'XAUUSD',
+            type: 'BUY',
+            volume: 0.05,
+            price: 3890.36,
+            cur_price: 3890.36,
+            sl: 3887.80,
+            open_time: '2026-11-13 11:46:08',
+          },
+        ],
+      },
+    });
+    expect(openRes.statusCode).toBe(200);
+
+    let trade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${partialTicket}`,
+    });
+    expect(trade).toBeDefined();
+    expect(trade?.status).toBe('OPEN');
+    expect(trade?.fills?.length).toBe(1);
+    expect(trade?.calculated?.openQuantity).toBe(0.05);
+    expect(trade?.calculated?.closedQuantity).toBe(0);
+
+    // 2. User books 50% / partial close: deal for 0.03 lot executes at 3896.34
+    const partialExitPayload = {
+      action: 'CLOSE',
+      ticket: partialTicket,
+      deal_id: '21654284',
+      symbol: 'XAUUSD',
+      type: 'BUY',
+      volume: 0.03,
+      open_price: 3890.36,
+      close_price: 3896.34,
+      profit: 17.94,
+      commission: 0,
+      swap: 0,
+      close_time: '2026-11-13 11:54:23',
+    };
+
+    const partialExitRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: partialExitPayload,
+    });
+    expect(partialExitRes.statusCode).toBe(200);
+    const partialBody = JSON.parse(partialExitRes.body);
+    expect(partialBody.results[0].status).toBe('PARTIALLY_CLOSED');
+
+    trade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${partialTicket}`,
+    });
+    expect(trade?.status).toBe('OPEN');
+    expect(trade?.exitTime).toBeUndefined();
+    expect(trade?.fills?.length).toBe(2);
+    expect(trade?.calculated?.closedQuantity).toBe(0.03);
+    expect(trade?.calculated?.openQuantity).toBe(0.02);
+
+    // 3. Duplicate delivery of partial close webhook: must NOT close the trade!
+    const dupPartialRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: partialExitPayload,
+    });
+    expect(dupPartialRes.statusCode).toBe(200);
+
+    trade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${partialTicket}`,
+    });
+    expect(trade?.status).toBe('OPEN');
+    expect(trade?.fills?.length).toBe(2);
+    expect(trade?.calculated?.openQuantity).toBe(0.02);
+
+    // 4. Test Self-Healing Revival:
+    // If the trade was somehow marked CLOSED in DB, but MT5 snapshot arrives with remaining volume 0.02:
+    trade!.status = 'CLOSED';
+    trade!.exitTime = new Date();
+    await trade!.save();
+
+    const snapshotRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        positions: [
+          {
+            ticket: partialTicket,
+            symbol: 'XAUUSD',
+            type: 'BUY',
+            volume: 0.02,
+            price: 3890.36,
+            cur_price: 3895.00,
+            sl: 3890.32,
+            open_time: '2026-11-13 11:46:08',
+            mfe_price: 3897.38,
+            peak_profit: 14.04,
+          },
+        ],
+      },
+    });
+    expect(snapshotRes.statusCode).toBe(200);
+
+    trade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${partialTicket}`,
+    });
+    // Must be REVIVED to OPEN!
+    expect(trade?.status).toBe('OPEN');
+    expect(trade?.exitTime).toBeUndefined();
+    expect(trade?.calculated?.openQuantity).toBe(0.02);
+    expect(trade?.calculated?.closedQuantity).toBe(0.03);
+
+    // 5. Final exit for the remaining 0.02 lot arrives
+    const finalExitRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${accountId}`,
+      payload: {
+        action: 'CLOSE',
+        ticket: partialTicket,
+        deal_id: '21654285',
+        symbol: 'XAUUSD',
+        type: 'BUY',
+        volume: 0.02,
+        open_price: 3890.36,
+        close_price: 3900.00,
+        profit: 19.28,
+        commission: 0,
+        swap: 0,
+        close_time: '2026-11-13 12:00:00',
+      },
+    });
+    expect(finalExitRes.statusCode).toBe(200);
+    const finalBody = JSON.parse(finalExitRes.body);
+    expect(finalBody.results[0].status).toBe('CLOSED');
+
+    trade = await Trade.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      tags: `MT5_TICKET_${partialTicket}`,
+    });
+    expect(trade?.status).toBe('CLOSED');
+    expect(trade?.exitTime).toBeDefined();
+    expect(trade?.fills?.length).toBe(3);
+    expect(trade?.calculated?.openQuantity).toBe(0);
+    expect(trade?.calculated?.closedQuantity).toBe(0.05);
+  });
 });

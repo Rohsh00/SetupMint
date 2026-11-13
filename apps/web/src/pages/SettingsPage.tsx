@@ -244,6 +244,7 @@ export function SettingsPage() {
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
   const [sendingSampleAlert, setSendingSampleAlert] = useState(false);
   const [testingGoldNewsAlert, setTestingGoldNewsAlert] = useState(false);
+  const [testingGoldNewsResultAlert, setTestingGoldNewsResultAlert] = useState(false);
   const [goldNewsReminderMinutes, setGoldNewsReminderMinutes] = useState(initialWatcher.goldNewsReminderMinutes ?? 15);
   const [goldNewsLeadTimesMinutes, setGoldNewsLeadTimesMinutes] = useState<number[]>(
     Array.isArray(initialWatcher.goldNewsLeadTimesMinutes) && initialWatcher.goldNewsLeadTimesMinutes.length > 0
@@ -265,6 +266,7 @@ export function SettingsPage() {
     tradeClosed: true,
     eodSummaryDigest: true,
     goldNewsReminder: true,
+    goldNewsResultAlert: true,
     ...(initialWatcher.telegramAlertEvents || {}),
   });
 
@@ -349,6 +351,7 @@ export function SettingsPage() {
           eodSummaryDigest: true,
           ...s.telegramAlertEvents,
           goldNewsReminder: s.telegramAlertEvents?.goldNewsReminder ?? true,
+          goldNewsResultAlert: s.telegramAlertEvents?.goldNewsResultAlert ?? true,
         });
       }
     }
@@ -461,6 +464,7 @@ export function SettingsPage() {
       eodSummaryDigest: true,
       ...(d.telegramAlertEvents || {}),
       goldNewsReminder: d.telegramAlertEvents?.goldNewsReminder ?? true,
+      goldNewsResultAlert: d.telegramAlertEvents?.goldNewsResultAlert ?? true,
     });
     setDisplaySettings({ ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS });
     toast.info('Reset live watcher settings to institutional defaults. Click "Save Execution Settings" to persist.');
@@ -566,6 +570,28 @@ export function SettingsPage() {
       toast.error(err.message || 'Error delivering Gold alert to Telegram.');
     } finally {
       setTestingGoldNewsAlert(false);
+    }
+  };
+
+  const handleTestGoldNewsResultAlert = async () => {
+    const tokenToTest = telegramBotToken || user?.liveWatcherSettings?.telegramBotToken;
+    const chatIdToTest = telegramChatId || user?.liveWatcherSettings?.telegramChatId;
+    if (!tokenToTest || !chatIdToTest) {
+      toast.error('Please configure and test your Telegram Bot Token and Chat ID first.');
+      return;
+    }
+    setTestingGoldNewsResultAlert(true);
+    try {
+      const res = await api.settings.testGoldNewsResultAlert();
+      if (res.success) {
+        toast.success(res.message || 'Sample Gold Macro News Result flash delivered to Telegram!');
+      } else {
+        toast.error(res.error?.message || 'Failed to send Gold news result flash to Telegram.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error delivering Gold news result flash to Telegram.');
+    } finally {
+      setTestingGoldNewsResultAlert(false);
     }
   };
 
@@ -2211,7 +2237,19 @@ export function SettingsPage() {
                                         onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsReminder: e.target.checked })}
                                       />
                                     }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#EAB308' }}>👑 Gold (XAUUSD) Catalyst News Reminder</Typography>}
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#EAB308' }}>👑 Gold Catalyst News Reminder</Typography>}
+                                  />
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        size="small"
+                                        checked={telegramAlertEvents.goldNewsResultAlert !== false}
+                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsResultAlert: e.target.checked })}
+                                      />
+                                    }
+                                    label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#10B981' }}>⚡ Post-News Actual Result Flash</Typography>}
                                   />
                                 </Grid>
                               </Grid>
@@ -2256,20 +2294,32 @@ export function SettingsPage() {
                                   />
                                 </Box>
 
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  color="warning"
-                                  onClick={handleTestGoldNewsAlert}
-                                  disabled={testingGoldNewsAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                  sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
-                                >
-                                  {testingGoldNewsAlert ? 'Delivering...' : '🔔 Test Gold Alert to Telegram'}
-                                </Button>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="warning"
+                                    onClick={handleTestGoldNewsAlert}
+                                    disabled={testingGoldNewsAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
+                                    sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
+                                  >
+                                    {testingGoldNewsAlert ? 'Delivering...' : '🔔 Test Pre-News Alert'}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="success"
+                                    onClick={handleTestGoldNewsResultAlert}
+                                    disabled={testingGoldNewsResultAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
+                                    sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
+                                  >
+                                    {testingGoldNewsResultAlert ? 'Delivering...' : '⚡ Test Actual Result Flash'}
+                                  </Button>
+                                </Box>
                               </Box>
 
                               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.45 }}>
-                                Gold (XAUUSD) is denominated in US Dollars. Major US macro releases (CPI, Non-Farm Payrolls, FOMC Interest Decisions, Retail Sales, GDP) trigger immediate $20–$60 price sweeps and massive spread expansion. SetupMint scans the economic calendar 24/7 and delivers loud, off-screen Telegram reminders before the release.
+                                Gold (XAUUSD) is denominated in US Dollars. Major US macro releases (CPI, Non-Farm Payrolls, FOMC Interest Decisions, Retail Sales, GDP) trigger immediate $20–$60 price sweeps and massive spread expansion. SetupMint scans the economic calendar 24/7 to deliver loud pre-news warnings AND instant post-release result flashes with deviation analysis, Gold bias, and live price reaction.
                               </Typography>
 
                               {/* Reminder Lead Times Preset & Custom Picker */}

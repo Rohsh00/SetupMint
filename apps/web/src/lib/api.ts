@@ -884,6 +884,8 @@ export const api = {
       request<any>('/settings/sample-alert', { method: 'POST' }),
     testGoldNewsAlert: () =>
       request<any>('/settings/test-gold-news-alert', { method: 'POST' }),
+    testGoldNewsResultAlert: () =>
+      request<any>('/settings/test-gold-news-result-alert', { method: 'POST' }),
   },
 
   // Review Queue & Mistake Detection

@@ -121,6 +121,22 @@ export class GoldNewsAlertWorker {
             if (sent) alertsDispatched++;
           }
         }
+
+        // Post-Release Actual News Flash (when actual data is published)
+        if (
+          minutesUntil <= 0 &&
+          minutesUntil >= -60 &&
+          event.actual &&
+          event.actual !== '—' &&
+          watcherSettings?.telegramAlertEvents?.goldNewsResultAlert !== false
+        ) {
+          const resultKey = `gold_result:${user._id}:${event.id}`;
+          if (!this.sentAlertKeys.has(resultKey)) {
+            this.sentAlertKeys.set(resultKey, nowMs);
+            const sent = await TelegramAlertService.sendGoldNewsResultAlert(user, event);
+            if (sent) alertsDispatched++;
+          }
+        }
       }
     }
 

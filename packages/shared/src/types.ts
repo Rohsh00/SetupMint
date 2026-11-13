@@ -2335,6 +2335,7 @@ export interface ILiveWatcherSettings {
     tradeClosed?: boolean;
     eodSummaryDigest?: boolean;
     goldNewsReminder?: boolean;
+    goldNewsResultAlert?: boolean;
   };
   lastDailyLossAlertDate?: string;
   lastDailyLossWarnDate?: string;
@@ -2417,6 +2418,7 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
     tradeClosed: true,
     eodSummaryDigest: true,
     goldNewsReminder: true,
+    goldNewsResultAlert: true,
   },
   goldNewsReminderMinutes: 15,
   goldNewsLeadTimesMinutes: [15, 60],
@@ -3040,6 +3042,13 @@ export interface IEconomicCalendarEvent {
   minutesUntil: number;
   forecast: string;
   previous: string;
+  actual?: string;
+  actualNum?: number;
+  deviation?: string;
+  deviationDirection?: 'BEAT' | 'MISS' | 'IN_LINE';
+  actualBiasOutcome?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  actualSummaryNote?: string;
+  releasedAt?: string;
   status: 'BLACKOUT_NOW' | 'IMMINENT' | 'TODAY' | 'UPCOMING' | 'JUST_RELEASED';
   goldImpactNote?: string;
   goldBias?: 'BULLISH_IF_LOW' | 'BEARISH_IF_HIGH' | 'HIGH_VOLATILITY' | 'NEUTRAL';

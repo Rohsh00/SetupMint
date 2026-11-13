@@ -853,20 +853,52 @@ export function PropChallengePanel() {
                             >
                               {ev.istTimeStr}
                             </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{ fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}
-                            >
-                              Fcst: <strong>{ev.forecast || '—'}</strong> • Prev: {ev.previous || '—'}
-                            </Typography>
+                            {ev.actual ? (
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontSize: '0.68rem',
+                                  fontVariantNumeric: 'tabular-nums',
+                                  color:
+                                    ev.actualBiasOutcome === 'BULLISH'
+                                      ? '#10B981'
+                                      : ev.actualBiasOutcome === 'BEARISH'
+                                      ? '#EF4444'
+                                      : 'text.primary',
+                                }}
+                              >
+                                Act: <strong>{ev.actual}</strong> • Fcst: {ev.forecast || '—'}
+                              </Typography>
+                            ) : (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ fontSize: '0.68rem', fontVariantNumeric: 'tabular-nums' }}
+                              >
+                                Fcst: <strong>{ev.forecast || '—'}</strong> • Prev: {ev.previous || '—'}
+                              </Typography>
+                            )}
                           </Box>
-                          {ev.goldImpactNote && (
+                          {(ev.actualSummaryNote || ev.goldImpactNote) && (
                             <Typography
                               variant="caption"
                               sx={{
                                 fontSize: '0.66rem',
-                                color: isDark ? 'rgba(253, 224, 71, 0.9)' : '#854D0E',
+                                color: ev.actual
+                                  ? ev.actualBiasOutcome === 'BULLISH'
+                                    ? isDark
+                                      ? '#34D399'
+                                      : '#059669'
+                                    : ev.actualBiasOutcome === 'BEARISH'
+                                    ? isDark
+                                      ? '#F87171'
+                                      : '#DC2626'
+                                    : isDark
+                                    ? 'rgba(253, 224, 71, 0.9)'
+                                    : '#854D0E'
+                                  : isDark
+                                  ? 'rgba(253, 224, 71, 0.9)'
+                                  : '#854D0E',
                                 display: '-webkit-box',
                                 WebkitLineClamp: 1,
                                 WebkitBoxOrient: 'vertical',
@@ -874,9 +906,10 @@ export function PropChallengePanel() {
                                 textOverflow: 'ellipsis',
                                 fontStyle: 'italic',
                               }}
-                              title={ev.goldImpactNote}
+                              title={ev.actualSummaryNote || ev.goldImpactNote}
                             >
-                              💡 {ev.goldImpactNote}
+                              {ev.actual ? (ev.actualBiasOutcome === 'BULLISH' ? '🟢' : ev.actualBiasOutcome === 'BEARISH' ? '🔴' : '⚪') : '💡'}{' '}
+                              {ev.actualSummaryNote || ev.goldImpactNote}
                             </Typography>
                           )}
                         </Box>

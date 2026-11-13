@@ -3518,9 +3518,14 @@ export class TelegramAlertService {
       for (const ev of events.slice(0, 5)) {
         const impactBadge = ev.impact === 'HIGH' ? '🔴 HIGH' : '🟠 MED';
         text += `• <b>${ev.title}</b> (${impactBadge})\n` +
-          `  ⏰ <b>${ev.countdownStr}</b> • <i>${ev.istTimeStr}</i>\n` +
-          `  📊 Forecast: <code>${ev.forecast}</code> | Prev: <code>${ev.previous}</code>\n` +
-          `  💡 <i>${ev.goldImpactNote ? ev.goldImpactNote.slice(0, 100) + '...' : 'High XAUUSD volatility'}</i>\n\n`;
+          `  ⏰ <b>${ev.countdownStr}</b> • <i>${ev.istTimeStr}</i>\n`;
+        if (ev.actual) {
+          const biasTag = ev.actualBiasOutcome === 'BULLISH' ? '🟢 Bullish Gold' : ev.actualBiasOutcome === 'BEARISH' ? '🔴 Bearish Gold' : '⚪ Neutral';
+          text += `  🎯 <b>Actual: <code>${ev.actual}</code></b> (${biasTag}) | Fcst: <code>${ev.forecast}</code>\n`;
+        } else {
+          text += `  📊 Forecast: <code>${ev.forecast}</code> | Prev: <code>${ev.previous}</code>\n`;
+        }
+        text += `  💡 <i>${ev.actualSummaryNote || (ev.goldImpactNote ? ev.goldImpactNote.slice(0, 100) + '...' : 'High XAUUSD volatility')}</i>\n\n`;
       }
 
       const configuredMinutes = user.liveWatcherSettings?.goldNewsReminderMinutes || 15;
@@ -3696,6 +3701,83 @@ export class TelegramAlertService {
       return true;
     } catch (err: any) {
       console.warn(`[TelegramAlertService] sendGoldNewsReminder failed for user ${user._id}:`, err.message);
+      return false;
+    }
+  }
+
+  static async sendGoldNewsResultAlert(
+    user: any,
+    event: IEconomicCalendarEvent,
+    liveGoldPrice?: number
+  ): Promise<boolean> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) {
+      return false;
+    }
+    if (settings.telegramAlertEvents && settings.telegramAlertEvents.goldNewsResultAlert === false) {
+      return false;
+    }
+
+    if (settings.goldNewsImpactFilter === 'HIGH_IMPACT_ONLY' && event.impact !== 'HIGH') {
+      return false;
+    }
+
+    const rawToken = settings.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    const chatId = settings.telegramChatId;
+    if (!botToken || !chatId) return false;
+
+    let disableNotification = false;
+    if (settings.quietHours?.enabled) {
+      const now = new Date();
+      const currentHhMm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const { start, end } = settings.quietHours;
+      if (start && end) {
+        if (start <= end) {
+          disableNotification = currentHhMm >= start && currentHhMm <= end;
+        } else {
+          disableNotification = currentHhMm >= start || currentHhMm <= end;
+        }
+      }
+    }
+
+    // Check if user has open Gold positions exposed to this news release
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    const openGoldTrades = await Trade.find({
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+      symbol: { $regex: /XAU|GOLD/i },
+    }).lean();
+
+    let ltp = liveGoldPrice;
+    if (!ltp && openGoldTrades && openGoldTrades.length > 0) {
+      ltp = (openGoldTrades[0] as any).currentLtp || openGoldTrades[0].simpleExecution?.entryPrice;
+    }
+
+    const { text, buttons } = EconomicCalendarService.formatGoldNewsResultTelegramAlert(
+      event,
+      ltp,
+      openGoldTrades
+    );
+
+    const finalButtons: ITelegramInlineButton[][] = [...buttons];
+    if (openGoldTrades && openGoldTrades.length > 0) {
+      for (const t of openGoldTrades as any[]) {
+        const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? t.entryPrice ?? 0);
+        const tradeLtp = t.currentLtp || entry;
+        finalButtons.unshift([
+          { text: `🛡️ Lock BE (${t.symbol})`, callback_data: `x:${t._id}:BE:1:${Number(tradeLtp.toFixed(2))}` },
+          { text: `🚨 Close Position`, callback_data: `x:${t._id}:E:1:${Number(tradeLtp.toFixed(2))}` },
+        ]);
+      }
+    }
+
+    try {
+      await this.sendMessage(botToken, chatId, text, finalButtons, disableNotification);
+      return true;
+    } catch (err: any) {
+      console.warn(`[TelegramAlertService] sendGoldNewsResultAlert failed for user ${user._id}:`, err.message);
       return false;
     }
   }

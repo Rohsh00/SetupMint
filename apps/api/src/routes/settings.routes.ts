@@ -421,6 +421,83 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     });
   });
 
+  // Test Telegram Gold (XAUUSD) Post-News Actual Result Flash
+  app.post('/test-gold-news-result-alert', async (req: any, reply) => {
+    const user = await User.findById(req.user!.id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+
+    const settings = user.liveWatcherSettings;
+    const rawToken = settings?.telegramBotToken;
+    const botToken = rawToken ? safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken) : null;
+    const chatId = settings?.telegramChatId;
+
+    if (!botToken || !chatId) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Please connect your Telegram bot and enter your Chat ID in Settings first.',
+        },
+      });
+    }
+
+    const upcoming = await EconomicCalendarService.getUpcomingGoldNews(new Date(), 48);
+    const event = upcoming[0] || {
+      id: 'SAMPLE_GOLD_PPI',
+      title: 'US Core PPI m/m (Producer Price Index)',
+      country: 'USD',
+      impact: 'HIGH' as const,
+      isGoldMover: true,
+      timestamp: new Date().toISOString(),
+      istTimeStr: 'Today 19:00 IST',
+      countdownStr: 'JUST RELEASED',
+      minutesUntil: 0,
+      forecast: '0.4%',
+      previous: '0.7%',
+      actual: '0.3%',
+      actualNum: 0.3,
+      deviation: '-0.1',
+      deviationDirection: 'MISS' as const,
+      actualBiasOutcome: 'BULLISH' as const,
+      actualSummaryNote: 'Softer inflation cools Treasury yields, triggering upside momentum for non-yielding Gold (XAUUSD).',
+      status: 'JUST_RELEASED' as const,
+      goldImpactNote: 'Directly influences Fed interest rate trajectory. Softer inflation sparks rate-cut rallies in Gold.',
+      goldBias: 'BULLISH_IF_LOW' as const,
+      recommendedAction: 'Watch for initial spread normalization before entering pullback continuations.',
+    };
+
+    const mockEvent = {
+      ...event,
+      actual: event.actual || '0.3%',
+      actualNum: event.actualNum ?? 0.3,
+      deviation: event.deviation || '-0.1',
+      deviationDirection: event.deviationDirection || ('MISS' as const),
+      actualBiasOutcome: event.actualBiasOutcome || ('BULLISH' as const),
+      actualSummaryNote:
+        event.actualSummaryNote ||
+        'Softer inflation cools Treasury yields, triggering upside momentum for non-yielding Gold (XAUUSD).',
+    };
+
+    const success = await TelegramAlertService.sendGoldNewsResultAlert(user, mockEvent);
+
+    if (!success) {
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'DISPATCH_FAILED',
+          message: 'Failed to send Gold news result alert to Telegram. Verify your bot token and chat ID.',
+        },
+      });
+    }
+
+    return reply.send({
+      success: true,
+      message: `Test Gold news result flash sent to Telegram (${mockEvent.title} • Actual: ${mockEvent.actual})!`,
+    });
+  });
+
   // Register Telegram Webhook URL for interactive buttons and two-way commands
   app.post('/register-telegram-webhook', async (req: any, reply) => {
     let { botToken, webhookUrl } = req.body || {};

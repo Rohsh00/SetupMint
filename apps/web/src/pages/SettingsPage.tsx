@@ -894,11 +894,59 @@ export function SettingsPage() {
     },
   });
 
-  const handleCopyVoiceUrl = (key: string, url: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedVoiceKey(key);
-    toast.success('Siri URL copied to clipboard!');
-    setTimeout(() => setCopiedVoiceKey(null), 2500);
+  const copyTextToClipboard = async (text: string): Promise<boolean> => {
+    if (!text) return false;
+    // 1. Try modern Async Clipboard API if available and permitted
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (err) {
+        console.warn('navigator.clipboard.writeText failed (non-secure context or permission denied), using fallback:', err);
+      }
+    }
+
+    // 2. Synchronous textarea fallback (works in non-HTTPS / HTTP IP environments)
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      textArea.setAttribute('readonly', '');
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      textArea.setSelectionRange(0, 99999);
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      if (successful) return true;
+    } catch (fallbackErr) {
+      console.error('Fallback execCommand copy failed:', fallbackErr);
+    }
+
+    // 3. Last-resort fallback for stubborn mobile browsers: prompt so user can press Copy
+    try {
+      window.prompt('Copy this Siri URL:', text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCopyVoiceUrl = async (key: string, url: string) => {
+    if (!url) {
+      toast.error('URL is not available yet.');
+      return;
+    }
+    const success = await copyTextToClipboard(url);
+    if (success) {
+      setCopiedVoiceKey(key);
+      toast.success('Siri URL copied to clipboard!');
+      setTimeout(() => setCopiedVoiceKey(null), 2500);
+    } else {
+      toast.error('Could not copy automatically. Please copy the link manually from the box.');
+    }
   };
 
   const handleTestCarPlaySpeech = async (key: string, url: string) => {
@@ -2573,8 +2621,22 @@ export function SettingsPage() {
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
                                       Spoken phrase: <em>&quot;Hey Siri, Gold Price&quot;</em>
                                     </Typography>
-                                    <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100', mb: 1.5 }}>
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block' }}>
+                                    <Box
+                                      onClick={() => handleCopyVoiceUrl('goldPrice', carPlaySetup.endpoints.goldPriceVoice)}
+                                      sx={{
+                                        p: 1,
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                        mb: 1.5,
+                                        cursor: 'pointer',
+                                        userSelect: 'all',
+                                        border: '1px solid transparent',
+                                        transition: 'all 0.15s ease',
+                                        '&:hover': { borderColor: 'primary.main', bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'grey.200' },
+                                      }}
+                                      title="Click to copy full URL"
+                                    >
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
                                         {carPlaySetup.endpoints.goldPriceVoice}
                                       </Typography>
                                     </Box>
@@ -2617,8 +2679,22 @@ export function SettingsPage() {
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
                                       Spoken phrase: <em>&quot;Hey Siri, Check Trades&quot;</em>
                                     </Typography>
-                                    <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100', mb: 1.5 }}>
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block' }}>
+                                    <Box
+                                      onClick={() => handleCopyVoiceUrl('trades', carPlaySetup.endpoints.openTradesVoice)}
+                                      sx={{
+                                        p: 1,
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                        mb: 1.5,
+                                        cursor: 'pointer',
+                                        userSelect: 'all',
+                                        border: '1px solid transparent',
+                                        transition: 'all 0.15s ease',
+                                        '&:hover': { borderColor: 'info.main', bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'grey.200' },
+                                      }}
+                                      title="Click to copy full URL"
+                                    >
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
                                         {carPlaySetup.endpoints.openTradesVoice}
                                       </Typography>
                                     </Box>
@@ -2661,8 +2737,22 @@ export function SettingsPage() {
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
                                       Spoken phrase: <em>&quot;Hey Siri, Market Briefing&quot;</em>
                                     </Typography>
-                                    <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100', mb: 1.5 }}>
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block' }}>
+                                    <Box
+                                      onClick={() => handleCopyVoiceUrl('briefing', carPlaySetup.endpoints.marketBriefingVoice)}
+                                      sx={{
+                                        p: 1,
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                        mb: 1.5,
+                                        cursor: 'pointer',
+                                        userSelect: 'all',
+                                        border: '1px solid transparent',
+                                        transition: 'all 0.15s ease',
+                                        '&:hover': { borderColor: 'success.main', bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'grey.200' },
+                                      }}
+                                      title="Click to copy full URL"
+                                    >
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
                                         {carPlaySetup.endpoints.marketBriefingVoice}
                                       </Typography>
                                     </Box>
@@ -2707,6 +2797,24 @@ export function SettingsPage() {
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
                                       Moves Stop Loss to entry plus fee buffer on active Gold position.
                                     </Typography>
+                                    <Box
+                                      onClick={() => handleCopyVoiceUrl('actionBE', carPlaySetup.endpoints.lockBreakevenVoice)}
+                                      sx={{
+                                        p: 0.75,
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                        mb: 1,
+                                        cursor: 'pointer',
+                                        userSelect: 'all',
+                                        border: '1px solid transparent',
+                                        '&:hover': { borderColor: 'primary.main' },
+                                      }}
+                                      title="Click to copy action URL"
+                                    >
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
+                                        {carPlaySetup.endpoints.lockBreakevenVoice}
+                                      </Typography>
+                                    </Box>
                                     <Button
                                       size="small"
                                       variant="outlined"
@@ -2727,6 +2835,24 @@ export function SettingsPage() {
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
                                       Closes 50% volume and moves SL to Breakeven on remaining lots.
                                     </Typography>
+                                    <Box
+                                      onClick={() => handleCopyVoiceUrl('actionHalf', carPlaySetup.endpoints.bookHalfProfitVoice)}
+                                      sx={{
+                                        p: 0.75,
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                        mb: 1,
+                                        cursor: 'pointer',
+                                        userSelect: 'all',
+                                        border: '1px solid transparent',
+                                        '&:hover': { borderColor: 'success.main' },
+                                      }}
+                                      title="Click to copy action URL"
+                                    >
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
+                                        {carPlaySetup.endpoints.bookHalfProfitVoice}
+                                      </Typography>
+                                    </Box>
                                     <Button
                                       size="small"
                                       variant="outlined"
@@ -2747,6 +2873,24 @@ export function SettingsPage() {
                                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
                                       Immediate market flatten for all open positions across all accounts.
                                     </Typography>
+                                    <Box
+                                      onClick={() => handleCopyVoiceUrl('actionPanic', carPlaySetup.endpoints.panicCloseVoice)}
+                                      sx={{
+                                        p: 0.75,
+                                        borderRadius: 1,
+                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                        mb: 1,
+                                        cursor: 'pointer',
+                                        userSelect: 'all',
+                                        border: '1px solid transparent',
+                                        '&:hover': { borderColor: 'error.main' },
+                                      }}
+                                      title="Click to copy action URL"
+                                    >
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
+                                        {carPlaySetup.endpoints.panicCloseVoice}
+                                      </Typography>
+                                    </Box>
                                     <Button
                                       size="small"
                                       variant="outlined"
@@ -3682,9 +3826,9 @@ export function SettingsPage() {
                         size="small"
                         variant="outlined"
                         startIcon={<ContentCopyRounded fontSize="small" />}
-                        onClick={() => {
-                          navigator.clipboard.writeText(fyersRedirectUri);
-                          toast.info('Redirect URL copied');
+                        onClick={async () => {
+                          const ok = await copyTextToClipboard(fyersRedirectUri);
+                          if (ok) toast.info('Redirect URL copied');
                         }}
                         sx={{ fontSize: '0.6875rem' }}
                       >

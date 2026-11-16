@@ -1384,7 +1384,7 @@ export class TelegramAlertService {
           `Traded Price: ${sym}${res.tradedPrice || currentLtp} • Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
         if (messageId) {
-          if (cq.message?.photo) {
+          if (cq.message?.caption !== undefined) {
             await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
           } else {
             await this.editMessageText(botToken, chatId, messageId, updateText, []);
@@ -1479,7 +1479,7 @@ export class TelegramAlertService {
           `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
         if (messageId) {
-          if (cq.message?.photo) {
+          if (cq.message?.caption !== undefined) {
             await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
           } else {
             await this.editMessageText(botToken, chatId, messageId, updateText, []);
@@ -1563,7 +1563,7 @@ export class TelegramAlertService {
           `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
         if (messageId) {
-          if (cq.message?.photo) {
+          if (cq.message?.caption !== undefined) {
             await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
           } else {
             await this.editMessageText(botToken, chatId, messageId, updateText, []);
@@ -1632,7 +1632,7 @@ export class TelegramAlertService {
           `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
         if (messageId) {
-          if (cq.message?.photo) {
+          if (cq.message?.caption !== undefined) {
             await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
           } else {
             await this.editMessageText(botToken, chatId, messageId, updateText, []);
@@ -1750,7 +1750,7 @@ export class TelegramAlertService {
           `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
         if (messageId) {
-          if (cq.message?.photo) {
+          if (cq.message?.caption !== undefined) {
             await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
           } else {
             await this.editMessageText(botToken, chatId, messageId, updateText, []);
@@ -1940,7 +1940,7 @@ export class TelegramAlertService {
     );
 
     if (messageId) {
-      if (cq.message?.photo) {
+      if (cq.message?.caption !== undefined) {
         await this.editMessageCaption(botToken, chatId, messageId, refreshText, newButtons);
       } else {
         await this.editMessageText(botToken, chatId, messageId, refreshText, newButtons);

@@ -47,7 +47,7 @@ import { Mt5CommandService } from './mt5-command.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { AccountScopeService } from './account-scope.service.js';
 import { ChartGeneratorService } from './chart-generator.service.js';
-import { MarketDataService } from './market-data/index.js';
+import { MarketDataService, GlobalCfdCandleProvider } from './market-data/index.js';
 import { EconomicCalendarService, IEconomicCalendarEvent } from './economic-calendar.service.js';
 import { ITradeCandle } from '@tradevault/shared';
 import sharp from 'sharp';
@@ -964,11 +964,12 @@ export class TelegramAlertService {
       }
       return [
         row1,
+        ...(isProfitableSideOfBe ? [partialScaleRow] : []),
         ...(trailButtons.length > 0 ? [trailButtons] : []),
         ...(includeTimeframes ? [tfRow] : []),
         [
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
-          { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
+          { text: '🔄 Refresh Price & PnL', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
         ],
       ];
     }
@@ -1156,19 +1157,26 @@ export class TelegramAlertService {
       await this.sendMessage(
         botToken,
         chatId,
-        `⚠️ <b>EMERGENCY KILLSWITCH CONFIRMATION</b>\n\nAre you sure you want to market-exit ALL open positions immediately?`,
+        `⚠️ <b>EMERGENCY KILLSWITCH CONFIRMATION</b>\n\nAre you sure you want to market-exit ALL open positions across MT5 (Elefin) and FYERS immediately?`,
         [[{ text: '🛑 YES, CLOSE ALL POSITIONS NOW', callback_data: 'confirm_panic' }]]
       );
       return;
     }
     if (data === 'confirm_panic') {
-      await this.answerCallbackQuery(botToken, cq.id, '🚨 Flattening all positions on FYERS...', true);
+      await this.answerCallbackQuery(botToken, cq.id, '🚨 Flattening all positions on MT5 & FYERS...', true);
       await this.executePanicExit(user, botToken, chatId, messageId);
       return;
     }
-    if (data === 'chart_xauusd') {
-      await this.answerCallbackQuery(botToken, cq.id, '⏱️ Checking XAUUSD chart...');
-      await this.handleChartCommand(user, botToken, chatId, ['XAUUSD', '5']);
+    if (data.startsWith('chart_')) {
+      const sym = data.replace('chart_', '').toUpperCase();
+      await this.answerCallbackQuery(botToken, cq.id, `⏱️ Checking ${sym} chart...`);
+      await this.handleChartCommand(user, botToken, chatId, [sym, '5']);
+      return;
+    }
+    if (data.startsWith('price_')) {
+      const sym = data.replace('price_', '').toUpperCase();
+      await this.answerCallbackQuery(botToken, cq.id, `🔄 Refreshing ${sym} price...`);
+      await this.handlePriceCommand(user, botToken, chatId, sym, messageId);
       return;
     }
     if (data === 'show_trades') {
@@ -1276,6 +1284,12 @@ export class TelegramAlertService {
       return;
     }
 
+    // Fast-path: Handle instant live price & PnL refresh
+    if (actionCode === 'REF') {
+      await this.handleRefreshCallback(user, botToken, chatId, messageId, cq, trade, cardVersion, sym);
+      return;
+    }
+
     // c. Verify cardVersion against persisted AlertState (prevent stale executions)
     const alertState = await AlertState.findOne({
       userId: user._id,
@@ -1364,12 +1378,18 @@ export class TelegramAlertService {
         const brokerLabel = isMt5 ? 'MT5 / ELEFIN BRIDGE' : 'FYERS';
         const statusLabel = isMt5 ? `SENT TO MT5 BRIDGE (#${ticket})` : (res.executedOnBroker ? 'FILLED ON EXCHANGE' : 'SIMULATED');
         const updateText =
-          (cq.message?.text || '') +
+          (cq.message?.text || cq.message?.caption || '') +
           `\n\n<b>[✅ EXECUTED MARKET EXIT ON ${brokerLabel}]</b>\n` +
           `Order Status: ${statusLabel}\n` +
-          `Traded Price: ${sym}${res.tradedPrice || currentLtp} • Time: ${new Date().toLocaleTimeString('en-IN')} IST`;
+          `Traded Price: ${sym}${res.tradedPrice || currentLtp} • Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
-        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+        if (messageId) {
+          if (cq.message?.photo) {
+            await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
+          } else {
+            await this.editMessageText(botToken, chatId, messageId, updateText, []);
+          }
+        }
 
         trade.auditLog.push({
           action: 'TELEGRAM_EXIT',
@@ -1401,7 +1421,23 @@ export class TelegramAlertService {
       }
 
       if (actionCode === 'BE') {
-        const trueBePrice = (trade.calculated as any)?.trueBreakevenPrice || trade.simpleExecution?.entryPrice || 0;
+        let trueBePrice = (trade.calculated as any)?.trueBreakevenPrice;
+        if (!trueBePrice) {
+          const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
+          try {
+            const beRes = calculateTrueBreakeven({
+              direction: trade.direction,
+              entryPrice,
+              quantity: trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? (trade as any).quantity ?? 1,
+              estimatedCharges: 50,
+            });
+            trueBePrice = beRes.trueBreakevenPrice;
+          } catch {
+            trueBePrice = entryPrice;
+          }
+        }
+        trueBePrice = Number(Number(trueBePrice).toFixed(2));
+
         // Preserve risk.initialStopLoss anchoring! Update only currentStopLoss.
         trade.risk = {
           ...(trade.risk || {}),
@@ -1435,13 +1471,20 @@ export class TelegramAlertService {
         });
         await trade.save();
 
-        const brokerStatus = isMt5 ? 'DISPATCHED TO MT5 BRIDGE' : (brokerResult.executedOnBroker ? 'UPDATED ON BROKER' : 'STORED');
+        const brokerStatus = isMt5 ? `DISPATCHED TO MT5 BRIDGE (#${ticket})` : (brokerResult.executedOnBroker ? 'UPDATED ON BROKER' : 'STORED');
         const updateText =
-          (cq.message?.text || '') +
+          (cq.message?.text || cq.message?.caption || '') +
           `\n\n<b>[🛡️ STOP LOCKED AT TRUE BREAKEVEN]</b>\n` +
-          `SL Level: ${sym}${trueBePrice.toFixed(2)} • Status: ${brokerStatus}`;
+          `SL Level: ${sym}${trueBePrice.toFixed(2)} • Status: ${brokerStatus}\n` +
+          `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
-        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+        if (messageId) {
+          if (cq.message?.photo) {
+            await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
+          } else {
+            await this.editMessageText(botToken, chatId, messageId, updateText, []);
+          }
+        }
 
         if (alertState) {
           alertState.cardVersion += 1;
@@ -1514,11 +1557,18 @@ export class TelegramAlertService {
         await trade.save();
 
         const updateText =
-          (cq.message?.text || '') +
+          (cq.message?.text || cq.message?.caption || '') +
           `\n\n<b>[🔒 STOP LOSS TRAILED TO +${pips} PIPS]</b>\n` +
-          `New SL: ${sym}${targetSl.toFixed(2)} • Status: ${brokerStatus}`;
+          `New SL: ${sym}${targetSl.toFixed(2)} • Status: ${brokerStatus}\n` +
+          `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
-        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+        if (messageId) {
+          if (cq.message?.photo) {
+            await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
+          } else {
+            await this.editMessageText(botToken, chatId, messageId, updateText, []);
+          }
+        }
 
         if (alertState) {
           alertState.cardVersion += 1;
@@ -1576,11 +1626,18 @@ export class TelegramAlertService {
         }
 
         const updateText =
-          (cq.message?.text || '') +
+          (cq.message?.text || cq.message?.caption || '') +
           `\n\n<b>[🎯 ${pct}% PARTIAL PROFIT BOOKED]</b>\n` +
-          `Qty Closed: ${closeQty} • Traded: ${sym}${res.tradedPrice || currentLtp}`;
+          `Qty Closed: ${closeQty} • Traded: ${sym}${res.tradedPrice || currentLtp}\n` +
+          `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
-        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+        if (messageId) {
+          if (cq.message?.photo) {
+            await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
+          } else {
+            await this.editMessageText(botToken, chatId, messageId, updateText, []);
+          }
+        }
 
         trade.auditLog.push({
           action: `TELEGRAM_BOOK_${pct}`,
@@ -1686,12 +1743,19 @@ export class TelegramAlertService {
         }
 
         const updateText =
-          (cq.message?.text || '') +
+          (cq.message?.text || cq.message?.caption || '') +
           `\n\n<b>[🎯 TARGET T${stepNum} SCALED OUT VIA TELEGRAM]</b>\n` +
           `Qty Closed: ${exitQty} • Traded: ${sym}${res.tradedPrice || currentLtp}\n` +
-          `Stop Trailed: ${newStopLoss ? `${sym}${newStopLoss.toFixed(2)}` : 'Unchanged'}`;
+          `Stop Trailed: ${newStopLoss ? `${sym}${newStopLoss.toFixed(2)}` : 'Unchanged'}\n` +
+          `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
 
-        await this.editMessageText(botToken, chatId, messageId, updateText, []);
+        if (messageId) {
+          if (cq.message?.photo) {
+            await this.editMessageCaption(botToken, chatId, messageId, updateText, []);
+          } else {
+            await this.editMessageText(botToken, chatId, messageId, updateText, []);
+          }
+        }
 
         trade.auditLog.push({
           action: `TELEGRAM_SCALE_OUT_T${stepNum}`,
@@ -1753,15 +1817,142 @@ export class TelegramAlertService {
       }
 
       if (actionCode === 'REF') {
-        const latestLtp = renderLtp > 0 ? renderLtp : (trade.calculated?.liveMfeSummary?.peakLtp || trade.simpleExecution?.entryPrice || 0);
-        const newButtons = this.buildContextualKeyboard(trade, (alertState?.type as AlertType) || 'STOP_THREAT', latestLtp, (alertState?.cardVersion || 1));
-        await this.editMessageText(botToken, chatId, messageId, cq.message?.text || '', newButtons);
+        await this.handleRefreshCallback(user, botToken, chatId, messageId, cq, trade, cardVersion, sym);
         return;
       }
     } catch (err: any) {
       console.error('[TelegramAlertService] Action execution failed:', err);
       await this.sendMessage(botToken, chatId, `❌ Action failed: ${err.message}`);
     }
+  }
+
+  /**
+   * Refreshes an active trade card in-place with latest live LTP, floating PnL, and distance to Stop Loss.
+   */
+  private static async handleRefreshCallback(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    messageId: number | undefined,
+    cq: any,
+    trade: any,
+    cardVersion: number,
+    sym: string
+  ): Promise<void> {
+    const isMt5 = trade.tags?.includes('MT5') || trade.tags?.includes('ELEFIN') || trade.exchange === 'FOREX';
+    const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? trade.entryPrice ?? 0);
+    const mult = trade.contractMultiplier || trade.simpleExecution?.contractMultiplier || 1;
+    const isLong = trade.direction === 'LONG';
+
+    // 1. Fetch live summary for user's accounts
+    let pos: any = null;
+    let providerName = isMt5 ? 'MT5 Bridge' : 'Live Feed';
+    try {
+      const summary = await LiveWatcherService.getLiveWatcherSummary(
+        user._id.toString(),
+        trade.accountId ? [trade.accountId] : undefined
+      );
+      if (summary?.provider) providerName = summary.provider;
+      if (summary?.positions && summary.positions.length > 0) {
+        pos = summary.positions.find(
+          (p: any) =>
+            p.tradeId === trade._id.toString() ||
+            (p.symbol === trade.symbol && p.direction === trade.direction)
+        );
+      }
+    } catch (err: any) {
+      console.warn('[handleRefreshCallback] LiveWatcherSummary error:', err.message);
+    }
+
+    // 2. Resolve current LTP and PnL
+    let curLtp = pos?.currentLtp || 0;
+    if (curLtp <= 0) {
+      const mt5Quote = Mt5CommandService.getLiveQuote(trade.symbol, trade.accountId?.toString());
+      if (mt5Quote && mt5Quote.ltp > 0) {
+        curLtp = mt5Quote.ltp;
+        providerName = 'MT5 Elefin Live';
+      } else if (GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol)) {
+        try {
+          const gqMap = await GlobalCfdCandleProvider.getLiveQuotes([trade.symbol]);
+          const gq = gqMap.get(trade.symbol);
+          if (gq && gq.ltp > 0) {
+            curLtp = gq.ltp;
+            providerName = 'Global Real-Time Feed';
+          }
+        } catch {
+          // Fallback below
+        }
+      }
+    }
+
+    if (curLtp <= 0) {
+      curLtp = trade.calculated?.liveMfeSummary?.peakLtp || entryPrice;
+    }
+
+    const qty = pos?.quantity ?? trade.calculated?.openQuantity ?? trade.quantity ?? trade.simpleExecution?.quantity ?? 1;
+    const netPnL = pos
+      ? pos.floatingNetPnL
+      : (isLong ? (curLtp - entryPrice) * qty * mult : (entryPrice - curLtp) * qty * mult);
+    const pnlSign = netPnL >= 0 ? '+' : '';
+    const plannedRisk = trade.risk?.initialStopLoss
+      ? Math.abs(entryPrice - trade.risk.initialStopLoss) * qty * mult
+      : (trade.risk?.plannedRiskAmount || 0);
+    const unR = pos?.unrealizedR ?? (plannedRisk > 0 ? netPnL / plannedRisk : 0);
+    const rSign = unR >= 0 ? '+' : '';
+
+    const stopVal = pos?.stopLoss ?? trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? trade.stopLoss;
+    const distPts = stopVal && curLtp > 0 ? Math.abs(curLtp - Number(stopVal)).toFixed(1) : null;
+    const stopInfo = stopVal ? `${sym}${stopVal}${distPts ? ` (${distPts} pts)` : ''}` : 'NO STOP (NAKED)';
+    const beVal = pos?.trueBreakevenPrice ?? (trade.calculated as any)?.trueBreakevenPrice ?? entryPrice;
+    const beInfo = `${sym}${Number(beVal).toFixed(2)}`;
+
+    const timeStr = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+    const refreshText =
+      `📊 <b>${trade.symbol}</b> (<code>${trade.direction}</code>) • <b>LIVE UPDATE</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Entry    : ${sym}${entryPrice.toFixed(2)}  |  LTP: ${sym}${curLtp.toFixed(2)}\n` +
+      `Net PnL  : ${pnlSign}${sym}${netPnL.toFixed(2)} (${rSign}${unR.toFixed(2)}R)\n` +
+      `Quantity : ${qty} ${mult > 1 ? `lots (${qty * mult} units)` : 'units'}\n` +
+      `StopLoss : ${stopInfo}\n` +
+      `True BE  : ${beInfo}\n` +
+      (trade.tradingSession ? `Session  : ${trade.tradingSession}\n` : '') +
+      `</pre>\n` +
+      `<i>Status: ${providerName} • Updated at ${timeStr} IST</i>`;
+
+    const newButtons = this.buildContextualKeyboard(
+      {
+        _id: trade._id,
+        symbol: trade.symbol,
+        direction: trade.direction,
+        entryPrice,
+        calculated: {
+          trueBreakevenPrice: beVal,
+          openQuantity: qty,
+        },
+      },
+      'STOP_THREAT',
+      curLtp,
+      cardVersion + 1,
+      false,
+      true // includeTimeframes
+    );
+
+    if (messageId) {
+      if (cq.message?.photo) {
+        await this.editMessageCaption(botToken, chatId, messageId, refreshText, newButtons);
+      } else {
+        await this.editMessageText(botToken, chatId, messageId, refreshText, newButtons);
+      }
+    }
+
+    await this.answerCallbackQuery(
+      botToken,
+      cq.id,
+      `⚡ ${trade.symbol} LTP: ${sym}${curLtp.toFixed(2)} | PnL: ${pnlSign}${sym}${netPnL.toFixed(2)}`,
+      false
+    );
   }
 
   /**
@@ -1834,10 +2025,11 @@ export class TelegramAlertService {
           chatId,
           `👋 <b>SetupMint Terminal Commands</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `• <b>/price [symbol]</b> — Live real-time market quote & spread (e.g. <code>/price XAUUSD</code>)\n` +
           `• <b>/pnl</b> — Live floating PnL, open R-multiple & day PnL\n` +
           `• <b>/trades</b> — List active open trades with live charts & 1-tap Exit\n` +
           `• <b>/risk</b> — Prop firm drawdown gauge, daily loss runway & Elefin guardrails\n` +
-          `• <b>/sl &lt;price&gt;</b> — Set or trail Stop Loss directly (e.g. <code>/sl 4005.50</code> or reply with price)\n` +
+          `• <b>/sl &lt;price&gt;</b> — Set or trail Stop Loss directly (e.g. <code>/sl 2735.50</code> or reply with price)\n` +
           `• <b>/chart [timeframe]</b> — Instant live candlestick chart (1m, 5m, 15m, 1h)\n` +
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
           `• <b>/news</b> — Upcoming XAUUSD / Gold catalysts & countdown\n` +
@@ -1845,9 +2037,16 @@ export class TelegramAlertService {
           `• <b>/alerts</b> — List active alert states and snoozed trades\n` +
           `• <b>/snooze</b> — Snooze alerts for 15 minutes\n` +
           `• <b>/mute &lt;mins&gt;</b> — Mute audible notifications\n` +
-          `• <b>/panic</b> — Two-step killswitch to market-exit all positions\n\n` +
+          `• <b>/panic</b> — Emergency killswitch to market-exit all positions across MT5 & FYERS\n\n` +
           `<i>Connected account: ${user.name || user.email}</i>`
         );
+        break;
+
+      case '/price':
+      case '/quote':
+      case 'price':
+      case 'quote':
+        await this.handlePriceCommand(user, botToken, chatId, args[0]);
         break;
 
       case '/risk':
@@ -1903,7 +2102,7 @@ export class TelegramAlertService {
         await this.sendMessage(
           botToken,
           chatId,
-          `⚠️ <b>EMERGENCY KILLSWITCH REQUESTED</b>\n\nDo you want to immediately market-exit ALL open positions on FYERS?`,
+          `⚠️ <b>EMERGENCY KILLSWITCH REQUESTED</b>\n\nDo you want to immediately market-exit ALL open positions across MT5 (Elefin) and FYERS?`,
           [[{ text: '🛑 YES, CLOSE ALL POSITIONS NOW', callback_data: 'confirm_panic' }]]
         );
         break;
@@ -2418,6 +2617,154 @@ export class TelegramAlertService {
   }
 
   /**
+   * Generates and sends an on-demand live market quote card.
+   * Usage: /price [symbol] or /quote [symbol] (e.g. /price XAUUSD)
+   */
+  private static async handlePriceCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    symbolArg?: string,
+    messageIdToEdit?: number
+  ): Promise<void> {
+    let symbol = (symbolArg || '').trim().toUpperCase();
+
+    // If no symbol passed, try to get symbol of most recent open trade
+    if (!symbol) {
+      const openTrade = await Trade.findOne({
+        userId: user._id,
+        status: 'OPEN',
+      }).sort({ entryTime: -1 }).select('symbol').lean();
+      symbol = openTrade?.symbol || 'XAUUSD';
+    }
+
+    const isForexOrGold =
+      symbol.includes('XAU') ||
+      symbol.includes('EUR') ||
+      symbol.includes('USD') ||
+      symbol.includes('GBP') ||
+      symbol.includes('BTC') ||
+      symbol === 'GOLD';
+
+    const curSym = isForexOrGold ? '$' : '₹';
+
+    let ltp: number = 0;
+    let bid: number = 0;
+    let ask: number = 0;
+    let high: number = 0;
+    let low: number = 0;
+    let prevClose: number = 0;
+    let providerName = 'SetupMint Live Feed';
+
+    // 1. Try MT5 Live Quote
+    const mt5Quote = Mt5CommandService.getLiveQuote(symbol);
+    if (mt5Quote && mt5Quote.ltp > 0) {
+      ltp = mt5Quote.ltp;
+      bid = mt5Quote.bid || ltp;
+      ask = mt5Quote.ask || ltp;
+      providerName = 'MT5 Elefin Live Bridge';
+    }
+
+    // 2. Try Global CFD provider for Forex/Metals/Crypto
+    if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(symbol)) {
+      try {
+        const quotes = await GlobalCfdCandleProvider.getLiveQuotes([symbol]);
+        const gq = quotes.get(symbol);
+        if (gq && gq.ltp > 0) {
+          ltp = gq.ltp;
+          bid = (gq as any).bid || (gq.ltp - 0.20);
+          ask = (gq as any).ask || (gq.ltp + 0.20);
+          high = gq.high || ltp;
+          low = gq.low || ltp;
+          prevClose = gq.open || ltp;
+          providerName = 'Global Real-Time Feed';
+        }
+      } catch (err: any) {
+        console.warn(`[handlePriceCommand] GlobalCfd quote error for ${symbol}:`, err.message);
+      }
+    }
+
+    // 3. Try FYERS quote
+    if (ltp === 0) {
+      try {
+        const quotes = await FyersService.getMarketQuotes(user._id, [symbol]);
+        const fq = quotes.get(symbol);
+        if (fq && fq.ltp > 0) {
+          ltp = fq.ltp;
+          bid = (fq as any).bid || ltp;
+          ask = (fq as any).ask || ltp;
+          high = fq.high || ltp;
+          low = fq.low || ltp;
+          prevClose = fq.prevClose || fq.open || ltp;
+          providerName = 'FYERS Real-Time';
+        }
+      } catch (err: any) {
+        console.warn(`[handlePriceCommand] FYERS quote error for ${symbol}:`, err.message);
+      }
+    }
+
+    // 4. Fallback to most recent trade in DB
+    if (ltp === 0) {
+      const recentTrade = await Trade.findOne({
+        userId: user._id,
+        symbol: new RegExp(symbol, 'i'),
+      }).sort({ createdAt: -1 });
+
+      if (recentTrade) {
+        ltp = recentTrade.calculated?.liveMfeSummary?.peakLtp || recentTrade.simpleExecution?.entryPrice || 0;
+        providerName = 'Last Recorded Fill';
+      }
+    }
+
+    if (ltp === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Market Quote Unavailable</b>\n\nCould not fetch real-time market data for <code>${symbol}</code>. Verify the symbol name or try again shortly.`
+      );
+      return;
+    }
+
+    const spreadPips = ask > 0 && bid > 0
+      ? (isForexOrGold ? ((ask - bid) / (symbol.includes('XAU') ? 0.10 : 0.0001)).toFixed(1) : (ask - bid).toFixed(2))
+      : '0.0';
+    const spreadDiff = ask > 0 && bid > 0 ? (ask - bid).toFixed(2) : '0.00';
+
+    const dayChange = prevClose > 0 ? ltp - prevClose : 0;
+    const dayChangePct = prevClose > 0 ? ((dayChange / prevClose) * 100).toFixed(2) : '0.00';
+    const changeSign = dayChange >= 0 ? '+' : '';
+
+    const text =
+      `🪙 <b>${symbol} • Real-Time Market Quote</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `LTP       : ${curSym}${ltp.toFixed(2)}\n` +
+      (bid > 0 && ask > 0 ? `Bid / Ask : ${curSym}${bid.toFixed(2)} / ${curSym}${ask.toFixed(2)}\n` : '') +
+      (spreadDiff !== '0.00' ? `Spread    : ${spreadPips} pips (${curSym}${spreadDiff})\n` : '') +
+      (high > 0 && low > 0 ? `Day Range : ${curSym}${low.toFixed(2)} - ${curSym}${high.toFixed(2)}\n` : '') +
+      (prevClose > 0 ? `Change    : ${changeSign}${curSym}${dayChange.toFixed(2)} (${changeSign}${dayChangePct}%)\n` : '') +
+      `</pre>\n` +
+      `<i>Feed: ${providerName} • ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        { text: '🔄 Refresh Price', callback_data: `price_${symbol}` },
+        { text: '📈 5m Chart', callback_data: `chart_${symbol.toLowerCase()}` },
+      ],
+      [
+        { text: '📋 View Open Trades', callback_data: 'cmd_trades' },
+        { text: '📊 Portfolio /pnl', callback_data: 'cmd_pnl' },
+      ],
+    ];
+
+    if (messageIdToEdit) {
+      await this.editMessageText(botToken, chatId, messageIdToEdit, text, buttons);
+    } else {
+      await this.sendMessage(botToken, chatId, text, buttons);
+    }
+  }
+
+  /**
    * Lists active and snoozed alert states for /alerts command.
    */
   private static async handleAlertsListCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
@@ -2490,45 +2837,74 @@ export class TelegramAlertService {
   }
 
   /**
-   * Executes emergency two-step panic flattening across all open FYERS (non-prop/live) positions.
+   * Executes emergency two-step panic flattening across all open positions (both MT5/Elefin and FYERS).
    */
   private static async executePanicExit(user: any, botToken: string | null | undefined, chatId: string | number, messageId?: number): Promise<void> {
-    const liveAccountIds = await AccountScopeService.resolveAccountScope(user._id, {
-      mode: 'TYPE',
-      accountType: 'LIVE',
-    });
     const openTrades = await Trade.find({
       userId: user._id,
-      accountId: { $in: liveAccountIds },
       status: 'OPEN',
     });
     if (openTrades.length === 0) {
-      await this.sendMessage(botToken, chatId, `ℹ️ No open positions to flatten.`);
+      await this.sendMessage(botToken, chatId, `ℹ️ No open positions to flatten. Capital is 100% safe.`);
       return;
     }
 
-    let closedCount = 0;
+    let mt5Closed = 0;
+    let fyersClosed = 0;
+    let failedCount = 0;
+
     for (const t of openTrades) {
       try {
-        const openQty = t.calculated?.openQuantity ?? t.simpleExecution?.quantity ?? 1;
-        await FyersService.executeBrokerExit(user._id, t._id.toString(), { exitQty: openQty, isFullClose: true });
-        closedCount++;
+        const openQty = t.calculated?.openQuantity ?? t.simpleExecution?.quantity ?? (t as any).quantity ?? 1;
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const isMt5 = Mt5CommandService.isMt5Trade(t, account);
+        const ticket = isMt5 ? Mt5CommandService.extractTicket(t) : null;
+
+        if (isMt5 && ticket) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId: (account?._id || t.accountId)!,
+            tradeId: t._id,
+            ticket,
+            volume: openQty,
+          });
+          mt5Closed++;
+        } else {
+          await FyersService.executeBrokerExit(user._id, t._id.toString(), { exitQty: openQty, isFullClose: true });
+          fyersClosed++;
+        }
+
+        t.auditLog.push({
+          action: 'TELEGRAM_PANIC_EXIT',
+          timestamp: new Date(),
+          details: { text: `Emergency panic exit executed via Telegram killswitch (${isMt5 ? `MT5 #${ticket}` : 'FYERS'})` },
+          changedBy: 'telegram',
+        });
+        await t.save();
       } catch (err: any) {
         console.error(`[PanicExit] Failed for trade ${t._id}:`, err.message);
+        failedCount++;
       }
     }
 
     const report =
       `🛑 <b>PANIC KILLSWITCH COMPLETED</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `Successfully market-exited ${closedCount} of ${openTrades.length} open position(s) on FYERS.\n` +
-      `Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
+      `Targeted Positions : ${openTrades.length}\n` +
+      `• MT5 (Elefin) Queued : ${mt5Closed}\n` +
+      `• FYERS Market Exits   : ${fyersClosed}\n` +
+      (failedCount > 0 ? `• Failed Exits         : ${failedCount}\n` : '') +
+      `\n<i>Time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</i>`;
 
     if (messageId) {
-      await this.editMessageText(botToken, chatId, messageId, report, []);
-    } else {
-      await this.sendMessage(botToken, chatId, report);
+      try {
+        await this.editMessageText(botToken, chatId, messageId, report, []);
+        return;
+      } catch {
+        // Fall back to sendMessage
+      }
     }
+    await this.sendMessage(botToken, chatId, report);
   }
 
   /**
@@ -2698,11 +3074,19 @@ export class TelegramAlertService {
         EntryPrice: `${sym}${entry}`,
         StopLoss: sl !== 'None' ? `${sym}${sl}` : 'NO STOP (NAKED)',
         InitialRisk: riskAmt ? `${sym}${Number(riskAmt).toFixed(2)}` : 'Unspecified',
+        ...(trade.tradingSession ? { Session: trade.tradingSession } : {}),
       },
       buttons: [
         [
-          { text: '📋 View Live Trade', callback_data: 'cmd_trades' },
-          { text: '🚨 Quick Market Exit', callback_data: `x:${trade._id}:E:1:${entry}` },
+          { text: '🔄 Refresh Price & PnL', callback_data: `x:${trade._id}:REF:1:${entry}` },
+          { text: '📈 5m Chart', callback_data: `x:${trade._id}:CHART_5:1:${entry}` },
+        ],
+        [
+          { text: '🛡️ Lock Breakeven', callback_data: `x:${trade._id}:BE:1:${entry}` },
+          { text: '⚡ Book 50%', callback_data: `x:${trade._id}:B50:1:${entry}` },
+        ],
+        [
+          { text: '🚨 Quick Market Exit (100%)', callback_data: `x:${trade._id}:E:1:${entry}` },
         ],
       ],
     });

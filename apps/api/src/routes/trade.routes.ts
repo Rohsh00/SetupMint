@@ -11,6 +11,7 @@ import {
   estimateFetchRange,
   sanitizeTradeFills,
   resolveAccountUiCapabilities,
+  deriveSessionFromTime,
 } from '@tradevault/financial-engine';
 import {
   createTradeSchema,
@@ -816,6 +817,15 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       tradeDate: new Date(body.tradeDate),
       entryTime: new Date(body.entryTime),
       exitTime: body.exitTime ? new Date(body.exitTime) : undefined,
+      session:
+        body.session ||
+        deriveSessionFromTime(
+          body.entryTime || body.tradeDate,
+          body.exchange,
+          body.marketSegment,
+          account.profile?.sessionCalendarKey,
+          body.symbol
+        ),
       calculated,
       auditLog: initialAuditLog,
     };

@@ -8,7 +8,7 @@ import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { Mt5CommandService } from '../services/mt5-command.service.js';
 import { decryptSecret, encryptSecret, hashOAuthState } from '../services/crypto.service.js';
 import { excursionBackfillSchema } from '@tradevault/shared';
-import { sanitizeTradeFills } from '@tradevault/financial-engine';
+import { sanitizeTradeFills, deriveSessionFromTime } from '@tradevault/financial-engine';
 import { InstrumentService } from '../services/instrument.service.js';
 import { AccountService } from '../services/account.service.js';
 import { config } from '../config.js';
@@ -789,6 +789,13 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             tradeDate: new Date(),
             entryTime: openDate,
             exitTime: closeDate,
+            session: deriveSessionFromTime(
+              openDate,
+              spec.exchange,
+              spec.marketSegment,
+              account.profile?.sessionCalendarKey || 'FOREX_24_5',
+              symbol
+            ),
             tags: ['ELEFIN', 'MT5', ticketTag],
             importBatchId: `MT5_${ticketStr}`,
             executionMode: 'SIMPLE',
@@ -1227,6 +1234,13 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             status: 'OPEN',
             tradeDate: new Date(),
             entryTime: item.open_time ? new Date(item.open_time) : new Date(),
+            session: deriveSessionFromTime(
+              item.open_time ? new Date(item.open_time) : new Date(),
+              spec.exchange,
+              spec.marketSegment,
+              account.profile?.sessionCalendarKey || 'FOREX_24_5',
+              symbol
+            ),
             tags: ['ELEFIN', 'MT5', ticketTag],
             importBatchId: `MT5_${ticketStr}`,
             executionMode: 'SIMPLE',

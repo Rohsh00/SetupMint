@@ -60,7 +60,7 @@ export function TradeIdentityTab({
       }
       const entryTime = watch('entryTime');
       if (entryTime) {
-        setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment));
+        setValue('session', deriveSessionFromTime(entryTime, found.exchange, found.marketSegment, caps.sessions.calendarKey, cleanSym));
       }
     } else {
       const preset = getPresetSpec(cleanSym);
@@ -76,7 +76,7 @@ export function TradeIdentityTab({
         }
         const entryTime = watch('entryTime');
         if (entryTime) {
-          setValue('session', deriveSessionFromTime(entryTime, preset.exchange, preset.marketSegment));
+          setValue('session', deriveSessionFromTime(entryTime, preset.exchange, preset.marketSegment, caps.sessions.calendarKey, cleanSym));
         }
       }
     }
@@ -305,7 +305,13 @@ export function TradeIdentityTab({
             value={toLocalIsoDateTime(watch('entryTime'))}
             onChange={(e) => {
               setValue('entryTime', e.target.value, { shouldDirty: true });
-              const derived = deriveSessionFromTime(e.target.value, watch('exchange'), watch('marketSegment'));
+              const derived = deriveSessionFromTime(
+                e.target.value,
+                watch('exchange'),
+                watch('marketSegment'),
+                caps.sessions.calendarKey,
+                watch('symbol')
+              );
               setValue('session', derived, { shouldDirty: true });
             }}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"

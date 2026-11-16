@@ -12,6 +12,7 @@ import {
   ICustomLadderRules,
   IExecutionSlippage,
 } from '@tradevault/shared';
+import { deriveSessionFromTime } from '@tradevault/financial-engine';
 
 export interface ITradeDoc extends Document {
   userId: mongoose.Types.ObjectId;
@@ -537,18 +538,38 @@ const TradeSchema = new Schema<ITradeDoc>(
 );
 
 TradeSchema.pre('validate', async function () {
-  if (!this.currency && this.accountId) {
+  let account: any = null;
+  if (this.accountId) {
     try {
-      const account = await mongoose.model('TradingAccount').findById(this.accountId).lean();
-      if (account) {
-        this.currency = (account as any).profile?.baseCurrency || (account as any).baseCurrency || 'USD';
-      }
+      account = await mongoose.model('TradingAccount').findById(this.accountId).lean();
     } catch {
       // ignore
     }
   }
+
   if (!this.currency) {
-    this.currency = 'USD';
+    if (account) {
+      this.currency = account.profile?.baseCurrency || account.baseCurrency || 'USD';
+    } else {
+      this.currency = 'USD';
+    }
+  }
+
+  if (!this.session) {
+    try {
+      const calendarKey =
+        account?.profile?.sessionCalendarKey ||
+        (account?.broker === 'FYERS' || account?.baseCurrency === 'INR' ? 'NSE' : 'FOREX_24_5');
+      this.session = deriveSessionFromTime(
+        this.entryTime || this.tradeDate,
+        this.exchange,
+        this.marketSegment,
+        calendarKey,
+        this.symbol
+      );
+    } catch {
+      // ignore
+    }
   }
 });
 

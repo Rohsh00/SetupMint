@@ -38,8 +38,31 @@ describe('Financial Engine - Trading Session Derivation', () => {
     expect(deriveSessionFromTime(nyDate, 'LSE')).toBe('LONDON');
   });
 
+  it('derives NEW_YORK, LONDON, and ASIA for Forex / Elefin trades', () => {
+    // 2026-11-09 is Monday: 20:14 UTC is 15:14 America/New_York (New York Session)
+    const nyTrade = new Date('2026-11-09T20:14:00Z');
+    expect(deriveSessionFromTime(nyTrade, 'FOREX', 'FOREX_SPOT', 'FOREX_24_5', 'XAUUSD')).toBe('NEW_YORK');
+    expect(deriveSessionFromTime(nyTrade, 'ELEFIN', 'CFD', undefined, 'XAUUSD')).toBe('NEW_YORK');
+
+    // 2026-11-10 is Tuesday: 09:44 UTC is 09:44 Europe/London (London Session, before NY open)
+    const londonTrade = new Date('2026-11-10T09:44:38Z');
+    expect(deriveSessionFromTime(londonTrade, 'FOREX', 'FOREX_SPOT', 'FOREX_24_5', 'XAUUSD')).toBe('LONDON');
+    expect(deriveSessionFromTime(londonTrade, undefined, undefined, 'FOREX_24_5')).toBe('LONDON');
+
+    // 2026-11-10 is Tuesday: 05:21 UTC is 14:21 Tokyo / Asian session
+    const asiaTrade = new Date('2026-11-10T05:21:42Z');
+    expect(deriveSessionFromTime(asiaTrade, 'FOREX', 'FOREX_SPOT', 'FOREX_24_5', 'XAUUSD')).toBe('ASIA');
+    expect(deriveSessionFromTime(asiaTrade, 'ELEFIN', undefined, undefined, 'EURUSD')).toBe('ASIA');
+
+    // Saturday weekend trade
+    const satTrade = new Date('2026-11-14T09:07:32Z');
+    expect(deriveSessionFromTime(satTrade, 'FOREX', 'FOREX_SPOT', 'FOREX_24_5', 'XAUUSD')).toBe('OFF_HOURS');
+  });
+
   it('handles null/undefined fallback gracefully', () => {
     expect(deriveSessionFromTime(null, 'NSE')).toBe('NSE_REGULAR');
     expect(deriveSessionFromTime(undefined, 'MCX')).toBe('MCX_EVENING');
+    expect(deriveSessionFromTime(null, 'FOREX')).toBe('NEW_YORK');
+    expect(deriveSessionFromTime(null, undefined, undefined, 'FOREX_24_5')).toBe('NEW_YORK');
   });
 });

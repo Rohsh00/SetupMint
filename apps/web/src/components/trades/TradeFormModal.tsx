@@ -52,6 +52,7 @@ import {
   rankTemplates,
   calculateContinuousTiltScore,
   resolveAccountUiCapabilities,
+  deriveSessionFromTime,
 } from '@tradevault/financial-engine';
 import { api } from '../../lib/api.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
@@ -302,7 +303,13 @@ function buildInitialFormValues(
       tradeDate: new Date().toISOString().split('T')[0],
       entryTime: currentLocalIsoDateTime(),
       exitTime: currentLocalIsoDateTime(),
-      session: isForex ? 'FOREX_LONDON_NY' : 'NSE_REGULAR',
+      session: deriveSessionFromTime(
+        currentLocalIsoDateTime(),
+        isForex ? 'FOREX' : 'NSE',
+        isForex ? 'FOREX_SPOT' : 'NSE_FNO',
+        isForex ? 'FOREX_24_5' : 'NSE',
+        rememberedPrefs.preferredSymbol || (isForex ? 'XAUUSD' : 'NIFTY')
+      ),
       tradeTitle: '',
       tagsInput: '',
 
@@ -1187,19 +1194,30 @@ function TradeFormModalContent({
         : undefined;
     const acc =
       effectiveDefaultAccountId || validPref || accounts[0]?.id || accounts[0]?._id || '';
+    const targetAccount = accounts.find((a) => (a.id || a._id) === acc);
+    const targetIsForex =
+      targetAccount?.profile?.sessionCalendarKey === 'FOREX_24_5' ||
+      targetAccount?.baseCurrency === 'USD' ||
+      /elefin|the5ers/i.test(targetAccount?.broker || '');
     reset({
       accountId: acc,
-      symbol: 'NIFTY',
-      assetClass: 'FUTURES',
-      exchange: 'NSE',
-      marketSegment: 'NSE_FNO',
+      symbol: targetIsForex ? 'XAUUSD' : 'NIFTY',
+      assetClass: targetIsForex ? 'FOREX' : 'FUTURES',
+      exchange: targetIsForex ? 'FOREX' : 'NSE',
+      marketSegment: targetIsForex ? 'FOREX_SPOT' : 'NSE_FNO',
       direction: 'LONG',
       status: 'CLOSED',
       strategyId: '',
       tradeDate: new Date().toISOString().split('T')[0],
       entryTime: currentLocalIsoDateTime(),
       exitTime: currentLocalIsoDateTime(),
-      session: 'NSE_REGULAR',
+      session: deriveSessionFromTime(
+        currentLocalIsoDateTime(),
+        targetIsForex ? 'FOREX' : 'NSE',
+        targetIsForex ? 'FOREX_SPOT' : 'NSE_FNO',
+        targetIsForex ? 'FOREX_24_5' : 'NSE',
+        targetIsForex ? 'XAUUSD' : 'NIFTY'
+      ),
       tradeTitle: '',
       tagsInput: '',
 

@@ -1015,5 +1015,27 @@ export const api = {
         }),
     },
   },
+
+  // In-Car & Apple CarPlay Siri Voice Feeds
+  carplay: {
+    getSetup: () =>
+      request<{
+        success: boolean;
+        carPlayToken: string;
+        endpoints: {
+          goldPriceVoice: string;
+          openTradesVoice: string;
+          marketBriefingVoice: string;
+          lockBreakevenVoice: string;
+          bookHalfProfitVoice: string;
+          panicCloseVoice: string;
+        };
+        instructions: string[];
+      }>('/carplay/setup'),
+    regenerateToken: () =>
+      request<{ success: boolean; carPlayToken: string }>('/carplay/regenerate-token', {
+        method: 'POST',
+      }),
+  },
 };
 

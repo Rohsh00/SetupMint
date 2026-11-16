@@ -2366,6 +2366,7 @@ export interface ILiveWatcherSettings {
   goldNewsReminderMinutes?: number;
   goldNewsLeadTimesMinutes?: number[];
   goldNewsImpactFilter?: 'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY';
+  carPlayToken?: string;
 }
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {

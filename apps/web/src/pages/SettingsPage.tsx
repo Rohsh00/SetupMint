@@ -63,6 +63,7 @@ import TuneRounded from '@mui/icons-material/TuneRounded';
 import LayersRounded from '@mui/icons-material/LayersRounded';
 import FlashOnRounded from '@mui/icons-material/FlashOnRounded';
 import TrackChangesRounded from '@mui/icons-material/TrackChangesRounded';
+import DirectionsCarRounded from '@mui/icons-material/DirectionsCarRounded';
 import SpeedRounded from '@mui/icons-material/SpeedRounded';
 import VolumeUpRounded from '@mui/icons-material/VolumeUpRounded';
 import VolumeOffRounded from '@mui/icons-material/VolumeOffRounded';
@@ -868,6 +869,61 @@ export function SettingsPage() {
     };
     return map[res] || `${res}m`;
   }
+
+  // =========================================================================
+  // 3.5. IN-CAR & APPLE CARPLAY SIRI VOICE STATE
+  // =========================================================================
+  const { data: carPlaySetupData, isLoading: isLoadingCarPlay } = useQuery({
+    queryKey: ['carplay-setup'],
+    queryFn: () => api.carplay.getSetup(),
+    enabled: activeTab === 0,
+  });
+
+  const carPlaySetup = (carPlaySetupData as any)?.data ?? carPlaySetupData;
+  const [copiedVoiceKey, setCopiedVoiceKey] = useState<string | null>(null);
+  const [speakingEndpoint, setSpeakingEndpoint] = useState<string | null>(null);
+
+  const regenerateCarPlayTokenMutation = useMutation({
+    mutationFn: () => api.carplay.regenerateToken(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carplay-setup'] });
+      toast.success('CarPlay voice token regenerated successfully!');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to regenerate CarPlay token');
+    },
+  });
+
+  const handleCopyVoiceUrl = (key: string, url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedVoiceKey(key);
+    toast.success('Siri URL copied to clipboard!');
+    setTimeout(() => setCopiedVoiceKey(null), 2500);
+  };
+
+  const handleTestCarPlaySpeech = async (key: string, url: string) => {
+    try {
+      setSpeakingEndpoint(key);
+      const res = await fetch(url);
+      const text = await res.text();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.onend = () => setSpeakingEndpoint(null);
+        utterance.onerror = () => setSpeakingEndpoint(null);
+        window.speechSynthesis.speak(utterance);
+        toast.info(text);
+      } else {
+        toast.info(text);
+        setSpeakingEndpoint(null);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to fetch CarPlay voice briefing');
+      setSpeakingEndpoint(null);
+    }
+  };
 
   // =========================================================================
   // 4. BROKER INTEGRATIONS (FYERS & ANGEL ONE) STATE
@@ -2458,6 +2514,268 @@ export function SettingsPage() {
                             </Box>
                           </Box>
                         )}
+                      </Box>
+                    </Grid>
+
+                    {/* In-Car & Apple CarPlay Siri Voice Briefings */}
+                    <Grid size={{ xs: 12 }}>
+                      <Box
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 2,
+                          border: 1,
+                          borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)',
+                          bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : 'rgba(239, 246, 255, 0.5)',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <DirectionsCarRounded sx={{ color: 'primary.main', fontSize: 24 }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                              In-Car &amp; Apple CarPlay Siri Voice Briefings
+                            </Typography>
+                            <Chip label="Hands-Free Driving" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700, fontSize: '0.7rem' }} />
+                          </Box>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="inherit"
+                            startIcon={<SyncRounded fontSize="small" />}
+                            onClick={() => regenerateCarPlayTokenMutation.mutate()}
+                            disabled={regenerateCarPlayTokenMutation.isPending}
+                            sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                          >
+                            Regenerate CarPlay Key
+                          </Button>
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                          Query real-time Gold spot prices, check running positions/PnL, and trigger hands-free trade management (Breakeven, Partial TP) from your car steering wheel voice controls or Siri over Bluetooth / Apple CarPlay with zero visual screen distraction.
+                        </Typography>
+
+                        {isLoadingCarPlay ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
+                            <CircularProgress size={20} />
+                            <Typography variant="caption" color="text.secondary">Loading your in-car voice endpoints...</Typography>
+                          </Box>
+                        ) : carPlaySetup?.endpoints ? (
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <Grid container spacing={2}>
+                              {/* Endpoint 1: Live Gold Price */}
+                              <Grid size={{ xs: 12, md: 4 }}>
+                                <Card variant="outlined" sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', bgcolor: 'background.paper' }}>
+                                  <Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                      <VolumeUpRounded sx={{ color: '#EAB308', fontSize: 20 }} />
+                                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                        Live Gold Voice Quote
+                                      </Typography>
+                                    </Box>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                                      Spoken phrase: <em>&quot;Hey Siri, Gold Price&quot;</em>
+                                    </Typography>
+                                    <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100', mb: 1.5 }}>
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block' }}>
+                                        {carPlaySetup.endpoints.goldPriceVoice}
+                                      </Typography>
+                                    </Box>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      fullWidth
+                                      startIcon={copiedVoiceKey === 'goldPrice' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                      onClick={() => handleCopyVoiceUrl('goldPrice', carPlaySetup.endpoints.goldPriceVoice)}
+                                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                                    >
+                                      {copiedVoiceKey === 'goldPrice' ? 'Copied' : 'Copy Siri Link'}
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      color="primary"
+                                      onClick={() => handleTestCarPlaySpeech('goldPrice', carPlaySetup.endpoints.goldPriceVoice)}
+                                      disabled={speakingEndpoint === 'goldPrice'}
+                                      sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 70 }}
+                                    >
+                                      {speakingEndpoint === 'goldPrice' ? 'Speaking...' : 'Test Voice'}
+                                    </Button>
+                                  </Box>
+                                </Card>
+                              </Grid>
+
+                              {/* Endpoint 2: Open Trades Briefing */}
+                              <Grid size={{ xs: 12, md: 4 }}>
+                                <Card variant="outlined" sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', bgcolor: 'background.paper' }}>
+                                  <Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                      <VolumeUpRounded sx={{ color: 'info.main', fontSize: 20 }} />
+                                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                        Open Trades &amp; PnL
+                                      </Typography>
+                                    </Box>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                                      Spoken phrase: <em>&quot;Hey Siri, Check Trades&quot;</em>
+                                    </Typography>
+                                    <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100', mb: 1.5 }}>
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block' }}>
+                                        {carPlaySetup.endpoints.openTradesVoice}
+                                      </Typography>
+                                    </Box>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      fullWidth
+                                      startIcon={copiedVoiceKey === 'trades' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                      onClick={() => handleCopyVoiceUrl('trades', carPlaySetup.endpoints.openTradesVoice)}
+                                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                                    >
+                                      {copiedVoiceKey === 'trades' ? 'Copied' : 'Copy Siri Link'}
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      color="info"
+                                      onClick={() => handleTestCarPlaySpeech('trades', carPlaySetup.endpoints.openTradesVoice)}
+                                      disabled={speakingEndpoint === 'trades'}
+                                      sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 70 }}
+                                    >
+                                      {speakingEndpoint === 'trades' ? 'Speaking...' : 'Test Voice'}
+                                    </Button>
+                                  </Box>
+                                </Card>
+                              </Grid>
+
+                              {/* Endpoint 3: Full Market Briefing */}
+                              <Grid size={{ xs: 12, md: 4 }}>
+                                <Card variant="outlined" sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', bgcolor: 'background.paper' }}>
+                                  <Box>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                      <VolumeUpRounded sx={{ color: 'success.main', fontSize: 20 }} />
+                                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                        Full In-Car Briefing
+                                      </Typography>
+                                    </Box>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                                      Spoken phrase: <em>&quot;Hey Siri, Market Briefing&quot;</em>
+                                    </Typography>
+                                    <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100', mb: 1.5 }}>
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block' }}>
+                                        {carPlaySetup.endpoints.marketBriefingVoice}
+                                      </Typography>
+                                    </Box>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      fullWidth
+                                      startIcon={copiedVoiceKey === 'briefing' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                      onClick={() => handleCopyVoiceUrl('briefing', carPlaySetup.endpoints.marketBriefingVoice)}
+                                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                                    >
+                                      {copiedVoiceKey === 'briefing' ? 'Copied' : 'Copy Siri Link'}
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      color="success"
+                                      onClick={() => handleTestCarPlaySpeech('briefing', carPlaySetup.endpoints.marketBriefingVoice)}
+                                      disabled={speakingEndpoint === 'briefing'}
+                                      sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 70 }}
+                                    >
+                                      {speakingEndpoint === 'briefing' ? 'Speaking...' : 'Test Voice'}
+                                    </Button>
+                                  </Box>
+                                </Card>
+                              </Grid>
+                            </Grid>
+
+                            {/* In-Car Voice Driving Actions */}
+                            <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <span>🎙️ Hands-Free In-Car Siri Actions (Voice Control from Steering Wheel)</span>
+                              </Typography>
+                              <Grid container spacing={1.5}>
+                                <Grid size={{ xs: 12, md: 4 }}>
+                                  <Box sx={{ p: 1.5, borderRadius: 1, border: '1px dashed', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main', display: 'block' }}>
+                                      1. Lock Breakeven (&quot;Hey Siri, Lock Breakeven&quot;)
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
+                                      Moves Stop Loss to entry plus fee buffer on active Gold position.
+                                    </Typography>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      fullWidth
+                                      startIcon={copiedVoiceKey === 'actionBE' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                      onClick={() => handleCopyVoiceUrl('actionBE', carPlaySetup.endpoints.lockBreakevenVoice)}
+                                      sx={{ textTransform: 'none', fontSize: '0.72rem' }}
+                                    >
+                                      {copiedVoiceKey === 'actionBE' ? 'Copied' : 'Copy Action URL'}
+                                    </Button>
+                                  </Box>
+                                </Grid>
+                                <Grid size={{ xs: 12, md: 4 }}>
+                                  <Box sx={{ p: 1.5, borderRadius: 1, border: '1px dashed', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main', display: 'block' }}>
+                                      2. Book 50% Profit (&quot;Hey Siri, Bank Half&quot;)
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
+                                      Closes 50% volume and moves SL to Breakeven on remaining lots.
+                                    </Typography>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      fullWidth
+                                      startIcon={copiedVoiceKey === 'actionHalf' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                      onClick={() => handleCopyVoiceUrl('actionHalf', carPlaySetup.endpoints.bookHalfProfitVoice)}
+                                      sx={{ textTransform: 'none', fontSize: '0.72rem' }}
+                                    >
+                                      {copiedVoiceKey === 'actionHalf' ? 'Copied' : 'Copy Action URL'}
+                                    </Button>
+                                  </Box>
+                                </Grid>
+                                <Grid size={{ xs: 12, md: 4 }}>
+                                  <Box sx={{ p: 1.5, borderRadius: 1, border: '1px dashed', borderColor: 'divider' }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main', display: 'block' }}>
+                                      3. Panic Close All (&quot;Hey Siri, Panic Close&quot;)
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
+                                      Immediate market flatten for all open positions across all accounts.
+                                    </Typography>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      fullWidth
+                                      startIcon={copiedVoiceKey === 'actionPanic' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                      onClick={() => handleCopyVoiceUrl('actionPanic', carPlaySetup.endpoints.panicCloseVoice)}
+                                      sx={{ textTransform: 'none', fontSize: '0.72rem' }}
+                                    >
+                                      {copiedVoiceKey === 'actionPanic' ? 'Copied' : 'Copy Action URL'}
+                                    </Button>
+                                  </Box>
+                                </Grid>
+                              </Grid>
+                            </Box>
+
+                            {/* 2-Step Apple Shortcuts Setup Guide */}
+                            <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                              <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary', display: 'block', mb: 1 }}>
+                                📱 2-Step Apple Shortcuts Setup for CarPlay &amp; In-Car Siri:
+                              </Typography>
+                              <Typography variant="caption" component="div" sx={{ color: 'text.primary', lineHeight: 1.8 }}>
+                                <strong>Step 1:</strong> On your iPhone, open the <strong>Shortcuts</strong> app and tap <strong>+</strong> in top right. Name the shortcut (e.g. <em>&quot;Gold Price&quot;</em> or <em>&quot;Check Trades&quot;</em>).<br />
+                                <strong>Step 2:</strong> Add action: <strong>Get Contents of URL</strong> &rarr; Paste your copied SetupMint Siri Link above.<br />
+                                <strong>Step 3:</strong> Add action: <strong>Speak Text</strong> &rarr; Select the output of &quot;Get Contents of URL&quot;.<br />
+                                <em>That&apos;s it!</em> While driving with Apple CarPlay or Bluetooth connected, just press your car&apos;s steering wheel voice button and say <strong>&quot;Gold Price&quot;</strong> — SetupMint will read the live quote and spread directly through your car speakers.
+                              </Typography>
+                            </Box>
+                          </Box>
+                        ) : null}
                       </Box>
                     </Grid>
 

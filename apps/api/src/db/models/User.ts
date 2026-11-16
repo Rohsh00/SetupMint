@@ -118,6 +118,7 @@ const UserSchema = new Schema<IUserDoc>(
       telegramAlertsEnabled: { type: Boolean, default: false },
       telegramBotToken: { type: String },
       telegramChatId: { type: String },
+      carPlayToken: { type: String },
       telegramAlertEvents: { type: Object, default: DEFAULT_LIVE_WATCHER_SETTINGS.telegramAlertEvents },
       lastDailyLossAlertDate: { type: String },
       lastDailyLossWarnDate: { type: String },

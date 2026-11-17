@@ -294,6 +294,82 @@ export class CarPlayService {
     };
   }
 
+  static getFriendlySymbolName(symbol: string): string {
+    if (!symbol) return 'Position';
+    if (/XAU|GOLD/i.test(symbol)) return 'Gold';
+    if (/CRUDEOILMINI/i.test(symbol)) return 'Crude Oil Mini';
+    if (/CRUDEOIL/i.test(symbol)) return 'Crude Oil';
+    if (/SILVER|XAG/i.test(symbol)) return 'Silver';
+    return symbol;
+  }
+
+  static resolveSymbolRegex(targetSymbol?: string): RegExp | null {
+    if (!targetSymbol) return null;
+    const clean = targetSymbol.trim();
+    if (/^all(\s*positions)?$/i.test(clean)) return null;
+    if (/^gold$/i.test(clean) || /^xauusd$/i.test(clean)) return /XAU|GOLD/i;
+    if (/^crude(\s*oil)?(\s*mini)?$/i.test(clean) || /^crudeoil/i.test(clean)) return /CRUDE/i;
+    if (/^silver$/i.test(clean) || /^xagusd$/i.test(clean)) return /SILVER|XAG/i;
+    return new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  }
+
+  /**
+   * Retrieves active open symbols formatted for Apple Shortcuts "Choose from List" dialogs.
+   */
+  static async getActiveSymbols(user: any): Promise<{
+    count: number;
+    symbols: string[];
+    choices: string[];
+    speechText: string;
+    data: any[];
+  }> {
+    const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).sort({ entryTime: -1 });
+    if (openTrades.length === 0) {
+      return {
+        count: 0,
+        symbols: [],
+        choices: [],
+        speechText: 'You currently have zero open positions.',
+        data: [],
+      };
+    }
+
+    const uniqueSymbolsMap = new Map<string, { friendlyName: string; rawSymbol: string; count: number }>();
+    for (const t of openTrades) {
+      const friendly = this.getFriendlySymbolName(t.symbol);
+      const existing = uniqueSymbolsMap.get(friendly);
+      if (existing) {
+        existing.count++;
+      } else {
+        uniqueSymbolsMap.set(friendly, { friendlyName: friendly, rawSymbol: t.symbol, count: 1 });
+      }
+    }
+
+    const symbols = Array.from(uniqueSymbolsMap.keys());
+    const choices = [...symbols];
+    if (symbols.length > 1) {
+      choices.push('All Positions');
+    }
+
+    const speechText =
+      symbols.length === 1
+        ? `You have 1 open position in ${symbols[0]}.`
+        : `You have open positions in: ${symbols.join(' and ')}.`;
+
+    return {
+      count: openTrades.length,
+      symbols,
+      choices,
+      speechText,
+      data: openTrades.map((t) => ({
+        id: t._id,
+        symbol: t.symbol,
+        friendlyName: this.getFriendlySymbolName(t.symbol),
+        direction: t.direction,
+      })),
+    };
+  }
+
   /**
    * Executes in-car hands-free trade controls (Breakeven, Partial scale-out, or Panic close).
    */
@@ -362,10 +438,163 @@ export class CarPlayService {
       };
     }
 
-    // Find candidate trade
+    // Check if target is "ALL" or "ALL POSITIONS"
+    const isAll = Boolean(targetSymbol && /^all(\s*positions)?$/i.test(targetSymbol.trim()));
+
+    if (isAll) {
+      const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).sort({ entryTime: -1 });
+      if (openTrades.length === 0) {
+        return {
+          success: true,
+          speechText: 'You have no open positions to adjust. Your account is already safe.',
+        };
+      }
+
+      // If BE on ALL
+      if (code === 'BE' || code === 'BREAKEVEN') {
+        const adjustedSymbols: string[] = [];
+        for (const trade of openTrades) {
+          try {
+            const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+            const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
+            const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+            const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
+            const curSign = isForex ? '$' : '₹';
+            const friendlyName = this.getFriendlySymbolName(trade.symbol);
+
+            let trueBePrice = (trade.calculated as any)?.trueBreakevenPrice;
+            const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
+            const safeOpenQty =
+              trade.calculated?.openQuantity && trade.calculated.openQuantity > 0
+                ? trade.calculated.openQuantity
+                : trade.simpleExecution?.quantity && trade.simpleExecution.quantity > 0
+                ? trade.simpleExecution.quantity
+                : (trade as any).quantity || 1;
+
+            if (!trueBePrice && entryPrice > 0) {
+              try {
+                const beRes = calculateTrueBreakeven({
+                  direction: trade.direction,
+                  entryPrice,
+                  quantity: safeOpenQty,
+                  estimatedCharges: 50,
+                });
+                trueBePrice = beRes.trueBreakevenPrice;
+              } catch {
+                trueBePrice = entryPrice;
+              }
+            }
+            trueBePrice = Number((trueBePrice || entryPrice).toFixed(2));
+
+            trade.risk = {
+              ...(trade.risk || {}),
+              initialStopLoss: trade.risk?.initialStopLoss || trueBePrice,
+              currentStopLoss: trueBePrice,
+            };
+
+            if (isMt5 && ticket) {
+              await Mt5CommandService.queueModifySl({
+                userId: user._id,
+                accountId: (account?._id || trade.accountId)!,
+                tradeId: trade._id,
+                ticket,
+                stopLoss: trueBePrice,
+              });
+            } else {
+              try {
+                await FyersService.executeBrokerStopLoss(user._id, trade._id.toString(), trueBePrice);
+              } catch {
+                // Broker stop placement fallback
+              }
+            }
+
+            trade.auditLog.push({
+              action: 'CARPLAY_LOCK_BE',
+              timestamp: new Date(),
+              details: { text: `Stop moved to true breakeven ${curSign}${trueBePrice} via CarPlay Siri Voice command (ALL)` },
+              changedBy: 'carplay_voice',
+            });
+            await trade.save();
+            adjustedSymbols.push(friendlyName);
+          } catch (err: any) {
+            console.error('[CarPlayAction:BeAll] Error adjusting trade:', err.message);
+          }
+        }
+
+        return {
+          success: true,
+          speechText: `Done! Stop loss locked at true breakeven for all ${adjustedSymbols.length} positions: ${adjustedSymbols.join(', ')}.`,
+        };
+      }
+
+      // If CLOSE_50 on ALL
+      if (code === 'CLOSE_50' || code === 'BOOK_50' || code === 'HALF') {
+        const closedSymbols: string[] = [];
+        for (const trade of openTrades) {
+          try {
+            const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+            const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
+            const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+            const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
+            const friendlyName = this.getFriendlySymbolName(trade.symbol);
+
+            const openQty =
+              trade.calculated?.openQuantity && trade.calculated.openQuantity > 0
+                ? trade.calculated.openQuantity
+                : trade.simpleExecution?.quantity && trade.simpleExecution.quantity > 0
+                ? trade.simpleExecution.quantity
+                : (trade as any).quantity || 1;
+
+            const isForexOrCrypto = isForex || isMt5 || (trade.symbol && /XAU|EUR|GBP|USD|JPY|BTC|ETH/i.test(trade.symbol));
+            let closeQty: number;
+            if (isForexOrCrypto) {
+              closeQty = Math.max(0.01, Number((openQty * 0.5).toFixed(2)));
+              if (closeQty > openQty) closeQty = openQty;
+            } else {
+              closeQty = Math.max(1, Math.floor(openQty * 0.5));
+              if (closeQty > openQty) closeQty = openQty;
+            }
+
+            if (isMt5 && ticket) {
+              await Mt5CommandService.queueClosePosition({
+                userId: user._id,
+                accountId: (account?._id || trade.accountId)!,
+                tradeId: trade._id,
+                ticket,
+                volume: closeQty,
+              });
+            } else {
+              await FyersService.executeBrokerExit(user._id, trade._id.toString(), {
+                exitQty: closeQty,
+                isFullClose: closeQty >= openQty,
+              });
+            }
+
+            trade.auditLog.push({
+              action: 'CARPLAY_BOOK_50',
+              timestamp: new Date(),
+              details: { text: `Booked 50% partial (${closeQty} lots) via CarPlay Siri Voice command (ALL)` },
+              changedBy: 'carplay_voice',
+            });
+            await trade.save();
+            closedSymbols.push(`${friendlyName} (${closeQty} lots)`);
+          } catch (err: any) {
+            console.error('[CarPlayAction:Close50All] Error partial closing trade:', err.message);
+          }
+        }
+
+        return {
+          success: true,
+          speechText: `Success! Booked 50 percent profit across all ${closedSymbols.length} positions: ${closedSymbols.join(', ')}.`,
+        };
+      }
+    }
+
+    // Find candidate single trade
     const query: any = { userId: user._id, status: 'OPEN' };
-    if (targetSymbol) {
-      query.symbol = new RegExp(`^${targetSymbol}$`, 'i');
+    const symbolRegex = this.resolveSymbolRegex(targetSymbol);
+    if (symbolRegex) {
+      query.symbol = symbolRegex;
     }
     const trade = await Trade.findOne(query).sort({ entryTime: -1 });
 
@@ -381,7 +610,7 @@ export class CarPlayService {
     const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
     const isForex = trade.exchange === 'FOREX' || (trade.symbol && trade.symbol.includes('XAU'));
     const curSign = isForex ? '$' : '₹';
-    const friendlyName = trade.symbol.includes('XAU') ? 'Gold' : trade.symbol;
+    const friendlyName = this.getFriendlySymbolName(trade.symbol);
 
     // 2. Lock Breakeven
     if (code === 'BE' || code === 'BREAKEVEN') {

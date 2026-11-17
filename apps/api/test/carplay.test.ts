@@ -239,4 +239,97 @@ describe('In-Car & Apple CarPlay Siri Voice Routes', () => {
     expect(data.success).toBe(true);
     expect(data.speechText).toContain('no open positions to close');
   });
+
+  it('12. GET /api/v1/carplay/active-symbols returns NONE when idle and choices with format=json', async () => {
+    const textRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/active-symbols?token=${carPlayToken}`,
+    });
+    expect(textRes.statusCode).toBe(200);
+    expect(textRes.body).toBe('NONE');
+
+    const jsonRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/active-symbols?token=${carPlayToken}&format=json`,
+    });
+    expect(jsonRes.statusCode).toBe(200);
+    const data = JSON.parse(jsonRes.body);
+    expect(data.count).toBe(0);
+    expect(data.choices.length).toBe(0);
+  });
+
+  it('13. Multi-position interactive selection and symbol=ALL action execution', async () => {
+    // Open 2 active trades: Gold (Elefin/MT5) and Crude Oil (FYERS)
+    const goldTrade = await Trade.create({
+      userId,
+      accountId,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      exchange: 'FOREX',
+      assetClass: 'COMMODITY',
+      marketSegment: 'FOREX',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      entryPrice: 2740.0,
+      quantity: 0.20,
+      contractMultiplier: 1,
+      tradingSession: 'NEW_YORK',
+      simpleExecution: { entryPrice: 2740.0, quantity: 0.20 },
+      risk: { initialStopLoss: 2730.0, currentStopLoss: 2730.0 },
+      tags: ['ELEFIN', 'MT5'],
+    });
+
+    const crudeTrade = await Trade.create({
+      userId,
+      accountId,
+      symbol: 'CRUDEOILMINI',
+      direction: 'LONG',
+      exchange: 'MCX',
+      assetClass: 'COMMODITY',
+      marketSegment: 'MCX',
+      currency: 'INR',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      entryPrice: 8150.0,
+      quantity: 10,
+      contractMultiplier: 10,
+      tradingSession: 'NEW_YORK',
+      simpleExecution: { entryPrice: 8150.0, quantity: 10 },
+      risk: { initialStopLoss: 8100.0, currentStopLoss: 8100.0 },
+    });
+
+    // 1. Check active symbols returns newline separated list including 'All Positions'
+    const symbolsRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/active-symbols?token=${carPlayToken}`,
+    });
+    expect(symbolsRes.statusCode).toBe(200);
+    expect(symbolsRes.body).toContain('Gold');
+    expect(symbolsRes.body).toContain('Crude Oil Mini');
+    expect(symbolsRes.body).toContain('All Positions');
+
+    // 2. Lock Breakeven on ALL positions
+    const beAllRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=BE&symbol=ALL&token=${carPlayToken}`,
+    });
+    expect(beAllRes.statusCode).toBe(200);
+    expect(beAllRes.body).toContain('locked at true breakeven for all 2 positions');
+
+    // Verify both trades updated
+    const updatedGold = await Trade.findById(goldTrade._id);
+    const updatedCrude = await Trade.findById(crudeTrade._id);
+    expect(updatedGold?.risk?.currentStopLoss).toBeGreaterThanOrEqual(2740.0);
+    expect(updatedCrude?.risk?.currentStopLoss).toBeGreaterThanOrEqual(8150.0);
+
+    // 3. Book 50% Profit on ALL positions
+    const halfAllRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=CLOSE_50&symbol=ALL&token=${carPlayToken}`,
+    });
+    expect(halfAllRes.statusCode).toBe(200);
+    expect(halfAllRes.body).toContain('Booked 50 percent profit across all 2 positions');
+  });
 });

@@ -117,6 +117,38 @@ export const carplayRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   });
 
   /**
+   * GET /active-symbols: Returns active symbols list for Apple Shortcuts "Choose from List"
+   */
+  app.get('/active-symbols', async (req: any, reply) => {
+    const user = await resolveRequestUser(req);
+    if (!user) {
+      const msg = 'Authentication failed. Please check your CarPlay security key.';
+      if (req.query?.format === 'json') {
+        return reply.status(401).send({ success: false, error: msg });
+      }
+      return reply.status(401).type('text/plain; charset=utf-8').send(msg);
+    }
+
+    const format = req.query?.format || (req.headers.accept?.includes('application/json') ? 'json' : 'text');
+    const result = await CarPlayService.getActiveSymbols(user);
+
+    if (format === 'json') {
+      return reply.send({
+        success: true,
+        count: result.count,
+        symbols: result.symbols,
+        choices: result.choices,
+        speechText: result.speechText,
+        data: result.data,
+      });
+    }
+
+    // Default plain text output: newline-separated for native Apple Shortcuts "Split Text"
+    const textOutput = result.choices.length > 0 ? result.choices.join('\n') : 'NONE';
+    return reply.type('text/plain; charset=utf-8').send(textOutput);
+  });
+
+  /**
    * POST /action and GET /action: In-car hands-free trade control
    */
   const handleAction = async (req: any, reply: any) => {
@@ -161,6 +193,7 @@ export const carplayRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       goldPriceVoice: `${baseUrl}/api/v1/carplay/price?symbol=XAUUSD&key=${token}`,
       openTradesVoice: `${baseUrl}/api/v1/carplay/trades?key=${token}`,
       marketBriefingVoice: `${baseUrl}/api/v1/carplay/briefing?symbol=XAUUSD&key=${token}`,
+      activeSymbolsUrl: `${baseUrl}/api/v1/carplay/active-symbols?key=${token}`,
       lockBreakevenVoice: `${baseUrl}/api/v1/carplay/action?action=BE&key=${token}`,
       bookHalfProfitVoice: `${baseUrl}/api/v1/carplay/action?action=CLOSE_50&key=${token}`,
       panicCloseVoice: `${baseUrl}/api/v1/carplay/action?action=PANIC&key=${token}`,

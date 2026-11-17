@@ -2918,6 +2918,60 @@ export function SettingsPage() {
                                 <em>That&apos;s it!</em> While driving with Apple CarPlay or Bluetooth connected, just press your car&apos;s steering wheel voice button and say <strong>&quot;Gold Price&quot;</strong> — SetupMint will read the live quote and spread directly through your car speakers.
                               </Typography>
                             </Box>
+
+                            {/* Multi-Position Interactive Selection Guide */}
+                            <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(240, 249, 255, 0.8)', border: '1px solid', borderColor: 'primary.light' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <TrackChangesRounded sx={{ color: 'primary.main', fontSize: 20 }} />
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                    Multiple Open Positions? Interactive Voice Selection (&quot;Which Trade?&quot;)
+                                  </Typography>
+                                </Box>
+                                {carPlaySetup.endpoints.activeSymbolsUrl && (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={copiedVoiceKey === 'symbols' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
+                                    onClick={() => handleCopyVoiceUrl('symbols', carPlaySetup.endpoints.activeSymbolsUrl!)}
+                                    sx={{ textTransform: 'none', fontSize: '0.72rem' }}
+                                  >
+                                    {copiedVoiceKey === 'symbols' ? 'Copied' : 'Copy Active Symbols Link'}
+                                  </Button>
+                                )}
+                              </Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                                When you hold multiple trades (e.g. Gold on Elefin + Crude Oil on FYERS), Siri can first ask you <em>&quot;Which position: Gold, or Crude Oil?&quot;</em>, or you can say <em>&quot;All Positions&quot;</em> to adjust both at once.
+                              </Typography>
+                              {carPlaySetup.endpoints.activeSymbolsUrl && (
+                                <Box
+                                  onClick={() => handleCopyVoiceUrl('symbols', carPlaySetup.endpoints.activeSymbolsUrl!)}
+                                  sx={{
+                                    p: 0.75,
+                                    borderRadius: 1,
+                                    bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
+                                    mb: 1.5,
+                                    cursor: 'pointer',
+                                    userSelect: 'all',
+                                    border: '1px solid transparent',
+                                    '&:hover': { borderColor: 'primary.main' },
+                                  }}
+                                  title="Click to copy Active Symbols URL"
+                                >
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
+                                    {carPlaySetup.endpoints.activeSymbolsUrl}
+                                  </Typography>
+                                </Box>
+                              )}
+                              <Typography variant="caption" component="div" sx={{ color: 'text.primary', lineHeight: 1.8 }}>
+                                <strong>How to build the Interactive Siri Shortcut:</strong><br />
+                                1. Add action: <strong>Get Contents of URL</strong> &rarr; Paste your Active Symbols link above.<br />
+                                2. Add action: <strong>Split Text</strong> &rarr; Select &quot;by New Lines&quot;.<br />
+                                3. Add action: <strong>Choose from List</strong> &rarr; Select &quot;Split Text&quot; (Prompt: <em>&quot;Which trade would you like to adjust?&quot;</em>).<br />
+                                4. Add action: <strong>Get Contents of URL</strong> &rarr; <code>http://13.205.58.162/api/v1/carplay/action?action=BE&amp;symbol=[Chosen Item]&amp;token=...</code><br />
+                                5. Add action: <strong>Speak Text</strong> &rarr; Siri speaks the confirmation!
+                              </Typography>
+                            </Box>
                           </Box>
                         ) : null}
                       </Box>

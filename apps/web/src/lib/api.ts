@@ -1026,6 +1026,7 @@ export const api = {
           goldPriceVoice: string;
           openTradesVoice: string;
           marketBriefingVoice: string;
+          activeSymbolsUrl?: string;
           lockBreakevenVoice: string;
           bookHalfProfitVoice: string;
           panicCloseVoice: string;

@@ -60,6 +60,7 @@ echo "==> Writing Nginx configuration to $NGINX_CONF..."
 sudo tee $NGINX_CONF > /dev/null << 'EOF'
 server {
     listen 80;
+    listen [::]:80;
     server_name _;
 
     # Gzip Compression for fast delivery

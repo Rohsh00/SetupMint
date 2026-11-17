@@ -32,16 +32,20 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
     (desc: DrillDescriptor): DrillDescriptor => {
       if (desc.kind !== 'FILTER') return desc;
       const existingFilter = (desc.filter || {}) as Record<string, any>;
+      const cleanFilter = { ...existingFilter };
+      if (typeof cleanFilter.date === 'string' && cleanFilter.date.includes('T')) {
+        cleanFilter.date = cleanFilter.date.split('T')[0];
+      }
       const hasExplicitScope =
-        existingFilter.scope !== undefined ||
-        existingFilter.mode !== undefined ||
-        existingFilter.accountId !== undefined;
-      if (hasExplicitScope) return desc;
+        cleanFilter.scope !== undefined ||
+        cleanFilter.mode !== undefined ||
+        cleanFilter.accountId !== undefined;
+      if (hasExplicitScope) return { ...desc, filter: cleanFilter };
       return {
         ...desc,
         filter: {
           ...queryParams,
-          ...existingFilter,
+          ...cleanFilter,
         },
       };
     },
@@ -61,6 +65,9 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
         }
         const decoded = JSON.parse(raw);
         if (decoded && decoded.kind) {
+          if (decoded.kind === 'FILTER' && decoded.filter?.date && typeof decoded.filter.date === 'string' && decoded.filter.date.includes('T')) {
+            decoded.filter.date = decoded.filter.date.split('T')[0];
+          }
           setDescriptor(decoded);
           if (decoded.targetTradeId) {
             setActiveTradeId(decoded.targetTradeId);

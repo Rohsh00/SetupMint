@@ -66,14 +66,18 @@ export function TradeDrillDrawer() {
     if (!descriptor) return null;
     if (descriptor.kind !== 'FILTER') return descriptor;
     const f = (descriptor.filter || {}) as Record<string, any>;
+    const cleanF = { ...f };
+    if (typeof cleanF.date === 'string' && cleanF.date.includes('T')) {
+      cleanF.date = cleanF.date.split('T')[0];
+    }
     const hasExplicitScope =
-      f.scope !== undefined || f.mode !== undefined || f.accountId !== undefined;
-    if (hasExplicitScope) return descriptor;
+      cleanF.scope !== undefined || cleanF.mode !== undefined || cleanF.accountId !== undefined;
+    if (hasExplicitScope) return { ...descriptor, filter: cleanF };
     return {
       ...descriptor,
       filter: {
         ...queryParams,
-        ...f,
+        ...cleanF,
       },
     };
   }, [descriptor, queryParams]);
@@ -177,7 +181,10 @@ export function TradeDrillDrawer() {
       const f = descriptor.filter;
       if (f.symbol) list.push({ label: `Symbol: ${f.symbol}`, color: 'info' });
       if (f.outcome) list.push({ label: `Outcome: ${f.outcome}`, color: f.outcome === 'WIN' ? 'success' : f.outcome === 'LOSS' ? 'error' : 'default' });
-      if (f.date) list.push({ label: `Date: ${f.date}`, color: 'secondary' });
+      if (f.date) {
+        const displayDate = typeof f.date === 'string' && f.date.includes('T') ? f.date.split('T')[0] : f.date;
+        list.push({ label: `Date: ${displayDate}`, color: 'secondary' });
+      }
       if (f.dateRange) list.push({ label: `Range: ${f.dateRange}`, color: 'secondary' });
       if (f.weekday) list.push({ label: `Day: ${f.weekday}`, color: 'info' });
       if (f.session) list.push({ label: `Session: ${f.session}`, color: 'info' });

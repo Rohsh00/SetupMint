@@ -56,7 +56,7 @@ import {
 } from 'recharts';
 import { EMOTION_LABEL_MAP, MISTAKE_LABEL_MAP } from '@tradevault/shared';
 import { api } from '../lib/api.js';
-import { formatCurrency, formatPercent, getCurrencySymbol } from '../lib/utils.js';
+import { formatCurrency, formatPercent, getCurrencySymbol, formatDate } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
@@ -397,12 +397,13 @@ export function AnalyticsPage() {
                     data={stats.equityCurve}
                     style={{ cursor: 'pointer' }}
                     onClick={(e: any) => {
-                      const date = e?.activePayload?.[0]?.payload?.date;
-                      if (date) {
+                      const rawDate = e?.activePayload?.[0]?.payload?.date;
+                      if (rawDate) {
+                        const dateStr = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
                         openDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), date },
-                          label: `Trades on ${date}`,
+                          filter: { ...(queryParams as any), date: dateStr },
+                          label: `Trades on ${formatDate(dateStr)}`,
                         });
                       }
                     }}

@@ -92,4 +92,55 @@ describe('Financial Engine - Performance Metrics & Analytics', () => {
     expect(stats.equityCurve.length).toBe(1);
     expect(stats.equityCurve[0].cumulativeEquity).toBe(50000);
   });
+
+  it('correctly groups multiple trades on the same day with ISO timestamps into a single dailyPnL entry', () => {
+    const trades: PerformanceInputTrade[] = [
+      {
+        id: 'trade-1',
+        tradeDate: '2026-11-17T09:15:00.000Z',
+        symbol: 'EURUSD',
+        status: 'CLOSED',
+        calculated: { netPnL: 150, grossPnL: 160, totalCosts: 10, outcome: 'WIN', realizedRMultiple: 1.5 },
+      },
+      {
+        id: 'trade-2',
+        tradeDate: '2026-11-17T11:30:22.848Z',
+        symbol: 'GBPUSD',
+        status: 'CLOSED',
+        calculated: { netPnL: -50, grossPnL: -45, totalCosts: 5, outcome: 'LOSS', realizedRMultiple: -0.5 },
+      },
+      {
+        id: 'trade-3',
+        tradeDate: '2026-11-17T14:45:10.123Z',
+        symbol: 'EURUSD',
+        status: 'CLOSED',
+        calculated: { netPnL: 200, grossPnL: 210, totalCosts: 10, outcome: 'WIN', realizedRMultiple: 2.0 },
+      },
+      {
+        id: 'trade-4',
+        tradeDate: '2026-11-18T10:00:00.000Z',
+        symbol: 'USDJPY',
+        status: 'CLOSED',
+        calculated: { netPnL: 75, grossPnL: 80, totalCosts: 5, outcome: 'WIN', realizedRMultiple: 0.75 },
+      },
+    ];
+
+    const stats = calculateDashboardMetrics(trades, 10000, { timezone: 'UTC' });
+
+    // Expect exactly 2 daily bars: 2026-11-17 and 2026-11-18
+    expect(stats.dailyPnL).toHaveLength(2);
+    expect(stats.dailyPnL[0].date).toBe('2026-11-17');
+    expect(stats.dailyPnL[0].tradesCount).toBe(3);
+    expect(stats.dailyPnL[0].winCount).toBe(2);
+    expect(stats.dailyPnL[0].lossCount).toBe(1);
+    expect(stats.dailyPnL[0].netPnL).toBe(300); // 150 - 50 + 200
+
+    expect(stats.dailyPnL[1].date).toBe('2026-11-18');
+    expect(stats.dailyPnL[1].tradesCount).toBe(1);
+    expect(stats.dailyPnL[1].netPnL).toBe(75);
+
+    // Best trading day should be 2026-11-17 with 300 net PnL
+    expect(stats.bestTradingDay?.date).toBe('2026-11-17');
+    expect(stats.bestTradingDay?.netPnL).toBe(300);
+  });
 });

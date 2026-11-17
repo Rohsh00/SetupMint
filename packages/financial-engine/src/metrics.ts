@@ -47,6 +47,18 @@ function getWeekdayNameInTz(dateStr: string, timeZone: string): string {
   }).format(safe);
 }
 
+function getTradingDateInTz(dateStr: string, timeZone: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr.slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
 export function calculateDashboardMetrics(
   trades: PerformanceInputTrade[],
   initialBalance = 0,
@@ -118,7 +130,7 @@ export function calculateDashboardMetrics(
 
   const equityCurve: IDashboardStats['equityCurve'] = [
     {
-      date: closedTrades.length > 0 ? closedTrades[0].tradeDate : new Date().toISOString().split('T')[0],
+      date: closedTrades.length > 0 ? getTradingDateInTz(closedTrades[0].tradeDate, timezone) : new Date().toISOString().split('T')[0],
       netPnL: 0,
       cumulativeEquity: runningEquity.toNumber(),
       drawdown: 0,
@@ -211,8 +223,10 @@ export function calculateDashboardMetrics(
       maxDrawdownPercent = currentDrawdownPct;
     }
 
+    const dayKey = getTradingDateInTz(trade.tradeDate, timezone);
+
     equityCurve.push({
-      date: trade.tradeDate,
+      date: dayKey,
       tradeId: trade.id,
       symbol: trade.symbol,
       netPnL: Number(pnl.toFixed(2)),
@@ -222,7 +236,7 @@ export function calculateDashboardMetrics(
     });
 
     // Daily breakdown
-    const dayRecord = dailyMap.get(trade.tradeDate) ?? {
+    const dayRecord = dailyMap.get(dayKey) ?? {
       netPnL: new Decimal(0),
       count: 0,
       wins: 0,
@@ -232,10 +246,10 @@ export function calculateDashboardMetrics(
     dayRecord.count++;
     if (pnl.greaterThan(0)) dayRecord.wins++;
     else if (pnl.lessThan(0)) dayRecord.losses++;
-    dailyMap.set(trade.tradeDate, dayRecord);
+    dailyMap.set(dayKey, dayRecord);
 
     // Monthly breakdown
-    const ym = trade.tradeDate.slice(0, 7); // YYYY-MM
+    const ym = dayKey.slice(0, 7); // YYYY-MM
     const monthRecord = monthlyMap.get(ym) ?? {
       netPnL: new Decimal(0),
       count: 0,

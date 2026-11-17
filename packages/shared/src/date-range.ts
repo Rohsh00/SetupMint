@@ -313,7 +313,10 @@ export function normalizeRange(
   range: IDateRange = {},
   timezone = 'Asia/Kolkata'
 ): INormalizedDateRange {
-  const { startDate, endDate } = range;
+  const rawStart = range.startDate;
+  const rawEnd = range.endDate;
+  const startDate = typeof rawStart === 'string' && rawStart.includes('T') ? rawStart.split('T')[0] : rawStart;
+  const endDate = typeof rawEnd === 'string' && rawEnd.includes('T') ? rawEnd.split('T')[0] : rawEnd;
 
   if (startDate && endDate && startDate > endDate) {
     throw new Error(

@@ -393,6 +393,19 @@ export const simpleExecutionSchema = z.object({
 const emptyStringToUndefined = (val: unknown) =>
   typeof val === 'string' && val.trim() === '' ? undefined : val;
 
+const sanitizeDateParam = (val: unknown) => {
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return undefined;
+    if (trimmed.includes('T')) {
+      const part = trimmed.split('T')[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(part)) return part;
+    }
+    return trimmed;
+  }
+  return val;
+};
+
 export const emotionEnum = z.enum([
   'CALM',
   'CONFIDENT',
@@ -596,7 +609,7 @@ export const tradeFilterQueryBaseSchema = z.object({
   templateId: z.preprocess(emptyStringToUndefined, z.string().optional()),
   session: z.preprocess(emptyStringToUndefined, z.string().optional()),
   startDate: z.preprocess(
-    emptyStringToUndefined,
+    sanitizeDateParam,
     z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid startDate format (expected YYYY-MM-DD)')
@@ -604,7 +617,7 @@ export const tradeFilterQueryBaseSchema = z.object({
       .optional()
   ),
   endDate: z.preprocess(
-    emptyStringToUndefined,
+    sanitizeDateParam,
     z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid endDate format (expected YYYY-MM-DD)')
@@ -629,7 +642,7 @@ export const tradeFilterQuerySchema = tradeFilterQueryBaseSchema.refine(
 export type TradeFilterQuery = z.infer<typeof tradeFilterQueryBaseSchema>;
 
 export const extendedTradeFilterBaseSchema = tradeFilterQueryBaseSchema.extend({
-  date: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  date: z.preprocess(sanitizeDateParam, z.string().optional()),
   dateRange: z.preprocess(emptyStringToUndefined, z.string().optional()),
   weekday: z.preprocess(emptyStringToUndefined, z.string().optional()),
   emotion: z.preprocess(emptyStringToUndefined, z.string().optional()),

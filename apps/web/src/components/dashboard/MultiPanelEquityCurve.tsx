@@ -226,10 +226,12 @@ export function MultiPanelEquityCurve({ selectedAccountId, startDate, endDate }:
           label: `Trade on ${formatDate(payload.date)} (${payload.symbol || 'Trade'})`,
         });
       } else if (payload.date) {
+        const rawDate = payload.date;
+        const dateStr = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
         openDrill({
           kind: 'FILTER',
-          filter: { date: payload.date },
-          label: `Trades on ${formatDate(payload.date)}`,
+          filter: { date: dateStr },
+          label: `Trades on ${formatDate(dateStr)}`,
         });
       }
     },

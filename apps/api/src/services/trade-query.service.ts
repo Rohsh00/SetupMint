@@ -119,20 +119,25 @@ export function buildTradeMongooseFilter(
   // Date filtering: single exact date, range, or delimited string
   // All normalized to inclusive IST trading day boundaries on tradeDate
   if (date) {
-    const clause = buildDateRangeClause({ startDate: date, endDate: date });
+    const cleanDate = typeof date === 'string' && date.includes('T') ? date.split('T')[0] : date;
+    const clause = buildDateRangeClause({ startDate: cleanDate, endDate: cleanDate });
     if (clause.tradeDate) {
       filter.tradeDate = clause.tradeDate;
     }
   } else if (startDate || endDate) {
-    const clause = buildDateRangeClause({ startDate, endDate });
+    const cleanStart = typeof startDate === 'string' && startDate.includes('T') ? startDate.split('T')[0] : startDate;
+    const cleanEnd = typeof endDate === 'string' && endDate.includes('T') ? endDate.split('T')[0] : endDate;
+    const clause = buildDateRangeClause({ startDate: cleanStart, endDate: cleanEnd });
     if (clause.tradeDate) {
       filter.tradeDate = clause.tradeDate;
     }
   } else if (dateRange && dateRange.includes('..')) {
     const [start, end] = dateRange.split('..');
+    const cleanStart = start && start.includes('T') ? start.split('T')[0] : start;
+    const cleanEnd = end && end.includes('T') ? end.split('T')[0] : end;
     const clause = buildDateRangeClause({
-      startDate: start || undefined,
-      endDate: end || undefined,
+      startDate: cleanStart || undefined,
+      endDate: cleanEnd || undefined,
     });
     if (clause.tradeDate) {
       filter.tradeDate = clause.tradeDate;

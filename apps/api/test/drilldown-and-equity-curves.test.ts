@@ -414,5 +414,47 @@ describe('Drilldown and Multi-Panel Equity Curves API Integration Tests', () => 
       expect(json.data.trades[0].id).toBe(tradeA2Id);
       expect(json.data.aggregate.netPnL).toBe(-2000);
     });
+
+    it('8. Kind FILTER: filters by calendar date YYYY-MM-DD', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/trades/drilldown',
+        headers: { cookie: userACookie },
+        payload: {
+          descriptor: {
+            kind: 'FILTER',
+            filter: { date: '2026-05-04' },
+            label: 'Session on 04 May 2026',
+          },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const json = res.json();
+      expect(json.success).toBe(true);
+      expect(json.data.trades).toHaveLength(1);
+      expect(json.data.trades[0].id).toBe(tradeA1Id);
+      expect(json.data.aggregate.netPnL).toBe(5000);
+    });
+
+    it('9. Kind FILTER: handles ISO timestamp with time component without error', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/trades/drilldown',
+        headers: { cookie: userACookie },
+        payload: {
+          descriptor: {
+            kind: 'FILTER',
+            filter: { date: '2026-05-04T04:00:00.000Z' },
+            label: 'Session on 04 May 2026',
+          },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const json = res.json();
+      expect(json.success).toBe(true);
+      expect(json.data.trades).toHaveLength(1);
+      expect(json.data.trades[0].id).toBe(tradeA1Id);
+      expect(json.data.aggregate.netPnL).toBe(5000);
+    });
   });
 });

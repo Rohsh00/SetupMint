@@ -300,13 +300,15 @@ export function DashboardPage() {
           severity="error"
           variant="filled"
           icon={<WarningAmberIcon fontSize="inherit" />}
-          onClick={() =>
+          onClick={() => {
+            const rawDate = reviewQueueData.dailyLossBreach.date || new Date().toISOString().slice(0, 10);
+            const dateStr = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
             openDrill({
               kind: 'FILTER',
-              filter: { date: reviewQueueData.dailyLossBreach.date || new Date().toISOString().slice(0, 10) },
+              filter: { date: dateStr },
               label: 'Daily Loss Breach Session Trades',
-            })
-          }
+            });
+          }}
           sx={{
             borderRadius: 2,
             fontWeight: 700,
@@ -795,10 +797,12 @@ export function DashboardPage() {
                     data={stats.dailyPnL}
                     onClick={(data) => {
                       if (data?.activePayload?.[0]?.payload?.date) {
+                        const rawDate = data.activePayload[0].payload.date;
+                        const dateStr = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
                         openDrill({
                           kind: 'FILTER',
-                          filter: { date: data.activePayload[0].payload.date },
-                          label: `Session on ${formatDate(data.activePayload[0].payload.date)}`,
+                          filter: { date: dateStr },
+                          label: `Session on ${formatDate(dateStr)}`,
                         });
                       }
                     }}

@@ -258,6 +258,17 @@ describe('Shared Date-Range Model & Pure Helpers', () => {
         /Invalid calendar startDate/
       );
     });
+
+    it('safely handles ISO timestamps by extracting calendar date', () => {
+      const normalized = normalizeRange({
+        startDate: '2026-11-17T09:55:55.848Z',
+        endDate: '2026-11-17T18:30:00.000Z',
+      });
+      expect(normalized.startDate).toBe('2026-11-17');
+      expect(normalized.endDate).toBe('2026-11-17');
+      expect(normalized.startUtc).toBeDefined();
+      expect(normalized.endUtc).toBeDefined();
+    });
   });
 
   describe('buildDateRangeClause', () => {

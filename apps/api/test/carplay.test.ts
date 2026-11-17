@@ -160,4 +160,83 @@ describe('In-Car & Apple CarPlay Siri Voice Routes', () => {
     const updatedTrade = await Trade.findById(trade._id);
     expect(updatedTrade?.risk?.currentStopLoss).toBeGreaterThanOrEqual(2730.0);
   });
+
+  it('6. GET /api/v1/carplay/action?action=CLOSE_50 books 50% partial on active trade', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=CLOSE_50&token=${carPlayToken}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Booked 50 percent profit on Gold');
+    expect(res.body).toContain('Closed 0.1 lots');
+  });
+
+  it('7. GET /api/v1/carplay/action?action=PANIC flattens open positions', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=PANIC&token=${carPlayToken}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Emergency killswitch executed');
+  });
+
+  it('8. GET /api/v1/carplay/action?action=PANIC when idle reports account safe', async () => {
+    // Delete remaining trades to simulate 0 open trades
+    await Trade.deleteMany({ userId });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=PANIC&token=${carPlayToken}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('no open positions to close');
+    expect(res.body).toContain('already safe');
+  });
+
+  it('9. GET /api/v1/carplay/action for BE & CLOSE_50 when idle reports no active trade found', async () => {
+    const beRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=BE&token=${carPlayToken}`,
+    });
+    expect(beRes.statusCode).toBe(200);
+    expect(beRes.body).toContain('No active open position found');
+
+    const halfRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=CLOSE_50&token=${carPlayToken}`,
+    });
+    expect(halfRes.statusCode).toBe(200);
+    expect(halfRes.body).toContain('No active open position found');
+  });
+
+  it('10. GET /api/v1/carplay/action with invalid action code returns helpful voice guidance', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/carplay/action?action=FLY_TO_MOON&token=${carPlayToken}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Unknown action command');
+    expect(res.body).toContain('Lock Breakeven');
+  });
+
+  it('11. POST /api/v1/carplay/action supports JSON body payload and format=json', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/carplay/action',
+      headers: { 'x-carplay-token': carPlayToken },
+      payload: {
+        action: 'PANIC',
+        format: 'json',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body);
+    expect(data.success).toBe(true);
+    expect(data.speechText).toContain('no open positions to close');
+  });
 });

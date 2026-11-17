@@ -304,6 +304,15 @@ export class CarPlayService {
   ): Promise<ICarPlayBriefingResult> {
     const code = (actionCode || '').toUpperCase().trim();
 
+    // Validate action command first
+    const KNOWN_ACTIONS = ['PANIC', 'CLOSE_ALL', 'BE', 'BREAKEVEN', 'CLOSE_50', 'BOOK_50', 'HALF'];
+    if (!KNOWN_ACTIONS.includes(code)) {
+      return {
+        success: false,
+        speechText: `Unknown action command: "${actionCode}". Please say Lock Breakeven, Book Fifty Percent, or Panic Close.`,
+      };
+    }
+
     // 1. Emergency Panic Close All
     if (code === 'PANIC' || code === 'CLOSE_ALL') {
       const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' });
@@ -319,7 +328,12 @@ export class CarPlayService {
 
       for (const t of openTrades) {
         try {
-          const openQty = t.calculated?.openQuantity ?? t.simpleExecution?.quantity ?? (t as any).quantity ?? 1;
+          const openQty =
+            t.calculated?.openQuantity && t.calculated.openQuantity > 0
+              ? t.calculated.openQuantity
+              : t.simpleExecution?.quantity && t.simpleExecution.quantity > 0
+              ? t.simpleExecution.quantity
+              : (t as any).quantity || 1;
           const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
           const isMt5 = Mt5CommandService.isMt5Trade(t, account);
           const ticket = isMt5 ? Mt5CommandService.extractTicket(t) : null;
@@ -373,13 +387,19 @@ export class CarPlayService {
     if (code === 'BE' || code === 'BREAKEVEN') {
       let trueBePrice = (trade.calculated as any)?.trueBreakevenPrice;
       const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
+      const safeOpenQty =
+        trade.calculated?.openQuantity && trade.calculated.openQuantity > 0
+          ? trade.calculated.openQuantity
+          : trade.simpleExecution?.quantity && trade.simpleExecution.quantity > 0
+          ? trade.simpleExecution.quantity
+          : (trade as any).quantity || 1;
 
       if (!trueBePrice && entryPrice > 0) {
         try {
           const beRes = calculateTrueBreakeven({
             direction: trade.direction,
             entryPrice,
-            quantity: trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? (trade as any).quantity ?? 1,
+            quantity: safeOpenQty,
             estimatedCharges: 50,
           });
           trueBePrice = beRes.trueBreakevenPrice;
@@ -427,9 +447,16 @@ export class CarPlayService {
 
     // 3. Book 50% Profit
     if (code === 'CLOSE_50' || code === 'BOOK_50' || code === 'HALF') {
-      const openQty = trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? (trade as any).quantity ?? 1;
+      const openQty =
+        trade.calculated?.openQuantity && trade.calculated.openQuantity > 0
+          ? trade.calculated.openQuantity
+          : trade.simpleExecution?.quantity && trade.simpleExecution.quantity > 0
+          ? trade.simpleExecution.quantity
+          : (trade as any).quantity || 1;
+
+      const isForexOrCrypto = isForex || isMt5 || (trade.symbol && /XAU|EUR|GBP|USD|JPY|BTC|ETH/i.test(trade.symbol));
       let closeQty: number;
-      if (isMt5) {
+      if (isForexOrCrypto) {
         closeQty = Math.max(0.01, Number((openQty * 0.5).toFixed(2)));
         if (closeQty > openQty) closeQty = openQty;
       } else {

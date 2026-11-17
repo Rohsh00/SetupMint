@@ -107,6 +107,7 @@ export async function buildApp() {
   await app.register(helmet, {
     contentSecurityPolicy: false, // Allows flexible dashboard assets
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: false, // Prevent browser from locking into HTTPS on IP / HTTP deployments
   });
 
   // CORS (supports comma-separated origins, production domains, and local dev)

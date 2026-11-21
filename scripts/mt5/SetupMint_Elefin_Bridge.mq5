@@ -280,6 +280,8 @@ void ProcessSetupMintCommands(string responseJson)
       {
          string symbol = ExtractJsonString(cmdObj, "symbol");
          string side = ExtractJsonString(cmdObj, "side");
+         string orderType = ExtractJsonString(cmdObj, "orderType");
+         double price = ExtractJsonNumber(cmdObj, "price");
          string comment = ExtractJsonString(cmdObj, "comment");
          if(StringLen(symbol) == 0) symbol = _Symbol;
          if(StringLen(comment) == 0) comment = "SetupMint-Telegram";
@@ -289,13 +291,30 @@ void ProcessSetupMintCommands(string responseJson)
 
          ResetLastError();
          bool openRes = false;
-         if(side == "BUY")
+         if(orderType == "LIMIT")
          {
-            openRes = m_trade.Buy(volume, symbol, 0, sl, tp, comment);
+            if(side == "BUY")
+               openRes = m_trade.BuyLimit(volume, price, symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+            else if(side == "SELL")
+               openRes = m_trade.SellLimit(volume, price, symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
          }
-         else if(side == "SELL")
+         else if(orderType == "STOP")
          {
-            openRes = m_trade.Sell(volume, symbol, 0, sl, tp, comment);
+            if(side == "BUY")
+               openRes = m_trade.BuyStop(volume, price, symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+            else if(side == "SELL")
+               openRes = m_trade.SellStop(volume, price, symbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+         }
+         else
+         {
+            if(side == "BUY")
+            {
+               openRes = m_trade.Buy(volume, symbol, 0, sl, tp, comment);
+            }
+            else if(side == "SELL")
+            {
+               openRes = m_trade.Sell(volume, symbol, 0, sl, tp, comment);
+            }
          }
 
          // Resilient Stop Handling: If initial stops are rejected by broker (e.g. fast market tick or stop level),
@@ -329,7 +348,8 @@ void ProcessSetupMintCommands(string responseJson)
             ulong finalTicket = orderTicket > 0 ? orderTicket : dealTicket;
             int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
             success = true;
-            msg = "Market " + side + " " + DoubleToString(volume, 2) + " " + symbol + " opened (Ticket #" + IntegerToString(finalTicket) + ") @ " + DoubleToString(m_trade.ResultPrice(), digits);
+            string typeStr = (orderType == "LIMIT" || orderType == "STOP") ? (orderType + " " + side) : ("Market " + side);
+            msg = typeStr + " " + DoubleToString(volume, 2) + " " + symbol + " placed (Ticket #" + IntegerToString(finalTicket) + ") @ " + DoubleToString(m_trade.ResultPrice(), digits);
             Print("[SetupMint] ⚡ OPEN_ORDER SUCCESS: ", msg);
          }
          else

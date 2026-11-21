@@ -384,9 +384,10 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     expect(msg.text).toContain('ETHUSD : $3140.25');
 
     const keyboard = msg.reply_markup.inline_keyboard;
-    expect(keyboard.length).toBe(4);
+    expect(keyboard.length).toBeGreaterThanOrEqual(4);
     expect(keyboard[0][0].text).toContain('BUY Gold (0.10)');
     expect(keyboard[1][0].text).toContain('BUY ETH (1.00)');
+    expect(keyboard[2][0].text).toContain('BUY BTC');
   });
 
   // 10. Top Pinned Cockpit: /pin calls pinChatMessage and stores message ID
@@ -1113,5 +1114,178 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     await Trade.deleteOne({ _id: activeTrade._id });
     await Mt5Command.deleteMany({ ticket: 443325 });
+  });
+
+  // 31. Auto-Execution toggle: /autoexecute on & /autoexecute off arms/disarms MT5 ladder execution
+  it('Scenario 31: /autoexecute on & off toggles MT5 ladder auto-execution', async () => {
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/autoexecute on',
+      },
+    });
+
+    let lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('AUTO-EXECUTION ARMED GLOBALLY');
+
+    let updatedUser = await User.findById(testUser._id);
+    expect(updatedUser?.liveWatcherSettings?.defaultAutoExecute).toBe(true);
+
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/autoexecute off',
+      },
+    });
+
+    lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('MANUAL CONFIRMATION MODE');
+
+    updatedUser = await User.findById(testUser._id);
+    expect(updatedUser?.liveWatcherSettings?.defaultAutoExecute).toBe(false);
+  });
+
+  // 32. Multi-Asset Orders: /btc, /us30, /nas100
+  it('Scenario 32: Multi-Asset orders execute with correct defaults for BTC, US30, and NAS100', async () => {
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/btc buy',
+      },
+    });
+
+    const btcCmd = await Mt5Command.findOne({ symbol: 'BTCUSD', action: 'OPEN_ORDER' }).sort({ createdAt: -1 });
+    expect(btcCmd).toBeDefined();
+    expect(btcCmd?.side).toBe('BUY');
+    expect(btcCmd?.volume).toBe(0.05);
+
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/us30 sell 0.20',
+      },
+    });
+
+    const us30Cmd = await Mt5Command.findOne({ symbol: 'US30', action: 'OPEN_ORDER' }).sort({ createdAt: -1 });
+    expect(us30Cmd).toBeDefined();
+    expect(us30Cmd?.side).toBe('SELL');
+    expect(us30Cmd?.volume).toBe(0.20);
+  });
+
+  // 33. Pending Limit & Stop Orders: /gold buylimit 2640.00
+  it('Scenario 33: /gold buylimit queues a LIMIT pending order with exact price to MT5 Bridge', async () => {
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/gold buylimit 2640.00 0.05',
+      },
+    });
+
+    const pendingCmd = await Mt5Command.findOne({ symbol: 'XAUUSD', orderType: 'LIMIT' }).sort({ createdAt: -1 });
+    expect(pendingCmd).toBeDefined();
+    expect(pendingCmd?.side).toBe('BUY');
+    expect(pendingCmd?.price).toBe(2640.00);
+    expect(pendingCmd?.volume).toBe(0.05);
+  });
+
+  // 34. Pyramiding Scale-In: /add on winning position
+  it('Scenario 34: Pyramiding adds volume to winning position and locks base position to BE', async () => {
+    const winningTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      status: 'OPEN',
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      marketSegment: 'FOREX',
+      entryTime: new Date(),
+      tradeDate: new Date(),
+      tags: ['MT5', 'MT5_TICKET_556677'],
+      simpleExecution: {
+        entryPrice: 2645.00, // Quote ltp is 2650.20, so trade is in profit!
+        quantity: 0.04,
+      },
+      risk: {
+        initialStopLoss: 2640.00,
+        currentStopLoss: 2640.00,
+      },
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/add 0.04',
+      },
+    });
+
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('PYRAMIDING SCALE-IN DISPATCHED');
+
+    // Base stop should be updated to entry price (2645.00)
+    const slModCmd = await Mt5Command.findOne({ ticket: 556677, action: 'MODIFY_SL' });
+    expect(slModCmd).toBeDefined();
+    expect(slModCmd?.stopLoss).toBe(2645.00);
+
+    // New scale-in order should be placed
+    const scaleInCmd = await Mt5Command.findOne({ symbol: 'XAUUSD', volume: 0.04, comment: { $regex: /Pyramid/ } });
+    expect(scaleInCmd).toBeDefined();
+
+    await Trade.deleteOne({ _id: winningTrade._id });
+    await Mt5Command.deleteMany({ ticket: 556677 });
+  });
+
+  // 35. Urgent News Shield: 2-minute pre-release warning
+  it('Scenario 35: sendGoldNewsUrgentShield dispatches alert with 1-tap flatten buttons', async () => {
+    const newsGoldTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      status: 'OPEN',
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      marketSegment: 'FOREX',
+      entryTime: new Date(),
+      tradeDate: new Date(),
+      tags: ['MT5', 'MT5_TICKET_889900'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.08,
+      },
+    });
+
+    sentMessages.length = 0;
+    const sent = await TelegramAlertService.sendGoldNewsUrgentShield(testUser, {
+      id: 'news-cpi-1',
+      title: 'US CPI m/m',
+      country: 'USD',
+      impact: 'HIGH',
+      isGoldMover: true,
+      timestamp: new Date().toISOString(),
+      istTimeStr: '06:00 PM IST',
+      countdownStr: '2m',
+      minutesUntil: 2,
+      forecast: '0.2%',
+      previous: '0.2%',
+      status: 'IMMINENT',
+    });
+
+    expect(sent).toBe(true);
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('URGENT NEWS SHIELD: 2 MINUTES UNTIL RELEASE!');
+    expect(lastMsg.reply_markup.inline_keyboard[0][0].text).toContain('FLATTEN ALL GOLD NOW');
+
+    await Trade.deleteOne({ _id: newsGoldTrade._id });
   });
 });

@@ -71,6 +71,24 @@ export interface IForexPresets {
     defaultSlPrice: number;
     defaultRr: number;
   };
+  btc?: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPoints: number;
+    defaultRr: number;
+  };
+  us30?: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPoints: number;
+    defaultRr: number;
+  };
+  nas100?: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPoints: number;
+    defaultRr: number;
+  };
 }
 
 export const DEFAULT_FOREX_PRESETS: IForexPresets = {
@@ -84,6 +102,24 @@ export const DEFAULT_FOREX_PRESETS: IForexPresets = {
     symbol: 'ETHUSD',
     defaultLot: 1.0,
     defaultSlPrice: 30,
+    defaultRr: 2.5,
+  },
+  btc: {
+    symbol: 'BTCUSD',
+    defaultLot: 0.05,
+    defaultSlPoints: 300,
+    defaultRr: 2.5,
+  },
+  us30: {
+    symbol: 'US30',
+    defaultLot: 0.10,
+    defaultSlPoints: 60,
+    defaultRr: 2.5,
+  },
+  nas100: {
+    symbol: 'NAS100',
+    defaultLot: 0.10,
+    defaultSlPoints: 40,
     defaultRr: 2.5,
   },
 };
@@ -1244,6 +1280,8 @@ export class TelegramAlertService {
       return;
     }
 
+    if (!botToken) return;
+
     // Fast-path for global commands
     if (data === 'cmd_pnl') {
       await this.answerCallbackQuery(botToken, cq.id, 'Refreshing PnL...');
@@ -1324,6 +1362,25 @@ export class TelegramAlertService {
     if (data === 'cmd_eth_menu') {
       await this.answerCallbackQuery(botToken, cq.id, 'Loading ETH Menu...');
       await this.handleForexOrderCommand(user, botToken, chatId, 'ETHUSD', []);
+      return;
+    }
+    if (data === 'cmd_btc_menu') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading Bitcoin Menu...');
+      await this.handleForexOrderCommand(user, botToken, chatId, 'BTCUSD', []);
+      return;
+    }
+    if (data === 'cmd_us30_menu') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading US30 Menu...');
+      await this.handleForexOrderCommand(user, botToken, chatId, 'US30', []);
+      return;
+    }
+    if (data === 'cmd_nas_menu') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading NAS100 Menu...');
+      await this.handleForexOrderCommand(user, botToken, chatId, 'NAS100', []);
+      return;
+    }
+    if (data.startsWith('pos_voice_hint:')) {
+      await this.answerCallbackQuery(botToken, cq.id, '🎙️ Send a voice note now to attach your debrief to this trade!', true);
       return;
     }
     if (data === 'cmd_close_gold') {
@@ -1537,6 +1594,30 @@ export class TelegramAlertService {
         await this.answerCallbackQuery(botToken, cq.id, `🛡️ SL moved to $${newSl.toFixed(2)} for #${ticket}`, true);
         await this.updatePinnedCockpitMessage(user);
       }
+      return;
+    }
+
+    if (data.startsWith('pos_add:')) {
+      const ticket = parseInt(data.replace('pos_add:', ''), 10);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      if (trade) {
+        const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+        const presets = user?.liveWatcherSettings?.telegramForexPresets;
+        const defaultLot = isGold ? (presets?.goldDefaultLot ?? 0.04) : (presets?.ethDefaultLot ?? 1.0);
+        await this.answerCallbackQuery(botToken, cq.id, `➕ Adding ${defaultLot}L scale-in...`, false);
+        await this.executeScaleIn(user, botToken, chatId, trade, defaultLot, ticket);
+      }
+      return;
+    }
+
+    if (data === 'cmd_autoexec_on' || data === 'cmd_autoexec_off') {
+      const arm = data === 'cmd_autoexec_on';
+      if (!user.liveWatcherSettings) (user as any).liveWatcherSettings = {};
+      (user.liveWatcherSettings as any).defaultAutoExecute = arm;
+      (user.liveWatcherSettings as any).serverSideExecutionEnabled = true;
+      await user.save();
+      await this.answerCallbackQuery(botToken, cq.id, arm ? '⚡ Auto-Execution Armed for MT5!' : '✋ Auto-Execution Disarmed.');
+      await this.handleAutoExecuteToggleCommand(user, botToken, chatId, [arm ? 'on' : 'off']);
       return;
     }
 
@@ -2523,6 +2604,49 @@ export class TelegramAlertService {
         await this.handleForexOrderCommand(user, botToken, chatId, 'ETHUSD', args);
         break;
 
+      case '/btc':
+      case '/bitcoin':
+      case 'btc':
+        await this.handleForexOrderCommand(user, botToken, chatId, 'BTCUSD', args);
+        break;
+
+      case '/us30':
+      case '/dow':
+      case 'us30':
+        await this.handleForexOrderCommand(user, botToken, chatId, 'US30', args);
+        break;
+
+      case '/nas':
+      case '/nas100':
+      case '/ustec':
+      case 'nas100':
+      case 'nas':
+        await this.handleForexOrderCommand(user, botToken, chatId, 'NAS100', args);
+        break;
+
+      case '/autoexecute':
+      case '/autotrade':
+      case '/ladder':
+      case 'autoexecute':
+      case 'autotrade':
+      case 'ladder':
+        await this.handleAutoExecuteToggleCommand(user, botToken, chatId, args);
+        break;
+
+      case '/add':
+      case '/pyramid':
+        await this.handlePyramidingCommand(user, botToken, chatId, args);
+        break;
+
+      case '/limit':
+      case '/buylimit':
+      case '/selllimit':
+      case '/stoporder':
+      case '/buystop':
+      case '/sellstop':
+        await this.handlePendingOrderCommand(user, botToken, chatId, command, args);
+        break;
+
       case '/trade':
       case '/cockpit':
       case 'trade':
@@ -2728,6 +2852,25 @@ export class TelegramAlertService {
     if (!botToken) return;
 
     try {
+      // 1b. Check if voice note or audio comes with a command caption or transcription
+      const voiceText = (msg.caption || msg.voice?.transcript || msg.voice?.transcription || '').trim();
+      if (voiceText) {
+        const lower = voiceText.toLowerCase();
+        if (
+          lower.startsWith('/') ||
+          lower.includes('buy') ||
+          lower.includes('sell') ||
+          lower.includes('close') ||
+          lower.includes('flatten') ||
+          lower.includes('lock') ||
+          lower.includes('trail') ||
+          lower.includes('limit') ||
+          lower.includes('pyramid')
+        ) {
+          await this.handleTextMessage({ ...msg, text: voiceText }, knownBotToken);
+        }
+      }
+
       // 2. Resolve Target Trade
       let targetTrade: any = null;
 
@@ -3764,7 +3907,8 @@ export class TelegramAlertService {
       title: `${isWin ? '🏁 Trade Closed in Profit' : '🛑 Trade Closed in Loss'}: ${trade.symbol}`,
       body: `<b>Post-Trade Efficiency Scorecard:</b>\n` +
         `Harvested <b>${harvestedPips >= 0 ? '+' : ''}${harvestedPips.toFixed(1)} pips</b> (${captureEfficiency.toFixed(1)}% efficiency).\n` +
-        `Execution Rating: <b>${rating}</b>`,
+        `Execution Rating: <b>${rating}</b>\n\n` +
+        `🎙️ <b>Voice Debrief:</b> Hold 🎙️ mic in Telegram to attach an audio reflection to this trade's journal.`,
       severity: isWin ? 'SUCCESS' : 'WARNING',
       metrics: {
         Symbol: trade.symbol,
@@ -3779,8 +3923,12 @@ export class TelegramAlertService {
       },
       buttons: [
         [
-          { text: '📊 Daily Summary (/summary)', callback_data: 'cmd_summary' },
+          { text: '🎙️ Record Voice Debrief', callback_data: `pos_voice_hint:${trade._id}` },
+          { text: '📊 Daily Summary', callback_data: 'cmd_summary' },
+        ],
+        [
           { text: '🛡️ Prop Risk (/risk)', callback_data: 'cmd_risk' },
+          { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
         ],
       ],
     });
@@ -4665,6 +4813,251 @@ export class TelegramAlertService {
   }
 
   /**
+   * Toggles live server-side ladder auto-execution (defaultAutoExecute) on MT5 and FYERS.
+   */
+  private static async handleAutoExecuteToggleCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[] = []
+  ): Promise<void> {
+    if (!botToken) return;
+    const target = (args[0] || '').toLowerCase();
+    let newState: boolean;
+
+    if (target === 'on' || target === 'arm' || target === 'enable' || target === '1') {
+      newState = true;
+    } else if (target === 'off' || target === 'disarm' || target === 'disable' || target === '0') {
+      newState = false;
+    } else {
+      newState = !Boolean(user.liveWatcherSettings?.defaultAutoExecute);
+    }
+
+    if (!user.liveWatcherSettings) {
+      user.liveWatcherSettings = {};
+    }
+    user.liveWatcherSettings.defaultAutoExecute = newState;
+    user.liveWatcherSettings.serverSideExecutionEnabled = true;
+    await user.save();
+
+    const statusBadge = newState ? '⚡ <b>AUTO-EXECUTION ARMED GLOBALLY</b>' : '✋ <b>MANUAL CONFIRMATION MODE</b>';
+    const explanation = newState
+      ? `• Live ladder profit-taking & trailing stop orders will execute automatically on your <b>MT5 terminal</b>.\n` +
+        `• When price reaches +1.5R or ladder targets, partial profits are harvested and SL is trailed to BE without manual clicks.\n` +
+        `• Type <code>/autoexecute off</code> anytime to disarm.`
+      : `• Automatic order execution is paused.\n` +
+        `• You will receive 1-tap Telegram interactive buttons to confirm profit harvesting manually.\n` +
+        `• Type <code>/autoexecute on</code> anytime to re-arm.`;
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `${statusBadge}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `${explanation}`,
+      [
+        [
+          newState
+            ? { text: '✋ Disarm Auto-Execute', callback_data: 'cmd_autoexec_off' }
+            : { text: '⚡ Arm Auto-Execute', callback_data: 'cmd_autoexec_on' },
+          { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+        ],
+      ]
+    );
+  }
+
+  /**
+   * Adds volume to an existing profitable position (Pyramiding) once risk is protected at BE.
+   */
+  private static async handlePyramidingCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[] = []
+  ): Promise<void> {
+    if (!botToken) return;
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    const openTrades = await Trade.find({
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+    }).sort({ entryTime: -1 });
+
+    if (openTrades.length === 0) {
+      await this.sendMessage(botToken, chatId, `⚠️ <b>No Active Open Positions:</b> Pyramiding requires an active, winning trade to add to.`);
+      return;
+    }
+
+    let trade = openTrades[0];
+    if (args[0] && isNaN(parseFloat(args[0]))) {
+      const symMatch = openTrades.find((t: any) => t.symbol?.toUpperCase().includes(args[0].toUpperCase()));
+      if (symMatch) trade = symMatch;
+    }
+
+    const ticket = Mt5CommandService.extractTicket(trade);
+    const sym = trade.symbol;
+    const isGold = (sym || '').includes('XAU') || sym === 'GOLD';
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const defaultLot = isGold ? (presets?.goldDefaultLot ?? 0.04) : (presets?.ethDefaultLot ?? 1.0);
+
+    let addLot = defaultLot;
+    for (const a of args) {
+      if (/^\d+(\.\d+)?$/.test(a)) {
+        addLot = parseFloat(a);
+        break;
+      }
+    }
+
+    await this.executeScaleIn(user, botToken, chatId, trade, addLot, ticket);
+  }
+
+  /**
+   * Executes pyramiding scale-in order on MT5 once original position is protected at BE.
+   */
+  static async executeScaleIn(
+    user: any,
+    botToken: string,
+    chatId: string | number,
+    trade: any,
+    addLot: number,
+    ticket?: number | null
+  ): Promise<void> {
+    const sym = trade.symbol;
+    const isGold = (sym || '').includes('XAU') || sym === 'GOLD';
+    const isEth = (sym || '').includes('ETH');
+    const quote = Mt5CommandService.getLiveQuote(sym);
+    const entry = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? trade.entryPrice ?? 0);
+    const ltp = quote?.ltp || entry;
+    const isLong = (trade.direction as string) === 'LONG' || (trade.direction as string) === 'BUY';
+    const isWinning = isLong ? ltp > entry : ltp < entry;
+
+    if (!isWinning) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Pyramiding Blocked on Non-Winning Trade:</b>\n` +
+        `Current market price (${ltp}) has not exceeded entry (${entry}). SetupMint strictly prohibits averaging down on losers. Pyramiding is only allowed on winning trades!`
+      );
+      return;
+    }
+
+    const curSl = Number(trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? 0);
+    const needsBeLock = isLong ? curSl < entry : curSl > entry;
+    const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+    const accountId = (account?._id || trade.accountId)!;
+
+    if (needsBeLock && ticket && accountId) {
+      await Mt5CommandService.queueModifySl({
+        userId: user._id,
+        accountId,
+        tradeId: trade._id,
+        ticket,
+        stopLoss: entry,
+      });
+      trade.risk = { ...(trade.risk || {}), currentStopLoss: entry };
+      await trade.save().catch(() => {});
+    }
+
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const slPts = isGold ? (presets?.goldSlPoints ?? 35) : (isEth ? (presets?.ethSlPrice ?? 30) : 50);
+    const rr = isGold ? (presets?.goldRrRatio ?? 2.0) : (presets?.ethRrRatio ?? 2.5);
+    const newSl = Number((isLong ? ltp - (slPts * (isGold ? 0.10 : 1.0)) : ltp + (slPts * (isGold ? 0.10 : 1.0))).toFixed(2));
+    const newTp = Number((isLong ? ltp + (slPts * rr * (isGold ? 0.10 : 1.0)) : ltp - (slPts * rr * (isGold ? 0.10 : 1.0))).toFixed(2));
+
+    await Mt5CommandService.queueOpenOrder({
+      userId: user._id,
+      accountId,
+      symbol: sym,
+      side: isLong ? 'BUY' : 'SELL',
+      volume: addLot,
+      stopLoss: newSl,
+      takeProfit: newTp,
+      comment: `SetupMint-Pyramid-${trade._id}`,
+    });
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `➕ <b>PYRAMIDING SCALE-IN DISPATCHED</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Symbol   : ${sym} (${isLong ? 'BUY' : 'SELL'})\n` +
+      `Added Vol: ${addLot} Lots\n` +
+      `Est Fill : $${ltp.toFixed(2)}\n` +
+      `Base Pos : #${ticket || 'Parent'} (Locked at BE $${entry.toFixed(2)})\n` +
+      `New SL   : $${newSl.toFixed(2)}\n` +
+      `New TP   : $${newTp.toFixed(2)}\n` +
+      `Status   : Dispatched to MT5 Server Bridge\n` +
+      `</pre>\n` +
+      `<i>Original trade is protected at Breakeven. Zero overall risk addition.</i>`
+    );
+    await this.updatePinnedCockpitMessage(user);
+  }
+
+  /**
+   * Handles limit and stop pending orders via Telegram (/limit, /buylimit, /selllimit, /buystop, /sellstop).
+   */
+  private static async handlePendingOrderCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    cmd: string,
+    args: string[] = []
+  ): Promise<void> {
+    if (!botToken) return;
+    let sym = 'XAUUSD';
+    let side: 'BUY' | 'SELL' = 'BUY';
+    const orderType: 'LIMIT' | 'STOP' = cmd.includes('stop') ? 'STOP' : 'LIMIT';
+    let price: number | undefined;
+    let volume: number | undefined;
+
+    if (cmd === '/limit' || cmd === '/stoporder') {
+      const symArg = (args[0] || '').toUpperCase();
+      if (symArg.includes('ETH')) sym = 'ETHUSD';
+      else if (symArg.includes('BTC')) sym = 'BTCUSD';
+      else if (symArg.includes('US30')) sym = 'US30';
+      else if (symArg.includes('NAS')) sym = 'NAS100';
+      else sym = 'XAUUSD';
+
+      const sideArg = (args[1] || '').toUpperCase();
+      side = sideArg === 'SELL' || sideArg === 'SHORT' ? 'SELL' : 'BUY';
+      price = args[2] ? parseFloat(args[2]) : undefined;
+      volume = args[3] ? parseFloat(args[3]) : undefined;
+    } else {
+      side = cmd.includes('sell') ? 'SELL' : 'BUY';
+      for (const a of args) {
+        const up = a.toUpperCase();
+        if (up.includes('ETH')) sym = 'ETHUSD';
+        else if (up.includes('BTC')) sym = 'BTCUSD';
+        else if (up.includes('US30')) sym = 'US30';
+        else if (up.includes('NAS')) sym = 'NAS100';
+        else if (up.includes('GOLD') || up.includes('XAU')) sym = 'XAUUSD';
+        else if (/^\d+(\.\d+)?$/.test(a)) {
+          const num = parseFloat(a);
+          if (!price) price = num;
+          else if (!volume) volume = num;
+        }
+      }
+    }
+
+    if (!price || price <= 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Missing Pending Price:</b>\n\n` +
+        `Usage:\n` +
+        `• <code>/gold buylimit &lt;price&gt; [vol]</code> (e.g. <code>/gold buylimit 2640.00 0.04</code>)\n` +
+        `• <code>/limit &lt;symbol&gt; &lt;buy|sell&gt; &lt;price&gt; [vol]</code>\n` +
+        `• <code>/buylimit 2640.00</code>`
+      );
+      return;
+    }
+
+    const orderSubcmd = `${side.toLowerCase()}${orderType.toLowerCase()}`;
+    await this.handleForexOrderCommand(user, botToken, chatId, sym as any, [orderSubcmd, String(price), ...(volume ? [String(volume)] : [])]);
+  }
+
+  /**
    * Resolves the primary MT5 / Elefin trading account for a user.
    */
   static async resolveMt5Account(userId: string | mongoose.Types.ObjectId): Promise<any> {
@@ -5008,13 +5401,23 @@ export class TelegramAlertService {
     user: any,
     botToken: string | null | undefined,
     chatId: string | number,
-    defaultSymbol: 'XAUUSD' | 'ETHUSD',
+    defaultSymbol: string,
     args: string[] = []
   ): Promise<void> {
     if (!botToken) return;
 
-    const isGold = defaultSymbol === 'XAUUSD';
-    const cleanSym = defaultSymbol;
+    const isGold = defaultSymbol.includes('XAU') || defaultSymbol === 'GOLD';
+    const isEth = defaultSymbol.includes('ETH');
+    const isBtc = defaultSymbol.includes('BTC');
+    const isUs30 = defaultSymbol.includes('US30') || defaultSymbol.includes('DOW');
+    const isNas = defaultSymbol.includes('NAS') || defaultSymbol.includes('USTEC');
+
+    let cleanSym = defaultSymbol;
+    if (isGold) cleanSym = 'XAUUSD';
+    else if (isEth) cleanSym = 'ETHUSD';
+    else if (isBtc) cleanSym = 'BTCUSD';
+    else if (isUs30) cleanSym = 'US30';
+    else if (isNas) cleanSym = 'NAS100';
 
     // Subcommand: /gold close or /eth close
     if (args.length > 0 && args[0].toLowerCase() === 'close') {
@@ -5028,10 +5431,21 @@ export class TelegramAlertService {
       return;
     }
 
-    // Check if user specified BUY or SELL
-    const actionArg = args[0]?.toLowerCase();
-    const isBuy = actionArg === 'buy' || actionArg === 'b' || actionArg === 'long';
-    const isSell = actionArg === 'sell' || actionArg === 's' || actionArg === 'short';
+    // Subcommand: /gold add or /eth add (Pyramiding)
+    if (args.length > 0 && (args[0].toLowerCase() === 'add' || args[0].toLowerCase() === 'pyramid')) {
+      await this.handlePyramidingCommand(user, botToken, chatId, [cleanSym, ...(args.slice(1))]);
+      return;
+    }
+
+    // Check if user specified BUY, SELL, or PENDING (BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP)
+    const actionArg = (args[0] || '').toLowerCase();
+    const isLimit = actionArg.includes('limit');
+    const isStop = actionArg.includes('stop') && !actionArg.includes('sl');
+    const isPending = isLimit || isStop;
+    const orderType: 'MARKET' | 'LIMIT' | 'STOP' = isLimit ? 'LIMIT' : (isStop ? 'STOP' : 'MARKET');
+
+    const isBuy = actionArg === 'buy' || actionArg === 'b' || actionArg === 'long' || actionArg.startsWith('buy');
+    const isSell = actionArg === 'sell' || actionArg === 's' || actionArg === 'short' || actionArg.startsWith('sell');
 
     if (isBuy || isSell) {
       const side: 'BUY' | 'SELL' = isBuy ? 'BUY' : 'SELL';
@@ -5044,21 +5458,30 @@ export class TelegramAlertService {
       const presetEthSl = presets?.ethSlPrice ?? DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
       const presetEthRr = presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr;
 
-      let volume = isGold ? presetGoldLot : presetEthLot;
-      let slPoints = isGold ? presetGoldSl : presetEthSl;
-      let tpPoints = isGold ? presetGoldSl * presetGoldRr : presetEthSl * presetEthRr;
+      let volume = isGold ? presetGoldLot : (isEth ? presetEthLot : (isBtc ? 0.05 : 0.10));
+      let slPoints = isGold ? presetGoldSl : (isEth ? presetEthSl : (isBtc ? 300 : (isUs30 ? 60 : 40)));
+      let rr = isGold ? presetGoldRr : (isEth ? presetEthRr : 2.5);
+      let tpPoints = slPoints * rr;
 
       let explicitSlPrice: number | undefined;
       let explicitTpPrice: number | undefined;
+      let pendingPrice: number | undefined;
 
       for (let i = 1; i < args.length; i++) {
         const a = args[i].toLowerCase();
         if (/^\d+(\.\d+)?$/.test(a)) {
-          const v = parseFloat(a);
-          if (v > 0) volume = v;
+          const num = parseFloat(a);
+          if (isPending && !pendingPrice && (num > 50 || isGold || isBtc || isUs30 || isNas)) {
+            pendingPrice = num;
+          } else if (num > 0) {
+            volume = num;
+          }
         } else if (a.startsWith('vol=') || a.startsWith('volume=') || a.startsWith('lot=') || a.startsWith('lots=')) {
           const v = parseFloat(a.split('=')[1]);
           if (v > 0) volume = v;
+        } else if (a.startsWith('price=')) {
+          const p = parseFloat(a.split('=')[1]);
+          if (p > 0) pendingPrice = p;
         } else if (a.startsWith('sl=') || a.startsWith('stop=')) {
           const valStr = a.split('=')[1].replace('pts', '').replace('pips', '');
           const val = parseFloat(valStr);
@@ -5102,14 +5525,15 @@ export class TelegramAlertService {
       }
       if (ltp === 0) {
         const recent = await Trade.findOne({ userId: user._id, symbol: new RegExp(cleanSym, 'i') }).sort({ createdAt: -1 });
-        ltp = recent?.simpleExecution?.entryPrice || (isGold ? 2650 : 3100);
+        ltp = recent?.simpleExecution?.entryPrice || (isGold ? 2650 : (isBtc ? 85000 : (isUs30 ? 44000 : 3100)));
       }
 
+      const basePrice = isPending && pendingPrice ? pendingPrice : ltp;
       const slDist = isGold ? slPoints * 0.10 : slPoints;
       const tpDist = isGold ? tpPoints * 0.10 : tpPoints;
 
-      const finalSl = explicitSlPrice || (side === 'BUY' ? ltp - slDist : ltp + slDist);
-      const finalTp = explicitTpPrice || (side === 'BUY' ? ltp + tpDist : ltp - tpDist);
+      const finalSl = explicitSlPrice || (side === 'BUY' ? basePrice - slDist : basePrice + slDist);
+      const finalTp = explicitTpPrice || (side === 'BUY' ? basePrice + tpDist : basePrice - tpDist);
 
       const account = await this.resolveMt5Account(user._id);
 
@@ -5143,22 +5567,28 @@ export class TelegramAlertService {
         symbol: cleanSym,
         side,
         volume,
+        orderType,
+        price: isPending ? pendingPrice : undefined,
         stopLoss: Number(finalSl.toFixed(2)),
         takeProfit: Number(finalTp.toFixed(2)),
         comment: `TG-${cleanSym}`,
       });
 
-      const estRisk = isGold ? (Math.abs(ltp - finalSl) * 100 * volume) : (Math.abs(ltp - finalSl) * volume);
-      const estReward = Math.abs(finalTp - ltp) * (isGold ? 100 : 1) * volume;
+      const estRisk = isGold ? (Math.abs(basePrice - finalSl) * 100 * volume) : (Math.abs(basePrice - finalSl) * volume);
+      const estReward = Math.abs(finalTp - basePrice) * (isGold ? 100 : 1) * volume;
+
+      const title = orderType === 'MARKET' ? '⚡ <b>MT5 ORDER QUEUED ON BRIDGE</b>' : `⏳ <b>MT5 PENDING ${orderType} ORDER QUEUED</b>`;
+      const priceLine = isPending && pendingPrice ? `Price    : $${pendingPrice.toFixed(2)}\n` : `Est. Fill: $${ltp.toFixed(2)}\n`;
 
       const text =
-        `⚡ <b>MT5 ORDER QUEUED ON BRIDGE</b>\n` +
+        `${title}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
         `Symbol   : ${cleanSym}\n` +
         `Side     : ${side}\n` +
+        `Type     : ${orderType}\n` +
         `Volume   : ${volume.toFixed(2)} Lots\n` +
-        `Est. Fill: $${ltp.toFixed(2)}\n` +
+        priceLine +
         `Stop Loss: $${finalSl.toFixed(2)} (-$${estRisk.toFixed(2)})\n` +
         `Target   : $${finalTp.toFixed(2)} (+$${estReward.toFixed(2)})\n` +
         `Account  : ${account.name || 'MT5'}\n` +
@@ -5370,7 +5800,7 @@ export class TelegramAlertService {
   }
 
   /**
-   * Generates the multi-asset live cockpit payload for Gold & ETH with cut-to-cut live pricing.
+   * Generates the multi-asset live cockpit payload for Gold, ETH, BTC, US30, and NAS100 with cut-to-cut live pricing.
    */
   static async buildCockpitPayload(
     user: any,
@@ -5380,6 +5810,10 @@ export class TelegramAlertService {
     let goldSpread = '$0.35';
     let ethLtp = 0;
     let ethSpread = '$0.50';
+    let btcLtp = 0;
+    let btcSpread = '$5.00';
+    let us30Ltp = 0;
+    let nasLtp = 0;
 
     const gQuote = Mt5CommandService.getLiveQuote('XAUUSD');
     if (gQuote && gQuote.ltp > 0) {
@@ -5393,10 +5827,27 @@ export class TelegramAlertService {
       if (eQuote.ask && eQuote.bid) ethSpread = `$${(eQuote.ask - eQuote.bid).toFixed(2)}`;
     }
 
+    const bQuote = Mt5CommandService.getLiveQuote('BTCUSD');
+    if (bQuote && bQuote.ltp > 0) {
+      btcLtp = bQuote.ltp;
+      if (bQuote.ask && bQuote.bid) btcSpread = `$${(bQuote.ask - bQuote.bid).toFixed(2)}`;
+    }
+
+    const uQuote = Mt5CommandService.getLiveQuote('US30');
+    if (uQuote && uQuote.ltp > 0) {
+      us30Ltp = uQuote.ltp;
+    }
+
+    const nQuote = Mt5CommandService.getLiveQuote('NAS100');
+    if (nQuote && nQuote.ltp > 0) {
+      nasLtp = nQuote.ltp;
+    }
+
     // Query Global CFD / TradingView / Binance if not in MT5 quote memory
     const missingSymbols: string[] = [];
     if (goldLtp === 0) missingSymbols.push('XAUUSD');
     if (ethLtp === 0) missingSymbols.push('ETHUSD');
+    if (btcLtp === 0) missingSymbols.push('BTCUSD');
 
     if (missingSymbols.length > 0) {
       try {
@@ -5415,11 +5866,21 @@ export class TelegramAlertService {
             if ((eq as any).ask && (eq as any).bid) ethSpread = `$${((eq as any).ask - (eq as any).bid).toFixed(2)}`;
           }
         }
+        if (btcLtp === 0) {
+          const bq = qMap.get('BTCUSD');
+          if (bq && bq.ltp > 0) {
+            btcLtp = bq.ltp;
+            if ((bq as any).ask && (bq as any).bid) btcSpread = `$${((bq as any).ask - (bq as any).bid).toFixed(2)}`;
+          }
+        }
       } catch {}
     }
 
     if (goldLtp === 0) goldLtp = 3534.69;
     if (ethLtp === 0) ethLtp = 1637.78;
+    if (btcLtp === 0) btcLtp = 91450.00;
+    if (us30Ltp === 0) us30Ltp = 43850.00;
+    if (nasLtp === 0) nasLtp = 20820.00;
 
     const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).lean();
     let totalFloat = 0;
@@ -5427,10 +5888,22 @@ export class TelegramAlertService {
 
     for (const t of openTrades) {
       const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
-      const ltp = isGold ? goldLtp : ethLtp;
+      const isEth = (t.symbol || '').includes('ETH');
+      const isBtc = (t.symbol || '').includes('BTC');
+      const isUs30 = (t.symbol || '').includes('US30') || (t.symbol || '').includes('DOW');
+      const isNas = (t.symbol || '').includes('NAS') || (t.symbol || '').includes('USTEC');
+
+      let ltp = goldLtp;
+      let mult = 100;
+      if (isGold) { ltp = goldLtp; mult = 100; }
+      else if (isEth) { ltp = ethLtp; mult = 1; }
+      else if (isBtc) { ltp = btcLtp; mult = 1; }
+      else if (isUs30) { ltp = us30Ltp; mult = 1; }
+      else if (isNas) { ltp = nasLtp; mult = 1; }
+      else { ltp = goldLtp; mult = 1; }
+
       const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
       const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
-      const mult = Number(t.simpleExecution?.contractMultiplier ?? (isGold ? 100 : 1));
       const ticket = Mt5CommandService.extractTicket(t);
       const ticketStr = ticket ? ` #${ticket}` : '';
 
@@ -5473,8 +5946,8 @@ export class TelegramAlertService {
     const pnlBadge = totalFloat >= 0 ? `🟢 <b>+$${floatAbs}</b>` : `🔴 <b>-$${floatAbs}</b>`;
 
     const line1 = hasOpenTrades
-      ? `${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ <b>LIVE</b>`
-      : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ <b>COCKPIT</b>`;
+      ? `${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>LIVE</b>`
+      : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>COCKPIT</b>`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
@@ -5493,6 +5966,7 @@ export class TelegramAlertService {
       `<pre>\n` +
       `🟡 XAUUSD : $${goldLtp.toFixed(2)}  (Spread ${goldSpread})\n` +
       `🔷 ETHUSD : $${ethLtp.toFixed(2)}  (Spread ${ethSpread})\n` +
+      `₿ BTCUSD : $${btcLtp.toFixed(2)}\n` +
       `Floating  : ${floatSign}$${floatAbs}\n` +
       `</pre>\n` +
       posSection +
@@ -5510,8 +5984,25 @@ export class TelegramAlertService {
     const ethRr = presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr;
     const ethTp = Number((ethSl * ethRr).toFixed(2));
 
+    const btcLot = presets?.btcDefaultLot ?? DEFAULT_FOREX_PRESETS.btc?.defaultLot ?? 0.05;
+    const btcSl = presets?.btcSlPoints ?? DEFAULT_FOREX_PRESETS.btc?.defaultSlPoints ?? 300;
+    const btcRr = presets?.btcRrRatio ?? DEFAULT_FOREX_PRESETS.btc?.defaultRr ?? 2.5;
+    const btcTp = Number((btcSl * btcRr).toFixed(2));
+
+    const us30Lot = presets?.us30DefaultLot ?? DEFAULT_FOREX_PRESETS.us30?.defaultLot ?? 0.10;
+    const nasLot = presets?.nas100DefaultLot ?? DEFAULT_FOREX_PRESETS.nas100?.defaultLot ?? 0.10;
+
     const goldLotStr = Number(goldLot).toFixed(2);
     const ethLotStr = Number(ethLot).toFixed(2);
+    const btcLotStr = Number(btcLot).toFixed(2);
+    const us30LotStr = Number(us30Lot).toFixed(2);
+    const nasLotStr = Number(nasLot).toFixed(2);
+
+    const autoExecArmed = Boolean(user?.liveWatcherSettings?.defaultAutoExecute);
+    const autoExecBtn = {
+      text: autoExecArmed ? '⚡ MT5 Auto-Exec: ON' : '✋ MT5 Auto-Exec: OFF',
+      callback_data: autoExecArmed ? 'cmd_autoexec_off' : 'cmd_autoexec_on',
+    };
 
     const buttons: ITelegramInlineButton[][] = [];
 
@@ -5525,7 +6016,8 @@ export class TelegramAlertService {
 
       for (const t of openTrades) {
         const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
-        const symLabel = isGold ? 'Gold' : (t.symbol || 'ETH');
+        const isEth = (t.symbol || '').includes('ETH');
+        const symLabel = isGold ? 'Gold' : (isEth ? 'ETH' : (t.symbol || 'Pos'));
         const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
         const qtyStr = qty.toFixed(2);
         const ticket = Mt5CommandService.extractTicket(t);
@@ -5546,35 +6038,37 @@ export class TelegramAlertService {
           { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
         ]);
 
-        if (ticket) {
-          const hasTp = t.risk?.plannedTarget && Number(t.risk.plannedTarget) > 0;
-          const entryPrice = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
-          const currentSl = t.risk?.currentStopLoss ?? t.risk?.initialStopLoss;
-          const numSl = currentSl ? Number(currentSl) : 0;
-          const riskDist = (numSl > 0 && entryPrice > 0) ? Math.abs(entryPrice - numSl) : (isGold ? 4.0 : 15.0);
-          const isLong = (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
-          const tp2R = Number((isLong ? entryPrice + 2.0 * riskDist : entryPrice - 2.0 * riskDist).toFixed(2));
-          const tp3R = Number((isLong ? entryPrice + 3.0 * riskDist : entryPrice - 3.0 * riskDist).toFixed(2));
+        const entryPrice = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+        const ltp = isGold ? goldLtp : (isEth ? ethLtp : goldLtp);
+        const isWinning = t.direction === 'LONG' ? ltp > entryPrice : ltp < entryPrice;
 
-          if (hasTp) {
+        if (ticket) {
+          if (isWinning) {
+            const addLot = isGold ? goldLotStr : (isEth ? ethLotStr : '0.04');
             buttons.push([
-              { text: `🎯 +2R ($${tp2R})`, callback_data: `pos_tp:${ticket}:${tp2R}` },
-              { text: '🚫 Remove TP', callback_data: `pos_removetp:${ticket}` },
+              { text: `➕ Add ${addLot}L (Pyramid)`, callback_data: `pos_add:${ticket}` },
+              { text: '🚫 Remove TP (Runner)', callback_data: `pos_removetp:${ticket}` },
             ]);
           } else {
+            const currentSl = t.risk?.currentStopLoss ?? t.risk?.initialStopLoss;
+            const numSl = currentSl ? Number(currentSl) : 0;
+            const riskDist = (numSl > 0 && entryPrice > 0) ? Math.abs(entryPrice - numSl) : (isGold ? 4.0 : 15.0);
+            const isLong = (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
+            const tp2R = Number((isLong ? entryPrice + 2.0 * riskDist : entryPrice - 2.0 * riskDist).toFixed(2));
             buttons.push([
               { text: `🎯 Set +2R ($${tp2R})`, callback_data: `pos_tp:${ticket}:${tp2R}` },
-              { text: `🎯 Set +3R ($${tp3R})`, callback_data: `pos_tp:${ticket}:${tp3R}` },
+              { text: '🚫 Remove TP', callback_data: `pos_removetp:${ticket}` },
             ]);
           }
         }
       }
 
       buttons.push([
-        { text: '🔄 Refresh Live PnL', callback_data: 'cmd_refresh_cockpit' },
+        { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+        autoExecBtn,
         isPinned
-          ? { text: '🛑 Unpin Cockpit', callback_data: 'cmd_unpin_cockpit' }
-          : { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+          ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
+          : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
       ]);
     } else {
       buttons.push([
@@ -5586,10 +6080,20 @@ export class TelegramAlertService {
         { text: `🔷 SELL ETH (${ethLotStr})`, callback_data: `order:ETHUSD:SELL:${ethLotStr}:${ethSl}:${ethTp}` },
       ]);
       buttons.push([
+        { text: `₿ BUY BTC (${btcLotStr})`, callback_data: `order:BTCUSD:BUY:${btcLotStr}:${btcSl}:${btcTp}` },
+        { text: `₿ SELL BTC (${btcLotStr})`, callback_data: `order:BTCUSD:SELL:${btcLotStr}:${btcSl}:${btcTp}` },
+      ]);
+      buttons.push([
+        { text: `🇺🇸 US30 (${us30LotStr}L)`, callback_data: 'cmd_us30_menu' },
+        { text: `💻 NAS100 (${nasLotStr}L)`, callback_data: 'cmd_nas_menu' },
         { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },
+      ]);
+      buttons.push([
+        { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+        autoExecBtn,
         isPinned
-          ? { text: '🛑 Unpin Cockpit', callback_data: 'cmd_unpin_cockpit' }
-          : { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+          ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
+          : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
       ]);
       buttons.push([
         { text: '🚨 Close Gold', callback_data: 'cmd_close_gold' },
@@ -6184,6 +6688,67 @@ export class TelegramAlertService {
       return true;
     } catch (err: any) {
       console.warn(`[TelegramAlertService] sendGoldNewsReminder failed for user ${user._id}:`, err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Dispatches high-urgency 2-minute pre-release shield alert with 1-tap flatten buttons.
+   */
+  static async sendGoldNewsUrgentShield(
+    user: any,
+    event: IEconomicCalendarEvent
+  ): Promise<boolean> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) {
+      return false;
+    }
+
+    const rawToken = settings.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    const chatId = settings.telegramChatId;
+    if (!botToken || !chatId) return false;
+
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    const openGoldTrades = await Trade.find({
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+      symbol: { $regex: /XAU|GOLD/i },
+    }).lean();
+
+    if (!openGoldTrades || openGoldTrades.length === 0) return false;
+
+    let totLots = 0;
+    for (const t of openGoldTrades) {
+      totLots += Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
+    }
+
+    const text =
+      `🚨 <b>URGENT NEWS SHIELD: 2 MINUTES UNTIL RELEASE!</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Event    : ${event.title} (${event.country})\n` +
+      `Impact   : 🔴 HIGH VOLATILITY CATALYST\n` +
+      `Release  : ${event.istTimeStr || event.countdownStr || '2 Minutes'}\n` +
+      `Exposure : ${openGoldTrades.length} position(s) · ${totLots.toFixed(2)} Lots\n` +
+      `</pre>\n` +
+      `<i>Extreme spread widening and whipsaws imminent. Recommended: Flatten exposure or lock breakeven immediately!</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        { text: `🚨 FLATTEN ALL GOLD NOW (${totLots.toFixed(2)}L)`, callback_data: 'cmd_close_gold' },
+        { text: '🛡️ Lock All to BE', callback_data: 'cmd_lock_be_all' },
+      ],
+      [
+        { text: '📌 View Live Cockpit', callback_data: 'cmd_refresh_cockpit' },
+      ],
+    ];
+
+    try {
+      await this.sendMessage(botToken, chatId, text, buttons, false);
+      return true;
+    } catch {
       return false;
     }
   }

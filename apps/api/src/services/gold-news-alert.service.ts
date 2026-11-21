@@ -122,6 +122,16 @@ export class GoldNewsAlertWorker {
           }
         }
 
+        // Dedicated 2-Minute Emergency Shield Warning (High Impact Releases)
+        if (minutesUntil <= 2 && minutesUntil >= 0 && event.impact === 'HIGH') {
+          const urgentKey = `gold_urgent_2m:${user._id}:${event.id}`;
+          if (!this.sentAlertKeys.has(urgentKey)) {
+            this.sentAlertKeys.set(urgentKey, nowMs);
+            const sent = await TelegramAlertService.sendGoldNewsUrgentShield(user, event);
+            if (sent) alertsDispatched++;
+          }
+        }
+
         // Post-Release Actual News Flash (when actual data is published)
         if (
           minutesUntil <= 0 &&

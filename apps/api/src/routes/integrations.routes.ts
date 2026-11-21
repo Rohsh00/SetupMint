@@ -406,13 +406,16 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         if (q && q.symbol) {
           const bid = Number(q.bid) || 0;
           const ask = Number(q.ask) || 0;
-          Mt5CommandService.recordQuote(account._id, {
-            symbol: q.symbol,
-            bid,
-            ask,
-            ltp: Number(q.ltp) || bid || ask || 0,
-            timestamp: q.time ? new Date(q.time) : new Date(),
-          });
+          const ltpVal = Number(q.ltp) || bid || ask || 0;
+          if (ltpVal > 0) {
+            Mt5CommandService.recordQuote(account._id, {
+              symbol: q.symbol,
+              bid,
+              ask,
+              ltp: ltpVal,
+              timestamp: new Date(),
+            });
+          }
 
           // Gold Spread Spike & Rollover Warning Check
           const isGold = (q.symbol || '').includes('XAU') || q.symbol === 'GOLD';

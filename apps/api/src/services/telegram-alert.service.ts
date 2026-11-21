@@ -4700,40 +4700,50 @@ export class TelegramAlertService {
     user: any,
     isPinned: boolean = false
   ): Promise<{ text: string; buttons: ITelegramInlineButton[][] }> {
-    let goldLtp = 2650;
+    let goldLtp = 0;
     let goldSpread = '$0.35';
-    let ethLtp = 3100;
+    let ethLtp = 0;
     let ethSpread = '$0.50';
 
     const gQuote = Mt5CommandService.getLiveQuote('XAUUSD');
     if (gQuote && gQuote.ltp > 0) {
       goldLtp = gQuote.ltp;
       if (gQuote.ask && gQuote.bid) goldSpread = `$${(gQuote.ask - gQuote.bid).toFixed(2)}`;
-    } else if (GlobalCfdCandleProvider.isSupportedGlobalSymbol('XAUUSD')) {
-      try {
-        const qMap = await GlobalCfdCandleProvider.getLiveQuotes(['XAUUSD']);
-        const gq = qMap.get('XAUUSD');
-        if (gq && gq.ltp > 0) {
-          goldLtp = gq.ltp;
-          if ((gq as any).ask && (gq as any).bid) goldSpread = `$${((gq as any).ask - (gq as any).bid).toFixed(2)}`;
-        }
-      } catch {}
     }
 
     const eQuote = Mt5CommandService.getLiveQuote('ETHUSD');
     if (eQuote && eQuote.ltp > 0) {
       ethLtp = eQuote.ltp;
       if (eQuote.ask && eQuote.bid) ethSpread = `$${(eQuote.ask - eQuote.bid).toFixed(2)}`;
-    } else if (GlobalCfdCandleProvider.isSupportedGlobalSymbol('ETHUSD')) {
+    }
+
+    // Query Global CFD / TradingView / Binance if not in MT5 quote memory
+    const missingSymbols: string[] = [];
+    if (goldLtp === 0) missingSymbols.push('XAUUSD');
+    if (ethLtp === 0) missingSymbols.push('ETHUSD');
+
+    if (missingSymbols.length > 0) {
       try {
-        const qMap = await GlobalCfdCandleProvider.getLiveQuotes(['ETHUSD']);
-        const eq = qMap.get('ETHUSD');
-        if (eq && eq.ltp > 0) {
-          ethLtp = eq.ltp;
-          if ((eq as any).ask && (eq as any).bid) ethSpread = `$${((eq as any).ask - (eq as any).bid).toFixed(2)}`;
+        const qMap = await GlobalCfdCandleProvider.getLiveQuotes(missingSymbols);
+        if (goldLtp === 0) {
+          const gq = qMap.get('XAUUSD');
+          if (gq && gq.ltp > 0) {
+            goldLtp = gq.ltp;
+            if ((gq as any).ask && (gq as any).bid) goldSpread = `$${((gq as any).ask - (gq as any).bid).toFixed(2)}`;
+          }
+        }
+        if (ethLtp === 0) {
+          const eq = qMap.get('ETHUSD');
+          if (eq && eq.ltp > 0) {
+            ethLtp = eq.ltp;
+            if ((eq as any).ask && (eq as any).bid) ethSpread = `$${((eq as any).ask - (eq as any).bid).toFixed(2)}`;
+          }
         }
       } catch {}
     }
+
+    if (goldLtp === 0) goldLtp = 3534.69;
+    if (ethLtp === 0) ethLtp = 1637.78;
 
     const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).lean();
     let totalFloat = 0;
@@ -4753,7 +4763,7 @@ export class TelegramAlertService {
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
     const text =
-      `📌 <b>LIVE FOREX COCKPIT · XAUUSD & ETHUSD</b>\n` +
+      `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ <b>COCKPIT</b>\n` +
       `⚡ <i>Live Cut-to-Cut</i> · <code>${nowUtc} UTC</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<pre>\n` +

@@ -409,10 +409,27 @@ void SyncAllActivePositions()
 
    string json = "{\"token\":\"" + InpToken + "\",\"balance\":" + DoubleToString(balance, 2) + ",\"equity\":" + DoubleToString(equity, 2);
 
-   // Collect unique symbols: current chart symbol + open position symbols (up to 16)
+   // Collect unique symbols: current chart symbol + core assets + open position symbols (up to 16)
    string trackedSymbols[16];
    int trackedCount = 0;
    trackedSymbols[trackedCount++] = _Symbol;
+
+   // Always track Gold and Ethereum for real-time Telegram Cockpit & 1-tap orders
+   string coreSymbols[] = {"XAUUSD", "ETHUSD"};
+   for(int c = 0; c < 2 && trackedCount < 16; c++)
+   {
+      string cs = coreSymbols[c];
+      bool exists = false;
+      for(int s = 0; s < trackedCount; s++)
+      {
+         if(trackedSymbols[s] == cs) { exists = true; break; }
+      }
+      if(!exists)
+      {
+         SymbolSelect(cs, true);
+         trackedSymbols[trackedCount++] = cs;
+      }
+   }
    for(int i = 0; i < total && trackedCount < 16; i++)
    {
       ulong ticket = PositionGetTicket(i);

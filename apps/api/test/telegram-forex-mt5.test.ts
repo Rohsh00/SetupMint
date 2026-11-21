@@ -378,7 +378,8 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     expect(sentMessages.length).toBeGreaterThanOrEqual(1);
     const msg = sentMessages[sentMessages.length - 1];
-    expect(msg.text).toContain('LIVE FOREX COCKPIT · XAUUSD & ETHUSD');
+    expect(msg.text).toContain('COCKPIT');
+    expect(msg.text).toContain('Au:');
     expect(msg.text).toContain('XAUUSD : $2650.20');
     expect(msg.text).toContain('ETHUSD : $3140.25');
 

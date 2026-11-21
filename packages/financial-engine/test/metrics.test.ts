@@ -143,4 +143,39 @@ describe('Financial Engine - Performance Metrics & Analytics', () => {
     expect(stats.bestTradingDay?.date).toBe('2026-11-17');
     expect(stats.bestTradingDay?.netPnL).toBe(300);
   });
+
+  it('correctly processes external cash flows during and after trades for drawdown and equity curve', () => {
+    const trades: PerformanceInputTrade[] = [
+      {
+        id: 'trade-1',
+        tradeDate: '2026-11-10T10:00:00.000Z',
+        symbol: 'XAUUSD',
+        status: 'CLOSED',
+        calculated: { netPnL: 50, grossPnL: 50, totalCosts: 0, outcome: 'WIN' },
+      },
+      {
+        id: 'trade-2',
+        tradeDate: '2026-11-11T10:00:00.000Z',
+        symbol: 'XAUUSD',
+        status: 'CLOSED',
+        calculated: { netPnL: 20, grossPnL: 20, totalCosts: 0, outcome: 'WIN' },
+      },
+    ];
+
+    // Starting 100 + trade1 (+50) = 150 -> withdrawal of 30 on 10 Nov -> equity 120, peak 120 (0 drawdown)
+    // trade2 (+20) = 140 -> withdrawal of 40 on 12 Nov (after trades) -> equity 100
+    const stats = calculateDashboardMetrics(trades, 100, {
+      timezone: 'UTC',
+      cashFlows: [
+        { date: '2026-11-10T15:00:00.000Z', signedAmount: -30, currency: 'USD' },
+        { date: '2026-11-12T10:00:00.000Z', signedAmount: -40, currency: 'USD' },
+      ],
+    });
+
+    // Final equity should be 100 + 50 - 30 + 20 - 40 = 100
+    const finalPt = stats.equityCurve[stats.equityCurve.length - 1];
+    expect(finalPt.cumulativeEquity).toBe(100);
+    // Cash withdrawal should not create artificial drawdown
+    expect(stats.maxDrawdownAmount).toBe(0);
+  });
 });

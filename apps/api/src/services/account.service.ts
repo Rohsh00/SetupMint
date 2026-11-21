@@ -98,14 +98,25 @@ export class AccountService {
       .minus(totalWithdrawals)
       .plus(totalAdjustments);
 
-    // Persist updated exact Decimal128 values back to the account document
-    account.realizedPnL = mongoose.Types.Decimal128.fromString(realizedPnL.toFixed(2));
-    account.totalDeposits = mongoose.Types.Decimal128.fromString(totalDeposits.toFixed(2));
-    account.totalWithdrawals = mongoose.Types.Decimal128.fromString(totalWithdrawals.toFixed(2));
-    account.totalAdjustments = mongoose.Types.Decimal128.fromString(totalAdjustments.toFixed(2));
-    account.currentBalance = mongoose.Types.Decimal128.fromString(currentBalance.toFixed(2));
+    const decRealizedPnL = mongoose.Types.Decimal128.fromString(realizedPnL.toFixed(2));
+    const decTotalDeposits = mongoose.Types.Decimal128.fromString(totalDeposits.toFixed(2));
+    const decTotalWithdrawals = mongoose.Types.Decimal128.fromString(totalWithdrawals.toFixed(2));
+    const decTotalAdjustments = mongoose.Types.Decimal128.fromString(totalAdjustments.toFixed(2));
+    const decCurrentBalance = mongoose.Types.Decimal128.fromString(currentBalance.toFixed(2));
 
-    await account.save();
+    // Persist updated exact Decimal128 values directly to MongoDB
+    await TradingAccount.updateOne(
+      { _id: accId, userId: uId },
+      {
+        $set: {
+          realizedPnL: decRealizedPnL,
+          totalDeposits: decTotalDeposits,
+          totalWithdrawals: decTotalWithdrawals,
+          totalAdjustments: decTotalAdjustments,
+          currentBalance: decCurrentBalance,
+        },
+      }
+    );
 
     return {
       accountId: account._id.toString(),

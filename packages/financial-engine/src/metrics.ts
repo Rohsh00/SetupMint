@@ -326,6 +326,34 @@ export function calculateDashboardMetrics(
     }
   }
 
+  // Apply any remaining cash flows occurring after the last closed trade
+  while (cashFlowIdx < sortedCashFlows.length) {
+    const flow = new Decimal(sortedCashFlows[cashFlowIdx].signedAmount || 0);
+    runningEquity = runningEquity.plus(flow);
+    peakEquity = Decimal.max(new Decimal(0), peakEquity.plus(flow));
+    if (runningEquity.greaterThan(peakEquity)) {
+      peakEquity = runningEquity;
+    }
+    const currentDrawdown = peakEquity.minus(runningEquity);
+    const currentDrawdownPct = peakEquity.greaterThan(0)
+      ? currentDrawdown.dividedBy(peakEquity).times(100)
+      : new Decimal(0);
+    if (currentDrawdown.greaterThan(maxDrawdownAmount)) {
+      maxDrawdownAmount = currentDrawdown;
+    }
+    if (currentDrawdownPct.greaterThan(maxDrawdownPercent)) {
+      maxDrawdownPercent = currentDrawdownPct;
+    }
+    equityCurve.push({
+      date: new Date(sortedCashFlows[cashFlowIdx].ts).toISOString().split('T')[0],
+      netPnL: 0,
+      cumulativeEquity: Number(runningEquity.toFixed(2)),
+      drawdown: Number(currentDrawdown.toFixed(2)),
+      drawdownPercent: Number(currentDrawdownPct.toFixed(2)),
+    });
+    cashFlowIdx++;
+  }
+
   const closedCount = closedTrades.length;
   const winRate = closedCount > 0 ? Number(((winCount / closedCount) * 100).toFixed(2)) : 0;
   const lossRate = closedCount > 0 ? Number(((lossCount / closedCount) * 100).toFixed(2)) : 0;

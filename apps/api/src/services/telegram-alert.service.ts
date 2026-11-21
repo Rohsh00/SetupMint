@@ -144,6 +144,7 @@ export class TelegramAlertService {
   private static recentAlerts = new Map<string, number>();
   private static DEBOUNCE_MS = 10 * 1000; // 10s throttle for flat alerts
   private static spreadWarningTimestamps = new Map<string, number>();
+  private static activeCockpitSubmenus = new Map<string, { menu: string; symbol: string; expiresAt: number }>();
 
   /**
    * Deterministic Webhook Secret Token derived from server configuration.
@@ -1411,6 +1412,34 @@ export class TelegramAlertService {
     if (data === 'cmd_cockpit' || data === 'cmd_refresh_cockpit') {
       await this.answerCallbackQuery(botToken, cq.id, 'Refreshing Cockpit...');
       await this.handleCockpitCommand(user, botToken, chatId);
+      return;
+    }
+
+    // Drilldown Submenu Deck Navigation
+    if (data.startsWith('deck:')) {
+      const parts = data.split(':');
+      const menu = parts[1];
+      const sym = parts[2];
+      const userIdStr = user._id ? user._id.toString() : '';
+      if (menu === 'back' || menu === 'main') {
+        TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+        await this.answerCallbackQuery(botToken, cq.id, '🔙 Back to Cockpit');
+      } else {
+        TelegramAlertService.activeCockpitSubmenus.set(userIdStr, {
+          menu,
+          symbol: (sym || 'XAUUSD').toUpperCase(),
+          expiresAt: Date.now() + 60000,
+        });
+        const label = menu === 'harvest' ? '🎯 Profit Harvest' : (menu === 'pyramid' ? '➕ Pyramiding' : (menu === 'defense' ? '🛡️ Defense & Trailing' : '📋 Layers'));
+        await this.answerCallbackQuery(botToken, cq.id, `Opening ${label} menu...`);
+      }
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    // Drilldown Submenu Execution Actions
+    if (data.startsWith('harvest_') || data.startsWith('pyramid_') || data.startsWith('defense_') || data.startsWith('act_close_')) {
+      await this.handleCockpitProAction(user, botToken, chatId, data, cq.id);
       return;
     }
 
@@ -4912,6 +4941,781 @@ export class TelegramAlertService {
   }
 
   /**
+   * Dispatches and executes advanced Pro Suite tactical submenu actions from Telegram Cockpit:
+   * 1. Profit Harvest (harvest_pct, harvest_freeride, harvest_moonshot, harvest_dollar)
+   * 2. Stack Pyramiding (pyramid_add, pyramid_zerorisk, pyramid_breakout, pyramid_pullback)
+   * 3. Defense & Trailing (defense_truebe, defense_trail_r, defense_lock_dollar, defense_candle, defense_runner, defense_sleep)
+   * 4. Multi-Layer Execution (act_close_top, act_close_stack)
+   */
+  static async handleCockpitProAction(
+    user: any,
+    botToken: string,
+    chatId: string | number,
+    data: string,
+    cqId?: string
+  ): Promise<void> {
+    const parts = data.split(':');
+    const actionKey = parts[0];
+    const rawSym = (parts[1] || 'XAUUSD').toUpperCase();
+    const isGold = rawSym.includes('XAU') || rawSym === 'GOLD';
+    const isEth = rawSym.includes('ETH');
+    const isBtc = rawSym.includes('BTC');
+    const isUs30 = rawSym.includes('US30') || rawSym.includes('DOW');
+    const isNas = rawSym.includes('NAS') || rawSym.includes('USTEC');
+
+    const symbolRegex = isGold
+      ? /XAU|GOLD/i
+      : isEth
+      ? /ETH/i
+      : isBtc
+      ? /BTC/i
+      : isUs30
+      ? /US30|DOW/i
+      : isNas
+      ? /NAS|USTEC/i
+      : new RegExp(rawSym, 'i');
+
+    const openTrades = await Trade.find({
+      userId: user._id,
+      status: 'OPEN',
+      symbol: { $regex: symbolRegex },
+    }).sort({ createdAt: 1 });
+
+    const userIdStr = user._id ? user._id.toString() : '';
+
+    if (!openTrades || openTrades.length === 0) {
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `⚠️ No open positions found for ${rawSym}`, true);
+      }
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    const getEntryPrice = (t: any): number =>
+      Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+    const isTradeLong = (t: any): boolean =>
+      (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
+
+    // 1. HARVEST ACTIONS
+    if (actionKey === 'harvest_pct') {
+      const pct = parseFloat(parts[2]) || 50;
+      let totalClosedVol = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const closeVol = Math.max(0.01, Number((qty * (pct / 100)).toFixed(2)));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+        if (ticket && accountId && closeVol > 0) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            volume: closeVol,
+          });
+          totalClosedVol = Number((totalClosedVol + closeVol).toFixed(2));
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🎯 Harvested ${pct}% on ${rawSym} (${totalClosedVol}L queued)`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🎯 <b>PROFIT HARVEST EXECUTED (${pct}%)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol      : ${rawSym}\n` +
+        `Harvest Pct : ${pct}%\n` +
+        `Closed Vol  : ${totalClosedVol} Lots\n` +
+        `Layers Hit  : ${openTrades.length} Ticket(s)\n` +
+        `Status      : Queued on MT5 Bridge\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'harvest_freeride') {
+      let totalClosedVol = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const entry = getEntryPrice(t);
+        const closeVol = Math.max(0.01, Number((qty * 0.50).toFixed(2)));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            volume: closeVol,
+          });
+          totalClosedVol = Number((totalClosedVol + closeVol).toFixed(2));
+
+          if (entry > 0) {
+            await Mt5CommandService.queueModifySl({
+              userId: user._id,
+              accountId,
+              tradeId: t._id,
+              ticket,
+              stopLoss: entry,
+            });
+            t.risk = { ...(t.risk || {}), currentStopLoss: entry };
+            await t.save().catch(() => {});
+          }
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🎰 Free-Ride Active! 50% booked & SL locked to BE. Zero Risk!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🎰 <b>FREE-RIDE MODE ENGAGED (HOUSE MONEY)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol      : ${rawSym}\n` +
+        `Booked Vol  : ${totalClosedVol} Lots (50%)\n` +
+        `Stop Loss   : Locked to Entry Price (BE)\n` +
+        `Risk Status : 100% Risk-Free Free-Ride\n` +
+        `</pre>\n` +
+        `<i>Remaining position is now pure house money!</i>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'harvest_moonshot') {
+      let totalClosedVol = 0;
+      for (let i = 0; i < openTrades.length; i++) {
+        const t = openTrades[i];
+        const ticket = Mt5CommandService.extractTicket(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const entry = getEntryPrice(t);
+        const isLong = isTradeLong(t);
+        const offset = isGold ? 0.50 : 2.0;
+        const bePlus = Number((isLong ? entry + offset : entry - offset).toFixed(2));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId) {
+          if (i === 0) {
+            const closeVol = Math.max(0, Number((qty - 0.01).toFixed(2)));
+            if (closeVol > 0) {
+              await Mt5CommandService.queueClosePosition({
+                userId: user._id,
+                accountId,
+                tradeId: t._id,
+                ticket,
+                volume: closeVol,
+              });
+              totalClosedVol = Number((totalClosedVol + closeVol).toFixed(2));
+            }
+            await Mt5CommandService.queueModifyTp({
+              userId: user._id,
+              accountId,
+              tradeId: t._id,
+              ticket,
+              takeProfit: 0,
+              stopLoss: bePlus > 0 ? bePlus : entry,
+            });
+            t.risk = { ...(t.risk || {}), plannedTarget: undefined, currentStopLoss: bePlus > 0 ? bePlus : entry };
+            if (!t.tags?.includes('OPEN_RUNNER')) {
+              t.tags = [...(t.tags || []), 'OPEN_RUNNER'];
+            }
+            await t.save().catch(() => {});
+          } else {
+            await Mt5CommandService.queueClosePosition({
+              userId: user._id,
+              accountId,
+              tradeId: t._id,
+              ticket,
+              volume: qty,
+            });
+            totalClosedVol = Number((totalClosedVol + qty).toFixed(2));
+          }
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🏃 Moonshot Engaged! 0.01L runner active with no TP.`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🏃 <b>MOONSHOT MODE ACTIVATED</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol      : ${rawSym}\n` +
+        `Harvested   : ${totalClosedVol} Lots\n` +
+        `Active Run  : 0.01 Lots (Runner)\n` +
+        `Take Profit : REMOVED (Uncapped Runner)\n` +
+        `Stop Loss   : Protected at BE+Spread\n` +
+        `</pre>\n` +
+        `<i>Position will ride indefinitely until manual exit.</i>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'harvest_dollar') {
+      const targetDollar = parseFloat(parts[2]) || 25;
+      const mult = isGold ? 100 : 1;
+      const quote = Mt5CommandService.getLiveQuote(rawSym);
+      const baseTrade = openTrades[0];
+      const entry = getEntryPrice(baseTrade);
+      const ltp = quote?.ltp || entry;
+      const isLong = isTradeLong(baseTrade);
+      const pts = isLong ? (ltp - entry) : (entry - ltp);
+
+      if (pts <= 0) {
+        if (cqId) {
+          await this.answerCallbackQuery(botToken, cqId, `⚠️ Cannot bank $${targetDollar}: ${rawSym} is not in profit!`, true);
+        }
+        return;
+      }
+
+      const dollarPerLot = pts * mult;
+      const neededLots = Math.max(0.01, Number((targetDollar / dollarPerLot).toFixed(2)));
+      let remainingLotsToClose = neededLots;
+      let actualClosedLots = 0;
+
+      for (const t of openTrades) {
+        if (remainingLotsToClose <= 0) break;
+        const ticket = Mt5CommandService.extractTicket(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const closeVol = Math.max(0.01, Math.min(qty, remainingLotsToClose));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId && closeVol > 0) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            volume: closeVol,
+          });
+          actualClosedLots = Number((actualClosedLots + closeVol).toFixed(2));
+          remainingLotsToClose = Number((remainingLotsToClose - closeVol).toFixed(2));
+        }
+      }
+
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🏦 Banking $${targetDollar} queued on MT5 (${actualClosedLots}L)!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🏦 <b>BANKED PROFIT TARGET ($${targetDollar})</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol      : ${rawSym}\n` +
+        `Target Bank : $${targetDollar.toFixed(2)}\n` +
+        `Closed Vol  : ${actualClosedLots} Lots\n` +
+        `At Price    : $${ltp.toFixed(2)}\n` +
+        `Status      : Dispatched to MT5 Server Bridge\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    // 2. PYRAMIDING ACTIONS
+    if (actionKey === 'pyramid_add') {
+      const addLot = parseFloat(parts[2]) || (isGold ? 0.04 : 1.0);
+      const baseTrade = openTrades[0];
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `➕ Adding ${addLot}L scale-in to ${rawSym}...`, false);
+      }
+      await this.executeScaleIn(user, botToken, chatId, baseTrade, addLot, Mt5CommandService.extractTicket(baseTrade));
+      return;
+    }
+
+    if (actionKey === 'pyramid_zerorisk') {
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const entry = getEntryPrice(t);
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+        if (ticket && accountId && entry > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            stopLoss: entry,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: entry };
+          await t.save().catch(() => {});
+        }
+      }
+
+      const baseTrade = openTrades[0];
+      const presets = user?.liveWatcherSettings?.telegramForexPresets;
+      const defLot = isGold ? (presets?.goldDefaultLot ?? 0.04) : (presets?.ethDefaultLot ?? 1.0);
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🛡️ Existing stack locked to BE & new scale-in queued!`, false);
+      }
+      await this.executeScaleIn(user, botToken, chatId, baseTrade, defLot, Mt5CommandService.extractTicket(baseTrade));
+      return;
+    }
+
+    if (actionKey === 'pyramid_breakout') {
+      const baseTrade = openTrades[0];
+      const isLong = isTradeLong(baseTrade);
+      const quote = Mt5CommandService.getLiveQuote(rawSym);
+      const ltp = quote?.ltp || Number(baseTrade.simpleExecution?.entryPrice ?? 0);
+      const offset = isGold ? 1.00 : (isEth ? 15.0 : 5.0);
+      const breakoutPrice = Number((isLong ? ltp + offset : ltp - offset).toFixed(2));
+      const presets = user?.liveWatcherSettings?.telegramForexPresets;
+      const addLot = isGold ? (presets?.goldDefaultLot ?? 0.04) : (presets?.ethDefaultLot ?? 1.0);
+      const account = baseTrade.accountId ? await TradingAccount.findById(baseTrade.accountId) : null;
+      const accountId = (account?._id || baseTrade.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+      if (accountId) {
+        await Mt5CommandService.queueOpenOrder({
+          userId: user._id,
+          accountId,
+          symbol: rawSym,
+          side: isLong ? 'BUY' : 'SELL',
+          volume: addLot,
+          orderType: 'STOP',
+          price: breakoutPrice,
+          comment: `SetupMint-Breakout-${baseTrade._id}`,
+        });
+      }
+
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `⏳ Breakout Stop order placed at $${breakoutPrice.toFixed(2)}`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⏳ <b>BREAKOUT SCALE ORDER PLACED</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym} (${isLong ? 'BUY STOP' : 'SELL STOP'})\n` +
+        `Trigger  : $${breakoutPrice.toFixed(2)} (+10 pts breakout)\n` +
+        `Volume   : ${addLot} Lots\n` +
+        `Current  : $${ltp.toFixed(2)}\n` +
+        `Status   : Pending on MT5 Order Book\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'pyramid_pullback') {
+      const baseTrade = openTrades[0];
+      const isLong = isTradeLong(baseTrade);
+      const quote = Mt5CommandService.getLiveQuote(rawSym);
+      const ltp = quote?.ltp || Number(baseTrade.simpleExecution?.entryPrice ?? 0);
+      const offset = isGold ? 1.50 : (isEth ? 25.0 : 8.0);
+      const pullbackPrice = Number((isLong ? ltp - offset : ltp + offset).toFixed(2));
+      const presets = user?.liveWatcherSettings?.telegramForexPresets;
+      const addLot = isGold ? (presets?.goldDefaultLot ?? 0.04) : (presets?.ethDefaultLot ?? 1.0);
+      const account = baseTrade.accountId ? await TradingAccount.findById(baseTrade.accountId) : null;
+      const accountId = (account?._id || baseTrade.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+      if (accountId) {
+        await Mt5CommandService.queueOpenOrder({
+          userId: user._id,
+          accountId,
+          symbol: rawSym,
+          side: isLong ? 'BUY' : 'SELL',
+          volume: addLot,
+          orderType: 'LIMIT',
+          price: pullbackPrice,
+          comment: `SetupMint-Pullback-${baseTrade._id}`,
+        });
+      }
+
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `📥 Pullback Limit order placed at $${pullbackPrice.toFixed(2)}`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `📥 <b>PULLBACK LIMIT ORDER PLACED</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym} (${isLong ? 'BUY LIMIT' : 'SELL LIMIT'})\n` +
+        `Entry    : $${pullbackPrice.toFixed(2)} (-15 pts dip limit)\n` +
+        `Volume   : ${addLot} Lots\n` +
+        `Current  : $${ltp.toFixed(2)}\n` +
+        `Status   : Pending on MT5 Order Book\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    // 3. DEFENSE & TRAILING ACTIONS
+    if (actionKey === 'defense_truebe') {
+      const offset = isGold ? 0.50 : (isEth ? 2.50 : 0.50);
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const entry = getEntryPrice(t);
+        const isLong = isTradeLong(t);
+        const bePrice = Number((isLong ? entry + offset : entry - offset).toFixed(2));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+        if (ticket && accountId && entry > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            stopLoss: bePrice,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: bePrice };
+          await t.save().catch(() => {});
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🛡️ True BE set (+spread cover) for ${rawSym}!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🛡️ <b>TRUE BREAKEVEN LOCKED (+SPREAD COVER)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym}\n` +
+        `Buffer   : +$${offset.toFixed(2)} (Covers Spread + Comm)\n` +
+        `Layers   : ${openTrades.length} Ticket(s)\n` +
+        `Status   : SL updated to True BE on MT5\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'defense_trail_r') {
+      const rMult = parseFloat(parts[2]) || 1.0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const entry = getEntryPrice(t);
+        const curSl = Number(t.risk?.initialStopLoss ?? t.risk?.currentStopLoss ?? 0);
+        const riskDist = (curSl > 0 && entry > 0) ? Math.abs(entry - curSl) : (isGold ? 3.5 : 20.0);
+        const isLong = isTradeLong(t);
+        const trailSl = Number((isLong ? entry + (rMult * riskDist) : entry - (rMult * riskDist)).toFixed(2));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId && trailSl > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            stopLoss: trailSl,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: trailSl };
+          await t.save().catch(() => {});
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `📈 Trailed SL to +${rMult}R for ${rawSym}!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `📈 <b>TRAILED STOP LOSS (+${rMult}R)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym}\n` +
+        `Multiple : +${rMult}R Profit Lock\n` +
+        `Layers   : ${openTrades.length} Ticket(s)\n` +
+        `Status   : Trailing SL Queued on MT5\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'defense_lock_dollar') {
+      const amt = parseFloat(parts[2]) || 25;
+      const mult = isGold ? 100 : 1;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const entry = getEntryPrice(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const isLong = isTradeLong(t);
+        const dollarPerPt = qty * mult;
+        const offset = amt / dollarPerPt;
+        const targetSl = Number((isLong ? entry + offset : entry - offset).toFixed(2));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId && targetSl > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            stopLoss: targetSl,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: targetSl };
+          await t.save().catch(() => {});
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🔒 Stop Loss locked at +$${amt} profit!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🔒 <b>PROFIT LOCKED AT +$${amt}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym}\n` +
+        `Guaranteed: +$${amt.toFixed(2)}\n` +
+        `Layers   : ${openTrades.length} Ticket(s)\n` +
+        `Status   : SL Updated to Guaranteed Profit\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'defense_candle') {
+      const quote = Mt5CommandService.getLiveQuote(rawSym);
+      const ltp = quote?.ltp || Number(openTrades[0]?.simpleExecution?.entryPrice ?? 0);
+      const offset = isGold ? 1.50 : (isEth ? 10.0 : 4.0);
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const isLong = isTradeLong(t);
+        const candleSl = Number((isLong ? ltp - offset : ltp + offset).toFixed(2));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId && candleSl > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            stopLoss: candleSl,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: candleSl };
+          await t.save().catch(() => {});
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🕯️ SL trailed behind candle structure!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🕯️ <b>TRAILED BEHIND CANDLE STRUCTURE</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym}\n` +
+        `Offset   : $${offset.toFixed(2)} Behind Market\n` +
+        `Layers   : ${openTrades.length} Ticket(s)\n` +
+        `Status   : Dynamic Candle SL Active\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'defense_runner') {
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const curSl = Number(t.risk?.currentStopLoss ?? t.risk?.initialStopLoss ?? 0);
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId) {
+          await Mt5CommandService.queueModifyTp({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            takeProfit: 0,
+            stopLoss: curSl > 0 ? curSl : undefined,
+          });
+          t.risk = { ...(t.risk || {}), plannedTarget: undefined };
+          if (!t.tags?.includes('OPEN_RUNNER')) {
+            t.tags = [...(t.tags || []), 'OPEN_RUNNER'];
+          }
+          await t.save().catch(() => {});
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🚫 TP Removed! ${rawSym} running uncapped.`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🚫 <b>RUNNER MODE ACTIVATED (NO TP)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym}\n` +
+        `Take Profit : REMOVED\n` +
+        `Layers   : ${openTrades.length} Ticket(s)\n` +
+        `Status   : Uncapped Profit Run Active\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'defense_sleep') {
+      let totalClosedVol = 0;
+      const offset = isGold ? 0.50 : 2.50;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const entry = getEntryPrice(t);
+        const isLong = isTradeLong(t);
+        const bePrice = Number((isLong ? entry + offset : entry - offset).toFixed(2));
+        const closeVol = Math.max(0.01, Number((qty * 0.75).toFixed(2)));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            volume: closeVol,
+          });
+          totalClosedVol = Number((totalClosedVol + closeVol).toFixed(2));
+
+          await Mt5CommandService.queueModifyTp({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            takeProfit: 0,
+            stopLoss: bePrice > 0 ? bePrice : entry,
+          });
+          t.risk = { ...(t.risk || {}), plannedTarget: undefined, currentStopLoss: bePrice > 0 ? bePrice : entry };
+          await t.save().catch(() => {});
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `💤 Sleep Mode Active! 75% booked, remaining locked at True BE.`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `💤 <b>SLEEP MODE ENGAGED (OVERNIGHT SHIELD)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol      : ${rawSym}\n` +
+        `Secured Vol : ${totalClosedVol} Lots (75% Profit Booked)\n` +
+        `Remaining   : 25% Runner with No TP\n` +
+        `Protection  : Stop Loss at True BE (+Spread)\n` +
+        `Status      : Sleep Soundly, Position is Protected\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    // 4. MULTI-LAYER ACTIONS
+    if (actionKey === 'act_close_top') {
+      const topTrade = openTrades[openTrades.length - 1];
+      const ticket = Mt5CommandService.extractTicket(topTrade);
+      const qty = Number(topTrade.calculated?.openQuantity && topTrade.calculated.openQuantity > 0 ? topTrade.calculated.openQuantity : (topTrade.simpleExecution?.quantity || 1));
+      const account = topTrade.accountId ? await TradingAccount.findById(topTrade.accountId) : null;
+      const accountId = (account?._id || topTrade.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+      if (ticket && accountId) {
+        await Mt5CommandService.queueClosePosition({
+          userId: user._id,
+          accountId,
+          tradeId: topTrade._id,
+          ticket,
+          volume: qty,
+        });
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🚨 Closed top layer #${ticket} (${qty}L) on ${rawSym}`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🚨 <b>TOP LAYER CLOSED</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${rawSym}\n` +
+        `Ticket   : #${ticket || 'Top'}\n` +
+        `Volume   : ${qty} Lots\n` +
+        `Status   : Dispatched to MT5 Server Bridge\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (actionKey === 'act_close_stack') {
+      let totalQty = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+        const account = t.accountId ? await TradingAccount.findById(t.accountId) : null;
+        const accountId = (account?._id || t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''))!;
+
+        if (ticket && accountId) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            volume: qty,
+          });
+          totalQty = Number((totalQty + qty).toFixed(2));
+        }
+      }
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+      if (cqId) {
+        await this.answerCallbackQuery(botToken, cqId, `🛑 Flattened entire ${rawSym} stack (${totalQty}L)!`, true);
+      }
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🛑 <b>POSITION STACK FLATTENED</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol     : ${rawSym}\n` +
+        `Total Vol  : ${totalQty} Lots\n` +
+        `Layers     : ${openTrades.length} Ticket(s)\n` +
+        `Status     : All Layers Closed on MT5\n` +
+        `</pre>`
+      );
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+  }
+
+  /**
    * Executes pyramiding scale-in order on MT5 once original position is protected at BE.
    */
   static async executeScaleIn(
@@ -5886,6 +6690,18 @@ export class TelegramAlertService {
     let totalFloat = 0;
     const posDetailLines: string[] = [];
 
+    // Group open trades by clean symbol into stacks
+    const stackMap = new Map<string, {
+      cleanSymbol: string;
+      displaySymbol: string;
+      direction: 'LONG' | 'SHORT';
+      totalQty: number;
+      blendedEntry: number;
+      currentLtp: number;
+      totalFloat: number;
+      layers: any[];
+    }>();
+
     for (const t of openTrades) {
       const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
       const isEth = (t.symbol || '').includes('ETH');
@@ -5893,19 +6709,20 @@ export class TelegramAlertService {
       const isUs30 = (t.symbol || '').includes('US30') || (t.symbol || '').includes('DOW');
       const isNas = (t.symbol || '').includes('NAS') || (t.symbol || '').includes('USTEC');
 
+      let cleanSymbol = 'XAUUSD';
+      let displaySymbol = 'Gold (XAUUSD)';
       let ltp = goldLtp;
       let mult = 100;
-      if (isGold) { ltp = goldLtp; mult = 100; }
-      else if (isEth) { ltp = ethLtp; mult = 1; }
-      else if (isBtc) { ltp = btcLtp; mult = 1; }
-      else if (isUs30) { ltp = us30Ltp; mult = 1; }
-      else if (isNas) { ltp = nasLtp; mult = 1; }
-      else { ltp = goldLtp; mult = 1; }
+      if (isGold) { cleanSymbol = 'XAUUSD'; displaySymbol = 'Gold (XAUUSD)'; ltp = goldLtp; mult = 100; }
+      else if (isEth) { cleanSymbol = 'ETHUSD'; displaySymbol = 'ETHUSD'; ltp = ethLtp; mult = 1; }
+      else if (isBtc) { cleanSymbol = 'BTCUSD'; displaySymbol = 'BTCUSD'; ltp = btcLtp; mult = 1; }
+      else if (isUs30) { cleanSymbol = 'US30'; displaySymbol = 'US30'; ltp = us30Ltp; mult = 1; }
+      else if (isNas) { cleanSymbol = 'NAS100'; displaySymbol = 'NAS100'; ltp = nasLtp; mult = 1; }
+      else { ltp = goldLtp; mult = 100; }
 
       const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
       const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
       const ticket = Mt5CommandService.extractTicket(t);
-      const ticketStr = ticket ? ` #${ticket}` : '';
 
       let pnl = 0;
       if (entry > 0 && ltp > 0) {
@@ -5916,27 +6733,59 @@ export class TelegramAlertService {
       pnl = Number(pnl.toFixed(2));
       totalFloat += pnl;
 
-      const pnlSign = pnl >= 0 ? '+' : '';
-      const pnlEmoji = pnl >= 0 ? '🟢' : '🔴';
-
-      const currentSl = t.risk?.currentStopLoss ?? t.risk?.initialStopLoss;
-      let rStr = '';
-      if (currentSl && entry > 0) {
-        const riskDist = Math.abs(entry - Number(currentSl));
-        if (riskDist > 0) {
-          const rMult = (t.direction === 'LONG' ? (ltp - entry) : (entry - ltp)) / riskDist;
-          rStr = ` (${rMult >= 0 ? '+' : ''}${rMult.toFixed(1)}R)`;
-        }
+      const stackKey = cleanSymbol;
+      if (!stackMap.has(stackKey)) {
+        stackMap.set(stackKey, {
+          cleanSymbol,
+          displaySymbol,
+          direction: t.direction as any,
+          totalQty: 0,
+          blendedEntry: 0,
+          currentLtp: ltp,
+          totalFloat: 0,
+          layers: [],
+        });
       }
 
-      const slText = currentSl ? `$${Number(currentSl).toFixed(2)}` : 'None';
-      const tpText = t.risk?.plannedTarget && Number(t.risk.plannedTarget) > 0 ? `$${Number(t.risk.plannedTarget).toFixed(2)}` : 'Open (Runner Mode)';
+      const s = stackMap.get(stackKey)!;
+      s.totalQty = Number((s.totalQty + qty).toFixed(2));
+      s.totalFloat = Number((s.totalFloat + pnl).toFixed(2));
+      s.layers.push({
+        trade: t,
+        ticket,
+        entry,
+        qty,
+        pnl,
+        currentSl: t.risk?.currentStopLoss ?? t.risk?.initialStopLoss,
+        tp: t.risk?.plannedTarget,
+      });
+    }
+
+    // Compute blended average entry for each stack
+    for (const s of stackMap.values()) {
+      let weightedSum = 0;
+      for (const l of s.layers) {
+        weightedSum += l.entry * l.qty;
+      }
+      s.blendedEntry = s.totalQty > 0 ? Number((weightedSum / s.totalQty).toFixed(2)) : 0;
+
+      const pnlSign = s.totalFloat >= 0 ? '+' : '';
+      const pnlEmoji = s.totalFloat >= 0 ? '🟢' : '🔴';
+      const layerCountStr = s.layers.length > 1 ? ` (${s.layers.length} Layers)` : '';
+
+      const layerDetails = s.layers.map((l, idx) => {
+        const tktStr = l.ticket ? ` #${l.ticket}` : ` L${idx + 1}`;
+        const lPnlSign = l.pnl >= 0 ? '+' : '';
+        const slStr = l.currentSl ? `$${Number(l.currentSl).toFixed(2)}` : 'None';
+        const tpStr = l.tp && Number(l.tp) > 0 ? `$${Number(l.tp).toFixed(2)}` : 'Open (Runner)';
+        return `  ├ Layer ${idx + 1}${tktStr}: <b>${l.qty.toFixed(2)}L @ $${l.entry.toFixed(2)}</b> (${lPnlSign}$${l.pnl.toFixed(2)})\n  │   └ SL: <code>${slStr}</code>  |  TP: <code>${tpStr}</code>`;
+      }).join('\n');
 
       posDetailLines.push(
-        `${pnlEmoji} <b>${t.symbol} ${t.direction} ${qty.toFixed(2)}L</b> (Tkt${ticketStr})\n` +
-        `  ├ Entry: <b>$${entry.toFixed(2)}</b>  |  LTP: <b>$${ltp.toFixed(2)}</b>\n` +
-        `  ├ Floating: <b>${pnlSign}$${pnl.toFixed(2)}</b>${rStr}\n` +
-        `  └ SL: <code>${slText}</code>  |  TP: <code>${tpText}</code>`
+        `${pnlEmoji} <b>${s.displaySymbol} ${s.direction} · ${s.totalQty.toFixed(2)}L Total${layerCountStr}</b>\n` +
+        `  ├ Blended Entry: <b>$${s.blendedEntry.toFixed(2)}</b>  |  LTP: <b>$${s.currentLtp.toFixed(2)}</b>\n` +
+        `  ├ Net Floating: <b>${pnlSign}$${s.totalFloat.toFixed(2)}</b>\n` +
+        layerDetails
       );
     }
 
@@ -6006,70 +6855,159 @@ export class TelegramAlertService {
 
     const buttons: ITelegramInlineButton[][] = [];
 
+    const userIdStr = user?._id ? user._id.toString() : '';
+    const activeSub = TelegramAlertService.activeCockpitSubmenus.get(userIdStr);
+    const isSubActive = Boolean(activeSub && activeSub.expiresAt > Date.now());
+    if (activeSub && activeSub.expiresAt <= Date.now()) {
+      TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+    }
+
     if (hasOpenTrades) {
-      if (openTrades.length > 1) {
-        buttons.push([
-          { text: `🚨 Panic Flatten All (${openTrades.length})`, callback_data: 'cmd_close_all' },
-          { text: '🛡️ Lock All to BE', callback_data: 'cmd_lock_be_all' },
-        ]);
-      }
+      if (isSubActive && activeSub) {
+        // RENDER ACTIVE SUBMENU DECK
+        const subSym = activeSub.symbol || 'XAUUSD';
+        const targetStack = stackMap.get(subSym) || stackMap.values().next().value;
+        const tot = targetStack ? targetStack.totalQty : 0.04;
+        const symShort = subSym.includes('XAU') ? 'Gold' : (subSym.includes('ETH') ? 'ETH' : subSym);
 
-      for (const t of openTrades) {
-        const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
-        const isEth = (t.symbol || '').includes('ETH');
-        const symLabel = isGold ? 'Gold' : (isEth ? 'ETH' : (t.symbol || 'Pos'));
-        const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
-        const qtyStr = qty.toFixed(2);
-        const ticket = Mt5CommandService.extractTicket(t);
+        if (activeSub.menu === 'harvest') {
+          const q25 = Math.max(0.01, Number((tot * 0.25).toFixed(2)));
+          const q33 = Math.max(0.01, Number((tot * 0.33).toFixed(2)));
+          const q50 = Math.max(0.01, Number((tot * 0.50).toFixed(2)));
+          const q75 = Math.max(0.01, Number((tot * 0.75).toFixed(2)));
 
-        const closeCb = ticket ? `pos_close:${ticket}` : (isGold ? 'cmd_close_gold' : 'cmd_close_eth');
-        const beCb = ticket ? `pos_be:${ticket}` : (isGold ? 'cmd_be_gold' : 'cmd_be_eth');
-        const halfCb = ticket ? `pos_half:${ticket}` : (isGold ? 'cmd_half_gold' : 'cmd_half_eth');
-        const trailCb = ticket ? `pos_trail:${ticket}` : (isGold ? 'cmd_trail_gold' : 'cmd_trail_eth');
+          buttons.push([
+            { text: `🎯 25% (${q25}L)`, callback_data: `harvest_pct:${subSym}:25` },
+            { text: `🎯 33% (${q33}L)`, callback_data: `harvest_pct:${subSym}:33` },
+          ]);
+          buttons.push([
+            { text: `🎯 50% (${q50}L)`, callback_data: `harvest_pct:${subSym}:50` },
+            { text: `🎯 75% (${q75}L)`, callback_data: `harvest_pct:${subSym}:75` },
+          ]);
+          buttons.push([
+            { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${subSym}` },
+            { text: '🏃 Moonshot (0.01L)', callback_data: `harvest_moonshot:${subSym}` },
+          ]);
+          buttons.push([
+            { text: '🏦 Bank $25', callback_data: `harvest_dollar:${subSym}:25` },
+            { text: '🏦 Bank $50', callback_data: `harvest_dollar:${subSym}:50` },
+            { text: '🏦 Bank $100', callback_data: `harvest_dollar:${subSym}:100` },
+          ]);
+          buttons.push([
+            { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
+          ]);
+        } else if (activeSub.menu === 'pyramid') {
+          const halfLot = Math.max(0.01, Number((tot / 2).toFixed(2)));
+          const defLot = subSym.includes('XAU') ? Number(goldLot) : 0.05;
 
-        buttons.push([
-          { text: `🚨 Close ${symLabel} (${qtyStr}L)`, callback_data: closeCb },
-          { text: `🛡️ Lock BE (${symLabel})`, callback_data: beCb },
-        ]);
-
-        const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
-        buttons.push([
-          { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
-          { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
-        ]);
-
-        const entryPrice = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
-        const ltp = isGold ? goldLtp : (isEth ? ethLtp : goldLtp);
-        const isWinning = t.direction === 'LONG' ? ltp > entryPrice : ltp < entryPrice;
-
-        if (ticket) {
-          if (isWinning) {
-            const addLot = isGold ? goldLotStr : (isEth ? ethLotStr : '0.04');
-            buttons.push([
-              { text: `➕ Add ${addLot}L (Pyramid)`, callback_data: `pos_add:${ticket}` },
-              { text: '🚫 Remove TP (Runner)', callback_data: `pos_removetp:${ticket}` },
-            ]);
-          } else {
-            const currentSl = t.risk?.currentStopLoss ?? t.risk?.initialStopLoss;
-            const numSl = currentSl ? Number(currentSl) : 0;
-            const riskDist = (numSl > 0 && entryPrice > 0) ? Math.abs(entryPrice - numSl) : (isGold ? 4.0 : 15.0);
-            const isLong = (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
-            const tp2R = Number((isLong ? entryPrice + 2.0 * riskDist : entryPrice - 2.0 * riskDist).toFixed(2));
-            buttons.push([
-              { text: `🎯 Set +2R ($${tp2R})`, callback_data: `pos_tp:${ticket}:${tp2R}` },
-              { text: '🚫 Remove TP', callback_data: `pos_removetp:${ticket}` },
-            ]);
+          buttons.push([
+            { text: `➕ Add Half-Size (${halfLot}L)`, callback_data: `pyramid_add:${subSym}:${halfLot}` },
+            { text: `➕ Add Preset (${defLot}L)`, callback_data: `pyramid_add:${subSym}:${defLot}` },
+          ]);
+          buttons.push([
+            { text: '🛡️ Zero-Risk Stack Lock & Add', callback_data: `pyramid_zerorisk:${subSym}` },
+          ]);
+          buttons.push([
+            { text: '⏳ Breakout Scale (+10 pts)', callback_data: `pyramid_breakout:${subSym}` },
+            { text: '📥 Pullback Limit (-15 pts)', callback_data: `pyramid_pullback:${subSym}` },
+          ]);
+          buttons.push([
+            { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
+          ]);
+        } else if (activeSub.menu === 'defense') {
+          buttons.push([
+            { text: '🛡️ True BE (+Spread Cover)', callback_data: `defense_truebe:${subSym}` },
+            { text: '📈 Trail +1.0R', callback_data: `defense_trail_r:${subSym}:1.0` },
+          ]);
+          buttons.push([
+            { text: '🔒 Lock +$25 Profit', callback_data: `defense_lock_dollar:${subSym}:25` },
+            { text: '🔒 Lock +$50 Profit', callback_data: `defense_lock_dollar:${subSym}:50` },
+          ]);
+          buttons.push([
+            { text: '🕯️ Trail Prev Candle Low', callback_data: `defense_candle:${subSym}` },
+            { text: '🚫 Runner Mode (No TP)', callback_data: `defense_runner:${subSym}` },
+          ]);
+          buttons.push([
+            { text: '💤 Sleep Mode (Overnight Protection)', callback_data: `defense_sleep:${subSym}` },
+          ]);
+          buttons.push([
+            { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
+          ]);
+        } else if (activeSub.menu === 'layers') {
+          if (targetStack) {
+            for (const l of targetStack.layers) {
+              const tkt = l.ticket;
+              const halfL = Math.max(0.01, Number((l.qty / 2).toFixed(2)));
+              if (tkt) {
+                buttons.push([
+                  { text: `🎯 Book 50% #${tkt} (${halfL}L)`, callback_data: `pos_half:${tkt}` },
+                  { text: `🛡️ BE #${tkt}`, callback_data: `pos_be:${tkt}` },
+                  { text: `🚨 Close #${tkt}`, callback_data: `pos_close:${tkt}` },
+                ]);
+              }
+            }
+            if (targetStack.layers.length > 1) {
+              buttons.push([
+                { text: `🚨 Close Top Layer Only`, callback_data: `act_close_top:${subSym}` },
+              ]);
+            }
           }
+          buttons.push([
+            { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
+          ]);
         }
-      }
+      } else {
+        // MAIN COCKPIT VIEW
+        for (const t of openTrades) {
+          const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
+          const isEth = (t.symbol || '').includes('ETH');
+          const symLabel = isGold ? 'Gold' : (isEth ? 'ETH' : (t.symbol || 'Pos'));
+          const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
+          const qtyStr = qty.toFixed(2);
+          const ticket = Mt5CommandService.extractTicket(t);
 
-      buttons.push([
-        { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
-        autoExecBtn,
-        isPinned
-          ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
-          : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
-      ]);
+          const closeCb = ticket ? `pos_close:${ticket}` : (isGold ? 'cmd_close_gold' : 'cmd_close_eth');
+          const beCb = ticket ? `pos_be:${ticket}` : (isGold ? 'cmd_be_gold' : 'cmd_be_eth');
+          const halfCb = ticket ? `pos_half:${ticket}` : (isGold ? 'cmd_half_gold' : 'cmd_half_eth');
+          const trailCb = ticket ? `pos_trail:${ticket}` : (isGold ? 'cmd_trail_gold' : 'cmd_trail_eth');
+
+          buttons.push([
+            { text: `🚨 Close ${symLabel} (${qtyStr}L)`, callback_data: closeCb },
+            { text: `🛡️ Lock BE (${symLabel})`, callback_data: beCb },
+          ]);
+
+          const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
+          buttons.push([
+            { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
+            { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
+          ]);
+        }
+
+        // Submenu Entry Deck for Each Stack
+        for (const [symKey, s] of stackMap.entries()) {
+          const symLabel = s.cleanSymbol.includes('XAU') ? 'Gold' : (s.cleanSymbol.includes('ETH') ? 'ETH' : s.cleanSymbol);
+          buttons.push([
+            { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${s.cleanSymbol}` },
+            { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${s.cleanSymbol}` },
+          ]);
+          buttons.push([
+            { text: `🛡️ Defense & Trail...`, callback_data: `deck:defense:${s.cleanSymbol}` },
+            { text: `📋 Layers (${s.layers.length})...`, callback_data: `deck:layers:${s.cleanSymbol}` },
+          ]);
+          buttons.push([
+            { text: `🚨 Close Top Layer`, callback_data: `act_close_top:${s.cleanSymbol}` },
+            { text: `🛑 Flatten ${symLabel} (${s.totalQty.toFixed(2)}L)`, callback_data: `act_close_stack:${s.cleanSymbol}` },
+          ]);
+        }
+
+        buttons.push([
+          { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+          autoExecBtn,
+          isPinned
+            ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
+            : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
+        ]);
+      }
     } else {
       buttons.push([
         { text: `🟡 BUY Gold (${goldLotStr})`, callback_data: `order:XAUUSD:BUY:${goldLotStr}:${goldSl}:${goldTp}` },

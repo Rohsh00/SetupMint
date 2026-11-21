@@ -1288,4 +1288,437 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     await Trade.deleteOne({ _id: newsGoldTrade._id });
   });
+
+  // 36. Pro Suite Submenu Navigation: Multi-Layer Aggregation & Deck Drilldowns
+  it('Scenario 36: Multi-layer positions aggregate into unified stack card and drilldown decks navigate cleanly', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const layer1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_111222'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.04,
+      },
+    });
+
+    const layer2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_333444'],
+      simpleExecution: {
+        entryPrice: 2655.00,
+        quantity: 0.02,
+      },
+    });
+
+    // Verify Main Cockpit shows Stack Aggregation
+    const payload = await (TelegramAlertService as any).buildCockpitPayload(testUser, 'test-bot-token');
+    expect(payload.text).toContain('Gold (XAUUSD) LONG · 0.06L Total (2 Layers)');
+    expect(payload.text).toContain('Blended Entry: <b>$2651.67</b>');
+    expect(payload.text).toContain('Layer 1 #111222: <b>0.04L @ $2650.00</b>');
+    expect(payload.text).toContain('Layer 2 #333444: <b>0.02L @ $2655.00</b>');
+
+    // Verify Main Deck Buttons include Submenu Drilldowns
+    const allButtons = payload.buttons.flat();
+    expect(allButtons.some((b: any) => b.callback_data === 'deck:harvest:XAUUSD')).toBe(true);
+    expect(allButtons.some((b: any) => b.callback_data === 'deck:pyramid:XAUUSD')).toBe(true);
+    expect(allButtons.some((b: any) => b.callback_data === 'deck:defense:XAUUSD')).toBe(true);
+    expect(allButtons.some((b: any) => b.callback_data === 'deck:layers:XAUUSD')).toBe(true);
+
+    // Navigate to deck:harvest:XAUUSD
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_drill_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'deck:harvest:XAUUSD',
+      },
+    });
+
+    const harvestPayload = await (TelegramAlertService as any).buildCockpitPayload(testUser, 'test-bot-token');
+    const harvestButtons = harvestPayload.buttons.flat();
+    expect(harvestButtons.some((b: any) => b.callback_data === 'harvest_pct:XAUUSD:25')).toBe(true);
+    expect(harvestButtons.some((b: any) => b.callback_data === 'harvest_pct:XAUUSD:50')).toBe(true);
+    expect(harvestButtons.some((b: any) => b.callback_data === 'harvest_freeride:XAUUSD')).toBe(true);
+    expect(harvestButtons.some((b: any) => b.callback_data === 'harvest_moonshot:XAUUSD')).toBe(true);
+    expect(harvestButtons.some((b: any) => b.callback_data === 'deck:back')).toBe(true);
+
+    // Navigate back to main cockpit
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_drill_back',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'deck:back',
+      },
+    });
+
+    const restoredPayload = await (TelegramAlertService as any).buildCockpitPayload(testUser, 'test-bot-token');
+    const restoredButtons = restoredPayload.buttons.flat();
+    expect(restoredButtons.some((b: any) => b.callback_data === 'deck:harvest:XAUUSD')).toBe(true);
+
+    await Trade.deleteMany({ _id: { $in: [layer1._id, layer2._id] } });
+  });
+
+  // 37. Pro Action: harvest_pct executes proportional partial exit across all layers
+  it('Scenario 37: harvest_pct:XAUUSD:50 executes 50% partial exit across all open layers', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const layer1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_101010'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+    });
+    const layer2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_202020'],
+      simpleExecution: { entryPrice: 2655.00, quantity: 0.02 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_hv_50',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'harvest_pct:XAUUSD:50',
+      },
+    });
+
+    const cmd1 = await Mt5Command.findOne({ ticket: 101010, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    const cmd2 = await Mt5Command.findOne({ ticket: 202020, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    expect(cmd1).toBeDefined();
+    expect(cmd1?.volume).toBe(0.02); // 50% of 0.04
+    expect(cmd2).toBeDefined();
+    expect(cmd2?.volume).toBe(0.01); // 50% of 0.02
+
+    await Trade.deleteMany({ _id: { $in: [layer1._id, layer2._id] } });
+    await Mt5Command.deleteMany({ ticket: { $in: [101010, 202020] } });
+  });
+
+  // 38. Pro Action: harvest_freeride books 50% and locks SL of all layers to breakeven
+  it('Scenario 38: harvest_freeride:XAUUSD books 50% volume and locks SL to breakeven', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_303030'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_freeride_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'harvest_freeride:XAUUSD',
+      },
+    });
+
+    const closeCmd = await Mt5Command.findOne({ ticket: 303030, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    const slCmd = await Mt5Command.findOne({ ticket: 303030, action: 'MODIFY_SL' }).sort({ createdAt: -1 });
+    expect(closeCmd).toBeDefined();
+    expect(closeCmd?.volume).toBe(0.02);
+    expect(slCmd).toBeDefined();
+    expect(slCmd?.stopLoss).toBe(2650.00);
+
+    await Trade.deleteOne({ _id: trade._id });
+    await Mt5Command.deleteMany({ ticket: 303030 });
+  });
+
+  // 39. Pro Action: harvest_moonshot leaves 0.01L runner, clears TP, locks SL to BE+Spread
+  it('Scenario 39: harvest_moonshot:XAUUSD retains 0.01L runner and clears TP on MT5', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_404040'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.05 },
+      risk: { plannedTarget: 2680.00 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_moonshot_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'harvest_moonshot:XAUUSD',
+      },
+    });
+
+    const closeCmd = await Mt5Command.findOne({ ticket: 404040, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    const tpCmd = await Mt5Command.findOne({ ticket: 404040, action: 'MODIFY_TP' }).sort({ createdAt: -1 });
+    expect(closeCmd).toBeDefined();
+    expect(closeCmd?.volume).toBe(0.04); // 0.05 - 0.01 = 0.04L closed
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(0); // Take Profit removed!
+    expect(tpCmd?.stopLoss).toBe(2650.50); // BE + spread cover
+
+    await Trade.deleteOne({ _id: trade._id });
+    await Mt5Command.deleteMany({ ticket: 404040 });
+  });
+
+  // 40. Pro Action: defense_truebe sets SL to entry + 0.50 spread buffer
+  it('Scenario 40: defense_truebe:XAUUSD sets Stop Loss to entry + 0.50 spread buffer', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_505050'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_truebe_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'defense_truebe:XAUUSD',
+      },
+    });
+
+    const slCmd = await Mt5Command.findOne({ ticket: 505050, action: 'MODIFY_SL' }).sort({ createdAt: -1 });
+    expect(slCmd).toBeDefined();
+    expect(slCmd?.stopLoss).toBe(2650.50);
+
+    await Trade.deleteOne({ _id: trade._id });
+    await Mt5Command.deleteMany({ ticket: 505050 });
+  });
+
+  // 41. Pro Action: defense_trail_r trails SL by +1.0R risk multiple
+  it('Scenario 41: defense_trail_r:XAUUSD:1.0 trails SL by +1.0R risk multiple', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_606060'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+      risk: { initialStopLoss: 2646.00 }, // 4.0 pts risk
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_trail_r_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'defense_trail_r:XAUUSD:1.0',
+      },
+    });
+
+    const slCmd = await Mt5Command.findOne({ ticket: 606060, action: 'MODIFY_SL' }).sort({ createdAt: -1 });
+    expect(slCmd).toBeDefined();
+    expect(slCmd?.stopLoss).toBe(2654.00); // 2650 + 1.0 * 4.0 = 2654.00
+
+    await Trade.deleteOne({ _id: trade._id });
+    await Mt5Command.deleteMany({ ticket: 606060 });
+  });
+
+  // 42. Pro Action: defense_sleep locks 75% profit, puts remaining at True BE with no TP
+  it('Scenario 42: defense_sleep:XAUUSD closes 75% volume, moves SL to True BE, removes TP', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_707070'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+      risk: { plannedTarget: 2680.00 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_sleep_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'defense_sleep:XAUUSD',
+      },
+    });
+
+    const closeCmd = await Mt5Command.findOne({ ticket: 707070, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    const tpCmd = await Mt5Command.findOne({ ticket: 707070, action: 'MODIFY_TP' }).sort({ createdAt: -1 });
+    expect(closeCmd).toBeDefined();
+    expect(closeCmd?.volume).toBe(0.03); // 75% of 0.04 = 0.03
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(0); // Take profit removed
+    expect(tpCmd?.stopLoss).toBe(2650.50); // Stop Loss at True BE (+Spread)
+
+    await Trade.deleteOne({ _id: trade._id });
+    await Mt5Command.deleteMany({ ticket: 707070 });
+  });
+
+  // 43. Pro Action: act_close_top closes only newest layer
+  it('Scenario 43: act_close_top:XAUUSD closes only the newest layer on MT5', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const layer1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_808081'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+    });
+    const layer2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_808082'],
+      simpleExecution: { entryPrice: 2655.00, quantity: 0.02 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_close_top_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'act_close_top:XAUUSD',
+      },
+    });
+
+    // Verify only ticket 808082 was queued for close
+    const closeCmd = await Mt5Command.findOne({ ticket: 808082, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    const unclosedCmd = await Mt5Command.findOne({ ticket: 808081, action: 'CLOSE_POSITION' });
+    expect(closeCmd).toBeDefined();
+    expect(closeCmd?.volume).toBe(0.02);
+    expect(unclosedCmd).toBeNull();
+
+    await Trade.deleteMany({ _id: { $in: [layer1._id, layer2._id] } });
+    await Mt5Command.deleteMany({ ticket: { $in: [808081, 808082] } });
+  });
+
+  // 44. Pro Action: act_close_stack flattens all open layers of symbol simultaneously
+  it('Scenario 44: act_close_stack:XAUUSD flattens all open layers of the symbol simultaneously', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const layer1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_909091'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+    });
+    const layer2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_909092'],
+      simpleExecution: { entryPrice: 2655.00, quantity: 0.02 },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_close_stack_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'act_close_stack:XAUUSD',
+      },
+    });
+
+    const cmd1 = await Mt5Command.findOne({ ticket: 909091, action: 'CLOSE_POSITION' });
+    const cmd2 = await Mt5Command.findOne({ ticket: 909092, action: 'CLOSE_POSITION' });
+    expect(cmd1).toBeDefined();
+    expect(cmd1?.volume).toBe(0.04);
+    expect(cmd2).toBeDefined();
+    expect(cmd2?.volume).toBe(0.02);
+
+    await Trade.deleteMany({ _id: { $in: [layer1._id, layer2._id] } });
+    await Mt5Command.deleteMany({ ticket: { $in: [909091, 909092] } });
+  });
 });

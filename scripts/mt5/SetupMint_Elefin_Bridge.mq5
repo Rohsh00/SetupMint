@@ -298,6 +298,30 @@ void ProcessSetupMintCommands(string responseJson)
             openRes = m_trade.Sell(volume, symbol, 0, sl, tp, comment);
          }
 
+         // Resilient Stop Handling: If initial stops are rejected by broker (e.g. fast market tick or stop level),
+         // fill market order first and immediately set normalized SL/TP based on actual fill price
+         if(!openRes && (m_trade.ResultRetcode() == 10016 || GetLastError() == 4756))
+         {
+            Print("[SetupMint] Initial stops rejected by broker. Retrying market order at current market price...");
+            ResetLastError();
+            if(side == "BUY")  openRes = m_trade.Buy(volume, symbol, 0, 0, 0, comment);
+            else if(side == "SELL") openRes = m_trade.Sell(volume, symbol, 0, 0, 0, comment);
+
+            if(openRes)
+            {
+               double fillPrice = m_trade.ResultPrice();
+               ulong posTicket = m_trade.ResultOrder() > 0 ? m_trade.ResultOrder() : m_trade.ResultDeal();
+               double slDist = MathAbs(sl - fillPrice);
+               double tpDist = MathAbs(tp - fillPrice);
+               if(slDist > 0 && posTicket > 0)
+               {
+                  double adjustedSl = (side == "BUY") ? fillPrice - slDist : fillPrice + slDist;
+                  double adjustedTp = tpDist > 0 ? ((side == "BUY") ? fillPrice + tpDist : fillPrice - tpDist) : 0;
+                  m_trade.PositionModify(posTicket, adjustedSl, adjustedTp);
+               }
+            }
+         }
+
          if(openRes)
          {
             ulong dealTicket = m_trade.ResultDeal();

@@ -7697,6 +7697,40 @@ export class TelegramAlertService {
       return await this.buildOrderPrepPayload(user, subSym, subSide);
     }
 
+    // Other Global Assets submenu deck (BTC, US30, NAS100)
+    if (isSubActive && activeSub && activeSub.menu === 'other_assets') {
+      const otherButtons: ITelegramInlineButton[][] = [
+        [
+          { text: `🟢 BUY BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
+          { text: `🔴 SELL BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
+        ],
+        [
+          { text: `🟢 BUY US30 (${us30LotStr})`, callback_data: 'deck:order_prep:US30:BUY' },
+          { text: `🔴 SELL US30 (${us30LotStr})`, callback_data: 'deck:order_prep:US30:SELL' },
+        ],
+        [
+          { text: `🟢 BUY NAS100 (${nasLotStr})`, callback_data: 'deck:order_prep:NAS100:BUY' },
+          { text: `🔴 SELL NAS100 (${nasLotStr})`, callback_data: 'deck:order_prep:NAS100:SELL' },
+        ],
+        [
+          { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
+        ],
+      ];
+      const otherText =
+        `${line1}\n` +
+        `⚡ <i>Live Cut-to-Cut · <code>${nowUtc} UTC</code></i>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🌐 <b>GLOBAL ASSETS & DEEP OPTIONS:</b>\n` +
+        `<pre>\n` +
+        `₿ BTCUSD : $${btcLtp.toFixed(2)}  (Spread ${btcSpread})\n` +
+        `🇺🇸 US30   : $${us30Ltp.toFixed(2)}\n` +
+        `💻 NAS100 : $${nasLtp.toFixed(2)}\n` +
+        `</pre>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<i>Tap any asset above to open disciplined lot sizing & execution:</i>`;
+      return { text: otherText, buttons: otherButtons };
+    }
+
     if (hasOpenTrades) {
       if (isSubActive && activeSub) {
         // RENDER ACTIVE SUBMENU DECK
@@ -7846,58 +7880,42 @@ export class TelegramAlertService {
     } else {
       let goldBtnLot = goldLotStr;
       let ethBtnLot = ethLotStr;
-      let btcBtnLot = btcLotStr;
-      let buyEmoji = '🟡';
-      let buyEthEmoji = '🔷';
-      let buyBtcEmoji = '₿';
-      let modeTag = '';
 
-      if (adaptive?.regime === 'HOUSE_MONEY') {
-        buyEmoji = '🟢';
-        buyEthEmoji = '🟢';
-        buyBtcEmoji = '🟢';
-        modeTag = ' • House';
-      } else if (adaptive?.regime === 'DEFENSIVE') {
-        buyEmoji = '🛡️';
-        buyEthEmoji = '🛡️';
-        buyBtcEmoji = '🛡️';
-        modeTag = ' • Def';
+      if (adaptive?.regime === 'DEFENSIVE') {
         goldBtnLot = (adaptive.tiers.bestOptionLot || (goldLot * 0.5)).toFixed(2);
         ethBtnLot = (adaptive.tiers.bestOptionLot || (ethLot * 0.5)).toFixed(2);
-        btcBtnLot = (adaptive.tiers.bestOptionLot || (btcLot * 0.5)).toFixed(2);
       }
 
+      // 1. Gold Execution (Crisp, self-explanatory, never truncated with ...)
       buttons.push([
-        { text: `${buyEmoji} BUY Gold (${goldBtnLot}${modeTag})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
-        { text: `${buyEmoji} SELL Gold (${goldBtnLot}${modeTag})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
+        { text: `🟢 BUY Gold (${goldBtnLot})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: `🔴 SELL Gold (${goldBtnLot})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
       ]);
+
+      // 2. ETH Execution (Crisp, self-explanatory, never truncated with ...)
       buttons.push([
-        { text: `${buyEthEmoji} BUY ETH (${ethBtnLot}${modeTag})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
-        { text: `${buyEthEmoji} SELL ETH (${ethBtnLot}${modeTag})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
+        { text: `🟢 BUY ETH (${ethBtnLot})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
+        { text: `🔴 SELL ETH (${ethBtnLot})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
       ]);
+
+      // 3. Asset Drilldown & Deep Options
       buttons.push([
-        { text: `${buyBtcEmoji} BUY BTC (${btcBtnLot}${modeTag})`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
-        { text: `${buyBtcEmoji} SELL BTC (${btcBtnLot}${modeTag})`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
+        { text: '🌟 Gold Lot Options', callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: '🌟 ETH Lot Options', callback_data: 'deck:order_prep:ETHUSD:BUY' },
       ]);
+
+      // 4. Other Assets & Primary Controls
       buttons.push([
-        { text: '🌟 Gold Lot Sizing & Ladders', callback_data: 'deck:order_prep:XAUUSD:BUY' },
-        { text: '🌟 ETH Lot Sizing & Ladders', callback_data: 'deck:order_prep:ETHUSD:BUY' },
-      ]);
-      buttons.push([
-        { text: `🇺🇸 US30 (${us30LotStr}L)`, callback_data: 'deck:order_prep:US30:BUY' },
-        { text: `💻 NAS100 (${nasLotStr}L)`, callback_data: 'deck:order_prep:NAS100:BUY' },
-        { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },
-      ]);
-      buttons.push([
+        { text: '🌐 Other Assets...', callback_data: 'deck:other_assets' },
         { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
-        autoExecBtn,
         isPinned
           ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
           : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
       ]);
+
+      // 5. Execution Mode
       buttons.push([
-        { text: '🚨 Close Gold', callback_data: 'cmd_close_gold' },
-        { text: '🚨 Close ETH', callback_data: 'cmd_close_eth' },
+        autoExecBtn,
       ]);
     }
 

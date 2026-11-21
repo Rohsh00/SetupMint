@@ -410,8 +410,34 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     const keyboard = msg.reply_markup.inline_keyboard;
     expect(keyboard.length).toBeGreaterThanOrEqual(4);
     expect(keyboard[0][0].text).toContain('BUY Gold (0.10)');
+    expect(keyboard[0][1].text).toContain('SELL Gold (0.10)');
     expect(keyboard[1][0].text).toContain('BUY ETH (1.00)');
-    expect(keyboard[2][0].text).toContain('BUY BTC');
+    expect(keyboard[1][1].text).toContain('SELL ETH (1.00)');
+    expect(keyboard[2][0].text).toContain('Gold Lot Options');
+    expect(keyboard[3][0].text).toContain('Other Assets');
+
+    // Test opening Other Assets drilldown deck for BTC, US30, NAS100
+    sentMessages.length = 0;
+    editedMessages.length = 0;
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_other_assets',
+      from: { id: chatId },
+      data: 'deck:other_assets',
+      message: { message_id: 8881, chat: { id: chatId } },
+    });
+    const otherMsg = editedMessages[editedMessages.length - 1] || sentMessages[sentMessages.length - 1];
+    expect(otherMsg.text).toContain('GLOBAL ASSETS');
+    expect(otherMsg.reply_markup.inline_keyboard[0][0].text).toContain('BUY BTC');
+    expect(otherMsg.reply_markup.inline_keyboard[1][0].text).toContain('BUY US30');
+    expect(otherMsg.reply_markup.inline_keyboard[2][0].text).toContain('BUY NAS100');
+
+    // Return to main cockpit cleanly
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_back',
+      from: { id: chatId },
+      data: 'deck:back',
+      message: { message_id: 8881, chat: { id: chatId } },
+    });
   });
 
   // 10. Top Pinned Cockpit: /pin calls pinChatMessage and stores message ID

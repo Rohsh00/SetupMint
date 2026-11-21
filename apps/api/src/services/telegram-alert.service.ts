@@ -78,36 +78,6 @@ export const DEFAULT_FOREX_PRESETS: IForexPresets = {
     symbol: 'XAUUSD',
     defaultLot: 0.10,
     defaultSlPoints: 35,
-    defaultRr: 3,
-  },
-  eth: {
-    symbol: 'ETHUSD',
-    defaultLot: 1.0,
-    defaultSlPrice: 30,
-    defaultRr: 3,
-  },
-};
-
-export interface IForexPresets {
-  gold: {
-    symbol: string;
-    defaultLot: number;
-    defaultSlPoints: number;
-    defaultRr: number;
-  };
-  eth: {
-    symbol: string;
-    defaultLot: number;
-    defaultSlPrice: number;
-    defaultRr: number;
-  };
-}
-
-export const DEFAULT_FOREX_PRESETS: IForexPresets = {
-  gold: {
-    symbol: 'XAUUSD',
-    defaultLot: 0.10,
-    defaultSlPoints: 35,
     defaultRr: 2.0,
   },
   eth: {

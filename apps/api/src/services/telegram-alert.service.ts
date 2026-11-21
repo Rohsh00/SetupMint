@@ -4013,6 +4013,195 @@ export class TelegramAlertService {
   }
 
   /**
+   * Comprehensive pre-trade guardrail evaluation for Telegram MT5 orders.
+   * Validates discipline rules, risk limits, stale quotes, lot caps, revenge cooldowns, and max open exposures.
+   */
+  static async evaluateOrderGuardrails(
+    user: any,
+    account: any,
+    symbol: string,
+    side: 'BUY' | 'SELL',
+    volume: number,
+    slPoints: number,
+    tpPoints: number,
+    ltp: number,
+    quoteTimestamp?: Date
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    // 1. Mandatory Stop Loss Check
+    if (!slPoints || slPoints <= 0) {
+      return {
+        allowed: false,
+        reason:
+          '🛡️ <b>ORDER BLOCKED: MANDATORY STOP LOSS REQUIRED</b>\n\n' +
+          'Naked market entries are prohibited by your risk rules. Every Telegram MT5 order must include a protective Stop Loss.',
+      };
+    }
+
+    // 2. Stale Quote Guardrail (Settings: staleDataThresholdSeconds, default 10s)
+    const staleThreshold = user?.liveWatcherSettings?.staleDataThresholdSeconds ?? 10;
+    if (quoteTimestamp) {
+      const quoteAgeSec = (Date.now() - new Date(quoteTimestamp).getTime()) / 1000;
+      if (quoteAgeSec > staleThreshold) {
+        return {
+          allowed: false,
+          reason:
+            `⚠️ <b>ORDER BLOCKED: STALE MARKET DATA</b>\n\n` +
+            `Market feed for <b>${symbol}</b> is <b>${quoteAgeSec.toFixed(1)}s old</b> (Threshold: ${staleThreshold}s).\n` +
+            `Live broker execution is blocked to protect against slippage. Wait for fresh ticks.`,
+        };
+      }
+    }
+
+    // 3. Max Concurrent Open Positions Guardrail (Settings: maxOpenTrades, default 3)
+    const maxOpenTrades = user?.riskSettings?.maxOpenTrades ?? 3;
+    const currentOpenCount = await Trade.countDocuments({
+      userId: user._id,
+      accountId: account._id,
+      status: 'OPEN',
+    });
+    if (currentOpenCount >= maxOpenTrades) {
+      return {
+        allowed: false,
+        reason:
+          `🛡️ <b>ORDER BLOCKED: MAX OPEN POSITIONS REACHED</b>\n\n` +
+          `You currently have <b>${currentOpenCount} active open trade(s)</b> (Your limit: <b>${maxOpenTrades}</b>).\n` +
+          `Close an existing position before taking on new risk exposure.`,
+      };
+    }
+
+    // 4. Max Daily Trades Overtrading Guardrail (Settings: maxDailyTrades, default 6)
+    const maxDailyTrades = user?.riskSettings?.maxDailyTrades ?? 6;
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+
+    const todayTradesCount = await Trade.countDocuments({
+      userId: user._id,
+      accountId: account._id,
+      createdAt: { $gte: startOfDay },
+    });
+    if (todayTradesCount >= maxDailyTrades) {
+      return {
+        allowed: false,
+        reason:
+          `🛡️ <b>ORDER BLOCKED: DAILY TRADE LIMIT REACHED</b>\n\n` +
+          `You have taken <b>${todayTradesCount} trade(s) today</b> (Your limit: <b>${maxDailyTrades}</b>).\n` +
+          `Overtrading guardrail active. Step away from the screens to preserve mental capital.`,
+      };
+    }
+
+    // 5. Max Daily Loss Limit Guardrail (Settings: maxDailyLoss, default 5000)
+    const maxDailyLoss = user?.riskSettings?.maxDailyLoss ?? 5000;
+    const todayClosedTrades = await Trade.find({
+      userId: user._id,
+      accountId: account._id,
+      status: 'CLOSED',
+      exitTime: { $gte: startOfDay },
+    }).lean();
+
+    let todayRealizedPnL = 0;
+    for (const t of todayClosedTrades) {
+      const pnl = t.calculated?.netPnL ?? (t as any).netPnL ?? 0;
+      todayRealizedPnL += pnl;
+    }
+
+    const openTrades = await Trade.find({
+      userId: user._id,
+      accountId: account._id,
+      status: 'OPEN',
+    }).lean();
+
+    let openFloatingPnL = 0;
+    for (const t of openTrades) {
+      const floatPnl = (t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? 0;
+      openFloatingPnL += floatPnl;
+    }
+
+    const todayTotalPnL = todayRealizedPnL + openFloatingPnL;
+    if (todayTotalPnL <= -maxDailyLoss) {
+      return {
+        allowed: false,
+        reason:
+          `🛑 <b>ORDER BLOCKED: DAILY LOSS LIMIT BREACHED</b>\n\n` +
+          `Your net PnL today is <b>-$${Math.abs(todayTotalPnL).toFixed(2)}</b> (Daily loss limit: <b>-$${maxDailyLoss.toFixed(2)}</b>).\n` +
+          `New order placement is locked for the rest of today to protect your capital.`,
+      };
+    }
+
+    // 6. Account Lot Cap Guardrail (Settings / Account Profile: lotCap)
+    const lotCap = account.profile?.riskRules?.lotCap;
+    if (lotCap && lotCap > 0 && volume > lotCap) {
+      return {
+        allowed: false,
+        reason:
+          `🛡️ <b>ORDER BLOCKED: LOT CAP EXCEEDED</b>\n\n` +
+          `Requested volume (<b>${volume} Lots</b>) exceeds this account's maximum allowed lot cap of <b>${lotCap} Lots</b>.`,
+      };
+    }
+
+    // 7. Per-Trade Maximum Dollar Risk Guardrail (Settings: maxRiskPerTradePercent, default 2.0%)
+    const isGold = symbol.includes('XAU') || symbol === 'GOLD';
+    const tradeRiskDollars = isGold ? slPoints * 10 * volume : slPoints * volume;
+    const balance = Number(account.currentBalance || account.initialBalance || 10000);
+    const maxRiskPct = user?.riskSettings?.maxRiskPerTradePercent ?? 2.0;
+    const maxAllowedRiskDollars = (balance * maxRiskPct) / 100;
+
+    if (maxAllowedRiskDollars > 0 && tradeRiskDollars > maxAllowedRiskDollars * 1.05) {
+      return {
+        allowed: false,
+        reason:
+          `🛡️ <b>ORDER BLOCKED: RISK PER TRADE EXCEEDED</b>\n\n` +
+          `This order risks <b>-$${tradeRiskDollars.toFixed(2)}</b>.\n` +
+          `Your maximum allowed risk per trade is <b>-$${maxAllowedRiskDollars.toFixed(2)}</b> (${maxRiskPct}% of $${balance.toLocaleString()}).\n` +
+          `Reduce volume or use <code>/risk ${isGold ? 'gold' : 'eth'} ${Math.floor(maxAllowedRiskDollars)}</code> for auto-sizing.`,
+      };
+    }
+
+    // 8. Revenge Trading Cooldown Guardrail (Settings: revengeTradingMinutes, default 30m)
+    const revengeMins = user?.riskSettings?.revengeTradingMinutes ?? 0;
+    if (revengeMins > 0) {
+      const cooldownSince = new Date(Date.now() - revengeMins * 60 * 1000);
+      const recentLosingTrade = await Trade.findOne({
+        userId: user._id,
+        accountId: account._id,
+        status: 'CLOSED',
+        exitTime: { $gte: cooldownSince },
+        $or: [{ 'calculated.netPnL': { $lt: 0 } }, { netPnL: { $lt: 0 } }],
+      }).sort({ exitTime: -1 }).lean();
+
+      if (recentLosingTrade) {
+        const lossPnl = recentLosingTrade.calculated?.netPnL ?? (recentLosingTrade as any).netPnL ?? 0;
+        const exitTimeMs = recentLosingTrade.exitTime ? new Date(recentLosingTrade.exitTime).getTime() : Date.now();
+        const closedMinsAgo = Math.max(0, Math.round((Date.now() - exitTimeMs) / 60000));
+        return {
+          allowed: false,
+          reason:
+            `🛑 <b>ORDER BLOCKED: REVENGE TRADING COOLDOWN ACTIVE</b>\n\n` +
+            `You closed a losing trade (-$${Math.abs(lossPnl).toFixed(2)}) <b>${closedMinsAgo}m ago</b> (Cooldown: <b>${revengeMins}m</b>).\n` +
+            `Take a breather and allow emotional variance to settle before re-entering.`,
+        };
+      }
+    }
+
+    // 9. Hard Discipline Lockout (Settings: hardDisciplineLockoutEnabled)
+    if (user?.liveWatcherSettings?.hardDisciplineLockoutEnabled) {
+      const lastLossDate = user?.liveWatcherSettings?.lastDailyLossAlertDate;
+      if (lastLossDate) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (lastLossDate === todayStr) {
+          return {
+            allowed: false,
+            reason:
+              `🔒 <b>ORDER BLOCKED: HARD DISCIPLINE LOCKOUT ACTIVE</b>\n\n` +
+              `Daily loss threshold was reached today. Trading lockout is in effect until tomorrow's session.`,
+          };
+        }
+      }
+    }
+
+    return { allowed: true };
+  }
+
+  /**
    * Executes a direct MT5 order triggered from a Telegram button callback.
    */
   static async executeTelegramOrder(
@@ -4034,20 +4223,49 @@ export class TelegramAlertService {
 
       // Fetch live price
       let ltp = 0;
+      let quoteTimestamp: Date | undefined;
       const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
       if (mt5Quote && mt5Quote.ltp > 0) {
         ltp = mt5Quote.ltp;
+        quoteTimestamp = mt5Quote.timestamp;
       }
       if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(cleanSym)) {
         try {
           const quotes = await GlobalCfdCandleProvider.getLiveQuotes([cleanSym]);
           const gq = quotes.get(cleanSym);
-          if (gq && gq.ltp > 0) ltp = gq.ltp;
+          if (gq && gq.ltp > 0) {
+            ltp = gq.ltp;
+            quoteTimestamp = gq.timestamp;
+          }
         } catch {}
       }
       if (ltp === 0) {
         const recentTrade = await Trade.findOne({ userId: user._id, symbol: new RegExp(cleanSym, 'i') }).sort({ createdAt: -1 });
         ltp = recentTrade?.simpleExecution?.entryPrice || (isGold ? 2650 : 3100);
+      }
+
+      // 1. Evaluate Pre-Trade Guardrails
+      const guardrail = await this.evaluateOrderGuardrails(
+        user,
+        account,
+        cleanSym,
+        side,
+        volume,
+        slPoints,
+        tpPoints,
+        ltp,
+        quoteTimestamp
+      );
+
+      if (!guardrail.allowed) {
+        const buttons: ITelegramInlineButton[][] = [
+          [
+            { text: '📊 Open Trades', callback_data: 'cmd_trades' },
+            { text: '📌 Live Cockpit', callback_data: 'cmd_cockpit' },
+          ],
+        ];
+        await this.sendMessage(botToken, chatId, guardrail.reason || '🛡️ Order blocked by risk guardrails.', buttons);
+        return;
       }
 
       const slDist = isGold ? slPoints * 0.10 : slPoints;
@@ -4190,13 +4408,20 @@ export class TelegramAlertService {
 
       // Fetch live price
       let ltp = 0;
+      let quoteTimestamp: Date | undefined;
       const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
-      if (mt5Quote && mt5Quote.ltp > 0) ltp = mt5Quote.ltp;
+      if (mt5Quote && mt5Quote.ltp > 0) {
+        ltp = mt5Quote.ltp;
+        quoteTimestamp = mt5Quote.timestamp;
+      }
       if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(cleanSym)) {
         try {
           const quotes = await GlobalCfdCandleProvider.getLiveQuotes([cleanSym]);
           const gq = quotes.get(cleanSym);
-          if (gq && gq.ltp > 0) ltp = gq.ltp;
+          if (gq && gq.ltp > 0) {
+            ltp = gq.ltp;
+            quoteTimestamp = gq.timestamp;
+          }
         } catch {}
       }
       if (ltp === 0) {
@@ -4211,6 +4436,30 @@ export class TelegramAlertService {
       const finalTp = explicitTpPrice || (side === 'BUY' ? ltp + tpDist : ltp - tpDist);
 
       const account = await this.resolveMt5Account(user._id);
+
+      // Evaluate Pre-Trade Guardrails
+      const guardrail = await this.evaluateOrderGuardrails(
+        user,
+        account,
+        cleanSym,
+        side,
+        volume,
+        slPoints,
+        tpPoints,
+        ltp,
+        quoteTimestamp
+      );
+
+      if (!guardrail.allowed) {
+        const buttons: ITelegramInlineButton[][] = [
+          [
+            { text: '📊 Open Trades', callback_data: 'cmd_trades' },
+            { text: '📌 Live Cockpit', callback_data: 'cmd_cockpit' },
+          ],
+        ];
+        await this.sendMessage(botToken, chatId, guardrail.reason || '🛡️ Order blocked by risk guardrails.', buttons);
+        return;
+      }
 
       await Mt5CommandService.queueOpenOrder({
         userId: user._id,
@@ -4595,6 +4844,10 @@ export class TelegramAlertService {
             'liveWatcherSettings.telegramPinnedCockpitChatId': chatId,
           },
         });
+        if (user?.liveWatcherSettings) {
+          user.liveWatcherSettings.telegramPinnedCockpitMessageId = sentMsg.message_id;
+          user.liveWatcherSettings.telegramPinnedCockpitChatId = chatId;
+        }
         await this.sendMessage(
           botToken,
           chatId,
@@ -4621,11 +4874,16 @@ export class TelegramAlertService {
     }
 
     await User.findByIdAndUpdate(user._id, {
-      $unset: {
-        'liveWatcherSettings.telegramPinnedCockpitMessageId': '',
-        'liveWatcherSettings.telegramPinnedCockpitChatId': '',
+      $set: {
+        'liveWatcherSettings.telegramPinnedCockpitMessageId': null,
+        'liveWatcherSettings.telegramPinnedCockpitChatId': null,
       },
     });
+
+    if (user?.liveWatcherSettings) {
+      user.liveWatcherSettings.telegramPinnedCockpitMessageId = null;
+      user.liveWatcherSettings.telegramPinnedCockpitChatId = null;
+    }
 
     await this.sendMessage(
       botToken,

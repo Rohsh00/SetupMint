@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/server.js';
@@ -13,7 +13,7 @@ import { TelegramAlertService, DEFAULT_FOREX_PRESETS } from '../src/services/tel
 import { Mt5CommandService } from '../src/services/mt5-command.service.js';
 import { TelegramCockpitTickerWorker } from '../src/services/telegram-cockpit-ticker.service.js';
 
-describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
+describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30000 }, () => {
   let app: FastifyInstance;
   let testUser: any;
   let testAccount: any;
@@ -142,6 +142,25 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
       ltp: 3140.25,
       timestamp: new Date(),
     });
+  }, 30000);
+
+  beforeEach(async () => {
+    if (testAccount) {
+      Mt5CommandService.recordQuote(testAccount._id, {
+        symbol: 'XAUUSD',
+        bid: 2650.00,
+        ask: 2650.40,
+        ltp: 2650.20,
+        timestamp: new Date(),
+      });
+      Mt5CommandService.recordQuote(testAccount._id, {
+        symbol: 'ETHUSD',
+        bid: 3140.00,
+        ask: 3140.50,
+        ltp: 3140.25,
+        timestamp: new Date(),
+      });
+    }
   });
 
   afterAll(async () => {
@@ -584,5 +603,149 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
     expect(promptMsg.text).toContain('Close Positions');
     expect(promptMsg.reply_markup.inline_keyboard[0][0].callback_data).toBe('cmd_close_gold');
     expect(promptMsg.reply_markup.inline_keyboard[0][1].callback_data).toBe('cmd_close_eth');
+  });
+
+  // 18. Pre-Trade Guardrail: Max Concurrent Open Positions
+  it('Scenario 18: Guardrail blocks order when max concurrent open positions limit is reached', async () => {
+    // Configure user with maxOpenTrades: 1
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: { 'riskSettings.maxOpenTrades': 1 },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    // Create 1 active open trade
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.handleForexOrderCommand(freshUser, botToken, chatId, 'XAUUSD', ['buy', '0.04']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('MAX OPEN POSITIONS REACHED');
+
+    // Clean up trade
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await User.findByIdAndUpdate(testUser._id, { $set: { 'riskSettings.maxOpenTrades': 5 } });
+  });
+
+  // 19. Pre-Trade Guardrail: Daily Loss Limit
+  it('Scenario 19: Guardrail blocks order when daily loss limit is breached', async () => {
+    // Set daily loss limit to $50
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: { 'riskSettings.maxDailyLoss': 50 },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    // Create a closed losing trade today with -$60 net PnL
+    const losingTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -60 },
+      netPnL: -60,
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.handleForexOrderCommand(freshUser, botToken, chatId, 'XAUUSD', ['buy', '0.04']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('DAILY LOSS LIMIT BREACHED');
+
+    // Clean up
+    await Trade.deleteOne({ _id: losingTrade._id });
+    await User.findByIdAndUpdate(testUser._id, { $set: { 'riskSettings.maxDailyLoss': 5000 } });
+  });
+
+  // 20. Pre-Trade Guardrail: Max Risk Per Trade Exceeded
+  it('Scenario 20: Guardrail blocks order when stop risk exceeds allowed per-trade risk budget', async () => {
+    // Account balance: $10,000, maxRiskPerTradePercent: 0.5% -> $50 max risk
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: { 'riskSettings.maxRiskPerTradePercent': 0.5 },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    // Try to enter 0.50 Lots Gold with 40-pt SL ($200 risk > $50 limit)
+    sentMessages.length = 0;
+    await TelegramAlertService.handleForexOrderCommand(freshUser, botToken, chatId, 'XAUUSD', ['buy', '0.50', 'sl=40']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('RISK PER TRADE EXCEEDED');
+
+    await User.findByIdAndUpdate(testUser._id, { $set: { 'riskSettings.maxRiskPerTradePercent': 2.0 } });
+  });
+
+  // 21. Pre-Trade Guardrail: Stale Market Data
+  it('Scenario 21: Guardrail blocks order when live quote is older than staleDataThresholdSeconds', async () => {
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: { 'liveWatcherSettings.staleDataThresholdSeconds': 5 },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    // Record an expired quote (30s ago)
+    const thirtySecsAgo = new Date(Date.now() - 30000);
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'XAUUSD',
+      bid: 2650.00,
+      ask: 2650.40,
+      ltp: 2650.20,
+      timestamp: thirtySecsAgo,
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.handleForexOrderCommand(freshUser, botToken, chatId, 'XAUUSD', ['buy', '0.04']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('STALE MARKET DATA');
+
+    // Reset quote with current time
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'XAUUSD',
+      bid: 2650.00,
+      ask: 2650.40,
+      ltp: 2650.20,
+      timestamp: new Date(),
+    });
+    await User.findByIdAndUpdate(testUser._id, { $set: { 'liveWatcherSettings.staleDataThresholdSeconds': 10 } });
+  });
+
+  // 22. Pre-Trade Guardrail: Lot Cap
+  it('Scenario 22: Guardrail blocks order when volume exceeds account lot cap', async () => {
+    // Set lotCap: 0.50 on account profile
+    await TradingAccount.findByIdAndUpdate(testAccount._id, {
+      $set: { 'profile.riskRules.lotCap': 0.50 },
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.handleForexOrderCommand(testUser, botToken, chatId, 'XAUUSD', ['buy', '1.00']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('LOT CAP EXCEEDED');
+
+    await TradingAccount.findByIdAndUpdate(testAccount._id, {
+      $set: { 'profile.riskRules.lotCap': 100 },
+    });
   });
 });

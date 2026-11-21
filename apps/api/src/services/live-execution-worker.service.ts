@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { User, Trade, BrokerIntegration } from '../db/models/index.js';
+import { User, Trade, BrokerIntegration, TradingAccount } from '../db/models/index.js';
 import { FyersService } from './fyers.service.js';
 import { LiveWatcherService } from './live-watcher.service.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
@@ -57,17 +57,31 @@ export class LiveExecutionWorker {
    * Executes a single evaluation cycle across all active users with open trades.
    */
   static async runCycle(): Promise<void> {
-    // 1. Find all users who have an active FYERS connection and server-side automation enabled
+    // 1. Find all users across connected brokers (FYERS), active MT5 accounts, or active OPEN trades
     const connectedBrokers = await BrokerIntegration.find({
       broker: 'FYERS',
       status: 'CONNECTED',
     }).lean();
 
-    if (!connectedBrokers || connectedBrokers.length === 0) return;
+    const mt5Accounts = await TradingAccount.find({
+      broker: 'ELEFIN_MT5',
+      status: 'ACTIVE',
+    }).select('userId').lean();
 
-    for (const broker of connectedBrokers) {
-      const user = await User.findById(broker.userId).lean();
+    const openTradeUserIds = await Trade.distinct('userId', { status: 'OPEN' });
+
+    const userIdsSet = new Set<string>();
+    for (const b of connectedBrokers) if (b.userId) userIdsSet.add(b.userId.toString());
+    for (const a of mt5Accounts) if (a.userId) userIdsSet.add(a.userId.toString());
+    for (const u of openTradeUserIds) if (u) userIdsSet.add(u.toString());
+
+    if (userIdsSet.size === 0) return;
+
+    for (const userId of userIdsSet) {
+      const user = await User.findById(userId).lean();
       if (!user) continue;
+
+      const broker = connectedBrokers.find((b) => b.userId?.toString() === userId);
 
       const watcherSettings = user.liveWatcherSettings;
       const isServerWorkerEnabled = watcherSettings?.serverSideExecutionEnabled !== false;
@@ -86,6 +100,7 @@ export class LiveExecutionWorker {
       // Check token expiration warning (30-minute window before expiry)
       const isTokenExpiryAlertActive = watcherSettings?.telegramAlertEvents?.tokenExpiryWarning !== false;
       if (
+        broker &&
         broker.tokenExpiresAt &&
         isTokenExpiryAlertActive &&
         watcherSettings?.telegramAlertsEnabled &&
@@ -202,6 +217,7 @@ export class LiveExecutionWorker {
         hours === 8 &&
         minutes >= 45 &&
         minutes <= 50 &&
+        broker &&
         isMorningCheckActive &&
         watcherSettings?.telegramAlertsEnabled &&
         watcherSettings?.telegramBotToken &&

@@ -2216,7 +2216,7 @@ export function SettingsPage() {
                                     </Typography>
                                   </Box>
                                   <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'text.secondary' }}>
-                                    100 oz / Lot
+                                    100 oz / Lot (Standard Gold Contract)
                                   </Typography>
                                 </Box>
 
@@ -2227,9 +2227,9 @@ export function SettingsPage() {
                                       label="Default Lots"
                                       type="number"
                                       value={goldDefaultLot}
-                                      onChange={(e) => setGoldDefaultLot(Math.max(0.01, Number(e.target.value)))}
-                                      slotProps={{ htmlInput: { step: 0.01, min: 0.01, max: 100 } }}
-                                      helperText="e.g. 0.10 lots"
+                                      onChange={(e) => setGoldDefaultLot(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                      slotProps={{ htmlInput: { step: 'any', min: 0.01, max: 100 } }}
+                                      helperText="e.g. 0.04 or 0.10 lots"
                                       fullWidth
                                     />
                                   </Grid>
@@ -2239,9 +2239,9 @@ export function SettingsPage() {
                                       label="SL Buffer (pts)"
                                       type="number"
                                       value={goldSlPoints}
-                                      onChange={(e) => setGoldSlPoints(Math.max(1, Number(e.target.value)))}
-                                      slotProps={{ htmlInput: { step: 1, min: 1, max: 500 } }}
-                                      helperText={`$${(goldSlPoints * 0.10).toFixed(2)}/oz`}
+                                      onChange={(e) => setGoldSlPoints(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                      slotProps={{ htmlInput: { step: 'any', min: 1, max: 1000 } }}
+                                      helperText={`$${((Number(goldSlPoints) || 0) * 0.10).toFixed(2)}/oz move`}
                                       fullWidth
                                     />
                                   </Grid>
@@ -2251,9 +2251,9 @@ export function SettingsPage() {
                                       label="Target R:R"
                                       type="number"
                                       value={goldRrRatio}
-                                      onChange={(e) => setGoldRrRatio(Math.max(0.5, Number(e.target.value)))}
-                                      slotProps={{ htmlInput: { step: 0.1, min: 0.5, max: 20 } }}
-                                      helperText={`${(goldSlPoints * goldRrRatio).toFixed(0)} pts TP`}
+                                      onChange={(e) => setGoldRrRatio(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                      slotProps={{ htmlInput: { step: 'any', min: 0.1, max: 50 } }}
+                                      helperText={`${((Number(goldSlPoints) || 0) * (Number(goldRrRatio) || 0)).toFixed(0)} pts TP`}
                                       fullWidth
                                     />
                                   </Grid>
@@ -2274,10 +2274,10 @@ export function SettingsPage() {
                                   </Typography>
                                   <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
                                     <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
-                                      Max SL Risk: -${(goldSlPoints * 10 * goldDefaultLot).toFixed(2)} (-${(goldSlPoints * 0.1).toFixed(2)}/oz)
+                                      Max SL Risk: -${((Number(goldSlPoints) || 0) * 10 * (Number(goldDefaultLot) || 0)).toFixed(2)} (-${((Number(goldSlPoints) || 0) * 0.1).toFixed(2)}/oz)
                                     </Typography>
                                     <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main' }}>
-                                      Target Gain: +${(goldSlPoints * goldRrRatio * 10 * goldDefaultLot).toFixed(2)} (+${(goldSlPoints * goldRrRatio * 0.1).toFixed(2)}/oz)
+                                      Target Gain: +${((Number(goldSlPoints) || 0) * (Number(goldRrRatio) || 0) * 10 * (Number(goldDefaultLot) || 0)).toFixed(2)} (+${((Number(goldSlPoints) || 0) * (Number(goldRrRatio) || 0) * 0.1).toFixed(2)}/oz)
                                     </Typography>
                                   </Box>
                                 </Box>
@@ -2333,9 +2333,9 @@ export function SettingsPage() {
                                       label="Default Lots"
                                       type="number"
                                       value={ethDefaultLot}
-                                      onChange={(e) => setEthDefaultLot(Math.max(0.01, Number(e.target.value)))}
-                                      slotProps={{ htmlInput: { step: 0.1, min: 0.01, max: 1000 } }}
-                                      helperText="e.g. 1.00 ETH"
+                                      onChange={(e) => setEthDefaultLot(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                      slotProps={{ htmlInput: { step: 'any', min: 0.01, max: 1000 } }}
+                                      helperText="e.g. 1.00 or 2.00 ETH"
                                       fullWidth
                                     />
                                   </Grid>
@@ -2345,9 +2345,9 @@ export function SettingsPage() {
                                       label="SL Buffer ($)"
                                       type="number"
                                       value={ethSlPrice}
-                                      onChange={(e) => setEthSlPrice(Math.max(1, Number(e.target.value)))}
-                                      slotProps={{ htmlInput: { step: 1, min: 1, max: 500 } }}
-                                      helperText={`$${ethSlPrice.toFixed(0)} stop distance`}
+                                      onChange={(e) => setEthSlPrice(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                      slotProps={{ htmlInput: { step: 'any', min: 1, max: 1000 } }}
+                                      helperText={`$${(Number(ethSlPrice) || 0).toFixed(0)} stop distance`}
                                       fullWidth
                                     />
                                   </Grid>
@@ -2357,9 +2357,9 @@ export function SettingsPage() {
                                       label="Target R:R"
                                       type="number"
                                       value={ethRrRatio}
-                                      onChange={(e) => setEthRrRatio(Math.max(0.5, Number(e.target.value)))}
-                                      slotProps={{ htmlInput: { step: 0.1, min: 0.5, max: 20 } }}
-                                      helperText={`+$${(ethSlPrice * ethRrRatio).toFixed(0)} TP`}
+                                      onChange={(e) => setEthRrRatio(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                      slotProps={{ htmlInput: { step: 'any', min: 0.1, max: 50 } }}
+                                      helperText={`+$${((Number(ethSlPrice) || 0) * (Number(ethRrRatio) || 0)).toFixed(0)} TP`}
                                       fullWidth
                                     />
                                   </Grid>
@@ -2380,10 +2380,10 @@ export function SettingsPage() {
                                   </Typography>
                                   <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
                                     <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
-                                      Max SL Risk: -${(ethSlPrice * ethDefaultLot).toFixed(2)} (-${ethSlPrice.toFixed(0)}/coin)
+                                      Max SL Risk: -${((Number(ethSlPrice) || 0) * (Number(ethDefaultLot) || 0)).toFixed(2)} (-${(Number(ethSlPrice) || 0).toFixed(0)}/coin)
                                     </Typography>
                                     <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main' }}>
-                                      Target Gain: +${(ethSlPrice * ethRrRatio * ethDefaultLot).toFixed(2)} (+${(ethSlPrice * ethRrRatio).toFixed(0)}/coin)
+                                      Target Gain: +${((Number(ethSlPrice) || 0) * (Number(ethRrRatio) || 0) * (Number(ethDefaultLot) || 0)).toFixed(2)} (+${((Number(ethSlPrice) || 0) * (Number(ethRrRatio) || 0)).toFixed(0)}/coin)
                                     </Typography>
                                   </Box>
                                 </Box>
@@ -2423,13 +2423,13 @@ export function SettingsPage() {
                                     label="Default Dollar Risk ($)"
                                     type="number"
                                     value={defaultDollarRisk}
-                                    onChange={(e) => setDefaultDollarRisk(Math.max(5, Number(e.target.value)))}
-                                    slotProps={{ htmlInput: { step: 5, min: 5, max: 100000 } }}
+                                    onChange={(e) => setDefaultDollarRisk(e.target.value === '' ? ('' as any) : Number(e.target.value))}
+                                    slotProps={{ htmlInput: { step: 'any', min: 1, max: 100000 } }}
                                     sx={{ width: 170 }}
                                   />
                                   <Box sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
-                                    <div>Gold: <strong>{(defaultDollarRisk / (goldSlPoints * 10)).toFixed(2)} Lots</strong> (@ {goldSlPoints} pts)</div>
-                                    <div>ETH: <strong>{(defaultDollarRisk / ethSlPrice).toFixed(2)} ETH</strong> (@ ${ethSlPrice})</div>
+                                    <div>Gold: <strong>{(((Number(defaultDollarRisk) || 0) / (((Number(goldSlPoints) || 35) * 10))) || 0).toFixed(2)} Lots</strong> (@ {goldSlPoints} pts)</div>
+                                    <div>ETH: <strong>{(((Number(defaultDollarRisk) || 0) / (Number(ethSlPrice) || 30)) || 0).toFixed(2)} ETH</strong> (@ ${ethSlPrice})</div>
                                   </Box>
                                 </Box>
                               </Box>

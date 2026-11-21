@@ -58,6 +58,66 @@ export interface ITelegramInlineButton {
   url?: string;
 }
 
+export interface IForexPresets {
+  gold: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPoints: number;
+    defaultRr: number;
+  };
+  eth: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPrice: number;
+    defaultRr: number;
+  };
+}
+
+export const DEFAULT_FOREX_PRESETS: IForexPresets = {
+  gold: {
+    symbol: 'XAUUSD',
+    defaultLot: 0.10,
+    defaultSlPoints: 35,
+    defaultRr: 3,
+  },
+  eth: {
+    symbol: 'ETHUSD',
+    defaultLot: 1.0,
+    defaultSlPrice: 30,
+    defaultRr: 3,
+  },
+};
+
+export interface IForexPresets {
+  gold: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPoints: number;
+    defaultRr: number;
+  };
+  eth: {
+    symbol: string;
+    defaultLot: number;
+    defaultSlPrice: number;
+    defaultRr: number;
+  };
+}
+
+export const DEFAULT_FOREX_PRESETS: IForexPresets = {
+  gold: {
+    symbol: 'XAUUSD',
+    defaultLot: 0.10,
+    defaultSlPoints: 35,
+    defaultRr: 2.0,
+  },
+  eth: {
+    symbol: 'ETHUSD',
+    defaultLot: 1.0,
+    defaultSlPrice: 30,
+    defaultRr: 2.5,
+  },
+};
+
 export interface ITelegramAlertPayload {
   botToken: string;
   chatId: string;
@@ -283,6 +343,37 @@ export class TelegramAlertService {
     } catch (err: any) {
       console.warn(`[TelegramAlertService] editMessageText network error:`, err.message);
       return null;
+    }
+  }
+
+  /**
+   * Low-level Telegram pinChatMessage API caller.
+   */
+  static async pinChatMessage(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    messageId: number,
+    disableNotification: boolean = true
+  ): Promise<boolean> {
+    if (!botToken || !messageId) return false;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return false;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/pinChatMessage`;
+    const payload = {
+      chat_id: chatId,
+      message_id: messageId,
+      disable_notification: disableNotification,
+    };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json()) as any;
+      return Boolean(json && json.ok);
+    } catch {
+      return false;
     }
   }
 
@@ -1193,6 +1284,51 @@ export class TelegramAlertService {
       await this.answerCallbackQuery(botToken, cq.id, '✅ Acknowledged! Trade safe.', true);
       return;
     }
+    if (data.startsWith('order:')) {
+      const parts = data.split(':');
+      const [, symbol, side, volumeStr, slPointsStr, tpPointsStr] = parts;
+      const volume = parseFloat(volumeStr) || 0.10;
+      const slPoints = parseFloat(slPointsStr) || 35;
+      const tpPoints = parseFloat(tpPointsStr) || 70;
+      await this.answerCallbackQuery(botToken, cq.id, `⚡ Sending ${side} ${volume} ${symbol} to MT5...`);
+      await this.executeTelegramOrder(user, botToken, chatId, symbol, side as any, volume, slPoints, tpPoints);
+      return;
+    }
+    if (data === 'cmd_gold_menu') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading Gold Menu...');
+      await this.handleForexOrderCommand(user, botToken, chatId, 'XAUUSD', []);
+      return;
+    }
+    if (data === 'cmd_eth_menu') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading ETH Menu...');
+      await this.handleForexOrderCommand(user, botToken, chatId, 'ETHUSD', []);
+      return;
+    }
+    if (data === 'cmd_close_gold') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Closing Gold positions on MT5...');
+      await this.handleCloseSymbolPositions(user, botToken, chatId, 'XAUUSD');
+      return;
+    }
+    if (data === 'cmd_close_eth') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Closing ETH positions on MT5...');
+      await this.handleCloseSymbolPositions(user, botToken, chatId, 'ETHUSD');
+      return;
+    }
+    if (data === 'cmd_lock_be_all') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Locking Breakeven on all positions...');
+      await this.handleLockBeAll(user, botToken, chatId);
+      return;
+    }
+    if (data === 'cmd_pin_cockpit') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Pinning Live Cockpit...');
+      await this.handlePinCockpitCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'cmd_cockpit') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Refreshing Cockpit...');
+      await this.handleCockpitCommand(user, botToken, chatId);
+      return;
+    }
 
     // Parse structured callback format: x:<tradeId>:<actionCode>:<cardVersion>:<renderLtp>
     if (!data.startsWith('x:')) {
@@ -2025,10 +2161,14 @@ export class TelegramAlertService {
           chatId,
           `👋 <b>SetupMint Terminal Commands</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `• <b>/gold [buy|sell] [vol]</b> — 1-tap Gold trade with preset SL & TP (e.g. <code>/gold buy 0.10</code>)\n` +
+          `• <b>/eth [buy|sell] [vol]</b> — 1-tap ETH trade with preset SL & TP (e.g. <code>/eth buy 1.0</code>)\n` +
+          `• <b>/trade</b> or <b>/cockpit</b> — Full interactive 1-tap execution grid\n` +
+          `• <b>/risk &lt;gold|eth&gt; &lt;$amt&gt;</b> — Auto-calculate lot size from dollar risk\n` +
+          `• <b>/pin</b> — Pin live price & positions header to top of chat\n` +
           `• <b>/price [symbol]</b> — Live real-time market quote & spread (e.g. <code>/price XAUUSD</code>)\n` +
           `• <b>/pnl</b> — Live floating PnL, open R-multiple & day PnL\n` +
           `• <b>/trades</b> — List active open trades with live charts & 1-tap Exit\n` +
-          `• <b>/risk</b> — Prop firm drawdown gauge, daily loss runway & Elefin guardrails\n` +
           `• <b>/sl &lt;price&gt;</b> — Set or trail Stop Loss directly (e.g. <code>/sl 2735.50</code> or reply with price)\n` +
           `• <b>/chart [timeframe]</b> — Instant live candlestick chart (1m, 5m, 15m, 1h)\n` +
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
@@ -2042,6 +2182,31 @@ export class TelegramAlertService {
         );
         break;
 
+      case '/gold':
+      case '/xau':
+      case 'gold':
+      case 'xau':
+        await this.handleForexOrderCommand(user, botToken, chatId, 'XAUUSD', args);
+        break;
+
+      case '/eth':
+      case '/ethereum':
+      case 'eth':
+        await this.handleForexOrderCommand(user, botToken, chatId, 'ETHUSD', args);
+        break;
+
+      case '/trade':
+      case '/cockpit':
+      case 'trade':
+      case 'cockpit':
+        await this.handleCockpitCommand(user, botToken, chatId);
+        break;
+
+      case '/pin':
+      case 'pin':
+        await this.handlePinCockpitCommand(user, botToken, chatId);
+        break;
+
       case '/price':
       case '/quote':
       case 'price':
@@ -2052,7 +2217,11 @@ export class TelegramAlertService {
       case '/risk':
       case '/prop':
       case '/drawdown':
-        await this.handleRiskCommand(user, botToken, chatId);
+        if (args.length > 0) {
+          await this.handleRiskCalculatorCommand(user, botToken, chatId, args);
+        } else {
+          await this.handleRiskCommand(user, botToken, chatId);
+        }
         break;
 
       case '/sl':
@@ -3624,7 +3793,8 @@ export class TelegramAlertService {
         }
       }
     } else if (specifiedSymbol) {
-      tradeQuery.symbol = specifiedSymbol;
+      const cleanSpecified = specifiedSymbol === 'GOLD' || specifiedSymbol === 'XAU' ? 'XAUUSD' : (specifiedSymbol === 'ETH' || specifiedSymbol === 'ETHEREUM' ? 'ETHUSD' : specifiedSymbol);
+      tradeQuery.symbol = new RegExp(cleanSpecified, 'i');
     }
 
     let matchingTrades = await Trade.find(tradeQuery).sort({ entryTime: -1 });
@@ -3666,7 +3836,8 @@ export class TelegramAlertService {
     const trade = matchingTrades[0];
     const isLong = trade.direction === 'LONG';
     const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
-    const currentLtp = (trade as any).currentLtp || trade.calculated?.liveMfeSummary?.peakLtp || trade.simpleExecution?.entryPrice || 0;
+    const mtQuote = trade.symbol ? Mt5CommandService.getLiveQuote(trade.symbol) : null;
+    const currentLtp = mtQuote?.ltp || (trade as any).currentLtp || trade.calculated?.liveMfeSummary?.peakLtp || trade.simpleExecution?.entryPrice || 0;
 
     if (isLong && currentLtp > 0 && targetPrice >= currentLtp) {
       await this.sendMessage(
@@ -3756,6 +3927,645 @@ export class TelegramAlertService {
     ];
 
     await this.sendMessage(botToken, chatId, card, buttons);
+  }
+
+  /**
+   * Resolves the primary MT5 / Elefin trading account for a user.
+   */
+  static async resolveMt5Account(userId: string | mongoose.Types.ObjectId): Promise<any> {
+    const acc = await TradingAccount.findOne({
+      userId,
+      status: 'ACTIVE',
+      $or: [
+        { broker: /mt5|elefin/i },
+        { name: /mt5|elefin/i },
+        { 'profile.executionAdapterKey': 'ELEFIN_MT5' },
+      ],
+    });
+    if (acc) return acc;
+    const fallback = await TradingAccount.findOne({ userId, status: 'ACTIVE' });
+    if (!fallback) {
+      throw new Error('No active trading account found. Please configure an account in SetupMint.');
+    }
+    return fallback;
+  }
+
+  /**
+   * Executes a direct MT5 order triggered from a Telegram button callback.
+   */
+  static async executeTelegramOrder(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    symbol: string,
+    side: 'BUY' | 'SELL',
+    volume: number,
+    slPoints: number,
+    tpPoints: number
+  ): Promise<void> {
+    if (!botToken) return;
+
+    try {
+      const account = await this.resolveMt5Account(user._id);
+      const isGold = symbol.includes('XAU') || symbol === 'GOLD';
+      const cleanSym = isGold ? 'XAUUSD' : (symbol.includes('ETH') ? 'ETHUSD' : symbol.toUpperCase());
+
+      // Fetch live price
+      let ltp = 0;
+      const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
+      if (mt5Quote && mt5Quote.ltp > 0) {
+        ltp = mt5Quote.ltp;
+      }
+      if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(cleanSym)) {
+        try {
+          const quotes = await GlobalCfdCandleProvider.getLiveQuotes([cleanSym]);
+          const gq = quotes.get(cleanSym);
+          if (gq && gq.ltp > 0) ltp = gq.ltp;
+        } catch {}
+      }
+      if (ltp === 0) {
+        const recentTrade = await Trade.findOne({ userId: user._id, symbol: new RegExp(cleanSym, 'i') }).sort({ createdAt: -1 });
+        ltp = recentTrade?.simpleExecution?.entryPrice || (isGold ? 2650 : 3100);
+      }
+
+      const slDist = isGold ? slPoints * 0.10 : slPoints;
+      const tpDist = isGold ? tpPoints * 0.10 : tpPoints;
+
+      const slPrice = side === 'BUY' ? ltp - slDist : ltp + slDist;
+      const tpPrice = tpDist > 0 ? (side === 'BUY' ? ltp + tpDist : ltp - tpDist) : 0;
+
+      await Mt5CommandService.queueOpenOrder({
+        userId: user._id,
+        accountId: account._id,
+        symbol: cleanSym,
+        side,
+        volume,
+        stopLoss: Number(slPrice.toFixed(2)),
+        takeProfit: tpPrice > 0 ? Number(tpPrice.toFixed(2)) : undefined,
+        comment: `TG-${cleanSym}`,
+      });
+
+      const estRisk = isGold ? (slPoints * 10 * volume) : (slDist * volume);
+      const estReward = tpDist > 0 ? (isGold ? (tpPoints * 10 * volume) : (tpDist * volume)) : 0;
+
+      const confirmText =
+        `⚡ <b>MT5 ORDER QUEUED ON BRIDGE</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${cleanSym}\n` +
+        `Side     : ${side}\n` +
+        `Volume   : ${volume.toFixed(2)} Lots\n` +
+        `Est. Fill: $${ltp.toFixed(2)}\n` +
+        `Stop Loss: $${slPrice.toFixed(2)} (-$${estRisk.toFixed(2)})\n` +
+        (tpPrice > 0 ? `Target   : $${tpPrice.toFixed(2)} (+$${estReward.toFixed(2)})\n` : '') +
+        `Account  : ${account.name || 'MT5'}\n` +
+        `Status   : QUEUED (Pending 1s EA poll)\n` +
+        `</pre>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<i>Order will execute on the connected MT5 terminal.</i>`;
+
+      const buttons: ITelegramInlineButton[][] = [
+        [
+          { text: '🔄 Check Price', callback_data: `price_${cleanSym}` },
+          { text: `🚨 Close All ${cleanSym}`, callback_data: isGold ? 'cmd_close_gold' : 'cmd_close_eth' },
+        ],
+        [
+          { text: '📊 View Open Trades', callback_data: 'cmd_trades' },
+          { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+        ],
+      ];
+
+      await this.sendMessage(botToken, chatId, confirmText, buttons);
+    } catch (err: any) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `❌ <b>Order Execution Failed:</b> ${err.message}`
+      );
+    }
+  }
+
+  /**
+   * Handles /gold (and /xau) or /eth (and /ethereum) orders and menus.
+   */
+  static async handleForexOrderCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    defaultSymbol: 'XAUUSD' | 'ETHUSD',
+    args: string[] = []
+  ): Promise<void> {
+    if (!botToken) return;
+
+    const isGold = defaultSymbol === 'XAUUSD';
+    const cleanSym = defaultSymbol;
+
+    // Subcommand: /gold close or /eth close
+    if (args.length > 0 && args[0].toLowerCase() === 'close') {
+      await this.handleCloseSymbolPositions(user, botToken, chatId, cleanSym);
+      return;
+    }
+
+    // Subcommand: /gold sl <val> or /eth sl <val>
+    if (args.length > 1 && args[0].toLowerCase() === 'sl') {
+      await this.handleCustomStopLossCommand(user, botToken, chatId, [cleanSym, args[1]]);
+      return;
+    }
+
+    // Check if user specified BUY or SELL
+    const actionArg = args[0]?.toLowerCase();
+    const isBuy = actionArg === 'buy' || actionArg === 'b' || actionArg === 'long';
+    const isSell = actionArg === 'sell' || actionArg === 's' || actionArg === 'short';
+
+    if (isBuy || isSell) {
+      const side: 'BUY' | 'SELL' = isBuy ? 'BUY' : 'SELL';
+
+      let volume = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultLot : DEFAULT_FOREX_PRESETS.eth.defaultLot;
+      let slPoints = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
+      let tpPoints = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints * DEFAULT_FOREX_PRESETS.gold.defaultRr : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice * DEFAULT_FOREX_PRESETS.eth.defaultRr;
+
+      let explicitSlPrice: number | undefined;
+      let explicitTpPrice: number | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const a = args[i].toLowerCase();
+        if (/^\d+(\.\d+)?$/.test(a)) {
+          const v = parseFloat(a);
+          if (v > 0) volume = v;
+        } else if (a.startsWith('vol=') || a.startsWith('volume=') || a.startsWith('lot=') || a.startsWith('lots=')) {
+          const v = parseFloat(a.split('=')[1]);
+          if (v > 0) volume = v;
+        } else if (a.startsWith('sl=') || a.startsWith('stop=')) {
+          const valStr = a.split('=')[1].replace('pts', '').replace('pips', '');
+          const val = parseFloat(valStr);
+          if (val > 0) {
+            if (val > 100) {
+              explicitSlPrice = val;
+            } else {
+              slPoints = val;
+            }
+          }
+        } else if (a.startsWith('tp=') || a.startsWith('target=')) {
+          const valStr = a.split('=')[1].replace('pts', '').replace('pips', '');
+          const val = parseFloat(valStr);
+          if (val > 0) {
+            if (val > 100) {
+              explicitTpPrice = val;
+            } else {
+              tpPoints = val;
+            }
+          }
+        }
+      }
+
+      // Fetch live price
+      let ltp = 0;
+      const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
+      if (mt5Quote && mt5Quote.ltp > 0) ltp = mt5Quote.ltp;
+      if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(cleanSym)) {
+        try {
+          const quotes = await GlobalCfdCandleProvider.getLiveQuotes([cleanSym]);
+          const gq = quotes.get(cleanSym);
+          if (gq && gq.ltp > 0) ltp = gq.ltp;
+        } catch {}
+      }
+      if (ltp === 0) {
+        const recent = await Trade.findOne({ userId: user._id, symbol: new RegExp(cleanSym, 'i') }).sort({ createdAt: -1 });
+        ltp = recent?.simpleExecution?.entryPrice || (isGold ? 2650 : 3100);
+      }
+
+      const slDist = isGold ? slPoints * 0.10 : slPoints;
+      const tpDist = isGold ? tpPoints * 0.10 : tpPoints;
+
+      const finalSl = explicitSlPrice || (side === 'BUY' ? ltp - slDist : ltp + slDist);
+      const finalTp = explicitTpPrice || (side === 'BUY' ? ltp + tpDist : ltp - tpDist);
+
+      const account = await this.resolveMt5Account(user._id);
+
+      await Mt5CommandService.queueOpenOrder({
+        userId: user._id,
+        accountId: account._id,
+        symbol: cleanSym,
+        side,
+        volume,
+        stopLoss: Number(finalSl.toFixed(2)),
+        takeProfit: Number(finalTp.toFixed(2)),
+        comment: `TG-${cleanSym}`,
+      });
+
+      const estRisk = isGold ? (Math.abs(ltp - finalSl) * 100 * volume) : (Math.abs(ltp - finalSl) * volume);
+      const estReward = Math.abs(finalTp - ltp) * (isGold ? 100 : 1) * volume;
+
+      const text =
+        `⚡ <b>MT5 ORDER QUEUED ON BRIDGE</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol   : ${cleanSym}\n` +
+        `Side     : ${side}\n` +
+        `Volume   : ${volume.toFixed(2)} Lots\n` +
+        `Est. Fill: $${ltp.toFixed(2)}\n` +
+        `Stop Loss: $${finalSl.toFixed(2)} (-$${estRisk.toFixed(2)})\n` +
+        `Target   : $${finalTp.toFixed(2)} (+$${estReward.toFixed(2)})\n` +
+        `Account  : ${account.name || 'MT5'}\n` +
+        `Status   : QUEUED (Pending 1s EA poll)\n` +
+        `</pre>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<i>Execution will confirm momentarily on MT5.</i>`;
+
+      const buttons: ITelegramInlineButton[][] = [
+        [
+          { text: '🔄 Refresh Price', callback_data: `price_${cleanSym}` },
+          { text: `🚨 Close All ${cleanSym}`, callback_data: isGold ? 'cmd_close_gold' : 'cmd_close_eth' },
+        ],
+        [
+          { text: '📊 Open Trades', callback_data: 'cmd_trades' },
+          { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+        ],
+      ];
+
+      await this.sendMessage(botToken, chatId, text, buttons);
+      return;
+    }
+
+    // No buy/sell specified: show dedicated quick menu
+    let ltp = 0;
+    let bid = 0;
+    let ask = 0;
+    const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
+    if (mt5Quote && mt5Quote.ltp > 0) {
+      ltp = mt5Quote.ltp;
+      bid = mt5Quote.bid || ltp;
+      ask = mt5Quote.ask || ltp;
+    }
+    if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(cleanSym)) {
+      try {
+        const quotes = await GlobalCfdCandleProvider.getLiveQuotes([cleanSym]);
+        const gq = quotes.get(cleanSym);
+        if (gq && gq.ltp > 0) {
+          ltp = gq.ltp;
+          bid = (gq as any).bid || (ltp - 0.20);
+          ask = (gq as any).ask || (ltp + 0.20);
+        }
+      } catch {}
+    }
+    if (ltp === 0) ltp = isGold ? 2650 : 3100;
+
+    const spreadStr = bid > 0 && ask > 0 ? `$${(ask - bid).toFixed(2)}` : '$0.35';
+
+    // Find active open trades for this symbol
+    const openTrades = await Trade.find({
+      userId: user._id,
+      status: 'OPEN',
+      symbol: new RegExp(cleanSym, 'i'),
+    }).lean();
+
+    let openSummary = 'None (Flat)';
+    if (openTrades.length > 0) {
+      openSummary = openTrades
+        .map((t: any) => {
+          const entry = t.simpleExecution?.entryPrice || t.calculated?.averageEntryPrice || 0;
+          const pnl = t.calculated?.floatingNetPnL ?? t.floatingNetPnL ?? 0;
+          const sign = pnl >= 0 ? '+' : '';
+          return `• ${t.direction} ${t.simpleExecution?.quantity || 1} lots @ $${entry} (${sign}$${pnl.toFixed(2)})`;
+        })
+        .join('\n');
+    }
+
+    const defaultLot = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultLot : DEFAULT_FOREX_PRESETS.eth.defaultLot;
+    const defaultSl = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
+    const defaultTp = isGold ? defaultSl * DEFAULT_FOREX_PRESETS.gold.defaultRr : defaultSl * DEFAULT_FOREX_PRESETS.eth.defaultRr;
+
+    const menuText =
+      `🪙 <b>${cleanSym} • Quick Trading Cockpit</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `LTP       : $${ltp.toFixed(2)}\n` +
+      `Spread    : ${spreadStr}\n` +
+      `Preset Lot: ${defaultLot} Lots\n` +
+      `Preset SL : ${defaultSl} pts ($${(isGold ? defaultSl * 0.10 : defaultSl).toFixed(2)})\n` +
+      `Preset TP : ${defaultTp} pts ($${(isGold ? defaultTp * 0.10 : defaultTp).toFixed(2)})\n` +
+      `</pre>\n` +
+      `<b>Active Positions:</b>\n${openSummary}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<i>Tap below for 1-click execution:</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        {
+          text: `🟢 BUY ${cleanSym} (${defaultLot})`,
+          callback_data: `order:${cleanSym}:BUY:${defaultLot}:${defaultSl}:${defaultTp}`,
+        },
+        {
+          text: `🔴 SELL ${cleanSym} (${defaultLot})`,
+          callback_data: `order:${cleanSym}:SELL:${defaultLot}:${defaultSl}:${defaultTp}`,
+        },
+      ],
+      [
+        { text: '🛡️ Lock Breakeven', callback_data: 'cmd_lock_be_all' },
+        { text: `🚨 Close All ${cleanSym}`, callback_data: isGold ? 'cmd_close_gold' : 'cmd_close_eth' },
+      ],
+      [
+        { text: '💵 Risk $50 Calculator', callback_data: `price_${cleanSym}` },
+        { text: '📌 Pin Live Cockpit', callback_data: 'cmd_pin_cockpit' },
+      ],
+    ];
+
+    await this.sendMessage(botToken, chatId, menuText, buttons);
+  }
+
+  /**
+   * Calculates lot size based on dollar risk and presents 1-tap execution buttons.
+   * Usage: /risk gold 50 or /risk eth 100 or /risk 50
+   */
+  static async handleRiskCalculatorCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[] = []
+  ): Promise<void> {
+    if (!botToken) return;
+
+    let symbol = 'XAUUSD';
+    let dollarRisk = 50;
+    let customSlPoints: number | undefined;
+
+    for (const a of args) {
+      const lower = a.toLowerCase();
+      if (lower === 'gold' || lower === 'xau' || lower === 'xauusd') {
+        symbol = 'XAUUSD';
+      } else if (lower === 'eth' || lower === 'ethereum' || lower === 'ethusd') {
+        symbol = 'ETHUSD';
+      } else if (lower.startsWith('sl=') || lower.startsWith('stop=')) {
+        const slVal = parseFloat(lower.split('=')[1].replace('pts', ''));
+        if (slVal > 0) customSlPoints = slVal;
+      } else if (/^\$?\d+(\.\d+)?$/.test(lower)) {
+        const num = parseFloat(lower.replace('$', ''));
+        if (num > 0) dollarRisk = num;
+      }
+    }
+
+    const isGold = symbol === 'XAUUSD';
+    const slPoints = customSlPoints || (isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice);
+    const tpPoints = isGold ? slPoints * DEFAULT_FOREX_PRESETS.gold.defaultRr : slPoints * DEFAULT_FOREX_PRESETS.eth.defaultRr;
+
+    let lots = isGold ? dollarRisk / (slPoints * 10) : dollarRisk / slPoints;
+    lots = Math.max(0.01, Number(lots.toFixed(2)));
+
+    // Fetch live quote
+    let ltp = 0;
+    const mt5Quote = Mt5CommandService.getLiveQuote(symbol);
+    if (mt5Quote && mt5Quote.ltp > 0) ltp = mt5Quote.ltp;
+    if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(symbol)) {
+      try {
+        const quotes = await GlobalCfdCandleProvider.getLiveQuotes([symbol]);
+        const gq = quotes.get(symbol);
+        if (gq && gq.ltp > 0) ltp = gq.ltp;
+      } catch {}
+    }
+    if (ltp === 0) ltp = isGold ? 2650 : 3100;
+
+    const slDist = isGold ? slPoints * 0.10 : slPoints;
+    const tpDist = isGold ? tpPoints * 0.10 : tpPoints;
+
+    const text =
+      `📐 <b>${symbol} • Dollar-Risk Position Calculator</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Risk Budget  : $${dollarRisk.toFixed(2)}\n` +
+      `Stop Buffer  : ${slPoints} points ($${slDist.toFixed(2)})\n` +
+      `Calculated   : ${lots.toFixed(2)} Lots\n` +
+      `Est. Fill    : $${ltp.toFixed(2)}\n` +
+      `Target (1:2) : +${tpPoints} points ($${tpDist.toFixed(2)})\n` +
+      `</pre>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<i>Tap below to enter with calculated risk:</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        {
+          text: `🟢 BUY ${lots.toFixed(2)} ${symbol}`,
+          callback_data: `order:${symbol}:BUY:${lots}:${slPoints}:${tpPoints}`,
+        },
+        {
+          text: `🔴 SELL ${lots.toFixed(2)} ${symbol}`,
+          callback_data: `order:${symbol}:SELL:${lots}:${slPoints}:${tpPoints}`,
+        },
+      ],
+      [
+        { text: '🔄 Refresh Price', callback_data: `price_${symbol}` },
+        { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+      ],
+    ];
+
+    await this.sendMessage(botToken, chatId, text, buttons);
+  }
+
+  /**
+   * Generates the multi-asset live cockpit card for Gold & ETH.
+   */
+  static async handleCockpitCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<any> {
+    if (!botToken) return null;
+
+    let goldLtp = 2650;
+    let goldSpread = '$0.35';
+    let ethLtp = 3100;
+    let ethSpread = '$0.50';
+
+    const gQuote = Mt5CommandService.getLiveQuote('XAUUSD');
+    if (gQuote && gQuote.ltp > 0) {
+      goldLtp = gQuote.ltp;
+      if (gQuote.ask && gQuote.bid) goldSpread = `$${(gQuote.ask - gQuote.bid).toFixed(2)}`;
+    } else if (GlobalCfdCandleProvider.isSupportedGlobalSymbol('XAUUSD')) {
+      try {
+        const qMap = await GlobalCfdCandleProvider.getLiveQuotes(['XAUUSD']);
+        const gq = qMap.get('XAUUSD');
+        if (gq && gq.ltp > 0) {
+          goldLtp = gq.ltp;
+          if ((gq as any).ask && (gq as any).bid) goldSpread = `$${((gq as any).ask - (gq as any).bid).toFixed(2)}`;
+        }
+      } catch {}
+    }
+
+    const eQuote = Mt5CommandService.getLiveQuote('ETHUSD');
+    if (eQuote && eQuote.ltp > 0) {
+      ethLtp = eQuote.ltp;
+      if (eQuote.ask && eQuote.bid) ethSpread = `$${(eQuote.ask - eQuote.bid).toFixed(2)}`;
+    } else if (GlobalCfdCandleProvider.isSupportedGlobalSymbol('ETHUSD')) {
+      try {
+        const qMap = await GlobalCfdCandleProvider.getLiveQuotes(['ETHUSD']);
+        const eq = qMap.get('ETHUSD');
+        if (eq && eq.ltp > 0) {
+          ethLtp = eq.ltp;
+          if ((eq as any).ask && (eq as any).bid) ethSpread = `$${((eq as any).ask - (eq as any).bid).toFixed(2)}`;
+        }
+      } catch {}
+    }
+
+    const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).lean();
+    let totalFloat = 0;
+    let posLines = 'No open positions (Flat)';
+    if (openTrades.length > 0) {
+      posLines = openTrades
+        .map((t: any) => {
+          const pnl = t.calculated?.floatingNetPnL ?? t.floatingNetPnL ?? 0;
+          totalFloat += pnl;
+          const sign = pnl >= 0 ? '+' : '';
+          return `• ${t.symbol} ${t.direction} ${t.simpleExecution?.quantity || 1}L: ${sign}$${pnl.toFixed(2)}`;
+        })
+        .join('\n');
+    }
+
+    const floatSign = totalFloat >= 0 ? '+' : '';
+
+    const text =
+      `📌 <b>LIVE FOREX COCKPIT · XAUUSD & ETHUSD</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `🟡 XAUUSD : $${goldLtp.toFixed(2)}  (Spread ${goldSpread})\n` +
+      `🔷 ETHUSD : $${ethLtp.toFixed(2)}  (Spread ${ethSpread})\n` +
+      `Floating  : ${floatSign}$${totalFloat.toFixed(2)}\n` +
+      `</pre>\n` +
+      `<b>Active Positions (${openTrades.length}):</b>\n${posLines}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<i>1-Tap Preset Execution:</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        { text: '🟡 BUY Gold (0.10)', callback_data: `order:XAUUSD:BUY:0.10:35:70` },
+        { text: '🟡 SELL Gold (0.10)', callback_data: `order:XAUUSD:SELL:0.10:35:70` },
+      ],
+      [
+        { text: '🔷 BUY ETH (1.00)', callback_data: `order:ETHUSD:BUY:1.00:30:75` },
+        { text: '🔷 SELL ETH (1.00)', callback_data: `order:ETHUSD:SELL:1.00:30:75` },
+      ],
+      [
+        { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },
+        { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+      ],
+      [
+        { text: '🚨 Close Gold', callback_data: 'cmd_close_gold' },
+        { text: '🚨 Close ETH', callback_data: 'cmd_close_eth' },
+      ],
+    ];
+
+    return await this.sendMessage(botToken, chatId, text, buttons);
+  }
+
+  /**
+   * Pins the live cockpit card to the top of the Telegram chat.
+   */
+  static async handlePinCockpitCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<void> {
+    if (!botToken) return;
+    const sentMsg = await this.handleCockpitCommand(user, botToken, chatId);
+    if (sentMsg && sentMsg.message_id) {
+      const pinned = await this.pinChatMessage(botToken, chatId, sentMsg.message_id, true);
+      if (pinned) {
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `📌 <b>Live Cockpit Pinned!</b>\n\nLive Gold & ETH telemetry is now anchored at the top of this chat.`
+        );
+      }
+    }
+  }
+
+  /**
+   * Closes all active open positions for a specific symbol on MT5.
+   */
+  static async handleCloseSymbolPositions(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    symbol: string
+  ): Promise<void> {
+    if (!botToken) return;
+    const openTrades = await Trade.find({
+      userId: user._id,
+      status: 'OPEN',
+      symbol: new RegExp(symbol, 'i'),
+    });
+
+    if (openTrades.length === 0) {
+      await this.sendMessage(botToken, chatId, `ℹ️ No active open positions found for <b>${symbol}</b>.`);
+      return;
+    }
+
+    let closedCount = 0;
+    for (const trade of openTrades) {
+      const ticket = Mt5CommandService.extractTicket(trade);
+      if (ticket) {
+        await Mt5CommandService.queueClosePosition({
+          userId: user._id,
+          accountId: trade.accountId,
+          tradeId: trade._id,
+          ticket,
+          volume: trade.calculated?.openQuantity ?? trade.simpleExecution?.quantity ?? 1,
+        });
+        closedCount++;
+      }
+    }
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🚨 <b>Close Command Dispatched for ${symbol}</b>\n\nQueued exit for <b>${closedCount}</b> active MT5 position(s).`
+    );
+  }
+
+  /**
+   * Moves Stop Loss to exact entry price for all open positions.
+   */
+  static async handleLockBeAll(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<void> {
+    if (!botToken) return;
+    const openTrades = await Trade.find({
+      userId: user._id,
+      status: 'OPEN',
+    });
+
+    if (openTrades.length === 0) {
+      await this.sendMessage(botToken, chatId, `ℹ️ No active open positions to lock breakeven.`);
+      return;
+    }
+
+    let lockedCount = 0;
+    for (const trade of openTrades) {
+      const ticket = Mt5CommandService.extractTicket(trade);
+      const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
+      if (ticket && entryPrice > 0) {
+        await Mt5CommandService.queueModifySl({
+          userId: user._id,
+          accountId: trade.accountId,
+          tradeId: trade._id,
+          ticket,
+          stopLoss: entryPrice,
+        });
+        trade.risk = {
+          ...(trade.risk || {}),
+          initialStopLoss: trade.risk?.initialStopLoss || entryPrice,
+          currentStopLoss: entryPrice,
+        };
+        await trade.save();
+        lockedCount++;
+      }
+    }
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🛡️ <b>Breakeven Locked</b>\n\nDispatched Stop Loss to entry price for <b>${lockedCount}</b> active MT5 position(s).`
+    );
   }
 
   /**

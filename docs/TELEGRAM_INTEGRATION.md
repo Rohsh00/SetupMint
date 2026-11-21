@@ -216,10 +216,17 @@ Traders can send standard slash commands directly in their Telegram chat:
 | Command | Action & Response Card | Available Interactive Buttons |
 | :--- | :--- | :--- |
 | **`/start`** or **`/help`** | Displays available bot commands and the authenticated account profile name. | None |
+| **`/gold`** or **`/xau`** | 1-tap Gold trade execution with preset SL & TP, or view live Gold quote and active positions. Supports `/gold buy [vol] [sl=...] [tp=...]`, `/gold sell`, `/gold close`. | `🟢 BUY Gold (0.10)`, `🔴 SELL Gold (0.10)`, `🛡️ Lock Breakeven`, `🚨 Close All Gold` |
+| **`/eth`** or **`/ethereum`** | 1-tap ETH trade execution with preset SL & TP, or view live ETH quote and active positions. Supports `/eth buy [vol] [sl=...] [tp=...]`, `/eth sell`, `/eth close`. | `🟢 BUY ETH (1.00)`, `🔴 SELL ETH (1.00)`, `🛡️ Lock Breakeven`, `🚨 Close All ETH` |
+| **`/trade`** or **`/cockpit`** | Multi-asset interactive cockpit with live Bid/Ask & Spreads for Gold & ETH, active floating P&L, and 1-tap execution buttons. | `🟡 BUY Gold`, `🟡 SELL Gold`, `🔷 BUY ETH`, `🔷 SELL ETH`, `🛡️ Lock All BE`, `📌 Pin Cockpit` |
+| **`/pin`** | Pinned Live Price & Position Header anchored to the top of Telegram chat via `pinChatMessage`. | `⚡ Refresh`, `🛡️ Lock All BE`, `🚨 Close All` |
+| **`/risk <symbol> <$amt>`** | Automatic lot sizing based on Dollar risk budget. E.g. `/risk gold 50` computes 0.14 lots for Gold (35 pt SL) and renders 1-tap Buy/Sell buttons. | `🟢 BUY <lots> <symbol>`, `🔴 SELL <lots> <symbol>` |
+| **`/sl <price>`** or bare price | Instantly updates Stop Loss on MT5 terminal. E.g. typing `2648.50` moves active position Stop Loss. | `🛡️ Lock True BE`, `🚨 Exit Market` |
+| **`/price [symbol]`** | Monospace card displaying live market quote, Bid/Ask, spread, and daily range (defaults to XAUUSD). | `🔄 Refresh`, `📊 Open Trades` |
 | **`/pnl`** | Monospace card displaying live floating net/gross P&L, unrealized R-multiple, estimated fees, realized P&L today, and overall day net P&L. | `📋 View Open Trades`, `🚨 Panic Exit All` |
 | **`/trades`** | Iterates across all currently open trades, showing Entry Price, LTP, Floating P&L, Stop Loss level, Distance to Stop, and True Breakeven price. | `🚨 Market Exit`, `🛡️ Lock True BE`, `🎯 Book 50%` |
 | **`/summary`** | End-of-day or mid-session performance digest: total closed trades, win/loss count, win rate %, net P&L, and net harvested R-multiples. | None |
-| **`/panic`** or **`/killswitch`** | Prompts for confirmation to market-exit all active open positions across the broker exchange immediately. | `🛑 YES, CLOSE ALL POSITIONS NOW` |
+| **`/panic`** or **`/killswitch`** | Prompts for confirmation to market-exit all active open positions across MT5 and broker exchanges immediately. | `🛑 YES, CLOSE ALL POSITIONS NOW` |
 
 ---
 

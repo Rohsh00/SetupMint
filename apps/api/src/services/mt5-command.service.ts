@@ -345,6 +345,40 @@ export class Mt5CommandService {
   }
 
   /**
+   * Queues a market or pending entry order command for the MT5 EA bridge.
+   */
+  static async queueOpenOrder(params: {
+    userId: string | mongoose.Types.ObjectId;
+    accountId: string | mongoose.Types.ObjectId;
+    symbol: string;
+    side: 'BUY' | 'SELL';
+    volume: number;
+    stopLoss?: number;
+    takeProfit?: number;
+    price?: number;
+    orderType?: 'MARKET' | 'LIMIT' | 'STOP';
+    comment?: string;
+  }): Promise<IMt5CommandDoc> {
+    const cmd = await Mt5Command.create({
+      userId: params.userId,
+      accountId: params.accountId,
+      ticket: 0,
+      action: 'OPEN_ORDER',
+      symbol: params.symbol.toUpperCase().trim(),
+      side: params.side,
+      volume: params.volume,
+      stopLoss: params.stopLoss,
+      takeProfit: params.takeProfit,
+      price: params.price,
+      orderType: params.orderType || 'MARKET',
+      comment: params.comment || 'SetupMint-Telegram',
+      status: 'PENDING',
+    });
+
+    return cmd;
+  }
+
+  /**
    * Retrieves pending commands for an account and formats them for MT5 webhook response.
    */
   static async getPendingCommandsForAccount(accountId: string | mongoose.Types.ObjectId): Promise<any[]> {
@@ -363,9 +397,14 @@ export class Mt5CommandService {
       commandId: c._id.toString(),
       action: c.action,
       ticket: c.ticket,
+      symbol: c.symbol ?? '',
+      side: c.side ?? '',
+      orderType: c.orderType ?? 'MARKET',
+      price: c.price ?? 0,
       stopLoss: c.stopLoss ?? 0,
       takeProfit: c.takeProfit ?? 0,
       volume: c.volume ?? 0,
+      comment: c.comment ?? '',
     }));
   }
 

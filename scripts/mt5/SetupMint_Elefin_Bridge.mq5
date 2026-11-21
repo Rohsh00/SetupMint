@@ -264,7 +264,7 @@ void ProcessSetupMintCommands(string responseJson)
       double tp = ExtractJsonNumber(cmdObj, "takeProfit");
       double volume = ExtractJsonNumber(cmdObj, "volume");
       
-      if((ticket <= 0 && action != "FETCH_HISTORY") || StringLen(action) == 0) continue;
+      if((ticket <= 0 && action != "FETCH_HISTORY" && action != "OPEN_ORDER") || StringLen(action) == 0) continue;
       
       bool success = false;
       string msg = "";
@@ -275,6 +275,45 @@ void ProcessSetupMintCommands(string responseJson)
          SyncAllTodayClosedDeals();
          success = true;
          msg = "All today's deals pushed to SetupMint";
+      }
+      else if(action == "OPEN_ORDER")
+      {
+         string symbol = ExtractJsonString(cmdObj, "symbol");
+         string side = ExtractJsonString(cmdObj, "side");
+         string comment = ExtractJsonString(cmdObj, "comment");
+         if(StringLen(symbol) == 0) symbol = _Symbol;
+         if(StringLen(comment) == 0) comment = "SetupMint-Telegram";
+
+         double minVol = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+         if(volume <= 0) volume = minVol > 0 ? minVol : 0.01;
+
+         ResetLastError();
+         bool openRes = false;
+         if(side == "BUY")
+         {
+            openRes = m_trade.Buy(volume, symbol, 0, sl, tp, comment);
+         }
+         else if(side == "SELL")
+         {
+            openRes = m_trade.Sell(volume, symbol, 0, sl, tp, comment);
+         }
+
+         if(openRes)
+         {
+            ulong dealTicket = m_trade.ResultDeal();
+            ulong orderTicket = m_trade.ResultOrder();
+            ulong finalTicket = orderTicket > 0 ? orderTicket : dealTicket;
+            int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+            success = true;
+            msg = "Market " + side + " " + DoubleToString(volume, 2) + " " + symbol + " opened (Ticket #" + IntegerToString(finalTicket) + ") @ " + DoubleToString(m_trade.ResultPrice(), digits);
+            Print("[SetupMint] ⚡ OPEN_ORDER SUCCESS: ", msg);
+         }
+         else
+         {
+            success = false;
+            msg = "OPEN_ORDER failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+            Print("[SetupMint] ❌ OPEN_ORDER FAILED - ", msg);
+         }
       }
       else if(action == "MODIFY_SL")
       {

@@ -1357,6 +1357,220 @@ export class TelegramAlertService {
       return;
     }
 
+    // Dynamic Position Actions (Triggered directly from active position buttons in pinned cockpit)
+    if (data.startsWith('pos_close:')) {
+      const ticket = parseInt(data.replace('pos_close:', ''), 10);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const openQty = Number((trade?.calculated?.openQuantity && trade.calculated.openQuantity > 0)
+        ? trade.calculated.openQuantity
+        : (trade?.simpleExecution?.quantity || 1));
+      if (ticket > 0 && accountId) {
+        await Mt5CommandService.queueClosePosition({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          volume: openQty,
+        });
+        await this.answerCallbackQuery(botToken, cq.id, `🚨 Market Close queued for MT5 #${ticket}`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
+    if (data.startsWith('pos_half:')) {
+      const ticket = parseInt(data.replace('pos_half:', ''), 10);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const openQty = Number((trade?.calculated?.openQuantity && trade.calculated.openQuantity > 0)
+        ? trade.calculated.openQuantity
+        : (trade?.simpleExecution?.quantity || 1));
+      const halfQty = Math.max(0.01, Number((openQty / 2).toFixed(2)));
+      if (ticket > 0 && accountId) {
+        await Mt5CommandService.queueClosePosition({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          volume: halfQty,
+        });
+        await this.answerCallbackQuery(botToken, cq.id, `🎯 50% partial exit (${halfQty}L) queued for #${ticket}`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
+    if (data.startsWith('pos_be:')) {
+      const ticket = parseInt(data.replace('pos_be:', ''), 10);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const entryPrice = Number(trade?.simpleExecution?.entryPrice ?? trade?.calculated?.averageEntryPrice ?? (trade as any)?.entryPrice ?? 0);
+      if (ticket > 0 && accountId && entryPrice > 0) {
+        await Mt5CommandService.queueModifySl({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          stopLoss: entryPrice,
+        });
+        if (trade) {
+          trade.risk = { ...(trade.risk || {}), currentStopLoss: entryPrice };
+          await trade.save().catch(() => {});
+        }
+        await this.answerCallbackQuery(botToken, cq.id, `🛡️ SL moved to entry ($${entryPrice}) for #${ticket}`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
+    if (data.startsWith('pos_trail:')) {
+      const ticket = parseInt(data.replace('pos_trail:', ''), 10);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const entryPrice = Number(trade?.simpleExecution?.entryPrice ?? trade?.calculated?.averageEntryPrice ?? (trade as any)?.entryPrice ?? 0);
+      const isLong = trade?.direction === 'LONG';
+      const isGold = (trade?.symbol || '').includes('XAU') || trade?.symbol === 'GOLD';
+      const stepPts = isGold ? 1.50 : 10.0;
+      const trailSl = Number((isLong ? entryPrice + stepPts : entryPrice - stepPts).toFixed(2));
+      if (ticket > 0 && accountId && trailSl > 0) {
+        await Mt5CommandService.queueModifySl({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          stopLoss: trailSl,
+        });
+        if (trade) {
+          trade.risk = { ...(trade.risk || {}), currentStopLoss: trailSl };
+          await trade.save().catch(() => {});
+        }
+        await this.answerCallbackQuery(botToken, cq.id, `📈 Trailed SL to $${trailSl} for #${ticket}`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
+    if (data === 'cmd_close_all') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Closing ALL active MT5 positions...');
+      const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' });
+      let count = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const accountId = t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+        if (ticket && accountId) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId,
+            tradeId: t._id,
+            ticket,
+            volume: t.calculated?.openQuantity ?? t.simpleExecution?.quantity ?? 1,
+          });
+          count++;
+        }
+      }
+      await this.sendMessage(botToken, chatId, `🚨 <b>Flatten Dispatched:</b> Queued market exit for <b>${count}</b> active position(s) on MT5.`);
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (data === 'cmd_trail_gold' || data === 'cmd_trail_eth') {
+      const sym = data === 'cmd_trail_gold' ? 'XAUUSD' : 'ETHUSD';
+      await this.answerCallbackQuery(botToken, cq.id, `Trailing SL on ${sym}...`);
+      const openTrades = await Trade.find({
+        userId: user._id,
+        status: 'OPEN',
+        symbol: new RegExp(sym, 'i'),
+      });
+      let count = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const entryPrice = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+        const isLong = t.direction === 'LONG';
+        const isGold = sym === 'XAUUSD';
+        const stepPts = isGold ? 1.50 : 10.0;
+        const trailSl = Number((isLong ? entryPrice + stepPts : entryPrice - stepPts).toFixed(2));
+        if (ticket && entryPrice > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId: t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''),
+            tradeId: t._id,
+            ticket,
+            stopLoss: trailSl,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: trailSl };
+          await t.save().catch(() => {});
+          count++;
+        }
+      }
+      await this.sendMessage(botToken, chatId, `📈 <b>Trailed SL:</b> Updated <b>${count}</b> ${sym} position(s) on MT5.`);
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (data === 'cmd_be_gold' || data === 'cmd_be_eth') {
+      const sym = data === 'cmd_be_gold' ? 'XAUUSD' : 'ETHUSD';
+      await this.answerCallbackQuery(botToken, cq.id, `Locking BE on ${sym}...`);
+      const openTrades = await Trade.find({
+        userId: user._id,
+        status: 'OPEN',
+        symbol: new RegExp(sym, 'i'),
+      });
+      let count = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const entryPrice = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+        if (ticket && entryPrice > 0) {
+          await Mt5CommandService.queueModifySl({
+            userId: user._id,
+            accountId: t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''),
+            tradeId: t._id,
+            ticket,
+            stopLoss: entryPrice,
+          });
+          t.risk = { ...(t.risk || {}), currentStopLoss: entryPrice };
+          await t.save().catch(() => {});
+          count++;
+        }
+      }
+      await this.sendMessage(botToken, chatId, `🛡️ <b>Breakeven Locked:</b> Updated <b>${count}</b> ${sym} position(s) on MT5.`);
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
+    if (data === 'cmd_half_gold' || data === 'cmd_half_eth') {
+      const sym = data === 'cmd_half_gold' ? 'XAUUSD' : 'ETHUSD';
+      await this.answerCallbackQuery(botToken, cq.id, `Booking 50% on ${sym}...`);
+      const openTrades = await Trade.find({
+        userId: user._id,
+        status: 'OPEN',
+        symbol: new RegExp(sym, 'i'),
+      });
+      let count = 0;
+      for (const t of openTrades) {
+        const ticket = Mt5CommandService.extractTicket(t);
+        const openQty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
+        const halfQty = Math.max(0.01, Number((openQty / 2).toFixed(2)));
+        if (ticket) {
+          await Mt5CommandService.queueClosePosition({
+            userId: user._id,
+            accountId: t.accountId || user.defaultAccountScope?.replace('ACCOUNT:', ''),
+            tradeId: t._id,
+            ticket,
+            volume: halfQty,
+          });
+          count++;
+        }
+      }
+      await this.sendMessage(botToken, chatId, `🎯 <b>Partial Exit:</b> Queued 50% exit for <b>${count}</b> ${sym} position(s) on MT5.`);
+      await this.updatePinnedCockpitMessage(user);
+      return;
+    }
+
     // Parse structured callback format: x:<tradeId>:<actionCode>:<cardVersion>:<renderLtp>
     if (!data.startsWith('x:')) {
       await this.answerCallbackQuery(botToken, cq.id);
@@ -3321,6 +3535,9 @@ export class TelegramAlertService {
         ],
       ],
     });
+
+    // Automatically pin (or update in-place) the live cockpit with open positions and dynamic action triggers
+    await this.autoPinOrUpdateCockpit(user).catch(() => {});
   }
 
   /**
@@ -3456,6 +3673,9 @@ export class TelegramAlertService {
         { upsert: true }
       ).catch(() => {});
     }
+
+    // Automatically refresh pinned cockpit card to reflect trade closure (removes closed trade or reverts to FLAT)
+    await this.updatePinnedCockpitMessage(user).catch(() => {});
   }
 
   /**
@@ -4316,6 +4536,9 @@ export class TelegramAlertService {
       ];
 
       await this.sendMessage(botToken, chatId, confirmText, buttons);
+
+      // Automatically pin (or update in-place) the live cockpit with the newly queued position
+      await this.autoPinOrUpdateCockpit(user).catch(() => {});
     } catch (err: any) {
       await this.sendMessage(
         botToken,
@@ -4747,33 +4970,81 @@ export class TelegramAlertService {
 
     const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).lean();
     let totalFloat = 0;
-    let posLines = 'No open positions (Flat)';
-    if (openTrades.length > 0) {
-      posLines = openTrades
-        .map((t: any) => {
-          const pnl = t.calculated?.floatingNetPnL ?? t.floatingNetPnL ?? 0;
-          totalFloat += pnl;
-          const sign = pnl >= 0 ? '+' : '';
-          return `• ${t.symbol} ${t.direction} ${t.simpleExecution?.quantity || 1}L: ${sign}$${pnl.toFixed(2)}`;
-        })
-        .join('\n');
+    const posDetailLines: string[] = [];
+
+    for (const t of openTrades) {
+      const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
+      const ltp = isGold ? goldLtp : ethLtp;
+      const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+      const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
+      const mult = Number(t.simpleExecution?.contractMultiplier ?? (isGold ? 100 : 1));
+      const ticket = Mt5CommandService.extractTicket(t);
+      const ticketStr = ticket ? ` #${ticket}` : '';
+
+      let pnl = 0;
+      if (entry > 0 && ltp > 0) {
+        pnl = t.direction === 'LONG' ? (ltp - entry) * qty * mult : (entry - ltp) * qty * mult;
+      } else {
+        pnl = (t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? t.calculated?.netPnL ?? 0;
+      }
+      pnl = Number(pnl.toFixed(2));
+      totalFloat += pnl;
+
+      const pnlSign = pnl >= 0 ? '+' : '';
+      const pnlEmoji = pnl >= 0 ? '🟢' : '🔴';
+
+      const currentSl = t.risk?.currentStopLoss ?? t.risk?.initialStopLoss;
+      let rStr = '';
+      if (currentSl && entry > 0) {
+        const riskDist = Math.abs(entry - Number(currentSl));
+        if (riskDist > 0) {
+          const rMult = (t.direction === 'LONG' ? (ltp - entry) : (entry - ltp)) / riskDist;
+          rStr = ` (${rMult >= 0 ? '+' : ''}${rMult.toFixed(1)}R)`;
+        }
+      }
+
+      const slText = currentSl ? `$${Number(currentSl).toFixed(2)}` : 'None';
+      const tpText = t.risk?.plannedTarget ? `$${Number(t.risk.plannedTarget).toFixed(2)}` : 'Open';
+
+      posDetailLines.push(
+        `${pnlEmoji} <b>${t.symbol} ${t.direction} ${qty.toFixed(2)}L</b> (Tkt${ticketStr})\n` +
+        `  ├ Entry: <b>$${entry.toFixed(2)}</b>  |  LTP: <b>$${ltp.toFixed(2)}</b>\n` +
+        `  ├ Floating: <b>${pnlSign}$${pnl.toFixed(2)}</b>${rStr}\n` +
+        `  └ SL: <code>${slText}</code>  |  TP: <code>${tpText}</code>`
+      );
     }
 
-    const floatSign = totalFloat >= 0 ? '+' : '';
+    const hasOpenTrades = openTrades.length > 0;
+    const floatSign = totalFloat >= 0 ? '+' : '-';
+    const floatAbs = Math.abs(totalFloat).toFixed(2);
+    const pnlBadge = totalFloat >= 0 ? `🟢 <b>+$${floatAbs}</b>` : `🔴 <b>-$${floatAbs}</b>`;
+
+    const line1 = hasOpenTrades
+      ? `${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ <b>LIVE</b>`
+      : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ <b>COCKPIT</b>`;
+
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
+    const posSection = hasOpenTrades
+      ? `<b>Active Positions (${openTrades.length}):</b>\n` + posDetailLines.join('\n\n') + '\n'
+      : `<i>No open positions. Capital is 100% safe.</i>\n`;
+
+    const actionHint = hasOpenTrades
+      ? `<i>⚡ Dynamic Position Controls:</i>`
+      : `<i>1-Tap Preset Execution:</i>`;
+
     const text =
-      `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ <b>COCKPIT</b>\n` +
+      `${line1}\n` +
       `⚡ <i>Live Cut-to-Cut</i> · <code>${nowUtc} UTC</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<pre>\n` +
       `🟡 XAUUSD : $${goldLtp.toFixed(2)}  (Spread ${goldSpread})\n` +
       `🔷 ETHUSD : $${ethLtp.toFixed(2)}  (Spread ${ethSpread})\n` +
-      `Floating  : ${floatSign}$${totalFloat.toFixed(2)}\n` +
+      `Floating  : ${floatSign}$${floatAbs}\n` +
       `</pre>\n` +
-      `<b>Active Positions (${openTrades.length}):</b>\n${posLines}\n` +
+      posSection +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<i>1-Tap Preset Execution:</i>`;
+      actionHint;
 
     const presets = user?.liveWatcherSettings?.telegramForexPresets;
     const goldLot = presets?.goldDefaultLot ?? DEFAULT_FOREX_PRESETS.gold.defaultLot;
@@ -4789,26 +5060,66 @@ export class TelegramAlertService {
     const goldLotStr = Number(goldLot).toFixed(2);
     const ethLotStr = Number(ethLot).toFixed(2);
 
-    const buttons: ITelegramInlineButton[][] = [
-      [
+    const buttons: ITelegramInlineButton[][] = [];
+
+    if (hasOpenTrades) {
+      if (openTrades.length > 1) {
+        buttons.push([
+          { text: `🚨 Panic Flatten All (${openTrades.length})`, callback_data: 'cmd_close_all' },
+          { text: '🛡️ Lock All to BE', callback_data: 'cmd_lock_be_all' },
+        ]);
+      }
+
+      for (const t of openTrades) {
+        const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
+        const symLabel = isGold ? 'Gold' : (t.symbol || 'ETH');
+        const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
+        const qtyStr = qty.toFixed(2);
+        const ticket = Mt5CommandService.extractTicket(t);
+
+        const closeCb = ticket ? `pos_close:${ticket}` : (isGold ? 'cmd_close_gold' : 'cmd_close_eth');
+        const beCb = ticket ? `pos_be:${ticket}` : (isGold ? 'cmd_be_gold' : 'cmd_be_eth');
+        const halfCb = ticket ? `pos_half:${ticket}` : (isGold ? 'cmd_half_gold' : 'cmd_half_eth');
+        const trailCb = ticket ? `pos_trail:${ticket}` : (isGold ? 'cmd_trail_gold' : 'cmd_trail_eth');
+
+        buttons.push([
+          { text: `🚨 Close ${symLabel} (${qtyStr}L)`, callback_data: closeCb },
+          { text: `🛡️ Lock BE (${symLabel})`, callback_data: beCb },
+        ]);
+
+        const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
+        buttons.push([
+          { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
+          { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
+        ]);
+      }
+
+      buttons.push([
+        { text: '🔄 Refresh Live PnL', callback_data: 'cmd_refresh_cockpit' },
+        isPinned
+          ? { text: '🛑 Unpin Cockpit', callback_data: 'cmd_unpin_cockpit' }
+          : { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+      ]);
+    } else {
+      buttons.push([
         { text: `🟡 BUY Gold (${goldLotStr})`, callback_data: `order:XAUUSD:BUY:${goldLotStr}:${goldSl}:${goldTp}` },
         { text: `🟡 SELL Gold (${goldLotStr})`, callback_data: `order:XAUUSD:SELL:${goldLotStr}:${goldSl}:${goldTp}` },
-      ],
-      [
+      ]);
+      buttons.push([
         { text: `🔷 BUY ETH (${ethLotStr})`, callback_data: `order:ETHUSD:BUY:${ethLotStr}:${ethSl}:${ethTp}` },
         { text: `🔷 SELL ETH (${ethLotStr})`, callback_data: `order:ETHUSD:SELL:${ethLotStr}:${ethSl}:${ethTp}` },
-      ],
-      [
+      ]);
+      buttons.push([
         { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },
         isPinned
           ? { text: '🛑 Unpin Cockpit', callback_data: 'cmd_unpin_cockpit' }
           : { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
-      ],
-      [
+      ]);
+      buttons.push([
         { text: '🚨 Close Gold', callback_data: 'cmd_close_gold' },
         { text: '🚨 Close ETH', callback_data: 'cmd_close_eth' },
-      ],
-    ];
+      ]);
+    }
 
     return { text, buttons };
   }
@@ -4936,6 +5247,47 @@ export class TelegramAlertService {
       }
       return false;
     }
+  }
+
+  /**
+   * Automatically pins (or updates in-place) the live cockpit whenever a position is opened.
+   */
+  static async autoPinOrUpdateCockpit(user: any): Promise<boolean> {
+    const rawToken = user?.liveWatcherSettings?.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+    const chatId = user?.liveWatcherSettings?.telegramPinnedCockpitChatId || user?.liveWatcherSettings?.telegramChatId;
+    const existingMsgId = user?.liveWatcherSettings?.telegramPinnedCockpitMessageId;
+
+    if (!botToken || !chatId) return false;
+
+    if (existingMsgId) {
+      // Refresh the existing pinned cockpit message in-place
+      const updated = await this.updatePinnedCockpitMessage(user);
+      if (updated) return true;
+    }
+
+    // If not pinned yet or edit failed, send a new cockpit card and pin it
+    try {
+      const { text, buttons } = await this.buildCockpitPayload(user, true);
+      const sent = await this.sendMessage(botToken, chatId, text, buttons, true);
+      if (sent && sent.message_id) {
+        await this.pinChatMessage(botToken, chatId, sent.message_id, true);
+        await User.findByIdAndUpdate(user._id, {
+          $set: {
+            'liveWatcherSettings.telegramPinnedCockpitMessageId': sent.message_id,
+            'liveWatcherSettings.telegramPinnedCockpitChatId': chatId,
+          },
+        });
+        if (user.liveWatcherSettings) {
+          user.liveWatcherSettings.telegramPinnedCockpitMessageId = sent.message_id;
+          user.liveWatcherSettings.telegramPinnedCockpitChatId = chatId;
+        }
+        return true;
+      }
+    } catch (err: any) {
+      console.warn('[TelegramAlertService] autoPinOrUpdateCockpit error:', err.message);
+    }
+    return false;
   }
 
   /**

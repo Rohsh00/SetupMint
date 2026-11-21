@@ -749,4 +749,173 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
       $set: { 'profile.riskRules.lotCap': 100 },
     });
   });
+
+  // 23. Live PnL in Cockpit Line 1 when open positions exist
+  it('Scenario 23: When an open position exists, Cockpit Line 1 shows live PnL badge alongside quotes', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    // Create an open ETH trade: SHORT 2.00 lots at 1650.00
+    const openEthTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'ETHUSD',
+      direction: 'SHORT',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_998877'],
+      simpleExecution: {
+        entryPrice: 1650.00,
+        quantity: 2.00,
+        contractMultiplier: 1,
+      },
+      risk: {
+        initialStopLoss: 1660.00,
+        currentStopLoss: 1660.00,
+        plannedTarget: 1625.00,
+      },
+    });
+
+    // Record quote for ETH at 1640.00 (profit: (1650 - 1640) * 2 = +$20.00)
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'ETHUSD',
+      ltp: 1640.00,
+      bid: 1639.80,
+      ask: 1640.20,
+    });
+
+    const payload = await TelegramAlertService.buildCockpitPayload(testUser, true);
+    const firstLine = payload.text.split('\n')[0];
+
+    // First line must contain the green positive PnL badge and live market rates
+    expect(firstLine).toContain('🟢');
+    expect(firstLine).toContain('+$20.00');
+    expect(firstLine).toContain('Au:');
+    expect(firstLine).toContain('ETH:');
+
+    // Clean up
+    await Trade.deleteOne({ _id: openEthTrade._id });
+  });
+
+  // 24. Dynamic Position-Specific Controls when positions are open
+  it('Scenario 24: Active open positions generate dynamic per-position triggers (Close, Lock BE, 50% Book, Trail +1R)', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const openGoldTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_554433'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.10,
+        contractMultiplier: 100,
+      },
+      risk: {
+        initialStopLoss: 2640.00,
+        currentStopLoss: 2640.00,
+      },
+    });
+
+    const payload = await TelegramAlertService.buildCockpitPayload(testUser, true);
+    const buttons = payload.buttons;
+
+    // Must have Close Gold and Lock BE Gold buttons
+    const row1 = buttons[0];
+    expect(row1[0].text).toContain('Close Gold (0.10L)');
+    expect(row1[0].callback_data).toBe('pos_close:554433');
+    expect(row1[1].text).toContain('Lock BE (Gold)');
+    expect(row1[1].callback_data).toBe('pos_be:554433');
+
+    // Row 2 must have Book 50% and Trail +1R
+    const row2 = buttons[1];
+    expect(row2[0].text).toContain('Book 50% (0.05L)');
+    expect(row2[0].callback_data).toBe('pos_half:554433');
+    expect(row2[1].text).toContain('Trail +1R (Gold)');
+    expect(row2[1].callback_data).toBe('pos_trail:554433');
+
+    await Trade.deleteOne({ _id: openGoldTrade._id });
+  });
+
+  // 25. Auto-Pinning of Live Cockpit on Trade Open
+  it('Scenario 25: autoPinOrUpdateCockpit automatically pins cockpit to top of chat when trade opens', async () => {
+    // Unset pinned message id on user
+    await User.findByIdAndUpdate(testUser._id, {
+      $unset: {
+        'liveWatcherSettings.telegramPinnedCockpitMessageId': '',
+        'liveWatcherSettings.telegramPinnedCockpitChatId': '',
+      },
+    });
+    const unpinnedUser = await User.findById(testUser._id);
+    expect(unpinnedUser?.liveWatcherSettings?.telegramPinnedCockpitMessageId).toBeFalsy();
+
+    pinnedMessages.length = 0;
+    const autoPinned = await TelegramAlertService.autoPinOrUpdateCockpit(unpinnedUser);
+    expect(autoPinned).toBe(true);
+    expect(pinnedMessages.length).toBeGreaterThanOrEqual(1);
+
+    const repinnedUser = await User.findById(testUser._id);
+    expect(repinnedUser?.liveWatcherSettings?.telegramPinnedCockpitMessageId).toBeDefined();
+  });
+
+  // 26. Dynamic Position Callbacks: pos_half and pos_be execution
+  it('Scenario 26: pos_half queues 50% partial exit and pos_be queues SL modification to entry', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'ETHUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_776655'],
+      simpleExecution: {
+        entryPrice: 1640.00,
+        quantity: 2.00,
+      },
+    });
+
+    // 1. Test pos_half:776655
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_half_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'pos_half:776655',
+      },
+    });
+
+    const halfCmd = await Mt5Command.findOne({ ticket: 776655, action: 'CLOSE_POSITION' }).sort({ createdAt: -1 });
+    expect(halfCmd).toBeDefined();
+    expect(halfCmd?.volume).toBe(1.00); // 50% of 2.00 is 1.00
+
+    // 2. Test pos_be:776655
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_be_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 999 },
+        data: 'pos_be:776655',
+      },
+    });
+
+    const beCmd = await Mt5Command.findOne({ ticket: 776655, action: 'MODIFY_SL' }).sort({ createdAt: -1 });
+    expect(beCmd).toBeDefined();
+    expect(beCmd?.stopLoss).toBe(1640.00); // Entry price
+
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await Mt5Command.deleteMany({ ticket: 776655 });
+  });
 });

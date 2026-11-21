@@ -12,6 +12,7 @@ import {
 import { TelegramAlertService, DEFAULT_FOREX_PRESETS } from '../src/services/telegram-alert.service.js';
 import { Mt5CommandService } from '../src/services/mt5-command.service.js';
 import { TelegramCockpitTickerWorker } from '../src/services/telegram-cockpit-ticker.service.js';
+import { AudioChimeService } from '../src/services/audio-chime.service.js';
 
 describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30000 }, () => {
   let app: FastifyInstance;
@@ -24,6 +25,7 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
   const pinnedMessages: any[] = [];
   const unpinnedMessages: any[] = [];
   const editedMessages: any[] = [];
+  const sentAudios: any[] = [];
 
   beforeAll(async () => {
     await connectDatabase();
@@ -33,7 +35,29 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     // Mock fetch for Telegram Bot API
     vi.spyOn(global, 'fetch').mockImplementation(async (url: any, init: any) => {
       const urlStr = String(url);
-      const body = init?.body ? JSON.parse(init.body) : {};
+      let body: any = {};
+      if (typeof init?.body === 'string') {
+        try { body = JSON.parse(init.body); } catch {}
+      } else if (init?.body && typeof (init.body as any).get === 'function') {
+        body = {
+          caption: (init.body as any).get('caption'),
+          title: (init.body as any).get('title'),
+          chat_id: (init.body as any).get('chat_id'),
+          reply_markup: (init.body as any).get('reply_markup') ? JSON.parse(String((init.body as any).get('reply_markup'))) : undefined,
+        };
+      }
+
+      if (urlStr.includes('/sendAudio')) {
+        sentAudios.push(body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: { message_id: 99900 + sentAudios.length, title: body.title },
+          }),
+        } as any;
+      }
 
       if (urlStr.includes('/sendMessage')) {
         sentMessages.push(body);
@@ -1720,5 +1744,144 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     await Trade.deleteMany({ _id: { $in: [layer1._id, layer2._id] } });
     await Mt5Command.deleteMany({ ticket: { $in: [909091, 909092] } });
+  });
+
+  // 45. R-Multiple Milestones: Audio chime and 1-tap tactical buttons on +1.0R
+  it('Scenario 45: evaluateRMilestones dispatches audio chime and tactical buttons on +1.0R', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    sentAudios.length = 0;
+
+    // Entry 2650.00, SL 2646.00 -> 1R = 4.0 pts. At 2654.50, gain is +4.5 pts = +1.12R (> 1.0R)
+    Mt5CommandService.recordQuote(testAccount._id, { symbol: 'XAUUSD', ltp: 2654.50, bid: 2654.30, ask: 2654.70, timestamp: new Date() });
+
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_121212'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+      risk: { initialStopLoss: 2646.00 },
+    });
+
+    await TelegramAlertService.evaluateRMilestones(testUser);
+
+    expect(sentAudios.length).toBeGreaterThanOrEqual(1);
+    const audioMsg = sentAudios[sentAudios.length - 1];
+    expect(audioMsg.title).toContain('+1.0R');
+    expect(audioMsg.caption).toContain('R-MULTIPLE MILESTONE HIT: +1.0R');
+    expect(audioMsg.caption).toContain('Symbol      : XAUUSD (LONG)');
+    expect(audioMsg.caption).toContain('Volume      : 0.04 Lots');
+
+    // Check attached 1-tap tactical buttons
+    const buttons = audioMsg.reply_markup.inline_keyboard.flat();
+    expect(buttons.some((b: any) => b.callback_data === 'defense_truebe:XAUUSD')).toBe(true);
+    expect(buttons.some((b: any) => b.callback_data === 'pyramid_add:XAUUSD:0.02')).toBe(true);
+    expect(buttons.some((b: any) => b.callback_data === 'harvest_pct:XAUUSD:50')).toBe(true);
+
+    const updatedTrade = await Trade.findById(trade._id);
+    expect(updatedTrade?.tags).toContain('R_MILESTONE_1.0');
+
+    await Trade.deleteOne({ _id: trade._id });
+  });
+
+  // 46. R-Multiple Milestones: Hysteresis prevents duplicate audio alerts on same tier
+  it('Scenario 46: Hysteresis prevents duplicate audio alerts when hovering around milestone', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    sentAudios.length = 0;
+
+    Mt5CommandService.recordQuote(testAccount._id, { symbol: 'XAUUSD', ltp: 2654.50, bid: 2654.30, ask: 2654.70, timestamp: new Date() });
+
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_131313'],
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+      risk: { initialStopLoss: 2646.00 },
+    });
+
+    // First evaluation triggers 1.0R alert
+    await TelegramAlertService.evaluateRMilestones(testUser);
+    expect(sentAudios.length).toBe(1);
+
+    // Second evaluation at same or slight tick fluctuation must NOT trigger duplicate alert
+    Mt5CommandService.recordQuote(testAccount._id, { symbol: 'XAUUSD', ltp: 2654.80, bid: 2654.60, ask: 2655.00, timestamp: new Date() });
+    await TelegramAlertService.evaluateRMilestones(testUser);
+    expect(sentAudios.length).toBe(1); // Still exactly 1! Zero spamming!
+
+    await Trade.deleteOne({ _id: trade._id });
+  });
+
+  // 47. R-Multiple Milestones: Advancing to +2.0R triggers second tier alert with trail button
+  it('Scenario 47: Advancing to +2.0R triggers second-tier milestone alert with Trail SL button', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    sentAudios.length = 0;
+
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_141414', 'R_MILESTONE_1.0', 'R_MILESTONE_1.5'], // Already passed 1R & 1.5R
+      simpleExecution: { entryPrice: 2650.00, quantity: 0.04 },
+      risk: { initialStopLoss: 2646.00 },
+    });
+
+    // Move to 2658.50 (+8.5 pts = +2.12R)
+    Mt5CommandService.recordQuote(testAccount._id, { symbol: 'XAUUSD', ltp: 2658.50, bid: 2658.30, ask: 2658.70, timestamp: new Date() });
+    await TelegramAlertService.evaluateRMilestones(testUser);
+
+    expect(sentAudios.length).toBe(1);
+    const msg = sentAudios[0];
+    expect(msg.title).toContain('+2.0R');
+    expect(msg.caption).toContain('R-MULTIPLE MILESTONE HIT: +2.0R');
+
+    const buttons = msg.reply_markup.inline_keyboard.flat();
+    expect(buttons.some((b: any) => b.callback_data === 'defense_trail_r:XAUUSD:1.0')).toBe(true);
+    expect(buttons.some((b: any) => b.callback_data === 'harvest_freeride:XAUUSD')).toBe(true);
+
+    const updated = await Trade.findById(trade._id);
+    expect(updated?.tags).toContain('R_MILESTONE_2.0');
+
+    await Trade.deleteOne({ _id: trade._id });
+  });
+
+  // 48. Audio Synthesizer: AudioChimeService generates valid 16-bit PCM RIFF WAV buffer
+  it('Scenario 48: AudioChimeService generates valid 16-bit PCM RIFF WAV audio buffer with correct magic bytes', () => {
+    const chime1 = AudioChimeService.getMilestoneChime(1.0);
+    const chime3 = AudioChimeService.getMilestoneChime(3.0);
+
+    expect(chime1).toBeInstanceOf(Buffer);
+    expect(chime3).toBeInstanceOf(Buffer);
+
+    // RIFF header validation
+    expect(chime1.toString('ascii', 0, 4)).toBe('RIFF');
+    expect(chime1.toString('ascii', 8, 12)).toBe('WAVE');
+    expect(chime1.toString('ascii', 12, 16)).toBe('fmt ');
+    expect(chime1.toString('ascii', 36, 40)).toBe('data');
+
+    // Non-trivial audio content (size > 10KB)
+    expect(chime1.length).toBeGreaterThan(10000);
+    expect(chime3.length).toBeGreaterThan(15000);
   });
 });

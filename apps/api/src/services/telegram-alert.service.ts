@@ -51,6 +51,7 @@ import { MarketDataService, GlobalCfdCandleProvider } from './market-data/index.
 import { EconomicCalendarService, IEconomicCalendarEvent } from './economic-calendar.service.js';
 import { ITradeCandle } from '@tradevault/shared';
 import sharp from 'sharp';
+import { AudioChimeService } from './audio-chime.service.js';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -476,6 +477,54 @@ export class TelegramAlertService {
       throw new Error(json.description || 'Telegram sendPhoto returned an error');
     }
     return json.result;
+  }
+
+  /**
+   * Dispatches an audible audio chime message with tactile inline buttons to Telegram.
+   */
+  static async sendAudio(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    audioBuffer: Buffer,
+    title: string,
+    caption?: string,
+    buttons?: ITelegramInlineButton[][],
+    disableNotification: boolean = false
+  ): Promise<any> {
+    if (!botToken) return null;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return null;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/sendAudio`;
+
+    try {
+      const formData = new FormData();
+      formData.append('chat_id', String(chatId));
+      formData.append('title', title);
+      formData.append('performer', 'SetupMint Milestone Radar');
+      formData.append('audio', new Blob([new Uint8Array(audioBuffer)], { type: 'audio/wav' }), `${title.replace(/\s+/g, '_')}.wav`);
+      if (caption) {
+        formData.append('caption', caption.length > 1024 ? caption.slice(0, 1020) + '...' : caption);
+        formData.append('parse_mode', 'HTML');
+      }
+      if (disableNotification) {
+        formData.append('disable_notification', 'true');
+      }
+      if (buttons && buttons.length > 0) {
+        formData.append('reply_markup', JSON.stringify({ inline_keyboard: buttons }));
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+      const json = (await res.json()) as any;
+      if (!json.ok) {
+        return await this.sendMessage(botToken, chatId, caption || title, buttons, disableNotification);
+      }
+      return json.result;
+    } catch {
+      return await this.sendMessage(botToken, chatId, caption || title, buttons, disableNotification);
+    }
   }
 
   /**
@@ -7147,6 +7196,7 @@ export class TelegramAlertService {
     try {
       const { text, buttons } = await this.buildCockpitPayload(user, true);
       const res = await this.editMessageText(botToken, chatId, messageId, text, buttons);
+      await this.evaluateRMilestones(user);
       return res !== null;
     } catch (err: any) {
       const msg = err.message || '';
@@ -7164,6 +7214,133 @@ export class TelegramAlertService {
         });
       }
       return false;
+    }
+  }
+
+  /**
+   * Evaluates all open positions and stacks against R-Multiple profit milestones (+1.0R, +1.5R, +2.0R, +3.0R, +5.0R).
+   * When crossed, dispatches audio chimes and tactical buttons to lock BE, trail R, harvest, or pyramid.
+   */
+  static async evaluateRMilestones(user: any): Promise<void> {
+    const rawToken = user?.liveWatcherSettings?.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+    const chatId = user?.liveWatcherSettings?.telegramPinnedCockpitChatId || user?.liveWatcherSettings?.telegramChatId;
+    if (!botToken || !chatId) return;
+
+    const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' });
+    if (!openTrades || openTrades.length === 0) return;
+
+    const R_TIERS = [1.0, 1.5, 2.0, 3.0, 5.0];
+
+    for (const t of openTrades) {
+      const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
+      const isEth = (t.symbol || '').includes('ETH');
+      const isBtc = (t.symbol || '').includes('BTC');
+      const isUs30 = (t.symbol || '').includes('US30') || (t.symbol || '').includes('DOW');
+      const isNas = (t.symbol || '').includes('NAS') || (t.symbol || '').includes('USTEC');
+
+      let cleanSymbol = 'XAUUSD';
+      let mult = 100;
+      if (isGold) { cleanSymbol = 'XAUUSD'; mult = 100; }
+      else if (isEth) { cleanSymbol = 'ETHUSD'; mult = 1; }
+      else if (isBtc) { cleanSymbol = 'BTCUSD'; mult = 1; }
+      else if (isUs30) { cleanSymbol = 'US30'; mult = 1; }
+      else if (isNas) { cleanSymbol = 'NAS100'; mult = 1; }
+
+      const quote = Mt5CommandService.getLiveQuote(cleanSymbol);
+      const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+      const ltp = quote?.ltp || entry;
+      if (entry <= 0 || ltp <= 0) continue;
+
+      const initialSl = Number(t.risk?.initialStopLoss ?? t.risk?.currentStopLoss ?? 0);
+      const defaultRiskPoints = isGold ? 4.0 : (isEth ? 25.0 : 10.0);
+      const riskDist = (initialSl > 0 && entry > 0) ? Math.abs(entry - initialSl) : defaultRiskPoints;
+      if (riskDist <= 0) continue;
+
+      const isLong = (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
+      const pts = isLong ? (ltp - entry) : (entry - ltp);
+      const currentR = Number((pts / riskDist).toFixed(2));
+      if (currentR < 1.0) continue;
+
+      const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
+      const dollarPnl = Number((pts * qty * mult).toFixed(2));
+      const dollarSign = dollarPnl >= 0 ? '+' : '';
+
+      for (const tier of R_TIERS) {
+        if (currentR < tier) break;
+        const tag = `R_MILESTONE_${tier.toFixed(1)}`;
+        if (t.tags?.includes(tag)) continue;
+
+        // Mark tier as claimed for strict hysteresis
+        t.tags = [...(t.tags || []), tag];
+        await t.save().catch(() => {});
+
+        // Build tactical buttons for this milestone
+        const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
+        const buttons: ITelegramInlineButton[][] = [];
+
+        if (tier === 1.0) {
+          buttons.push([
+            { text: '🛡️ Lock True BE (+Spread)', callback_data: `defense_truebe:${cleanSymbol}` },
+            { text: `➕ Add Half-Size (${halfQty}L)`, callback_data: `pyramid_add:${cleanSymbol}:${halfQty}` },
+          ]);
+          buttons.push([
+            { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${cleanSymbol}:50` },
+            { text: '🏃 Let It Ride (No TP)', callback_data: `defense_runner:${cleanSymbol}` },
+          ]);
+        } else if (tier === 1.5) {
+          buttons.push([
+            { text: '🔒 Lock +0.5R Profit', callback_data: `defense_trail_r:${cleanSymbol}:0.5` },
+            { text: `➕ Add Preset Pyramid`, callback_data: `pyramid_zerorisk:${cleanSymbol}` },
+          ]);
+          buttons.push([
+            { text: `🎯 Book 33%`, callback_data: `harvest_pct:${cleanSymbol}:33` },
+            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
+          ]);
+        } else if (tier === 2.0) {
+          buttons.push([
+            { text: `🎯 Book 50% Profit`, callback_data: `harvest_pct:${cleanSymbol}:50` },
+            { text: '📈 Trail SL to +1.0R', callback_data: `defense_trail_r:${cleanSymbol}:1.0` },
+          ]);
+          buttons.push([
+            { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${cleanSymbol}` },
+            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
+          ]);
+        } else if (tier === 3.0) {
+          buttons.push([
+            { text: `🎯 Book 75% Profit`, callback_data: `harvest_pct:${cleanSymbol}:75` },
+            { text: '📈 Trail SL to +2.0R', callback_data: `defense_trail_r:${cleanSymbol}:2.0` },
+          ]);
+          buttons.push([
+            { text: '🏃 Moonshot (0.01L)', callback_data: `harvest_moonshot:${cleanSymbol}` },
+            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
+          ]);
+        } else {
+          // 5.0R+
+          buttons.push([
+            { text: '🏃 Moonshot (0.01L Runner)', callback_data: `harvest_moonshot:${cleanSymbol}` },
+            { text: `🛑 Flatten All (${qty}L)`, callback_data: `act_close_stack:${cleanSymbol}` },
+          ]);
+        }
+
+        const audioBuffer = AudioChimeService.getMilestoneChime(tier);
+        const title = `Milestone +${tier.toFixed(1)}R Hit (${cleanSymbol})`;
+        const caption =
+          `🎯 <b>R-MULTIPLE MILESTONE HIT: +${tier.toFixed(1)}R (${dollarSign}$${dollarPnl.toFixed(2)})</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `<pre>\n` +
+          `Symbol      : ${cleanSymbol} (${t.direction})\n` +
+          `Volume      : ${qty.toFixed(2)} Lots\n` +
+          `Entry       : $${entry.toFixed(2)}\n` +
+          `LTP         : $${ltp.toFixed(2)} (${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts)\n` +
+          `Initial Risk: $${riskDist.toFixed(2)} (${dollarSign}$${(riskDist * qty * mult).toFixed(2)})\n` +
+          `Milestone   : +${tier.toFixed(1)}R Multiplier Achieved\n` +
+          `Status      : Milestone Audio Dispatched\n` +
+          `</pre>\n` +
+          `<i>Tap a tactical button below to secure profit or scale into momentum.</i>`;
+
+        await this.sendAudio(botToken, chatId, audioBuffer, title, caption, buttons);
+      }
     }
   }
 

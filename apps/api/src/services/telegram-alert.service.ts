@@ -6760,6 +6760,20 @@ export class TelegramAlertService {
     let todayLossCount = 0;
     let consecutiveLosses = 0;
     let streakCounted = false;
+    let accumulatedR = 0;
+
+    // Resolve base 1R upfront for fallback R calculation
+    const balance = Number(acc?.currentBalance || acc?.initialBalance || 100000);
+    const maxRiskPct =
+      acc?.riskRules?.maxRiskPerTradePercent ??
+      acc?.profile?.riskRules?.maxRiskPerTradePercent ??
+      user?.riskSettings?.maxRiskPerTradePercent ??
+      1.0;
+    const maxAllowedRiskDollars = (balance * maxRiskPct) / 100;
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const defaultDollarRisk = presets?.defaultDollarRisk;
+    const effectiveBase1RDollar = defaultDollarRisk ?? Math.min(50, maxAllowedRiskDollars);
+    const base1RDollar = effectiveBase1RDollar;
 
     for (const t of todayClosedTrades) {
       const pnl = Number(t.calculated?.netPnL ?? (t as any).netPnL ?? 0);
@@ -6775,7 +6789,35 @@ export class TelegramAlertService {
           consecutiveLosses++;
         }
       }
+
+      // Calculate realized R for this trade
+      let tradeR = 0;
+      if (t.calculated?.realizedRMultiple !== undefined && t.calculated.realizedRMultiple !== null) {
+        tradeR = Number(t.calculated.realizedRMultiple);
+      } else if (t.risk?.realizedRMultiple !== undefined && t.risk.realizedRMultiple !== null) {
+        tradeR = Number(t.risk.realizedRMultiple);
+      } else if (t.calculated?.riskAmount && Number(t.calculated.riskAmount) > 0) {
+        tradeR = pnl / Number(t.calculated.riskAmount);
+      } else if (t.risk?.plannedRiskAmount && Number(t.risk.plannedRiskAmount) > 0) {
+        tradeR = pnl / Number(t.risk.plannedRiskAmount);
+      } else if (t.risk?.estimatedRiskAmount && Number(t.risk.estimatedRiskAmount) > 0) {
+        tradeR = pnl / Number(t.risk.estimatedRiskAmount);
+      } else if (t.risk?.initialStopLoss && (t.simpleExecution?.entryPrice || (t as any).entryPrice)) {
+        const entry = Number(t.simpleExecution?.entryPrice ?? (t as any).entryPrice);
+        const sl = Number(t.risk.initialStopLoss);
+        const dist = Math.abs(entry - sl);
+        const qty = Number(t.simpleExecution?.quantity ?? (t as any).quantity ?? 1);
+        const isGoldTrade = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
+        const plannedRisk = Math.max(1, dist * qty * (isGoldTrade ? 100 : 1));
+        tradeR = pnl / plannedRisk;
+      } else {
+        tradeR = base1RDollar > 0 ? pnl / base1RDollar : 0;
+      }
+      accumulatedR += tradeR;
     }
+
+    accumulatedR = Number(accumulatedR.toFixed(2));
+    todayRealizedPnL = Number(todayRealizedPnL.toFixed(2));
 
     let todayFloatingPnL = 0;
     for (const t of openTrades) {
@@ -6783,10 +6825,15 @@ export class TelegramAlertService {
       todayFloatingPnL += floatPnl;
     }
 
-    todayRealizedPnL = Number(todayRealizedPnL.toFixed(2));
     todayFloatingPnL = Number(todayFloatingPnL.toFixed(2));
     const todayTotalPnL = Number((todayRealizedPnL + todayFloatingPnL).toFixed(2));
     const todayPeakPnL = Math.max(0, todayRealizedPnL, todayTotalPnL);
+
+    // Dynamic Session Starting Capital (Immunized against intraday profit withdrawals)
+    const sessionStartingCapital = Math.max(10, balance - todayRealizedPnL);
+    const capitalGrowthPct = sessionStartingCapital > 0
+      ? Number(((todayRealizedPnL / sessionStartingCapital) * 100).toFixed(2))
+      : 0;
 
     // Account & Prop Firm Daily Loss Limit
     let effectiveDailyLossLimit = 5000;
@@ -6835,12 +6882,26 @@ export class TelegramAlertService {
       regimeBadge = '⚪';
     }
 
-    // Dynamic trade limits & bonus trades
+    // Dynamic trade limits & Option B 1:2R Dual-Gate bonus trades
     let bonusTradesEarned = 0;
     let effectiveMaxDailyTrades = baseMaxDailyTrades;
 
     if (regime === 'HOUSE_MONEY') {
-      bonusTradesEarned = Math.min(3, Math.floor(todayRealizedPnL / 50));
+      const isFatigued = todayTradesCount >= baseMaxDailyTrades * 2;
+      if (!isFatigued) {
+        // Option B Dual Gate: Minimum 1:2R (+2.0R) and 2x 1R profit gate to unlock bonus trades
+        if (accumulatedR >= 5.0 && todayRealizedPnL >= 5.0 * effectiveBase1RDollar) {
+          bonusTradesEarned = 3;
+        } else if (accumulatedR >= 3.5 && todayRealizedPnL >= 3.5 * effectiveBase1RDollar) {
+          bonusTradesEarned = 2;
+        } else if (accumulatedR >= 2.0 && todayRealizedPnL >= 2.0 * effectiveBase1RDollar) {
+          bonusTradesEarned = 1;
+        } else {
+          bonusTradesEarned = 0;
+        }
+      } else {
+        bonusTradesEarned = 0;
+      }
       effectiveMaxDailyTrades = baseMaxDailyTrades + bonusTradesEarned;
     } else if (regime === 'DEFENSIVE') {
       if (consecutiveLosses >= 3) {
@@ -6853,33 +6914,23 @@ export class TelegramAlertService {
     const remainingTrades = Math.max(0, effectiveMaxDailyTrades - todayTradesCount);
     const isTradeLimitReached = todayTradesCount >= effectiveMaxDailyTrades;
 
-    // Risk Dollar Sizing
-    const balance = Number(acc?.currentBalance || acc?.initialBalance || 100000);
-    const maxRiskPct =
-      acc?.riskRules?.maxRiskPerTradePercent ??
-      acc?.profile?.riskRules?.maxRiskPerTradePercent ??
-      user?.riskSettings?.maxRiskPerTradePercent ??
-      1.0;
-    const maxAllowedRiskDollars = (balance * maxRiskPct) / 100;
-
-    const presets = user?.liveWatcherSettings?.telegramForexPresets;
-    const defaultDollarRisk = presets?.defaultDollarRisk ?? 50;
-    const baseDollarRisk = Math.min(maxAllowedRiskDollars, defaultDollarRisk);
-
-    let targetDollarRisk = baseDollarRisk;
+    // Risk Dollar Sizing: dynamically scaled by accumulated R
+    let targetDollarRisk = effectiveBase1RDollar;
     let riskRationale = '';
 
     if (regime === 'HOUSE_MONEY') {
+      const rMultiplier = Math.min(1.5, Math.max(0.5, (accumulatedR > 0 ? accumulatedR : 1.5) / 3));
+      const rScaledRisk = effectiveBase1RDollar * rMultiplier;
       const houseMoneyBudget = Math.max(25, Number((todayRealizedPnL * 0.33).toFixed(2)));
-      targetDollarRisk = Math.min(maxAllowedRiskDollars, Math.max(baseDollarRisk, houseMoneyBudget));
-      riskRationale = `House Money Advantage: Banked +$${todayRealizedPnL.toFixed(2)} profit today. Next risk budgeted at safe 33% profit slice ($${targetDollarRisk.toFixed(0)}), locking 67% banked gains.`;
+      targetDollarRisk = Math.min(maxAllowedRiskDollars, Math.min(rScaledRisk, houseMoneyBudget));
+      riskRationale = `House Money Advantage: Banked +$${todayRealizedPnL.toFixed(2)} (+${accumulatedR.toFixed(2)}R, +${capitalGrowthPct.toFixed(2)}% capital growth). Next risk budgeted at disciplined $${targetDollarRisk.toFixed(0)} (${((targetDollarRisk / balance) * 100).toFixed(2)}% equity), locking ≥67% banked gains.`;
     } else if (regime === 'DEFENSIVE') {
       const defensiveScale = consecutiveLosses >= 3 ? 0.25 : 0.50;
       const bufferCap = Math.max(10, remainingDailyLossBuffer * 0.20);
-      targetDollarRisk = Math.max(10, Math.min(baseDollarRisk * defensiveScale, bufferCap));
+      targetDollarRisk = Math.max(10, Math.min(effectiveBase1RDollar * defensiveScale, bufferCap));
       riskRationale = `Defensive Guardrail Active: Scaled to ${Math.round(defensiveScale * 100)}% standard risk ($${targetDollarRisk.toFixed(0)}) to protect remaining $${remainingDailyLossBuffer.toFixed(0)} buffer and curb drawdown.`;
     } else {
-      targetDollarRisk = baseDollarRisk;
+      targetDollarRisk = effectiveBase1RDollar;
       riskRationale = `Standard Session: Baseline risk-adjusted sizing ($${targetDollarRisk.toFixed(0)}) within account rules and 1.0% equity cap.`;
     }
 
@@ -6945,7 +6996,7 @@ export class TelegramAlertService {
     const presetReward = Number((presetLot * riskPer1Lot * defaultRr).toFixed(2));
 
     let bestOptionLabel = `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • -$${bestRisk.toFixed(0)})`;
-    let microLabel = `🛡️ Micro (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`;
+    let microLabel = `🛡️ Micro Safe (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`;
     let conservativeLabel = `⚖️ Cons (${conservativeLot.toFixed(2)}L • -$${conservativeRisk.toFixed(2)})`;
     let presetLabel = `⚡ Preset (${presetLot.toFixed(2)}L • -$${presetRisk.toFixed(2)})`;
 
@@ -6961,29 +7012,14 @@ export class TelegramAlertService {
       extraRiskLot = extraLot;
       extraRisk = Number((extraLot * riskPer1Lot).toFixed(2));
       extraRiskLabel = `🚀 Momentum Boost (${extraLot.toFixed(2)}L • -$${extraRisk.toFixed(0)})`;
-
-      const b25 = 25;
-      const b50 = 50;
-      const bDynamic = Math.min(200, Math.max(75, Math.floor(todayRealizedPnL * 0.33)));
-      dollarBudgets = [
-        { amount: b25, lot: Math.max(0.01, Number((b25 / riskPer1Lot).toFixed(2))), label: `💵 $${b25} Risk` },
-        { amount: b50, lot: Math.max(0.01, Number((b50 / riskPer1Lot).toFixed(2))), label: `💵 $${b50} Risk` },
-        { amount: bDynamic, lot: Math.max(0.01, Number((bDynamic / riskPer1Lot).toFixed(2))), label: `💵 $${bDynamic} House` },
-      ];
+      dollarBudgets = [];
     } else if (regime === 'DEFENSIVE') {
-      bestOptionLabel = `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • Defensive -$${bestRisk.toFixed(0)})`;
-      microLabel = `🛡️ Micro Safe (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`;
+      bestOptionLabel = `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • Defensive Half -$${bestRisk.toFixed(0)})`;
       conservativeLabel = `⚖️ Defensive Half (${conservativeLot.toFixed(2)}L • -$${conservativeRisk.toFixed(2)})`;
       extraRiskLot = undefined;
       extraRiskLabel = undefined;
       extraRisk = undefined;
-
-      const d1 = Math.max(10, Math.min(25, Math.floor(targetDollarRisk)));
-      const d2 = Math.max(15, Math.min(50, Math.floor(targetDollarRisk * 1.5)));
-      dollarBudgets = [
-        { amount: d1, lot: Math.max(0.01, Number((d1 / riskPer1Lot).toFixed(2))), label: `🛡️ $${d1} Safe` },
-        { amount: d2, lot: Math.max(0.01, Number((d2 / riskPer1Lot).toFixed(2))), label: `🛡️ $${d2} Max` },
-      ];
+      dollarBudgets = [];
     } else {
       let extraLot = Math.max(0.01, Number((defaultLot * 2).toFixed(2)));
       if (lotCap && lotCap > 0 && extraLot > lotCap) extraLot = lotCap;
@@ -6994,7 +7030,6 @@ export class TelegramAlertService {
       dollarBudgets = [
         { amount: 25, lot: Math.max(0.01, Number((25 / riskPer1Lot).toFixed(2))), label: '💵 $25 Risk' },
         { amount: 50, lot: Math.max(0.01, Number((50 / riskPer1Lot).toFixed(2))), label: '💵 $50 Risk' },
-        { amount: 100, lot: Math.max(0.01, Number((100 / riskPer1Lot).toFixed(2))), label: '💵 $100 Risk' },
       ];
     }
 
@@ -7046,6 +7081,8 @@ export class TelegramAlertService {
       targetDollarRisk,
       riskRationale,
       recommendedLadderNotes,
+      accumulatedR,
+      capitalGrowthPct,
       tiers,
     };
   }
@@ -7221,6 +7258,10 @@ export class TelegramAlertService {
 
     const pnlSign = adaptive.todayTotalPnL >= 0 ? '+' : '';
     const bonusText = adaptive.bonusTradesEarned > 0 ? ` (+${adaptive.bonusTradesEarned} bonus)` : '';
+    const rSign = (adaptive.accumulatedR ?? 0) >= 0 ? '+' : '';
+    const rMultipleText = adaptive.accumulatedR !== undefined ? ` • R: ${rSign}${adaptive.accumulatedR.toFixed(2)}R` : '';
+    const growthSign = (adaptive.capitalGrowthPct ?? 0) >= 0 ? '+' : '';
+    const growthText = adaptive.capitalGrowthPct !== undefined ? ` • Growth: ${growthSign}${adaptive.capitalGrowthPct.toFixed(2)}%` : '';
 
     const extraRiskTitle = adaptive.regime === 'HOUSE_MONEY' ? 'Momentum Boost' : 'Extra Risk';
     const extraRiskLine = extraRiskLot && extraRisk !== undefined
@@ -7228,14 +7269,14 @@ export class TelegramAlertService {
       : `• 🚀 <b>Extra Risk</b>  : <i>[Disabled in Defensive Mode to protect buffer]</i>\n`;
 
     const text =
-      `${symIcon} <b>${displaySym} • ${side} LOT OPTIONS REPORT</b>\n` +
+      `${symIcon} <b>${displaySym} • ${side} LOT OPTIONS REPORT (HARD DISCIPLINE)</b>\n` +
       `⚡ <i>Live LTP: $${ltp.toFixed(2)}  (Spread ${spreadStr})</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🎯 <b>Direction   :</b> ${sideEmoji} <b>${sideLabel}</b>\n` +
       `🛑 <b>Stop Loss   :</b> <code>$${slPrice.toFixed(2)}</code> (-${slPoints} pts / -$${slDist.toFixed(2)})\n` +
       `🎯 <b>Take Profit :</b> <code>$${tpPrice.toFixed(2)}</code> (+${tpPoints} pts / 1:${defaultRr.toFixed(1)} RR)\n` +
       `💼 <b>Account     :</b> ${accountName} ($${equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${propNotes})\n` +
-      `📈 <b>Day State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b> (P&L: ${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)} | Trades: ${adaptive.todayTradesCount}/${adaptive.effectiveMaxDailyTrades}${bonusText})\n` +
+      `📈 <b>Day State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b> (P&L: ${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}${rMultipleText}${growthText} | Trades: ${adaptive.todayTradesCount}/${adaptive.effectiveMaxDailyTrades}${bonusText})\n` +
       `🛡️ <b>Day Buffer  :</b> Remaining Buffer: <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b> (Limit: $${adaptive.effectiveDailyLossLimit.toFixed(2)})\n` +
       `🎯 <b>Ladder Plan :</b> <i>${adaptive.recommendedLadderNotes}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -7243,23 +7284,59 @@ export class TelegramAlertService {
       `👉 <b>${bestOptionLot.toFixed(2)} Lots</b>  |  Risk: <b>-$${bestRisk.toFixed(2)}</b> (${bestPctEquity}%)  |  Target: <b>+$${bestReward.toFixed(2)}</b>\n` +
       `💡 <i>${adaptive.riskRationale}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `📊 <b>AVAILABLE LOT OPTIONS & RISK BREAKDOWN:</b>\n` +
+      `📊 <b>HARD DISCIPLINE LOT OPTIONS:</b>\n` +
       `• 🌟 <b>Best Option</b> : <code>${bestOptionLot.toFixed(2)}L</code> ➜ Risk: <b>-$${bestRisk.toFixed(2)}</b> | Reward: <b>+$${bestReward.toFixed(2)}</b>\n` +
-      `• 🛡️ <b>Micro / Min</b> : <code>${microLot.toFixed(2)}L</code> ➜ Risk: <b>-$${microRisk.toFixed(2)}</b> | Reward: <b>+$${microReward.toFixed(2)}</b>\n` +
-      `• ⚖️ <b>Conservative</b>: <code>${conservativeLot.toFixed(2)}L</code> ➜ Risk: <b>-$${conservativeRisk.toFixed(2)}</b> | Reward: <b>+$${conservativeReward.toFixed(2)}</b>\n` +
-      `• ⚡ <b>Saved Preset</b>: <code>${presetLot.toFixed(2)}L</code> ➜ Risk: <b>-$${presetRisk.toFixed(2)}</b> | Reward: <b>+$${presetReward.toFixed(2)}</b>\n` +
+      `• 🛡️ <b>Micro / Min</b>  : <code>${microLot.toFixed(2)}L</code> ➜ Risk: <b>-$${microRisk.toFixed(2)}</b> | Reward: <b>+$${microReward.toFixed(2)}</b>\n` +
+      (adaptive.regime === 'NEUTRAL'
+        ? `• ⚖️ <b>Conservative</b>: <code>${conservativeLot.toFixed(2)}L</code> ➜ Risk: <b>-$${conservativeRisk.toFixed(2)}</b> | Reward: <b>+$${conservativeReward.toFixed(2)}</b>\n` +
+          `• ⚡ <b>Saved Preset</b>: <code>${presetLot.toFixed(2)}L</code> ➜ Risk: <b>-$${presetRisk.toFixed(2)}</b> | Reward: <b>+$${presetReward.toFixed(2)}</b>\n`
+        : '') +
       extraRiskLine +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<i>Tap your preferred lot size below to execute on MT5:</i>`;
+      `<i>Tap your preferred disciplined lot size below to execute on MT5:</i>`;
 
-    const buttons: ITelegramInlineButton[][] = [
-      [
+    const buttons: ITelegramInlineButton[][] = [];
+
+    if (adaptive.regime === 'HOUSE_MONEY') {
+      buttons.push([
         {
           text: bestOptionLabel,
           callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
-      ],
-      [
+      ]);
+      const row2: ITelegramInlineButton[] = [];
+      if (extraRiskLot && extraRiskLabel) {
+        row2.push({
+          text: extraRiskLabel,
+          callback_data: `order:${cleanSym}:${side}:${extraRiskLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        });
+      }
+      row2.push({
+        text: microLabel,
+        callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+      });
+      buttons.push(row2);
+    } else if (adaptive.regime === 'DEFENSIVE') {
+      buttons.push([
+        {
+          text: bestOptionLabel,
+          callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ]);
+      buttons.push([
+        {
+          text: microLabel,
+          callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ]);
+    } else {
+      buttons.push([
+        {
+          text: bestOptionLabel,
+          callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ]);
+      buttons.push([
         {
           text: microLabel,
           callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
@@ -7268,30 +7345,29 @@ export class TelegramAlertService {
           text: conservativeLabel,
           callback_data: `order:${cleanSym}:${side}:${conservativeLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
-      ],
-    ];
+      ]);
+      const row3: ITelegramInlineButton[] = [
+        {
+          text: presetLabel,
+          callback_data: `order:${cleanSym}:${side}:${presetLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ];
+      if (extraRiskLot && extraRiskLabel) {
+        row3.push({
+          text: extraRiskLabel,
+          callback_data: `order:${cleanSym}:${side}:${extraRiskLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        });
+      }
+      buttons.push(row3);
 
-    const row3: ITelegramInlineButton[] = [
-      {
-        text: presetLabel,
-        callback_data: `order:${cleanSym}:${side}:${presetLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-      },
-    ];
-    if (extraRiskLot && extraRiskLabel) {
-      row3.push({
-        text: extraRiskLabel,
-        callback_data: `order:${cleanSym}:${side}:${extraRiskLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-      });
-    }
-    buttons.push(row3);
-
-    if (dollarBudgets && dollarBudgets.length > 0) {
-      buttons.push(
-        dollarBudgets.map((b) => ({
-          text: `${b.label} (${b.lot.toFixed(2)}L)`,
-          callback_data: `order:${cleanSym}:${side}:${b.lot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        }))
-      );
+      if (dollarBudgets && dollarBudgets.length > 0) {
+        buttons.push(
+          dollarBudgets.map((b) => ({
+            text: `${b.label} (${b.lot.toFixed(2)}L)`,
+            callback_data: `order:${cleanSym}:${side}:${b.lot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+          }))
+        );
+      }
     }
 
     buttons.push([
@@ -7543,12 +7619,14 @@ export class TelegramAlertService {
     if (adaptive) {
       const pnlSign = adaptive.todayTotalPnL >= 0 ? '+' : '';
       const bonusStr = adaptive.bonusTradesEarned > 0 ? ` (+${adaptive.bonusTradesEarned} bonus)` : '';
+      const rStr = adaptive.accumulatedR !== undefined ? ` • ${adaptive.accumulatedR >= 0 ? '+' : ''}${adaptive.accumulatedR.toFixed(2)}R` : '';
+      const capGrowthStr = adaptive.capitalGrowthPct !== undefined ? ` • Growth: ${adaptive.capitalGrowthPct >= 0 ? '+' : ''}${adaptive.capitalGrowthPct.toFixed(2)}%` : '';
       dayPerformanceSection =
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📈 <b>DAY PERFORMANCE & ADAPTIVE REGIME:</b>\n` +
         `• <b>State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>${bonusStr}\n` +
-        `• <b>Net P&L :</b> <b>${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}</b> (Realized: $${adaptive.todayRealizedPnL.toFixed(2)})\n` +
-        `• <b>Trades  :</b> <b>${adaptive.todayTradesCount} / ${adaptive.effectiveMaxDailyTrades}</b> Taken\n` +
+        `• <b>Net P&L :</b> <b>${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}</b> (Realized: $${adaptive.todayRealizedPnL.toFixed(2)}${rStr})\n` +
+        `• <b>Trades  :</b> <b>${adaptive.todayTradesCount} / ${adaptive.effectiveMaxDailyTrades}</b> Taken${capGrowthStr}\n` +
         `• <b>Buffer  :</b> <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b> (Limit: $${adaptive.effectiveDailyLossLimit.toFixed(2)})\n` +
         `• <b>Ladders :</b> <i>${adaptive.recommendedLadderNotes}</i>\n`;
     }

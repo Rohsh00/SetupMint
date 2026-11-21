@@ -1974,7 +1974,39 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
   it('Scenario 52: HOUSE_MONEY regime awards bonus trades and dynamic house money risk sizing', async () => {
     await Trade.deleteMany({ userId: testUser._id });
 
-    // Create banked profit closed trade today: +$120 net PnL
+    // 1. Test sub-threshold trade: +1.30R (+40 profit) does NOT earn bonus trade (< +2.0R gate)
+    const subTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: 40, realizedRMultiple: 1.30 },
+      netPnL: 40,
+    });
+
+    const subAdaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      testUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100,
+      'BUY'
+    );
+    expect(subAdaptive.regime).toBe('HOUSE_MONEY');
+    expect(subAdaptive.accumulatedR).toBe(1.30);
+    expect(subAdaptive.bonusTradesEarned).toBe(0); // 1.30R < 2.0R threshold -> 0 bonus trades
+    expect(subAdaptive.effectiveMaxDailyTrades).toBe(6);
+
+    // 2. Expand profit to +$200 (+2.0R with 1R=$100) -> Unlocks Tier 1 (+1 bonus trade)
+    await Trade.deleteMany({ userId: testUser._id });
     const winTrade = await Trade.create({
       userId: testUser._id,
       accountId: testAccount._id,
@@ -1987,8 +2019,8 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
       marketSegment: 'FOREX',
       exchange: 'FOREX',
       assetClass: 'FOREX',
-      calculated: { netPnL: 120 },
-      netPnL: 120,
+      calculated: { netPnL: 200, realizedRMultiple: 2.0 },
+      netPnL: 200,
     });
 
     const adaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
@@ -2003,21 +2035,56 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     expect(adaptive.regime).toBe('HOUSE_MONEY');
     expect(adaptive.regimeBadge).toBe('🟢');
-    expect(adaptive.bonusTradesEarned).toBe(2); // $120 / $50 = 2 bonus trades
-    expect(adaptive.effectiveMaxDailyTrades).toBe(8); // 6 base + 2 bonus
+    expect(adaptive.accumulatedR).toBe(2.0);
+    expect(adaptive.bonusTradesEarned).toBe(1); // Option B Tier 1: >= 2.0R & >= 2x 1R ($200) -> 1 bonus trade
+    expect(adaptive.effectiveMaxDailyTrades).toBe(7); // 6 base + 1 bonus
     expect(adaptive.tiers.bestOptionLabel).toContain('House Money');
     expect(adaptive.tiers.extraRiskLabel).toContain('Momentum Boost');
 
     // Verify UI report card renders green day house money state
     const card = await TelegramAlertService.buildOrderPrepPayload(testUser, 'XAUUSD', 'BUY');
     expect(card.text).toContain('House Money Session');
-    expect(card.text).toContain('+2 bonus');
+    expect(card.text).toContain('+1 bonus');
     expect(card.text).toContain('Momentum Boost');
+    expect(card.text).toContain('• R: +2.00R');
 
+    // Hard Discipline Buttons: Exactly 3 execution buttons (Best Option, Momentum Boost, Micro Safe), NO dollar clutter
     const buttons = card.buttons.flat();
     expect(buttons.some((b) => b.text.includes('House Money'))).toBe(true);
     expect(buttons.some((b) => b.text.includes('Momentum Boost'))).toBe(true);
+    expect(buttons.some((b) => b.text.includes('Micro Safe'))).toBe(true);
     expect(buttons.some((b) => b.text.includes('House'))).toBe(true);
+    expect(buttons.some((b) => b.text.includes('$25 Risk'))).toBe(false);
+    expect(buttons.some((b) => b.text.includes('$50 Risk'))).toBe(false);
+
+    // 3. Add second winning trade to reach +$350 (+3.5R) -> Unlocks Tier 2 (+2 bonus trades)
+    await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: 150, realizedRMultiple: 1.5 },
+      netPnL: 150,
+    });
+    const tier2Adaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      testUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100,
+      'BUY'
+    );
+    expect(tier2Adaptive.accumulatedR).toBe(3.5);
+    expect(tier2Adaptive.bonusTradesEarned).toBe(2); // Tier 2: >= 3.5R & >= 3.5x 1R ($350) -> 2 bonus trades
+    expect(tier2Adaptive.effectiveMaxDailyTrades).toBe(8); // 6 base + 2 bonus
 
     // Clean up
     await Trade.deleteMany({ userId: testUser._id });

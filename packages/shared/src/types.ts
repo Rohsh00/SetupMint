@@ -2434,6 +2434,8 @@ export interface IAdaptiveDayRiskState {
   targetDollarRisk: number;
   riskRationale: string;
   recommendedLadderNotes: string;
+  accumulatedR?: number;
+  capitalGrowthPct?: number;
   tiers: IAdaptiveDayRiskTier;
 }
 

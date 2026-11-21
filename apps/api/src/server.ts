@@ -37,6 +37,7 @@ import { InstrumentClassifier } from './services/instrument-classifier.service.j
 import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
 import { BrokerAutoSyncWorker } from './services/broker-auto-sync.service.js';
 import { TelegramPollingService } from './services/telegram-polling.service.js';
+import { TelegramCockpitTickerWorker } from './services/telegram-cockpit-ticker.service.js';
 import { GoldNewsAlertWorker } from './services/gold-news-alert.service.js';
 
 export async function buildApp() {
@@ -287,10 +288,11 @@ if (
 
       const app = await buildApp();
 
-      // Start server-side execution worker, broker auto-sync, and telegram polling daemons
+      // Start server-side execution worker, broker auto-sync, telegram polling and cockpit ticker daemons
       LiveExecutionWorker.start();
       BrokerAutoSyncWorker.start();
       await TelegramPollingService.start();
+      TelegramCockpitTickerWorker.start();
       GoldNewsAlertWorker.start();
 
       await app.listen({ port: config.port, host: config.host });
@@ -304,6 +306,7 @@ if (
         LiveExecutionWorker.stop();
         BrokerAutoSyncWorker.stop();
         TelegramPollingService.stop();
+        TelegramCockpitTickerWorker.stop();
         GoldNewsAlertWorker.stop();
         await app.close();
         await disconnectDatabase();

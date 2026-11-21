@@ -170,6 +170,8 @@ const UserSchema = new Schema<IUserDoc>(
         ethRrRatio: { type: Number, default: 2.5 },
         defaultDollarRisk: { type: Number, default: 50 },
       },
+      telegramPinnedCockpitMessageId: { type: Number },
+      telegramPinnedCockpitChatId: { type: Schema.Types.Mixed },
     },
   },
   {

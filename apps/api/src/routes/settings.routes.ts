@@ -203,6 +203,13 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         if (p.defaultDollarRisk !== undefined) update['liveWatcherSettings.telegramForexPresets.defaultDollarRisk'] = Number(p.defaultDollarRisk);
       }
 
+      if (liveWatcherSettings.telegramPinnedCockpitMessageId !== undefined) {
+        update['liveWatcherSettings.telegramPinnedCockpitMessageId'] = Number(liveWatcherSettings.telegramPinnedCockpitMessageId);
+      }
+      if (liveWatcherSettings.telegramPinnedCockpitChatId !== undefined) {
+        update['liveWatcherSettings.telegramPinnedCockpitChatId'] = liveWatcherSettings.telegramPinnedCockpitChatId;
+      }
+
       // 5. Telegram Alerts Enabled Flag
       if (liveWatcherSettings.telegramAlertsEnabled !== undefined) {
         update['liveWatcherSettings.telegramAlertsEnabled'] = Boolean(liveWatcherSettings.telegramAlertsEnabled);
@@ -254,12 +261,12 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     if (user?.liveWatcherSettings?.telegramBotToken) {
       const activeBotToken = safeDecryptSecret(user.liveWatcherSettings.telegramBotToken);
       if (activeBotToken) {
-        if (user.liveWatcherSettings.telegramAlertsEnabled !== false) {
-          TelegramPollingService.startPollingForBot(activeBotToken);
-        } else {
-          TelegramPollingService.stopPollingForBot(activeBotToken);
-        }
+        TelegramPollingService.startPollingForBot(activeBotToken);
       }
+    } else if (liveWatcherSettings?.clearTelegramCredentials === true) {
+      // Telegram disconnected: stop polling
+      TelegramPollingService.stop();
+      TelegramPollingService.start();
     } else {
       // If token was cleared/unset, stop polling
       TelegramPollingService.stop();

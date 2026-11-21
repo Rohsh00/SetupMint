@@ -911,6 +911,8 @@ export const liveWatcherSettingsSchema = z.object({
   clearTelegramCredentials: z.boolean().optional(),
   displaySettings: liveWatcherDisplaySettingsSchema.optional(),
   telegramForexPresets: telegramForexPresetsSchema.optional(),
+  telegramPinnedCockpitMessageId: z.number().optional(),
+  telegramPinnedCockpitChatId: z.union([z.string(), z.number()]).optional(),
 });
 
 export const updateProfileSchema = z.object({

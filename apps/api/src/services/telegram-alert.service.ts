@@ -307,10 +307,31 @@ export class TelegramAlertService {
         if (json.description && json.description.includes('there is no text in the message to edit')) {
           return await this.editMessageCaption(botToken, chatId, messageId, text, buttons);
         }
+        if (
+          json.description &&
+          (json.description.includes('message to edit not found') ||
+            json.description.includes('chat not found') ||
+            json.description.includes('bot was blocked') ||
+            json.description.includes("message can't be edited"))
+        ) {
+          const err: any = new Error(json.description);
+          err.telegramCode = json.error_code;
+          throw err;
+        }
         console.warn(`[TelegramAlertService] editMessageText notice:`, json.description);
+        return null;
       }
       return json.result;
     } catch (err: any) {
+      if (
+        err.message &&
+        (err.message.includes('message to edit not found') ||
+          err.message.includes('chat not found') ||
+          err.message.includes('bot was blocked') ||
+          err.message.includes("message can't be edited"))
+      ) {
+        throw err;
+      }
       console.warn(`[TelegramAlertService] editMessageText network error:`, err.message);
       return null;
     }
@@ -334,6 +355,37 @@ export class TelegramAlertService {
       message_id: messageId,
       disable_notification: disableNotification,
     };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json()) as any;
+      return Boolean(json && json.ok);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Low-level Telegram unpinChatMessage API caller.
+   */
+  static async unpinChatMessage(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    messageId?: number
+  ): Promise<boolean> {
+    if (!botToken) return false;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return false;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/unpinChatMessage`;
+    const payload: any = {
+      chat_id: chatId,
+    };
+    if (messageId) {
+      payload.message_id = messageId;
+    }
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -1294,7 +1346,12 @@ export class TelegramAlertService {
       await this.handlePinCockpitCommand(user, botToken, chatId);
       return;
     }
-    if (data === 'cmd_cockpit') {
+    if (data === 'cmd_unpin_cockpit') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Unpinning Live Cockpit...');
+      await this.handleUnpinCockpitCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'cmd_cockpit' || data === 'cmd_refresh_cockpit') {
       await this.answerCallbackQuery(botToken, cq.id, 'Refreshing Cockpit...');
       await this.handleCockpitCommand(user, botToken, chatId);
       return;
@@ -2134,8 +2191,10 @@ export class TelegramAlertService {
           `• <b>/gold [buy|sell] [vol]</b> — 1-tap Gold trade with preset SL & TP (e.g. <code>/gold buy 0.10</code>)\n` +
           `• <b>/eth [buy|sell] [vol]</b> — 1-tap ETH trade with preset SL & TP (e.g. <code>/eth buy 1.0</code>)\n` +
           `• <b>/trade</b> or <b>/cockpit</b> — Full interactive 1-tap execution grid\n` +
+          `• <b>/pin</b> — Pin live price & positions header with cut-to-cut auto-refresh\n` +
+          `• <b>/unpin</b> — Unpin live cockpit header and stop auto-refresh ticker\n` +
+          `• <b>/close [gold|eth]</b> — Close active positions for symbol (or all)\n` +
           `• <b>/risk &lt;gold|eth&gt; &lt;$amt&gt;</b> — Auto-calculate lot size from dollar risk\n` +
-          `• <b>/pin</b> — Pin live price & positions header to top of chat\n` +
           `• <b>/price [symbol]</b> — Live real-time market quote & spread (e.g. <code>/price XAUUSD</code>)\n` +
           `• <b>/pnl</b> — Live floating PnL, open R-multiple & day PnL\n` +
           `• <b>/trades</b> — List active open trades with live charts & 1-tap Exit\n` +
@@ -2176,6 +2235,39 @@ export class TelegramAlertService {
       case 'pin':
         await this.handlePinCockpitCommand(user, botToken, chatId);
         break;
+
+      case '/unpin':
+      case '/stoppin':
+      case 'unpin':
+      case 'stoppin':
+        await this.handleUnpinCockpitCommand(user, botToken, chatId);
+        break;
+
+      case '/close':
+      case 'close': {
+        const target = (args[0] || '').toLowerCase();
+        if (target.includes('gold') || target.includes('xau')) {
+          await this.handleCloseSymbolPositions(user, botToken, chatId, 'XAUUSD');
+        } else if (target.includes('eth')) {
+          await this.handleCloseSymbolPositions(user, botToken, chatId, 'ETHUSD');
+        } else {
+          await this.sendMessage(
+            botToken,
+            chatId,
+            `🚨 <b>Close Positions</b>\nSelect an asset to exit:`,
+            [
+              [
+                { text: '🚨 Close All Gold', callback_data: 'cmd_close_gold' },
+                { text: '🚨 Close All ETH', callback_data: 'cmd_close_eth' },
+              ],
+              [
+                { text: '🛑 Emergency Panic Exit All', callback_data: 'confirm_panic' },
+              ],
+            ]
+          );
+        }
+        break;
+      }
 
       case '/price':
       case '/quote':
@@ -4353,15 +4445,12 @@ export class TelegramAlertService {
   }
 
   /**
-   * Generates the multi-asset live cockpit card for Gold & ETH.
+   * Generates the multi-asset live cockpit payload for Gold & ETH with cut-to-cut live pricing.
    */
-  static async handleCockpitCommand(
+  static async buildCockpitPayload(
     user: any,
-    botToken: string | null | undefined,
-    chatId: string | number
-  ): Promise<any> {
-    if (!botToken) return null;
-
+    isPinned: boolean = false
+  ): Promise<{ text: string; buttons: ITelegramInlineButton[][] }> {
     let goldLtp = 2650;
     let goldSpread = '$0.35';
     let ethLtp = 3100;
@@ -4412,9 +4501,11 @@ export class TelegramAlertService {
     }
 
     const floatSign = totalFloat >= 0 ? '+' : '';
+    const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
     const text =
       `📌 <b>LIVE FOREX COCKPIT · XAUUSD & ETHUSD</b>\n` +
+      `⚡ <i>Live Cut-to-Cut</i> · <code>${nowUtc} UTC</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<pre>\n` +
       `🟡 XAUUSD : $${goldLtp.toFixed(2)}  (Spread ${goldSpread})\n` +
@@ -4450,7 +4541,9 @@ export class TelegramAlertService {
       ],
       [
         { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },
-        { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
+        isPinned
+          ? { text: '🛑 Unpin Cockpit', callback_data: 'cmd_unpin_cockpit' }
+          : { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
       ],
       [
         { text: '🚨 Close Gold', callback_data: 'cmd_close_gold' },
@@ -4458,11 +4551,25 @@ export class TelegramAlertService {
       ],
     ];
 
+    return { text, buttons };
+  }
+
+  /**
+   * Generates the multi-asset live cockpit card for Gold & ETH.
+   */
+  static async handleCockpitCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<any> {
+    if (!botToken) return null;
+    const isPinned = Boolean(user?.liveWatcherSettings?.telegramPinnedCockpitMessageId);
+    const { text, buttons } = await this.buildCockpitPayload(user, isPinned);
     return await this.sendMessage(botToken, chatId, text, buttons);
   }
 
   /**
-   * Pins the live cockpit card to the top of the Telegram chat.
+   * Pins the live cockpit card to the top of the Telegram chat and begins continuous cut-to-cut auto-refresh.
    */
   static async handlePinCockpitCommand(
     user: any,
@@ -4470,16 +4577,96 @@ export class TelegramAlertService {
     chatId: string | number
   ): Promise<void> {
     if (!botToken) return;
-    const sentMsg = await this.handleCockpitCommand(user, botToken, chatId);
+
+    // Unpin any previous pinned cockpit message first to prevent clutter
+    const oldPinnedId = user?.liveWatcherSettings?.telegramPinnedCockpitMessageId;
+    if (oldPinnedId) {
+      await this.unpinChatMessage(botToken, chatId, oldPinnedId);
+    }
+
+    const { text, buttons } = await this.buildCockpitPayload(user, true);
+    const sentMsg = await this.sendMessage(botToken, chatId, text, buttons, true);
     if (sentMsg && sentMsg.message_id) {
       const pinned = await this.pinChatMessage(botToken, chatId, sentMsg.message_id, true);
       if (pinned) {
+        await User.findByIdAndUpdate(user._id, {
+          $set: {
+            'liveWatcherSettings.telegramPinnedCockpitMessageId': sentMsg.message_id,
+            'liveWatcherSettings.telegramPinnedCockpitChatId': chatId,
+          },
+        });
         await this.sendMessage(
           botToken,
           chatId,
-          `📌 <b>Live Cockpit Pinned!</b>\n\nLive Gold & ETH telemetry is now anchored at the top of this chat.`
+          `📌 <b>Live Cockpit Pinned!</b>\n\nLive Gold & ETH telemetry is anchored to the top of this chat and auto-refreshing cut-to-cut.\nType <b>/unpin</b> or tap 🛑 Unpin anytime to stop.`
         );
       }
+    }
+  }
+
+  /**
+   * Unpins the live cockpit from the top of the Telegram chat and stops continuous auto-refresh.
+   */
+  static async handleUnpinCockpitCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<void> {
+    if (!botToken) return;
+    const pinnedMessageId = user?.liveWatcherSettings?.telegramPinnedCockpitMessageId;
+    if (pinnedMessageId) {
+      await this.unpinChatMessage(botToken, chatId, pinnedMessageId);
+    } else {
+      await this.unpinChatMessage(botToken, chatId);
+    }
+
+    await User.findByIdAndUpdate(user._id, {
+      $unset: {
+        'liveWatcherSettings.telegramPinnedCockpitMessageId': '',
+        'liveWatcherSettings.telegramPinnedCockpitChatId': '',
+      },
+    });
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🛑 <b>Live Cockpit Unpinned</b>\n\nAuto-refresh ticker stopped. Type <b>/pin</b> anytime to re-anchor.`
+    );
+  }
+
+  /**
+   * Updates an existing pinned cockpit message in-place with latest cut-to-cut market prices.
+   */
+  static async updatePinnedCockpitMessage(user: any): Promise<boolean> {
+    const rawToken = user?.liveWatcherSettings?.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+    const chatId = user?.liveWatcherSettings?.telegramPinnedCockpitChatId || user?.liveWatcherSettings?.telegramChatId;
+    const messageId = user?.liveWatcherSettings?.telegramPinnedCockpitMessageId;
+
+    if (!botToken || !chatId || !messageId) {
+      return false;
+    }
+
+    try {
+      const { text, buttons } = await this.buildCockpitPayload(user, true);
+      const res = await this.editMessageText(botToken, chatId, messageId, text, buttons);
+      return res !== null;
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (
+        msg.includes('message to edit not found') ||
+        msg.includes('message can\'t be edited') ||
+        msg.includes('chat not found') ||
+        msg.includes('bot was blocked')
+      ) {
+        await User.findByIdAndUpdate(user._id, {
+          $unset: {
+            'liveWatcherSettings.telegramPinnedCockpitMessageId': '',
+            'liveWatcherSettings.telegramPinnedCockpitChatId': '',
+          },
+        });
+      }
+      return false;
     }
   }
 

@@ -11,6 +11,7 @@ import {
 } from '../src/db/models/index.js';
 import { TelegramAlertService, DEFAULT_FOREX_PRESETS } from '../src/services/telegram-alert.service.js';
 import { Mt5CommandService } from '../src/services/mt5-command.service.js';
+import { TelegramCockpitTickerWorker } from '../src/services/telegram-cockpit-ticker.service.js';
 
 describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
   let app: FastifyInstance;
@@ -21,6 +22,8 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
   const chatId = '99887766';
   const sentMessages: any[] = [];
   const pinnedMessages: any[] = [];
+  const unpinnedMessages: any[] = [];
+  const editedMessages: any[] = [];
 
   beforeAll(async () => {
     await connectDatabase();
@@ -52,6 +55,30 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
           json: async () => ({
             ok: true,
             result: true,
+          }),
+        } as any;
+      }
+
+      if (urlStr.includes('/unpinChatMessage')) {
+        unpinnedMessages.push(body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: true,
+          }),
+        } as any;
+      }
+
+      if (urlStr.includes('/editMessageText')) {
+        editedMessages.push(body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: { message_id: body.message_id, text: body.text },
           }),
         } as any;
       }
@@ -342,7 +369,7 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
     expect(keyboard[1][0].text).toContain('BUY ETH (1.00)');
   });
 
-  // 10. Top Pinned Cockpit: /pin calls pinChatMessage
+  // 10. Top Pinned Cockpit: /pin calls pinChatMessage and stores message ID
   it('Scenario 10: /pin pins the live cockpit to the top of the chat', async () => {
     pinnedMessages.length = 0;
     await TelegramAlertService.handlePinCockpitCommand(testUser, botToken, chatId);
@@ -350,6 +377,10 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
     expect(pinnedMessages.length).toBeGreaterThanOrEqual(1);
     expect(pinnedMessages[0].chat_id).toBe(chatId);
     expect(pinnedMessages[0].disable_notification).toBe(true);
+
+    const updatedUser = await User.findById(testUser._id);
+    expect(updatedUser?.liveWatcherSettings?.telegramPinnedCockpitMessageId).toBeDefined();
+    expect(updatedUser?.liveWatcherSettings?.telegramPinnedCockpitChatId).toBe(chatId);
   });
 
   // 11. Bare Number Stop Loss Adjustment on Active Position
@@ -490,5 +521,68 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
     // At live mock LTP 2650.20: SL 50 pts ($5) -> 2645.20, TP 150 pts ($15) -> 2665.20
     expect(customCmd?.stopLoss).toBe(2645.20);
     expect(customCmd?.takeProfit).toBe(2665.20);
+  });
+
+  // 15. TelegramCockpitTickerWorker live cut-to-cut refresh on pinned header
+  it('Scenario 15: TelegramCockpitTickerWorker refreshes pinned cockpit in-place with latest live prices', async () => {
+    // 1. Pin cockpit for testUser
+    await TelegramAlertService.handlePinCockpitCommand(testUser, botToken, chatId);
+    const userWithPin = await User.findById(testUser._id);
+    expect(userWithPin?.liveWatcherSettings?.telegramPinnedCockpitMessageId).toBeDefined();
+
+    editedMessages.length = 0;
+
+    // 2. Change live quote to new cut-to-cut price
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'XAUUSD',
+      bid: 2655.00,
+      ask: 2655.30,
+      ltp: 2655.15,
+      timestamp: new Date(),
+    });
+
+    // 3. Trigger worker tick
+    const updated = await TelegramAlertService.updatePinnedCockpitMessage(userWithPin);
+    expect(updated).toBe(true);
+    expect(editedMessages.length).toBeGreaterThanOrEqual(1);
+
+    const lastEdit = editedMessages[editedMessages.length - 1];
+    expect(lastEdit.message_id).toBe(userWithPin?.liveWatcherSettings?.telegramPinnedCockpitMessageId);
+    expect(lastEdit.text).toContain('XAUUSD : $2655.15');
+    expect(lastEdit.text).toContain('Live Cut-to-Cut');
+  });
+
+  // 16. /unpin command and callback unpins message and unsets pinned ID in DB
+  it('Scenario 16: /unpin unpins live cockpit and clears pinned state from user settings', async () => {
+    unpinnedMessages.length = 0;
+    await TelegramAlertService.handleUnpinCockpitCommand(testUser, botToken, chatId);
+
+    expect(unpinnedMessages.length).toBeGreaterThanOrEqual(1);
+    const clearedUser = await User.findById(testUser._id);
+    expect(clearedUser?.liveWatcherSettings?.telegramPinnedCockpitMessageId).toBeFalsy();
+
+    // Verify confirmation message sent
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('Live Cockpit Unpinned');
+  });
+
+  // 17. /close command dispatches close positions for specified symbol
+  it('Scenario 17: /close gold flattens positions and /close without args prompts symbol selection', async () => {
+    sentMessages.length = 0;
+
+    // Test text command /close without symbol
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/close',
+      },
+    }, botToken);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const promptMsg = sentMessages[sentMessages.length - 1];
+    expect(promptMsg.text).toContain('Close Positions');
+    expect(promptMsg.reply_markup.inline_keyboard[0][0].callback_data).toBe('cmd_close_gold');
+    expect(promptMsg.reply_markup.inline_keyboard[0][1].callback_data).toBe('cmd_close_eth');
   });
 });

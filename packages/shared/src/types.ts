@@ -2368,6 +2368,8 @@ export interface ILiveWatcherSettings {
   goldNewsImpactFilter?: 'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY';
   carPlayToken?: string;
   telegramForexPresets?: ITelegramForexPresets;
+  telegramPinnedCockpitMessageId?: number;
+  telegramPinnedCockpitChatId?: string | number;
 }
 
 export interface ITelegramForexPresets {

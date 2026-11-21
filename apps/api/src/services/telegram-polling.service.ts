@@ -20,7 +20,7 @@ export class TelegramPollingService {
 
     try {
       const users = await User.find({
-        'liveWatcherSettings.telegramAlertsEnabled': true,
+        email: { $not: /@(tradevault\.local|test\.local|setupmint\.internal)$/ },
         'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
       }).lean();
 

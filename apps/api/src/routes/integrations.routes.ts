@@ -813,6 +813,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               regulatoryFees: 0,
               otherFees: swap,
               explicitAdjustments: 0,
+              spreadPoints: ask > 0 && bid > 0 ? Number((ask - bid).toFixed(spec.tickSize < 0.001 ? 5 : (spec.tickSize < 0.01 ? 3 : 2))) : undefined,
+              spreadCost: ask > 0 && bid > 0 ? Number(((ask - bid) * volume * spec.multiplier).toFixed(2)) : undefined,
             },
             fills: [
               {
@@ -1257,6 +1259,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               regulatoryFees: 0,
               otherFees: swap,
               explicitAdjustments: 0,
+              spreadPoints: ask > 0 && bid > 0 ? Number((ask - bid).toFixed(spec.tickSize < 0.001 ? 5 : (spec.tickSize < 0.01 ? 3 : 2))) : undefined,
+              spreadCost: ask > 0 && bid > 0 ? Number(((ask - bid) * volume * spec.multiplier).toFixed(2)) : undefined,
             },
             fills: [
               {

@@ -8,6 +8,7 @@ import {
   Alert,
   Divider,
   useTheme,
+  Tooltip,
 } from '@mui/material';
 import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
 import TrendingDownRounded from '@mui/icons-material/TrendingDownRounded';
@@ -15,6 +16,7 @@ import RemoveCircleOutlineRounded from '@mui/icons-material/RemoveCircleOutlineR
 import HourglassEmptyRounded from '@mui/icons-material/HourglassEmptyRounded';
 import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { TradeOutcome } from '@tradevault/shared';
 import { formatCurrency, formatR } from '../../../lib/utils.js';
 import { HelpHint } from '../../help/index.js';
@@ -35,6 +37,10 @@ interface TradeCalculationBannerProps {
   isAutoFees?: boolean;
   onResetAutoFees?: () => void;
   strategyRRWarning?: string;
+  costLabel?: string;
+  isForexOrCfd?: boolean;
+  spreadPoints?: number;
+  spreadCost?: number;
 }
 
 export function TradeCalculationBanner({
@@ -53,6 +59,10 @@ export function TradeCalculationBanner({
   isAutoFees,
   onResetAutoFees,
   strategyRRWarning,
+  costLabel,
+  isForexOrCfd = false,
+  spreadPoints,
+  spreadCost,
 }: TradeCalculationBannerProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -271,7 +281,7 @@ export function TradeCalculationBanner({
                 </Typography>
               </Box>
 
-              {/* Total Costs */}
+              {/* Total Costs / Commission / Spread */}
               <Box
                 sx={{
                   px: 1.25,
@@ -284,15 +294,15 @@ export function TradeCalculationBanner({
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem' }}>
-                    TOTAL FEES
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem', fontWeight: 600 }}>
+                    {costLabel || (isForexOrCfd ? (totalCosts === 0 ? 'SPREAD (INCL)' : 'COMMISSION') : 'TOTAL FEES')}
                   </Typography>
                   <HelpHint hintKey="trade.fees.autoManual" />
                   {isAutoFees !== undefined && (
                     <Chip
-                      label={isAutoFees ? 'AUTO' : 'MANUAL'}
+                      label={isForexOrCfd && totalCosts === 0 ? 'SPREAD' : (isAutoFees ? 'AUTO' : 'MANUAL')}
                       size="small"
-                      color={isAutoFees ? 'success' : 'warning'}
+                      color={isForexOrCfd && totalCosts === 0 ? 'info' : (isAutoFees ? 'success' : 'warning')}
                       variant="outlined"
                       sx={{ height: 16, fontSize: '0.5625rem', fontWeight: 800, px: 0.25 }}
                     />
@@ -300,7 +310,13 @@ export function TradeCalculationBanner({
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                   <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: 'text.secondary' }}>
-                    {formatCurrency(totalCosts, currency)}
+                    {isForexOrCfd && totalCosts === 0 ? (
+                      <Tooltip title="Standard spread account: broker revenue is included in the execution bid/ask spread. Zero separate ticket fee deducted." arrow>
+                        <span>$0.00</span>
+                      </Tooltip>
+                    ) : (
+                      formatCurrency(totalCosts, currency)
+                    )}
                   </Typography>
                   {isAutoFees === false && onResetAutoFees && (
                     <Typography
@@ -319,6 +335,33 @@ export function TradeCalculationBanner({
                   )}
                 </Box>
               </Box>
+
+              {/* Spread Telemetry for Forex / CFD trades */}
+              {isForexOrCfd && (spreadPoints !== undefined && spreadPoints > 0) && (
+                <Box
+                  sx={{
+                    px: 1.25,
+                    py: 0.5,
+                    borderRadius: 1,
+                    backgroundColor: 'background.paper',
+                    border: 1,
+                    borderColor: 'divider',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.625rem', fontWeight: 600 }}>
+                      SPREAD DRAG
+                    </Typography>
+                    <Tooltip title="Execution friction at fill price. In financial accounting, spread is already absorbed in Gross P&L and not subtracted twice from cash balance." arrow>
+                      <InfoOutlined sx={{ fontSize: '0.75rem', color: 'text.secondary', cursor: 'help' }} />
+                    </Tooltip>
+                  </Box>
+                  <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'inherit', color: 'text.secondary' }}>
+                    {spreadPoints} pts {spreadCost !== undefined ? `(${formatCurrency(spreadCost, currency)})` : ''}
+                  </Typography>
+                </Box>
+              )}
 
               {/* Planned Risk */}
               {plannedRisk !== undefined && plannedRisk > 0 && (

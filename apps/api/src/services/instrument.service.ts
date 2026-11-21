@@ -363,6 +363,10 @@ export class InstrumentService {
       grossPnL = res.grossPnLNumber;
       totalCosts = isForexOrUsd && res.totalCostsNumber === 40 ? 0 : res.totalCostsNumber;
 
+      if (exec.spreadPoints && !exec.spreadCost) {
+        exec.spreadCost = Number((new CalcDecimal(exec.spreadPoints).times(resolvedMult).times(exec.quantity)).toFixed(2));
+      }
+
       // Auto-calculate fees only for non-MT5 accounts with non-NONE fee models when zero fees were supplied
       if (totalCosts === 0 && exec.entryPrice > 0 && exec.quantity > 0 && feeModelKey !== 'NONE' && !isMt5Synced) {
         const isSingleOpen = body.status === 'OPEN' && !(exec.exitPrice && Number(exec.exitPrice) > 0);
@@ -383,6 +387,9 @@ export class InstrumentService {
           brokerFlatFeePerLeg: feeModelKey === 'INDIA_STATUTORY' ? (normBroker === 'FINVASIA' ? 0 : 20) : undefined,
           isSingleLeg: isSingleOpen,
           legSide: isSingleOpen ? (body.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
+          isMt5: isMt5Synced,
+          isSpreadOnly: isForexOrUsd && (isMt5Synced || /ELEFIN/i.test(String(body.broker || ''))),
+          spreadPoints: exec.spreadPoints,
         });
         if (autoCharges.totalCosts > 0) {
           totalCosts = autoCharges.totalCosts;
@@ -489,6 +496,9 @@ export class InstrumentService {
           legSide: isSingleOpen ? (body.direction === 'SHORT' ? 'SELL' : 'BUY') : undefined,
           entryOrdersCount: entryCount,
           exitOrdersCount: isSingleOpen ? 0 : Math.max(1, exitCount),
+          isMt5: isMt5Synced,
+          isSpreadOnly: isForexOrUsd && (isMt5Synced || /ELEFIN/i.test(String(body.broker || ''))),
+          spreadPoints: body.simpleExecution?.spreadPoints,
         });
         totalCosts = autoCharges.totalCosts;
         if (!body.simpleExecution) {

@@ -540,6 +540,8 @@ export interface IAccountUiCapabilities {
     model: FeeModelKey | string;
     showStatutoryBreakdown: boolean;
     showCommissionSwap: boolean;
+    isSpreadOnly?: boolean;
+    costLabel?: string;
   };
 
   // Instruments & contract specs
@@ -748,6 +750,8 @@ export interface ISimpleExecution {
   otherFees: number;
   explicitAdjustments: number;
   adjustmentsReason?: string;
+  spreadPoints?: number;
+  spreadCost?: number;
 }
 
 export type InitialStopSource = 'MANUAL' | 'TEMPLATE' | 'BROKER_ORDERBOOK';

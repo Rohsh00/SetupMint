@@ -388,6 +388,8 @@ export const simpleExecutionSchema = z.object({
   otherFees: z.number().nonnegative().default(0),
   explicitAdjustments: z.number().default(0),
   adjustmentsReason: z.string().optional(),
+  spreadPoints: z.preprocess((val) => (val === '' || Number.isNaN(val) || val === undefined ? undefined : Number(val)), z.number().nonnegative().optional()),
+  spreadCost: z.preprocess((val) => (val === '' || Number.isNaN(val) || val === undefined ? undefined : Number(val)), z.number().nonnegative().optional()),
 });
 
 const emptyStringToUndefined = (val: unknown) =>

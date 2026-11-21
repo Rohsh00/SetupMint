@@ -98,6 +98,10 @@ export interface ChargesBreakdown {
   regulatoryFeesDecimal: Decimal;
   taxesDecimal: Decimal;
   totalCostsDecimal: Decimal;
+  spreadCost?: number;
+  spreadCostDecimal?: Decimal;
+  spreadPoints?: number;
+  spreadPips?: number;
 }
 
 function toIstDateString(dateInput?: Date | string): string {

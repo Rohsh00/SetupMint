@@ -26,9 +26,12 @@ export interface FeeCalculationParams {
   dpChargePerSell?: number | string | Decimal;
   roundSttToInteger?: boolean;
   spreadPips?: number | string | Decimal;
+  spreadPoints?: number | string | Decimal;
   swapAmount?: number | string | Decimal;
   commissionPerLot?: number | string | Decimal;
   lots?: number | string | Decimal;
+  isSpreadOnly?: boolean;
+  isMt5?: boolean;
 }
 
 export interface IFeeModel {
@@ -68,10 +71,19 @@ export class ForexCommissionFeeModel implements IFeeModel {
         : rawQty;
     const legs = params.isSingleLeg ? 1 : 2;
 
-    // Default $3.50 per leg per 1.0 standard lot ($7.00 round turn per lot)
+    // Auto-detection of spread-only / zero-commission brokers (e.g. Elefin, MT5 prop accounts)
+    const isElefinOrMt5 =
+      params.isMt5 === true ||
+      params.isSpreadOnly === true ||
+      /ELEFIN|MT5/i.test(String(params.broker || ''));
+
+    // Default $3.50 per leg per 1.0 standard lot ($7.00 round turn per lot) for standard ECN accounts.
+    // For MT5 / Elefin or spread-only accounts, default commission is $0.00 unless explicitly configured.
     const isUsdOrGlobal = params.currency === 'USD' || params.currency === 'EUR' || params.currency === 'GBP';
     const commPerLegPerLot = params.commissionPerLot !== undefined
       ? new Decimal(params.commissionPerLot).dividedBy(2)
+      : isElefinOrMt5
+      ? new Decimal(0)
       : (params.brokerFlatFeePerLeg !== undefined && !isUsdOrGlobal)
       ? new Decimal(params.brokerFlatFeePerLeg)
       : new Decimal(3.5);
@@ -79,30 +91,38 @@ export class ForexCommissionFeeModel implements IFeeModel {
     const brokerageDec = commPerLegPerLot.times(qty).times(legs);
     const swapDec = params.swapAmount ? new Decimal(params.swapAmount).abs() : new Decimal(0);
 
-    // Spread cost calculation if provided (spreadPips * pipValue * qty)
-    let exchangeFeesDec = new Decimal(0);
-    if (params.spreadPips) {
+    // Spread cost telemetry calculation (spreadPoints * multiplier * qty, or spreadPips * pipValue * qty).
+    // In financial accounting, spread is an implicit execution friction already reflected in Gross P&L fills.
+    // It is tracked for transparency/telemetry (spreadCost) but NOT subtracted twice from cash totalCosts.
+    let spreadCostDec = new Decimal(0);
+    if (params.spreadPoints) {
+      const pts = new Decimal(params.spreadPoints);
+      spreadCostDec = pts.times(mult).times(qty);
+    } else if (params.spreadPips) {
       const pips = new Decimal(params.spreadPips);
-      // approximate standard pip value: $10 per lot for 0.0001
-      const pipValue = new Decimal(10);
-      exchangeFeesDec = pips.times(pipValue).times(qty);
+      const pipValue = new Decimal(10); // Standard $10 per lot for 0.0001
+      spreadCostDec = pips.times(pipValue).times(qty);
     }
 
-    const totalCostsDec = brokerageDec.plus(swapDec).plus(exchangeFeesDec);
+    const totalCostsDec = brokerageDec.plus(swapDec);
     const zero = new Decimal(0);
 
     return {
       brokerage: Number(brokerageDec.toFixed(2)),
-      exchangeFees: Number(exchangeFeesDec.toFixed(2)),
+      exchangeFees: 0,
       regulatoryFees: 0,
       taxes: Number(swapDec.toFixed(2)), // swap mapped to other/carrying charges
       totalCosts: Number(totalCostsDec.toFixed(2)),
+      spreadCost: Number(spreadCostDec.toFixed(2)),
+      spreadCostDecimal: spreadCostDec,
+      spreadPoints: params.spreadPoints ? Number(params.spreadPoints) : undefined,
+      spreadPips: params.spreadPips ? Number(params.spreadPips) : undefined,
       sebiTurnover: 0,
       stampDuty: 0,
       sttCtt: 0,
       gst: 0,
       brokerageDecimal: brokerageDec,
-      exchangeFeesDecimal: exchangeFeesDec,
+      exchangeFeesDecimal: zero,
       regulatoryFeesDecimal: zero,
       taxesDecimal: swapDec,
       totalCostsDecimal: totalCostsDec,

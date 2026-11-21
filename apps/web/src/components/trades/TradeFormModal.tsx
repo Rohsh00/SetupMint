@@ -148,9 +148,23 @@ function buildInitialFormValues(
       initialAssetClass = 'FOREX';
     }
 
+    const targetAccId = typeof initialValues.accountId === 'object'
+      ? (initialValues.accountId?._id || initialValues.accountId?.id)
+      : (initialValues.accountId || defaultAccountId);
+    const matchedAcc = accounts.find((a: any) => (a.id || a._id) === targetAccId);
+
     let initialExec = initialValues.simpleExecution ? { ...initialValues.simpleExecution } : {};
+    const isSpreadOnlyAccount =
+      isForexOrUsd &&
+      (matchedAcc?.broker === 'ELEFIN' ||
+        matchedAcc?.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+        matchedAcc?.accountType === 'PROP_FIRM' ||
+        (Array.isArray(initialValues?.tags) && (initialValues.tags.includes('ELEFIN') || initialValues.tags.includes('MT5'))));
+
     if (isForexOrUsd) {
-      if (Number(initialExec.brokerage) === 40) initialExec.brokerage = 0;
+      if (Number(initialExec.brokerage) === 40 || (isSpreadOnlyAccount && Number(initialExec.brokerage) === 7)) {
+        initialExec.brokerage = 0;
+      }
       initialExec.exchangeFees = 0;
       initialExec.regulatoryFees = 0;
       initialExec.taxes = 0;
@@ -162,7 +176,7 @@ function buildInitialFormValues(
       Number(initialExec.taxes || 0) > 0;
 
     let shouldAutoFees = true;
-    if (hasItemizedFees) {
+    if (hasItemizedFees || isSpreadOnlyAccount) {
       shouldAutoFees = false;
     } else {
       let entryP = Number(initialExec.entryPrice) || Number(initialValues.calculated?.averageEntryPrice) || 0;
@@ -184,9 +198,6 @@ function buildInitialFormValues(
       }
 
       if (entryP > 0 && qty > 0) {
-        const matchedAcc = accounts.find(
-          (a: any) => a.id === (typeof initialValues.accountId === 'object' ? initialValues.accountId?.id || initialValues.accountId?._id : initialValues.accountId)
-        );
         const brokerCode = matchedAcc?.broker || initialValues.accountId?.broker;
         const normBrokerCode = String(brokerCode || '').toUpperCase().replace(/[\s_-]/g, '');
         const feeModelKey = matchedAcc?.profile?.feeModelKey || (matchedAcc?.baseCurrency === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
@@ -318,7 +329,7 @@ function buildInitialFormValues(
         exitPrice: isForex ? 1.0890 : 24100,
         quantity: isForex ? 1.0 : 25,
         contractMultiplier: isForex ? 100000 : 1,
-        brokerage: isForex ? 7 : 40,
+        brokerage: isForex ? 0 : 40,
         exchangeFees: isForex ? 0 : 30,
         regulatoryFees: isForex ? 0 : 5,
         taxes: isForex ? 0 : 80,
@@ -736,6 +747,15 @@ function TradeFormModalContent({
       const feeModelKey = selectedAccount?.profile?.feeModelKey || (selectedAccount?.baseCurrency === 'INR' ? 'INDIA_STATUTORY' : 'FOREX_COMMISSION');
       const normBroker = String(selectedAccount?.broker || '').toUpperCase().replace(/[\s_-]/g, '');
       const isSingleOpen = watchedStatus !== 'CLOSED' && !exitP;
+      const isMt5Account =
+        selectedAccount?.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+        normBroker === 'ELEFIN' ||
+        (Array.isArray(initialValues?.tags) && (initialValues.tags.includes('ELEFIN') || initialValues.tags.includes('MT5')));
+      const isForexOrUsdTrade =
+        selectedAccount?.baseCurrency !== 'INR' ||
+        watchedAssetClass === 'FOREX' ||
+        watchedAssetClass === 'CRYPTO';
+
       return FeeModelRegistry.calculate(feeModelKey, {
         assetClass: watchedAssetClass || 'EQUITY',
         marketSegment: watchedMarketSegment || 'NSE_EQ',
@@ -752,6 +772,9 @@ function TradeFormModalContent({
         currency: selectedAccount?.currency || selectedAccount?.baseCurrency || initialValues?.currency || 'USD',
         isSingleLeg: isSingleOpen,
         legSide: isSingleOpen ? (watchedDirection === 'SHORT' ? 'SELL' : 'BUY') : undefined,
+        isMt5: isMt5Account,
+        isSpreadOnly: isForexOrUsdTrade && (isMt5Account || selectedAccount?.accountType === 'PROP_FIRM' || normBroker === 'ELEFIN'),
+        spreadPoints: watchedSimple?.spreadPoints,
       });
     }
     return null;
@@ -1680,6 +1703,10 @@ function TradeFormModalContent({
             isAutoFees={isAutoFees}
             onResetAutoFees={handleResetAutoFees}
             strategyRRWarning={strategyRRWarning}
+            costLabel={formCaps.fees.costLabel}
+            isForexOrCfd={formCaps.fees.showCommissionSwap || selectedAccount?.baseCurrency !== 'INR' || watchedAssetClass === 'FOREX' || watchedAssetClass === 'CRYPTO'}
+            spreadPoints={watchedSimple?.spreadPoints}
+            spreadCost={watchedSimple?.spreadCost || (watchedSimple?.spreadPoints ? Number((Number(watchedSimple.spreadPoints) * multiplier * (Number(watchedSimple.quantity) || 1)).toFixed(2)) : undefined)}
           />
 
           {templateNotice && (

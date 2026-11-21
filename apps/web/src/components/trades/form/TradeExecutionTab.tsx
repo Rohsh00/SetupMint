@@ -138,71 +138,124 @@ export function TradeExecutionTab({
           <div className="pt-3 border-t border-border">
             <div className="flex items-center mb-2">
               <span className="text-xs font-semibold text-foreground">
-                Trading Costs & Fee Breakdown
+                {caps.fees.showStatutoryBreakdown ? 'Trading Costs & Statutory Fee Breakdown' : 'Forex Costs, Spreads & Commission'}
               </span>
               <HelpHint hintKey="trade.fees.autoManual" />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1">Brokerage</label>
-                <input
-                  type="number"
-                  step="any"
-                  {...register('simpleExecution.brokerage', { valueAsNumber: true })}
-                  className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
 
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1">Exchange Fees</label>
-                <input
-                  type="number"
-                  step="any"
-                  {...register('simpleExecution.exchangeFees', { valueAsNumber: true })}
-                  className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
+            {caps.fees.showStatutoryBreakdown ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Brokerage</label>
+                  <input
+                    type="number"
+                    step="any"
+                    {...register('simpleExecution.brokerage', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1">STT / Taxes</label>
-                <input
-                  type="number"
-                  step="any"
-                  {...register('simpleExecution.taxes', { valueAsNumber: true })}
-                  className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Exchange Fees</label>
+                  <input
+                    type="number"
+                    step="any"
+                    {...register('simpleExecution.exchangeFees', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1">Regulatory Fees</label>
-                <input
-                  type="number"
-                  step="any"
-                  {...register('simpleExecution.regulatoryFees', { valueAsNumber: true })}
-                  className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">STT / Taxes</label>
+                  <input
+                    type="number"
+                    step="any"
+                    {...register('simpleExecution.taxes', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1">Other Fees</label>
-                <input
-                  type="number"
-                  step="any"
-                  {...register('simpleExecution.otherFees', { valueAsNumber: true })}
-                  className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Regulatory Fees</label>
+                  <input
+                    type="number"
+                    step="any"
+                    {...register('simpleExecution.regulatoryFees', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[11px] text-muted-foreground mb-1">Adjustments (±)</label>
-                <input
-                  type="number"
-                  step="any"
-                  {...register('simpleExecution.explicitAdjustments', { valueAsNumber: true })}
-                  className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Other Fees</label>
+                  <input
+                    type="number"
+                    step="any"
+                    {...register('simpleExecution.otherFees', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Adjustments (±)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    {...register('simpleExecution.explicitAdjustments', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Broker Commission ($)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="0.00"
+                    {...register('simpleExecution.brokerage', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <span className="text-[10px] text-muted-foreground block mt-0.5">$0 for standard spread accounts</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Spread (Points / Pips)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="e.g. 1.5"
+                    {...register('simpleExecution.spreadPoints', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <span className="text-[10px] text-muted-foreground block mt-0.5">Execution friction / drag</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Swap / Financing ($)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="0.00"
+                    {...register('simpleExecution.otherFees', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <span className="text-[10px] text-muted-foreground block mt-0.5">Overnight rollover financing</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-muted-foreground mb-1">Adjustments (±)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="0.00"
+                    {...register('simpleExecution.explicitAdjustments', { valueAsNumber: true })}
+                    className="w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <span className="text-[10px] text-muted-foreground block mt-0.5">Dividends, rebates, corrections</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (

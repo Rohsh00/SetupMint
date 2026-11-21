@@ -196,6 +196,8 @@ function createEmptyCapabilities(): IAccountUiCapabilities {
       model: 'NONE',
       showStatutoryBreakdown: false,
       showCommissionSwap: false,
+      isSpreadOnly: false,
+      costLabel: 'TOTAL FEES',
     },
     instruments: {
       showLots: false,
@@ -420,6 +422,12 @@ export function resolveAccountUiCapabilities(
 
     const showStatutoryBreakdown = (profile.feeModelKey === 'INDIA_STATUTORY' || isIndianMarket) && !isProp;
     const showCommissionSwap = profile.feeModelKey === 'FOREX_COMMISSION' || profile.marketRegion === 'GLOBAL' || isProp;
+    const isSpreadOnly = isElefin || isProp || profile.executionAdapterKey === 'ELEFIN_MT5' || profile.feeModelKey === 'NONE';
+    const costLabel = showStatutoryBreakdown
+      ? 'TOTAL FEES'
+      : isSpreadOnly
+      ? 'SPREAD (INCL)'
+      : 'COMMISSION';
 
     const showOptionsFields =
       (isIndianMarket || accType === 'FUTURES_OPTIONS' || accType === 'EQUITY') &&
@@ -484,6 +492,8 @@ export function resolveAccountUiCapabilities(
         model: profile.feeModelKey,
         showStatutoryBreakdown,
         showCommissionSwap,
+        isSpreadOnly,
+        costLabel,
       },
       instruments: {
         showLots,
@@ -567,6 +577,7 @@ export function resolveAccountUiCapabilities(
 
   const allStatutory = evaluatedItems.every((i) => i.capabilities.fees.showStatutoryBreakdown);
   const allCommission = evaluatedItems.every((i) => i.capabilities.fees.showCommissionSwap);
+  const allSpreadOnly = evaluatedItems.every((i) => i.capabilities.fees.isSpreadOnly);
   const allLots = evaluatedItems.every((i) => i.capabilities.instruments.showLots);
   const allMultiplier = evaluatedItems.every((i) => i.capabilities.instruments.showMultiplier);
   const allOptions = evaluatedItems.every((i) => i.capabilities.instruments.showOptionsFields);
@@ -650,6 +661,8 @@ export function resolveAccountUiCapabilities(
       model: commonFeeModel,
       showStatutoryBreakdown: allStatutory,
       showCommissionSwap: allCommission,
+      isSpreadOnly: allSpreadOnly,
+      costLabel: allStatutory ? 'TOTAL FEES' : (allSpreadOnly ? 'SPREAD (INCL)' : 'COMMISSION'),
     },
     instruments: {
       showLots: allLots,

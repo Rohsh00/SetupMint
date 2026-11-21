@@ -1062,7 +1062,11 @@ export function TradeQuickSection({
             endIcon={showItemizedFees ? <ExpandLessRounded /> : <ExpandMoreRounded />}
             sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', color: 'text.secondary', p: 0 }}
           >
-            {showItemizedFees ? 'Hide Itemized Execution Fees' : 'Itemized Execution Fees (Brokerage, Taxes, Exchange)'}
+            {showItemizedFees
+              ? 'Hide Itemized Execution Costs'
+              : caps.fees.showStatutoryBreakdown
+              ? 'Itemized Execution Fees (Brokerage, Taxes, Exchange)'
+              : 'Forex Costs, Spreads & Commission'}
           </Button>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1125,7 +1129,7 @@ export function TradeQuickSection({
                 display: 'grid',
                 gridTemplateColumns: caps.fees.showStatutoryBreakdown
                   ? { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr 1fr' }
-                  : { xs: '1fr 1fr', sm: '1fr 1fr 1fr' },
+                  : { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr' },
                 gap: 2,
               }}
             >
@@ -1181,19 +1185,33 @@ export function TradeQuickSection({
                   />
                 </>
               ) : (
-                <TextField
-                  label="Swap / Financing"
-                  type="number"
-                  size="small"
-                  fullWidth
-                  value={watch('simpleExecution.exchangeFees') ?? 0}
-                  onChange={(e) => {
-                    onToggleAutoFees?.(false);
-                    setValue('simpleExecution.exchangeFees', Number(e.target.value));
-                  }}
-                  slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-                  helperText="Overnight rollover"
-                />
+                <>
+                  <TextField
+                    label="Spread (Pts/Pips)"
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={watch('simpleExecution.spreadPoints') ?? ''}
+                    onChange={(e) => {
+                      setValue('simpleExecution.spreadPoints', e.target.value === '' ? undefined : Number(e.target.value));
+                    }}
+                    slotProps={{ htmlInput: { step: 'any', min: 0, style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                    helperText="Entry spread drag"
+                  />
+                  <TextField
+                    label="Swap / Financing"
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={watch('simpleExecution.otherFees') ?? 0}
+                    onChange={(e) => {
+                      onToggleAutoFees?.(false);
+                      setValue('simpleExecution.otherFees', Number(e.target.value));
+                    }}
+                    slotProps={{ htmlInput: { step: 'any', style: { fontFamily: '"JetBrains Mono", monospace' } } }}
+                    helperText="Overnight rollover"
+                  />
+                </>
               )}
               <TextField
                 label="Explicit Adjustments"

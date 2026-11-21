@@ -56,6 +56,8 @@ export interface ITradeDoc extends Document {
     otherFees: number;
     explicitAdjustments: number;
     adjustmentsReason?: string;
+    spreadPoints?: number;
+    spreadCost?: number;
   };
   fills: Array<{
     fillId: string;
@@ -332,6 +334,8 @@ const TradeSchema = new Schema<ITradeDoc>(
       otherFees: { type: Number, default: 0 },
       explicitAdjustments: { type: Number, default: 0 },
       adjustmentsReason: { type: String },
+      spreadPoints: { type: Number },
+      spreadCost: { type: Number },
     },
     fills: [TradeFillSchema],
 

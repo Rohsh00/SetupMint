@@ -1884,4 +1884,89 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     expect(chime1.length).toBeGreaterThan(10000);
     expect(chime3.length).toBeGreaterThan(15000);
   });
+
+  // 49. Live Cockpit Deep Lot Sizing: Clicking BUY Gold opens Deep Sizing & Lot Options Report
+  it('Scenario 49: Clicking BUY Gold or BUY ETH opens Deep Sizing & Lot Options Report with Best Option', async () => {
+    sentMessages.length = 0;
+    editedMessages.length = 0;
+
+    // Simulate clicking BUY Gold button from Cockpit: deck:order_prep:XAUUSD:BUY
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_prep_gold_1',
+      from: { id: chatId },
+      data: 'deck:order_prep:XAUUSD:BUY',
+      message: { message_id: 77701, chat: { id: chatId } },
+    }, botToken);
+
+    // Verify Deep Sizing card was generated
+    const card = editedMessages[editedMessages.length - 1] || sentMessages[sentMessages.length - 1];
+    expect(card).toBeDefined();
+    expect(card.text).toContain('Gold (XAUUSD) • BUY LOT OPTIONS REPORT');
+    expect(card.text).toContain('BEST OPTION (RECOMMENDED)');
+    expect(card.text).toContain('Micro / Min');
+    expect(card.text).toContain('Conservative');
+    expect(card.text).toContain('Saved Preset');
+    expect(card.text).toContain('Extra Risk');
+
+    // Verify interactive buttons contain Best Option, Tiers, Dollar budgets, and Cancel
+    const buttons = card.reply_markup.inline_keyboard.flat();
+    expect(buttons.some((b: any) => b.text.includes('BEST OPTION'))).toBe(true);
+    expect(buttons.some((b: any) => b.text.includes('Micro'))).toBe(true);
+    expect(buttons.some((b: any) => b.text.includes('Preset'))).toBe(true);
+    expect(buttons.some((b: any) => b.text.includes('Extra Risk'))).toBe(true);
+    expect(buttons.some((b: any) => b.text.includes('$25 Risk'))).toBe(true);
+    expect(buttons.some((b: any) => b.text.includes('$50 Risk'))).toBe(true);
+    expect(buttons.some((b: any) => b.text.includes('Cancel / Back to Cockpit'))).toBe(true);
+
+    // Verify Best Option button callback has :exec suffix
+    const bestOptBtn = buttons.find((b: any) => b.text.includes('BEST OPTION'));
+    expect(bestOptBtn.callback_data).toContain(':exec');
+  });
+
+  // 50. Live Cockpit Deep Lot Sizing: Clicking BUY ETH generates ETH-specific pricing and options
+  it('Scenario 50: Clicking BUY ETH generates ETHUSD specific pricing and risk tiers', async () => {
+    sentMessages.length = 0;
+    editedMessages.length = 0;
+
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_prep_eth_1',
+      from: { id: chatId },
+      data: 'deck:order_prep:ETHUSD:BUY',
+      message: { message_id: 77702, chat: { id: chatId } },
+    }, botToken);
+
+    const card = editedMessages[editedMessages.length - 1] || sentMessages[sentMessages.length - 1];
+    expect(card).toBeDefined();
+    expect(card.text).toContain('ETHUSD • BUY LOT OPTIONS REPORT');
+    expect(card.text).toContain('BEST OPTION (RECOMMENDED)');
+
+    const buttons = card.reply_markup.inline_keyboard.flat();
+    const ethBestBtn = buttons.find((b: any) => b.text.includes('BEST OPTION'));
+    expect(ethBestBtn.callback_data).toContain('order:ETHUSD:BUY:');
+    expect(ethBestBtn.callback_data).toContain(':exec');
+  });
+
+  // 51. Deep Lot Sizing Execution: Clicking confirmed Best Option button places order on MT5
+  it('Scenario 51: Tapping confirmed Best Option button executes order on MT5 Bridge', async () => {
+    sentMessages.length = 0;
+
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_exec_gold_best',
+      from: { id: chatId },
+      data: 'order:XAUUSD:BUY:0.14:35:70:exec',
+      message: { message_id: 77703, chat: { id: chatId } },
+    }, botToken);
+
+    // Verify command was queued to MT5 with exact 0.14 lots
+    const cmd = await Mt5Command.findOne({
+      userId: testUser._id,
+      symbol: 'XAUUSD',
+      side: 'BUY',
+      volume: 0.14,
+    }).sort({ createdAt: -1 });
+
+    expect(cmd).toBeDefined();
+    expect(cmd?.action).toBe('OPEN_ORDER');
+    expect(cmd?.volume).toBe(0.14);
+  });
 });

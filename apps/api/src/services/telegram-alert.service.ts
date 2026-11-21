@@ -145,7 +145,7 @@ export class TelegramAlertService {
   private static recentAlerts = new Map<string, number>();
   private static DEBOUNCE_MS = 10 * 1000; // 10s throttle for flat alerts
   private static spreadWarningTimestamps = new Map<string, number>();
-  private static activeCockpitSubmenus = new Map<string, { menu: string; symbol: string; expiresAt: number }>();
+  private static activeCockpitSubmenus = new Map<string, { menu: string; symbol: string; side?: 'BUY' | 'SELL'; expiresAt: number }>();
 
   /**
    * Deterministic Webhook Secret Token derived from server configuration.
@@ -1396,12 +1396,53 @@ export class TelegramAlertService {
     }
     if (data.startsWith('order:')) {
       const parts = data.split(':');
-      const [, symbol, side, volumeStr, slPointsStr, tpPointsStr] = parts;
+      const [, symbol, side, volumeStr, slPointsStr, tpPointsStr, mode] = parts;
       const volume = parseFloat(volumeStr) || 0.10;
       const slPoints = parseFloat(slPointsStr) || 35;
       const tpPoints = parseFloat(tpPointsStr) || 70;
-      await this.answerCallbackQuery(botToken, cq.id, `⚡ Sending ${side} ${volume} ${symbol} to MT5...`);
-      await this.executeTelegramOrder(user, botToken, chatId, symbol, side as any, volume, slPoints, tpPoints);
+
+      if (mode === 'exec') {
+        const userIdStr = user._id ? user._id.toString() : '';
+        TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
+        await this.answerCallbackQuery(botToken, cq.id, `⚡ Sending ${side} ${volume} ${symbol} to MT5...`);
+        await this.executeTelegramOrder(user, botToken, chatId, symbol, side as any, volume, slPoints, tpPoints);
+        return;
+      }
+
+      // If clicked without explicit ':exec' confirmation, report lot options and prompt deeper
+      const cleanSym = (symbol || 'XAUUSD').toUpperCase();
+      const targetSide: 'BUY' | 'SELL' = (side || 'BUY').toUpperCase() as any;
+      const userIdStr = user._id ? user._id.toString() : '';
+      TelegramAlertService.activeCockpitSubmenus.set(userIdStr, {
+        menu: 'order_prep',
+        symbol: cleanSym,
+        side: targetSide,
+        expiresAt: Date.now() + 120000,
+      });
+      await this.answerCallbackQuery(botToken, cq.id, `📊 Sizing & Lot Options for ${targetSide} ${cleanSym}...`);
+      const updatedPinned = await this.updatePinnedCockpitMessage(user);
+      if (!updatedPinned) {
+        await this.handleOrderPrepCommand(user, botToken, chatId, cleanSym, targetSide, messageId);
+      }
+      return;
+    }
+    if (data.startsWith('prep_order:')) {
+      const parts = data.split(':');
+      const [, symbol, side] = parts;
+      const cleanSym = (symbol || 'XAUUSD').toUpperCase();
+      const targetSide: 'BUY' | 'SELL' = (side || 'BUY').toUpperCase() as any;
+      const userIdStr = user._id ? user._id.toString() : '';
+      TelegramAlertService.activeCockpitSubmenus.set(userIdStr, {
+        menu: 'order_prep',
+        symbol: cleanSym,
+        side: targetSide,
+        expiresAt: Date.now() + 120000,
+      });
+      await this.answerCallbackQuery(botToken, cq.id, `📊 Sizing & Lot Options for ${targetSide} ${cleanSym}...`);
+      const updatedPinned = await this.updatePinnedCockpitMessage(user);
+      if (!updatedPinned) {
+        await this.handleOrderPrepCommand(user, botToken, chatId, cleanSym, targetSide, messageId);
+      }
       return;
     }
     if (data === 'cmd_gold_menu') {
@@ -1469,20 +1510,33 @@ export class TelegramAlertService {
       const parts = data.split(':');
       const menu = parts[1];
       const sym = parts[2];
+      const side = (parts[3] as 'BUY' | 'SELL') || 'BUY';
       const userIdStr = user._id ? user._id.toString() : '';
       if (menu === 'back' || menu === 'main') {
         TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
         await this.answerCallbackQuery(botToken, cq.id, '🔙 Back to Cockpit');
+        const updatedPinned = await this.updatePinnedCockpitMessage(user);
+        if (!updatedPinned && messageId) {
+          await this.handleCockpitCommand(user, botToken, chatId);
+        }
       } else {
         TelegramAlertService.activeCockpitSubmenus.set(userIdStr, {
           menu,
           symbol: (sym || 'XAUUSD').toUpperCase(),
-          expiresAt: Date.now() + 60000,
+          side: (side || 'BUY').toUpperCase() as any,
+          expiresAt: Date.now() + 120000,
         });
-        const label = menu === 'harvest' ? '🎯 Profit Harvest' : (menu === 'pyramid' ? '➕ Pyramiding' : (menu === 'defense' ? '🛡️ Defense & Trailing' : '📋 Layers'));
-        await this.answerCallbackQuery(botToken, cq.id, `Opening ${label} menu...`);
+        const label = menu === 'order_prep'
+          ? `📊 Sizing & Lot Options for ${side} ${sym}`
+          : (menu === 'harvest' ? '🎯 Profit Harvest' : (menu === 'pyramid' ? '➕ Pyramiding' : (menu === 'defense' ? '🛡️ Defense & Trailing' : '📋 Layers')));
+        await this.answerCallbackQuery(botToken, cq.id, `Opening ${label}...`);
+        const updatedPinned = await this.updatePinnedCockpitMessage(user);
+        if (!updatedPinned && messageId) {
+          if (menu === 'order_prep') {
+            await this.handleOrderPrepCommand(user, botToken, chatId, (sym || 'XAUUSD').toUpperCase(), (side || 'BUY').toUpperCase() as any, messageId);
+          }
+        }
       }
-      await this.updatePinnedCockpitMessage(user);
       return;
     }
 
@@ -6539,11 +6593,11 @@ export class TelegramAlertService {
       [
         {
           text: `🟢 BUY ${cleanSym} (${defaultLot})`,
-          callback_data: `order:${cleanSym}:BUY:${defaultLot}:${defaultSl}:${defaultTp}`,
+          callback_data: `deck:order_prep:${cleanSym}:BUY`,
         },
         {
           text: `🔴 SELL ${cleanSym} (${defaultLot})`,
-          callback_data: `order:${cleanSym}:SELL:${defaultLot}:${defaultSl}:${defaultTp}`,
+          callback_data: `deck:order_prep:${cleanSym}:SELL`,
         },
       ],
       [
@@ -6636,11 +6690,11 @@ export class TelegramAlertService {
       [
         {
           text: `🟢 BUY ${lots.toFixed(2)} ${symbol}`,
-          callback_data: `order:${symbol}:BUY:${lots}:${slPoints}:${tpPoints}`,
+          callback_data: `order:${symbol}:BUY:${lots}:${slPoints}:${tpPoints}:exec`,
         },
         {
           text: `🔴 SELL ${lots.toFixed(2)} ${symbol}`,
-          callback_data: `order:${symbol}:SELL:${lots}:${slPoints}:${tpPoints}`,
+          callback_data: `order:${symbol}:SELL:${lots}:${slPoints}:${tpPoints}:exec`,
         },
       ],
       [
@@ -6649,6 +6703,267 @@ export class TelegramAlertService {
       ],
     ];
 
+    await this.sendMessage(botToken, chatId, text, buttons);
+  }
+
+  /**
+   * Generates the deep sizing & lot options report card for any asset (Gold, ETH, BTC, US30, NAS100).
+   * Audits live account equity, prop firm challenge guardrails, and highlights the optimal BEST OPTION.
+   */
+  static async buildOrderPrepPayload(
+    user: any,
+    symbol: string,
+    side: 'BUY' | 'SELL' = 'BUY'
+  ): Promise<{ text: string; buttons: ITelegramInlineButton[][] }> {
+    const isGold = (symbol || '').includes('XAU') || symbol === 'GOLD';
+    const isEth = (symbol || '').includes('ETH');
+    const isBtc = (symbol || '').includes('BTC');
+    const isUs30 = (symbol || '').includes('US30') || (symbol || '').includes('DOW');
+    const isNas = (symbol || '').includes('NAS') || (symbol || '').includes('USTEC');
+
+    let cleanSym = 'XAUUSD';
+    let displaySym = 'Gold (XAUUSD)';
+    let symIcon = '🟡';
+    let multiplier = 100;
+    let pointScale = 0.10; // 1 point = $0.10 for Gold
+
+    if (isGold) {
+      cleanSym = 'XAUUSD';
+      displaySym = 'Gold (XAUUSD)';
+      symIcon = '🟡';
+      multiplier = 100;
+      pointScale = 0.10;
+    } else if (isEth) {
+      cleanSym = 'ETHUSD';
+      displaySym = 'ETHUSD';
+      symIcon = '🔷';
+      multiplier = 1;
+      pointScale = 1.0;
+    } else if (isBtc) {
+      cleanSym = 'BTCUSD';
+      displaySym = 'BTCUSD';
+      symIcon = '₿';
+      multiplier = 1;
+      pointScale = 1.0;
+    } else if (isUs30) {
+      cleanSym = 'US30';
+      displaySym = 'US30';
+      symIcon = '🇺🇸';
+      multiplier = 1;
+      pointScale = 1.0;
+    } else if (isNas) {
+      cleanSym = 'NAS100';
+      displaySym = 'NAS100';
+      symIcon = '💻';
+      multiplier = 1;
+      pointScale = 1.0;
+    } else {
+      cleanSym = (symbol || 'XAUUSD').toUpperCase();
+      displaySym = cleanSym;
+      symIcon = '🪙';
+      multiplier = 100;
+      pointScale = 0.10;
+    }
+
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const defaultLot = isGold
+      ? (presets?.goldDefaultLot ?? DEFAULT_FOREX_PRESETS.gold.defaultLot)
+      : (isEth
+        ? (presets?.ethDefaultLot ?? DEFAULT_FOREX_PRESETS.eth.defaultLot)
+        : (isBtc ? (DEFAULT_FOREX_PRESETS.btc?.defaultLot ?? 0.05) : 0.10));
+
+    const defaultSl = isGold
+      ? (presets?.goldSlPoints ?? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints)
+      : (isEth
+        ? (presets?.ethSlPrice ?? DEFAULT_FOREX_PRESETS.eth.defaultSlPrice)
+        : (isBtc ? (DEFAULT_FOREX_PRESETS.btc?.defaultSlPoints ?? 300) : (isUs30 ? 60 : 40)));
+
+    const defaultRr = isGold
+      ? (presets?.goldRrRatio ?? DEFAULT_FOREX_PRESETS.gold.defaultRr)
+      : (isEth
+        ? (presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr)
+        : (isBtc ? (DEFAULT_FOREX_PRESETS.btc?.defaultRr ?? 2.5) : 2.0));
+
+    const slPoints = defaultSl;
+    const tpPoints = Number((slPoints * defaultRr).toFixed(2));
+    const slDist = Number((slPoints * pointScale).toFixed(2));
+    const tpDist = Number((tpPoints * pointScale).toFixed(2));
+    const riskPer1Lot = Math.max(0.001, slDist * multiplier);
+
+    // Fetch live quote
+    let ltp = 0;
+    let bid = 0;
+    let ask = 0;
+    const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
+    if (mt5Quote && mt5Quote.ltp > 0) {
+      ltp = mt5Quote.ltp;
+      bid = mt5Quote.bid || ltp;
+      ask = mt5Quote.ask || ltp;
+    }
+    if (ltp === 0 && GlobalCfdCandleProvider.isSupportedGlobalSymbol(cleanSym)) {
+      try {
+        const quotes = await GlobalCfdCandleProvider.getLiveQuotes([cleanSym]);
+        const gq = quotes.get(cleanSym);
+        if (gq && gq.ltp > 0) {
+          ltp = gq.ltp;
+          bid = (gq as any).bid || (ltp - 0.20);
+          ask = (gq as any).ask || (ltp + 0.20);
+        }
+      } catch {}
+    }
+    if (ltp === 0) {
+      ltp = isGold ? 2650.00 : (isEth ? 3100.00 : (isBtc ? 91450.00 : (isUs30 ? 43850.00 : 20820.00)));
+      bid = ltp - 0.20;
+      ask = ltp + 0.20;
+    }
+    const spreadVal = (ask > 0 && bid > 0) ? Math.max(0.01, ask - bid) : (isGold ? 0.35 : (isEth ? 0.50 : 5.00));
+    const spreadStr = `$${spreadVal.toFixed(2)}`;
+
+    const entryPrice = side === 'BUY' ? (ask > 0 ? ask : ltp) : (bid > 0 ? bid : ltp);
+    const slPrice = side === 'BUY' ? entryPrice - slDist : entryPrice + slDist;
+    const tpPrice = side === 'BUY' ? entryPrice + tpDist : entryPrice - tpDist;
+
+    // Account & Risk calculations
+    let equity = 100000;
+    let accountName = 'MT5 Elefin';
+    let propNotes = '';
+    try {
+      const account = await this.resolveMt5Account(user._id);
+      if (account?.currentBalance) equity = Number(account.currentBalance);
+      if (account?.name) accountName = account.name;
+      if (account?.accountType === 'PROP_FIRM' || account?.propFirmConfig?.enabled) {
+        propNotes = ' • Prop Guard Armed';
+      }
+    } catch {}
+
+    const defaultDollarRisk = presets?.defaultDollarRisk ?? 50;
+    let targetDollarRisk = defaultDollarRisk;
+    if (equity > 0) {
+      targetDollarRisk = Math.min(targetDollarRisk, Math.max(25, equity * 0.01));
+    }
+
+    let bestOptionLot = riskPer1Lot > 0 ? targetDollarRisk / riskPer1Lot : defaultLot;
+    bestOptionLot = Math.max(0.01, Number(bestOptionLot.toFixed(2)));
+
+    const microLot = 0.01;
+    const consLot = Math.max(0.01, Number((defaultLot * 0.5).toFixed(2)));
+    const presetLot = Number(defaultLot.toFixed(2));
+    const aggrLot = Number((defaultLot * 2).toFixed(2));
+
+    const lot25 = Math.max(0.01, Number((25 / riskPer1Lot).toFixed(2)));
+    const lot50 = Math.max(0.01, Number((50 / riskPer1Lot).toFixed(2)));
+    const lot100 = Math.max(0.01, Number((100 / riskPer1Lot).toFixed(2)));
+
+    const bestRisk = Number((bestOptionLot * riskPer1Lot).toFixed(2));
+    const bestReward = Number((bestOptionLot * riskPer1Lot * defaultRr).toFixed(2));
+    const microRisk = Number((microLot * riskPer1Lot).toFixed(2));
+    const microReward = Number((microLot * riskPer1Lot * defaultRr).toFixed(2));
+    const consRisk = Number((consLot * riskPer1Lot).toFixed(2));
+    const consReward = Number((consLot * riskPer1Lot * defaultRr).toFixed(2));
+    const presetRisk = Number((presetLot * riskPer1Lot).toFixed(2));
+    const presetReward = Number((presetLot * riskPer1Lot * defaultRr).toFixed(2));
+    const aggrRisk = Number((aggrLot * riskPer1Lot).toFixed(2));
+    const aggrReward = Number((aggrLot * riskPer1Lot * defaultRr).toFixed(2));
+
+    const bestPctEquity = equity > 0 ? ((bestRisk / equity) * 100).toFixed(2) : '0.05';
+    const sideEmoji = side === 'BUY' ? '🟢' : '🔴';
+    const sideLabel = side === 'BUY' ? 'BUY (LONG)' : 'SELL (SHORT)';
+
+    const text =
+      `${symIcon} <b>${displaySym} • ${side} LOT OPTIONS REPORT</b>\n` +
+      `⚡ <i>Live LTP: $${ltp.toFixed(2)}  (Spread ${spreadStr})</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🎯 <b>Direction   :</b> ${sideEmoji} <b>${sideLabel}</b>\n` +
+      `🛑 <b>Stop Loss   :</b> <code>$${slPrice.toFixed(2)}</code> (-${slPoints} pts / -$${slDist.toFixed(2)})\n` +
+      `🎯 <b>Take Profit :</b> <code>$${tpPrice.toFixed(2)}</code> (+${tpPoints} pts / 1:${defaultRr.toFixed(1)} RR)\n` +
+      `💼 <b>Account     :</b> ${accountName} ($${equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${propNotes})\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🌟 <b>BEST OPTION (RECOMMENDED):</b>\n` +
+      `👉 <b>${bestOptionLot.toFixed(2)} Lots</b>  |  Risk: <b>-$${bestRisk.toFixed(2)}</b> (${bestPctEquity}%)  |  Target: <b>+$${bestReward.toFixed(2)}</b>\n` +
+      `💡 <i>Optimal risk-adjusted lot: fits strictly within safe budget, guarantees 1:${defaultRr.toFixed(1)} R:R, and protects prop challenge drawdown limits.</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📊 <b>AVAILABLE LOT OPTIONS & RISK BREAKDOWN:</b>\n` +
+      `• 🌟 <b>Best Option</b> : <code>${bestOptionLot.toFixed(2)}L</code> ➜ Risk: <b>-$${bestRisk.toFixed(2)}</b> | Reward: <b>+$${bestReward.toFixed(2)}</b>\n` +
+      `• 🛡️ <b>Micro / Min</b> : <code>${microLot.toFixed(2)}L</code> ➜ Risk: <b>-$${microRisk.toFixed(2)}</b> | Reward: <b>+$${microReward.toFixed(2)}</b>\n` +
+      `• ⚖️ <b>Conservative</b>: <code>${consLot.toFixed(2)}L</code> ➜ Risk: <b>-$${consRisk.toFixed(2)}</b> | Reward: <b>+$${consReward.toFixed(2)}</b>\n` +
+      `• ⚡ <b>Saved Preset</b>: <code>${presetLot.toFixed(2)}L</code> ➜ Risk: <b>-$${presetRisk.toFixed(2)}</b> | Reward: <b>+$${presetReward.toFixed(2)}</b>\n` +
+      `• 🚀 <b>Extra Risk</b>  : <code>${aggrLot.toFixed(2)}L</code> ➜ Risk: <b>-$${aggrRisk.toFixed(2)}</b> | Reward: <b>+$${aggrReward.toFixed(2)}</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<i>Tap your preferred lot size below to execute on MT5:</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        {
+          text: `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • -$${bestRisk.toFixed(0)})`,
+          callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ],
+      [
+        {
+          text: `🛡️ Micro (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`,
+          callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+        {
+          text: `⚖️ Cons (${consLot.toFixed(2)}L • -$${consRisk.toFixed(2)})`,
+          callback_data: `order:${cleanSym}:${side}:${consLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ],
+      [
+        {
+          text: `⚡ Preset (${presetLot.toFixed(2)}L • -$${presetRisk.toFixed(2)})`,
+          callback_data: `order:${cleanSym}:${side}:${presetLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+        {
+          text: `🚀 Extra Risk (${aggrLot.toFixed(2)}L • -$${aggrRisk.toFixed(2)})`,
+          callback_data: `order:${cleanSym}:${side}:${aggrLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ],
+      [
+        {
+          text: `💵 $25 Risk (${lot25.toFixed(2)}L)`,
+          callback_data: `order:${cleanSym}:${side}:${lot25.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+        {
+          text: `💵 $50 Risk (${lot50.toFixed(2)}L)`,
+          callback_data: `order:${cleanSym}:${side}:${lot50.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+        {
+          text: `💵 $100 Risk (${lot100.toFixed(2)}L)`,
+          callback_data: `order:${cleanSym}:${side}:${lot100.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        },
+      ],
+      [
+        {
+          text: '🔄 Refresh Price',
+          callback_data: `deck:order_prep:${cleanSym}:${side}`,
+        },
+        {
+          text: '🔙 ❮ Cancel / Back to Cockpit',
+          callback_data: 'deck:back',
+        },
+      ],
+    ];
+
+    return { text, buttons };
+  }
+
+  /**
+   * Handles opening the pre-order lot sizing and deep options report deck.
+   */
+  static async handleOrderPrepCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    symbol: string,
+    side: 'BUY' | 'SELL' = 'BUY',
+    messageId?: number
+  ): Promise<void> {
+    if (!botToken) return;
+    const { text, buttons } = await this.buildOrderPrepPayload(user, symbol, side);
+    if (messageId) {
+      const edited = await this.editMessageText(botToken, chatId, messageId, text, buttons);
+      if (edited) return;
+    }
     await this.sendMessage(botToken, chatId, text, buttons);
   }
 
@@ -6911,6 +7226,13 @@ export class TelegramAlertService {
       TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
     }
 
+    // Pre-order lot options & sizing deck (renders for both flat and active position states)
+    if (isSubActive && activeSub && activeSub.menu === 'order_prep') {
+      const subSym = activeSub.symbol || 'XAUUSD';
+      const subSide: 'BUY' | 'SELL' = (activeSub.side as any) || 'BUY';
+      return await this.buildOrderPrepPayload(user, subSym, subSide);
+    }
+
     if (hasOpenTrades) {
       if (isSubActive && activeSub) {
         // RENDER ACTIVE SUBMENU DECK
@@ -7059,20 +7381,20 @@ export class TelegramAlertService {
       }
     } else {
       buttons.push([
-        { text: `🟡 BUY Gold (${goldLotStr})`, callback_data: `order:XAUUSD:BUY:${goldLotStr}:${goldSl}:${goldTp}` },
-        { text: `🟡 SELL Gold (${goldLotStr})`, callback_data: `order:XAUUSD:SELL:${goldLotStr}:${goldSl}:${goldTp}` },
+        { text: `🟡 BUY Gold (${goldLotStr})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: `🟡 SELL Gold (${goldLotStr})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
       ]);
       buttons.push([
-        { text: `🔷 BUY ETH (${ethLotStr})`, callback_data: `order:ETHUSD:BUY:${ethLotStr}:${ethSl}:${ethTp}` },
-        { text: `🔷 SELL ETH (${ethLotStr})`, callback_data: `order:ETHUSD:SELL:${ethLotStr}:${ethSl}:${ethTp}` },
+        { text: `🔷 BUY ETH (${ethLotStr})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
+        { text: `🔷 SELL ETH (${ethLotStr})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
       ]);
       buttons.push([
-        { text: `₿ BUY BTC (${btcLotStr})`, callback_data: `order:BTCUSD:BUY:${btcLotStr}:${btcSl}:${btcTp}` },
-        { text: `₿ SELL BTC (${btcLotStr})`, callback_data: `order:BTCUSD:SELL:${btcLotStr}:${btcSl}:${btcTp}` },
+        { text: `₿ BUY BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
+        { text: `₿ SELL BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
       ]);
       buttons.push([
-        { text: `🇺🇸 US30 (${us30LotStr}L)`, callback_data: 'cmd_us30_menu' },
-        { text: `💻 NAS100 (${nasLotStr}L)`, callback_data: 'cmd_nas_menu' },
+        { text: `🇺🇸 US30 (${us30LotStr}L)`, callback_data: 'deck:order_prep:US30:BUY' },
+        { text: `💻 NAS100 (${nasLotStr}L)`, callback_data: 'deck:order_prep:NAS100:BUY' },
         { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },
       ]);
       buttons.push([

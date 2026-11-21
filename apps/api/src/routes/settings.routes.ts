@@ -191,6 +191,18 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         }
       }
 
+      // Telegram Forex Presets (Gold XAUUSD & Ethereum ETHUSD)
+      if (liveWatcherSettings.telegramForexPresets && typeof liveWatcherSettings.telegramForexPresets === 'object') {
+        const p = liveWatcherSettings.telegramForexPresets;
+        if (p.goldDefaultLot !== undefined) update['liveWatcherSettings.telegramForexPresets.goldDefaultLot'] = Number(p.goldDefaultLot);
+        if (p.goldSlPoints !== undefined) update['liveWatcherSettings.telegramForexPresets.goldSlPoints'] = Number(p.goldSlPoints);
+        if (p.goldRrRatio !== undefined) update['liveWatcherSettings.telegramForexPresets.goldRrRatio'] = Number(p.goldRrRatio);
+        if (p.ethDefaultLot !== undefined) update['liveWatcherSettings.telegramForexPresets.ethDefaultLot'] = Number(p.ethDefaultLot);
+        if (p.ethSlPrice !== undefined) update['liveWatcherSettings.telegramForexPresets.ethSlPrice'] = Number(p.ethSlPrice);
+        if (p.ethRrRatio !== undefined) update['liveWatcherSettings.telegramForexPresets.ethRrRatio'] = Number(p.ethRrRatio);
+        if (p.defaultDollarRisk !== undefined) update['liveWatcherSettings.telegramForexPresets.defaultDollarRisk'] = Number(p.defaultDollarRisk);
+      }
+
       // 5. Telegram Alerts Enabled Flag
       if (liveWatcherSettings.telegramAlertsEnabled !== undefined) {
         update['liveWatcherSettings.telegramAlertsEnabled'] = Boolean(liveWatcherSettings.telegramAlertsEnabled);

@@ -2367,7 +2367,28 @@ export interface ILiveWatcherSettings {
   goldNewsLeadTimesMinutes?: number[];
   goldNewsImpactFilter?: 'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY';
   carPlayToken?: string;
+  telegramForexPresets?: ITelegramForexPresets;
 }
+
+export interface ITelegramForexPresets {
+  goldDefaultLot: number;
+  goldSlPoints: number;
+  goldRrRatio: number;
+  ethDefaultLot: number;
+  ethSlPrice: number;
+  ethRrRatio: number;
+  defaultDollarRisk: number;
+}
+
+export const DEFAULT_TELEGRAM_FOREX_PRESETS: ITelegramForexPresets = {
+  goldDefaultLot: 0.10,
+  goldSlPoints: 35,
+  goldRrRatio: 2.0,
+  ethDefaultLot: 1.0,
+  ethSlPrice: 30,
+  ethRrRatio: 2.5,
+  defaultDollarRisk: 50,
+};
 
 export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   defaultAutoExecute: false,
@@ -2434,6 +2455,7 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   layoutPresets: DEFAULT_WATCHER_LAYOUT_PRESETS,
   activePresetId: 'positional',
   displaySettings: DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
+  telegramForexPresets: DEFAULT_TELEGRAM_FOREX_PRESETS,
 };
 
 export function createLadderRulesFromSettings(

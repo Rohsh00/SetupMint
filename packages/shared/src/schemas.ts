@@ -842,6 +842,16 @@ export const liveWatcherDisplaySettingsSchema = z.object({
   showOptionsGreeks: z.boolean().optional(),
 });
 
+export const telegramForexPresetsSchema = z.object({
+  goldDefaultLot: z.coerce.number().positive().default(0.10),
+  goldSlPoints: z.coerce.number().positive().default(35),
+  goldRrRatio: z.coerce.number().positive().default(2.0),
+  ethDefaultLot: z.coerce.number().positive().default(1.0),
+  ethSlPrice: z.coerce.number().positive().default(30),
+  ethRrRatio: z.coerce.number().positive().default(2.5),
+  defaultDollarRisk: z.coerce.number().positive().default(50),
+});
+
 export const liveWatcherSettingsSchema = z.object({
   defaultAutoExecute: z.boolean().optional(),
   defaultTargetMode: z.enum(['T1_ONLY', 'T1_FREE_RUNNER', 'TWO_TARGETS_RUNNER', 'CLASSIC_THREE']).optional(),
@@ -900,6 +910,7 @@ export const liveWatcherSettingsSchema = z.object({
   activePresetId: z.string().optional(),
   clearTelegramCredentials: z.boolean().optional(),
   displaySettings: liveWatcherDisplaySettingsSchema.optional(),
+  telegramForexPresets: telegramForexPresetsSchema.optional(),
 });
 
 export const updateProfileSchema = z.object({

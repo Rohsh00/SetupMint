@@ -459,4 +459,36 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', () => {
     const updatedEth = await Trade.findById(ethTrade._id);
     expect(updatedEth?.risk?.currentStopLoss).toBe(3100.00);
   });
+
+  it('Scenario 14: User custom telegramForexPresets from Settings UI are dynamically loaded and executed', async () => {
+    // Configure user with custom settings: Gold 0.25 lots, 50 pts SL, 3.0 RR
+    testUser.liveWatcherSettings = {
+      ...(testUser.liveWatcherSettings || {}),
+      telegramForexPresets: {
+        goldDefaultLot: 0.25,
+        goldSlPoints: 50,
+        goldRrRatio: 3.0,
+        ethDefaultLot: 2.0,
+        ethSlPrice: 40,
+        ethRrRatio: 2.0,
+        defaultDollarRisk: 100,
+      },
+    };
+    await testUser.save();
+
+    await TelegramAlertService.handleForexOrderCommand(testUser, botToken, chatId, 'XAUUSD', ['buy']);
+
+    const customCmd = await Mt5Command.findOne({
+      userId: testUser._id,
+      symbol: 'XAUUSD',
+      side: 'BUY',
+      volume: 0.25,
+    }).sort({ createdAt: -1 });
+
+    expect(customCmd).toBeDefined();
+    expect(customCmd?.volume).toBe(0.25);
+    // At live mock LTP 2650.20: SL 50 pts ($5) -> 2645.20, TP 150 pts ($15) -> 2665.20
+    expect(customCmd?.stopLoss).toBe(2645.20);
+    expect(customCmd?.takeProfit).toBe(2665.20);
+  });
 });

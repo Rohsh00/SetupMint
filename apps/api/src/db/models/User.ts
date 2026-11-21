@@ -161,6 +161,15 @@ const UserSchema = new Schema<IUserDoc>(
         type: Object,
         default: DEFAULT_LIVE_WATCHER_SETTINGS.displaySettings,
       },
+      telegramForexPresets: {
+        goldDefaultLot: { type: Number, default: 0.10 },
+        goldSlPoints: { type: Number, default: 35 },
+        goldRrRatio: { type: Number, default: 2.0 },
+        ethDefaultLot: { type: Number, default: 1.0 },
+        ethSlPrice: { type: Number, default: 30 },
+        ethRrRatio: { type: Number, default: 2.5 },
+        defaultDollarRisk: { type: Number, default: 50 },
+      },
     },
   },
   {

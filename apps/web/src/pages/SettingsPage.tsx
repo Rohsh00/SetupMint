@@ -86,6 +86,8 @@ import {
   DEFAULT_LIVE_WATCHER_SETTINGS,
   ILiveWatcherDisplaySettings,
   DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
+  DEFAULT_TELEGRAM_FOREX_PRESETS,
+  ITelegramForexPresets,
 } from '@tradevault/shared';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
@@ -151,6 +153,18 @@ export function SettingsPage() {
       a.profile?.capabilities?.canExitPositions ||
       a.profile?.executionAdapterKey === 'FYERS' ||
       a.profile?.executionAdapterKey === 'ELEFIN_MT5'
+    );
+  }, [accounts]);
+
+  const hasMt5Account = useMemo(() => {
+    return accounts.some((a: any) =>
+      a.profile?.executionAdapterKey === 'ELEFIN_MT5' ||
+      a.broker === 'MT5' ||
+      a.accountType === 'PROP_FIRM' ||
+      a.platform === 'MT5' ||
+      a.name?.toLowerCase().includes('mt5') ||
+      a.name?.toLowerCase().includes('elefin') ||
+      a.name?.toLowerCase().includes('the5ers')
     );
   }, [accounts]);
 
@@ -276,6 +290,16 @@ export function SettingsPage() {
     ...(initialWatcher.displaySettings || {}),
   }));
 
+  // Telegram MT5 Fast Execution Presets (Gold XAUUSD & Ethereum ETHUSD)
+  const initialForex = initialWatcher.telegramForexPresets || DEFAULT_TELEGRAM_FOREX_PRESETS;
+  const [goldDefaultLot, setGoldDefaultLot] = useState<number>(initialForex.goldDefaultLot ?? 0.10);
+  const [goldSlPoints, setGoldSlPoints] = useState<number>(initialForex.goldSlPoints ?? 35);
+  const [goldRrRatio, setGoldRrRatio] = useState<number>(initialForex.goldRrRatio ?? 2.0);
+  const [ethDefaultLot, setEthDefaultLot] = useState<number>(initialForex.ethDefaultLot ?? 1.0);
+  const [ethSlPrice, setEthSlPrice] = useState<number>(initialForex.ethSlPrice ?? 30);
+  const [ethRrRatio, setEthRrRatio] = useState<number>(initialForex.ethRrRatio ?? 2.5);
+  const [defaultDollarRisk, setDefaultDollarRisk] = useState<number>(initialForex.defaultDollarRisk ?? 50);
+
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
 
@@ -354,6 +378,15 @@ export function SettingsPage() {
           goldNewsReminder: s.telegramAlertEvents?.goldNewsReminder ?? true,
           goldNewsResultAlert: s.telegramAlertEvents?.goldNewsResultAlert ?? true,
         });
+      }
+      if (s.telegramForexPresets) {
+        if (s.telegramForexPresets.goldDefaultLot !== undefined) setGoldDefaultLot(s.telegramForexPresets.goldDefaultLot);
+        if (s.telegramForexPresets.goldSlPoints !== undefined) setGoldSlPoints(s.telegramForexPresets.goldSlPoints);
+        if (s.telegramForexPresets.goldRrRatio !== undefined) setGoldRrRatio(s.telegramForexPresets.goldRrRatio);
+        if (s.telegramForexPresets.ethDefaultLot !== undefined) setEthDefaultLot(s.telegramForexPresets.ethDefaultLot);
+        if (s.telegramForexPresets.ethSlPrice !== undefined) setEthSlPrice(s.telegramForexPresets.ethSlPrice);
+        if (s.telegramForexPresets.ethRrRatio !== undefined) setEthRrRatio(s.telegramForexPresets.ethRrRatio);
+        if (s.telegramForexPresets.defaultDollarRisk !== undefined) setDefaultDollarRisk(s.telegramForexPresets.defaultDollarRisk);
       }
     }
   }, [user?.liveWatcherSettings]);
@@ -453,6 +486,13 @@ export function SettingsPage() {
     setGoldNewsReminderMinutes(15);
     setGoldNewsLeadTimesMinutes([15, 60]);
     setGoldNewsImpactFilter('ALL_GOLD_MOVERS');
+    setGoldDefaultLot(DEFAULT_TELEGRAM_FOREX_PRESETS.goldDefaultLot);
+    setGoldSlPoints(DEFAULT_TELEGRAM_FOREX_PRESETS.goldSlPoints);
+    setGoldRrRatio(DEFAULT_TELEGRAM_FOREX_PRESETS.goldRrRatio);
+    setEthDefaultLot(DEFAULT_TELEGRAM_FOREX_PRESETS.ethDefaultLot);
+    setEthSlPrice(DEFAULT_TELEGRAM_FOREX_PRESETS.ethSlPrice);
+    setEthRrRatio(DEFAULT_TELEGRAM_FOREX_PRESETS.ethRrRatio);
+    setDefaultDollarRisk(DEFAULT_TELEGRAM_FOREX_PRESETS.defaultDollarRisk);
     setTelegramAlertEvents({
       stopThreatCritical: true,
       givebackLeaking: true,
@@ -658,6 +698,15 @@ export function SettingsPage() {
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
       displaySettings,
+      telegramForexPresets: {
+        goldDefaultLot: Number(goldDefaultLot),
+        goldSlPoints: Number(goldSlPoints),
+        goldRrRatio: Number(goldRrRatio),
+        ethDefaultLot: Number(ethDefaultLot),
+        ethSlPrice: Number(ethSlPrice),
+        ethRrRatio: Number(ethRrRatio),
+        defaultDollarRisk: Number(defaultDollarRisk),
+      },
     };
     liveWatcherMutation.mutate(payload);
   };
@@ -2083,6 +2132,311 @@ export function SettingsPage() {
                           </Grid>
                         </Box>
 
+                        {/* Telegram MT5 Fast Execution Presets (Gold XAUUSD & Ethereum ETHUSD) - ALWAYS VISIBLE */}
+                        <Box
+                          sx={{
+                            p: 2.5,
+                            borderRadius: 2,
+                            bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(248, 250, 252, 0.9)',
+                            border: '1px solid',
+                            borderColor: isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(14, 165, 233, 0.35)',
+                            mb: 2.5,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Box
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 1.5,
+                                  bgcolor: 'primary.main',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#fff',
+                                }}
+                              >
+                                <FlashOnRounded sx={{ fontSize: 20 }} />
+                              </Box>
+                              <Box>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                                  ⚡ Telegram MT5 Fast-Order Presets (Gold &amp; Ethereum)
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Default sizing, Stop Loss buffers &amp; Target R:R ratios for instant 1-tap orders sent via Telegram
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <Chip
+                              size="small"
+                              label="Active on /gold, /eth, /trade, /risk"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                            />
+                          </Box>
+
+                          <Grid container spacing={2}>
+                            {/* Gold (XAUUSD) Card */}
+                            <Grid size={{ xs: 12, md: 6 }}>
+                              <Box
+                                sx={{
+                                  p: 2,
+                                  borderRadius: 2,
+                                  bgcolor: isDark ? 'rgba(234, 179, 8, 0.05)' : 'rgba(254, 240, 138, 0.25)',
+                                  border: '1px solid',
+                                  borderColor: isDark ? 'rgba(234, 179, 8, 0.35)' : 'rgba(234, 179, 8, 0.5)',
+                                  height: '100%',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 1.5,
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Box
+                                      sx={{
+                                        width: 24,
+                                        height: 24,
+                                        borderRadius: '50%',
+                                        bgcolor: 'warning.main',
+                                        color: '#000',
+                                        fontWeight: 900,
+                                        fontSize: '0.75rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      Au
+                                    </Box>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#FDE047' : '#854D0E' }}>
+                                      Gold (XAUUSD) MT5 Presets
+                                    </Typography>
+                                  </Box>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'text.secondary' }}>
+                                    100 oz / Lot
+                                  </Typography>
+                                </Box>
+
+                                <Grid container spacing={1.5}>
+                                  <Grid size={{ xs: 12, sm: 4 }}>
+                                    <TextField
+                                      size="small"
+                                      label="Default Lots"
+                                      type="number"
+                                      value={goldDefaultLot}
+                                      onChange={(e) => setGoldDefaultLot(Math.max(0.01, Number(e.target.value)))}
+                                      slotProps={{ htmlInput: { step: 0.01, min: 0.01, max: 100 } }}
+                                      helperText="e.g. 0.10 lots"
+                                      fullWidth
+                                    />
+                                  </Grid>
+                                  <Grid size={{ xs: 12, sm: 4 }}>
+                                    <TextField
+                                      size="small"
+                                      label="SL Buffer (pts)"
+                                      type="number"
+                                      value={goldSlPoints}
+                                      onChange={(e) => setGoldSlPoints(Math.max(1, Number(e.target.value)))}
+                                      slotProps={{ htmlInput: { step: 1, min: 1, max: 500 } }}
+                                      helperText={`$${(goldSlPoints * 0.10).toFixed(2)}/oz`}
+                                      fullWidth
+                                    />
+                                  </Grid>
+                                  <Grid size={{ xs: 12, sm: 4 }}>
+                                    <TextField
+                                      size="small"
+                                      label="Target R:R"
+                                      type="number"
+                                      value={goldRrRatio}
+                                      onChange={(e) => setGoldRrRatio(Math.max(0.5, Number(e.target.value)))}
+                                      slotProps={{ htmlInput: { step: 0.1, min: 0.5, max: 20 } }}
+                                      helperText={`${(goldSlPoints * goldRrRatio).toFixed(0)} pts TP`}
+                                      fullWidth
+                                    />
+                                  </Grid>
+                                </Grid>
+
+                                <Box
+                                  sx={{
+                                    p: 1.25,
+                                    borderRadius: 1.5,
+                                    bgcolor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.85)',
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    mt: 'auto',
+                                  }}
+                                >
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                    Per-Order Sizing Preview:
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
+                                      Max SL Risk: -${(goldSlPoints * 10 * goldDefaultLot).toFixed(2)} (-${(goldSlPoints * 0.1).toFixed(2)}/oz)
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main' }}>
+                                      Target Gain: +${(goldSlPoints * goldRrRatio * 10 * goldDefaultLot).toFixed(2)} (+${(goldSlPoints * goldRrRatio * 0.1).toFixed(2)}/oz)
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              </Box>
+                            </Grid>
+
+                            {/* Ethereum (ETHUSD) Card */}
+                            <Grid size={{ xs: 12, md: 6 }}>
+                              <Box
+                                sx={{
+                                  p: 2,
+                                  borderRadius: 2,
+                                  bgcolor: isDark ? 'rgba(2, 132, 199, 0.05)' : 'rgba(224, 242, 254, 0.3)',
+                                  border: '1px solid',
+                                  borderColor: isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(14, 165, 233, 0.45)',
+                                  height: '100%',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 1.5,
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Box
+                                      sx={{
+                                        width: 24,
+                                        height: 24,
+                                        borderRadius: '50%',
+                                        bgcolor: 'info.main',
+                                        color: '#fff',
+                                        fontWeight: 900,
+                                        fontSize: '0.75rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      Ξ
+                                    </Box>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#38BDF8' : '#0369A1' }}>
+                                      Ethereum (ETHUSD) MT5 Presets
+                                    </Typography>
+                                  </Box>
+                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'text.secondary' }}>
+                                    1 ETH / Lot
+                                  </Typography>
+                                </Box>
+
+                                <Grid container spacing={1.5}>
+                                  <Grid size={{ xs: 12, sm: 4 }}>
+                                    <TextField
+                                      size="small"
+                                      label="Default Lots"
+                                      type="number"
+                                      value={ethDefaultLot}
+                                      onChange={(e) => setEthDefaultLot(Math.max(0.01, Number(e.target.value)))}
+                                      slotProps={{ htmlInput: { step: 0.1, min: 0.01, max: 1000 } }}
+                                      helperText="e.g. 1.00 ETH"
+                                      fullWidth
+                                    />
+                                  </Grid>
+                                  <Grid size={{ xs: 12, sm: 4 }}>
+                                    <TextField
+                                      size="small"
+                                      label="SL Buffer ($)"
+                                      type="number"
+                                      value={ethSlPrice}
+                                      onChange={(e) => setEthSlPrice(Math.max(1, Number(e.target.value)))}
+                                      slotProps={{ htmlInput: { step: 1, min: 1, max: 500 } }}
+                                      helperText={`$${ethSlPrice.toFixed(0)} stop distance`}
+                                      fullWidth
+                                    />
+                                  </Grid>
+                                  <Grid size={{ xs: 12, sm: 4 }}>
+                                    <TextField
+                                      size="small"
+                                      label="Target R:R"
+                                      type="number"
+                                      value={ethRrRatio}
+                                      onChange={(e) => setEthRrRatio(Math.max(0.5, Number(e.target.value)))}
+                                      slotProps={{ htmlInput: { step: 0.1, min: 0.5, max: 20 } }}
+                                      helperText={`+$${(ethSlPrice * ethRrRatio).toFixed(0)} TP`}
+                                      fullWidth
+                                    />
+                                  </Grid>
+                                </Grid>
+
+                                <Box
+                                  sx={{
+                                    p: 1.25,
+                                    borderRadius: 1.5,
+                                    bgcolor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.85)',
+                                    border: '1px solid',
+                                    borderColor: 'divider',
+                                    mt: 'auto',
+                                  }}
+                                >
+                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                                    Per-Order Sizing Preview:
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
+                                      Max SL Risk: -${(ethSlPrice * ethDefaultLot).toFixed(2)} (-${ethSlPrice.toFixed(0)}/coin)
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main' }}>
+                                      Target Gain: +${(ethSlPrice * ethRrRatio * ethDefaultLot).toFixed(2)} (+${(ethSlPrice * ethRrRatio).toFixed(0)}/coin)
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              </Box>
+                            </Grid>
+
+                            {/* Risk Budget Sizing (/risk) */}
+                            <Grid size={{ xs: 12 }}>
+                              <Box
+                                sx={{
+                                  p: 1.75,
+                                  borderRadius: 1.5,
+                                  bgcolor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(209, 250, 229, 0.35)',
+                                  border: '1px solid',
+                                  borderColor: isDark ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.45)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  flexWrap: 'wrap',
+                                  gap: 2,
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                  <TrackChangesRounded sx={{ color: 'success.main', fontSize: 24 }} />
+                                  <Box>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                      Default Risk-Budget Sizing for <code>/risk</code> Command
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      When you type <code>/risk gold</code> or <code>/risk eth</code> in Telegram, SetupMint dynamically calculates lots to keep your maximum stop-loss dollar loss strictly capped.
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                                  <TextField
+                                    size="small"
+                                    label="Default Dollar Risk ($)"
+                                    type="number"
+                                    value={defaultDollarRisk}
+                                    onChange={(e) => setDefaultDollarRisk(Math.max(5, Number(e.target.value)))}
+                                    slotProps={{ htmlInput: { step: 5, min: 5, max: 100000 } }}
+                                    sx={{ width: 170 }}
+                                  />
+                                  <Box sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
+                                    <div>Gold: <strong>{(defaultDollarRisk / (goldSlPoints * 10)).toFixed(2)} Lots</strong> (@ {goldSlPoints} pts)</div>
+                                    <div>ETH: <strong>{(defaultDollarRisk / ethSlPrice).toFixed(2)} ETH</strong> (@ ${ethSlPrice})</div>
+                                  </Box>
+                                </Box>
+                              </Box>
+                            </Grid>
+                          </Grid>
+                        </Box>
+
                         {!telegramAlertsEnabled && ((user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) && (user?.liveWatcherSettings?.telegramChatId || telegramChatId)) && (
                           <Alert severity="info" variant="outlined" sx={{ py: 0.5, px: 2, mb: 2, alignItems: 'center' }}>
                             Telegram Bot is configured and linked. Real-time push alerts are currently <strong>Paused</strong>. Flip the switch above to &quot;Alerts Active&quot; to receive risk notifications on Telegram.
@@ -2528,40 +2882,128 @@ export function SettingsPage() {
                               </Box>
                             </Box>
 
-                            {/* Two-Way Bot Interactive Commands Cheatsheet */}
-                            <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'background.paper', border: '1px dashed', borderColor: 'divider' }}>
-                              <Typography variant="caption" sx={{ fontWeight: 800, color: 'info.main', display: 'block', mb: 0.5 }}>
-                                📱 Interactive Mobile Bot Commands (Send anytime in Telegram):
-                              </Typography>
-                              <Grid container spacing={1}>
-                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/pnl</Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Live floating PnL, Net R &amp; Day total</Typography>
-                                </Grid>
-                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/trades</Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Open positions with 1-tap Exit &amp; Lock BE</Typography>
-                                </Grid>
-                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: '#EAB308' }}>/news</Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Gold catalysts, schedule &amp; countdowns</Typography>
-                                </Grid>
-                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: '#EAB308' }}>/newsremind</Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Set reminder time (e.g. /newsremind 15)</Typography>
-                                </Grid>
-                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>/summary</Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Today's win rate, closed trades &amp; net R</Typography>
-                                </Grid>
-                                <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'error.main' }}>/panic</Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem' }}>Emergency market-exit for all positions</Typography>
-                                </Grid>
-                              </Grid>
-                            </Box>
                           </Box>
                         )}
+
+                        {/* Two-Way Bot Interactive Commands Cheatsheet - ALWAYS VISIBLE */}
+                        <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? alpha('#0284C7', 0.05) : alpha('#0284C7', 0.02), border: '1px dashed', borderColor: alpha('#0284C7', 0.3), mt: 2 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 800, color: 'info.main', display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            📱 Interactive Mobile Bot Commands (Send anytime in your connected Telegram chat):
+                          </Typography>
+                          <Grid container spacing={1.5}>
+                            {/* Row 1: Fast Execution */}
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#EAB308', display: 'block' }}>
+                                  /gold [buy|sell] [lots]
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  1-tap Gold order with your saved presets or quick cockpit menu (also <code>/xau</code>)
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#38BDF8', display: 'block' }}>
+                                  /eth [buy|sell] [lots]
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  1-tap Ethereum order with your saved presets or quick cockpit menu
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'primary.main', display: 'block' }}>
+                                  /trade or /cockpit
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Live multi-asset price &amp; spread cockpit with 1-click BUY/SELL execution buttons
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#10B981', display: 'block' }}>
+                                  /pin
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Anchors live market prices and floating PnL permanently at the top of your Telegram chat
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'success.main', display: 'block' }}>
+                                  /risk [gold|eth] [$amt]
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Auto-calculate exact lot size capped at your dollar risk budget with 1-tap entry
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'error.main', display: 'block' }}>
+                                  /close [gold|eth]
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Instantly exit all active positions on MT5 for that specific symbol
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            {/* Row 2: Management & Risk */}
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, display: 'block' }}>
+                                  /trades
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  View open trades with 1-tap Exit and Lock BE buttons
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, display: 'block' }}>
+                                  /pnl
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Live floating PnL, Net R &amp; day total
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#EAB308', display: 'block' }}>
+                                  /news
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Gold catalyst schedule &amp; release countdowns
+                                </Typography>
+                              </Box>
+                            </Grid>
+
+                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'error.main', display: 'block' }}>
+                                  /panic
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
+                                  Emergency market-exit for all open positions
+                                </Typography>
+                              </Box>
+                            </Grid>
+                          </Grid>
+                        </Box>
                       </Box>
                     </Grid>
 
@@ -3667,7 +4109,7 @@ export function SettingsPage() {
           ========================================================================= */}
       {activeTab === 3 && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          {!hasFyersAccount && !hasMarketDataAccount && (
+          {!hasFyersAccount && !hasMarketDataAccount && !hasMt5Account && (
             <Card variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
                 No External Broker Integrations Needed
@@ -4154,6 +4596,81 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+          )}
+
+          {/* MetaTrader 5 (MT5) EA Bridge & Telegram Execution Card */}
+          {hasMt5Account && (
+            <Card variant="outlined" sx={{ p: 1 }}>
+              <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <FlashOnRounded sx={{ color: 'primary.main' }} />
+                        MetaTrader 5 (MT5) EA Bridge &amp; Telegram Execution
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Sub-second order placement, automatic Stop Loss &amp; Take Profit, floating PnL tracking, and Telegram fast entries
+                    </Typography>
+                  </Box>
+
+                  <Chip
+                    icon={<CheckCircleRounded sx={{ fontSize: '1rem !important' }} />}
+                    label="MT5 BRIDGE READY"
+                    color="success"
+                    size="small"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                  />
+                </Box>
+
+                <Alert severity="info" sx={{ fontSize: '0.8125rem', py: 0.75 }}>
+                  <span>
+                    <strong>Forex &amp; Crypto Execution:</strong> SetupMint communicates directly with your MT5 terminal via the <code>SetupMint_Elefin_Bridge.mq5</code> Expert Advisor. You can place market orders, manage SL/TP, and track live Gold (<code>XAUUSD</code>) and Ethereum (<code>ETHUSD</code>) quotes from your Telegram Bot.
+                  </span>
+                </Alert>
+
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Gold Presets: ${goldDefaultLot} Lots • ${goldSlPoints} pts SL • 1:${goldRrRatio} RR`}
+                    color="warning"
+                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
+                  />
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`ETH Presets: ${ethDefaultLot} Lots • $${ethSlPrice} SL • 1:${ethRrRatio} RR`}
+                    color="info"
+                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
+                  />
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Risk Budget: $${defaultDollarRisk} / order`}
+                    color="success"
+                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="small"
+                    startIcon={<FlashOnRounded />}
+                    onClick={() => {
+                      setActiveTab(0);
+                      window.scrollTo({ top: 600, behavior: 'smooth' });
+                    }}
+                    sx={{ fontWeight: 700, textTransform: 'none' }}
+                  >
+                    ⚡ Edit Telegram MT5 Presets &amp; Sizing
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
           )}
         </Box>
       )}

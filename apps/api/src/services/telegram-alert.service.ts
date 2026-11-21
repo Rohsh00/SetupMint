@@ -4050,9 +4050,17 @@ export class TelegramAlertService {
     if (isBuy || isSell) {
       const side: 'BUY' | 'SELL' = isBuy ? 'BUY' : 'SELL';
 
-      let volume = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultLot : DEFAULT_FOREX_PRESETS.eth.defaultLot;
-      let slPoints = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
-      let tpPoints = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints * DEFAULT_FOREX_PRESETS.gold.defaultRr : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice * DEFAULT_FOREX_PRESETS.eth.defaultRr;
+      const presets = user?.liveWatcherSettings?.telegramForexPresets;
+      const presetGoldLot = presets?.goldDefaultLot ?? DEFAULT_FOREX_PRESETS.gold.defaultLot;
+      const presetGoldSl = presets?.goldSlPoints ?? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints;
+      const presetGoldRr = presets?.goldRrRatio ?? DEFAULT_FOREX_PRESETS.gold.defaultRr;
+      const presetEthLot = presets?.ethDefaultLot ?? DEFAULT_FOREX_PRESETS.eth.defaultLot;
+      const presetEthSl = presets?.ethSlPrice ?? DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
+      const presetEthRr = presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr;
+
+      let volume = isGold ? presetGoldLot : presetEthLot;
+      let slPoints = isGold ? presetGoldSl : presetEthSl;
+      let tpPoints = isGold ? presetGoldSl * presetGoldRr : presetEthSl * presetEthRr;
 
       let explicitSlPrice: number | undefined;
       let explicitTpPrice: number | undefined;
@@ -4201,9 +4209,17 @@ export class TelegramAlertService {
         .join('\n');
     }
 
-    const defaultLot = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultLot : DEFAULT_FOREX_PRESETS.eth.defaultLot;
-    const defaultSl = isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
-    const defaultTp = isGold ? defaultSl * DEFAULT_FOREX_PRESETS.gold.defaultRr : defaultSl * DEFAULT_FOREX_PRESETS.eth.defaultRr;
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const defaultLot = isGold
+      ? (presets?.goldDefaultLot ?? DEFAULT_FOREX_PRESETS.gold.defaultLot)
+      : (presets?.ethDefaultLot ?? DEFAULT_FOREX_PRESETS.eth.defaultLot);
+    const defaultSl = isGold
+      ? (presets?.goldSlPoints ?? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints)
+      : (presets?.ethSlPrice ?? DEFAULT_FOREX_PRESETS.eth.defaultSlPrice);
+    const defaultRr = isGold
+      ? (presets?.goldRrRatio ?? DEFAULT_FOREX_PRESETS.gold.defaultRr)
+      : (presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr);
+    const defaultTp = Number((defaultSl * defaultRr).toFixed(2));
 
     const menuText =
       `🪙 <b>${cleanSym} • Quick Trading Cockpit</b>\n` +
@@ -4256,7 +4272,8 @@ export class TelegramAlertService {
     if (!botToken) return;
 
     let symbol = 'XAUUSD';
-    let dollarRisk = 50;
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    let dollarRisk = presets?.defaultDollarRisk ?? 50;
     let customSlPoints: number | undefined;
 
     for (const a of args) {
@@ -4275,8 +4292,13 @@ export class TelegramAlertService {
     }
 
     const isGold = symbol === 'XAUUSD';
-    const slPoints = customSlPoints || (isGold ? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints : DEFAULT_FOREX_PRESETS.eth.defaultSlPrice);
-    const tpPoints = isGold ? slPoints * DEFAULT_FOREX_PRESETS.gold.defaultRr : slPoints * DEFAULT_FOREX_PRESETS.eth.defaultRr;
+    const presetGoldSl = presets?.goldSlPoints ?? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints;
+    const presetGoldRr = presets?.goldRrRatio ?? DEFAULT_FOREX_PRESETS.gold.defaultRr;
+    const presetEthSl = presets?.ethSlPrice ?? DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
+    const presetEthRr = presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr;
+
+    const slPoints = customSlPoints || (isGold ? presetGoldSl : presetEthSl);
+    const tpPoints = isGold ? Number((slPoints * presetGoldRr).toFixed(2)) : Number((slPoints * presetEthRr).toFixed(2));
 
     let lots = isGold ? dollarRisk / (slPoints * 10) : dollarRisk / slPoints;
     lots = Math.max(0.01, Number(lots.toFixed(2)));
@@ -4403,14 +4425,28 @@ export class TelegramAlertService {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<i>1-Tap Preset Execution:</i>`;
 
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const goldLot = presets?.goldDefaultLot ?? DEFAULT_FOREX_PRESETS.gold.defaultLot;
+    const goldSl = presets?.goldSlPoints ?? DEFAULT_FOREX_PRESETS.gold.defaultSlPoints;
+    const goldRr = presets?.goldRrRatio ?? DEFAULT_FOREX_PRESETS.gold.defaultRr;
+    const goldTp = Number((goldSl * goldRr).toFixed(2));
+
+    const ethLot = presets?.ethDefaultLot ?? DEFAULT_FOREX_PRESETS.eth.defaultLot;
+    const ethSl = presets?.ethSlPrice ?? DEFAULT_FOREX_PRESETS.eth.defaultSlPrice;
+    const ethRr = presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr;
+    const ethTp = Number((ethSl * ethRr).toFixed(2));
+
+    const goldLotStr = Number(goldLot).toFixed(2);
+    const ethLotStr = Number(ethLot).toFixed(2);
+
     const buttons: ITelegramInlineButton[][] = [
       [
-        { text: '🟡 BUY Gold (0.10)', callback_data: `order:XAUUSD:BUY:0.10:35:70` },
-        { text: '🟡 SELL Gold (0.10)', callback_data: `order:XAUUSD:SELL:0.10:35:70` },
+        { text: `🟡 BUY Gold (${goldLotStr})`, callback_data: `order:XAUUSD:BUY:${goldLotStr}:${goldSl}:${goldTp}` },
+        { text: `🟡 SELL Gold (${goldLotStr})`, callback_data: `order:XAUUSD:SELL:${goldLotStr}:${goldSl}:${goldTp}` },
       ],
       [
-        { text: '🔷 BUY ETH (1.00)', callback_data: `order:ETHUSD:BUY:1.00:30:75` },
-        { text: '🔷 SELL ETH (1.00)', callback_data: `order:ETHUSD:SELL:1.00:30:75` },
+        { text: `🔷 BUY ETH (${ethLotStr})`, callback_data: `order:ETHUSD:BUY:${ethLotStr}:${ethSl}:${ethTp}` },
+        { text: `🔷 SELL ETH (${ethLotStr})`, callback_data: `order:ETHUSD:SELL:${ethLotStr}:${ethSl}:${ethTp}` },
       ],
       [
         { text: '🛡️ Lock All BE', callback_data: 'cmd_lock_be_all' },

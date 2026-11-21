@@ -1969,4 +1969,261 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     expect(cmd?.action).toBe('OPEN_ORDER');
     expect(cmd?.volume).toBe(0.14);
   });
+
+  // 52. Dynamic Day State: HOUSE_MONEY regime awards bonus trades, house money sizing & momentum button
+  it('Scenario 52: HOUSE_MONEY regime awards bonus trades and dynamic house money risk sizing', async () => {
+    await Trade.deleteMany({ userId: testUser._id });
+
+    // Create banked profit closed trade today: +$120 net PnL
+    const winTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: 120 },
+      netPnL: 120,
+    });
+
+    const adaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      testUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100,
+      'BUY'
+    );
+
+    expect(adaptive.regime).toBe('HOUSE_MONEY');
+    expect(adaptive.regimeBadge).toBe('🟢');
+    expect(adaptive.bonusTradesEarned).toBe(2); // $120 / $50 = 2 bonus trades
+    expect(adaptive.effectiveMaxDailyTrades).toBe(8); // 6 base + 2 bonus
+    expect(adaptive.tiers.bestOptionLabel).toContain('House Money');
+    expect(adaptive.tiers.extraRiskLabel).toContain('Momentum Boost');
+
+    // Verify UI report card renders green day house money state
+    const card = await TelegramAlertService.buildOrderPrepPayload(testUser, 'XAUUSD', 'BUY');
+    expect(card.text).toContain('House Money Session');
+    expect(card.text).toContain('+2 bonus');
+    expect(card.text).toContain('Momentum Boost');
+
+    const buttons = card.buttons.flat();
+    expect(buttons.some((b) => b.text.includes('House Money'))).toBe(true);
+    expect(buttons.some((b) => b.text.includes('Momentum Boost'))).toBe(true);
+    expect(buttons.some((b) => b.text.includes('House'))).toBe(true);
+
+    // Clean up
+    await Trade.deleteMany({ userId: testUser._id });
+  });
+
+  // 53. Dynamic Day State: DEFENSIVE regime triggers on consecutive losses, scales down risk, and hides aggressive options
+  it('Scenario 53: DEFENSIVE regime throttles trade limit, halves lot size, and hides extra risk button', async () => {
+    await Trade.deleteMany({ userId: testUser._id });
+
+    // Create 2 consecutive closed losses today
+    const loss1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 3600000),
+      exitTime: new Date(Date.now() - 3600000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -40 },
+      netPnL: -40,
+    });
+    const loss2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -50 },
+      netPnL: -50,
+    });
+
+    const adaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      testUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100,
+      'BUY'
+    );
+
+    expect(adaptive.regime).toBe('DEFENSIVE');
+    expect(adaptive.regimeBadge).toBe('🔴');
+    expect(adaptive.consecutiveLosses).toBe(2);
+    expect(adaptive.tiers.bestOptionLabel).toContain('Defensive');
+    expect(adaptive.tiers.conservativeLabel).toContain('Defensive Half');
+    expect(adaptive.tiers.extraRiskLot).toBeUndefined();
+
+    // Verify UI report card displays defensive mode and omits aggressive buttons
+    const card = await TelegramAlertService.buildOrderPrepPayload(testUser, 'XAUUSD', 'BUY');
+    expect(card.text).toContain('Defensive Mode');
+    expect(card.text).toContain('[Disabled in Defensive Mode to protect buffer]');
+
+    const buttons = card.buttons.flat();
+    expect(buttons.some((b) => b.text.includes('Defensive'))).toBe(true);
+    expect(buttons.some((b) => b.text.includes('Micro Safe'))).toBe(true);
+    expect(buttons.some((b) => b.text.includes('Defensive Half'))).toBe(true);
+    // Extra Risk / Momentum button must be completely absent
+    expect(buttons.some((b) => b.text.includes('Extra Risk'))).toBe(false);
+    expect(buttons.some((b) => b.text.includes('Momentum Boost'))).toBe(false);
+
+    // Clean up
+    await Trade.deleteMany({ userId: testUser._id });
+  });
+
+  // 54. Adaptive Ladders: Correct T1/T2 ladder recommendations generated according to Day Regime
+  it('Scenario 54: Adaptive ladder recommendations reflect configured user ladder settings and day regime', async () => {
+    await Trade.deleteMany({ userId: testUser._id });
+
+    // Configure user's custom ladder parameters
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: {
+        'liveWatcherSettings.t1MultipleR': 1.5,
+        'liveWatcherSettings.t1ExitRatio': 0.60,
+        'liveWatcherSettings.t2MultipleR': 3.0,
+        'liveWatcherSettings.isFreeRunner': true,
+      },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    // 1. In Neutral regime
+    const neutralAdaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      freshUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100
+    );
+    expect(neutralAdaptive.recommendedLadderNotes).toContain('T1 (+1.5R) take 60%');
+    expect(neutralAdaptive.recommendedLadderNotes).toContain('T2 (+3R)');
+    expect(neutralAdaptive.recommendedLadderNotes).toContain('Free Runner Trailing');
+
+    // 2. In House Money regime (after banked profit)
+    const winTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: 80 },
+      netPnL: 80,
+    });
+    const houseAdaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      freshUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100
+    );
+    expect(houseAdaptive.recommendedLadderNotes).toContain('Harvest 60% & Lock True BE');
+    expect(houseAdaptive.recommendedLadderNotes).toContain('Dynamic Trailing Ratchet');
+
+    // 3. In Defensive regime (after consecutive losses)
+    await Trade.deleteMany({ userId: testUser._id });
+    const lossTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -75 },
+      netPnL: -75,
+    });
+    const defAdaptive = await TelegramAlertService.evaluateAdaptiveDayRiskState(
+      freshUser,
+      testAccount,
+      'XAUUSD',
+      35,
+      0.10,
+      100
+    );
+    expect(defAdaptive.recommendedLadderNotes).toContain('Take 75% at T1 (+1.5R) & Instantly move SL to True BE');
+
+    // Clean up
+    await Trade.deleteMany({ userId: testUser._id });
+  });
+
+  // 55. Defensive Volume Cap Guardrail: Blocks oversized volumes when account is in defensive mode
+  it('Scenario 55: Defensive Mode Volume Cap blocks oversized orders to prevent tilt betting', async () => {
+    await Trade.deleteMany({ userId: testUser._id });
+
+    // Create 2 consecutive closed losses
+    const loss1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      exitTime: new Date(Date.now() - 60000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -50 },
+      netPnL: -50,
+    });
+    const loss2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -50 },
+      netPnL: -50,
+    });
+
+    sentMessages.length = 0;
+    // In defensive mode, recommended best option is ~0.07L. Attempting 0.50L triggers defensive lot cap!
+    await TelegramAlertService.handleForexOrderCommand(testUser, botToken, chatId, 'XAUUSD', ['buy', '0.50', 'sl=35']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('DEFENSIVE MODE LOT CAP ACTIVE');
+
+    // Clean up
+    await Trade.deleteMany({ userId: testUser._id });
+  });
 });

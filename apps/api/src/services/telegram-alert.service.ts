@@ -49,7 +49,7 @@ import { AccountScopeService } from './account-scope.service.js';
 import { ChartGeneratorService } from './chart-generator.service.js';
 import { MarketDataService, GlobalCfdCandleProvider } from './market-data/index.js';
 import { EconomicCalendarService, IEconomicCalendarEvent } from './economic-calendar.service.js';
-import { ITradeCandle } from '@tradevault/shared';
+import { ITradeCandle, DayRiskRegime, IAdaptiveDayRiskState, IAdaptiveDayRiskTier } from '@tradevault/shared';
 import sharp from 'sharp';
 import { AudioChimeService } from './audio-chime.service.js';
 
@@ -6042,66 +6042,64 @@ export class TelegramAlertService {
       };
     }
 
-    // 4. Max Daily Trades Overtrading Guardrail (Settings: maxDailyTrades, default 6)
-    const maxDailyTrades = user?.riskSettings?.maxDailyTrades ?? 6;
-    const startOfDay = new Date();
-    startOfDay.setUTCHours(0, 0, 0, 0);
+    // 4. Adaptive Day-Risk State (Dynamic Daily Trades, Dynamic Daily Loss, & Defensive Vol Guard)
+    const isGoldSym = (symbol || '').includes('XAU') || symbol === 'GOLD';
+    const pointScale = isGoldSym ? 0.10 : 1.0;
+    const multiplier = isGoldSym ? 100 : 1;
+    const adaptive = await this.evaluateAdaptiveDayRiskState(
+      user,
+      account,
+      symbol,
+      slPoints,
+      pointScale,
+      multiplier,
+      side
+    );
 
-    const todayTradesCount = await Trade.countDocuments({
-      userId: user._id,
-      accountId: account._id,
-      createdAt: { $gte: startOfDay },
-    });
-    if (todayTradesCount >= maxDailyTrades) {
+    // 4a. Dynamic Daily Trade Limit Guardrail
+    if (adaptive.isTradeLimitReached) {
+      const bonusText = adaptive.bonusTradesEarned > 0 ? ` (Includes +${adaptive.bonusTradesEarned} bonus trades)` : '';
+      const regimeHint = adaptive.regime === 'DEFENSIVE'
+        ? 'Throttled by Defensive Mode to curb tilt & protect capital.'
+        : 'Overtrading guardrail active. Step away to preserve capital.';
       return {
         allowed: false,
         reason:
           `🛡️ <b>ORDER BLOCKED: DAILY TRADE LIMIT REACHED</b>\n\n` +
-          `You have taken <b>${todayTradesCount} trade(s) today</b> (Your limit: <b>${maxDailyTrades}</b>).\n` +
-          `Overtrading guardrail active. Step away from the screens to preserve mental capital.`,
+          `You have taken <b>${adaptive.todayTradesCount} trade(s) today</b> (Dynamic limit: <b>${adaptive.effectiveMaxDailyTrades}</b>${bonusText}).\n` +
+          `Day State: ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>.\n` +
+          `${regimeHint}`,
       };
     }
 
-    // 5. Max Daily Loss Limit Guardrail (Settings: maxDailyLoss, default 5000)
-    const maxDailyLoss = user?.riskSettings?.maxDailyLoss ?? 5000;
-    const todayClosedTrades = await Trade.find({
-      userId: user._id,
-      accountId: account._id,
-      status: 'CLOSED',
-      exitTime: { $gte: startOfDay },
-    }).lean();
-
-    let todayRealizedPnL = 0;
-    for (const t of todayClosedTrades) {
-      const pnl = t.calculated?.netPnL ?? (t as any).netPnL ?? 0;
-      todayRealizedPnL += pnl;
-    }
-
-    const openTrades = await Trade.find({
-      userId: user._id,
-      accountId: account._id,
-      status: 'OPEN',
-    }).lean();
-
-    let openFloatingPnL = 0;
-    for (const t of openTrades) {
-      const floatPnl = (t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? 0;
-      openFloatingPnL += floatPnl;
-    }
-
-    const todayTotalPnL = todayRealizedPnL + openFloatingPnL;
-    if (todayTotalPnL <= -maxDailyLoss) {
+    // 5. Dynamic Daily Loss Limit Guardrail
+    if (adaptive.isDailyLossBreached) {
       return {
         allowed: false,
         reason:
           `🛑 <b>ORDER BLOCKED: DAILY LOSS LIMIT BREACHED</b>\n\n` +
-          `Your net PnL today is <b>-$${Math.abs(todayTotalPnL).toFixed(2)}</b> (Daily loss limit: <b>-$${maxDailyLoss.toFixed(2)}</b>).\n` +
-          `New order placement is locked for the rest of today to protect your capital.`,
+          `Your net PnL today is <b>-$${Math.abs(adaptive.todayTotalPnL).toFixed(2)}</b> (Daily loss limit: <b>-$${adaptive.effectiveDailyLossLimit.toFixed(2)}</b>).\n` +
+          `Remaining buffer: <b>$0.00</b>. Locked for today to protect capital.`,
       };
     }
 
+    // 5b. Defensive Mode Volume Cap Guardrail (Prevents outsized tilt betting)
+    if (adaptive.regime === 'DEFENSIVE') {
+      const maxDefensiveLot = Math.max(0.02, Number((adaptive.tiers.bestOptionLot * 2).toFixed(2)));
+      if (volume > maxDefensiveLot) {
+        return {
+          allowed: false,
+          reason:
+            `🛡️ <b>ORDER BLOCKED: DEFENSIVE MODE LOT CAP ACTIVE</b>\n\n` +
+            `You are in <b>${adaptive.regimeBadge} ${adaptive.regimeLabel}</b> (${adaptive.consecutiveLosses} consecutive losses / net -$${Math.abs(adaptive.todayTotalPnL).toFixed(2)}).\n` +
+            `To prevent tilt and drawdown escalation, max allowed lot size is capped at <b>${maxDefensiveLot.toFixed(2)} Lots</b> (Requested: <b>${volume.toFixed(2)} Lots</b>).\n` +
+            `Stick to recommended defensive sizing (${adaptive.tiers.bestOptionLot.toFixed(2)}L) or micro (${adaptive.tiers.microLot.toFixed(2)}L).`,
+        };
+      }
+    }
+
     // 6. Account Lot Cap Guardrail (Settings / Account Profile: lotCap)
-    const lotCap = account.profile?.riskRules?.lotCap;
+    const lotCap = account?.riskRules?.lotCap ?? account?.profile?.riskRules?.lotCap;
     if (lotCap && lotCap > 0 && volume > lotCap) {
       return {
         allowed: false,
@@ -6707,6 +6705,352 @@ export class TelegramAlertService {
   }
 
   /**
+   * Evaluates the trader's dynamic day-risk regime (HOUSE_MONEY, DEFENSIVE, NEUTRAL),
+   * audits account rules & prop firm daily loss limits, calculates dynamic trade limits & bonus trades,
+   * and produces adaptive sizing tiers & ladder recommendations.
+   */
+  static async evaluateAdaptiveDayRiskState(
+    user: any,
+    account?: any,
+    symbol: string = 'XAUUSD',
+    slPoints: number = 35,
+    pointScale: number = 0.10,
+    multiplier: number = 100,
+    side: 'BUY' | 'SELL' = 'BUY'
+  ): Promise<IAdaptiveDayRiskState> {
+    let acc = account;
+    if (!acc || !acc._id) {
+      try {
+        acc = await this.resolveMt5Account(user._id);
+      } catch {
+        acc = null;
+      }
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+
+    let todayClosedTrades: any[] = [];
+    let openTrades: any[] = [];
+    let todayTradesCount = 0;
+
+    if (acc?._id) {
+      todayClosedTrades = await Trade.find({
+        userId: user._id,
+        accountId: acc._id,
+        status: 'CLOSED',
+        exitTime: { $gte: startOfDay },
+      }).sort({ exitTime: -1 }).lean();
+
+      openTrades = await Trade.find({
+        userId: user._id,
+        accountId: acc._id,
+        status: 'OPEN',
+      }).lean();
+
+      todayTradesCount = await Trade.countDocuments({
+        userId: user._id,
+        accountId: acc._id,
+        createdAt: { $gte: startOfDay },
+      });
+    }
+
+    let todayRealizedPnL = 0;
+    let todayWinCount = 0;
+    let todayLossCount = 0;
+    let consecutiveLosses = 0;
+    let streakCounted = false;
+
+    for (const t of todayClosedTrades) {
+      const pnl = Number(t.calculated?.netPnL ?? (t as any).netPnL ?? 0);
+      todayRealizedPnL += pnl;
+      if (pnl > 0) {
+        todayWinCount++;
+        if (!streakCounted) {
+          streakCounted = true;
+        }
+      } else if (pnl < 0) {
+        todayLossCount++;
+        if (!streakCounted) {
+          consecutiveLosses++;
+        }
+      }
+    }
+
+    let todayFloatingPnL = 0;
+    for (const t of openTrades) {
+      const floatPnl = Number((t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? 0);
+      todayFloatingPnL += floatPnl;
+    }
+
+    todayRealizedPnL = Number(todayRealizedPnL.toFixed(2));
+    todayFloatingPnL = Number(todayFloatingPnL.toFixed(2));
+    const todayTotalPnL = Number((todayRealizedPnL + todayFloatingPnL).toFixed(2));
+    const todayPeakPnL = Math.max(0, todayRealizedPnL, todayTotalPnL);
+
+    // Account & Prop Firm Daily Loss Limit
+    let effectiveDailyLossLimit = 5000;
+    if (acc) {
+      if (AccountScopeService.isPropAccount(acc)) {
+        effectiveDailyLossLimit = AccountScopeService.getPropAccountDailyLossLimit(acc);
+      } else {
+        effectiveDailyLossLimit =
+          acc.riskRules?.maxDailyLoss ??
+          acc.profile?.riskRules?.maxDailyLoss ??
+          user?.riskSettings?.maxDailyLoss ??
+          5000;
+      }
+    }
+    const remainingDailyLossBuffer = Math.max(0, Number((effectiveDailyLossLimit + todayTotalPnL).toFixed(2)));
+    const isDailyLossBreached = todayTotalPnL <= -effectiveDailyLossLimit || remainingDailyLossBuffer <= 0;
+
+    // Base Daily Trades
+    const baseMaxDailyTrades =
+      acc?.riskRules?.maxDailyTrades ??
+      acc?.profile?.riskRules?.maxDailyTrades ??
+      user?.riskSettings?.maxDailyTrades ??
+      6;
+
+    // Regime classification
+    let regime: DayRiskRegime = 'NEUTRAL';
+    let regimeLabel = 'Neutral Day';
+    let regimeBadge = '⚪';
+
+    const isDefensive = todayTotalPnL <= -25 || consecutiveLosses >= 2;
+    const isHouseMoney = !isDefensive && todayRealizedPnL >= 25 && todayTotalPnL > 0;
+
+    if (isDefensive) {
+      regime = 'DEFENSIVE';
+      regimeLabel = consecutiveLosses >= 2
+        ? `Defensive Mode (${consecutiveLosses}L Streak)`
+        : 'Defensive Mode (Drawdown)';
+      regimeBadge = '🔴';
+    } else if (isHouseMoney) {
+      regime = 'HOUSE_MONEY';
+      regimeLabel = 'House Money Session';
+      regimeBadge = '🟢';
+    } else {
+      regime = 'NEUTRAL';
+      regimeLabel = 'Neutral Session';
+      regimeBadge = '⚪';
+    }
+
+    // Dynamic trade limits & bonus trades
+    let bonusTradesEarned = 0;
+    let effectiveMaxDailyTrades = baseMaxDailyTrades;
+
+    if (regime === 'HOUSE_MONEY') {
+      bonusTradesEarned = Math.min(3, Math.floor(todayRealizedPnL / 50));
+      effectiveMaxDailyTrades = baseMaxDailyTrades + bonusTradesEarned;
+    } else if (regime === 'DEFENSIVE') {
+      if (consecutiveLosses >= 3) {
+        effectiveMaxDailyTrades = Math.max(1, Math.min(baseMaxDailyTrades, todayTradesCount));
+      } else {
+        effectiveMaxDailyTrades = Math.max(todayTradesCount, baseMaxDailyTrades - 2);
+      }
+    }
+
+    const remainingTrades = Math.max(0, effectiveMaxDailyTrades - todayTradesCount);
+    const isTradeLimitReached = todayTradesCount >= effectiveMaxDailyTrades;
+
+    // Risk Dollar Sizing
+    const balance = Number(acc?.currentBalance || acc?.initialBalance || 100000);
+    const maxRiskPct =
+      acc?.riskRules?.maxRiskPerTradePercent ??
+      acc?.profile?.riskRules?.maxRiskPerTradePercent ??
+      user?.riskSettings?.maxRiskPerTradePercent ??
+      1.0;
+    const maxAllowedRiskDollars = (balance * maxRiskPct) / 100;
+
+    const presets = user?.liveWatcherSettings?.telegramForexPresets;
+    const defaultDollarRisk = presets?.defaultDollarRisk ?? 50;
+    const baseDollarRisk = Math.min(maxAllowedRiskDollars, defaultDollarRisk);
+
+    let targetDollarRisk = baseDollarRisk;
+    let riskRationale = '';
+
+    if (regime === 'HOUSE_MONEY') {
+      const houseMoneyBudget = Math.max(25, Number((todayRealizedPnL * 0.33).toFixed(2)));
+      targetDollarRisk = Math.min(maxAllowedRiskDollars, Math.max(baseDollarRisk, houseMoneyBudget));
+      riskRationale = `House Money Advantage: Banked +$${todayRealizedPnL.toFixed(2)} profit today. Next risk budgeted at safe 33% profit slice ($${targetDollarRisk.toFixed(0)}), locking 67% banked gains.`;
+    } else if (regime === 'DEFENSIVE') {
+      const defensiveScale = consecutiveLosses >= 3 ? 0.25 : 0.50;
+      const bufferCap = Math.max(10, remainingDailyLossBuffer * 0.20);
+      targetDollarRisk = Math.max(10, Math.min(baseDollarRisk * defensiveScale, bufferCap));
+      riskRationale = `Defensive Guardrail Active: Scaled to ${Math.round(defensiveScale * 100)}% standard risk ($${targetDollarRisk.toFixed(0)}) to protect remaining $${remainingDailyLossBuffer.toFixed(0)} buffer and curb drawdown.`;
+    } else {
+      targetDollarRisk = baseDollarRisk;
+      riskRationale = `Standard Session: Baseline risk-adjusted sizing ($${targetDollarRisk.toFixed(0)}) within account rules and 1.0% equity cap.`;
+    }
+
+    // Adaptive Ladder Notes based on user's liveWatcherSettings
+    const t1MultipleR = user?.liveWatcherSettings?.t1MultipleR ?? 1.0;
+    const t1ExitRatio = user?.liveWatcherSettings?.t1ExitRatio ?? 0.50;
+    const t2MultipleR = user?.liveWatcherSettings?.t2MultipleR ?? 2.0;
+    const t2ExitRatio = user?.liveWatcherSettings?.t2ExitRatio ?? 0.25;
+    const isFreeRunner = Boolean(user?.liveWatcherSettings?.isFreeRunner);
+
+    let recommendedLadderNotes = '';
+    if (regime === 'HOUSE_MONEY') {
+      recommendedLadderNotes = `🎯 T1 (+${t1MultipleR}R): Harvest ${Math.round(t1ExitRatio * 100)}% & Lock True BE ➜ 🚀 Runner (+${t2MultipleR}R+): Dynamic Trailing Ratchet`;
+    } else if (regime === 'DEFENSIVE') {
+      recommendedLadderNotes = `🛡️ Defensive Lock: Take 75% at T1 (+${t1MultipleR}R) & Instantly move SL to True BE. Leave 25% to +${t2MultipleR}R`;
+    } else {
+      const runnerStr = isFreeRunner ? ' ➜ Free Runner Trailing' : '';
+      recommendedLadderNotes = `🎯 Standard Ladder: T1 (+${t1MultipleR}R) take ${Math.round(t1ExitRatio * 100)}% ➜ T2 (+${t2MultipleR}R) take ${Math.round(t2ExitRatio * 100)}%${runnerStr}`;
+    }
+
+    // Adaptive Sizing Tiers & Lots
+    const isGold = (symbol || '').includes('XAU') || symbol === 'GOLD';
+    const isEth = (symbol || '').includes('ETH');
+    const isBtc = (symbol || '').includes('BTC');
+
+    const defaultLot = isGold
+      ? (presets?.goldDefaultLot ?? DEFAULT_FOREX_PRESETS.gold.defaultLot)
+      : (isEth
+        ? (presets?.ethDefaultLot ?? DEFAULT_FOREX_PRESETS.eth.defaultLot)
+        : (isBtc ? (DEFAULT_FOREX_PRESETS.btc?.defaultLot ?? 0.05) : 0.10));
+
+    const defaultRr = isGold
+      ? (presets?.goldRrRatio ?? DEFAULT_FOREX_PRESETS.gold.defaultRr)
+      : (isEth
+        ? (presets?.ethRrRatio ?? DEFAULT_FOREX_PRESETS.eth.defaultRr)
+        : (isBtc ? (DEFAULT_FOREX_PRESETS.btc?.defaultRr ?? 2.5) : 2.0));
+
+    const slDist = Number((slPoints * pointScale).toFixed(2));
+    const riskPer1Lot = Math.max(0.001, slDist * multiplier);
+
+    let bestOptionLot = riskPer1Lot > 0 ? targetDollarRisk / riskPer1Lot : defaultLot;
+    bestOptionLot = Math.max(0.01, Number(bestOptionLot.toFixed(2)));
+
+    const lotCap = acc?.riskRules?.lotCap ?? acc?.profile?.riskRules?.lotCap;
+    if (lotCap && lotCap > 0 && bestOptionLot > lotCap) {
+      bestOptionLot = lotCap;
+    }
+
+    const microLot = 0.01;
+    let conservativeLot = Math.max(0.01, Number((bestOptionLot * 0.5).toFixed(2)));
+    let presetLot = Number(defaultLot.toFixed(2));
+    if (lotCap && lotCap > 0 && presetLot > lotCap) {
+      presetLot = lotCap;
+    }
+
+    const bestRisk = Number((bestOptionLot * riskPer1Lot).toFixed(2));
+    const bestReward = Number((bestOptionLot * riskPer1Lot * defaultRr).toFixed(2));
+    const microRisk = Number((microLot * riskPer1Lot).toFixed(2));
+    const microReward = Number((microLot * riskPer1Lot * defaultRr).toFixed(2));
+    const conservativeRisk = Number((conservativeLot * riskPer1Lot).toFixed(2));
+    const conservativeReward = Number((conservativeLot * riskPer1Lot * defaultRr).toFixed(2));
+    const presetRisk = Number((presetLot * riskPer1Lot).toFixed(2));
+    const presetReward = Number((presetLot * riskPer1Lot * defaultRr).toFixed(2));
+
+    let bestOptionLabel = `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • -$${bestRisk.toFixed(0)})`;
+    let microLabel = `🛡️ Micro (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`;
+    let conservativeLabel = `⚖️ Cons (${conservativeLot.toFixed(2)}L • -$${conservativeRisk.toFixed(2)})`;
+    let presetLabel = `⚡ Preset (${presetLot.toFixed(2)}L • -$${presetRisk.toFixed(2)})`;
+
+    let extraRiskLot: number | undefined;
+    let extraRiskLabel: string | undefined;
+    let extraRisk: number | undefined;
+    let dollarBudgets: Array<{ amount: number; lot: number; label: string }> = [];
+
+    if (regime === 'HOUSE_MONEY') {
+      bestOptionLabel = `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • House Money -$${bestRisk.toFixed(0)})`;
+      let extraLot = Math.max(0.01, Number((defaultLot * 2).toFixed(2)));
+      if (lotCap && lotCap > 0 && extraLot > lotCap) extraLot = lotCap;
+      extraRiskLot = extraLot;
+      extraRisk = Number((extraLot * riskPer1Lot).toFixed(2));
+      extraRiskLabel = `🚀 Momentum Boost (${extraLot.toFixed(2)}L • -$${extraRisk.toFixed(0)})`;
+
+      const b25 = 25;
+      const b50 = 50;
+      const bDynamic = Math.min(200, Math.max(75, Math.floor(todayRealizedPnL * 0.33)));
+      dollarBudgets = [
+        { amount: b25, lot: Math.max(0.01, Number((b25 / riskPer1Lot).toFixed(2))), label: `💵 $${b25} Risk` },
+        { amount: b50, lot: Math.max(0.01, Number((b50 / riskPer1Lot).toFixed(2))), label: `💵 $${b50} Risk` },
+        { amount: bDynamic, lot: Math.max(0.01, Number((bDynamic / riskPer1Lot).toFixed(2))), label: `💵 $${bDynamic} House` },
+      ];
+    } else if (regime === 'DEFENSIVE') {
+      bestOptionLabel = `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • Defensive -$${bestRisk.toFixed(0)})`;
+      microLabel = `🛡️ Micro Safe (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`;
+      conservativeLabel = `⚖️ Defensive Half (${conservativeLot.toFixed(2)}L • -$${conservativeRisk.toFixed(2)})`;
+      extraRiskLot = undefined;
+      extraRiskLabel = undefined;
+      extraRisk = undefined;
+
+      const d1 = Math.max(10, Math.min(25, Math.floor(targetDollarRisk)));
+      const d2 = Math.max(15, Math.min(50, Math.floor(targetDollarRisk * 1.5)));
+      dollarBudgets = [
+        { amount: d1, lot: Math.max(0.01, Number((d1 / riskPer1Lot).toFixed(2))), label: `🛡️ $${d1} Safe` },
+        { amount: d2, lot: Math.max(0.01, Number((d2 / riskPer1Lot).toFixed(2))), label: `🛡️ $${d2} Max` },
+      ];
+    } else {
+      let extraLot = Math.max(0.01, Number((defaultLot * 2).toFixed(2)));
+      if (lotCap && lotCap > 0 && extraLot > lotCap) extraLot = lotCap;
+      extraRiskLot = extraLot;
+      extraRisk = Number((extraLot * riskPer1Lot).toFixed(2));
+      extraRiskLabel = `🚀 Extra Risk (${extraLot.toFixed(2)}L • -$${extraRisk.toFixed(0)})`;
+
+      dollarBudgets = [
+        { amount: 25, lot: Math.max(0.01, Number((25 / riskPer1Lot).toFixed(2))), label: '💵 $25 Risk' },
+        { amount: 50, lot: Math.max(0.01, Number((50 / riskPer1Lot).toFixed(2))), label: '💵 $50 Risk' },
+        { amount: 100, lot: Math.max(0.01, Number((100 / riskPer1Lot).toFixed(2))), label: '💵 $100 Risk' },
+      ];
+    }
+
+    const extraRiskReward = extraRiskLot ? Number((extraRiskLot * riskPer1Lot * defaultRr).toFixed(2)) : undefined;
+
+    const tiers: IAdaptiveDayRiskTier = {
+      bestOptionLot,
+      bestOptionLabel,
+      bestRisk,
+      bestReward,
+      microLot,
+      microLabel,
+      microRisk,
+      microReward,
+      conservativeLot,
+      conservativeLabel,
+      conservativeRisk,
+      conservativeReward,
+      presetLot,
+      presetLabel,
+      presetRisk,
+      presetReward,
+      extraRiskLot,
+      extraRiskLabel,
+      extraRisk,
+      extraRiskReward,
+      dollarBudgets,
+    };
+
+    return {
+      regime,
+      regimeLabel,
+      regimeBadge,
+      todayRealizedPnL,
+      todayFloatingPnL,
+      todayTotalPnL,
+      todayTradesCount,
+      todayWinCount,
+      todayLossCount,
+      consecutiveLosses,
+      todayPeakPnL,
+      effectiveMaxDailyTrades,
+      remainingTrades,
+      bonusTradesEarned,
+      isTradeLimitReached,
+      effectiveDailyLossLimit,
+      remainingDailyLossBuffer,
+      isDailyLossBreached,
+      targetDollarRisk,
+      riskRationale,
+      recommendedLadderNotes,
+      tiers,
+    };
+  }
+
+  /**
    * Generates the deep sizing & lot options report card for any asset (Gold, ETH, BTC, US30, NAS100).
    * Audits live account equity, prop firm challenge guardrails, and highlights the optimal BEST OPTION.
    */
@@ -6827,8 +7171,9 @@ export class TelegramAlertService {
     let equity = 100000;
     let accountName = 'MT5 Elefin';
     let propNotes = '';
+    let account: any = null;
     try {
-      const account = await this.resolveMt5Account(user._id);
+      account = await this.resolveMt5Account(user._id);
       if (account?.currentBalance) equity = Number(account.currentBalance);
       if (account?.name) accountName = account.name;
       if (account?.accountType === 'PROP_FIRM' || account?.propFirmConfig?.enabled) {
@@ -6836,38 +7181,51 @@ export class TelegramAlertService {
       }
     } catch {}
 
-    const defaultDollarRisk = presets?.defaultDollarRisk ?? 50;
-    let targetDollarRisk = defaultDollarRisk;
-    if (equity > 0) {
-      targetDollarRisk = Math.min(targetDollarRisk, Math.max(25, equity * 0.01));
-    }
+    const adaptive = await this.evaluateAdaptiveDayRiskState(
+      user,
+      account,
+      cleanSym,
+      slPoints,
+      pointScale,
+      multiplier,
+      side
+    );
 
-    let bestOptionLot = riskPer1Lot > 0 ? targetDollarRisk / riskPer1Lot : defaultLot;
-    bestOptionLot = Math.max(0.01, Number(bestOptionLot.toFixed(2)));
+    const {
+      bestOptionLot,
+      bestOptionLabel,
+      bestRisk,
+      bestReward,
+      microLot,
+      microLabel,
+      microRisk,
+      microReward,
+      conservativeLot,
+      conservativeLabel,
+      conservativeRisk,
+      conservativeReward,
+      presetLot,
+      presetLabel,
+      presetRisk,
+      presetReward,
+      extraRiskLot,
+      extraRiskLabel,
+      extraRisk,
+      dollarBudgets,
+    } = adaptive.tiers;
 
-    const microLot = 0.01;
-    const consLot = Math.max(0.01, Number((defaultLot * 0.5).toFixed(2)));
-    const presetLot = Number(defaultLot.toFixed(2));
-    const aggrLot = Number((defaultLot * 2).toFixed(2));
-
-    const lot25 = Math.max(0.01, Number((25 / riskPer1Lot).toFixed(2)));
-    const lot50 = Math.max(0.01, Number((50 / riskPer1Lot).toFixed(2)));
-    const lot100 = Math.max(0.01, Number((100 / riskPer1Lot).toFixed(2)));
-
-    const bestRisk = Number((bestOptionLot * riskPer1Lot).toFixed(2));
-    const bestReward = Number((bestOptionLot * riskPer1Lot * defaultRr).toFixed(2));
-    const microRisk = Number((microLot * riskPer1Lot).toFixed(2));
-    const microReward = Number((microLot * riskPer1Lot * defaultRr).toFixed(2));
-    const consRisk = Number((consLot * riskPer1Lot).toFixed(2));
-    const consReward = Number((consLot * riskPer1Lot * defaultRr).toFixed(2));
-    const presetRisk = Number((presetLot * riskPer1Lot).toFixed(2));
-    const presetReward = Number((presetLot * riskPer1Lot * defaultRr).toFixed(2));
-    const aggrRisk = Number((aggrLot * riskPer1Lot).toFixed(2));
-    const aggrReward = Number((aggrLot * riskPer1Lot * defaultRr).toFixed(2));
-
+    const extraRiskReward = extraRiskLot ? Number((extraRiskLot * riskPer1Lot * defaultRr).toFixed(2)) : 0;
     const bestPctEquity = equity > 0 ? ((bestRisk / equity) * 100).toFixed(2) : '0.05';
     const sideEmoji = side === 'BUY' ? '🟢' : '🔴';
     const sideLabel = side === 'BUY' ? 'BUY (LONG)' : 'SELL (SHORT)';
+
+    const pnlSign = adaptive.todayTotalPnL >= 0 ? '+' : '';
+    const bonusText = adaptive.bonusTradesEarned > 0 ? ` (+${adaptive.bonusTradesEarned} bonus)` : '';
+
+    const extraRiskTitle = adaptive.regime === 'HOUSE_MONEY' ? 'Momentum Boost' : 'Extra Risk';
+    const extraRiskLine = extraRiskLot && extraRisk !== undefined
+      ? `• 🚀 <b>${extraRiskTitle}</b>  : <code>${extraRiskLot.toFixed(2)}L</code> ➜ Risk: <b>-$${extraRisk.toFixed(2)}</b> | Reward: <b>+$${extraRiskReward.toFixed(2)}</b>\n`
+      : `• 🚀 <b>Extra Risk</b>  : <i>[Disabled in Defensive Mode to protect buffer]</i>\n`;
 
     const text =
       `${symIcon} <b>${displaySym} • ${side} LOT OPTIONS REPORT</b>\n` +
@@ -6877,72 +7235,75 @@ export class TelegramAlertService {
       `🛑 <b>Stop Loss   :</b> <code>$${slPrice.toFixed(2)}</code> (-${slPoints} pts / -$${slDist.toFixed(2)})\n` +
       `🎯 <b>Take Profit :</b> <code>$${tpPrice.toFixed(2)}</code> (+${tpPoints} pts / 1:${defaultRr.toFixed(1)} RR)\n` +
       `💼 <b>Account     :</b> ${accountName} ($${equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${propNotes})\n` +
+      `📈 <b>Day State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b> (P&L: ${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)} | Trades: ${adaptive.todayTradesCount}/${adaptive.effectiveMaxDailyTrades}${bonusText})\n` +
+      `🛡️ <b>Day Buffer  :</b> Remaining Buffer: <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b> (Limit: $${adaptive.effectiveDailyLossLimit.toFixed(2)})\n` +
+      `🎯 <b>Ladder Plan :</b> <i>${adaptive.recommendedLadderNotes}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🌟 <b>BEST OPTION (RECOMMENDED):</b>\n` +
       `👉 <b>${bestOptionLot.toFixed(2)} Lots</b>  |  Risk: <b>-$${bestRisk.toFixed(2)}</b> (${bestPctEquity}%)  |  Target: <b>+$${bestReward.toFixed(2)}</b>\n` +
-      `💡 <i>Optimal risk-adjusted lot: fits strictly within safe budget, guarantees 1:${defaultRr.toFixed(1)} R:R, and protects prop challenge drawdown limits.</i>\n` +
+      `💡 <i>${adaptive.riskRationale}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `📊 <b>AVAILABLE LOT OPTIONS & RISK BREAKDOWN:</b>\n` +
       `• 🌟 <b>Best Option</b> : <code>${bestOptionLot.toFixed(2)}L</code> ➜ Risk: <b>-$${bestRisk.toFixed(2)}</b> | Reward: <b>+$${bestReward.toFixed(2)}</b>\n` +
       `• 🛡️ <b>Micro / Min</b> : <code>${microLot.toFixed(2)}L</code> ➜ Risk: <b>-$${microRisk.toFixed(2)}</b> | Reward: <b>+$${microReward.toFixed(2)}</b>\n` +
-      `• ⚖️ <b>Conservative</b>: <code>${consLot.toFixed(2)}L</code> ➜ Risk: <b>-$${consRisk.toFixed(2)}</b> | Reward: <b>+$${consReward.toFixed(2)}</b>\n` +
+      `• ⚖️ <b>Conservative</b>: <code>${conservativeLot.toFixed(2)}L</code> ➜ Risk: <b>-$${conservativeRisk.toFixed(2)}</b> | Reward: <b>+$${conservativeReward.toFixed(2)}</b>\n` +
       `• ⚡ <b>Saved Preset</b>: <code>${presetLot.toFixed(2)}L</code> ➜ Risk: <b>-$${presetRisk.toFixed(2)}</b> | Reward: <b>+$${presetReward.toFixed(2)}</b>\n` +
-      `• 🚀 <b>Extra Risk</b>  : <code>${aggrLot.toFixed(2)}L</code> ➜ Risk: <b>-$${aggrRisk.toFixed(2)}</b> | Reward: <b>+$${aggrReward.toFixed(2)}</b>\n` +
+      extraRiskLine +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<i>Tap your preferred lot size below to execute on MT5:</i>`;
 
     const buttons: ITelegramInlineButton[][] = [
       [
         {
-          text: `🌟 ${side} BEST OPTION (${bestOptionLot.toFixed(2)}L • -$${bestRisk.toFixed(0)})`,
+          text: bestOptionLabel,
           callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ],
       [
         {
-          text: `🛡️ Micro (${microLot.toFixed(2)}L • -$${microRisk.toFixed(2)})`,
+          text: microLabel,
           callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
         {
-          text: `⚖️ Cons (${consLot.toFixed(2)}L • -$${consRisk.toFixed(2)})`,
-          callback_data: `order:${cleanSym}:${side}:${consLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        },
-      ],
-      [
-        {
-          text: `⚡ Preset (${presetLot.toFixed(2)}L • -$${presetRisk.toFixed(2)})`,
-          callback_data: `order:${cleanSym}:${side}:${presetLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        },
-        {
-          text: `🚀 Extra Risk (${aggrLot.toFixed(2)}L • -$${aggrRisk.toFixed(2)})`,
-          callback_data: `order:${cleanSym}:${side}:${aggrLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        },
-      ],
-      [
-        {
-          text: `💵 $25 Risk (${lot25.toFixed(2)}L)`,
-          callback_data: `order:${cleanSym}:${side}:${lot25.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        },
-        {
-          text: `💵 $50 Risk (${lot50.toFixed(2)}L)`,
-          callback_data: `order:${cleanSym}:${side}:${lot50.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        },
-        {
-          text: `💵 $100 Risk (${lot100.toFixed(2)}L)`,
-          callback_data: `order:${cleanSym}:${side}:${lot100.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
-        },
-      ],
-      [
-        {
-          text: '🔄 Refresh Price',
-          callback_data: `deck:order_prep:${cleanSym}:${side}`,
-        },
-        {
-          text: '🔙 ❮ Cancel / Back to Cockpit',
-          callback_data: 'deck:back',
+          text: conservativeLabel,
+          callback_data: `order:${cleanSym}:${side}:${conservativeLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ],
     ];
+
+    const row3: ITelegramInlineButton[] = [
+      {
+        text: presetLabel,
+        callback_data: `order:${cleanSym}:${side}:${presetLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+      },
+    ];
+    if (extraRiskLot && extraRiskLabel) {
+      row3.push({
+        text: extraRiskLabel,
+        callback_data: `order:${cleanSym}:${side}:${extraRiskLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+      });
+    }
+    buttons.push(row3);
+
+    if (dollarBudgets && dollarBudgets.length > 0) {
+      buttons.push(
+        dollarBudgets.map((b) => ({
+          text: `${b.label} (${b.lot.toFixed(2)}L)`,
+          callback_data: `order:${cleanSym}:${side}:${b.lot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
+        }))
+      );
+    }
+
+    buttons.push([
+      {
+        text: '🔄 Refresh Price',
+        callback_data: `deck:order_prep:${cleanSym}:${side}`,
+      },
+      {
+        text: '🔙 ❮ Cancel / Back to Cockpit',
+        callback_data: 'deck:back',
+      },
+    ]);
 
     return { text, buttons };
   }
@@ -7158,9 +7519,18 @@ export class TelegramAlertService {
     const floatAbs = Math.abs(totalFloat).toFixed(2);
     const pnlBadge = totalFloat >= 0 ? `🟢 <b>+$${floatAbs}</b>` : `🔴 <b>-$${floatAbs}</b>`;
 
+    let dayRegimeBadge = '';
+    try {
+      const account = await this.resolveMt5Account(user._id);
+      if (account) {
+        const adaptive = await this.evaluateAdaptiveDayRiskState(user, account, 'XAUUSD', 35, 0.10, 100);
+        dayRegimeBadge = `${adaptive.regimeBadge} ${adaptive.regimeLabel} ｜ `;
+      }
+    } catch {}
+
     const line1 = hasOpenTrades
-      ? `${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>LIVE</b>`
-      : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>COCKPIT</b>`;
+      ? `${dayRegimeBadge}${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>LIVE</b>`
+      : `${dayRegimeBadge}🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>COCKPIT</b>`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 

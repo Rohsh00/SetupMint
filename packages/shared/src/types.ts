@@ -2386,6 +2386,57 @@ export interface ITelegramForexPresets {
   defaultDollarRisk: number;
 }
 
+export type DayRiskRegime = 'HOUSE_MONEY' | 'DEFENSIVE' | 'NEUTRAL';
+
+export interface IAdaptiveDayRiskTier {
+  bestOptionLot: number;
+  bestOptionLabel: string;
+  bestRisk: number;
+  bestReward: number;
+  microLot: number;
+  microLabel: string;
+  microRisk: number;
+  microReward: number;
+  conservativeLot: number;
+  conservativeLabel: string;
+  conservativeRisk: number;
+  conservativeReward: number;
+  presetLot: number;
+  presetLabel: string;
+  presetRisk: number;
+  presetReward: number;
+  extraRiskLot?: number;
+  extraRiskLabel?: string;
+  extraRisk?: number;
+  extraRiskReward?: number;
+  dollarBudgets: Array<{ amount: number; lot: number; label: string }>;
+}
+
+export interface IAdaptiveDayRiskState {
+  regime: DayRiskRegime;
+  regimeLabel: string;
+  regimeBadge: string;
+  todayRealizedPnL: number;
+  todayFloatingPnL: number;
+  todayTotalPnL: number;
+  todayTradesCount: number;
+  todayWinCount: number;
+  todayLossCount: number;
+  consecutiveLosses: number;
+  todayPeakPnL: number;
+  effectiveMaxDailyTrades: number;
+  remainingTrades: number;
+  bonusTradesEarned: number;
+  isTradeLimitReached: boolean;
+  effectiveDailyLossLimit: number;
+  remainingDailyLossBuffer: number;
+  isDailyLossBreached: boolean;
+  targetDollarRisk: number;
+  riskRationale: string;
+  recommendedLadderNotes: string;
+  tiers: IAdaptiveDayRiskTier;
+}
+
 export const DEFAULT_TELEGRAM_FOREX_PRESETS: ITelegramForexPresets = {
   goldDefaultLot: 0.10,
   goldSlPoints: 35,

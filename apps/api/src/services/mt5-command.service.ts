@@ -322,6 +322,43 @@ export class Mt5CommandService {
   }
 
   /**
+   * Queues a modify Take Profit (or remove TP) command for MT5 EA.
+   * If takeProfit is 0, MT5 clears the take profit completely (Runner Mode).
+   */
+  static async queueModifyTp(params: {
+    userId: string | mongoose.Types.ObjectId;
+    accountId: string | mongoose.Types.ObjectId;
+    tradeId?: string | mongoose.Types.ObjectId;
+    ticket: number;
+    takeProfit: number;
+    stopLoss?: number;
+  }): Promise<IMt5CommandDoc> {
+    // Supersede any pending modify TP commands for the same ticket
+    await Mt5Command.updateMany(
+      {
+        accountId: params.accountId,
+        ticket: params.ticket,
+        action: 'MODIFY_TP',
+        status: { $in: ['PENDING', 'SENT'] },
+      },
+      { $set: { status: 'FAILED', resultMessage: 'Superseded by newer Take Profit command' } }
+    );
+
+    const cmd = await Mt5Command.create({
+      userId: params.userId,
+      accountId: params.accountId,
+      tradeId: params.tradeId,
+      ticket: params.ticket,
+      action: 'MODIFY_TP',
+      takeProfit: params.takeProfit,
+      stopLoss: params.stopLoss,
+      status: 'PENDING',
+    });
+
+    return cmd;
+  }
+
+  /**
    * Queues a market close position command for MT5 EA.
    */
   static async queueClosePosition(params: {

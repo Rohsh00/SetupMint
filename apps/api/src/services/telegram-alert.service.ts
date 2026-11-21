@@ -1455,6 +1455,91 @@ export class TelegramAlertService {
       return;
     }
 
+    if (data.startsWith('pos_removetp:')) {
+      const ticket = parseInt(data.replace('pos_removetp:', ''), 10);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const curSl = Number(trade?.risk?.currentStopLoss ?? trade?.risk?.initialStopLoss ?? 0);
+      if (ticket > 0 && accountId) {
+        await Mt5CommandService.queueModifyTp({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          takeProfit: 0,
+          stopLoss: curSl > 0 ? curSl : undefined,
+        });
+        if (trade) {
+          trade.risk = { ...(trade.risk || {}), plannedTarget: undefined };
+          if (!trade.tags?.includes('OPEN_RUNNER')) {
+            trade.tags = [...(trade.tags || []), 'OPEN_RUNNER'];
+          }
+          await trade.save().catch(() => {});
+        }
+        await this.answerCallbackQuery(botToken, cq.id, `🚫 TP Removed! #${ticket} is now running in Open Runner mode.`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
+    if (data.startsWith('pos_tp:')) {
+      const parts = data.split(':');
+      const ticket = parseInt(parts[1], 10);
+      const newTp = parseFloat(parts[2]);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const curSl = Number(trade?.risk?.currentStopLoss ?? trade?.risk?.initialStopLoss ?? 0);
+      if (ticket > 0 && accountId && newTp > 0) {
+        await Mt5CommandService.queueModifyTp({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          takeProfit: newTp,
+          stopLoss: curSl > 0 ? curSl : undefined,
+        });
+        if (trade) {
+          trade.risk = { ...(trade.risk || {}), plannedTarget: newTp };
+          if (trade.tags?.includes('OPEN_RUNNER')) {
+            trade.tags = trade.tags.filter((t: string) => t !== 'OPEN_RUNNER');
+          }
+          await trade.save().catch(() => {});
+        }
+        await this.answerCallbackQuery(botToken, cq.id, `🎯 Take Profit set to $${newTp.toFixed(2)} for #${ticket}`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
+    if (data.startsWith('pos_sl:')) {
+      const parts = data.split(':');
+      const ticket = parseInt(parts[1], 10);
+      const newSl = parseFloat(parts[2]);
+      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
+      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      const curTp = Number(trade?.risk?.plannedTarget ?? 0);
+      if (ticket > 0 && accountId && newSl > 0) {
+        await Mt5CommandService.queueModifySl({
+          userId: user._id,
+          accountId,
+          tradeId: trade?._id,
+          ticket,
+          stopLoss: newSl,
+          takeProfit: curTp > 0 ? curTp : undefined,
+        });
+        if (trade) {
+          trade.risk = { ...(trade.risk || {}), currentStopLoss: newSl };
+          await trade.save().catch(() => {});
+        }
+        await this.answerCallbackQuery(botToken, cq.id, `🛡️ SL moved to $${newSl.toFixed(2)} for #${ticket}`, true);
+        await this.updatePinnedCockpitMessage(user);
+      }
+      return;
+    }
+
     if (data === 'cmd_close_all') {
       await this.answerCallbackQuery(botToken, cq.id, 'Closing ALL active MT5 positions...');
       const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' });
@@ -2505,6 +2590,18 @@ export class TelegramAlertService {
         await this.handleCustomStopLossCommand(user, botToken, chatId, args, msg);
         break;
 
+      case '/tp':
+      case 'tp':
+        await this.handleCustomTakeProfitCommand(user, botToken, chatId, args, msg);
+        break;
+
+      case '/removetp':
+      case 'removetp':
+      case '/canceltp':
+      case 'canceltp':
+        await this.handleRemoveTakeProfitCommand(user, botToken, chatId, args, msg);
+        break;
+
       case '/pnl':
         await this.handlePnlCommand(user, botToken, chatId, args[0]);
         break;
@@ -3505,6 +3602,51 @@ export class TelegramAlertService {
     const entry = trade.entryPrice || trade.simpleExecution?.entryPrice || 0;
     const sl = initialStopLoss ?? trade.risk?.initialStopLoss ?? trade.stopLoss ?? 'None';
     const riskAmt = sl !== 'None' ? Math.abs(entry - Number(sl)) * qty * mult : trade.risk?.plannedRiskAmount;
+    const ticket = Mt5CommandService.extractTicket(trade);
+
+    const numSl = sl !== 'None' ? Number(sl) : 0;
+    const isLong = (trade.direction as string) === 'LONG' || (trade.direction as string) === 'BUY';
+    const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+    const defaultPts = isGold ? 4.0 : 15.0;
+    const riskDist = (numSl > 0 && entry > 0) ? Math.abs(entry - numSl) : defaultPts;
+
+    const tp15 = Number((isLong ? entry + 1.5 * riskDist : entry - 1.5 * riskDist).toFixed(2));
+    const tp20 = Number((isLong ? entry + 2.0 * riskDist : entry - 2.0 * riskDist).toFixed(2));
+    const tp30 = Number((isLong ? entry + 3.0 * riskDist : entry - 3.0 * riskDist).toFixed(2));
+
+    const openedButtons: ITelegramInlineButton[][] = [];
+    if (ticket) {
+      openedButtons.push([
+        { text: `🛡️ Lock BE ($${entry.toFixed(2)})`, callback_data: `pos_be:${ticket}` },
+        { text: '🚫 Remove TP (Runner)', callback_data: `pos_removetp:${ticket}` },
+      ]);
+      openedButtons.push([
+        { text: `🎯 +1.5R ($${tp15})`, callback_data: `pos_tp:${ticket}:${tp15}` },
+        { text: `🎯 +2R ($${tp20})`, callback_data: `pos_tp:${ticket}:${tp20}` },
+        { text: `🎯 +3R ($${tp30})`, callback_data: `pos_tp:${ticket}:${tp30}` },
+      ]);
+      openedButtons.push([
+        { text: '🎯 Book 50%', callback_data: `pos_half:${ticket}` },
+        { text: '📈 Trail +1R', callback_data: `pos_trail:${ticket}` },
+        { text: '🚨 Close (100%)', callback_data: `pos_close:${ticket}` },
+      ]);
+      openedButtons.push([
+        { text: '🔄 Refresh Price & PnL', callback_data: `x:${trade._id}:REF:1:${entry}` },
+        { text: '📈 5m Chart', callback_data: `x:${trade._id}:CHART_5:1:${entry}` },
+      ]);
+    } else {
+      openedButtons.push([
+        { text: '🔄 Refresh Price & PnL', callback_data: `x:${trade._id}:REF:1:${entry}` },
+        { text: '📈 5m Chart', callback_data: `x:${trade._id}:CHART_5:1:${entry}` },
+      ]);
+      openedButtons.push([
+        { text: '🛡️ Lock Breakeven', callback_data: `x:${trade._id}:BE:1:${entry}` },
+        { text: '⚡ Book 50%', callback_data: `x:${trade._id}:B50:1:${entry}` },
+      ]);
+      openedButtons.push([
+        { text: '🚨 Quick Market Exit (100%)', callback_data: `x:${trade._id}:E:1:${entry}` },
+      ]);
+    }
 
     await this.sendAlert({
       botToken: settings.telegramBotToken,
@@ -3521,19 +3663,7 @@ export class TelegramAlertService {
         InitialRisk: riskAmt ? `${sym}${Number(riskAmt).toFixed(2)}` : 'Unspecified',
         ...(trade.tradingSession ? { Session: trade.tradingSession } : {}),
       },
-      buttons: [
-        [
-          { text: '🔄 Refresh Price & PnL', callback_data: `x:${trade._id}:REF:1:${entry}` },
-          { text: '📈 5m Chart', callback_data: `x:${trade._id}:CHART_5:1:${entry}` },
-        ],
-        [
-          { text: '🛡️ Lock Breakeven', callback_data: `x:${trade._id}:BE:1:${entry}` },
-          { text: '⚡ Book 50%', callback_data: `x:${trade._id}:B50:1:${entry}` },
-        ],
-        [
-          { text: '🚨 Quick Market Exit (100%)', callback_data: `x:${trade._id}:E:1:${entry}` },
-        ],
-      ],
+      buttons: openedButtons,
     });
 
     // Automatically pin (or update in-place) the live cockpit with open positions and dynamic action triggers
@@ -4209,6 +4339,329 @@ export class TelegramAlertService {
     ];
 
     await this.sendMessage(botToken, chatId, card, buttons);
+  }
+
+  /**
+   * Adjusts Take Profit directly from Telegram text command (/tp <price> or /tp none).
+   */
+  private static async handleCustomTakeProfitCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[],
+    msg?: any
+  ): Promise<void> {
+    if (!botToken) return;
+
+    // Check for remove keywords
+    const isRemove = args.some(a => ['none', '0', 'remove', 'off', 'cancel', 'clear'].includes(a.toLowerCase().trim()));
+    if (isRemove) {
+      await this.handleRemoveTakeProfitCommand(user, botToken, chatId, args, msg);
+      return;
+    }
+
+    let targetPriceStr: string | undefined;
+    let specifiedSymbol: string | undefined;
+
+    for (const arg of args) {
+      const clean = arg.replace('$', '').replace('₹', '').trim();
+      if (/^\d+(\.\d+)?$/.test(clean)) {
+        targetPriceStr = clean;
+      } else if (/^[A-Za-z0-9_]+$/.test(clean) && clean.toUpperCase() !== 'TP') {
+        specifiedSymbol = clean.toUpperCase();
+      }
+    }
+
+    if (!targetPriceStr) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Missing Take Profit Price</b>\n\n` +
+        `Usage:\n` +
+        `• <code>/tp &lt;price&gt;</code> (e.g. <code>/tp 2680.00</code>)\n` +
+        `• <code>/tp &lt;symbol&gt; &lt;price&gt;</code> (e.g. <code>/tp XAUUSD 2680.00</code>)\n` +
+        `• <code>/removetp</code> — Clears TP for Runner mode!`
+      );
+      return;
+    }
+
+    const targetPrice = parseFloat(targetPriceStr);
+    if (isNaN(targetPrice) || targetPrice <= 0) {
+      await this.sendMessage(botToken, chatId, `⚠️ Invalid price: <code>${targetPriceStr}</code>.`);
+      return;
+    }
+
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    let tradeQuery: any = {
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+    };
+
+    const repliedText = msg?.reply_to_message?.text || msg?.reply_to_message?.caption || '';
+    if (repliedText) {
+      const ticketMatch = repliedText.match(/Ticket\s*#?(\d+)/i) || repliedText.match(/MT5_TICKET_(\d+)/i);
+      if (ticketMatch && ticketMatch[1]) {
+        tradeQuery.tags = `MT5_TICKET_${ticketMatch[1]}`;
+      } else {
+        const symMatch = repliedText.match(/(XAUUSD|GOLD|[A-Z]{3,6})/);
+        if (symMatch && symMatch[1]) {
+          tradeQuery.symbol = symMatch[1];
+        }
+      }
+    } else if (specifiedSymbol) {
+      const cleanSpecified = specifiedSymbol === 'GOLD' || specifiedSymbol === 'XAU' ? 'XAUUSD' : (specifiedSymbol === 'ETH' || specifiedSymbol === 'ETHEREUM' ? 'ETHUSD' : specifiedSymbol);
+      tradeQuery.symbol = new RegExp(cleanSpecified, 'i');
+    }
+
+    let matchingTrades = await Trade.find(tradeQuery).sort({ entryTime: -1 });
+    if (matchingTrades.length === 0 && !tradeQuery.tags && !tradeQuery.symbol) {
+      matchingTrades = await Trade.find({
+        userId: user._id,
+        accountId: { $in: allActiveAccountIds },
+        status: 'OPEN',
+        symbol: { $regex: /XAU|GOLD/i },
+      }).sort({ entryTime: -1 });
+    }
+
+    if (matchingTrades.length === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `❌ <b>No Active Open Trade Found</b>\n\nThere are no open positions matching your request to set Take Profit to $${targetPrice.toFixed(2)}.`
+      );
+      return;
+    }
+
+    if (matchingTrades.length > 1 && !tradeQuery.tags && !specifiedSymbol) {
+      const tradeList = matchingTrades
+        .map((t: any) => `• <code>${t.symbol}</code> (${t.direction}) @ $${t.simpleExecution?.entryPrice || t.calculated?.averageEntryPrice || t.entryPrice || 0}`)
+        .join('\n');
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Multiple Open Positions Active</b>\n\nPlease specify symbol:\n<code>/tp &lt;symbol&gt; ${targetPrice}</code>\n\nActive positions:\n${tradeList}`
+      );
+      return;
+    }
+
+    const trade = matchingTrades[0];
+    const isLong = (trade.direction as string) === 'LONG' || (trade.direction as string) === 'BUY';
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+    const mtQuote = trade.symbol ? Mt5CommandService.getLiveQuote(trade.symbol) : null;
+    const currentLtp = mtQuote?.ltp || (trade as any).currentLtp || trade.simpleExecution?.entryPrice || 0;
+
+    if (isLong && currentLtp > 0 && targetPrice <= currentLtp) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Invalid Take Profit:</b>\nFor a <b>LONG</b> position on ${trade.symbol}, Take Profit (${sym}${targetPrice.toFixed(2)}) must be <b>above</b> the current market price (${sym}${currentLtp.toFixed(2)}).`
+      );
+      return;
+    }
+    if (!isLong && currentLtp > 0 && targetPrice >= currentLtp) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Invalid Take Profit:</b>\nFor a <b>SHORT</b> position on ${trade.symbol}, Take Profit (${sym}${targetPrice.toFixed(2)}) must be <b>below</b> the current market price (${sym}${currentLtp.toFixed(2)}).`
+      );
+      return;
+    }
+
+    const oldTp = trade.risk?.plannedTarget;
+    trade.risk = {
+      ...(trade.risk || {}),
+      plannedTarget: targetPrice,
+    };
+    if (trade.tags?.includes('OPEN_RUNNER')) {
+      trade.tags = trade.tags.filter((t: string) => t !== 'OPEN_RUNNER');
+    }
+
+    const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+    const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
+    const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+    const curSl = Number(trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? 0);
+
+    let brokerStatus = 'Stored in SetupMint Journal';
+    if (isMt5 && ticket) {
+      await Mt5CommandService.queueModifyTp({
+        userId: user._id,
+        accountId: (account?._id || trade.accountId)!,
+        tradeId: trade._id,
+        ticket,
+        takeProfit: targetPrice,
+        stopLoss: curSl > 0 ? curSl : undefined,
+      });
+      brokerStatus = `⚡ Dispatched to MT5 Server Bridge (Ticket #${ticket})`;
+    }
+
+    trade.auditLog.push({
+      action: 'TELEGRAM_SET_TP',
+      timestamp: new Date(),
+      details: {
+        text: `Take Profit updated to ${sym}${targetPrice.toFixed(2)} via Telegram command`,
+        previousTp: oldTp,
+      },
+      changedBy: 'telegram',
+    });
+    await trade.save();
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🎯 <b>TAKE PROFIT UPDATED</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Symbol   : ${trade.symbol} (${trade.direction})\n` +
+      `New TP   : ${sym}${targetPrice.toFixed(2)}\n` +
+      `Old TP   : ${oldTp ? `${sym}${Number(oldTp).toFixed(2)}` : 'Open (Runner)'}\n` +
+      `Market   : ${sym}${currentLtp.toFixed(2)}\n` +
+      `Status   : ${brokerStatus}\n` +
+      `</pre>\n` +
+      `<i>Updated at ${new Date().toLocaleTimeString('en-IN')} IST</i>`,
+      ticket
+        ? [
+            [
+              { text: '🚫 Remove TP (Runner)', callback_data: `pos_removetp:${ticket}` },
+              { text: '🛡️ Lock BE', callback_data: `pos_be:${ticket}` },
+            ],
+            [
+              { text: '🚨 Close Position', callback_data: `pos_close:${ticket}` },
+              { text: '📌 Refresh Cockpit', callback_data: 'cmd_refresh_cockpit' },
+            ],
+          ]
+        : undefined
+    );
+    await this.updatePinnedCockpitMessage(user);
+  }
+
+  /**
+   * Removes Take Profit completely, setting MT5 position into Open Runner mode.
+   */
+  private static async handleRemoveTakeProfitCommand(
+    user: any,
+    botToken: string | null | undefined,
+    chatId: string | number,
+    args: string[],
+    msg?: any
+  ): Promise<void> {
+    if (!botToken) return;
+
+    let specifiedSymbol: string | undefined;
+    for (const arg of args) {
+      const clean = arg.trim().toUpperCase();
+      if (/^[A-Za-z0-9_]+$/.test(clean) && !['NONE', '0', 'REMOVE', 'OFF', 'CANCEL', 'CLEAR', 'REMOVETP'].includes(clean)) {
+        specifiedSymbol = clean;
+      }
+    }
+
+    const allActiveAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    let tradeQuery: any = {
+      userId: user._id,
+      accountId: { $in: allActiveAccountIds },
+      status: 'OPEN',
+    };
+
+    const repliedText = msg?.reply_to_message?.text || msg?.reply_to_message?.caption || '';
+    if (repliedText) {
+      const ticketMatch = repliedText.match(/Ticket\s*#?(\d+)/i) || repliedText.match(/MT5_TICKET_(\d+)/i);
+      if (ticketMatch && ticketMatch[1]) {
+        tradeQuery.tags = `MT5_TICKET_${ticketMatch[1]}`;
+      } else {
+        const symMatch = repliedText.match(/(XAUUSD|GOLD|[A-Z]{3,6})/);
+        if (symMatch && symMatch[1]) {
+          tradeQuery.symbol = symMatch[1];
+        }
+      }
+    } else if (specifiedSymbol) {
+      const cleanSpecified = specifiedSymbol === 'GOLD' || specifiedSymbol === 'XAU' ? 'XAUUSD' : (specifiedSymbol === 'ETH' || specifiedSymbol === 'ETHEREUM' ? 'ETHUSD' : specifiedSymbol);
+      tradeQuery.symbol = new RegExp(cleanSpecified, 'i');
+    }
+
+    let matchingTrades = await Trade.find(tradeQuery).sort({ entryTime: -1 });
+    if (matchingTrades.length === 0 && !tradeQuery.tags && !tradeQuery.symbol) {
+      matchingTrades = await Trade.find({
+        userId: user._id,
+        accountId: { $in: allActiveAccountIds },
+        status: 'OPEN',
+        symbol: { $regex: /XAU|GOLD/i },
+      }).sort({ entryTime: -1 });
+    }
+
+    if (matchingTrades.length === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `❌ <b>No Active Open Trade Found</b>\n\nThere are no open positions to remove Take Profit from.`
+      );
+      return;
+    }
+
+    const trade = matchingTrades[0];
+    const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+    const isMt5 = Mt5CommandService.isMt5Trade(trade, account);
+    const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+    const curSl = Number(trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? 0);
+
+    const oldTp = trade.risk?.plannedTarget;
+    trade.risk = {
+      ...(trade.risk || {}),
+      plannedTarget: undefined,
+    };
+    if (!trade.tags?.includes('OPEN_RUNNER')) {
+      trade.tags = [...(trade.tags || []), 'OPEN_RUNNER'];
+    }
+
+    let brokerStatus = 'Stored in SetupMint Journal';
+    if (isMt5 && ticket) {
+      await Mt5CommandService.queueModifyTp({
+        userId: user._id,
+        accountId: (account?._id || trade.accountId)!,
+        tradeId: trade._id,
+        ticket,
+        takeProfit: 0,
+        stopLoss: curSl > 0 ? curSl : undefined,
+      });
+      brokerStatus = `⚡ Dispatched to MT5 Server Bridge (Ticket #${ticket})`;
+    }
+
+    trade.auditLog.push({
+      action: 'TELEGRAM_REMOVE_TP',
+      timestamp: new Date(),
+      details: {
+        text: `Take Profit removed (Runner Mode enabled) via Telegram command`,
+        previousTp: oldTp,
+      },
+      changedBy: 'telegram',
+    });
+    await trade.save();
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🚫 <b>TAKE PROFIT REMOVED (RUNNER MODE)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Symbol   : ${trade.symbol} (${trade.direction})\n` +
+      `Target   : OPEN / NONE (Runner Mode)\n` +
+      `StopLoss : ${curSl > 0 ? `$${curSl.toFixed(2)}` : 'None'}\n` +
+      `Status   : ${brokerStatus}\n` +
+      `</pre>\n` +
+      `<i>The broker will not close this position on target. Let your winners run!</i>`,
+      ticket
+        ? [
+            [
+              { text: '🛡️ Lock BE', callback_data: `pos_be:${ticket}` },
+              { text: '📈 Trail +1R', callback_data: `pos_trail:${ticket}` },
+            ],
+            [
+              { text: '🎯 Book 50%', callback_data: `pos_half:${ticket}` },
+              { text: '🚨 Close Position', callback_data: `pos_close:${ticket}` },
+            ],
+          ]
+        : undefined
+    );
+    await this.updatePinnedCockpitMessage(user);
   }
 
   /**
@@ -5004,7 +5457,7 @@ export class TelegramAlertService {
       }
 
       const slText = currentSl ? `$${Number(currentSl).toFixed(2)}` : 'None';
-      const tpText = t.risk?.plannedTarget ? `$${Number(t.risk.plannedTarget).toFixed(2)}` : 'Open';
+      const tpText = t.risk?.plannedTarget && Number(t.risk.plannedTarget) > 0 ? `$${Number(t.risk.plannedTarget).toFixed(2)}` : 'Open (Runner Mode)';
 
       posDetailLines.push(
         `${pnlEmoji} <b>${t.symbol} ${t.direction} ${qty.toFixed(2)}L</b> (Tkt${ticketStr})\n` +
@@ -5092,6 +5545,29 @@ export class TelegramAlertService {
           { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
           { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
         ]);
+
+        if (ticket) {
+          const hasTp = t.risk?.plannedTarget && Number(t.risk.plannedTarget) > 0;
+          const entryPrice = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+          const currentSl = t.risk?.currentStopLoss ?? t.risk?.initialStopLoss;
+          const numSl = currentSl ? Number(currentSl) : 0;
+          const riskDist = (numSl > 0 && entryPrice > 0) ? Math.abs(entryPrice - numSl) : (isGold ? 4.0 : 15.0);
+          const isLong = (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
+          const tp2R = Number((isLong ? entryPrice + 2.0 * riskDist : entryPrice - 2.0 * riskDist).toFixed(2));
+          const tp3R = Number((isLong ? entryPrice + 3.0 * riskDist : entryPrice - 3.0 * riskDist).toFixed(2));
+
+          if (hasTp) {
+            buttons.push([
+              { text: `🎯 +2R ($${tp2R})`, callback_data: `pos_tp:${ticket}:${tp2R}` },
+              { text: '🚫 Remove TP', callback_data: `pos_removetp:${ticket}` },
+            ]);
+          } else {
+            buttons.push([
+              { text: `🎯 Set +2R ($${tp2R})`, callback_data: `pos_tp:${ticket}:${tp2R}` },
+              { text: `🎯 Set +3R ($${tp3R})`, callback_data: `pos_tp:${ticket}:${tp3R}` },
+            ]);
+          }
+        }
       }
 
       buttons.push([

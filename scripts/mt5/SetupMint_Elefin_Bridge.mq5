@@ -365,6 +365,33 @@ void ProcessSetupMintCommands(string responseJson)
             Print("[SetupMint] ⚠️ ", msg);
          }
       }
+      else if(action == "MODIFY_TP")
+      {
+         if(PositionSelectByTicket(ticket))
+         {
+            double curSl = sl > 0 ? sl : PositionGetDouble(POSITION_SL);
+            double newTp = tp; // In MT5, 0.0 clears TP completely for runner mode
+            ResetLastError();
+            if(m_trade.PositionModify(ticket, curSl, newTp))
+            {
+               success = true;
+               msg = (newTp <= 0.0) ? "Take Profit removed (open runner)" : ("Take Profit modified to " + DoubleToString(newTp, 2));
+               Print("[SetupMint] ⚡ PositionModify TP SUCCESS on Ticket #", ticket, " -> TP: ", newTp);
+            }
+            else
+            {
+               success = false;
+               msg = "PositionModify TP failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+               Print("[SetupMint] ❌ PositionModify TP FAILED on Ticket #", ticket, " - ", msg);
+            }
+         }
+         else
+         {
+            success = false;
+            msg = "Position ticket #" + IntegerToString(ticket) + " not found or already closed";
+            Print("[SetupMint] ⚠️ ", msg);
+         }
+      }
       else if(action == "CLOSE_POSITION")
       {
          if(PositionSelectByTicket(ticket))

@@ -918,4 +918,200 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     await Trade.deleteOne({ _id: activeTrade._id });
     await Mt5Command.deleteMany({ ticket: 776655 });
   });
+
+  // 27. 1-Click Remove Take Profit (Runner Mode)
+  it('Scenario 27: pos_removetp queues MODIFY_TP with takeProfit: 0 and marks trade as OPEN_RUNNER', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_443322'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.10,
+      },
+      risk: {
+        initialStopLoss: 2640.00,
+        currentStopLoss: 2640.00,
+        plannedTarget: 2675.00,
+      },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_removetp_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 888 },
+        data: 'pos_removetp:443322',
+      },
+    });
+
+    const tpCmd = await Mt5Command.findOne({ ticket: 443322, action: 'MODIFY_TP' }).sort({ createdAt: -1 });
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(0); // 0 clears TP on MT5
+
+    const updatedTrade = await Trade.findById(activeTrade._id);
+    expect(updatedTrade?.risk?.plannedTarget).toBeUndefined();
+    expect(updatedTrade?.tags).toContain('OPEN_RUNNER');
+
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await Mt5Command.deleteMany({ ticket: 443322 });
+  });
+
+  // 28. 1-Click Take Profit Target Adjustment
+  it('Scenario 28: pos_tp queues MODIFY_TP with exact target price and updates database target', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_443323'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.10,
+      },
+      risk: {
+        initialStopLoss: 2640.00,
+        currentStopLoss: 2640.00,
+      },
+    });
+
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: 'cq_tp_1',
+        from: { id: chatId },
+        message: { chat: { id: chatId }, message_id: 889 },
+        data: 'pos_tp:443323:2680.50',
+      },
+    });
+
+    const tpCmd = await Mt5Command.findOne({ ticket: 443323, action: 'MODIFY_TP' }).sort({ createdAt: -1 });
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(2680.50);
+
+    const updatedTrade = await Trade.findById(activeTrade._id);
+    expect(updatedTrade?.risk?.plannedTarget).toBe(2680.50);
+
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await Mt5Command.deleteMany({ ticket: 443323 });
+  });
+
+  // 29. Text Command /tp <price>
+  it('Scenario 29: /tp 2685.00 modifies Take Profit on MT5 and updates trade record', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_443324'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.10,
+      },
+      risk: {
+        initialStopLoss: 2640.00,
+        currentStopLoss: 2640.00,
+      },
+    });
+
+    // Mock live quote for Gold
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'XAUUSD',
+      ltp: 2652.00,
+      bid: 2651.80,
+      ask: 2652.20,
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/tp 2685.00',
+      },
+    });
+
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('TAKE PROFIT UPDATED');
+    expect(lastMsg.text).toContain('2685.00');
+
+    const tpCmd = await Mt5Command.findOne({ ticket: 443324, action: 'MODIFY_TP' }).sort({ createdAt: -1 });
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(2685.00);
+
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await Mt5Command.deleteMany({ ticket: 443324 });
+  });
+
+  // 30. Text Command /removetp
+  it('Scenario 30: /removetp clears Take Profit and sets position into Runner mode', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_443325'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.10,
+      },
+      risk: {
+        initialStopLoss: 2640.00,
+        currentStopLoss: 2640.00,
+        plannedTarget: 2675.00,
+      },
+    });
+
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate({
+      message: {
+        chat: { id: chatId },
+        from: { id: chatId },
+        text: '/removetp',
+      },
+    });
+
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).toContain('TAKE PROFIT REMOVED (RUNNER MODE)');
+
+    const tpCmd = await Mt5Command.findOne({ ticket: 443325, action: 'MODIFY_TP' }).sort({ createdAt: -1 });
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(0);
+
+    const updatedTrade = await Trade.findById(activeTrade._id);
+    expect(updatedTrade?.risk?.plannedTarget).toBeUndefined();
+    expect(updatedTrade?.tags).toContain('OPEN_RUNNER');
+
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await Mt5Command.deleteMany({ ticket: 443325 });
+  });
 });

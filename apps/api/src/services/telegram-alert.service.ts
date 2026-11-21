@@ -7519,11 +7519,12 @@ export class TelegramAlertService {
     const floatAbs = Math.abs(totalFloat).toFixed(2);
     const pnlBadge = totalFloat >= 0 ? `🟢 <b>+$${floatAbs}</b>` : `🔴 <b>-$${floatAbs}</b>`;
 
+    let adaptive: IAdaptiveDayRiskState | null = null;
     let dayRegimeBadge = '';
     try {
       const account = await this.resolveMt5Account(user._id);
       if (account) {
-        const adaptive = await this.evaluateAdaptiveDayRiskState(user, account, 'XAUUSD', 35, 0.10, 100);
+        adaptive = await this.evaluateAdaptiveDayRiskState(user, account, 'XAUUSD', 35, 0.10, 100);
         dayRegimeBadge = `${adaptive.regimeBadge} ${adaptive.regimeLabel} ｜ `;
       }
     } catch {}
@@ -7538,9 +7539,23 @@ export class TelegramAlertService {
       ? `<b>Active Positions (${openTrades.length}):</b>\n` + posDetailLines.join('\n\n') + '\n'
       : `<i>No open positions. Capital is 100% safe.</i>\n`;
 
+    let dayPerformanceSection = '';
+    if (adaptive) {
+      const pnlSign = adaptive.todayTotalPnL >= 0 ? '+' : '';
+      const bonusStr = adaptive.bonusTradesEarned > 0 ? ` (+${adaptive.bonusTradesEarned} bonus)` : '';
+      dayPerformanceSection =
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📈 <b>DAY PERFORMANCE & ADAPTIVE REGIME:</b>\n` +
+        `• <b>State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>${bonusStr}\n` +
+        `• <b>Net P&L :</b> <b>${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}</b> (Realized: $${adaptive.todayRealizedPnL.toFixed(2)})\n` +
+        `• <b>Trades  :</b> <b>${adaptive.todayTradesCount} / ${adaptive.effectiveMaxDailyTrades}</b> Taken\n` +
+        `• <b>Buffer  :</b> <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b> (Limit: $${adaptive.effectiveDailyLossLimit.toFixed(2)})\n` +
+        `• <b>Ladders :</b> <i>${adaptive.recommendedLadderNotes}</i>\n`;
+    }
+
     const actionHint = hasOpenTrades
       ? `<i>⚡ Dynamic Position Controls:</i>`
-      : `<i>1-Tap Preset Execution:</i>`;
+      : `<i>1-Tap Preset Execution & Lot Sizing:</i>`;
 
     const text =
       `${line1}\n` +
@@ -7553,6 +7568,7 @@ export class TelegramAlertService {
       `Floating  : ${floatSign}$${floatAbs}\n` +
       `</pre>\n` +
       posSection +
+      dayPerformanceSection +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       actionHint;
 
@@ -7750,17 +7766,44 @@ export class TelegramAlertService {
         ]);
       }
     } else {
+      let goldBtnLot = goldLotStr;
+      let ethBtnLot = ethLotStr;
+      let btcBtnLot = btcLotStr;
+      let buyEmoji = '🟡';
+      let buyEthEmoji = '🔷';
+      let buyBtcEmoji = '₿';
+      let modeTag = '';
+
+      if (adaptive?.regime === 'HOUSE_MONEY') {
+        buyEmoji = '🟢';
+        buyEthEmoji = '🟢';
+        buyBtcEmoji = '🟢';
+        modeTag = ' • House';
+      } else if (adaptive?.regime === 'DEFENSIVE') {
+        buyEmoji = '🛡️';
+        buyEthEmoji = '🛡️';
+        buyBtcEmoji = '🛡️';
+        modeTag = ' • Def';
+        goldBtnLot = (adaptive.tiers.bestOptionLot || (goldLot * 0.5)).toFixed(2);
+        ethBtnLot = (adaptive.tiers.bestOptionLot || (ethLot * 0.5)).toFixed(2);
+        btcBtnLot = (adaptive.tiers.bestOptionLot || (btcLot * 0.5)).toFixed(2);
+      }
+
       buttons.push([
-        { text: `🟡 BUY Gold (${goldLotStr})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
-        { text: `🟡 SELL Gold (${goldLotStr})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
+        { text: `${buyEmoji} BUY Gold (${goldBtnLot}${modeTag})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: `${buyEmoji} SELL Gold (${goldBtnLot}${modeTag})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
       ]);
       buttons.push([
-        { text: `🔷 BUY ETH (${ethLotStr})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
-        { text: `🔷 SELL ETH (${ethLotStr})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
+        { text: `${buyEthEmoji} BUY ETH (${ethBtnLot}${modeTag})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
+        { text: `${buyEthEmoji} SELL ETH (${ethBtnLot}${modeTag})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
       ]);
       buttons.push([
-        { text: `₿ BUY BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
-        { text: `₿ SELL BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
+        { text: `${buyBtcEmoji} BUY BTC (${btcBtnLot}${modeTag})`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
+        { text: `${buyBtcEmoji} SELL BTC (${btcBtnLot}${modeTag})`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
+      ]);
+      buttons.push([
+        { text: '🌟 Gold Lot Sizing & Ladders', callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: '🌟 ETH Lot Sizing & Ladders', callback_data: 'deck:order_prep:ETHUSD:BUY' },
       ]);
       buttons.push([
         { text: `🇺🇸 US30 (${us30LotStr}L)`, callback_data: 'deck:order_prep:US30:BUY' },

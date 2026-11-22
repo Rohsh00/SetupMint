@@ -7697,11 +7697,93 @@ export class TelegramAlertService {
     } catch {}
 
     const regimeTag = dayRegimeBadge ? `${dayRegimeBadge} ｜ ` : '';
-    // When trades are open: put PnL FIRST so trader immediately sees live floating PnL in Telegram pinned preview bar!
-    // When flat: Au & ETH prices first.
+
+    interface ICockpitAsset {
+      symbol: string;
+      cleanSymbol: string;
+      shortLabel: string;
+      emoji: string;
+      ltp: number;
+      spread: string;
+      hasPosition: boolean;
+      totalFloat: number;
+      totalQty: number;
+    }
+
+    const assetList: ICockpitAsset[] = [
+      {
+        symbol: 'XAUUSD',
+        cleanSymbol: 'XAUUSD',
+        shortLabel: 'Au',
+        emoji: '🟡',
+        ltp: goldLtp,
+        spread: goldSpread,
+        hasPosition: stackMap.has('XAUUSD'),
+        totalFloat: stackMap.get('XAUUSD')?.totalFloat ?? 0,
+        totalQty: stackMap.get('XAUUSD')?.totalQty ?? 0,
+      },
+      {
+        symbol: 'ETHUSD',
+        cleanSymbol: 'ETHUSD',
+        shortLabel: 'ETH',
+        emoji: '🔷',
+        ltp: ethLtp,
+        spread: ethSpread,
+        hasPosition: stackMap.has('ETHUSD'),
+        totalFloat: stackMap.get('ETHUSD')?.totalFloat ?? 0,
+        totalQty: stackMap.get('ETHUSD')?.totalQty ?? 0,
+      },
+      {
+        symbol: 'BTCUSD',
+        cleanSymbol: 'BTCUSD',
+        shortLabel: 'BTC',
+        emoji: '₿',
+        ltp: btcLtp,
+        spread: btcSpread,
+        hasPosition: stackMap.has('BTCUSD'),
+        totalFloat: stackMap.get('BTCUSD')?.totalFloat ?? 0,
+        totalQty: stackMap.get('BTCUSD')?.totalQty ?? 0,
+      },
+    ];
+
+    // Include any other active symbols with open positions (e.g. US30, NAS100)
+    for (const [symKey, s] of stackMap.entries()) {
+      if (!assetList.some((a) => a.cleanSymbol === symKey)) {
+        assetList.push({
+          symbol: s.cleanSymbol,
+          cleanSymbol: s.cleanSymbol,
+          shortLabel: s.cleanSymbol,
+          emoji: '📈',
+          ltp: s.currentLtp,
+          spread: '$1.00',
+          hasPosition: true,
+          totalFloat: s.totalFloat,
+          totalQty: s.totalQty,
+        });
+      }
+    }
+
+    // Dynamic Sorting: Active positions ALWAYS come first!
+    // If multiple positions are live, sort by absolute floating PnL (or total volume) descending.
+    assetList.sort((a, b) => {
+      if (a.hasPosition && !b.hasPosition) return -1;
+      if (!a.hasPosition && b.hasPosition) return 1;
+      if (a.hasPosition && b.hasPosition) {
+        if (Math.abs(b.totalFloat) !== Math.abs(a.totalFloat)) {
+          return Math.abs(b.totalFloat) - Math.abs(a.totalFloat);
+        }
+        return b.totalQty - a.totalQty;
+      }
+      return 0;
+    });
+
+    // Top 2 assets for Line 1 pinned header preview
+    const top2Assets = assetList.slice(0, 2);
+    const assetHeaderTags = top2Assets.map((a) => `${a.emoji} <b>${a.shortLabel}: $${a.ltp.toFixed(2)}</b>`).join(' ｜ ');
+
     const line1 = hasOpenTrades
-      ? `${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${regimeTag}<b>LIVE</b>`
-      : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${regimeTag}<b>COCKPIT</b>`;
+      ? `${pnlBadge} ｜ ${assetHeaderTags} ｜ ${regimeTag}<b>LIVE</b>`
+      : `${assetHeaderTags} ｜ ${regimeTag}<b>COCKPIT</b>`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
@@ -7726,12 +7808,15 @@ export class TelegramAlertService {
       ? `<i>⚡ Dynamic Position Controls:</i>`
       : `<i>1-Tap Preset Execution & Lot Sizing:</i>`;
 
+    const telemetryLines = assetList
+      .slice(0, 4)
+      .map((a) => `${a.emoji} ${a.symbol.padEnd(6, ' ')} : $${a.ltp.toFixed(2)}  (Spread ${a.spread})`)
+      .join('\n');
+
     const livePricingBlock =
       `📊 <b>LIVE MARKET TELEMETRY:</b>\n` +
       `<pre>\n` +
-      `🟡 XAUUSD : $${goldLtp.toFixed(2)}  (Spread ${goldSpread})\n` +
-      `🔷 ETHUSD : $${ethLtp.toFixed(2)}  (Spread ${ethSpread})\n` +
-      `₿ BTCUSD : $${btcLtp.toFixed(2)}\n` +
+      telemetryLines + '\n' +
       (hasOpenTrades ? `Floating  : ${floatSign}$${floatAbs}\n` : '') +
       `</pre>\n`;
 

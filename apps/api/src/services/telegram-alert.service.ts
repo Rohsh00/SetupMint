@@ -1510,6 +1510,12 @@ export class TelegramAlertService {
     }
     if (data === 'cmd_cockpit' || data === 'cmd_refresh_cockpit') {
       await this.answerCallbackQuery(botToken, cq.id, 'Refreshing Cockpit...');
+      if (messageId) {
+        const isPinned = Boolean(user?.liveWatcherSettings?.telegramPinnedCockpitMessageId);
+        const { text, buttons } = await this.buildCockpitPayload(user, isPinned);
+        const edited = await this.editMessageText(botToken, chatId, messageId, text, buttons);
+        if (edited) return;
+      }
       await this.handleCockpitCommand(user, botToken, chatId);
       return;
     }
@@ -7650,13 +7656,15 @@ export class TelegramAlertService {
       const account = await this.resolveMt5Account(user._id);
       if (account) {
         adaptive = await this.evaluateAdaptiveDayRiskState(user, account, 'XAUUSD', 35, 0.10, 100);
-        dayRegimeBadge = `${adaptive.regimeBadge} ${adaptive.regimeLabel} ｜ `;
+        dayRegimeBadge = `${adaptive.regimeBadge} ${adaptive.regimeLabel}`;
       }
     } catch {}
 
+    const regimeTag = dayRegimeBadge ? `${dayRegimeBadge} ｜ ` : '';
+    // Prices placed FIRST so Telegram pinned bar preview shows live Gold & ETH cut-to-cut without being cut off by session labels
     const line1 = hasOpenTrades
-      ? `${dayRegimeBadge}${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>LIVE</b>`
-      : `${dayRegimeBadge}🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ₿ <b>$${btcLtp.toFixed(0)}</b> ｜ <b>COCKPIT</b>`;
+      ? `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${pnlBadge} ｜ ${regimeTag}<b>LIVE</b>`
+      : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${regimeTag}<b>COCKPIT</b>`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
@@ -7671,31 +7679,32 @@ export class TelegramAlertService {
       const rStr = adaptive.accumulatedR !== undefined ? ` • ${adaptive.accumulatedR >= 0 ? '+' : ''}${adaptive.accumulatedR.toFixed(2)}R` : '';
       const capGrowthStr = adaptive.capitalGrowthPct !== undefined ? ` • Growth: ${adaptive.capitalGrowthPct >= 0 ? '+' : ''}${adaptive.capitalGrowthPct.toFixed(2)}%` : '';
       dayPerformanceSection =
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📈 <b>DAY PERFORMANCE & ADAPTIVE REGIME:</b>\n` +
+        `📈 <b>DAY PERFORMANCE & REGIME:</b>\n` +
         `• <b>State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>${bonusStr}\n` +
         `• <b>Net P&L :</b> <b>${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}</b> (Realized: $${adaptive.todayRealizedPnL.toFixed(2)}${rStr})\n` +
-        `• <b>Trades  :</b> <b>${adaptive.todayTradesCount} / ${adaptive.effectiveMaxDailyTrades}</b> Taken${capGrowthStr}\n` +
-        `• <b>Buffer  :</b> <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b> (Limit: $${adaptive.effectiveDailyLossLimit.toFixed(2)})\n` +
-        `• <b>Ladders :</b> <i>${adaptive.recommendedLadderNotes}</i>\n`;
+        `• <b>Trades  :</b> <b>${adaptive.todayTradesCount}/${adaptive.effectiveMaxDailyTrades}</b> Taken${capGrowthStr} ｜ <b>Buffer:</b> <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b>\n`;
     }
 
     const actionHint = hasOpenTrades
       ? `<i>⚡ Dynamic Position Controls:</i>`
       : `<i>1-Tap Preset Execution & Lot Sizing:</i>`;
 
-    const text =
-      `${line1}\n` +
-      `⚡ <i>Live Cut-to-Cut</i> · <code>${nowUtc} UTC</code>\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    const livePricingBlock =
+      `📊 <b>LIVE MARKET TELEMETRY:</b>\n` +
       `<pre>\n` +
       `🟡 XAUUSD : $${goldLtp.toFixed(2)}  (Spread ${goldSpread})\n` +
       `🔷 ETHUSD : $${ethLtp.toFixed(2)}  (Spread ${ethSpread})\n` +
       `₿ BTCUSD : $${btcLtp.toFixed(2)}\n` +
-      `Floating  : ${floatSign}$${floatAbs}\n` +
-      `</pre>\n` +
+      (hasOpenTrades ? `Floating  : ${floatSign}$${floatAbs}\n` : '') +
+      `</pre>\n`;
+
+    const text =
+      `${line1}\n` +
+      `⚡ <i>Live Cut-to-Cut</i> · <code>${nowUtc} UTC</code>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      livePricingBlock +
       posSection +
-      dayPerformanceSection +
+      (dayPerformanceSection ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${dayPerformanceSection}` : '') +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       actionHint;
 

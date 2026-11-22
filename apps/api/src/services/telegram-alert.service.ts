@@ -7566,7 +7566,7 @@ export class TelegramAlertService {
 
       if (dollarBudgets && dollarBudgets.length > 0) {
         buttons.push(
-          dollarBudgets.map((b) => ({
+          dollarBudgets.map((b: any) => ({
             text: `${b.label} (${b.lot.toFixed(2)}L${priceTag})`,
             callback_data: `order:${cleanSym}:${side}:${b.lot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
           }))

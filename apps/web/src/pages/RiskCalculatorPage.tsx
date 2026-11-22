@@ -114,6 +114,25 @@ export function RiskCalculatorPage() {
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [prefilledTradeData, setPrefilledTradeData] = useState<any>(null);
 
+  // Real-time market telemetry and live price auto-refresh (3s interval)
+  const symbolsToTrack = useMemo(() => {
+    const set = new Set(['XAUUSD', 'ETHUSD', 'BTCUSD', 'US30', 'NAS100']);
+    if (selectedSymbol) set.add(selectedSymbol.toUpperCase());
+    return Array.from(set);
+  }, [selectedSymbol]);
+
+  const { data: liveQuotesData } = useQuery({
+    queryKey: ['live-quotes', symbolsToTrack],
+    queryFn: () => api.trades.getLiveQuotes(symbolsToTrack),
+    refetchInterval: 3000,
+    staleTime: 2500,
+  });
+
+  const activeQuote = useMemo(() => {
+    if (!liveQuotesData || !selectedSymbol) return null;
+    return liveQuotesData[selectedSymbol] || liveQuotesData[selectedSymbol.toUpperCase()] || null;
+  }, [liveQuotesData, selectedSymbol]);
+
   // Auto-set account equity when accounts list or global scope changes
   useEffect(() => {
     if (accounts.length === 0) return;
@@ -768,18 +787,29 @@ export function RiskCalculatorPage() {
                 <Box sx={{ display: 'flex', gap: 0.6, mt: 1, flexWrap: 'wrap' }}>
                   {(instruments.length > 0
                     ? Array.from(new Set(instruments.map((i: any) => i.symbol))).slice(0, 7)
-                    : ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD']
-                  ).map((s: any) => (
-                    <Chip
-                      key={s}
-                      label={s}
-                      size="small"
-                      onClick={() => handleSymbolChange(s)}
-                      color={selectedSymbol.toUpperCase() === s ? 'primary' : 'default'}
-                      variant={selectedSymbol.toUpperCase() === s ? 'filled' : 'outlined'}
-                      sx={{ height: 20, fontSize: '0.625rem', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, cursor: 'pointer' }}
-                    />
-                  ))}
+                    : (calcCurrency === 'INR'
+                        ? ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'CRUDEOIL', 'GOLD']
+                        : ['XAUUSD', 'ETHUSD', 'BTCUSD', 'US30', 'NAS100', 'EURUSD'])
+                  ).map((s: any) => {
+                    const q = liveQuotesData?.[s] || liveQuotesData?.[s.toUpperCase()];
+                    const label = q && q.ltp > 0 ? `${s} • $${q.ltp.toFixed(2)}` : s;
+                    return (
+                      <Chip
+                        key={s}
+                        label={label}
+                        size="small"
+                        onClick={() => {
+                          handleSymbolChange(s);
+                          if (q && q.ltp > 0) {
+                            setEntryPriceStr(String(q.ltp));
+                          }
+                        }}
+                        color={selectedSymbol.toUpperCase() === s ? 'primary' : 'default'}
+                        variant={selectedSymbol.toUpperCase() === s ? 'filled' : 'outlined'}
+                        sx={{ height: 20, fontSize: '0.625rem', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, cursor: 'pointer' }}
+                      />
+                    );
+                  })}
                 </Box>
               </Grid>
 
@@ -817,9 +847,34 @@ export function RiskCalculatorPage() {
             <Grid container spacing={2}>
               {/* Entry Price */}
               <Grid size={{ xs: 12, sm: 4 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                  Entry Price
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
+                    Entry Price
+                  </Typography>
+                  {activeQuote && activeQuote.ltp > 0 && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      startIcon={<AutoFixHighIcon sx={{ fontSize: 13 }} />}
+                      onClick={() => {
+                        setEntryPriceStr(String(activeQuote.ltp));
+                        toast.info(`Set Entry Price to live ${activeQuote.symbol}: $${activeQuote.ltp}`);
+                      }}
+                      sx={{
+                        p: 0,
+                        minWidth: 0,
+                        fontSize: '0.6875rem',
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        fontWeight: 700,
+                        color: muiTheme.palette.primary.main,
+                        textTransform: 'none',
+                      }}
+                    >
+                      ⚡ Use Live: ${activeQuote.ltp.toFixed(2)}
+                      {activeQuote.spread ? ` (Spr ${activeQuote.spread})` : ''}
+                    </Button>
+                  )}
+                </Box>
                 <TextField
                   fullWidth
                   size="small"

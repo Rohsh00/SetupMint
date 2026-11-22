@@ -148,6 +148,15 @@ export class TelegramAlertService {
   private static activeCockpitSubmenus = new Map<string, { menu: string; symbol: string; side?: 'BUY' | 'SELL'; expiresAt: number }>();
 
   /**
+   * Clears any active cockpit submenu (e.g. order_prep) for a user so that the main live cockpit is shown.
+   */
+  static clearSubmenu(userId: string | any): void {
+    if (!userId) return;
+    const uid = typeof userId === 'object' && userId._id ? userId._id.toString() : userId.toString();
+    TelegramAlertService.activeCockpitSubmenus.delete(uid);
+  }
+
+  /**
    * Deterministic Webhook Secret Token derived from server configuration.
    */
   static getWebhookSecretToken(): string {
@@ -3815,7 +3824,8 @@ export class TelegramAlertService {
 
     const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
     if (!realToken) return false;
-    const dedupeKey = `${chatId}:${title}:${body.slice(0, 30)}`;
+    const metricIdentity = metrics?.Ticket || (metrics as any)?.ExecutionId || '';
+    const dedupeKey = metricIdentity ? `${chatId}:${title}:${metricIdentity}` : `${chatId}:${title}:${body.slice(0, 30)}`;
     const now = Date.now();
     const lastSent = this.recentAlerts.get(dedupeKey);
     // For session expiry / token expiration notices, enforce a 15-minute debounce to prevent alert spam
@@ -3867,6 +3877,9 @@ export class TelegramAlertService {
    * Triggered when a new trade is opened or synced from FYERS.
    */
   static async notifyTradeOpened(user: any, trade: any, initialStopLoss?: number): Promise<void> {
+    // Clear any pre-order submenu state immediately so cockpit flips to active positions
+    TelegramAlertService.clearSubmenu(user._id);
+
     const settings = user.liveWatcherSettings;
     if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
     if (settings.telegramAlertEvents && settings.telegramAlertEvents.tradeOpened === false) return;
@@ -3934,6 +3947,7 @@ export class TelegramAlertService {
         Direction: trade.direction,
         Quantity: `${qty} ${mult > 1 ? `lots (${qty * mult} units)` : 'units'}`,
         EntryPrice: `${sym}${entry}`,
+        ...(ticket ? { Ticket: `#${ticket}` } : {}),
         StopLoss: sl !== 'None' ? `${sym}${sl}` : 'NO STOP (NAKED)',
         InitialRisk: riskAmt ? `${sym}${Number(riskAmt).toFixed(2)}` : 'Unspecified',
         ...(trade.tradingSession ? { Session: trade.tradingSession } : {}),
@@ -6256,6 +6270,9 @@ export class TelegramAlertService {
         comment: `TG-${cleanSym}`,
       });
 
+      // Clear any pre-order submenu state so live cockpit displays freshly queued order
+      TelegramAlertService.clearSubmenu(user._id);
+
       const estRisk = isGold ? (slPoints * 10 * volume) : (slDist * volume);
       const estReward = tpDist > 0 ? (isGold ? (tpPoints * 10 * volume) : (tpDist * volume)) : 0;
 
@@ -6478,6 +6495,9 @@ export class TelegramAlertService {
         takeProfit: Number(finalTp.toFixed(2)),
         comment: `TG-${cleanSym}`,
       });
+
+      // Clear any pre-order submenu state so live cockpit displays freshly queued order
+      TelegramAlertService.clearSubmenu(user._id);
 
       const estRisk = isGold ? (Math.abs(basePrice - finalSl) * 100 * volume) : (Math.abs(basePrice - finalSl) * volume);
       const estReward = Math.abs(finalTp - basePrice) * (isGold ? 100 : 1) * volume;
@@ -7193,7 +7213,7 @@ export class TelegramAlertService {
       } catch {}
     }
     if (ltp === 0) {
-      ltp = isGold ? 2650.00 : (isEth ? 3100.00 : (isBtc ? 91450.00 : (isUs30 ? 43850.00 : 20820.00)));
+      ltp = isGold ? 3538.18 : (isEth ? 1671.85 : (isBtc ? 91450.00 : (isUs30 ? 48350.00 : 25029.00)));
       bid = ltp - 0.20;
       ask = ltp + 0.20;
     }
@@ -7296,65 +7316,71 @@ export class TelegramAlertService {
       `<i>Tap your preferred disciplined lot size below to execute on MT5:</i>`;
 
     const buttons: ITelegramInlineButton[][] = [];
+    const priceTag = ltp > 0 ? ` @ $${ltp.toFixed(2)}` : '';
+    const bestOptText = bestOptionLabel.includes(' •') ? bestOptionLabel.replace(' •', `${priceTag} •`) : `${bestOptionLabel}${priceTag}`;
+    const microText = microLabel.includes(' •') ? microLabel.replace(' •', `${priceTag} •`) : `${microLabel}${priceTag}`;
+    const consText = conservativeLabel.includes(' •') ? conservativeLabel.replace(' •', `${priceTag} •`) : `${conservativeLabel}${priceTag}`;
+    const presetText = presetLabel.includes(' •') ? presetLabel.replace(' •', `${priceTag} •`) : `${presetLabel}${priceTag}`;
+    const extraRiskText = extraRiskLabel ? (extraRiskLabel.includes(' •') ? extraRiskLabel.replace(' •', `${priceTag} •`) : `${extraRiskLabel}${priceTag}`) : '';
 
     if (adaptive.regime === 'HOUSE_MONEY') {
       buttons.push([
         {
-          text: bestOptionLabel,
+          text: bestOptText,
           callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ]);
       const row2: ITelegramInlineButton[] = [];
-      if (extraRiskLot && extraRiskLabel) {
+      if (extraRiskLot && extraRiskText) {
         row2.push({
-          text: extraRiskLabel,
+          text: extraRiskText,
           callback_data: `order:${cleanSym}:${side}:${extraRiskLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         });
       }
       row2.push({
-        text: microLabel,
+        text: microText,
         callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
       });
       buttons.push(row2);
     } else if (adaptive.regime === 'DEFENSIVE') {
       buttons.push([
         {
-          text: bestOptionLabel,
+          text: bestOptText,
           callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ]);
       buttons.push([
         {
-          text: microLabel,
+          text: microText,
           callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ]);
     } else {
       buttons.push([
         {
-          text: bestOptionLabel,
+          text: bestOptText,
           callback_data: `order:${cleanSym}:${side}:${bestOptionLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ]);
       buttons.push([
         {
-          text: microLabel,
+          text: microText,
           callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
         {
-          text: conservativeLabel,
+          text: consText,
           callback_data: `order:${cleanSym}:${side}:${conservativeLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ]);
       const row3: ITelegramInlineButton[] = [
         {
-          text: presetLabel,
+          text: presetText,
           callback_data: `order:${cleanSym}:${side}:${presetLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         },
       ];
-      if (extraRiskLot && extraRiskLabel) {
+      if (extraRiskLot && extraRiskText) {
         row3.push({
-          text: extraRiskLabel,
+          text: extraRiskText,
           callback_data: `order:${cleanSym}:${side}:${extraRiskLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
         });
       }
@@ -7363,7 +7389,7 @@ export class TelegramAlertService {
       if (dollarBudgets && dollarBudgets.length > 0) {
         buttons.push(
           dollarBudgets.map((b) => ({
-            text: `${b.label} (${b.lot.toFixed(2)}L)`,
+            text: `${b.label} (${b.lot.toFixed(2)}L${priceTag})`,
             callback_data: `order:${cleanSym}:${side}:${b.lot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
           }))
         );
@@ -7453,6 +7479,8 @@ export class TelegramAlertService {
     if (goldLtp === 0) missingSymbols.push('XAUUSD');
     if (ethLtp === 0) missingSymbols.push('ETHUSD');
     if (btcLtp === 0) missingSymbols.push('BTCUSD');
+    if (us30Ltp === 0) missingSymbols.push('US30');
+    if (nasLtp === 0) missingSymbols.push('NAS100');
 
     if (missingSymbols.length > 0) {
       try {
@@ -7478,14 +7506,22 @@ export class TelegramAlertService {
             if ((bq as any).ask && (bq as any).bid) btcSpread = `$${((bq as any).ask - (bq as any).bid).toFixed(2)}`;
           }
         }
+        if (us30Ltp === 0) {
+          const uq = qMap.get('US30');
+          if (uq && uq.ltp > 0) us30Ltp = uq.ltp;
+        }
+        if (nasLtp === 0) {
+          const nq = qMap.get('NAS100');
+          if (nq && nq.ltp > 0) nasLtp = nq.ltp;
+        }
       } catch {}
     }
 
-    if (goldLtp === 0) goldLtp = 3534.69;
-    if (ethLtp === 0) ethLtp = 1637.78;
+    if (goldLtp === 0) goldLtp = 3538.18;
+    if (ethLtp === 0) ethLtp = 1671.85;
     if (btcLtp === 0) btcLtp = 91450.00;
-    if (us30Ltp === 0) us30Ltp = 43850.00;
-    if (nasLtp === 0) nasLtp = 20820.00;
+    if (us30Ltp === 0) us30Ltp = 48350.00;
+    if (nasLtp === 0) nasLtp = 25029.00;
 
     const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).lean();
     let totalFloat = 0;
@@ -7519,14 +7555,27 @@ export class TelegramAlertService {
       else if (isBtc) { cleanSymbol = 'BTCUSD'; displaySymbol = 'BTCUSD'; ltp = btcLtp; mult = 1; }
       else if (isUs30) { cleanSymbol = 'US30'; displaySymbol = 'US30'; ltp = us30Ltp; mult = 1; }
       else if (isNas) { cleanSymbol = 'NAS100'; displaySymbol = 'NAS100'; ltp = nasLtp; mult = 1; }
-      else { ltp = goldLtp; mult = 100; }
+      else {
+        cleanSymbol = (t.symbol || 'XAUUSD').toUpperCase();
+        displaySymbol = cleanSymbol;
+        mult = (t as any).contractMultiplier || t.simpleExecution?.contractMultiplier || 1;
+        const symQuote = Mt5CommandService.getLiveQuote(cleanSymbol);
+        ltp = symQuote?.ltp || 0;
+      }
 
       const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
       const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
       const ticket = Mt5CommandService.extractTicket(t);
 
+      const posQuote = ticket ? Mt5CommandService.getPositionQuote(ticket) : null;
+      if (posQuote && posQuote.curPrice > 0) {
+        ltp = posQuote.curPrice;
+      }
+
       let pnl = 0;
-      if (entry > 0 && ltp > 0) {
+      if (posQuote && typeof posQuote.profit === 'number' && posQuote.profit !== 0) {
+        pnl = Number(posQuote.profit.toFixed(2));
+      } else if (entry > 0 && ltp > 0) {
         pnl = t.direction === 'LONG' ? (ltp - entry) * qty * mult : (entry - ltp) * qty * mult;
       } else {
         pnl = (t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? t.calculated?.netPnL ?? 0;
@@ -7690,8 +7739,8 @@ export class TelegramAlertService {
       TelegramAlertService.activeCockpitSubmenus.delete(userIdStr);
     }
 
-    // Pre-order lot options & sizing deck (renders for both flat and active position states)
-    if (isSubActive && activeSub && activeSub.menu === 'order_prep') {
+    // Pre-order lot options & sizing deck (renders for flat state; if positions are open, positions take precedence!)
+    if (isSubActive && activeSub && activeSub.menu === 'order_prep' && !hasOpenTrades) {
       const subSym = activeSub.symbol || 'XAUUSD';
       const subSide: 'BUY' | 'SELL' = (activeSub.side as any) || 'BUY';
       return await this.buildOrderPrepPayload(user, subSym, subSide);
@@ -7701,16 +7750,16 @@ export class TelegramAlertService {
     if (isSubActive && activeSub && activeSub.menu === 'other_assets') {
       const otherButtons: ITelegramInlineButton[][] = [
         [
-          { text: `🟢 BUY BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
-          { text: `🔴 SELL BTC (${btcLotStr})`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
+          { text: `🟢 BUY BTC (${btcLotStr}) • $${btcLtp.toFixed(0)}`, callback_data: 'deck:order_prep:BTCUSD:BUY' },
+          { text: `🔴 SELL BTC (${btcLotStr}) • $${btcLtp.toFixed(0)}`, callback_data: 'deck:order_prep:BTCUSD:SELL' },
         ],
         [
-          { text: `🟢 BUY US30 (${us30LotStr})`, callback_data: 'deck:order_prep:US30:BUY' },
-          { text: `🔴 SELL US30 (${us30LotStr})`, callback_data: 'deck:order_prep:US30:SELL' },
+          { text: `🟢 BUY US30 (${us30LotStr}) • $${us30Ltp.toFixed(0)}`, callback_data: 'deck:order_prep:US30:BUY' },
+          { text: `🔴 SELL US30 (${us30LotStr}) • $${us30Ltp.toFixed(0)}`, callback_data: 'deck:order_prep:US30:SELL' },
         ],
         [
-          { text: `🟢 BUY NAS100 (${nasLotStr})`, callback_data: 'deck:order_prep:NAS100:BUY' },
-          { text: `🔴 SELL NAS100 (${nasLotStr})`, callback_data: 'deck:order_prep:NAS100:SELL' },
+          { text: `🟢 BUY NAS100 (${nasLotStr}) • $${nasLtp.toFixed(0)}`, callback_data: 'deck:order_prep:NAS100:BUY' },
+          { text: `🔴 SELL NAS100 (${nasLotStr}) • $${nasLtp.toFixed(0)}`, callback_data: 'deck:order_prep:NAS100:SELL' },
         ],
         [
           { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
@@ -7888,14 +7937,14 @@ export class TelegramAlertService {
 
       // 1. Gold Execution (Crisp, self-explanatory, never truncated with ...)
       buttons.push([
-        { text: `🟢 BUY Gold (${goldBtnLot})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
-        { text: `🔴 SELL Gold (${goldBtnLot})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
+        { text: `🟢 BUY Gold (${goldBtnLot}) • $${goldLtp.toFixed(2)}`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: `🔴 SELL Gold (${goldBtnLot}) • $${goldLtp.toFixed(2)}`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
       ]);
 
       // 2. ETH Execution (Crisp, self-explanatory, never truncated with ...)
       buttons.push([
-        { text: `🟢 BUY ETH (${ethBtnLot})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
-        { text: `🔴 SELL ETH (${ethBtnLot})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
+        { text: `🟢 BUY ETH (${ethBtnLot}) • $${ethLtp.toFixed(2)}`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
+        { text: `🔴 SELL ETH (${ethBtnLot}) • $${ethLtp.toFixed(2)}`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
       ]);
 
       // 3. Asset Drilldown & Deep Options
@@ -8179,6 +8228,7 @@ export class TelegramAlertService {
    * Automatically pins (or updates in-place) the live cockpit whenever a position is opened.
    */
   static async autoPinOrUpdateCockpit(user: any): Promise<boolean> {
+    TelegramAlertService.clearSubmenu(user._id);
     const rawToken = user?.liveWatcherSettings?.telegramBotToken;
     const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
     const chatId = user?.liveWatcherSettings?.telegramPinnedCockpitChatId || user?.liveWatcherSettings?.telegramChatId;

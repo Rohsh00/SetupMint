@@ -432,6 +432,7 @@ export function TradesPage() {
       {caps.live.watcher && (
         <LiveOpenTradeWatcher
           accountId={selectedAccountId !== 'ALL' ? selectedAccountId : undefined}
+          showWhenEmpty={true}
         />
       )}
 

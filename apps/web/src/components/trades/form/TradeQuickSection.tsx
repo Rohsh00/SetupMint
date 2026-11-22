@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { UseFormRegister, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import {
   Box,
@@ -43,6 +44,7 @@ import {
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 import { formatCurrency, toLocalIsoDateTime } from '../../../lib/utils.js';
 import { useAccountCapabilities } from '../../../context/AccountScopeContext.js';
+import { api } from '../../../lib/api.js';
 import { MarketTemplateBar } from './MarketTemplateBar.js';
 
 interface TradeQuickSectionProps {
@@ -112,6 +114,20 @@ export function TradeQuickSection({
   const selectedAccountId = watch('accountId');
   const currentAccount = accounts.find((a: any) => (a._id || a.id) === selectedAccountId);
   const fallbackCurrency = currentAccount?.profile?.baseCurrency || currentAccount?.baseCurrency || 'USD';
+
+  const { data: quotesData } = useQuery({
+    queryKey: ['live-quick-quote', selectedSymbol],
+    queryFn: () => (selectedSymbol ? api.trades.getLiveQuotes(selectedSymbol) : Promise.resolve({})),
+    enabled: Boolean(selectedSymbol),
+    refetchInterval: 3000,
+    staleTime: 2500,
+  });
+  const liveQuote =
+    selectedSymbol && quotesData
+      ? (quotesData as Record<string, any>)[selectedSymbol] ||
+        (quotesData as Record<string, any>)[selectedSymbol.toUpperCase()] ||
+        null
+      : null;
 
   // Active instrument metadata
   const currentInstrument = instruments.find(
@@ -556,6 +572,20 @@ export function TradeQuickSection({
             setValue('risk.plannedEntryPrice', val, { shouldDirty: true });
           }}
           slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
+          helperText={
+            liveQuote && liveQuote.ltp > 0 ? (
+              <Box
+                component="span"
+                onClick={() => {
+                  setValue('simpleExecution.entryPrice', liveQuote.ltp, { shouldDirty: true });
+                  setValue('risk.plannedEntryPrice', liveQuote.ltp, { shouldDirty: true });
+                }}
+                sx={{ cursor: 'pointer', color: 'primary.main', fontWeight: 700 }}
+              >
+                ⚡ Live: ${liveQuote.ltp.toFixed(2)}{liveQuote.spread ? ` (Spr ${liveQuote.spread})` : ''} — Click to apply
+              </Box>
+            ) : ''
+          }
         />
 
         <TextField
@@ -568,7 +598,7 @@ export function TradeQuickSection({
           value={status === 'OPEN' ? '' : (watch('simpleExecution.exitPrice') || '')}
           onChange={(e) => setValue('simpleExecution.exitPrice', e.target.value === '' ? '' : Number(e.target.value))}
           slotProps={{ htmlInput: { step: 'any', min: 0.0001, style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 } } }}
-          helperText={status === 'OPEN' ? 'Position is active' : ''}
+          helperText={status === 'OPEN' ? (liveQuote && liveQuote.ltp > 0 ? `⚡ Live LTP: $${liveQuote.ltp.toFixed(2)}` : 'Position is active') : ''}
         />
 
         {/* Lots Input */}

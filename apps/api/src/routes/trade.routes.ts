@@ -57,6 +57,8 @@ import { ExecutionPipelineService } from '../services/execution-pipeline.service
 import { IdempotencyService } from '../services/idempotency.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { Mt5CommandService } from '../services/mt5-command.service.js';
+import { GlobalCfdCandleProvider } from '../services/market-data/global-cfd.provider.js';
+import { getMt5ContractSpec } from '../services/mt5-report-parser.js';
 import { User } from '../db/models/index.js';
 
 /**
@@ -1141,6 +1143,157 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       return reply.status(500).send({
         success: false,
         error: { code: 'GET_ALERTS_FAILED', message: err.message },
+      });
+    }
+  });
+
+  // GET /live/quotes - Real-time market quotes for arbitrary symbols across MT5, Global CFD, and FYERS
+  app.get('/live/quotes', async (req: any, reply) => {
+    try {
+      const rawSymbols = req.query?.symbols || req.query?.symbol;
+      const symbolsList: string[] = [];
+      if (typeof rawSymbols === 'string') {
+        symbolsList.push(...rawSymbols.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean));
+      } else if (Array.isArray(rawSymbols)) {
+        for (const s of rawSymbols) {
+          if (typeof s === 'string') symbolsList.push(...s.split(',').map((x: string) => x.trim().toUpperCase()).filter(Boolean));
+        }
+      }
+
+      if (symbolsList.length === 0) {
+        symbolsList.push('XAUUSD', 'ETHUSD', 'BTCUSD', 'US30', 'NAS100');
+      }
+
+      const results: Record<string, {
+        symbol: string;
+        ltp: number;
+        bid: number;
+        ask: number;
+        spread?: number;
+        high?: number;
+        low?: number;
+        open?: number;
+        change?: number;
+        changePct?: number;
+        provider: string;
+        timestamp: Date;
+      }> = {};
+
+      const missingForGlobal: string[] = [];
+
+      for (const sym of symbolsList) {
+        const spec = getMt5ContractSpec(sym);
+        const cleanSym = spec.symbol;
+
+        // 1. Check MT5 live quote
+        const mt5Quote = Mt5CommandService.getLiveQuote(cleanSym);
+        if (mt5Quote && mt5Quote.ltp > 0) {
+          const bid = mt5Quote.bid || mt5Quote.ltp;
+          const ask = mt5Quote.ask || mt5Quote.ltp;
+          results[sym] = {
+            symbol: sym,
+            ltp: mt5Quote.ltp,
+            bid,
+            ask,
+            spread: ask > 0 && bid > 0 ? Number((ask - bid).toFixed(spec.tickSize < 0.001 ? 5 : (spec.tickSize < 0.01 ? 3 : 2))) : undefined,
+            provider: 'MT5',
+            timestamp: mt5Quote.timestamp || new Date(),
+          };
+        } else {
+          missingForGlobal.push(cleanSym);
+        }
+      }
+
+      // 2. Check Global CFD for missing symbols
+      if (missingForGlobal.length > 0) {
+        try {
+          const globalQuotes = await GlobalCfdCandleProvider.getLiveQuotes(missingForGlobal);
+          for (const sym of symbolsList) {
+            if (results[sym]) continue;
+            const spec = getMt5ContractSpec(sym);
+            const gq = globalQuotes.get(spec.symbol);
+            if (gq && gq.ltp > 0) {
+              const bid = (gq as any).bid || (gq.ltp - (spec.tickSize || 0.01));
+              const ask = (gq as any).ask || (gq.ltp + (spec.tickSize || 0.01));
+              results[sym] = {
+                symbol: sym,
+                ltp: gq.ltp,
+                bid,
+                ask,
+                spread: ask > 0 && bid > 0 ? Number((ask - bid).toFixed(spec.tickSize < 0.001 ? 5 : (spec.tickSize < 0.01 ? 3 : 2))) : undefined,
+                high: gq.high,
+                low: gq.low,
+                open: gq.open,
+                change: gq.changeAbs,
+                changePct: gq.changePct,
+                provider: 'GLOBAL_CFD',
+                timestamp: gq.timestamp || new Date(),
+              };
+            }
+          }
+        } catch {}
+      }
+
+      // 3. Check FYERS for remaining missing symbols
+      const stillMissing = symbolsList.filter((s) => !results[s]);
+      if (stillMissing.length > 0 && req.user?.id) {
+        try {
+          const fyersQuotes = await FyersService.getMarketQuotes(req.user.id, stillMissing);
+          for (const sym of stillMissing) {
+            const fq = fyersQuotes.get(sym);
+            if (fq && fq.ltp > 0) {
+              results[sym] = {
+                symbol: sym,
+                ltp: fq.ltp,
+                bid: (fq as any).bid || fq.ltp,
+                ask: (fq as any).ask || fq.ltp,
+                spread: (fq as any).ask && (fq as any).bid ? Number(((fq as any).ask - (fq as any).bid).toFixed(2)) : undefined,
+                high: fq.high,
+                low: fq.low,
+                open: fq.open,
+                change: fq.prevClose ? Number((fq.ltp - fq.prevClose).toFixed(2)) : undefined,
+                changePct: fq.prevClose ? Number((((fq.ltp - fq.prevClose) / fq.prevClose) * 100).toFixed(2)) : undefined,
+                provider: 'FYERS',
+                timestamp: new Date(),
+              };
+            }
+          }
+        } catch {}
+      }
+
+      // 4. Fallback defaults for primary assets if external APIs failed
+      for (const sym of symbolsList) {
+        if (!results[sym]) {
+          const upper = sym.toUpperCase();
+          let fallbackLtp = 0;
+          if (upper.includes('XAU') || upper === 'GOLD') fallbackLtp = 3538.18;
+          else if (upper.includes('ETH')) fallbackLtp = 1671.85;
+          else if (upper.includes('BTC')) fallbackLtp = 91450.00;
+          else if (upper.includes('US30') || upper.includes('DOW')) fallbackLtp = 48350.00;
+          else if (upper.includes('NAS') || upper.includes('USTEC')) fallbackLtp = 25029.00;
+
+          if (fallbackLtp > 0) {
+            results[sym] = {
+              symbol: sym,
+              ltp: fallbackLtp,
+              bid: fallbackLtp,
+              ask: fallbackLtp,
+              provider: 'STATIC_FALLBACK',
+              timestamp: new Date(),
+            };
+          }
+        }
+      }
+
+      return reply.send({
+        success: true,
+        data: results,
+      });
+    } catch (err: any) {
+      req.log.error('Failed to get live quotes: %s', err.message);
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'GET_QUOTES_FAILED', message: err.message },
       });
     }
   });

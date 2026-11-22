@@ -119,11 +119,19 @@ export class Mt5CommandService {
     if (accIdStr) {
       Mt5CommandService.quoteMap.set(`${accIdStr}:${cleanSym}`, entry);
     }
-    // Also map XAUUSD if symbol is e.g. XAUUSDm, XAUUSDpro, GOLD
-    if (cleanSym.includes('XAU') || cleanSym === 'GOLD') {
-      Mt5CommandService.quoteMap.set('XAUUSD', entry);
+
+    // Canonical alias mappings for common symbols (handles broker suffixes like XAUUSDm, ETHUSD.pro, etc.)
+    const aliases: string[] = [];
+    if (cleanSym.includes('XAU') || cleanSym === 'GOLD') aliases.push('XAUUSD');
+    if (cleanSym.includes('ETH')) aliases.push('ETHUSD');
+    if (cleanSym.includes('BTC')) aliases.push('BTCUSD');
+    if (cleanSym.includes('US30') || cleanSym.includes('DOW')) aliases.push('US30');
+    if (cleanSym.includes('NAS') || cleanSym.includes('USTEC') || cleanSym.includes('NDX')) aliases.push('NAS100');
+
+    for (const alias of aliases) {
+      Mt5CommandService.quoteMap.set(alias, entry);
       if (accIdStr) {
-        Mt5CommandService.quoteMap.set(`${accIdStr}:XAUUSD`, entry);
+        Mt5CommandService.quoteMap.set(`${accIdStr}:${alias}`, entry);
       }
     }
   }
@@ -173,8 +181,19 @@ export class Mt5CommandService {
 
     let quote = accIdStr ? Mt5CommandService.quoteMap.get(`${accIdStr}:${cleanSym}`) : undefined;
     if (!quote) quote = Mt5CommandService.quoteMap.get(cleanSym);
-    if (!quote && (cleanSym.includes('XAU') || cleanSym === 'GOLD')) {
-      quote = accIdStr ? Mt5CommandService.quoteMap.get(`${accIdStr}:XAUUSD`) : Mt5CommandService.quoteMap.get('XAUUSD');
+
+    // Check alias fallbacks
+    if (!quote) {
+      let alias = '';
+      if (cleanSym.includes('XAU') || cleanSym === 'GOLD') alias = 'XAUUSD';
+      else if (cleanSym.includes('ETH')) alias = 'ETHUSD';
+      else if (cleanSym.includes('BTC')) alias = 'BTCUSD';
+      else if (cleanSym.includes('US30') || cleanSym.includes('DOW')) alias = 'US30';
+      else if (cleanSym.includes('NAS') || cleanSym.includes('USTEC') || cleanSym.includes('NDX')) alias = 'NAS100';
+
+      if (alias) {
+        quote = accIdStr ? Mt5CommandService.quoteMap.get(`${accIdStr}:${alias}`) : Mt5CommandService.quoteMap.get(alias);
+      }
     }
 
     if (quote && now - quote.timestamp.getTime() <= Mt5CommandService.MT5_QUOTE_TTL_MS) {
@@ -454,16 +473,95 @@ export class Mt5CommandService {
     if (!Array.isArray(results) || results.length === 0) return;
     for (const r of results) {
       if (!r.commandId || !mongoose.isValidObjectId(r.commandId)) continue;
-      await Mt5Command.updateOne(
-        { _id: r.commandId },
-        {
-          $set: {
-            status: r.status === 'SUCCESS' ? 'EXECUTED' : 'FAILED',
-            resultMessage: r.message,
-            executedAt: new Date(),
-          },
+      const cmd = await Mt5Command.findById(r.commandId);
+      if (!cmd) continue;
+
+      cmd.status = r.status === 'SUCCESS' ? 'EXECUTED' : 'FAILED';
+      cmd.resultMessage = r.message;
+      cmd.executedAt = new Date();
+      await cmd.save();
+
+      // Dispatch instant Telegram execution notification to trader if command was OPEN_ORDER
+      if (cmd.action === 'OPEN_ORDER') {
+        try {
+          const { User } = await import('../db/models/User.js');
+          const user = await User.findById(cmd.userId);
+          if (user) {
+            const { TelegramAlertService } = await import('./telegram-alert.service.js');
+            const { safeDecryptSecret } = await import('./crypto.service.js');
+            const rawToken = user.liveWatcherSettings?.telegramBotToken;
+            const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+            const chatId = user.liveWatcherSettings?.telegramPinnedCockpitChatId || user.liveWatcherSettings?.telegramChatId;
+
+            // Clear submenu so live cockpit flips to active positions immediately
+            TelegramAlertService.clearSubmenu(cmd.userId);
+
+            if (botToken && chatId) {
+              if (r.status === 'SUCCESS') {
+                const isBuy = cmd.side === 'BUY';
+                const sideEmoji = isBuy ? '🟢' : '🔴';
+                const sym = cmd.symbol || 'XAUUSD';
+                const vol = cmd.volume || 0.10;
+                const slText = cmd.stopLoss ? `$${Number(cmd.stopLoss).toFixed(2)}` : 'None';
+                const tpText = cmd.takeProfit ? `$${Number(cmd.takeProfit).toFixed(2)}` : 'Open (Runner)';
+
+                const ticketMatch = (r.message || '').match(/Ticket\s*#?(\d+)/i);
+                const ticket = ticketMatch ? ticketMatch[1] : (cmd.ticket ? String(cmd.ticket) : '');
+
+                const execButtons: any[][] = [];
+                if (ticket) {
+                  execButtons.push([
+                    { text: `🛡️ Lock BE`, callback_data: `pos_be:${ticket}` },
+                    { text: '🎯 Book 50%', callback_data: `pos_half:${ticket}` },
+                  ]);
+                  execButtons.push([
+                    { text: '📈 Trail +1R', callback_data: `pos_trail:${ticket}` },
+                    { text: '🚨 Close (100%)', callback_data: `pos_close:${ticket}` },
+                  ]);
+                }
+                execButtons.push([
+                  { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+                  { text: '📌 Live Cockpit', callback_data: 'cmd_cockpit' },
+                ]);
+
+                const text =
+                  `✅ <b>TRADE EXECUTED ON MT5</b>\n` +
+                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                  `<pre>\n` +
+                  `Symbol    : ${sym}\n` +
+                  `Side      : ${sideEmoji} ${cmd.side || 'BUY'}\n` +
+                  `Volume    : ${vol.toFixed(2)} Lots\n` +
+                  (ticket ? `Ticket    : #${ticket}\n` : '') +
+                  `Stop Loss : ${slText}\n` +
+                  `Target    : ${tpText}\n` +
+                  `Status    : FILLED & LIVE\n` +
+                  `</pre>\n` +
+                  `<i>${r.message || 'Order placed successfully on MT5'}</i>\n` +
+                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                  `⚡ <i>Position is now live. Pinned Cockpit updated below.</i>`;
+
+                await TelegramAlertService.sendMessage(botToken, chatId, text, execButtons);
+                await TelegramAlertService.autoPinOrUpdateCockpit(user);
+              } else {
+                const failText =
+                  `❌ <b>MT5 ORDER REJECTED BY BROKER</b>\n` +
+                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                  `<pre>\n` +
+                  `Symbol : ${cmd.symbol || 'XAUUSD'}\n` +
+                  `Side   : ${cmd.side || 'BUY'}\n` +
+                  `Volume : ${(cmd.volume || 0.10).toFixed(2)} Lots\n` +
+                  `Reason : ${r.message || 'Execution failed on MT5'}\n` +
+                  `</pre>\n` +
+                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                  `<i>Please check broker connectivity or margin.</i>`;
+                await TelegramAlertService.sendMessage(botToken, chatId, failText);
+              }
+            }
+          }
+        } catch (err: any) {
+          console.warn('[Mt5CommandService] Execution dispatch error:', err?.message || err);
         }
-      );
+      }
     }
   }
 }

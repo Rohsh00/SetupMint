@@ -435,6 +435,24 @@ export const api = {
       const query = params.toString() ? `?${params.toString()}` : '';
       return request<ILiveWatcherSummary>(`/trades/live/watcher${query}`);
     },
+    getLiveQuotes: (symbols?: string | string[]) => {
+      const symList = Array.isArray(symbols) ? symbols.join(',') : symbols;
+      const query = symList ? `?symbols=${encodeURIComponent(symList)}` : '';
+      return request<Record<string, {
+        symbol: string;
+        ltp: number;
+        bid: number;
+        ask: number;
+        spread?: number;
+        high?: number;
+        low?: number;
+        open?: number;
+        change?: number;
+        changePct?: number;
+        provider: string;
+        timestamp: string;
+      }>>(`/trades/live/quotes${query}`);
+    },
     getLiveAlerts: (paramsObj?: Record<string, any>) => {
       const params = new URLSearchParams();
       if (paramsObj) {

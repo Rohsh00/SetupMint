@@ -46,7 +46,7 @@ export class TelegramCockpitTickerWorker {
 
     try {
       const users = await User.find({
-        'liveWatcherSettings.telegramPinnedCockpitMessageId': { $exists: true, $ne: null },
+        'liveWatcherSettings.telegramPinnedCockpitMessageId': { $exists: true, $nin: [null, '', 0] },
         'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
         email: { $not: /@(tradevault\.local|test\.local|setupmint\.internal)$/ },
       }).lean();

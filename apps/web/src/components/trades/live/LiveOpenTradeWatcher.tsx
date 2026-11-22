@@ -676,6 +676,13 @@ export function LiveOpenTradeWatcher({
     refetchOnWindowFocus: true,
   });
 
+  const { data: liveQuotesData } = useQuery({
+    queryKey: ['live-watcher-quotes'],
+    queryFn: () => api.trades.getLiveQuotes(['XAUUSD', 'ETHUSD', 'BTCUSD', 'US30', 'NAS100']),
+    refetchInterval: 3000,
+    staleTime: 2500,
+  });
+
   // Sync server-persisted customLadderRules into local tradeRulesMap
   useEffect(() => {
     if (summary?.positions) {
@@ -2469,8 +2476,79 @@ export function LiveOpenTradeWatcher({
                 ))}
               </Grid>
             ) : openTradesCount === 0 ? (
-              <Box sx={{ py: 3, textAlign: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
+              <Box sx={{ py: 2, px: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    🌐 Live Market Telemetry (Auto-refresh 3s)
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.disabled', fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.6875rem' }}>
+                    Real-time Cut-to-Cut
+                  </Typography>
+                </Box>
+                <Grid container spacing={1.5}>
+                  {[
+                    { symbol: 'XAUUSD', name: 'Gold (XAUUSD)', icon: '🟡' },
+                    { symbol: 'ETHUSD', name: 'Ethereum (ETHUSD)', icon: '🔷' },
+                    { symbol: 'BTCUSD', name: 'Bitcoin (BTCUSD)', icon: '₿' },
+                    { symbol: 'US30', name: 'Dow Jones (US30)', icon: '🇺🇸' },
+                    { symbol: 'NAS100', name: 'Nasdaq 100 (NAS100)', icon: '💻' },
+                  ].map((item) => {
+                    const q = liveQuotesData?.[item.symbol];
+                    const ltp = q?.ltp || 0;
+                    const change = q?.changePct || 0;
+                    const isPositive = change >= 0;
+                    return (
+                      <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={item.symbol}>
+                        <Card
+                          variant="outlined"
+                          sx={{
+                            p: 1.5,
+                            borderRadius: '10px',
+                            bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
+                            border: '1px solid',
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                              {item.icon} {item.symbol}
+                            </Typography>
+                            {change !== 0 && (
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontSize: '0.6875rem',
+                                  fontFamily: `'JetBrains Mono', monospace`,
+                                  fontWeight: 700,
+                                  color: isPositive ? '#10B981' : '#F43F5E',
+                                }}
+                              >
+                                {isPositive ? '+' : ''}{change.toFixed(2)}%
+                              </Typography>
+                            )}
+                          </Box>
+                          <Typography
+                            variant="h6"
+                            sx={{
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              fontWeight: 800,
+                              fontSize: '1.05rem',
+                              color: isDark ? '#F1F5F9' : '#0F172A',
+                            }}
+                          >
+                            {ltp > 0 ? `$${ltp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                          </Typography>
+                          {q?.spread !== undefined && (
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                              Spread: ${q.spread}
+                            </Typography>
+                          )}
+                        </Card>
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+                <Typography variant="caption" sx={{ display: 'block', mt: 1.5, textAlign: 'center', color: 'text.secondary', fontSize: '0.75rem' }}>
                   No open positions currently active. Open trades will automatically appear here with real-time MTM and risk gauges.
                 </Typography>
               </Box>

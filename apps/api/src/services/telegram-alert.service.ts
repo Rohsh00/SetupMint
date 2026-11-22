@@ -146,6 +146,8 @@ export class TelegramAlertService {
   private static DEBOUNCE_MS = 10 * 1000; // 10s throttle for flat alerts
   private static spreadWarningTimestamps = new Map<string, number>();
   private static activeCockpitSubmenus = new Map<string, { menu: string; symbol: string; side?: 'BUY' | 'SELL'; expiresAt: number }>();
+  private static rateLimitCooldownUntil = 0;
+  private static lastPinnedPayloadByMessageId = new Map<number, { text: string; buttonsJson: string; lastSentAt: number }>();
 
   /**
    * Clears any active cockpit submenu (e.g. order_prep) for a user so that the main live cockpit is shown.
@@ -324,6 +326,9 @@ export class TelegramAlertService {
     buttons?: ITelegramInlineButton[][]
   ): Promise<any> {
     if (!botToken) return null;
+    if (Date.now() < this.rateLimitCooldownUntil) {
+      return null;
+    }
     const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
     if (!realToken) return null;
     const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/editMessageText`;
@@ -346,6 +351,13 @@ export class TelegramAlertService {
       });
       const json = (await res.json()) as any;
       if (!json.ok) {
+        // Handle Telegram 429 rate limit backoff gracefully
+        if (json.parameters && json.parameters.retry_after) {
+          const retrySec = Number(json.parameters.retry_after) || 10;
+          this.rateLimitCooldownUntil = Date.now() + (retrySec * 1000) + 1000;
+          console.warn(`[TelegramAlertService] Telegram rate limit active. Backing off for ${retrySec}s.`);
+          return null;
+        }
         // Swallow "message is not modified" error from Telegram
         if (json.description && json.description.includes('message is not modified')) {
           return null;
@@ -438,6 +450,30 @@ export class TelegramAlertService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+      });
+      const json = (await res.json()) as any;
+      return Boolean(json && json.ok);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Low-level Telegram unpinAllChatMessages API caller to clear stacked stale pins.
+   */
+  static async unpinAllChatMessages(
+    botToken: string | null | undefined,
+    chatId: string | number
+  ): Promise<boolean> {
+    if (!botToken) return false;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return false;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/unpinAllChatMessages`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId }),
       });
       const json = (await res.json()) as any;
       return Boolean(json && json.ok);
@@ -8004,11 +8040,8 @@ export class TelegramAlertService {
   ): Promise<void> {
     if (!botToken) return;
 
-    // Unpin any previous pinned cockpit message first to prevent clutter
-    const oldPinnedId = user?.liveWatcherSettings?.telegramPinnedCockpitMessageId;
-    if (oldPinnedId) {
-      await this.unpinChatMessage(botToken, chatId, oldPinnedId);
-    }
+    // Clear all previous pinned cockpit messages first to prevent pin stacking
+    await this.unpinAllChatMessages(botToken, chatId);
 
     const { text, buttons } = await this.buildCockpitPayload(user, true);
     const sentMsg = await this.sendMessage(botToken, chatId, text, buttons, true);
@@ -8045,10 +8078,12 @@ export class TelegramAlertService {
     if (!botToken) return;
     const pinnedMessageId = user?.liveWatcherSettings?.telegramPinnedCockpitMessageId;
     if (pinnedMessageId) {
+      this.lastPinnedPayloadByMessageId.delete(pinnedMessageId);
       await this.unpinChatMessage(botToken, chatId, pinnedMessageId);
     } else {
       await this.unpinChatMessage(botToken, chatId);
     }
+    await this.unpinAllChatMessages(botToken, chatId);
 
     await User.findByIdAndUpdate(user._id, {
       $set: {
@@ -8072,7 +8107,7 @@ export class TelegramAlertService {
   /**
    * Updates an existing pinned cockpit message in-place with latest cut-to-cut market prices.
    */
-  static async updatePinnedCockpitMessage(user: any): Promise<boolean> {
+  static async updatePinnedCockpitMessage(user: any, force: boolean = false): Promise<boolean> {
     const rawToken = user?.liveWatcherSettings?.telegramBotToken;
     const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
     const chatId = user?.liveWatcherSettings?.telegramPinnedCockpitChatId || user?.liveWatcherSettings?.telegramChatId;
@@ -8082,9 +8117,39 @@ export class TelegramAlertService {
       return false;
     }
 
+    if (!force && Date.now() < this.rateLimitCooldownUntil) {
+      return false;
+    }
+
     try {
       const { text, buttons } = await this.buildCockpitPayload(user, true);
+
+      // Throttling for automated background ticker
+      const userIdStr = user?._id ? user._id.toString() : '';
+      const activeSub = TelegramAlertService.activeCockpitSubmenus.get(userIdStr);
+      const isSubmenuActive = Boolean(activeSub && activeSub.expiresAt > Date.now());
+
+      const buttonsJson = JSON.stringify(buttons || []);
+      const cached = this.lastPinnedPayloadByMessageId.get(messageId);
+      const now = Date.now();
+      if (!force && !isSubmenuActive) {
+        if (cached && (now - cached.lastSentAt < 15000)) {
+          const stripTs = (t: string) => t.replace(/⚡ <i>Live Cut-to-Cut<\/i> · <code>.*?<\/code>\n/, '');
+          if (stripTs(cached.text) === stripTs(text) && cached.buttonsJson === buttonsJson) {
+            return true;
+          }
+        }
+
+        // Minimum 3.5s spacing between automated ticker edits
+        if (cached && (now - cached.lastSentAt < 3500)) {
+          return true;
+        }
+      }
+
       const res = await this.editMessageText(botToken, chatId, messageId, text, buttons);
+      if (res !== null) {
+        this.lastPinnedPayloadByMessageId.set(messageId, { text, buttonsJson, lastSentAt: now });
+      }
       await this.evaluateRMilestones(user);
       return res !== null;
     } catch (err: any) {
@@ -8253,6 +8318,7 @@ export class TelegramAlertService {
 
     // If not pinned yet or edit failed, send a new cockpit card and pin it
     try {
+      await this.unpinAllChatMessages(botToken, chatId);
       const { text, buttons } = await this.buildCockpitPayload(user, true);
       const sent = await this.sendMessage(botToken, chatId, text, buttons, true);
       if (sent && sent.message_id) {

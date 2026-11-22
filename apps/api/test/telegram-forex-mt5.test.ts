@@ -2319,4 +2319,69 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     // Clean up
     await Trade.deleteMany({ userId: testUser._id });
   });
+
+  // 56. Unified Callback Protocol Routing (Phase 3)
+  it('Scenario 56: Phase 3 Unified Callback Protocol routes domain:action:entity:payload cleanly', async () => {
+    const openTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      tags: ['MT5', 'MT5_TICKET_998877'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.10,
+      },
+    });
+
+    // 1. Test pos:defense:XAUUSD:TRUE_BE
+    sentMessages.length = 0;
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_unified_defense',
+      from: { id: chatId },
+      data: 'pos:defense:XAUUSD:TRUE_BE',
+      message: { message_id: 1111, chat: { id: chatId } },
+    });
+    const updatedTrade = await Trade.findById(openTrade._id);
+    expect(updatedTrade?.risk?.currentStopLoss).toBe(2650.50);
+
+    // 2. Test pos:harvest:XAUUSD:PCT_50
+    sentMessages.length = 0;
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_unified_harvest',
+      from: { id: chatId },
+      data: 'pos:harvest:XAUUSD:PCT_50',
+      message: { message_id: 1112, chat: { id: chatId } },
+    });
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    expect(sentMessages[sentMessages.length - 1].text).toContain('PROFIT HARVEST EXECUTED (50%)');
+
+    // 3. Test nav:back:cockpit:MAIN
+    await (TelegramAlertService as any).handleCallbackQuery({
+      id: 'cq_unified_nav',
+      from: { id: chatId },
+      data: 'nav:back:cockpit:MAIN',
+      message: { message_id: 1113, chat: { id: chatId } },
+    });
+
+    await Trade.deleteMany({ userId: testUser._id });
+  });
+
+  // 57. Ephemeral Message Cleanup Pipeline (Phase 4)
+  it('Scenario 57: Ephemeral notifications are scheduled and cleaned up on user interaction', async () => {
+    // Schedule an ephemeral message cleanup
+    TelegramAlertService.scheduleEphemeralMessageCleanup(botToken, chatId, 999123, 60000);
+    const queue = (TelegramAlertService as any).ephemeralQueue;
+    expect(queue.some((item: any) => item.messageId === 999123)).toBe(true);
+
+    // Triggering user callback interaction immediately flushes pending ephemeral messages
+    await (TelegramAlertService as any).cleanPendingEphemeralMessages(chatId);
+    expect((TelegramAlertService as any).ephemeralQueue.filter((item: any) => String(item.chatId) === String(chatId)).length).toBe(0);
+  });
 });

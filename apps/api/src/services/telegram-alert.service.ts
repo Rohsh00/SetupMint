@@ -483,6 +483,88 @@ export class TelegramAlertService {
   }
 
   /**
+   * Low-level Telegram deleteMessage API caller.
+   */
+  static async deleteMessage(
+    botToken: string | null | undefined,
+    chatId: string | number,
+    messageId: number
+  ): Promise<boolean> {
+    if (!botToken || !messageId) return false;
+    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!realToken) return false;
+    const url = `${this.TELEGRAM_API_BASE}/bot${realToken}/deleteMessage`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+      });
+      const json = (await res.json()) as any;
+      return Boolean(json && json.ok);
+    } catch {
+      return false;
+    }
+  }
+
+  // Phase 4: In-memory registry for transient notifications auto-cleaning
+  private static ephemeralQueue: Array<{
+    botToken: string;
+    chatId: string | number;
+    messageId: number;
+    expiresAt: number;
+    timer?: any;
+  }> = [];
+
+  /**
+   * Schedules an ephemeral notification (e.g. order fill, profit harvest) to auto-delete after ttlMs.
+   */
+  static scheduleEphemeralMessageCleanup(
+    botToken: string,
+    chatId: string | number,
+    messageId: number,
+    ttlMs: number = 30000
+  ): void {
+    if (!botToken || !chatId || !messageId) return;
+    const timer = setTimeout(async () => {
+      try {
+        await TelegramAlertService.deleteMessage(botToken, chatId, messageId);
+      } catch {}
+      TelegramAlertService.ephemeralQueue = TelegramAlertService.ephemeralQueue.filter(
+        (item) => item.messageId !== messageId
+      );
+    }, ttlMs);
+
+    TelegramAlertService.ephemeralQueue.push({
+      botToken,
+      chatId,
+      messageId,
+      expiresAt: Date.now() + ttlMs,
+      timer,
+    });
+  }
+
+  /**
+   * Cleans all pending ephemeral transient alerts for a chat immediately upon user action.
+   */
+  static async cleanPendingEphemeralMessages(chatId: string | number): Promise<void> {
+    const targetChat = String(chatId);
+    const toDelete = TelegramAlertService.ephemeralQueue.filter(
+      (item) => String(item.chatId) === targetChat
+    );
+    TelegramAlertService.ephemeralQueue = TelegramAlertService.ephemeralQueue.filter(
+      (item) => String(item.chatId) !== targetChat
+    );
+
+    for (const item of toDelete) {
+      if (item.timer) clearTimeout(item.timer);
+      try {
+        await TelegramAlertService.deleteMessage(item.botToken, item.chatId, item.messageId);
+      } catch {}
+    }
+  }
+
+  /**
    * Low-level Telegram sendPhoto API caller supporting multipart/form-data with inline keyboard & caption.
    */
   static async sendPhoto(
@@ -1376,6 +1458,79 @@ export class TelegramAlertService {
     }
 
     if (!botToken) return;
+
+    // Phase 4: Clean any pending ephemeral alerts upon user interaction
+    await this.cleanPendingEphemeralMessages(chatId);
+
+    // Phase 3: Standardized REST-Style Callback Protocol Router
+    // Format: domain:action:entity:payload
+    if (
+      data.includes(':') &&
+      (data.startsWith('exec:') || data.startsWith('pos:') || data.startsWith('nav:') || data.startsWith('cfg:'))
+    ) {
+      const parts = data.split(':');
+      const domain = parts[0];
+      const action = parts[1];
+      const entity = parts[2];
+      const payload = parts.slice(3).join(':');
+
+      if (domain === 'exec' && action === 'market') {
+        const subSide = (parts[3] || 'BUY').toUpperCase() as 'BUY' | 'SELL';
+        const subVol = parseFloat(parts[4]) || 1.0;
+        await this.answerCallbackQuery(botToken, cq.id, `⚡ Executing ${subSide} ${subVol} ${entity} on MT5...`);
+        await this.executeTelegramOrder(user, botToken, chatId, entity, subSide, subVol, 35, 70);
+        return;
+      }
+
+      if (domain === 'pos') {
+        if (action === 'close') {
+          if (/^\d+$/.test(entity)) {
+            const ticket = parseInt(entity, 10);
+            return await this.handleCallbackQuery({ ...cq, data: `pos_close:${ticket}` }, knownBotToken);
+          } else {
+            return await this.handleCallbackQuery({ ...cq, data: `act_close_stack:${entity}` }, knownBotToken);
+          }
+        }
+        if (action === 'harvest') {
+          if (payload === 'FREERIDE' || payload === 'freeride') {
+            return await this.handleCallbackQuery({ ...cq, data: `harvest_freeride:${entity}` }, knownBotToken);
+          }
+          const pct = parseInt(payload.replace('PCT_', ''), 10) || 50;
+          return await this.handleCallbackQuery({ ...cq, data: `harvest_pct:${entity}:${pct}` }, knownBotToken);
+        }
+        if (action === 'defense') {
+          if (payload === 'TRUE_BE' || payload === 'truebe') {
+            return await this.handleCallbackQuery({ ...cq, data: `defense_truebe:${entity}` }, knownBotToken);
+          }
+          if (payload === 'SLEEP' || payload === 'sleep') {
+            return await this.handleCallbackQuery({ ...cq, data: `defense_sleep:${entity}` }, knownBotToken);
+          }
+          if (payload === 'RUNNER' || payload === 'runner') {
+            return await this.handleCallbackQuery({ ...cq, data: `defense_runner:${entity}` }, knownBotToken);
+          }
+          return await this.handleCallbackQuery({ ...cq, data: `defense_truebe:${entity}` }, knownBotToken);
+        }
+        if (action === 'flatten') {
+          return await this.handleCallbackQuery({ ...cq, data: `act_close_stack:${entity}` }, knownBotToken);
+        }
+      }
+
+      if (domain === 'nav') {
+        if (action === 'open') {
+          return await this.handleCallbackQuery({ ...cq, data: `deck:${payload || entity}` }, knownBotToken);
+        }
+        if (action === 'back') {
+          return await this.handleCallbackQuery({ ...cq, data: 'deck:back' }, knownBotToken);
+        }
+      }
+
+      if (domain === 'cfg') {
+        if (action === 'toggle' && entity === 'autoexec') {
+          const armed = payload === 'ON';
+          return await this.handleCallbackQuery({ ...cq, data: armed ? 'cmd_autoexec_on' : 'cmd_autoexec_off' }, knownBotToken);
+        }
+      }
+    }
 
     // Fast-path for global commands
     if (data === 'cmd_pnl') {
@@ -5156,6 +5311,15 @@ export class TelegramAlertService {
     const isTradeLong = (t: any): boolean =>
       (t.direction as string) === 'LONG' || (t.direction as string) === 'BUY';
 
+    // Phase 4: Transient notifications helper that auto-cleans after 30 seconds
+    const sendEphemeralAlert = async (textHtml: string, actionButtons?: ITelegramInlineButton[][]) => {
+      const sent = await this.sendMessage(botToken, chatId, textHtml, actionButtons);
+      if (sent && sent.message_id) {
+        TelegramAlertService.scheduleEphemeralMessageCleanup(botToken, chatId, sent.message_id, 30000);
+      }
+      return sent;
+    };
+
     // 1. HARVEST ACTIONS
     if (actionKey === 'harvest_pct') {
       const pct = parseFloat(parts[2]) || 50;
@@ -5181,9 +5345,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🎯 Harvested ${pct}% on ${rawSym} (${totalClosedVol}L queued)`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🎯 <b>PROFIT HARVEST EXECUTED (${pct}%)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5235,9 +5397,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🎰 Free-Ride Active! 50% booked & SL locked to BE. Zero Risk!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🎰 <b>FREE-RIDE MODE ENGAGED (HOUSE MONEY)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5307,9 +5467,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🏃 Moonshot Engaged! 0.01L runner active with no TP.`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🏃 <b>MOONSHOT MODE ACTIVATED</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5372,9 +5530,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🏦 Banking $${targetDollar} queued on MT5 (${actualClosedLots}L)!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🏦 <b>BANKED PROFIT TARGET ($${targetDollar})</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5460,9 +5616,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `⏳ Breakout Stop order placed at $${breakoutPrice.toFixed(2)}`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `⏳ <b>BREAKOUT SCALE ORDER PLACED</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5506,9 +5660,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `📥 Pullback Limit order placed at $${pullbackPrice.toFixed(2)}`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `📥 <b>PULLBACK LIMIT ORDER PLACED</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5549,9 +5701,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🛡️ True BE set (+spread cover) for ${rawSym}!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🛡️ <b>TRUE BREAKEVEN LOCKED (+SPREAD COVER)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5593,9 +5743,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `📈 Trailed SL to +${rMult}R for ${rawSym}!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `📈 <b>TRAILED STOP LOSS (+${rMult}R)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5639,9 +5787,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🔒 Stop Loss locked at +$${amt} profit!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🔒 <b>PROFIT LOCKED AT +$${amt}</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5682,9 +5828,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🕯️ SL trailed behind candle structure!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🕯️ <b>TRAILED BEHIND CANDLE STRUCTURE</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5725,9 +5869,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🚫 TP Removed! ${rawSym} running uncapped.`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🚫 <b>RUNNER MODE ACTIVATED (NO TP)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5780,9 +5922,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `💤 Sleep Mode Active! 75% booked, remaining locked at True BE.`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `💤 <b>SLEEP MODE ENGAGED (OVERNIGHT SHIELD)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5818,9 +5958,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🚨 Closed top layer #${ticket} (${qty}L) on ${rawSym}`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🚨 <b>TOP LAYER CLOSED</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -5857,9 +5995,7 @@ export class TelegramAlertService {
       if (cqId) {
         await this.answerCallbackQuery(botToken, cqId, `🛑 Flattened entire ${rawSym} stack (${totalQty}L)!`, true);
       }
-      await this.sendMessage(
-        botToken,
-        chatId,
+      await sendEphemeralAlert(
         `🛑 <b>POSITION STACK FLATTENED</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
@@ -7664,12 +7800,25 @@ export class TelegramAlertService {
       const pnlSign = s.totalFloat >= 0 ? '+' : '';
       const pnlEmoji = s.totalFloat >= 0 ? '🟢' : '🔴';
       const layerCountStr = s.layers.length > 1 ? ` (${s.layers.length} Layers)` : '';
+      const isGoldStack = s.cleanSymbol.includes('XAU') || s.cleanSymbol === 'GOLD';
+      const stackMult = isGoldStack ? 100 : 1;
 
       const layerDetails = s.layers.map((l, idx) => {
         const tktStr = l.ticket ? ` #${l.ticket}` : ` L${idx + 1}`;
         const lPnlSign = l.pnl >= 0 ? '+' : '';
-        const slStr = l.currentSl ? `$${Number(l.currentSl).toFixed(2)}` : 'None';
-        const tpStr = l.tp && Number(l.tp) > 0 ? `$${Number(l.tp).toFixed(2)}` : 'Open (Runner)';
+        let slStr = 'None';
+        if (l.currentSl && Number(l.currentSl) > 0) {
+          const slNum = Number(l.currentSl);
+          const ptsAway = Math.abs(s.currentLtp - slNum);
+          const riskAtSl = Math.abs((l.entry - slNum) * l.qty * stackMult);
+          slStr = `$${slNum.toFixed(2)} (-$${riskAtSl.toFixed(2)} · ${ptsAway.toFixed(1)} pts away)`;
+        }
+        let tpStr = 'Open (Runner)';
+        if (l.tp && Number(l.tp) > 0) {
+          const tpNum = Number(l.tp);
+          const tpPts = Math.abs(tpNum - s.currentLtp);
+          tpStr = `$${tpNum.toFixed(2)} (+${tpPts.toFixed(1)} pts)`;
+        }
         return `  ├ Layer ${idx + 1}${tktStr}: <b>${l.qty.toFixed(2)}L @ $${l.entry.toFixed(2)}</b> (${lPnlSign}$${l.pnl.toFixed(2)})\n  │   └ SL: <code>${slStr}</code>  |  TP: <code>${tpStr}</code>`;
       }).join('\n');
 
@@ -7781,8 +7930,17 @@ export class TelegramAlertService {
     const top2Assets = assetList.slice(0, 2);
     const assetHeaderTags = top2Assets.map((a) => `${a.emoji} <b>${a.shortLabel}: $${a.ltp.toFixed(2)}</b>`).join(' ｜ ');
 
+    let activeAssetBadge = '';
+    if (hasOpenTrades) {
+      const leadingAsset = assetList.find((a) => a.hasPosition) || assetList[0];
+      const stack = stackMap.get(leadingAsset.cleanSymbol);
+      const dirIcon = stack?.direction === 'LONG' ? '🔺' : '🔻';
+      const dirText = stack?.direction === 'LONG' ? 'Long' : 'Short';
+      activeAssetBadge = ` (${leadingAsset.shortLabel} ${dirIcon}${dirText})`;
+    }
+
     const line1 = hasOpenTrades
-      ? `${pnlBadge} ｜ ${assetHeaderTags} ｜ ${regimeTag}<b>LIVE</b>`
+      ? `${pnlBadge}${activeAssetBadge} ｜ ${assetHeaderTags} ｜ <b>LIVE</b>`
       : `${assetHeaderTags} ｜ ${regimeTag}<b>COCKPIT</b>`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
@@ -7796,12 +7954,10 @@ export class TelegramAlertService {
       const pnlSign = adaptive.todayTotalPnL >= 0 ? '+' : '';
       const bonusStr = adaptive.bonusTradesEarned > 0 ? ` (+${adaptive.bonusTradesEarned} bonus)` : '';
       const rStr = adaptive.accumulatedR !== undefined ? ` • ${adaptive.accumulatedR >= 0 ? '+' : ''}${adaptive.accumulatedR.toFixed(2)}R` : '';
-      const capGrowthStr = adaptive.capitalGrowthPct !== undefined ? ` • Growth: ${adaptive.capitalGrowthPct >= 0 ? '+' : ''}${adaptive.capitalGrowthPct.toFixed(2)}%` : '';
       dayPerformanceSection =
-        `📈 <b>DAY PERFORMANCE & REGIME:</b>\n` +
-        `• <b>State   :</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>${bonusStr}\n` +
-        `• <b>Net P&L :</b> <b>${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}</b> (Realized: $${adaptive.todayRealizedPnL.toFixed(2)}${rStr})\n` +
-        `• <b>Trades  :</b> <b>${adaptive.todayTradesCount}/${adaptive.effectiveMaxDailyTrades}</b> Taken${capGrowthStr} ｜ <b>Buffer:</b> <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b>\n`;
+        `📈 <b>DAY REGIME:</b> ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>${bonusStr} ｜ ` +
+        `<b>PnL:</b> <b>${pnlSign}$${adaptive.todayTotalPnL.toFixed(2)}</b>${rStr} ｜ ` +
+        `<b>Buffer:</b> <b>$${adaptive.remainingDailyLossBuffer.toFixed(2)}</b>\n`;
     }
 
     const actionHint = hasOpenTrades
@@ -7928,19 +8084,12 @@ export class TelegramAlertService {
           buttons.push([
             { text: `🎯 25% (${q25}L)`, callback_data: `harvest_pct:${subSym}:25` },
             { text: `🎯 33% (${q33}L)`, callback_data: `harvest_pct:${subSym}:33` },
-          ]);
-          buttons.push([
             { text: `🎯 50% (${q50}L)`, callback_data: `harvest_pct:${subSym}:50` },
-            { text: `🎯 75% (${q75}L)`, callback_data: `harvest_pct:${subSym}:75` },
           ]);
           buttons.push([
             { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${subSym}` },
             { text: '🏃 Moonshot (0.01L)', callback_data: `harvest_moonshot:${subSym}` },
-          ]);
-          buttons.push([
-            { text: '🏦 Bank $25', callback_data: `harvest_dollar:${subSym}:25` },
             { text: '🏦 Bank $50', callback_data: `harvest_dollar:${subSym}:50` },
-            { text: '🏦 Bank $100', callback_data: `harvest_dollar:${subSym}:100` },
           ]);
           buttons.push([
             { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
@@ -7950,17 +8099,15 @@ export class TelegramAlertService {
           const defLot = subSym.includes('XAU') ? Number(goldLot) : 0.05;
 
           buttons.push([
-            { text: `➕ Add Half-Size (${halfLot}L)`, callback_data: `pyramid_add:${subSym}:${halfLot}` },
+            { text: `➕ Add Half (${halfLot}L)`, callback_data: `pyramid_add:${subSym}:${halfLot}` },
             { text: `➕ Add Preset (${defLot}L)`, callback_data: `pyramid_add:${subSym}:${defLot}` },
           ]);
           buttons.push([
-            { text: '🛡️ Zero-Risk Stack Lock & Add', callback_data: `pyramid_zerorisk:${subSym}` },
+            { text: '🛡️ Zero-Risk Lock & Add', callback_data: `pyramid_zerorisk:${subSym}` },
+            { text: '⏳ Breakout (+10 pts)', callback_data: `pyramid_breakout:${subSym}` },
           ]);
           buttons.push([
-            { text: '⏳ Breakout Scale (+10 pts)', callback_data: `pyramid_breakout:${subSym}` },
-            { text: '📥 Pullback Limit (-15 pts)', callback_data: `pyramid_pullback:${subSym}` },
-          ]);
-          buttons.push([
+            { text: '📥 Pullback (-15 pts)', callback_data: `pyramid_pullback:${subSym}` },
             { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
           ]);
         } else if (activeSub.menu === 'defense') {
@@ -7969,27 +8116,22 @@ export class TelegramAlertService {
             { text: '📈 Trail +1.0R', callback_data: `defense_trail_r:${subSym}:1.0` },
           ]);
           buttons.push([
-            { text: '🔒 Lock +$25 Profit', callback_data: `defense_lock_dollar:${subSym}:25` },
-            { text: '🔒 Lock +$50 Profit', callback_data: `defense_lock_dollar:${subSym}:50` },
+            { text: '🔒 Lock +$25', callback_data: `defense_lock_dollar:${subSym}:25` },
+            { text: '🔒 Lock +$50', callback_data: `defense_lock_dollar:${subSym}:50` },
+            { text: '💤 Sleep Mode', callback_data: `defense_sleep:${subSym}` },
           ]);
           buttons.push([
-            { text: '🕯️ Trail Prev Candle Low', callback_data: `defense_candle:${subSym}` },
             { text: '🚫 Runner Mode (No TP)', callback_data: `defense_runner:${subSym}` },
-          ]);
-          buttons.push([
-            { text: '💤 Sleep Mode (Overnight Protection)', callback_data: `defense_sleep:${subSym}` },
-          ]);
-          buttons.push([
             { text: '🔙 ❮ Back to Cockpit', callback_data: 'deck:back' },
           ]);
         } else if (activeSub.menu === 'layers') {
           if (targetStack) {
-            for (const l of targetStack.layers) {
+            for (const l of targetStack.layers.slice(0, 3)) {
               const tkt = l.ticket;
               const halfL = Math.max(0.01, Number((l.qty / 2).toFixed(2)));
               if (tkt) {
                 buttons.push([
-                  { text: `🎯 Book 50% #${tkt} (${halfL}L)`, callback_data: `pos_half:${tkt}` },
+                  { text: `🎯 50% #${tkt} (${halfL}L)`, callback_data: `pos_half:${tkt}` },
                   { text: `🛡️ BE #${tkt}`, callback_data: `pos_be:${tkt}` },
                   { text: `🚨 Close #${tkt}`, callback_data: `pos_close:${tkt}` },
                 ]);
@@ -7997,7 +8139,8 @@ export class TelegramAlertService {
             }
             if (targetStack.layers.length > 1) {
               buttons.push([
-                { text: `🚨 Close Top Layer Only`, callback_data: `act_close_top:${subSym}` },
+                { text: '🚨 Close Top Layer Only', callback_data: `act_close_top:${subSym}` },
+                { text: `🛑 Flatten All (${targetStack.totalQty.toFixed(2)}L)`, callback_data: `act_close_stack:${subSym}` },
               ]);
             }
           }
@@ -8007,10 +8150,12 @@ export class TelegramAlertService {
         }
       } else {
         // MAIN COCKPIT VIEW
-        for (const t of openTrades) {
+        if (openTrades.length === 1) {
+          const t = openTrades[0];
           const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
           const isEth = (t.symbol || '').includes('ETH');
           const symLabel = isGold ? 'Gold' : (isEth ? 'ETH' : (t.symbol || 'Pos'));
+          const cleanSym = isGold ? 'XAUUSD' : (isEth ? 'ETHUSD' : (t.symbol || 'XAUUSD'));
           const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
           const qtyStr = qty.toFixed(2);
           const ticket = Mt5CommandService.extractTicket(t);
@@ -8030,32 +8175,61 @@ export class TelegramAlertService {
             { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
             { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
           ]);
-        }
 
-        // Submenu Entry Deck for Each Stack
-        for (const [symKey, s] of stackMap.entries()) {
+          buttons.push([
+            { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${cleanSym}` },
+            { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${cleanSym}` },
+            { text: `🛡️ Defense...`, callback_data: `deck:defense:${cleanSym}` },
+            { text: `📋 Layers (1)...`, callback_data: `deck:layers:${cleanSym}` },
+          ]);
+
+          buttons.push([
+            { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+            autoExecBtn,
+            isPinned
+              ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
+              : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
+          ]);
+        } else {
+          // Multi-Layer / Stack Mode (e.g. 2 ETH positions as Rohit has currently)
+          const leadingAsset = assetList.find((a) => a.hasPosition) || assetList[0];
+          const s = (stackMap.get(leadingAsset.cleanSymbol) || stackMap.values().next().value) || {
+            cleanSymbol: 'XAUUSD',
+            displaySymbol: 'Gold (XAUUSD)',
+            direction: 'LONG' as const,
+            totalQty: 0.04,
+            blendedEntry: 0,
+            currentLtp: 0,
+            totalFloat: 0,
+            layers: [],
+          };
           const symLabel = s.cleanSymbol.includes('XAU') ? 'Gold' : (s.cleanSymbol.includes('ETH') ? 'ETH' : s.cleanSymbol);
+          const halfQty = Math.max(0.01, Number((s.totalQty / 2).toFixed(2)));
+
+          // Row 1: Capital Defense & Panic Flatten (Thumb-Reach)
+          buttons.push([
+            { text: '🛡️ True BE (+Spread)', callback_data: `defense_truebe:${s.cleanSymbol}` },
+            { text: `🚨 Panic Flatten (${s.totalQty.toFixed(2)}L)`, callback_data: `act_close_stack:${s.cleanSymbol}` },
+          ]);
+          // Row 2: Tactical Harvest & Free-Ride
+          buttons.push([
+            { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${s.cleanSymbol}:50` },
+            { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${s.cleanSymbol}` },
+          ]);
+          // Row 3: Submenu Drilldown Deck
           buttons.push([
             { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${s.cleanSymbol}` },
             { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${s.cleanSymbol}` },
-          ]);
-          buttons.push([
-            { text: `🛡️ Defense & Trail...`, callback_data: `deck:defense:${s.cleanSymbol}` },
+            { text: `🛡️ Defense...`, callback_data: `deck:defense:${s.cleanSymbol}` },
             { text: `📋 Layers (${s.layers.length})...`, callback_data: `deck:layers:${s.cleanSymbol}` },
           ]);
+          // Row 4: Lifecycle & Controls
           buttons.push([
-            { text: `🚨 Close Top Layer`, callback_data: `act_close_top:${s.cleanSymbol}` },
-            { text: `🛑 Flatten ${symLabel} (${s.totalQty.toFixed(2)}L)`, callback_data: `act_close_stack:${s.cleanSymbol}` },
+            { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+            { text: '🌙 Sleep Mode', callback_data: `defense_sleep:${s.cleanSymbol}` },
+            autoExecBtn,
           ]);
         }
-
-        buttons.push([
-          { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
-          autoExecBtn,
-          isPinned
-            ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
-            : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
-        ]);
       }
     } else {
       let goldBtnLot = goldLotStr;
@@ -8084,18 +8258,14 @@ export class TelegramAlertService {
         { text: '🌟 ETH Lot Options', callback_data: 'deck:order_prep:ETHUSD:BUY' },
       ]);
 
-      // 4. Other Assets & Primary Controls
+      // 4. Other Assets, Refresh & Controls
       buttons.push([
         { text: '🌐 Other Assets...', callback_data: 'deck:other_assets' },
         { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+        autoExecBtn,
         isPinned
           ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
           : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
-      ]);
-
-      // 5. Execution Mode
-      buttons.push([
-        autoExecBtn,
       ]);
     }
 

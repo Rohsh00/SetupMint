@@ -9,11 +9,12 @@ export class TelegramCockpitTickerWorker {
   private static timer: NodeJS.Timeout | null = null;
   private static isRunning = false;
   private static isTickRunning = false;
+  private static lastTickStartedAt = 0;
 
   /**
    * Starts the background ticker loop.
    */
-  static start(intervalMs: number = 3000): void {
+  static start(intervalMs: number = 3500): void {
     if (this.isRunning) return;
     this.isRunning = true;
     console.log(`[TelegramCockpitTickerWorker] Started pinned live cut-to-cut ticker (${intervalMs}ms interval).`);
@@ -34,6 +35,7 @@ export class TelegramCockpitTickerWorker {
       this.timer = null;
     }
     this.isRunning = false;
+    this.isTickRunning = false;
     console.log(`[TelegramCockpitTickerWorker] Stopped.`);
   }
 
@@ -41,8 +43,16 @@ export class TelegramCockpitTickerWorker {
    * Executes a single tick across all users with active pinned cockpit headers.
    */
   static async tick(): Promise<void> {
-    if (this.isTickRunning) return;
+    if (this.isTickRunning) {
+      if (Date.now() - this.lastTickStartedAt > 10000) {
+        console.warn(`[TelegramCockpitTickerWorker] Previous tick timed out (>10s), resetting isTickRunning.`);
+        this.isTickRunning = false;
+      } else {
+        return;
+      }
+    }
     this.isTickRunning = true;
+    this.lastTickStartedAt = Date.now();
 
     try {
       const users = await User.find({
@@ -58,7 +68,10 @@ export class TelegramCockpitTickerWorker {
       await Promise.allSettled(
         users.map(async (user) => {
           try {
-            await TelegramAlertService.updatePinnedCockpitMessage(user);
+            const updated = await TelegramAlertService.updatePinnedCockpitMessage(user);
+            if (updated) {
+              console.log(`[TelegramCockpitTickerWorker] Updated pinned cockpit for ${user.email} (msg ${user.liveWatcherSettings?.telegramPinnedCockpitMessageId})`);
+            }
           } catch (err: any) {
             console.warn(`[TelegramCockpitTickerWorker] User ${user.email} update failed:`, err?.message || err);
           }

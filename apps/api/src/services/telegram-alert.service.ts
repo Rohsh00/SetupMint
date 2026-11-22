@@ -7697,9 +7697,10 @@ export class TelegramAlertService {
     } catch {}
 
     const regimeTag = dayRegimeBadge ? `${dayRegimeBadge} ｜ ` : '';
-    // Prices placed FIRST so Telegram pinned bar preview shows live Gold & ETH cut-to-cut without being cut off by session labels
+    // When trades are open: put PnL FIRST so trader immediately sees live floating PnL in Telegram pinned preview bar!
+    // When flat: Au & ETH prices first.
     const line1 = hasOpenTrades
-      ? `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${pnlBadge} ｜ ${regimeTag}<b>LIVE</b>`
+      ? `${pnlBadge} ｜ 🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${regimeTag}<b>LIVE</b>`
       : `🟡 <b>Au: $${goldLtp.toFixed(2)}</b> ｜ 🔷 <b>ETH: $${ethLtp.toFixed(2)}</b> ｜ ${regimeTag}<b>COCKPIT</b>`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
@@ -8129,19 +8130,24 @@ export class TelegramAlertService {
       const activeSub = TelegramAlertService.activeCockpitSubmenus.get(userIdStr);
       const isSubmenuActive = Boolean(activeSub && activeSub.expiresAt > Date.now());
 
+      const openTradesCount = await Trade.countDocuments({ userId: user._id, status: 'OPEN' });
+      const hasLivePositions = openTradesCount > 0;
+      const maxInterval = hasLivePositions ? 5000 : 15000;
+      const minSpacing = 3500;
+
       const buttonsJson = JSON.stringify(buttons || []);
       const cached = this.lastPinnedPayloadByMessageId.get(messageId);
       const now = Date.now();
       if (!force && !isSubmenuActive) {
-        if (cached && (now - cached.lastSentAt < 15000)) {
+        if (cached && (now - cached.lastSentAt < maxInterval)) {
           const stripTs = (t: string) => t.replace(/⚡ <i>Live Cut-to-Cut<\/i> · <code>.*?<\/code>\n/, '');
           if (stripTs(cached.text) === stripTs(text) && cached.buttonsJson === buttonsJson) {
             return true;
           }
         }
 
-        // Minimum 3.5s spacing between automated ticker edits
-        if (cached && (now - cached.lastSentAt < 3500)) {
+        // Minimum spacing between automated ticker edits
+        if (cached && (now - cached.lastSentAt < minSpacing)) {
           return true;
         }
       }

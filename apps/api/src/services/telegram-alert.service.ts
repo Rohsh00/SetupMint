@@ -3028,6 +3028,9 @@ export class TelegramAlertService {
 
     switch (command) {
       case '/start':
+        await this.handleCockpitCommand(user, botToken, chatId);
+        break;
+
       case '/help':
         await this.sendMessage(
           botToken,

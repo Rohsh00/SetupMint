@@ -3073,6 +3073,7 @@ export class TelegramAlertService {
           `• <b>/eth [buy|sell] [vol]</b> — 1-tap ETH trade with preset SL & TP (e.g. <code>/eth buy 1.0</code>)\n` +
           `• <b>/alert &lt;price&gt;</b> — Set price level alert with Radar Crystal Ping (e.g. <code>/alert 2685.50</code> or <code>/alert eth 3420</code>)\n` +
           `• <b>/alerts</b> — List active price alerts & risk states with 1-tap Cancel\n` +
+          `• <b>/sounds</b> — Receive all 7 official alert audio files to set as your phone ringtone\n` +
           `• <b>/trade</b> or <b>/cockpit</b> — Full interactive 1-tap execution grid\n` +
           `• <b>/pin</b> — Pin live price & positions header with cut-to-cut auto-refresh\n` +
           `• <b>/unpin</b> — Unpin live cockpit header and stop auto-refresh ticker\n` +
@@ -3090,6 +3091,8 @@ export class TelegramAlertService {
           `• <b>/snooze</b> — Snooze alerts for 15 minutes\n` +
           `• <b>/mute &lt;mins&gt;</b> — Mute audible notifications\n` +
           `• <b>/lock</b> / <b>/unlock</b> — Restrict or allow new trade placement from Telegram\n` +
+          `• <b>/guardrails [on|off]</b> — Enforce or bypass pre-trade risk guardrails on Telegram orders\n` +
+          `• <b>/adaptive [on|off]</b> — Enforce or bypass adaptive day-risk blocking (trade limits & defensive caps)\n` +
           `• <b>/panic</b> — Emergency killswitch to market-exit all positions across MT5 & FYERS\n\n` +
           `<i>Connected account: ${user.name || user.email}</i>`
         );
@@ -3266,6 +3269,13 @@ export class TelegramAlertService {
         await this.handleAlertsListCommand(user, botToken, chatId, args[0]);
         break;
 
+      case '/sounds':
+      case '/tones':
+      case 'sounds':
+      case 'tones':
+        await this.handleDispatchSoundPackCommand(user, botToken, chatId);
+        break;
+
       case '/snooze':
         await this.handleGlobalSnoozeCommand(user, botToken, chatId);
         break;
@@ -3306,6 +3316,9 @@ export class TelegramAlertService {
         await User.findByIdAndUpdate(user._id, {
           $set: { 'liveWatcherSettings.restrictTelegramTradeExecution': false },
         });
+        if (user?.liveWatcherSettings) {
+          user.liveWatcherSettings.restrictTelegramTradeExecution = false;
+        }
         await this.sendMessage(
           botToken,
           chatId,
@@ -3313,6 +3326,92 @@ export class TelegramAlertService {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `You can now execute market orders and lot sizing presets directly from Telegram.`
         );
+        break;
+      }
+
+      case '/guardrails':
+      case 'guardrails': {
+        const sub = (args[0] || '').toLowerCase();
+        let newState: boolean;
+        if (sub === 'off' || sub === 'disable' || sub === 'bypass' || sub === '0') {
+          newState = false;
+        } else if (sub === 'on' || sub === 'enable' || sub === '1') {
+          newState = true;
+        } else {
+          const current = user?.liveWatcherSettings?.enforceTelegramOrderGuardrails ?? true;
+          newState = !current;
+        }
+
+        await User.findByIdAndUpdate(user._id, {
+          $set: { 'liveWatcherSettings.enforceTelegramOrderGuardrails': newState },
+        });
+        if (user?.liveWatcherSettings) {
+          user.liveWatcherSettings.enforceTelegramOrderGuardrails = newState;
+        }
+
+        if (newState) {
+          await this.sendMessage(
+            botToken,
+            chatId,
+            `🛡️ <b>TELEGRAM ORDER GUARDRAILS ENFORCED</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Pre-trade discipline guardrails (max open positions, risk per trade, stale quotes, revenge cooldowns) are now active.\n\n` +
+            `• Send <code>/guardrails off</code> or toggle in SetupMint Settings to bypass.`
+          );
+        } else {
+          await this.sendMessage(
+            botToken,
+            chatId,
+            `⚡ <b>TELEGRAM ORDER GUARDRAILS BYPASSED</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Pre-trade discipline guardrails are now <b>OPTIONAL / BYPASSED</b> for Telegram execution.\n\n` +
+            `• 1-tap orders execute directly without being blocked by limits or cooldowns.\n` +
+            `• Send <code>/guardrails on</code> or toggle in SetupMint Settings to re-enable.`
+          );
+        }
+        break;
+      }
+
+      case '/adaptive':
+      case 'adaptive': {
+        const sub = (args[0] || '').toLowerCase();
+        let newState: boolean;
+        if (sub === 'off' || sub === 'disable' || sub === 'bypass' || sub === '0') {
+          newState = false;
+        } else if (sub === 'on' || sub === 'enable' || sub === '1') {
+          newState = true;
+        } else {
+          const current = user?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails ?? true;
+          newState = !current;
+        }
+
+        await User.findByIdAndUpdate(user._id, {
+          $set: { 'liveWatcherSettings.enforceAdaptiveDayRiskGuardrails': newState },
+        });
+        if (user?.liveWatcherSettings) {
+          user.liveWatcherSettings.enforceAdaptiveDayRiskGuardrails = newState;
+        }
+
+        if (newState) {
+          await this.sendMessage(
+            botToken,
+            chatId,
+            `📈 <b>ADAPTIVE DAY-RISK BLOCKING ENFORCED</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Dynamic daily trade limits, daily loss thresholds, and defensive mode lot caps are active.\n\n` +
+            `• Send <code>/adaptive off</code> or toggle in SetupMint Settings to disable.`
+          );
+        } else {
+          await this.sendMessage(
+            botToken,
+            chatId,
+            `⚡ <b>ADAPTIVE DAY-RISK BLOCKING DISABLED</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Dynamic trade limits, daily loss thresholds, and defensive lot caps will <b>NOT block</b> Telegram trade execution.\n\n` +
+            `• Sizing recommendations and day regime telemetry remain active.\n` +
+            `• Send <code>/adaptive on</code> or toggle in SetupMint Settings to re-enable.`
+          );
+        }
         break;
       }
 
@@ -4115,6 +4214,51 @@ export class TelegramAlertService {
       caption,
       buttons
     );
+  }
+
+  /**
+   * Dispatches the complete acoustic sound pack directly into Telegram so the user
+   * can listen and tap "Save for Notifications" to use any tone as their locked-screen ringtone.
+   */
+  static async handleDispatchSoundPackCommand(
+    user: any,
+    botToken: string,
+    chatId: string | number
+  ): Promise<void> {
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🎵 <b>SetupMint Official Alert Sound Pack</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Here are the 7 official audio tones generated by SetupMint's sound engine.\n\n` +
+      `<b>How to make any tone your phone's ringtone:</b>\n` +
+      `1. Tap & hold (or tap 3 dots) on any sound clip below.\n` +
+      `2. Tap <b>"Save for Notifications"</b>.\n` +
+      `3. Open Bot Profile ➔ Notifications ➔ Sound ➔ Select the saved sound.\n` +
+      `4. Your phone will now ring with this exact sound when locked!`
+    );
+
+    const sounds = [
+      { title: 'Radar Crystal Ping', desc: '🔔 Price Alert Hit (1046Hz -> 1318Hz Bell)', buf: AudioChimeService.getPriceAlertChime() },
+      { title: 'Rising Major Arpeggio', desc: '🎯 Target / Milestone Hit (+1R to +5R)', buf: AudioChimeService.getMilestoneChime(3.0) },
+      { title: 'Urgent Dual Siren', desc: '🚨 Critical Stop Threat (<25% Runway)', buf: AudioChimeService.getStopThreatChime() },
+      { title: 'Electric Dual Snap', desc: '⚡ Order Executed / Scaled-in', buf: AudioChimeService.getOrderExecutedChime() },
+      { title: 'Resolution Bell', desc: '💰 Trade Closed & Realized PnL Receipt', buf: AudioChimeService.getTradeClosedChime() },
+      { title: 'Caution Triad', desc: '⚠️ Profit Giveback Reversal (>35% Leak)', buf: AudioChimeService.getGivebackChime() },
+      { title: 'Triple Fanfare', desc: '📰 High-Impact Gold News Flash', buf: AudioChimeService.getNewsAlertChime() },
+    ];
+
+    for (const s of sounds) {
+      await this.sendAudio(
+        botToken,
+        chatId,
+        s.buf,
+        s.title,
+        `<b>${s.title}</b>\n${s.desc}\n<i>Tap & hold ➔ "Save for Notifications"</i>`,
+        undefined,
+        true
+      );
+    }
   }
 
   /**
@@ -6785,6 +6929,15 @@ export class TelegramAlertService {
       };
     }
 
+    // Pre-trade guardrail switches (optional from Settings)
+    const enforceGuardrails = user?.liveWatcherSettings?.enforceTelegramOrderGuardrails ?? true;
+    const enforceAdaptive = user?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails ?? true;
+
+    // If pre-trade guardrails are disabled by user, bypass all blocking guardrails
+    if (!enforceGuardrails) {
+      return { allowed: true };
+    }
+
     // 1. Mandatory Stop Loss Check
     if (!slPoints || slPoints <= 0) {
       return {
@@ -6805,7 +6958,8 @@ export class TelegramAlertService {
           reason:
             `⚠️ <b>ORDER BLOCKED: STALE MARKET DATA</b>\n\n` +
             `Market feed for <b>${symbol}</b> is <b>${quoteAgeSec.toFixed(1)}s old</b> (Threshold: ${staleThreshold}s).\n` +
-            `Live broker execution is blocked to protect against slippage. Wait for fresh ticks.`,
+            `Live broker execution is blocked to protect against slippage. Wait for fresh ticks.\n\n` +
+            `• To bypass: send <code>/guardrails off</code> or disable in SetupMint Settings.`,
         };
       }
     }
@@ -6823,63 +6977,69 @@ export class TelegramAlertService {
         reason:
           `🛡️ <b>ORDER BLOCKED: MAX OPEN POSITIONS REACHED</b>\n\n` +
           `You currently have <b>${currentOpenCount} active open trade(s)</b> (Your limit: <b>${maxOpenTrades}</b>).\n` +
-          `Close an existing position before taking on new risk exposure.`,
+          `Close an existing position before taking on new risk exposure.\n\n` +
+          `• To bypass: send <code>/guardrails off</code> or disable in SetupMint Settings.`,
       };
     }
 
     // 4. Adaptive Day-Risk State (Dynamic Daily Trades, Dynamic Daily Loss, & Defensive Vol Guard)
-    const isGoldSym = (symbol || '').includes('XAU') || symbol === 'GOLD';
-    const pointScale = isGoldSym ? 0.10 : 1.0;
-    const multiplier = isGoldSym ? 100 : 1;
-    const adaptive = await this.evaluateAdaptiveDayRiskState(
-      user,
-      account,
-      symbol,
-      slPoints,
-      pointScale,
-      multiplier,
-      side
-    );
+    if (enforceAdaptive) {
+      const isGoldSym = (symbol || '').includes('XAU') || symbol === 'GOLD';
+      const pointScale = isGoldSym ? 0.10 : 1.0;
+      const multiplier = isGoldSym ? 100 : 1;
+      const adaptive = await this.evaluateAdaptiveDayRiskState(
+        user,
+        account,
+        symbol,
+        slPoints,
+        pointScale,
+        multiplier,
+        side
+      );
 
-    // 4a. Dynamic Daily Trade Limit Guardrail
-    if (adaptive.isTradeLimitReached) {
-      const bonusText = adaptive.bonusTradesEarned > 0 ? ` (Includes +${adaptive.bonusTradesEarned} bonus trades)` : '';
-      const regimeHint = adaptive.regime === 'DEFENSIVE'
-        ? 'Throttled by Defensive Mode to curb tilt & protect capital.'
-        : 'Overtrading guardrail active. Step away to preserve capital.';
-      return {
-        allowed: false,
-        reason:
-          `🛡️ <b>ORDER BLOCKED: DAILY TRADE LIMIT REACHED</b>\n\n` +
-          `You have taken <b>${adaptive.todayTradesCount} trade(s) today</b> (Dynamic limit: <b>${adaptive.effectiveMaxDailyTrades}</b>${bonusText}).\n` +
-          `Day State: ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>.\n` +
-          `${regimeHint}`,
-      };
-    }
-
-    // 5. Dynamic Daily Loss Limit Guardrail
-    if (adaptive.isDailyLossBreached) {
-      return {
-        allowed: false,
-        reason:
-          `🛑 <b>ORDER BLOCKED: DAILY LOSS LIMIT BREACHED</b>\n\n` +
-          `Your net PnL today is <b>-$${Math.abs(adaptive.todayTotalPnL).toFixed(2)}</b> (Daily loss limit: <b>-$${adaptive.effectiveDailyLossLimit.toFixed(2)}</b>).\n` +
-          `Remaining buffer: <b>$0.00</b>. Locked for today to protect capital.`,
-      };
-    }
-
-    // 5b. Defensive Mode Volume Cap Guardrail (Prevents outsized tilt betting)
-    if (adaptive.regime === 'DEFENSIVE') {
-      const maxDefensiveLot = Math.max(0.02, Number((adaptive.tiers.bestOptionLot * 2).toFixed(2)));
-      if (volume > maxDefensiveLot) {
+      // 4a. Dynamic Daily Trade Limit Guardrail
+      if (adaptive.isTradeLimitReached) {
+        const bonusText = adaptive.bonusTradesEarned > 0 ? ` (Includes +${adaptive.bonusTradesEarned} bonus trades)` : '';
+        const regimeHint = adaptive.regime === 'DEFENSIVE'
+          ? 'Throttled by Defensive Mode to curb tilt & protect capital.'
+          : 'Overtrading guardrail active. Step away to preserve capital.';
         return {
           allowed: false,
           reason:
-            `🛡️ <b>ORDER BLOCKED: DEFENSIVE MODE LOT CAP ACTIVE</b>\n\n` +
-            `You are in <b>${adaptive.regimeBadge} ${adaptive.regimeLabel}</b> (${adaptive.consecutiveLosses} consecutive losses / net -$${Math.abs(adaptive.todayTotalPnL).toFixed(2)}).\n` +
-            `To prevent tilt and drawdown escalation, max allowed lot size is capped at <b>${maxDefensiveLot.toFixed(2)} Lots</b> (Requested: <b>${volume.toFixed(2)} Lots</b>).\n` +
-            `Stick to recommended defensive sizing (${adaptive.tiers.bestOptionLot.toFixed(2)}L) or micro (${adaptive.tiers.microLot.toFixed(2)}L).`,
+            `🛡️ <b>ORDER BLOCKED: DAILY TRADE LIMIT REACHED</b>\n\n` +
+            `You have taken <b>${adaptive.todayTradesCount} trade(s) today</b> (Dynamic limit: <b>${adaptive.effectiveMaxDailyTrades}</b>${bonusText}).\n` +
+            `Day State: ${adaptive.regimeBadge} <b>${adaptive.regimeLabel}</b>.\n` +
+            `${regimeHint}\n\n` +
+            `• To bypass: send <code>/adaptive off</code> or disable in SetupMint Settings.`,
         };
+      }
+
+      // 5. Dynamic Daily Loss Limit Guardrail
+      if (adaptive.isDailyLossBreached) {
+        return {
+          allowed: false,
+          reason:
+            `🛑 <b>ORDER BLOCKED: DAILY LOSS LIMIT BREACHED</b>\n\n` +
+            `Your net PnL today is <b>-$${Math.abs(adaptive.todayTotalPnL).toFixed(2)}</b> (Daily loss limit: <b>-$${adaptive.effectiveDailyLossLimit.toFixed(2)}</b>).\n` +
+            `Remaining buffer: <b>$0.00</b>. Locked for today to protect capital.\n\n` +
+            `• To bypass: send <code>/adaptive off</code> or disable in SetupMint Settings.`,
+        };
+      }
+
+      // 5b. Defensive Mode Volume Cap Guardrail (Prevents outsized tilt betting)
+      if (adaptive.regime === 'DEFENSIVE') {
+        const maxDefensiveLot = Math.max(0.02, Number((adaptive.tiers.bestOptionLot * 2).toFixed(2)));
+        if (volume > maxDefensiveLot) {
+          return {
+            allowed: false,
+            reason:
+              `🛡️ <b>ORDER BLOCKED: DEFENSIVE MODE LOT CAP ACTIVE</b>\n\n` +
+              `You are in <b>${adaptive.regimeBadge} ${adaptive.regimeLabel}</b> (${adaptive.consecutiveLosses} consecutive losses / net -$${Math.abs(adaptive.todayTotalPnL).toFixed(2)}).\n` +
+              `To prevent tilt and drawdown escalation, max allowed lot size is capped at <b>${maxDefensiveLot.toFixed(2)} Lots</b> (Requested: <b>${volume.toFixed(2)} Lots</b>).\n` +
+              `Stick to recommended defensive sizing (${adaptive.tiers.bestOptionLot.toFixed(2)}L) or micro (${adaptive.tiers.microLot.toFixed(2)}L).\n\n` +
+              `• To bypass: send <code>/adaptive off</code> or disable in SetupMint Settings.`,
+          };
+        }
       }
     }
 
@@ -8054,10 +8214,14 @@ export class TelegramAlertService {
     const growthSign = (adaptive.capitalGrowthPct ?? 0) >= 0 ? '+' : '';
     const growthText = adaptive.capitalGrowthPct !== undefined ? ` • Growth: ${growthSign}${adaptive.capitalGrowthPct.toFixed(2)}%` : '';
 
+    const enforceAdaptive = user?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails ?? true;
+    const enforceGuardrails = user?.liveWatcherSettings?.enforceTelegramOrderGuardrails ?? true;
+    const isAdaptiveEnforced = enforceAdaptive && enforceGuardrails;
+
     const extraRiskTitle = adaptive.regime === 'HOUSE_MONEY' ? 'Momentum Boost' : 'Extra Risk';
     const extraRiskLine = extraRiskLot && extraRisk !== undefined
       ? `• 🚀 <b>${extraRiskTitle}</b>  : <code>${extraRiskLot.toFixed(2)}L</code> ➜ Risk: <b>-$${extraRisk.toFixed(2)}</b> | Reward: <b>+$${extraRiskReward.toFixed(2)}</b>\n`
-      : `• 🚀 <b>Extra Risk</b>  : <i>[Disabled in Defensive Mode to protect buffer]</i>\n`;
+      : (isAdaptiveEnforced ? `• 🚀 <b>Extra Risk</b>  : <i>[Disabled in Defensive Mode to protect buffer]</i>\n` : '');
 
     const text =
       `${symIcon} <b>${displaySym} • ${side} LOT OPTIONS REPORT (HARD DISCIPLINE)</b>\n` +
@@ -8078,7 +8242,7 @@ export class TelegramAlertService {
       `📊 <b>HARD DISCIPLINE LOT OPTIONS:</b>\n` +
       `• 🌟 <b>Best Option</b> : <code>${bestOptionLot.toFixed(2)}L</code> ➜ Risk: <b>-$${bestRisk.toFixed(2)}</b> | Reward: <b>+$${bestReward.toFixed(2)}</b>\n` +
       `• 🛡️ <b>Micro / Min</b>  : <code>${microLot.toFixed(2)}L</code> ➜ Risk: <b>-$${microRisk.toFixed(2)}</b> | Reward: <b>+$${microReward.toFixed(2)}</b>\n` +
-      (adaptive.regime === 'NEUTRAL'
+      (adaptive.regime === 'NEUTRAL' || !isAdaptiveEnforced
         ? `• ⚖️ <b>Conservative</b>: <code>${conservativeLot.toFixed(2)}L</code> ➜ Risk: <b>-$${conservativeRisk.toFixed(2)}</b> | Reward: <b>+$${conservativeReward.toFixed(2)}</b>\n` +
           `• ⚡ <b>Saved Preset</b>: <code>${presetLot.toFixed(2)}L</code> ➜ Risk: <b>-$${presetRisk.toFixed(2)}</b> | Reward: <b>+$${presetReward.toFixed(2)}</b>\n`
         : '') +
@@ -8113,7 +8277,7 @@ export class TelegramAlertService {
         callback_data: `order:${cleanSym}:${side}:${microLot.toFixed(2)}:${slPoints}:${tpPoints}:exec`,
       });
       buttons.push(row2);
-    } else if (adaptive.regime === 'DEFENSIVE') {
+    } else if (adaptive.regime === 'DEFENSIVE' && isAdaptiveEnforced) {
       buttons.push([
         {
           text: bestOptText,
@@ -8844,7 +9008,9 @@ export class TelegramAlertService {
       let goldBtnLot = goldLotStr;
       let ethBtnLot = ethLotStr;
 
-      if (adaptive?.regime === 'DEFENSIVE') {
+      const enforceAdaptive = user?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails ?? true;
+      const enforceGuardrails = user?.liveWatcherSettings?.enforceTelegramOrderGuardrails ?? true;
+      if (adaptive?.regime === 'DEFENSIVE' && enforceAdaptive && enforceGuardrails) {
         goldBtnLot = (adaptive.tiers.bestOptionLot || (goldLot * 0.5)).toFixed(2);
         ethBtnLot = (adaptive.tiers.bestOptionLot || (ethLot * 0.5)).toFixed(2);
       }

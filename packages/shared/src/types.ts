@@ -2388,6 +2388,8 @@ export interface ILiveWatcherSettings {
   telegramPinnedCockpitMessageId?: number;
   telegramPinnedCockpitChatId?: string | number;
   restrictTelegramTradeExecution?: boolean;
+  enforceTelegramOrderGuardrails?: boolean;
+  enforceAdaptiveDayRiskGuardrails?: boolean;
 }
 
 export interface ITelegramForexPresets {
@@ -2529,6 +2531,9 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   activePresetId: 'positional',
   displaySettings: DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
   telegramForexPresets: DEFAULT_TELEGRAM_FOREX_PRESETS,
+  restrictTelegramTradeExecution: false,
+  enforceTelegramOrderGuardrails: true,
+  enforceAdaptiveDayRiskGuardrails: true,
 };
 
 export function createLadderRulesFromSettings(

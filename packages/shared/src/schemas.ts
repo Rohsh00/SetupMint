@@ -916,6 +916,8 @@ export const liveWatcherSettingsSchema = z.object({
   telegramPinnedCockpitMessageId: z.number().optional(),
   telegramPinnedCockpitChatId: z.union([z.string(), z.number()]).optional(),
   restrictTelegramTradeExecution: z.boolean().optional(),
+  enforceTelegramOrderGuardrails: z.boolean().optional(),
+  enforceAdaptiveDayRiskGuardrails: z.boolean().optional(),
 });
 
 export const updateProfileSchema = z.object({

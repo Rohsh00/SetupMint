@@ -17,6 +17,7 @@ import { Mt5CommandService } from '../src/services/mt5-command.service.js';
 import { TelegramCockpitTickerWorker } from '../src/services/telegram-cockpit-ticker.service.js';
 import { AudioChimeService } from '../src/services/audio-chime.service.js';
 import { LiveExecutionWorker } from '../src/services/live-execution-worker.service.js';
+import { LiveWatcherService } from '../src/services/live-watcher.service.js';
 
 describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30000 }, () => {
   let app: FastifyInstance;
@@ -3224,5 +3225,131 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     expect(sentMessages[sentMessages.length - 1].text).toContain('ADAPTIVE DAY-RISK BLOCKING ENFORCED');
     u = await User.findById(testUser._id);
     expect(u?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails).toBe(true);
+  });
+
+  // 66. Multi-currency Cockpit: Separate USD & INR badges, Indian broker actions, zero Gold cross-contamination
+  it('Scenario 66: Multi-currency Cockpit: Separate USD & INR badges, Indian broker actions, zero Gold cross-contamination', async () => {
+    // Clean up any test trades first
+    await Trade.deleteMany({ userId: testUser._id });
+
+    const inrAccount = await TradingAccount.create({
+      userId: testUser._id,
+      name: 'FYERS Trading',
+      broker: 'FYERS',
+      accountType: 'COMMODITY',
+      baseCurrency: 'INR',
+      currency: 'INR',
+      balance: 100000,
+    });
+
+    // 1. Create open ETH trade (USD, Elefin)
+    const ethTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'ETHUSD',
+      direction: 'SHORT',
+      entryPrice: 1721.39,
+      quantity: 2.0,
+      currency: 'USD',
+      currencySymbol: '$',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'CRYPTO',
+      exchange: 'FOREX',
+      assetClass: 'CRYPTO',
+      simpleExecution: {
+        entryPrice: 1721.39,
+        quantity: 2.0,
+      },
+      calculated: { floatingNetPnL: -16.54, openQuantity: 2.0 },
+      tags: ['MT5_TICKET_991122'],
+    });
+
+    // 2. Create open CRUDEOIL trade (INR, FYERS)
+    const crudeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: inrAccount._id,
+      symbol: 'CRUDEOILMINI',
+      exchange: 'MCX',
+      marketSegment: 'MCX',
+      assetClass: 'COMMODITY',
+      direction: 'LONG',
+      entryPrice: 7608,
+      quantity: 10,
+      currency: 'INR',
+      currencySymbol: '₹',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      simpleExecution: {
+        entryPrice: 7608,
+        quantity: 10,
+      },
+      calculated: { floatingNetPnL: 320.90, openQuantity: 10 },
+      tags: ['FYERS_AUTO_SYNC'],
+    });
+
+    // Mock live watcher summary so it provides live metrics for both
+    vi.spyOn(LiveWatcherService, 'getLiveWatcherSummary').mockResolvedValue({
+      positions: [
+        {
+          tradeId: ethTrade._id.toString(),
+          symbol: 'ETHUSD',
+          currentLtp: 1729.66,
+          floatingNetPnL: -16.54,
+          floatingGrossPnL: -15.00,
+          estimatedCharges: 1.54,
+          currency: 'USD',
+          unrealizedR: -0.66,
+          isMt5: true,
+          entryPrice: 1721.39,
+          quantity: 2.0,
+        },
+        {
+          tradeId: crudeTrade._id.toString(),
+          symbol: 'CRUDEOILMINI',
+          currentLtp: 7640.00,
+          floatingNetPnL: 320.90,
+          floatingGrossPnL: 500.00,
+          estimatedCharges: 179.10,
+          currency: 'INR',
+          unrealizedR: 1.28,
+          isMt5: false,
+          entryPrice: 7608.00,
+          quantity: 10,
+        },
+      ],
+      totalFloatingNetPnL: 304.36,
+      totalFloatingGrossPnL: 485.00,
+      totalEstimatedCharges: 180.64,
+      portfolioUnrealizedR: 0.62,
+      provider: 'LIVE',
+      dataHealth: { status: 'HEALTHY' } as any,
+    } as any);
+
+    const payload = await TelegramAlertService.buildCockpitPayload(testUser, true);
+
+    // Verify Line 1 has separate currency badges and NEVER blends them into -$121$ or -$58.57
+    expect(payload.text).toContain('-$16.54');
+    expect(payload.text).toContain('+₹320.90');
+    expect(payload.text).not.toContain('-$121$');
+    expect(payload.text).not.toContain('$-16.54');
+
+    // Verify position detail lines show ₹ for Crude and $ for ETH
+    expect(payload.text).toContain('CRUDEOILMINI');
+    expect(payload.text).toContain('₹7608.00');
+    expect(payload.text).toContain('+₹320.90');
+    expect(payload.text).toContain('ETHUSD');
+    expect(payload.text).toContain('$1721.39');
+    expect(payload.text).toContain('-$16.54');
+
+    // Verify live pricing telemetry shows separate floating lines
+    expect(payload.text).toContain('Floating (USD) : -$16.54');
+    expect(payload.text).toContain('Floating (INR) : +₹320.90');
+
+    // Clean up test trades and test account
+    await Trade.deleteMany({ userId: testUser._id });
+    await TradingAccount.deleteMany({ _id: inrAccount._id });
   });
 });

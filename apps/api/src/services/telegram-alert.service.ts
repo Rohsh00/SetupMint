@@ -184,26 +184,38 @@ export class TelegramAlertService {
   }
 
   /**
-   * Deterministic Currency Symbol resolver for trade alerts ($ for USD/FOREX/Metals/Prop, ₹ for INR).
+   * Deterministic Currency resolver for trades ('USD' | 'INR' | 'EUR' | 'GBP').
    */
-  static getTradeCurrencySymbol(trade: any): string {
-    if (!trade) return '$';
-    const c = (trade.currency || (trade.accountId as any)?.baseCurrency || '').toUpperCase();
-    if (c === 'INR') return '₹';
-    if (c === 'EUR') return '€';
-    if (c === 'GBP') return '£';
-    if (c === 'JPY') return '¥';
-    if (c === 'USD') return '$';
+  static getTradeCurrency(trade: any): string {
+    if (!trade) return 'USD';
+    const c = String(trade.currency || (trade.accountId as any)?.baseCurrency || '').toUpperCase();
+    if (['INR', 'USD', 'EUR', 'GBP', 'JPY'].includes(c)) return c;
+    const ex = String(trade.exchange || '').toUpperCase();
+    if (['NSE', 'BSE', 'MCX', 'NFO', 'BFO', 'CDS'].includes(ex)) return 'INR';
     const isForex =
-      trade.exchange === 'FOREX' ||
+      ex === 'FOREX' ||
       (trade.symbol &&
         (trade.symbol.includes('XAU') ||
           trade.symbol.includes('EUR') ||
           trade.symbol.includes('USD') ||
           trade.symbol.includes('GBP') ||
-          trade.symbol.includes('BTC'))) ||
+          trade.symbol.includes('BTC') ||
+          trade.symbol.includes('ETH'))) ||
       (Array.isArray(trade.tags) && (trade.tags.includes('ELEFIN') || trade.tags.includes('MT5')));
-    return isForex ? '$' : (c || '$');
+    if (isForex) return 'USD';
+    return c || 'USD';
+  }
+
+  /**
+   * Deterministic Currency Symbol resolver for trade alerts ($ for USD/FOREX/Metals/Prop, ₹ for INR).
+   */
+  static getTradeCurrencySymbol(trade: any): string {
+    const curr = this.getTradeCurrency(trade);
+    if (curr === 'INR') return '₹';
+    if (curr === 'EUR') return '€';
+    if (curr === 'GBP') return '£';
+    if (curr === 'JPY') return '¥';
+    return '$';
   }
 
   /**
@@ -3712,7 +3724,7 @@ export class TelegramAlertService {
   }
 
   /**
-   * Generates live PnL report card for /pnl command.
+   * Generates live PnL report card for /pnl command with strict zero-cross-currency isolation.
    */
   private static async handlePnlCommand(user: any, botToken: string | null | undefined, chatId: string | number, scopeArg?: string): Promise<void> {
     const argLower = scopeArg?.toLowerCase() || '';
@@ -3725,9 +3737,6 @@ export class TelegramAlertService {
       : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
-    const openCount = summary.positions.length;
-    const hasUsd = isProp || summary.positions.some((p: any) => p.currency === 'USD' || p.isMt5 || (p.symbol && p.symbol.includes('XAU')));
-    const sym = hasUsd ? '$' : '₹';
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -3738,24 +3747,68 @@ export class TelegramAlertService {
       accountId: { $in: accountIds },
     }).lean();
 
-    const realizedPnL = todayTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
-    const totalDayPnL = summary.totalFloatingNetPnL + realizedPnL;
+    // Group floating positions strictly by currency
+    const floatByCurr = new Map<string, { count: number; floatNet: number; floatGross: number; charges: number; unrealizedR: number }>();
+    for (const pos of summary.positions) {
+      const c = (pos.currency || 'USD').toUpperCase();
+      const curr = (c === 'INR' || c === 'USD' || c === 'EUR' || c === 'GBP') ? c : (pos.isMt5 ? 'USD' : 'INR');
+      if (!floatByCurr.has(curr)) {
+        floatByCurr.set(curr, { count: 0, floatNet: 0, floatGross: 0, charges: 0, unrealizedR: 0 });
+      }
+      const item = floatByCurr.get(curr)!;
+      item.count += 1;
+      item.floatNet += (pos.floatingNetPnL || 0);
+      item.floatGross += (pos.floatingGrossPnL || 0);
+      item.charges += (pos.estimatedCharges || 0);
+      item.unrealizedR += (pos.unrealizedR || 0);
+    }
 
-    const pnlSign = summary.totalFloatingNetPnL >= 0 ? '+' : '';
-    const daySign = totalDayPnL >= 0 ? '+' : '';
-    const rSign = (summary.portfolioUnrealizedR || 0) >= 0 ? '+' : '';
+    // Group realized today closed trades strictly by currency
+    const realizedByCurr = new Map<string, { count: number; realizedNet: number }>();
+    for (const t of todayTrades) {
+      const curr = TelegramAlertService.getTradeCurrency(t);
+      if (!realizedByCurr.has(curr)) {
+        realizedByCurr.set(curr, { count: 0, realizedNet: 0 });
+      }
+      const item = realizedByCurr.get(curr)!;
+      item.count += 1;
+      item.realizedNet += (t.calculated?.netPnL || 0);
+    }
+
+    const allCurrencies = Array.from(new Set([...floatByCurr.keys(), ...realizedByCurr.keys()]));
+    if (allCurrencies.length === 0) {
+      allCurrencies.push(isProp ? 'USD' : 'INR');
+    }
+
+    const blocks: string[] = [];
+    for (const curr of allCurrencies) {
+      const sym = curr === 'INR' ? '₹' : (curr === 'EUR' ? '€' : (curr === 'GBP' ? '£' : '$'));
+      const f = floatByCurr.get(curr) || { count: 0, floatNet: 0, floatGross: 0, charges: 0, unrealizedR: 0 };
+      const r = realizedByCurr.get(curr) || { count: 0, realizedNet: 0 };
+      const totalDay = f.floatNet + r.realizedNet;
+
+      const pnlSign = f.floatNet >= 0 ? '+' : '-';
+      const daySign = totalDay >= 0 ? '+' : '-';
+      const rSign = f.unrealizedR >= 0 ? '+' : '';
+      const headerTitle = curr === 'USD' ? '🇺🇸 Prop & Global CFD (USD)' : (curr === 'INR' ? '🇮🇳 Indian Broker / FYERS (INR)' : `🌐 Portfolio (${curr})`);
+
+      blocks.push(
+        `<b>${headerTitle}</b>\n` +
+        `<pre>\n` +
+        `Open Positions  : ${f.count}\n` +
+        `Floating Net    : ${pnlSign}${sym}${Math.abs(f.floatNet).toFixed(2)}${f.count > 0 ? ` (${rSign}${f.unrealizedR.toFixed(2)}R)` : ''}\n` +
+        `Floating Gross  : ${f.floatGross >= 0 ? '+' : '-'}${sym}${Math.abs(f.floatGross).toFixed(2)}\n` +
+        `Est Charges     : -${sym}${Math.abs(f.charges).toFixed(2)}\n` +
+        `Realized Today  : ${r.realizedNet >= 0 ? '+' : '-'}${sym}${Math.abs(r.realizedNet).toFixed(2)} (${r.count} closed)\n` +
+        `Total Day PnL   : ${daySign}${sym}${Math.abs(totalDay).toFixed(2)}\n` +
+        `</pre>`
+      );
+    }
 
     const text =
       `📈 <b>SetupMint Live Portfolio PnL${isProp ? ' (PROP MODE)' : isLive ? ' (LIVE PERSONAL)' : ''}</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<pre>\n` +
-      `Open Positions  : ${openCount}\n` +
-      `Floating Net    : ${pnlSign}${sym}${summary.totalFloatingNetPnL.toFixed(2)} (${rSign}${(summary.portfolioUnrealizedR || 0).toFixed(2)}R)\n` +
-      `Floating Gross  : ${sym}${summary.totalFloatingGrossPnL.toFixed(2)}\n` +
-      `Est Charges     : -${sym}${summary.totalEstimatedCharges.toFixed(2)}\n` +
-      `Realized Today  : ${sym}${realizedPnL.toFixed(2)}\n` +
-      `Total Day PnL   : ${daySign}${sym}${totalDayPnL.toFixed(2)}\n` +
-      `</pre>\n` +
+      blocks.join('\n') + '\n' +
       `<i>Status: ${summary.provider} live feed • ${new Date().toLocaleTimeString('en-IN')} IST</i>`;
 
     const buttons: ITelegramInlineButton[][] = [
@@ -3782,7 +3835,6 @@ export class TelegramAlertService {
       : { mode: 'ALL' as const };
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
-    const sym = isProp ? '$' : '₹';
     if (summary.positions.length === 0) {
       await this.sendMessage(
         botToken,
@@ -3804,7 +3856,7 @@ export class TelegramAlertService {
             pos.symbol.includes('GBP')));
       const posSym = posIsUsd ? '$' : '₹';
       const posLocale = posIsUsd ? 'en-US' : 'en-IN';
-      const pnlSign = pos.floatingNetPnL >= 0 ? '+' : '';
+      const pnlSign = pos.floatingNetPnL >= 0 ? '+' : '-';
       const rSign = (pos.unrealizedR || 0) >= 0 ? '+' : '';
       const mult = pos.contractMultiplier && pos.contractMultiplier > 1 ? pos.contractMultiplier : 1;
       const exposure = pos.quantity * mult * pos.currentLtp;
@@ -3817,7 +3869,7 @@ export class TelegramAlertService {
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `<pre>\n` +
         `Entry    : ${posSym}${pos.entryPrice.toFixed(2)}  |  LTP: ${posSym}${pos.currentLtp.toFixed(2)}\n` +
-        `Net PnL  : ${pnlSign}${posSym}${pos.floatingNetPnL.toFixed(2)} (${rSign}${(pos.unrealizedR || 0).toFixed(2)}R)\n` +
+        `Net PnL  : ${pnlSign}${posSym}${Math.abs(pos.floatingNetPnL).toFixed(2)} (${rSign}${(pos.unrealizedR || 0).toFixed(2)}R)\n` +
         `Quantity : ${pos.quantity} ${mult > 1 ? `lots (${pos.quantity * mult} units)` : 'units'}\n` +
         `Exposure : ${posSym}${exposure.toLocaleString(posLocale)}\n` +
         `StopLoss : ${stopInfo}\n` +
@@ -4867,7 +4919,7 @@ export class TelegramAlertService {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<b>RISK & SIZING LEDGER</b>\n` +
       `• <b>Stop Loss</b>   : <code>${numSl > 0 ? `${sym}${numSl.toFixed(priceDecimals)}` : 'NO STOP (NAKED)'}</code> (${riskDistStr})\n` +
-      `• <b>Dollar Risk</b> : <b>${sym}${Number(riskAmt).toFixed(2)}</b>${riskPct ? ` (${riskPct}% Eq)` : ''}\n` +
+      `• <b>${sym === '₹' ? 'Capital Risk' : 'Dollar Risk'}</b> : <b>${sym}${Number(riskAmt).toFixed(2)}</b>${riskPct ? ` (${riskPct}% Eq)` : ''}\n` +
       `• <b>Target 1</b>    : <code>${sym}${t1TargetPrice}</code> (+${t1MultipleR.toFixed(1)}R)\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<b>AUTOMATED LADDER BLUEPRINT</b> (Auto: ${autoStatus})\n` +
@@ -8486,7 +8538,24 @@ export class TelegramAlertService {
     if (nasLtp === 0) nasLtp = 25029.00;
 
     const openTrades = await Trade.find({ userId: user._id, status: 'OPEN' }).lean();
-    let totalFloat = 0;
+
+    // Map open trades with live LTP and floating PnL from LiveWatcherService (supports FYERS, MT5, and Global CFD)
+    const liveWatcherMap = new Map<string, any>();
+    if (openTrades.length > 0) {
+      try {
+        const liveSummary = await LiveWatcherService.getLiveWatcherSummary(user._id);
+        if (liveSummary && Array.isArray(liveSummary.positions)) {
+          for (const pos of liveSummary.positions) {
+            if (pos.tradeId) {
+              liveWatcherMap.set(pos.tradeId.toString(), pos);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[buildCockpitPayload] Could not fetch live watcher summary: ${err?.message || err}`);
+      }
+    }
+
     const posDetailLines: string[] = [];
 
     // Group open trades by clean symbol into stacks
@@ -8498,6 +8567,9 @@ export class TelegramAlertService {
       blendedEntry: number;
       currentLtp: number;
       totalFloat: number;
+      currency: string;
+      currencySymbol: string;
+      isMt5: boolean;
       layers: any[];
     }>();
 
@@ -8508,10 +8580,10 @@ export class TelegramAlertService {
       const isUs30 = (t.symbol || '').includes('US30') || (t.symbol || '').includes('DOW');
       const isNas = (t.symbol || '').includes('NAS') || (t.symbol || '').includes('USTEC');
 
-      let cleanSymbol = 'XAUUSD';
-      let displaySymbol = 'Gold (XAUUSD)';
-      let ltp = goldLtp;
-      let mult = 100;
+      let cleanSymbol = (t.symbol || '').toUpperCase();
+      let displaySymbol = cleanSymbol;
+      let ltp = 0;
+      let mult = (t as any).contractMultiplier || t.simpleExecution?.contractMultiplier || 1;
       if (isGold) { cleanSymbol = 'XAUUSD'; displaySymbol = 'Gold (XAUUSD)'; ltp = goldLtp; mult = 100; }
       else if (isEth) { cleanSymbol = 'ETHUSD'; displaySymbol = 'ETHUSD'; ltp = ethLtp; mult = 1; }
       else if (isBtc) { cleanSymbol = 'BTCUSD'; displaySymbol = 'BTCUSD'; ltp = btcLtp; mult = 1; }
@@ -8529,21 +8601,35 @@ export class TelegramAlertService {
       const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
       const ticket = Mt5CommandService.extractTicket(t);
 
-      const posQuote = ticket ? Mt5CommandService.getPositionQuote(ticket) : null;
-      if (posQuote && posQuote.curPrice > 0) {
-        ltp = posQuote.curPrice;
+      // Check LiveWatcherService metric for live broker / scanner price and PnL
+      const liveMetric = liveWatcherMap.get(t._id.toString());
+      if (liveMetric && typeof liveMetric.currentLtp === 'number' && liveMetric.currentLtp > 0) {
+        ltp = liveMetric.currentLtp;
+      } else {
+        const posQuote = ticket ? Mt5CommandService.getPositionQuote(ticket) : null;
+        if (posQuote && posQuote.curPrice > 0) {
+          ltp = posQuote.curPrice;
+        }
       }
 
       let pnl = 0;
-      if (posQuote && typeof posQuote.profit === 'number' && posQuote.profit !== 0) {
-        pnl = Number(posQuote.profit.toFixed(2));
-      } else if (entry > 0 && ltp > 0) {
-        pnl = t.direction === 'LONG' ? (ltp - entry) * qty * mult : (entry - ltp) * qty * mult;
+      if (liveMetric && typeof liveMetric.floatingNetPnL === 'number') {
+        pnl = Number(liveMetric.floatingNetPnL.toFixed(2));
       } else {
-        pnl = (t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? t.calculated?.netPnL ?? 0;
+        const posQuote = ticket ? Mt5CommandService.getPositionQuote(ticket) : null;
+        if (posQuote && typeof posQuote.profit === 'number' && posQuote.profit !== 0) {
+          pnl = Number(posQuote.profit.toFixed(2));
+        } else if (entry > 0 && ltp > 0) {
+          pnl = t.direction === 'LONG' ? (ltp - entry) * qty * mult : (entry - ltp) * qty * mult;
+        } else {
+          pnl = (t.calculated as any)?.floatingNetPnL ?? (t as any).floatingNetPnL ?? t.calculated?.netPnL ?? 0;
+        }
+        pnl = Number(pnl.toFixed(2));
       }
-      pnl = Number(pnl.toFixed(2));
-      totalFloat += pnl;
+
+      const tradeCurr = TelegramAlertService.getTradeCurrency(t);
+      const currSym = TelegramAlertService.getTradeCurrencySymbol(t);
+      const isMt5 = Mt5CommandService.isMt5Trade(t, t.accountId);
 
       const stackKey = cleanSymbol;
       if (!stackMap.has(stackKey)) {
@@ -8555,6 +8641,9 @@ export class TelegramAlertService {
           blendedEntry: 0,
           currentLtp: ltp,
           totalFloat: 0,
+          currency: tradeCurr,
+          currencySymbol: currSym,
+          isMt5,
           layers: [],
         });
       }
@@ -8562,6 +8651,7 @@ export class TelegramAlertService {
       const s = stackMap.get(stackKey)!;
       s.totalQty = Number((s.totalQty + qty).toFixed(2));
       s.totalFloat = Number((s.totalFloat + pnl).toFixed(2));
+      if (ltp > 0) s.currentLtp = ltp;
       s.layers.push({
         trade: t,
         ticket,
@@ -8581,7 +8671,8 @@ export class TelegramAlertService {
       }
       s.blendedEntry = s.totalQty > 0 ? Number((weightedSum / s.totalQty).toFixed(2)) : 0;
 
-      const pnlSign = s.totalFloat >= 0 ? '+' : '';
+      const currSym = s.currencySymbol || '$';
+      const pnlSign = s.totalFloat >= 0 ? '+' : '-';
       const pnlEmoji = s.totalFloat >= 0 ? '🟢' : '🔴';
       const layerCountStr = s.layers.length > 1 ? ` (${s.layers.length} Layers)` : '';
       const isGoldStack = s.cleanSymbol.includes('XAU') || s.cleanSymbol === 'GOLD';
@@ -8589,35 +8680,52 @@ export class TelegramAlertService {
 
       const layerDetails = s.layers.map((l, idx) => {
         const tktStr = l.ticket ? ` #${l.ticket}` : ` L${idx + 1}`;
-        const lPnlSign = l.pnl >= 0 ? '+' : '';
+        const lPnlSign = l.pnl >= 0 ? '+' : '-';
         let slStr = 'None';
         if (l.currentSl && Number(l.currentSl) > 0) {
           const slNum = Number(l.currentSl);
           const ptsAway = Math.abs(s.currentLtp - slNum);
           const riskAtSl = Math.abs((l.entry - slNum) * l.qty * stackMult);
-          slStr = `$${slNum.toFixed(2)} (-$${riskAtSl.toFixed(2)} · ${ptsAway.toFixed(1)} pts away)`;
+          slStr = `${currSym}${slNum.toFixed(2)} (-${currSym}${riskAtSl.toFixed(2)} · ${ptsAway.toFixed(1)} pts away)`;
         }
         let tpStr = 'Open (Runner)';
         if (l.tp && Number(l.tp) > 0) {
           const tpNum = Number(l.tp);
           const tpPts = Math.abs(tpNum - s.currentLtp);
-          tpStr = `$${tpNum.toFixed(2)} (+${tpPts.toFixed(1)} pts)`;
+          tpStr = `${currSym}${tpNum.toFixed(2)} (+${tpPts.toFixed(1)} pts)`;
         }
-        return `  ├ Layer ${idx + 1}${tktStr}: <b>${l.qty.toFixed(2)}L @ $${l.entry.toFixed(2)}</b> (${lPnlSign}$${l.pnl.toFixed(2)})\n  │   └ SL: <code>${slStr}</code>  |  TP: <code>${tpStr}</code>`;
+        return `  ├ Layer ${idx + 1}${tktStr}: <b>${l.qty.toFixed(2)}L @ ${currSym}${l.entry.toFixed(2)}</b> (${lPnlSign}${currSym}${Math.abs(l.pnl).toFixed(2)})\n  │   └ SL: <code>${slStr}</code>  |  TP: <code>${tpStr}</code>`;
       }).join('\n');
 
       posDetailLines.push(
         `${pnlEmoji} <b>${s.displaySymbol} ${s.direction} · ${s.totalQty.toFixed(2)}L Total${layerCountStr}</b>\n` +
-        `  ├ Blended Entry: <b>$${s.blendedEntry.toFixed(2)}</b>  |  LTP: <b>$${s.currentLtp.toFixed(2)}</b>\n` +
-        `  ├ Net Floating: <b>${pnlSign}$${s.totalFloat.toFixed(2)}</b>\n` +
+        `  ├ Blended Entry: <b>${currSym}${s.blendedEntry.toFixed(2)}</b>  |  LTP: <b>${currSym}${s.currentLtp.toFixed(2)}</b>\n` +
+        `  ├ Net Floating: <b>${pnlSign}${currSym}${Math.abs(s.totalFloat).toFixed(2)}</b>\n` +
         layerDetails
       );
     }
 
     const hasOpenTrades = openTrades.length > 0;
-    const floatSign = totalFloat >= 0 ? '+' : '-';
-    const floatAbs = Math.abs(totalFloat).toFixed(2);
-    const pnlBadge = totalFloat >= 0 ? `🟢 <b>+$${floatAbs}</b>` : `🔴 <b>-$${floatAbs}</b>`;
+    const floatByCurrency = new Map<string, number>();
+    for (const s of stackMap.values()) {
+      const existing = floatByCurrency.get(s.currency) || 0;
+      floatByCurrency.set(s.currency, Number((existing + s.totalFloat).toFixed(2)));
+    }
+
+    let pnlBadge = '';
+    if (!hasOpenTrades || floatByCurrency.size === 0) {
+      pnlBadge = '🟢 <b>$0.00</b>';
+    } else {
+      const badges: string[] = [];
+      for (const [curr, amt] of floatByCurrency.entries()) {
+        const sym = curr === 'INR' ? '₹' : (curr === 'EUR' ? '€' : (curr === 'GBP' ? '£' : '$'));
+        const sign = amt >= 0 ? '+' : '-';
+        const emoji = amt >= 0 ? '🟢' : '🔴';
+        const abs = Math.abs(amt).toFixed(2);
+        badges.push(`${emoji} <b>${sign}${sym}${abs}</b>`);
+      }
+      pnlBadge = badges.join(' ｜ ');
+    }
 
     let adaptive: IAdaptiveDayRiskState | null = null;
     let dayRegimeBadge = '';
@@ -8638,6 +8746,7 @@ export class TelegramAlertService {
       emoji: string;
       ltp: number;
       spread: string;
+      currencySymbol?: string;
       hasPosition: boolean;
       totalFloat: number;
       totalQty: number;
@@ -8651,6 +8760,7 @@ export class TelegramAlertService {
         emoji: '🟡',
         ltp: goldLtp,
         spread: goldSpread,
+        currencySymbol: '$',
         hasPosition: stackMap.has('XAUUSD'),
         totalFloat: stackMap.get('XAUUSD')?.totalFloat ?? 0,
         totalQty: stackMap.get('XAUUSD')?.totalQty ?? 0,
@@ -8662,13 +8772,14 @@ export class TelegramAlertService {
         emoji: '🔷',
         ltp: ethLtp,
         spread: ethSpread,
+        currencySymbol: '$',
         hasPosition: stackMap.has('ETHUSD'),
         totalFloat: stackMap.get('ETHUSD')?.totalFloat ?? 0,
         totalQty: stackMap.get('ETHUSD')?.totalQty ?? 0,
       },
     ];
 
-    // Include any other active symbols with open positions (e.g. US30, NAS100)
+    // Include any other active symbols with open positions (e.g. US30, NAS100, CRUDEOILMINI)
     for (const [symKey, s] of stackMap.entries()) {
       if (!assetList.some((a) => a.cleanSymbol === symKey)) {
         assetList.push({
@@ -8677,7 +8788,8 @@ export class TelegramAlertService {
           shortLabel: s.cleanSymbol,
           emoji: '📈',
           ltp: s.currentLtp,
-          spread: '$1.00',
+          spread: s.currencySymbol === '₹' ? '₹1.00' : '$1.00',
+          currencySymbol: s.currencySymbol || '$',
           hasPosition: true,
           totalFloat: s.totalFloat,
           totalQty: s.totalQty,
@@ -8701,7 +8813,7 @@ export class TelegramAlertService {
 
     // Top 2 assets for Line 1 pinned header preview
     const top2Assets = assetList.slice(0, 2);
-    const assetHeaderTags = top2Assets.map((a) => `${a.emoji} <b>${a.shortLabel}: $${a.ltp.toFixed(2)}</b>`).join(' ｜ ');
+    const assetHeaderTags = top2Assets.map((a) => `${a.emoji} <b>${a.shortLabel}: ${a.currencySymbol || '$'}${a.ltp.toFixed(2)}</b>`).join(' ｜ ');
 
     let activeAssetBadge = '';
     if (hasOpenTrades) {
@@ -8744,14 +8856,21 @@ export class TelegramAlertService {
 
     const telemetryLines = assetList
       .slice(0, 4)
-      .map((a) => `${a.emoji} ${a.symbol.padEnd(6, ' ')} : $${a.ltp.toFixed(2)}  (Spread ${a.spread})`)
+      .map((a) => `${a.emoji} ${a.symbol.padEnd(6, ' ')} : ${a.currencySymbol || '$'}${a.ltp.toFixed(2)}  (Spread ${a.spread})`)
       .join('\n');
+
+    const floatingSummaryLines = Array.from(floatByCurrency.entries()).map(([curr, amt]) => {
+      const sym = curr === 'INR' ? '₹' : (curr === 'EUR' ? '€' : (curr === 'GBP' ? '£' : '$'));
+      const sign = amt >= 0 ? '+' : '-';
+      const abs = Math.abs(amt).toFixed(2);
+      return `Floating (${curr}) : ${sign}${sym}${abs}`;
+    }).join('\n');
 
     const livePricingBlock =
       `📊 <b>LIVE MARKET TELEMETRY:</b>\n` +
       `<pre>\n` +
       telemetryLines + '\n' +
-      (hasOpenTrades ? `Floating  : ${floatSign}$${floatAbs}\n` : '') +
+      (hasOpenTrades ? floatingSummaryLines + '\n' : '') +
       `</pre>\n`;
 
     const text =
@@ -8932,41 +9051,60 @@ export class TelegramAlertService {
           const t = openTrades[0];
           const isGold = (t.symbol || '').includes('XAU') || t.symbol === 'GOLD';
           const isEth = (t.symbol || '').includes('ETH');
+          const isMt5 = Mt5CommandService.isMt5Trade(t, t.accountId);
           const symLabel = isGold ? 'Gold' : (isEth ? 'ETH' : (t.symbol || 'Pos'));
           const cleanSym = isGold ? 'XAUUSD' : (isEth ? 'ETHUSD' : (t.symbol || 'XAUUSD'));
           const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
           const qtyStr = qty.toFixed(2);
           const ticket = Mt5CommandService.extractTicket(t);
+          const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
+          const tradeLtp = Number(liveWatcherMap.get(t._id.toString())?.currentLtp || stackMap.get(cleanSym)?.currentLtp || entry);
 
-          const closeCb = ticket ? `pos_close:${ticket}` : (isGold ? 'cmd_close_gold' : 'cmd_close_eth');
-          const beCb = ticket ? `pos_be:${ticket}` : (isGold ? 'cmd_be_gold' : 'cmd_be_eth');
-          const halfCb = ticket ? `pos_half:${ticket}` : (isGold ? 'cmd_half_gold' : 'cmd_half_eth');
-          const trailCb = ticket ? `pos_trail:${ticket}` : (isGold ? 'cmd_trail_gold' : 'cmd_trail_eth');
+          if (isMt5 || ticket || isGold || isEth) {
+            const closeCb = ticket ? `pos_close:${ticket}` : (isGold ? 'cmd_close_gold' : 'cmd_close_eth');
+            const beCb = ticket ? `pos_be:${ticket}` : (isGold ? 'cmd_be_gold' : 'cmd_be_eth');
+            const halfCb = ticket ? `pos_half:${ticket}` : (isGold ? 'cmd_half_gold' : 'cmd_half_eth');
+            const trailCb = ticket ? `pos_trail:${ticket}` : (isGold ? 'cmd_trail_gold' : 'cmd_trail_eth');
 
-          // Row 1: Capital Defense & Close
-          buttons.push([
-            { text: `🚨 Close ${symLabel} (${qtyStr}L)`, callback_data: closeCb },
-            { text: `🛡️ Lock BE (${symLabel})`, callback_data: beCb },
-          ]);
+            // Row 1: Capital Defense & Close
+            buttons.push([
+              { text: `🚨 Close ${symLabel} (${qtyStr}L)`, callback_data: closeCb },
+              { text: `🛡️ Lock BE (${symLabel})`, callback_data: beCb },
+            ]);
 
-          const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
-          // Row 2: Tactical Harvest & Runner Trail
-          buttons.push([
-            { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
-            { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
-          ]);
+            const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
+            // Row 2: Tactical Harvest & Runner Trail
+            buttons.push([
+              { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
+              { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
+            ]);
 
-          // Row 3: Tactical Submenus (Clean 2-button grid)
-          buttons.push([
-            { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${cleanSym}` },
-            { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${cleanSym}` },
-          ]);
+            // Row 3: Tactical Submenus (Clean 2-button grid)
+            buttons.push([
+              { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${cleanSym}` },
+              { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${cleanSym}` },
+            ]);
 
-          // Row 4: Protection & Stack Inspection
-          buttons.push([
-            { text: `🛡️ Defense...`, callback_data: `deck:defense:${cleanSym}` },
-            { text: `📋 Layers (1)...`, callback_data: `deck:layers:${cleanSym}` },
-          ]);
+            // Row 4: Protection & Stack Inspection
+            buttons.push([
+              { text: `🛡️ Defense...`, callback_data: `deck:defense:${cleanSym}` },
+              { text: `📋 Layers (1)...`, callback_data: `deck:layers:${cleanSym}` },
+            ]);
+          } else {
+            // Indian broker (FYERS / MCX / NSE) position controls
+            buttons.push([
+              { text: `🚨 Close ${symLabel} (${qtyStr})`, callback_data: `x:${t._id}:E:1:${tradeLtp}` },
+              { text: `🛡️ Lock BE (${symLabel})`, callback_data: `x:${t._id}:BE:1:${tradeLtp}` },
+            ]);
+            buttons.push([
+              { text: `🎯 Book 50%`, callback_data: `x:${t._id}:B50:1:${tradeLtp}` },
+              { text: `📈 Trail SL`, callback_data: `x:${t._id}:T10:1:${tradeLtp}` },
+            ]);
+            buttons.push([
+              { text: `📋 Full Telemetry`, callback_data: `drill_telem_id:${t._id}` },
+              { text: `🎯 Ladder Blueprint`, callback_data: `drill_ladder_id:${t._id}` },
+            ]);
+          }
 
           // Row 5: Real-Time Stream & PnL Refresh
           buttons.push([
@@ -8992,31 +9130,54 @@ export class TelegramAlertService {
             blendedEntry: 0,
             currentLtp: 0,
             totalFloat: 0,
+            currency: 'USD',
+            currencySymbol: '$',
+            isMt5: true,
             layers: [],
           };
           const symLabel = s.cleanSymbol.includes('XAU') ? 'Gold' : (s.cleanSymbol.includes('ETH') ? 'ETH' : s.cleanSymbol);
           const halfQty = Math.max(0.01, Number((s.totalQty / 2).toFixed(2)));
+          const isMt5Stack = Boolean(s.isMt5 || s.layers.some((l: any) => l.ticket));
 
-          // Row 1: Capital Defense & Panic Flatten (Thumb-Reach)
-          buttons.push([
-            { text: '🛡️ True BE (+Spread)', callback_data: `defense_truebe:${s.cleanSymbol}` },
-            { text: `🚨 Panic Flatten (${s.totalQty.toFixed(2)}L)`, callback_data: `act_close_stack:${s.cleanSymbol}` },
-          ]);
-          // Row 2: Tactical Harvest & Free-Ride
-          buttons.push([
-            { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${s.cleanSymbol}:50` },
-            { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${s.cleanSymbol}` },
-          ]);
-          // Row 3: Tactical Submenus (Clean 2-button grid)
-          buttons.push([
-            { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${s.cleanSymbol}` },
-            { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${s.cleanSymbol}` },
-          ]);
-          // Row 4: Protection & Stack Inspection
-          buttons.push([
-            { text: `🛡️ Defense...`, callback_data: `deck:defense:${s.cleanSymbol}` },
-            { text: `📋 Layers (${s.layers.length})...`, callback_data: `deck:layers:${s.cleanSymbol}` },
-          ]);
+          if (isMt5Stack) {
+            // Row 1: Capital Defense & Panic Flatten (Thumb-Reach)
+            buttons.push([
+              { text: '🛡️ True BE (+Spread)', callback_data: `defense_truebe:${s.cleanSymbol}` },
+              { text: `🚨 Panic Flatten (${s.totalQty.toFixed(2)}L)`, callback_data: `act_close_stack:${s.cleanSymbol}` },
+            ]);
+            // Row 2: Tactical Harvest & Free-Ride
+            buttons.push([
+              { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${s.cleanSymbol}:50` },
+              { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${s.cleanSymbol}` },
+            ]);
+            // Row 3: Tactical Submenus (Clean 2-button grid)
+            buttons.push([
+              { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${s.cleanSymbol}` },
+              { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${s.cleanSymbol}` },
+            ]);
+            // Row 4: Protection & Stack Inspection
+            buttons.push([
+              { text: `🛡️ Defense...`, callback_data: `deck:defense:${s.cleanSymbol}` },
+              { text: `📋 Layers (${s.layers.length})...`, callback_data: `deck:layers:${s.cleanSymbol}` },
+            ]);
+          } else {
+            const firstTrade = s.layers[0]?.trade;
+            const tId = firstTrade?._id || '';
+            const tLtp = s.currentLtp;
+            buttons.push([
+              { text: `🛡️ Lock BE (${symLabel})`, callback_data: `x:${tId}:BE:1:${tLtp}` },
+              { text: `🚨 Exit Market (${s.totalQty.toFixed(2)})`, callback_data: `x:${tId}:E:1:${tLtp}` },
+            ]);
+            buttons.push([
+              { text: `🎯 Book 50%`, callback_data: `x:${tId}:B50:1:${tLtp}` },
+              { text: `📈 Trail SL`, callback_data: `x:${tId}:T10:1:${tLtp}` },
+            ]);
+            buttons.push([
+              { text: `📋 Open Positions (${openTrades.length})`, callback_data: 'cmd_trades' },
+              { text: `🎯 Portfolio PnL`, callback_data: 'cmd_pnl' },
+            ]);
+          }
+
           // Row 5: Real-Time Stream & PnL Refresh
           buttons.push([
             { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
@@ -9269,22 +9430,64 @@ export class TelegramAlertService {
       const isBtc = (t.symbol || '').includes('BTC');
       const isUs30 = (t.symbol || '').includes('US30') || (t.symbol || '').includes('DOW');
       const isNas = (t.symbol || '').includes('NAS') || (t.symbol || '').includes('USTEC');
+      const isMt5 = Mt5CommandService.isMt5Trade(t, t.accountId);
+      const ticket = Mt5CommandService.extractTicket(t);
 
-      let cleanSymbol = 'XAUUSD';
-      let mult = 100;
-      if (isGold) { cleanSymbol = 'XAUUSD'; mult = 100; }
-      else if (isEth) { cleanSymbol = 'ETHUSD'; mult = 1; }
-      else if (isBtc) { cleanSymbol = 'BTCUSD'; mult = 1; }
-      else if (isUs30) { cleanSymbol = 'US30'; mult = 1; }
-      else if (isNas) { cleanSymbol = 'NAS100'; mult = 1; }
+      let cleanSymbol = (t.symbol || '').toUpperCase();
+      let mult = Number((t as any).contractMultiplier || t.simpleExecution?.contractMultiplier || 1);
+      let defaultRiskPoints = 10.0;
 
-      const quote = Mt5CommandService.getLiveQuote(cleanSymbol);
+      if (isGold) {
+        cleanSymbol = 'XAUUSD';
+        mult = 100;
+        defaultRiskPoints = 4.0;
+      } else if (isEth) {
+        cleanSymbol = 'ETHUSD';
+        mult = 1;
+        defaultRiskPoints = 25.0;
+      } else if (isBtc) {
+        cleanSymbol = 'BTCUSD';
+        mult = 1;
+        defaultRiskPoints = 300.0;
+      } else if (isUs30) {
+        cleanSymbol = 'US30';
+        mult = 1;
+        defaultRiskPoints = 30.0;
+      } else if (isNas) {
+        cleanSymbol = 'NAS100';
+        mult = 1;
+        defaultRiskPoints = 25.0;
+      }
+
+      // Check live quote
+      let ltp = 0;
+      const posQuote = ticket ? Mt5CommandService.getPositionQuote(ticket) : null;
+      if (posQuote && posQuote.curPrice > 0) {
+        ltp = posQuote.curPrice;
+      } else {
+        const symQuote = Mt5CommandService.getLiveQuote(cleanSymbol);
+        if (symQuote && symQuote.ltp > 0) {
+          ltp = symQuote.ltp;
+        } else if (!isMt5) {
+          try {
+            const liveSummary = await LiveWatcherService.getLiveWatcherSummary(user._id);
+            const pos = liveSummary.positions.find((p) => p.tradeId === t._id.toString());
+            if (pos && pos.currentLtp > 0) {
+              ltp = pos.currentLtp;
+            }
+          } catch {}
+        }
+      }
+
       const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? (t as any).entryPrice ?? 0);
-      const ltp = quote?.ltp || entry;
       if (entry <= 0 || ltp <= 0) continue;
 
+      // Sanity guard against cross-symbol quote contamination (e.g. comparing Gold quote against Crude Oil price)
+      if (Math.abs(ltp - entry) / entry > 0.4) {
+        continue;
+      }
+
       const initialSl = Number(t.risk?.initialStopLoss ?? t.risk?.currentStopLoss ?? 0);
-      const defaultRiskPoints = isGold ? 4.0 : (isEth ? 25.0 : 10.0);
       const riskDist = (initialSl > 0 && entry > 0) ? Math.abs(entry - initialSl) : defaultRiskPoints;
       if (riskDist <= 0) continue;
 
@@ -9294,8 +9497,10 @@ export class TelegramAlertService {
       if (currentR < 1.0) continue;
 
       const qty = Number(t.calculated?.openQuantity && t.calculated.openQuantity > 0 ? t.calculated.openQuantity : (t.simpleExecution?.quantity || 1));
-      const dollarPnl = Number((pts * qty * mult).toFixed(2));
-      const dollarSign = dollarPnl >= 0 ? '+' : '';
+      const pnlAmt = Number((pts * qty * mult).toFixed(2));
+      const pnlSign = pnlAmt >= 0 ? '+' : '-';
+      const sym = TelegramAlertService.getTradeCurrencySymbol(t);
+      const pnlStr = `${pnlSign}${sym}${Math.abs(pnlAmt).toFixed(2)}`;
 
       for (const tier of R_TIERS) {
         if (currentR < tier) break;
@@ -9310,61 +9515,73 @@ export class TelegramAlertService {
         const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
         const buttons: ITelegramInlineButton[][] = [];
 
-        if (tier === 1.0) {
-          buttons.push([
-            { text: '🛡️ Lock True BE (+Spread)', callback_data: `defense_truebe:${cleanSymbol}` },
-            { text: `➕ Add Half-Size (${halfQty}L)`, callback_data: `pyramid_add:${cleanSymbol}:${halfQty}` },
-          ]);
-          buttons.push([
-            { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${cleanSymbol}:50` },
-            { text: '🏃 Let It Ride (No TP)', callback_data: `defense_runner:${cleanSymbol}` },
-          ]);
-        } else if (tier === 1.5) {
-          buttons.push([
-            { text: '🔒 Lock +0.5R Profit', callback_data: `defense_trail_r:${cleanSymbol}:0.5` },
-            { text: `➕ Add Preset Pyramid`, callback_data: `pyramid_zerorisk:${cleanSymbol}` },
-          ]);
-          buttons.push([
-            { text: `🎯 Book 33%`, callback_data: `harvest_pct:${cleanSymbol}:33` },
-            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
-          ]);
-        } else if (tier === 2.0) {
-          buttons.push([
-            { text: `🎯 Book 50% Profit`, callback_data: `harvest_pct:${cleanSymbol}:50` },
-            { text: '📈 Trail SL to +1.0R', callback_data: `defense_trail_r:${cleanSymbol}:1.0` },
-          ]);
-          buttons.push([
-            { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${cleanSymbol}` },
-            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
-          ]);
-        } else if (tier === 3.0) {
-          buttons.push([
-            { text: `🎯 Book 75% Profit`, callback_data: `harvest_pct:${cleanSymbol}:75` },
-            { text: '📈 Trail SL to +2.0R', callback_data: `defense_trail_r:${cleanSymbol}:2.0` },
-          ]);
-          buttons.push([
-            { text: '🏃 Moonshot (0.01L)', callback_data: `harvest_moonshot:${cleanSymbol}` },
-            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
-          ]);
+        if (ticket || isMt5) {
+          if (tier === 1.0) {
+            buttons.push([
+              { text: '🛡️ Lock True BE (+Spread)', callback_data: `defense_truebe:${cleanSymbol}` },
+              { text: `➕ Add Half-Size (${halfQty}L)`, callback_data: `pyramid_add:${cleanSymbol}:${halfQty}` },
+            ]);
+            buttons.push([
+              { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${cleanSymbol}:50` },
+              { text: '🏃 Let It Ride (No TP)', callback_data: `defense_runner:${cleanSymbol}` },
+            ]);
+          } else if (tier === 1.5) {
+            buttons.push([
+              { text: '🔒 Lock +0.5R Profit', callback_data: `defense_trail_r:${cleanSymbol}:0.5` },
+              { text: `➕ Add Preset Pyramid`, callback_data: `pyramid_zerorisk:${cleanSymbol}` },
+            ]);
+            buttons.push([
+              { text: `🎯 Book 33%`, callback_data: `harvest_pct:${cleanSymbol}:33` },
+              { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
+            ]);
+          } else if (tier === 2.0) {
+            buttons.push([
+              { text: `🎯 Book 50% Profit`, callback_data: `harvest_pct:${cleanSymbol}:50` },
+              { text: '📈 Trail SL to +1.0R', callback_data: `defense_trail_r:${cleanSymbol}:1.0` },
+            ]);
+            buttons.push([
+              { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${cleanSymbol}` },
+              { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
+            ]);
+          } else if (tier === 3.0) {
+            buttons.push([
+              { text: `🎯 Book 75% Profit`, callback_data: `harvest_pct:${cleanSymbol}:75` },
+              { text: '📈 Trail SL to +2.0R', callback_data: `defense_trail_r:${cleanSymbol}:2.0` },
+            ]);
+            buttons.push([
+              { text: '🏃 Moonshot (0.01L)', callback_data: `harvest_moonshot:${cleanSymbol}` },
+              { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
+            ]);
+          } else {
+            // 5.0R+
+            buttons.push([
+              { text: '🏃 Moonshot (0.01L Runner)', callback_data: `harvest_moonshot:${cleanSymbol}` },
+              { text: `🛑 Flatten All (${qty}L)`, callback_data: `act_close_stack:${cleanSymbol}` },
+            ]);
+          }
         } else {
-          // 5.0R+
+          // Indian / Non-MT5 tactical buttons
           buttons.push([
-            { text: '🏃 Moonshot (0.01L Runner)', callback_data: `harvest_moonshot:${cleanSymbol}` },
-            { text: `🛑 Flatten All (${qty}L)`, callback_data: `act_close_stack:${cleanSymbol}` },
+            { text: `🛡️ Lock BE (${cleanSymbol})`, callback_data: `x:${t._id}:BE:1:${ltp}` },
+            { text: `🎯 Book 50%`, callback_data: `x:${t._id}:B50:1:${ltp}` },
+          ]);
+          buttons.push([
+            { text: `🚨 Close Trade`, callback_data: `x:${t._id}:E:1:${ltp}` },
+            { text: '🔙 Cockpit', callback_data: 'cmd_cockpit' },
           ]);
         }
 
         const audioBuffer = AudioChimeService.getMilestoneChime(tier);
         const title = `Milestone +${tier.toFixed(1)}R Hit (${cleanSymbol})`;
         const caption =
-          `🎯 <b>R-MULTIPLE MILESTONE HIT: +${tier.toFixed(1)}R (${dollarSign}$${dollarPnl.toFixed(2)})</b>\n` +
+          `🎯 <b>R-MULTIPLE MILESTONE HIT: +${tier.toFixed(1)}R (${pnlStr})</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `<pre>\n` +
           `Symbol      : ${cleanSymbol} (${t.direction})\n` +
           `Volume      : ${qty.toFixed(2)} Lots\n` +
-          `Entry       : $${entry.toFixed(2)}\n` +
-          `LTP         : $${ltp.toFixed(2)} (${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts)\n` +
-          `Initial Risk: $${riskDist.toFixed(2)} (${dollarSign}$${(riskDist * qty * mult).toFixed(2)})\n` +
+          `Entry       : ${sym}${entry.toFixed(2)}\n` +
+          `LTP         : ${sym}${ltp.toFixed(2)} (${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts)\n` +
+          `Initial Risk: ${sym}${riskDist.toFixed(2)} (${sym}${(riskDist * qty * mult).toFixed(2)})\n` +
           `Milestone   : +${tier.toFixed(1)}R Multiplier Achieved\n` +
           `Status      : Milestone Audio Dispatched\n` +
           `</pre>\n` +

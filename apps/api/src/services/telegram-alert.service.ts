@@ -8118,17 +8118,6 @@ export class TelegramAlertService {
         totalFloat: stackMap.get('ETHUSD')?.totalFloat ?? 0,
         totalQty: stackMap.get('ETHUSD')?.totalQty ?? 0,
       },
-      {
-        symbol: 'BTCUSD',
-        cleanSymbol: 'BTCUSD',
-        shortLabel: 'BTC',
-        emoji: '₿',
-        ltp: btcLtp,
-        spread: btcSpread,
-        hasPosition: stackMap.has('BTCUSD'),
-        totalFloat: stackMap.get('BTCUSD')?.totalFloat ?? 0,
-        totalQty: stackMap.get('BTCUSD')?.totalQty ?? 0,
-      },
     ];
 
     // Include any other active symbols with open positions (e.g. US30, NAS100)
@@ -8518,7 +8507,7 @@ export class TelegramAlertService {
 
       // 4. Global Market Coverage & Real-Time Stream (ms)
       buttons.push([
-        { text: '🌐 Other Assets (BTC/US30)', callback_data: 'deck:other_assets' },
+        { text: '🌐 Other Assets...', callback_data: 'deck:other_assets' },
         { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
       ]);
 

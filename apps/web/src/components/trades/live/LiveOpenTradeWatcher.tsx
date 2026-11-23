@@ -2489,16 +2489,13 @@ export function LiveOpenTradeWatcher({
                   {[
                     { symbol: 'XAUUSD', name: 'Gold (XAUUSD)', icon: '🟡' },
                     { symbol: 'ETHUSD', name: 'Ethereum (ETHUSD)', icon: '🔷' },
-                    { symbol: 'BTCUSD', name: 'Bitcoin (BTCUSD)', icon: '₿' },
-                    { symbol: 'US30', name: 'Dow Jones (US30)', icon: '🇺🇸' },
-                    { symbol: 'NAS100', name: 'Nasdaq 100 (NAS100)', icon: '💻' },
                   ].map((item) => {
                     const q = liveQuotesData?.[item.symbol];
                     const ltp = q?.ltp || 0;
                     const change = q?.changePct || 0;
                     const isPositive = change >= 0;
                     return (
-                      <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={item.symbol}>
+                      <Grid size={{ xs: 12, sm: 6 }} key={item.symbol}>
                         <Card
                           variant="outlined"
                           sx={{

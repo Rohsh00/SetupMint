@@ -32,6 +32,7 @@ import { templateRoutes } from './routes/template.routes.js';
 import { marketDataRoutes } from './routes/market-data.routes.js';
 import { holidayRoutes } from './routes/holiday.routes.js';
 import { carplayRoutes } from './routes/carplay.routes.js';
+import { priceAlertRoutes } from './routes/price-alert.routes.js';
 import { HolidayService } from './services/holiday.service.js';
 import { InstrumentClassifier } from './services/instrument-classifier.service.js';
 import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
@@ -234,6 +235,7 @@ export async function buildApp() {
   app.register(templateRoutes, { prefix: '/api/v1/templates' });
   app.register(holidayRoutes, { prefix: '/api/v1/holidays' });
   app.register(carplayRoutes, { prefix: '/api/v1/carplay' });
+  app.register(priceAlertRoutes, { prefix: '/api/v1/price-alerts' });
 
   // Centralized Error Handler
   app.setErrorHandler((error: any, request, reply) => {

@@ -9,6 +9,7 @@ import {
   TradingAccount,
   Mt5Command,
   Session,
+  PriceAlert,
 } from '../src/db/models/index.js';
 import { hashSessionToken } from '../src/middleware/auth.js';
 import { TelegramAlertService, DEFAULT_FOREX_PRESETS } from '../src/services/telegram-alert.service.js';
@@ -2941,6 +2942,106 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
       await Mt5Command.deleteMany({ userId: restrictedUser._id });
       await TradingAccount.deleteMany({ _id: testAccount._id });
       await User.deleteMany({ _id: restrictedUser._id });
+    }
+  });
+
+  // 62. Differentiated Audio Chimes & Price Alert System
+  it('Scenario 62: AudioChimeService generates distinct chimes, /alert arms radar, /alerts lists, and evaluateArmedPriceAlerts triggers', async () => {
+    // 1. Verify all 6 unique audio profiles generate valid WAV buffers with correct magic headers
+    const priceAlertWav = AudioChimeService.getPriceAlertChime();
+    const orderExecWav = AudioChimeService.getOrderExecutedChime();
+    const tradeClosedWav = AudioChimeService.getTradeClosedChime();
+    const stopThreatWav = AudioChimeService.getStopThreatChime();
+    const givebackWav = AudioChimeService.getGivebackChime();
+    const newsWav = AudioChimeService.getNewsAlertChime();
+
+    for (const buf of [priceAlertWav, orderExecWav, tradeClosedWav, stopThreatWav, givebackWav, newsWav]) {
+      expect(Buffer.isBuffer(buf)).toBe(true);
+      expect(buf.length).toBeGreaterThan(44);
+      expect(buf.toString('ascii', 0, 4)).toBe('RIFF');
+      expect(buf.toString('ascii', 8, 12)).toBe('WAVE');
+    }
+
+    // 2. Mock Mt5 live quote for XAUUSD at 2680.00
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'XAUUSD',
+      bid: 2679.80,
+      ask: 2680.20,
+      ltp: 2680.00,
+    });
+
+    const sentAudios: any[] = [];
+    const origSendAudio = TelegramAlertService.sendAudio;
+    (TelegramAlertService as any).sendAudio = async (t: any, c: any, b: any, title: any, cap: any, btns: any) => {
+      sentAudios.push({ title, cap, btns, bufLen: b?.length });
+      return { message_id: Date.now() };
+    };
+
+    try {
+      // 3. User sends /alert XAU 2685.50
+      await TelegramAlertService.handleSetPriceAlertCommand(testUser, botToken, chatId, ['XAU', '2685.50']);
+
+      const armed = await PriceAlert.find({ userId: testUser._id, status: 'ARMED' });
+      expect(armed.length).toBe(1);
+      expect(armed[0].symbol).toBe('XAUUSD');
+      expect(armed[0].targetPrice).toBe(2685.50);
+      expect(armed[0].condition).toBe('CROSSES_ABOVE');
+      expect(sentAudios.length).toBe(1);
+      expect(sentAudios[0].title).toContain('Alert Armed: XAUUSD');
+
+      // 4. Test /alerts listing
+      sentMessages.length = 0;
+      await (TelegramAlertService as any).handleAlertsListCommand(testUser, botToken, chatId);
+      expect(sentMessages.length).toBe(1);
+      expect(sentMessages[0].text).toContain('ARMED PRICE ALERTS');
+      expect(sentMessages[0].text).toContain('2685.50');
+
+      // 5. Price does NOT trigger yet at 2682.00
+      Mt5CommandService.recordQuote(testAccount._id, {
+        symbol: 'XAUUSD',
+        bid: 2681.80,
+        ask: 2682.20,
+        ltp: 2682.00,
+      });
+      let triggered = await TelegramAlertService.evaluateArmedPriceAlerts();
+      expect(triggered).toBe(0);
+
+      // 6. Price reaches 2685.60 -> evaluateArmedPriceAlerts triggers alert!
+      Mt5CommandService.recordQuote(testAccount._id, {
+        symbol: 'XAUUSD',
+        bid: 2685.40,
+        ask: 2685.80,
+        ltp: 2685.60,
+      });
+      triggered = await TelegramAlertService.evaluateArmedPriceAlerts();
+      expect(triggered).toBe(1);
+
+      const triggeredAlert = await PriceAlert.findById(armed[0]._id);
+      expect(triggeredAlert?.status).toBe('TRIGGERED');
+      expect(triggeredAlert?.triggeredPrice).toBe(2685.60);
+      expect(sentAudios.length).toBe(2);
+      expect(sentAudios[1].title).toContain('Price Alert: XAUUSD');
+
+      // 7. Test cancellation callback
+      const alertToCancel = await PriceAlert.create({
+        userId: testUser._id,
+        symbol: 'ETHUSD',
+        targetPrice: 3450,
+        initialPrice: 3400,
+        condition: 'CROSSES_ABOVE',
+        status: 'ARMED',
+      });
+      await (TelegramAlertService as any).handleCallbackQuery({
+        id: 'cq_cancel_alert',
+        from: { id: chatId },
+        data: `cancel_alert:${alertToCancel._id}`,
+        message: { message_id: 2222, chat: { id: chatId } },
+      });
+      const cancelled = await PriceAlert.findById(alertToCancel._id);
+      expect(cancelled?.status).toBe('CANCELLED');
+    } finally {
+      (TelegramAlertService as any).sendAudio = origSendAudio;
+      await PriceAlert.deleteMany({ userId: testUser._id });
     }
   });
 });

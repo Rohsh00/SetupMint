@@ -38,6 +38,7 @@ import {
   AlertEvent,
   TelegramUpdateAudit,
   TelegramCallbackLock,
+  PriceAlert,
 } from '../db/models/index.js';
 import { getStorage } from '../storage/index.js';
 import { config } from '../config.js';
@@ -1675,6 +1676,37 @@ export class TelegramAlertService {
       await this.answerCallbackQuery(botToken, cq.id, '🎙️ Send a voice note now to attach your debrief to this trade!', true);
       return;
     }
+    if (data.startsWith('cancel_alert:')) {
+      const alertId = data.split(':')[1];
+      await PriceAlert.updateOne({ _id: alertId, userId: user._id }, { $set: { status: 'CANCELLED' } });
+      await this.answerCallbackQuery(botToken, cq.id, '❌ Price Alert Cancelled');
+      if (messageId) {
+        await this.editMessageText(botToken, chatId, messageId, '🗑️ <i>Price alert cancelled.</i>', []);
+      }
+      return;
+    }
+    if (data.startsWith('rearm_alert:')) {
+      const alertId = data.split(':')[1];
+      const old = await PriceAlert.findOne({ _id: alertId, userId: user._id });
+      if (old) {
+        const quote = Mt5CommandService.getLiveQuote(old.symbol);
+        const ltp = quote?.ltp || old.targetPrice;
+        const condition = ltp < old.targetPrice ? 'CROSSES_ABOVE' : 'CROSSES_BELOW';
+        await PriceAlert.create({
+          userId: user._id,
+          symbol: old.symbol,
+          targetPrice: old.targetPrice,
+          initialPrice: ltp,
+          condition,
+          status: 'ARMED',
+        });
+        await this.answerCallbackQuery(botToken, cq.id, `🔔 Alert Re-armed for ${old.symbol} @ $${old.targetPrice}`);
+        if (messageId) {
+          await this.editMessageText(botToken, chatId, messageId, `🔔 <i>Alert Re-armed for ${old.symbol} @ $${old.targetPrice.toFixed(2)} (Current: $${ltp.toFixed(2)})</i>`, []);
+        }
+      }
+      return;
+    }
     if (data === 'cmd_close_gold') {
       await this.answerCallbackQuery(botToken, cq.id, 'Closing Gold positions on MT5...');
       await this.handleCloseSymbolPositions(user, botToken, chatId, 'XAUUSD');
@@ -3039,6 +3071,8 @@ export class TelegramAlertService {
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `• <b>/gold [buy|sell] [vol]</b> — 1-tap Gold trade with preset SL & TP (e.g. <code>/gold buy 0.10</code>)\n` +
           `• <b>/eth [buy|sell] [vol]</b> — 1-tap ETH trade with preset SL & TP (e.g. <code>/eth buy 1.0</code>)\n` +
+          `• <b>/alert &lt;price&gt;</b> — Set price level alert with Radar Crystal Ping (e.g. <code>/alert 2685.50</code> or <code>/alert eth 3420</code>)\n` +
+          `• <b>/alerts</b> — List active price alerts & risk states with 1-tap Cancel\n` +
           `• <b>/trade</b> or <b>/cockpit</b> — Full interactive 1-tap execution grid\n` +
           `• <b>/pin</b> — Pin live price & positions header with cut-to-cut auto-refresh\n` +
           `• <b>/unpin</b> — Unpin live cockpit header and stop auto-refresh ticker\n` +
@@ -3221,7 +3255,14 @@ export class TelegramAlertService {
         await this.handleNewsRemindCommand(user, botToken, chatId, args);
         break;
 
+      case '/alert':
+      case '/pricealert':
+      case 'alert':
+        await this.handleSetPriceAlertCommand(user, botToken, chatId, args);
+        break;
+
       case '/alerts':
+      case '/pricealerts':
         await this.handleAlertsListCommand(user, botToken, chatId, args[0]);
         break;
 
@@ -3245,14 +3286,9 @@ export class TelegramAlertService {
 
       case '/lock':
       case 'lock': {
-        const u = await User.findById(user._id);
-        if (u) {
-          u.liveWatcherSettings = {
-            ...(u.liveWatcherSettings || {}),
-            restrictTelegramTradeExecution: true,
-          } as any;
-          await u.save();
-        }
+        await User.findByIdAndUpdate(user._id, {
+          $set: { 'liveWatcherSettings.restrictTelegramTradeExecution': true },
+        });
         await this.sendMessage(
           botToken,
           chatId,
@@ -3267,14 +3303,9 @@ export class TelegramAlertService {
 
       case '/unlock':
       case 'unlock': {
-        const u = await User.findById(user._id);
-        if (u) {
-          u.liveWatcherSettings = {
-            ...(u.liveWatcherSettings || {}),
-            restrictTelegramTradeExecution: false,
-          } as any;
-          await u.save();
-        }
+        await User.findByIdAndUpdate(user._id, {
+          $set: { 'liveWatcherSettings.restrictTelegramTradeExecution': false },
+        });
         await this.sendMessage(
           botToken,
           chatId,
@@ -3962,7 +3993,231 @@ export class TelegramAlertService {
   }
 
   /**
-   * Lists active and snoozed alert states for /alerts command.
+   * Sets a new price alert on Gold (XAUUSD) or Ethereum (ETHUSD).
+   * Syntax: /alert <price> or /alert <symbol> <price>
+   */
+  static async handleSetPriceAlertCommand(
+    user: any,
+    botToken: string,
+    chatId: string | number,
+    args: string[]
+  ): Promise<void> {
+    if (!args || args.length === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🔔 <b>Price Alert Radar</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Set an instant price level trigger with a unique Radar Crystal Ping audio chime.\n\n` +
+        `<b>Usage Examples:</b>\n` +
+        `• <code>/alert 2685.50</code> — Set alert on Gold at $2,685.50\n` +
+        `• <code>/alert eth 3420</code> — Set alert on ETH at $3,420.00\n` +
+        `• <code>/alert xau 2700</code> — Set alert on Gold at $2,700.00\n` +
+        `• <code>/alerts</code> — View and cancel active alerts\n\n` +
+        `<i>Monitored continuously every 3 seconds from live feeds.</i>`
+      );
+      return;
+    }
+
+    let symbol = 'XAUUSD';
+    let targetPriceStr = '';
+
+    const first = (args[0] || '').toUpperCase();
+    if (['XAU', 'GOLD', 'XAUUSD'].includes(first)) {
+      symbol = 'XAUUSD';
+      targetPriceStr = args[1] || '';
+    } else if (['ETH', 'ETHEREUM', 'ETHUSD'].includes(first)) {
+      symbol = 'ETHUSD';
+      targetPriceStr = args[1] || '';
+    } else if (['BTC', 'BITCOIN', 'BTCUSD'].includes(first)) {
+      symbol = 'BTCUSD';
+      targetPriceStr = args[1] || '';
+    } else {
+      targetPriceStr = args[0] || '';
+      const num = parseFloat(targetPriceStr);
+      if (!isNaN(num)) {
+        symbol = num >= 3000 ? 'ETHUSD' : 'XAUUSD';
+      }
+    }
+
+    const targetPrice = parseFloat(targetPriceStr);
+    if (isNaN(targetPrice) || targetPrice <= 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `⚠️ <b>Invalid Price Alert</b>\n\nPlease provide a valid price number, e.g. <code>/alert 2685.50</code> or <code>/alert eth 3420</code>.`
+      );
+      return;
+    }
+
+    // Fetch live quote for symbol
+    const mt5Quote = Mt5CommandService.getLiveQuote(symbol);
+    let currentLtp = mt5Quote?.ltp || 0;
+    if (currentLtp <= 0) {
+      try {
+        const qMap = await GlobalCfdCandleProvider.getLiveQuotes([symbol]);
+        currentLtp = qMap.get(symbol)?.ltp || 0;
+      } catch {}
+    }
+
+    let condition: 'CROSSES_ABOVE' | 'CROSSES_BELOW' | 'TOUCH_EXACT' = 'CROSSES_ABOVE';
+    let conditionDesc = '';
+    if (currentLtp > 0) {
+      if (targetPrice > currentLtp) {
+        condition = 'CROSSES_ABOVE';
+        conditionDesc = `Rises above $${targetPrice.toFixed(2)}`;
+      } else if (targetPrice < currentLtp) {
+        condition = 'CROSSES_BELOW';
+        conditionDesc = `Drops below $${targetPrice.toFixed(2)}`;
+      } else {
+        condition = 'TOUCH_EXACT';
+        conditionDesc = `Touches $${targetPrice.toFixed(2)}`;
+      }
+    } else {
+      condition = 'CROSSES_ABOVE';
+      conditionDesc = `Crosses $${targetPrice.toFixed(2)}`;
+    }
+
+    const alertDoc = await PriceAlert.create({
+      userId: user._id,
+      symbol,
+      targetPrice,
+      initialPrice: currentLtp,
+      condition,
+      status: 'ARMED',
+    });
+
+    const audioBuf = AudioChimeService.getPriceAlertChime();
+    const caption =
+      `🔔 <b>PRICE ALERT ARMED</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<pre>\n` +
+      `Symbol    : ${symbol}\n` +
+      `Target    : $${targetPrice.toFixed(2)}\n` +
+      `Current   : $${currentLtp > 0 ? currentLtp.toFixed(2) : 'Awaiting Quote'}\n` +
+      `Trigger   : ${conditionDesc}\n` +
+      `Status    : ARMED (Scanning every 3s)\n` +
+      `</pre>\n` +
+      `<i>Audio sample attached. Radar Crystal Ping will sound when breached.</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        { text: '❌ Cancel Alert', callback_data: `cancel_alert:${alertDoc._id}` },
+        { text: '📊 Cockpit', callback_data: 'cmd_cockpit' },
+      ],
+    ];
+
+    await this.sendAudio(
+      botToken,
+      chatId,
+      audioBuf,
+      `Alert Armed: ${symbol} @ $${targetPrice.toFixed(2)}`,
+      caption,
+      buttons
+    );
+  }
+
+  /**
+   * Evaluates all active ARMED price alerts across live MT5 and global CFD quotes.
+   * Dispatches audible Radar Crystal Ping chimes with rapid execution triggers upon breach.
+   */
+  static async evaluateArmedPriceAlerts(): Promise<number> {
+    const armedAlerts = await PriceAlert.find({ status: 'ARMED' }).populate('userId');
+    if (armedAlerts.length === 0) return 0;
+
+    const symbols = Array.from(new Set(armedAlerts.map((a) => a.symbol)));
+    const quoteMap = new Map<string, number>();
+
+    for (const sym of symbols) {
+      const mt5Q = Mt5CommandService.getLiveQuote(sym);
+      if (mt5Q && mt5Q.ltp > 0) {
+        quoteMap.set(sym, mt5Q.ltp);
+      }
+    }
+
+    const missing = symbols.filter((s) => !quoteMap.has(s));
+    if (missing.length > 0) {
+      try {
+        const qMap = await GlobalCfdCandleProvider.getLiveQuotes(missing);
+        for (const [s, q] of qMap.entries()) {
+          if (q && q.ltp > 0) quoteMap.set(s, q.ltp);
+        }
+      } catch {}
+    }
+
+    let triggeredCount = 0;
+    for (const alert of armedAlerts) {
+      const ltp = quoteMap.get(alert.symbol);
+      if (!ltp || ltp <= 0) continue;
+
+      let triggered = false;
+      if (alert.condition === 'CROSSES_ABOVE' && ltp >= alert.targetPrice) {
+        triggered = true;
+      } else if (alert.condition === 'CROSSES_BELOW' && ltp <= alert.targetPrice) {
+        triggered = true;
+      } else if (alert.condition === 'TOUCH_EXACT') {
+        const tolerance = alert.symbol === 'XAUUSD' ? 0.35 : 1.0;
+        if (Math.abs(ltp - alert.targetPrice) <= tolerance) {
+          triggered = true;
+        }
+      }
+
+      if (triggered) {
+        alert.status = alert.isRecurring ? 'ARMED' : 'TRIGGERED';
+        alert.triggeredAt = new Date();
+        alert.triggeredPrice = ltp;
+        await alert.save();
+        triggeredCount++;
+
+        const user = alert.userId as any;
+        if (user) {
+          const rawToken = user.liveWatcherSettings?.telegramBotToken;
+          const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+          const chatId = user.liveWatcherSettings?.telegramPinnedCockpitChatId || user.liveWatcherSettings?.telegramChatId;
+          if (botToken && chatId) {
+            const audioBuffer = AudioChimeService.getPriceAlertChime();
+            const cleanSym = alert.symbol;
+            const caption =
+              `🔔 <b>PRICE ALERT TRIGGERED: ${cleanSym}</b>\n` +
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+              `<pre>\n` +
+              `Target Level  : $${alert.targetPrice.toFixed(2)}\n` +
+              `Triggered LTP : $${ltp.toFixed(2)}\n` +
+              `Armed From    : $${alert.initialPrice.toFixed(2)}\n` +
+              `Condition     : ${alert.condition}\n` +
+              `Triggered At  : ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST\n` +
+              `</pre>\n` +
+              `<i>Radar Crystal Ping dispatched. Tap below for rapid 1-tap entry:</i>`;
+
+            const buttons: ITelegramInlineButton[][] = [
+              [
+                { text: `🟢 Buy ${cleanSym}`, callback_data: `quick_buy:${cleanSym}` },
+                { text: `🔴 Sell ${cleanSym}`, callback_data: `quick_sell:${cleanSym}` },
+              ],
+              [
+                { text: `➕ Re-arm Alert`, callback_data: `rearm_alert:${alert._id}` },
+                { text: `📊 Cockpit`, callback_data: 'cmd_cockpit' },
+              ],
+            ];
+
+            await this.sendAudio(
+              botToken,
+              chatId,
+              audioBuffer,
+              `Price Alert: ${cleanSym} @ $${ltp.toFixed(2)}`,
+              caption,
+              buttons
+            );
+          }
+        }
+      }
+    }
+
+    return triggeredCount;
+  }
+
+  /**
+   * Lists active and snoozed alert states and armed price alerts for /alerts command.
    */
   private static async handleAlertsListCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
     const argLower = scopeArg?.toLowerCase() || '';
@@ -3984,19 +4239,43 @@ export class TelegramAlertService {
     };
 
     const alerts = await AlertState.find(alertFilter).lean();
+    const priceAlerts = await PriceAlert.find({ userId: user._id, status: 'ARMED' }).sort({ createdAt: -1 }).limit(8).lean();
 
-    if (alerts.length === 0) {
-      await this.sendMessage(botToken, chatId, `✅ <b>No Active Alerts</b>\n\nAll risk states are cleared and healthy.`);
+    if (alerts.length === 0 && priceAlerts.length === 0) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `✅ <b>No Active Alerts</b>\n\nAll risk states are cleared and healthy. No armed price alerts.\n• Set a price alert via: <code>/alert 2685.50</code> or <code>/alert eth 3420</code>`
+      );
       return;
     }
 
-    let report = `🚨 <b>Active Alert States (${alerts.length})</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n<pre>\n`;
-    for (const a of alerts) {
-      const stateBadge = a.state === 'SNOOZED' ? '💤 SNOOZED' : '🔴 ACTIVE';
-      report += `${a.type.padEnd(14)} : ${stateBadge} (sev ${a.severity})\n`;
+    let report = `🚨 <b>Active Alert Monitor</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    const buttons: ITelegramInlineButton[][] = [];
+
+    if (priceAlerts.length > 0) {
+      report += `<b>🔔 ARMED PRICE ALERTS (${priceAlerts.length})</b>\n<pre>\n`;
+      for (const p of priceAlerts) {
+        report += `${p.symbol.padEnd(8)} : Target $${p.targetPrice.toFixed(2)} (${p.condition})\n`;
+        buttons.push([
+          { text: `❌ Cancel ${p.symbol} @ $${p.targetPrice.toFixed(2)}`, callback_data: `cancel_alert:${p._id}` }
+        ]);
+      }
+      report += `</pre>\n`;
     }
-    report += `</pre>`;
-    await this.sendMessage(botToken, chatId, report);
+
+    if (alerts.length > 0) {
+      report += `<b>🛡️ RISK DEFENSE STATES (${alerts.length})</b>\n<pre>\n`;
+      for (const a of alerts) {
+        const stateBadge = a.state === 'SNOOZED' ? '💤 SNOOZED' : '🔴 ACTIVE';
+        report += `${a.type.padEnd(14)} : ${stateBadge} (sev ${a.severity})\n`;
+      }
+      report += `</pre>\n`;
+    }
+
+    buttons.push([{ text: '📊 Live Cockpit', callback_data: 'cmd_cockpit' }]);
+
+    await this.sendMessage(botToken, chatId, report, buttons);
   }
 
   /**

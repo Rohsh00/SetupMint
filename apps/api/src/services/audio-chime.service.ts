@@ -87,4 +87,68 @@ export class AudioChimeService {
       { freq: 1318.51, startMs: 280, durationMs: 700, volume: 0.8 },
     ], 1100);
   }
+
+  /**
+   * Price Alert Triggered: High crystal dual radar ping (C6 -> E6)
+   */
+  static getPriceAlertChime(): Buffer {
+    return this.generateWav([
+      { freq: 1046.50, startMs: 0, durationMs: 250, volume: 0.8 },
+      { freq: 1318.51, startMs: 100, durationMs: 450, volume: 0.9 },
+    ], 650);
+  }
+
+  /**
+   * Order Execution / Scale-in: Quick electric double confirmation click
+   */
+  static getOrderExecutedChime(): Buffer {
+    return this.generateWav([
+      { freq: 800.0, startMs: 0, durationMs: 100, volume: 0.7 },
+      { freq: 1200.0, startMs: 70, durationMs: 140, volume: 0.8 },
+    ], 300);
+  }
+
+  /**
+   * Trade Closed / Exit Receipt: Warm fifth chord resolution bell (F5 -> C6)
+   */
+  static getTradeClosedChime(): Buffer {
+    return this.generateWav([
+      { freq: 698.46, startMs: 0, durationMs: 350, volume: 0.7 },
+      { freq: 1046.50, startMs: 120, durationMs: 650, volume: 0.85 },
+    ], 900);
+  }
+
+  /**
+   * Stop Loss Threat Alert: Urgent dual-tone siren pulse (220Hz <-> 440Hz)
+   */
+  static getStopThreatChime(): Buffer {
+    return this.generateWav([
+      { freq: 220.0, startMs: 0, durationMs: 160, volume: 0.85 },
+      { freq: 440.0, startMs: 140, durationMs: 180, volume: 0.9 },
+      { freq: 220.0, startMs: 300, durationMs: 160, volume: 0.85 },
+      { freq: 440.0, startMs: 440, durationMs: 250, volume: 0.9 },
+    ], 800);
+  }
+
+  /**
+   * Profit Giveback Alert: Descending minor caution triad (A4 -> F4 -> D4)
+   */
+  static getGivebackChime(): Buffer {
+    return this.generateWav([
+      { freq: 440.0, startMs: 0, durationMs: 200, volume: 0.75 },
+      { freq: 349.23, startMs: 120, durationMs: 220, volume: 0.8 },
+      { freq: 293.66, startMs: 240, durationMs: 400, volume: 0.85 },
+    ], 750);
+  }
+
+  /**
+   * High-Impact News Flash / Macro Alert: Triple staccato brass pulse (D5 -> F#5 -> A5)
+   */
+  static getNewsAlertChime(): Buffer {
+    return this.generateWav([
+      { freq: 587.33, startMs: 0, durationMs: 150, volume: 0.75 },
+      { freq: 739.99, startMs: 110, durationMs: 150, volume: 0.8 },
+      { freq: 880.00, startMs: 220, durationMs: 350, volume: 0.85 },
+    ], 700);
+  }
 }

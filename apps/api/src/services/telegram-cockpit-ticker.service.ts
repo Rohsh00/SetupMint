@@ -55,6 +55,11 @@ export class TelegramCockpitTickerWorker {
     this.lastTickStartedAt = Date.now();
 
     try {
+      // Evaluate armed price alerts across all users on every tick
+      await TelegramAlertService.evaluateArmedPriceAlerts().catch((alertErr) => {
+        console.warn(`[TelegramCockpitTickerWorker] evaluateArmedPriceAlerts error:`, alertErr?.message || alertErr);
+      });
+
       const users = await User.find({
         'liveWatcherSettings.telegramPinnedCockpitMessageId': { $exists: true, $nin: [null, '', 0] },
         'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },

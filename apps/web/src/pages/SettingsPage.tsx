@@ -96,6 +96,7 @@ import { api, BASE_URL } from '../lib/api.js';
 import { formatCurrency, getCurrencySymbol } from '../lib/utils.js';
 import { toast } from '../context/ToastContext.js';
 import { HelpHint } from '../components/help/index.js';
+import { soundEngine } from '../lib/sound-engine.js';
 
 function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
   if (!ua) return { browser: 'Unknown Browser', os: 'Unknown Device', full: 'Web Session (Unknown Device)', isMobile: false };
@@ -1821,7 +1822,7 @@ export function SettingsPage() {
                           Audio Sound Alerts
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Chimes for milestone hits, stop loss threats, and automated executions
+                          Crisp institutional chimes for price alerts, targets, stop threats, and executions
                         </Typography>
                       </Box>
                       <Switch
@@ -1829,6 +1830,118 @@ export function SettingsPage() {
                         onChange={(e) => setSoundAlertsEnabled(e.target.checked)}
                         size="small"
                       />
+                    </Box>
+
+                    {/* Interactive Acoustic Soundboard Showcase */}
+                    <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha(muiTheme.palette.primary.main, 0.04), border: `1px solid ${alpha(muiTheme.palette.primary.main, 0.12)}` }}>
+                      <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                        <VolumeUpRounded sx={{ fontSize: 16 }} /> Distinct Audio Profile Soundboard (Tap to Test)
+                      </Typography>
+                      <Grid container spacing={1}>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            onClick={() => soundEngine.playPriceAlert()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            🔔 Price Alert
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="success"
+                            onClick={() => soundEngine.playTargetHit()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            🎯 Target +R
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="info"
+                            onClick={() => soundEngine.playOrderExecuted()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            ⚡ Executed
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="secondary"
+                            onClick={() => soundEngine.playTradeClosed()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            💰 Trade Exit
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="error"
+                            onClick={() => soundEngine.playStopThreat()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            🚨 Stop Threat
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="warning"
+                            onClick={() => soundEngine.playGivebackAlert()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            ⚠️ Giveback
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="warning"
+                            onClick={() => soundEngine.playNewsAlert()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            📰 Gold News
+                          </Button>
+                        </Grid>
+                        <Grid size={{ xs: 6, sm: 3 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                            color="error"
+                            onClick={() => soundEngine.playKillSwitch()}
+                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                          >
+                            🛑 Kill Switch
+                          </Button>
+                        </Grid>
+                      </Grid>
                     </Box>
 
                     <Box sx={{ pt: 1 }}>
@@ -2641,52 +2754,80 @@ export function SettingsPage() {
                               </Typography>
                               <Grid container spacing={1}>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.stopThreatCritical !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, stopThreatCritical: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚨 Critical Stop Threats (&lt;25% Runway)</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.stopThreatCritical !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, stopThreatCritical: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚨 Critical Stop Threats (&lt;25% Runway)</Typography>}
+                                    />
+                                    <Tooltip title="Audition Stop Threat Siren" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playStopThreat()} sx={{ color: 'error.main', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.givebackLeaking !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, givebackLeaking: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⚠️ Profit Giveback Reversals (&gt;35% Leak)</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.givebackLeaking !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, givebackLeaking: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⚠️ Profit Giveback Reversals (&gt;35% Leak)</Typography>}
+                                    />
+                                    <Tooltip title="Audition Giveback Leak Chime" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playGivebackAlert()} sx={{ color: 'warning.main', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.ladderMilestoneReached !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, ladderMilestoneReached: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🎯 Ladder Target Met (T1, T2 Hits)</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.ladderMilestoneReached !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, ladderMilestoneReached: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🎯 Ladder Target Met (T1, T2 Hits)</Typography>}
+                                    />
+                                    <Tooltip title="Audition Target Hit Chime" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playTargetHit()} sx={{ color: 'success.main', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.dailyLossBreached !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, dailyLossBreached: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🛑 Daily Max Loss Breach & 75% Warning</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.dailyLossBreached !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, dailyLossBreached: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🛑 Daily Max Loss Breach & 75% Warning</Typography>}
+                                    />
+                                    <Tooltip title="Audition Daily Loss Siren" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playDailyLossAlert()} sx={{ color: 'error.main', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                                   <FormControlLabel
@@ -2713,28 +2854,42 @@ export function SettingsPage() {
                                   />
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.tradeOpened !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeOpened: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚀 Trade Opened &amp; Synced Notice</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.tradeOpened !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeOpened: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚀 Trade Opened &amp; Synced Notice</Typography>}
+                                    />
+                                    <Tooltip title="Audition Order Execution Click" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playOrderExecuted()} sx={{ color: 'info.main', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.tradeClosed !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeClosed: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🏁 Trade Closed &amp; Excursion Summary</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.tradeClosed !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeClosed: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🏁 Trade Closed &amp; Excursion Summary</Typography>}
+                                    />
+                                    <Tooltip title="Audition Resolution Bell" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playTradeClosed()} sx={{ color: 'secondary.main', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                                   <FormControlLabel
@@ -2749,28 +2904,42 @@ export function SettingsPage() {
                                   />
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.goldNewsReminder !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsReminder: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#EAB308' }}>👑 Gold Catalyst News Reminder</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.goldNewsReminder !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsReminder: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#EAB308' }}>👑 Gold Catalyst News Reminder</Typography>}
+                                    />
+                                    <Tooltip title="Audition Gold News Horn" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playNewsAlert()} sx={{ color: '#EAB308', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                                 <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.goldNewsResultAlert !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsResultAlert: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#10B981' }}>⚡ Post-News Actual Result Flash</Typography>}
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                                    <FormControlLabel
+                                      control={
+                                        <Checkbox
+                                          size="small"
+                                          checked={telegramAlertEvents.goldNewsResultAlert !== false}
+                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsResultAlert: e.target.checked })}
+                                        />
+                                      }
+                                      label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#10B981' }}>⚡ Post-News Actual Result Flash</Typography>}
+                                    />
+                                    <Tooltip title="Audition News Flash Chime" arrow>
+                                      <IconButton size="small" onClick={() => soundEngine.playNewsAlert()} sx={{ color: '#10B981', p: 0.5 }}>
+                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
                                 </Grid>
                               </Grid>
                             </Box>

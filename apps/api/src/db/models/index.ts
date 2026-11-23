@@ -23,5 +23,6 @@ export * from './AlertEvent.js';
 export * from './TelegramUpdateAudit.js';
 export * from './TelegramCallbackLock.js';
 export * from './Mt5Command.js';
+export * from './PriceAlert.js';
 
 

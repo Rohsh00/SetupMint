@@ -4,81 +4,23 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Typography,
-  Button,
-  Grid,
   Card,
-  CardContent,
-  TextField,
-  MenuItem,
   ToggleButtonGroup,
   ToggleButton,
-  Alert,
-  Divider,
   Chip,
-  CircularProgress,
-  IconButton,
-  InputAdornment,
-  Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  LinearProgress,
-  Switch,
   Tabs,
   Tab,
-  Slider,
-  Collapse,
-  Checkbox,
-  FormControlLabel,
   useTheme as useMuiTheme,
-  alpha,
 } from '@mui/material';
 import SettingsRounded from '@mui/icons-material/SettingsRounded';
 import PersonRounded from '@mui/icons-material/PersonRounded';
-import LockRounded from '@mui/icons-material/LockRounded';
-import StorageRounded from '@mui/icons-material/StorageRounded';
 import KeyRounded from '@mui/icons-material/KeyRounded';
-import DarkModeRounded from '@mui/icons-material/DarkModeRounded';
-import LightModeRounded from '@mui/icons-material/LightModeRounded';
-import SettingsBrightnessRounded from '@mui/icons-material/SettingsBrightnessRounded';
-import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
-import LogoutRounded from '@mui/icons-material/LogoutRounded';
-import LaptopRounded from '@mui/icons-material/LaptopRounded';
-import PhoneAndroidRounded from '@mui/icons-material/PhoneAndroidRounded';
-import SyncRounded from '@mui/icons-material/SyncRounded';
-import LinkRounded from '@mui/icons-material/LinkRounded';
-import LinkOffRounded from '@mui/icons-material/LinkOffRounded';
-import VisibilityRounded from '@mui/icons-material/VisibilityRounded';
-import VisibilityOffRounded from '@mui/icons-material/VisibilityOffRounded';
 import CloudDoneRounded from '@mui/icons-material/CloudDoneRounded';
-import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
+import LinkOffRounded from '@mui/icons-material/LinkOffRounded';
 import TimelineRounded from '@mui/icons-material/TimelineRounded';
-import AddRounded from '@mui/icons-material/AddRounded';
-import DeleteRounded from '@mui/icons-material/DeleteRounded';
-import EditRounded from '@mui/icons-material/EditRounded';
-import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
-import TuneRounded from '@mui/icons-material/TuneRounded';
-import LayersRounded from '@mui/icons-material/LayersRounded';
 import FlashOnRounded from '@mui/icons-material/FlashOnRounded';
-import TrackChangesRounded from '@mui/icons-material/TrackChangesRounded';
-import DirectionsCarRounded from '@mui/icons-material/DirectionsCarRounded';
-import SpeedRounded from '@mui/icons-material/SpeedRounded';
-import VolumeUpRounded from '@mui/icons-material/VolumeUpRounded';
-import VolumeOffRounded from '@mui/icons-material/VolumeOffRounded';
-import KeyboardAltRounded from '@mui/icons-material/KeyboardAltRounded';
-import AccessTimeRounded from '@mui/icons-material/AccessTimeRounded';
-import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
-import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
-import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
-import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded';
-import CheckRounded from '@mui/icons-material/CheckRounded';
-import NotificationsActiveRounded from '@mui/icons-material/NotificationsActiveRounded';
 import SendRounded from '@mui/icons-material/SendRounded';
-import ScienceRounded from '@mui/icons-material/ScienceRounded';
-import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
-import LockClockRounded from '@mui/icons-material/LockClockRounded';
 import {
   IInstrumentDetectionSetting,
   DEFAULT_PATTERN_DETECTION_SETTINGS,
@@ -87,37 +29,22 @@ import {
   ILiveWatcherDisplaySettings,
   DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS,
   DEFAULT_TELEGRAM_FOREX_PRESETS,
-  ITelegramForexPresets,
 } from '@tradevault/shared';
 import { useAuth } from '../context/AuthContext.js';
 import { useTheme } from '../context/ThemeContext.js';
 import { useAccountScope } from '../context/AccountScopeContext.js';
 import { api, BASE_URL } from '../lib/api.js';
-import { formatCurrency, getCurrencySymbol } from '../lib/utils.js';
+import { getCurrencySymbol } from '../lib/utils.js';
 import { toast } from '../context/ToastContext.js';
-import { HelpHint } from '../components/help/index.js';
-import { soundEngine } from '../lib/sound-engine.js';
 
-function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
-  if (!ua) return { browser: 'Unknown Browser', os: 'Unknown Device', full: 'Web Session (Unknown Device)', isMobile: false };
-
-  let os = 'Unknown OS';
-  let isMobile = false;
-  if (/windows/i.test(ua)) os = 'Windows';
-  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
-  else if (/iphone|ipad|ipod/i.test(ua)) { os = 'iOS'; isMobile = true; }
-  else if (/android/i.test(ua)) { os = 'Android'; isMobile = true; }
-  else if (/linux/i.test(ua)) os = 'Linux';
-
-  let browser = 'Unknown Browser';
-  if (/edg\//i.test(ua)) browser = 'Edge';
-  else if (/chrome|crios/i.test(ua) && !/edg/i.test(ua)) browser = 'Chrome';
-  else if (/safari/i.test(ua) && !/chrome|crios/i.test(ua)) browser = 'Safari';
-  else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
-  else if (/opera|opr/i.test(ua)) browser = 'Opera';
-
-  return { browser, os, full: `${browser} on ${os}`, isMobile };
-}
+import { ExecutionSettingsTab } from './settings/ExecutionSettingsTab.js';
+import { RiskGuardrailsTab } from './settings/RiskGuardrailsTab.js';
+import { TelegramMobileTab } from './settings/TelegramMobileTab.js';
+import { MarketStructureTab, formatResLabel } from './settings/MarketStructureTab.js';
+import { BrokerConnectionsTab } from './settings/BrokerConnectionsTab.js';
+import { ProfileSystemTab } from './settings/ProfileSystemTab.js';
+import { AngelOneTotpDialog } from './settings/dialogs/AngelOneTotpDialog.js';
+import { InstrumentOverrideDialog } from './settings/dialogs/InstrumentOverrideDialog.js';
 
 export function SettingsPage() {
   const muiTheme = useMuiTheme();
@@ -169,20 +96,24 @@ export function SettingsPage() {
     );
   }, [accounts]);
 
-  // Active Tab state (0: Live Execution, 1: Risk Guardrails, 2: Market Structure, 3: Brokers, 4: Account & Security)
+  // Active Tab state:
+  // 0: Execution & Scaling, 1: Risk & Guardrails, 2: Telegram & Mobile,
+  // 3: Market Structure, 4: Broker Connections, 5: Profile & System
   const [activeTab, setActiveTab] = useState<number>(() => {
     const p = new URLSearchParams(window.location.search).get('tab');
+    if (p === 'execution' || p === 'live') return 0;
     if (p === 'risk') return 1;
-    if (p === 'structure') return 2;
-    if (p === 'brokers') return 3;
-    if (p === 'account') return 4;
-    return 0; // Default to Live Execution
+    if (p === 'telegram' || p === 'mobile') return 2;
+    if (p === 'structure') return 3;
+    if (p === 'brokers') return 4;
+    if (p === 'profile' || p === 'account') return 5;
+    return 0;
   });
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
-    const tabNames = ['live', 'risk', 'structure', 'brokers', 'account'];
-    const tabName = tabNames[newValue] || 'live';
+    const tabNames = ['execution', 'risk', 'telegram', 'structure', 'brokers', 'profile'];
+    const tabName = tabNames[newValue] || 'execution';
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tabName);
     window.history.replaceState({}, '', url.toString());
@@ -193,7 +124,7 @@ export function SettingsPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // =========================================================================
-  // 1. LIVE TRADE WATCHER GLOBAL EXECUTION SETTINGS STATE
+  // 1. LIVE WATCHER & EXECUTION SETTINGS STATE
   // =========================================================================
   const initialWatcher = user?.liveWatcherSettings || DEFAULT_LIVE_WATCHER_SETTINGS;
 
@@ -238,7 +169,7 @@ export function SettingsPage() {
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(initialWatcher.soundAlertsEnabled);
   const [defaultRefreshIntervalSec, setDefaultRefreshIntervalSec] = useState(initialWatcher.defaultRefreshIntervalSec);
 
-  // Institutional Execution, Telegram Alerts & Lockout State
+  // Institutional Execution & Telegram Alerts State
   const [paperExecutionMode, setPaperExecutionMode] = useState(initialWatcher.paperExecutionMode ?? false);
   const [serverSideExecutionEnabled, setServerSideExecutionEnabled] = useState(initialWatcher.serverSideExecutionEnabled ?? false);
   const [telegramAlertsEnabled, setTelegramAlertsEnabled] = useState(
@@ -265,7 +196,7 @@ export function SettingsPage() {
   const [goldNewsLeadTimesMinutes, setGoldNewsLeadTimesMinutes] = useState<number[]>(
     Array.isArray(initialWatcher.goldNewsLeadTimesMinutes) && initialWatcher.goldNewsLeadTimesMinutes.length > 0
       ? initialWatcher.goldNewsLeadTimesMinutes
-      : [initialWatcher.goldNewsReminderMinutes ?? 15]
+      : [15, 60]
   );
   const [goldNewsImpactFilter, setGoldNewsImpactFilter] = useState<'ALL_GOLD_MOVERS' | 'HIGH_IMPACT_ONLY'>(
     initialWatcher.goldNewsImpactFilter ?? 'ALL_GOLD_MOVERS'
@@ -417,11 +348,11 @@ export function SettingsPage() {
       localStorage.setItem('tv_live_watcher_display_settings', JSON.stringify(displaySettings));
       setWatcherError(null);
       setWatcherSuccess(true);
-      toast.success('Live Trade Watcher & Execution defaults saved successfully.');
+      toast.success('Settings saved successfully.');
       setTimeout(() => setWatcherSuccess(false), 3000);
     },
     onError: (err: any) => {
-      const msg = err.message || 'Failed to update live watcher settings';
+      const msg = err.message || 'Failed to update settings';
       setWatcherError(msg);
       toast.error(msg);
     },
@@ -495,7 +426,6 @@ export function SettingsPage() {
     setDefaultRefreshIntervalSec(d.defaultRefreshIntervalSec);
     setPaperExecutionMode(d.paperExecutionMode ?? false);
     setServerSideExecutionEnabled(d.serverSideExecutionEnabled ?? false);
-    // Note: Do not reset user's Telegram bot credentials or alert subscriptions when resetting ladder execution defaults.
     setStaleDataThresholdSeconds(d.staleDataThresholdSeconds ?? 10);
     setRequireHoldToConfirm(d.requireHoldToConfirm ?? true);
     setHardDisciplineLockoutEnabled(d.hardDisciplineLockoutEnabled ?? false);
@@ -528,7 +458,7 @@ export function SettingsPage() {
       goldNewsResultAlert: d.telegramAlertEvents?.goldNewsResultAlert ?? true,
     });
     setDisplaySettings({ ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS });
-    toast.info('Reset live watcher settings to institutional defaults. Click "Save Execution Settings" to persist.');
+    toast.info('Reset live watcher settings to institutional defaults. Click "Save" to persist.');
   };
 
   const handleTestTelegram = async () => {
@@ -665,7 +595,6 @@ export function SettingsPage() {
       ? telegramChatId.trim()
       : (user?.liveWatcherSettings?.telegramChatId || undefined);
 
-    // Auto-enable alerts if fresh botToken and chatId are being provided for the first time
     const effectiveAlertsEnabled = telegramAlertsEnabled || Boolean(
       telegramBotToken.trim() !== '' &&
       !telegramBotToken.startsWith('••') &&
@@ -759,6 +688,14 @@ export function SettingsPage() {
     mutationFn: (payload: any) => api.settings.updateProfile({ riskSettings: payload }),
     onSuccess: () => {
       refreshUser();
+      // Also persist the hard lockout & remote guardrail policies alongside risk settings
+      liveWatcherMutation.mutate({
+        ...user?.liveWatcherSettings,
+        hardDisciplineLockoutEnabled,
+        hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
+        enforceTelegramOrderGuardrails: Boolean(enforceTelegramOrderGuardrails),
+        enforceAdaptiveDayRiskGuardrails: Boolean(enforceAdaptiveDayRiskGuardrails),
+      } as any);
       setRiskError(null);
       setRiskSuccess(true);
       toast.success('Discipline & risk guardrails saved successfully.');
@@ -928,27 +865,13 @@ export function SettingsPage() {
     toast.success(`Override saved for ${sym}.`);
   };
 
-  function formatResLabel(res: string): string {
-    const map: Record<string, string> = {
-      '1': '1m',
-      '3': '3m',
-      '5': '5m',
-      '15': '15m',
-      '30': '30m',
-      '60': '1h',
-      '240': '4h',
-      'D': '1D',
-    };
-    return map[res] || `${res}m`;
-  }
-
   // =========================================================================
   // 3.5. IN-CAR & APPLE CARPLAY SIRI VOICE STATE
   // =========================================================================
   const { data: carPlaySetupData, isLoading: isLoadingCarPlay } = useQuery({
     queryKey: ['carplay-setup'],
     queryFn: () => api.carplay.getSetup(),
-    enabled: activeTab === 0,
+    enabled: activeTab === 2,
   });
 
   const carPlaySetup = (carPlaySetupData as any)?.data ?? carPlaySetupData;
@@ -968,17 +891,15 @@ export function SettingsPage() {
 
   const copyTextToClipboard = async (text: string): Promise<boolean> => {
     if (!text) return false;
-    // 1. Try modern Async Clipboard API if available and permitted
     if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
       try {
         await navigator.clipboard.writeText(text);
         return true;
       } catch (err) {
-        console.warn('navigator.clipboard.writeText failed (non-secure context or permission denied), using fallback:', err);
+        console.warn('navigator.clipboard.writeText failed, using fallback:', err);
       }
     }
 
-    // 2. Synchronous textarea fallback (works in non-HTTPS / HTTP IP environments)
     try {
       const textArea = document.createElement('textarea');
       textArea.value = text;
@@ -997,9 +918,8 @@ export function SettingsPage() {
       console.error('Fallback execCommand copy failed:', fallbackErr);
     }
 
-    // 3. Last-resort fallback for stubborn mobile browsers: prompt so user can press Copy
     try {
-      window.prompt('Copy this Siri URL:', text);
+      window.prompt('Copy this URL:', text);
       return true;
     } catch {
       return false;
@@ -1017,7 +937,7 @@ export function SettingsPage() {
       toast.success('Siri URL copied to clipboard!');
       setTimeout(() => setCopiedVoiceKey(null), 2500);
     } else {
-      toast.error('Could not copy automatically. Please copy the link manually from the box.');
+      toast.error('Could not copy automatically. Please copy the link manually.');
     }
   };
 
@@ -1220,20 +1140,6 @@ export function SettingsPage() {
     },
   });
 
-  const angelOneDeleteMutation = useMutation({
-    mutationFn: () => api.marketData.angelOne.deleteIntegration(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['angel-one-status'] });
-      setAngelOneApiKey('');
-      setAngelOneClientCode('');
-      setAngelOnePin('');
-      toast.success('Angel One integration credentials removed.');
-    },
-    onError: (err: any) => {
-      toast.error(err.message || 'Failed to delete Angel One integration');
-    },
-  });
-
   const angelOneRefreshMutation = useMutation({
     mutationFn: (force?: boolean) => api.marketData.angelOne.refreshInstruments(force),
     onSuccess: (res: any) => {
@@ -1359,10 +1265,10 @@ export function SettingsPage() {
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 1.25 }}>
             <SettingsRounded sx={{ color: 'primary.main', fontSize: 28 }} />
-            Settings & Live Trading Cockpit
+            Settings &amp; Trading Cockpit
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Configure automated order execution, scaling ladders, risk guardrails, market structure detection, and broker connections
+            Configure automated order execution, scaling ladders, risk guardrails, Telegram alerts, and broker connections
           </Typography>
         </Box>
 
@@ -1378,6 +1284,14 @@ export function SettingsPage() {
             icon={isFyersConnected ? <CloudDoneRounded sx={{ fontSize: '0.9rem !important' }} /> : <LinkOffRounded sx={{ fontSize: '0.9rem !important' }} />}
             label={isFyersConnected ? 'FYERS LIVE' : 'FYERS OFFLINE'}
             color={isFyersConnected ? 'primary' : 'default'}
+            variant="outlined"
+            size="small"
+            sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+          />
+          <Chip
+            icon={<SendRounded sx={{ fontSize: '0.9rem !important' }} />}
+            label={telegramAlertsEnabled && (telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) ? 'TELEGRAM ACTIVE' : 'TELEGRAM MUTED'}
+            color={telegramAlertsEnabled && (telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) ? 'info' : 'default'}
             variant="outlined"
             size="small"
             sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
@@ -1402,7 +1316,7 @@ export function SettingsPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <ShieldRounded sx={{ color: 'primary.main', fontSize: 20 }} />
               <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                Default Trading Mode & Account Scope
+                Default Trading Mode &amp; Account Scope
               </Typography>
               <Chip
                 label="Saved to Backend"
@@ -1453,7 +1367,7 @@ export function SettingsPage() {
         </Box>
       </Card>
 
-      {/* Modern Navigation Tabs Header */}
+      {/* Modern Navigation Tabs Header (6 Organized Categories) */}
       <Tabs
         value={activeTab}
         onChange={handleTabChange}
@@ -1471,4138 +1385,356 @@ export function SettingsPage() {
           },
         }}
       >
-        <Tab icon={<FlashOnRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Live Cockpit & Execution" />
+        <Tab icon={<FlashOnRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Execution & Scaling" />
         <Tab icon={<ShieldRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Risk & Guardrails" />
-        <Tab icon={<TimelineRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Market Structure & Routing" />
+        <Tab icon={<SendRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Telegram & Mobile" />
+        <Tab icon={<TimelineRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Market Structure" />
         <Tab icon={<KeyRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Broker Connections" />
-        <Tab icon={<PersonRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Account & Security" />
+        <Tab icon={<PersonRounded sx={{ fontSize: 18 }} />} iconPosition="start" label="Profile & System" />
       </Tabs>
 
-      {/* =========================================================================
-          TAB 0: LIVE COCKPIT & EXECUTION CONTROLS
-          ========================================================================= */}
+      {/* TAB 0: EXECUTION & SCALING */}
       {activeTab === 0 && (
-        <form onSubmit={handleWatcherSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Card 1: Interactive Scaling Ladder & Target Multiples */}
-          <Card variant="outlined" sx={{ p: 1 }}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1 }}>
-                <Box>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TrackChangesRounded sx={{ color: 'primary.main' }} />
-                    Default Scaling Ladder & Trailing Stop Rules
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    These rules apply automatically to every open order detected from FYERS. You can customize ratios, target R-multiples, and trailing stop actions.
-                  </Typography>
-                </Box>
-
-                {/* Preset Selector */}
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={defaultTargetMode}
-                  onChange={(_, val) => val && handleApplyPresetMode(val)}
-                  sx={{
-                    '& .MuiToggleButton-root': {
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      px: 1.5,
-                      textTransform: 'none',
-                    },
-                  }}
-                >
-                  <ToggleButton value="TWO_TARGETS_RUNNER">2 Targets + Runner</ToggleButton>
-                  <ToggleButton value="T1_FREE_RUNNER">T1 + Free Runner</ToggleButton>
-                  <ToggleButton value="CLASSIC_THREE">Classic 3 Targets</ToggleButton>
-                  <ToggleButton value="T1_ONLY">T1 Only (100%)</ToggleButton>
-                </ToggleButtonGroup>
-              </Box>
-
-              {/* Visual Timeline Preview */}
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                  border: 1,
-                  borderColor: 'divider',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1.5,
-                }}
-              >
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Live Execution Workflow Preview for Every Open Trade:
-                </Typography>
-
-                <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
-                  <Grid size={{ xs: 12, sm: 3 }}>
-                    <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)', border: 1, borderColor: 'primary.main' }}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main', display: 'block' }}>
-                        STEP 1: ENTRY (0.0R)
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        Initial SL Armed
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Full position size active
-                      </Typography>
-                    </Box>
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 3 }}>
-                    <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)', border: 1, borderColor: '#10B981' }}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: '#10B981', display: 'block' }}>
-                        STEP 2: TARGET 1 (+{t1MultipleR}R)
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        Exit {t1ExitPercent}% Position
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {t1TrailingAction === 'TRUE_BE_WITH_FEES'
-                          ? 'Trail SL to True BE + Fees'
-                          : t1TrailingAction === 'NOMINAL_BE'
-                          ? 'Trail SL to Entry Price'
-                          : t1TrailingAction === 'CUSTOM_POINTS'
-                          ? `Trail SL +${t1TrailPoints} pts`
-                          : 'SL Unchanged'}
-                      </Typography>
-                    </Box>
-                  </Grid>
-
-                  {t2Enabled && (
-                    <Grid size={{ xs: 12, sm: 3 }}>
-                      <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(139, 92, 246, 0.1)' : 'rgba(139, 92, 246, 0.08)', border: 1, borderColor: '#8B5CF6' }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: '#8B5CF6', display: 'block' }}>
-                          STEP 3: TARGET 2 (+{t2MultipleR}R)
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Exit {t2ExitPercent}% Position
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {t2TrailingAction === 'TRAIL_T1' ? `Trail SL to T1 (+${t1MultipleR}R)` : 'Trail by custom rule'}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  )}
-
-                  <Grid size={{ xs: 12, sm: t2Enabled ? 3 : 6 }}>
-                    <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.08)', border: 1, borderColor: '#F59E0B' }}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: '#F59E0B', display: 'block' }}>
-                        STEP 4: RUNNER ({Math.max(0, 100 - t1ExitPercent - (t2Enabled ? t2ExitPercent : 0))}%)
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {isFreeRunner ? 'Free Runner Ride' : `Target 3 (+${t3MultipleR}R)`}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {givebackAutoExitEnabled ? `Max ${givebackMaxPercent}% giveback radar` : 'Manual exit'}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                </Grid>
-              </Box>
-
-              {/* Ladder Step Controls */}
-              <Grid container spacing={2.5}>
-                {/* Target 1 Controls */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip size="small" label="T1" color="primary" sx={{ fontWeight: 800, height: 20 }} />
-                        Target 1 (Primary Scaling Level)
-                      </Typography>
-                    </Box>
-
-                    <Grid container spacing={2}>
-                      <Grid size={{ xs: 6 }}>
-                        <TextField
-                          label="Target 1 (R-Multiple)"
-                          size="small"
-                          fullWidth
-                          type="number"
-                          value={t1MultipleR}
-                          onChange={(e) => setT1MultipleR(Number(e.target.value))}
-                          slotProps={{ htmlInput: { step: '0.1', min: '0.5' } }}
-                          helperText="e.g. +1.0R risk multiple"
-                        />
-                      </Grid>
-                      <Grid size={{ xs: 6 }}>
-                        <TextField
-                          label="Exit Ratio (%)"
-                          size="small"
-                          fullWidth
-                          type="number"
-                          value={t1ExitPercent}
-                          onChange={(e) => setT1ExitPercent(Number(e.target.value))}
-                          slotProps={{ htmlInput: { step: '5', min: '10', max: '100' } }}
-                          helperText="Partial quantity exit %"
-                        />
-                      </Grid>
-
-                      <Grid size={{ xs: 12 }}>
-                        <TextField
-                          select
-                          label="Trailing Stop Action When T1 is Reached"
-                          size="small"
-                          fullWidth
-                          value={t1TrailingAction}
-                          onChange={(e) => setT1TrailingAction(e.target.value as any)}
-                          helperText="Automated order adjustment sent to FYERS broker book"
-                        >
-                          <MenuItem value="TRUE_BE_WITH_FEES">
-                            <strong>Lock True BE + Fees (Guaranteed Net Non-Negative)</strong>
-                          </MenuItem>
-                          <MenuItem value="NOMINAL_BE">
-                            Nominal Breakeven (Exact Entry Price)
-                          </MenuItem>
-                          <MenuItem value="CUSTOM_POINTS">
-                            Trail Stop Loss by Custom Points (+X pts)
-                          </MenuItem>
-                          <MenuItem value="NONE">
-                            Do Not Move Stop Loss (Leave Initial Risk)
-                          </MenuItem>
-                        </TextField>
-                      </Grid>
-
-                      {t1TrailingAction === 'CUSTOM_POINTS' && (
-                        <Grid size={{ xs: 12 }}>
-                          <TextField
-                            label="Trail Points Behind LTP"
-                            size="small"
-                            type="number"
-                            fullWidth
-                            value={t1TrailPoints}
-                            onChange={(e) => setT1TrailPoints(Number(e.target.value))}
-                          />
-                        </Grid>
-                      )}
-                    </Grid>
-                  </Box>
-                </Grid>
-
-                {/* Target 2 Controls */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip size="small" label="T2" color="secondary" sx={{ fontWeight: 800, height: 20 }} />
-                        Target 2 (Secondary Milestone)
-                      </Typography>
-                      <Switch
-                        checked={t2Enabled}
-                        onChange={(e) => setT2Enabled(e.target.checked)}
-                        size="small"
-                      />
-                    </Box>
-
-                    {t2Enabled ? (
-                      <Grid container spacing={2}>
-                        <Grid size={{ xs: 6 }}>
-                          <TextField
-                            label="Target 2 (R-Multiple)"
-                            size="small"
-                            fullWidth
-                            type="number"
-                            value={t2MultipleR}
-                            onChange={(e) => setT2MultipleR(Number(e.target.value))}
-                            slotProps={{ htmlInput: { step: '0.1', min: '1.0' } }}
-                            helperText="e.g. +2.0R risk multiple"
-                          />
-                        </Grid>
-                        <Grid size={{ xs: 6 }}>
-                          <TextField
-                            label="Exit Ratio (%)"
-                            size="small"
-                            fullWidth
-                            type="number"
-                            value={t2ExitPercent}
-                            onChange={(e) => setT2ExitPercent(Number(e.target.value))}
-                            slotProps={{ htmlInput: { step: '5', min: '5', max: '100' } }}
-                            helperText="Partial quantity exit %"
-                          />
-                        </Grid>
-                        <Grid size={{ xs: 12 }}>
-                          <TextField
-                            select
-                            label="Trailing Stop Action When T2 is Reached"
-                            size="small"
-                            fullWidth
-                            value={t2TrailingAction}
-                            onChange={(e) => setT2TrailingAction(e.target.value as any)}
-                          >
-                            <MenuItem value="TRAIL_T1">Trail Stop Loss to Target 1 (+{t1MultipleR}R Locked)</MenuItem>
-                            <MenuItem value="CUSTOM_POINTS">Trail Stop Loss by Custom Points</MenuItem>
-                            <MenuItem value="NONE">Leave Trailing Stop at Breakeven</MenuItem>
-                          </TextField>
-                        </Grid>
-                      </Grid>
-                    ) : (
-                      <Box sx={{ py: 3, textAlign: 'center', color: 'text.secondary' }}>
-                        <Typography variant="body2">
-                          Target 2 is disabled. Trades will proceed from Target 1 directly to the free runner position.
-                        </Typography>
-                      </Box>
-                    )}
-                  </Box>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-
-          {/* Card 2: Auto-Execution Master Arm & Anti-Greed Giveback Radar */}
-          <Grid container spacing={2.5}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
-                <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <FlashOnRounded sx={{ color: defaultAutoExecute ? 'success.main' : 'text.secondary' }} />
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Master FYERS Auto-Execution Switch
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 1.5,
-                      bgcolor: defaultAutoExecute
-                        ? isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)'
-                        : isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                      border: 1,
-                      borderColor: defaultAutoExecute ? 'success.main' : 'divider',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 2,
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {defaultAutoExecute ? '⚡ Auto-Execution Armed Globally' : '✋ Manual Confirmation Mode'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {defaultAutoExecute
-                          ? 'When a target or stop price is reached, SetupMint immediately fires partial exits and SL modifications to FYERS broker book.'
-                          : 'Shows high-priority alert prompts and scalper chimes for 1-click execution without auto-firing to broker.'}
-                      </Typography>
-                    </Box>
-                    <Switch
-                      checked={defaultAutoExecute}
-                      onChange={(e) => setDefaultAutoExecute(e.target.checked)}
-                      color="success"
-                    />
-                  </Box>
-
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          MIS 15:14 IST Auto-Square-Off
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Auto-exits intraday MIS trades at 15:14 IST before broker penalty fees kick in
-                        </Typography>
-                      </Box>
-                      <Switch
-                        checked={misSquareOffEnabled}
-                        onChange={(e) => setMisSquareOffEnabled(e.target.checked)}
-                        size="small"
-                      />
-                    </Box>
-
-                    <Divider />
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Scalper Keyboard Hotkeys
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          [B] Lock True BE • [Space] 50% Quick Exit • [K] Panic Kill Switch
-                        </Typography>
-                      </Box>
-                      <Switch
-                        checked={scalperHotkeysEnabled}
-                        onChange={(e) => setScalperHotkeysEnabled(e.target.checked)}
-                        size="small"
-                      />
-                    </Box>
-
-                    <Divider />
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Audio Sound Alerts
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Crisp institutional chimes for price alerts, targets, stop threats, and executions
-                        </Typography>
-                      </Box>
-                      <Switch
-                        checked={soundAlertsEnabled}
-                        onChange={(e) => setSoundAlertsEnabled(e.target.checked)}
-                        size="small"
-                      />
-                    </Box>
-
-                    {/* Interactive Acoustic Soundboard Showcase */}
-                    <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha(muiTheme.palette.primary.main, 0.04), border: `1px solid ${alpha(muiTheme.palette.primary.main, 0.12)}` }}>
-                      <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                        <VolumeUpRounded sx={{ fontSize: 16 }} /> Distinct Audio Profile Soundboard (Tap to Test)
-                      </Typography>
-                      <Grid container spacing={1}>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            onClick={() => soundEngine.playPriceAlert()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            🔔 Price Alert
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="success"
-                            onClick={() => soundEngine.playTargetHit()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            🎯 Target +R
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="info"
-                            onClick={() => soundEngine.playOrderExecuted()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            ⚡ Executed
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="secondary"
-                            onClick={() => soundEngine.playTradeClosed()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            💰 Trade Exit
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="error"
-                            onClick={() => soundEngine.playStopThreat()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            🚨 Stop Threat
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="warning"
-                            onClick={() => soundEngine.playGivebackAlert()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            ⚠️ Giveback
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="warning"
-                            onClick={() => soundEngine.playNewsAlert()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            📰 Gold News
-                          </Button>
-                        </Grid>
-                        <Grid size={{ xs: 6, sm: 3 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                            color="error"
-                            onClick={() => soundEngine.playKillSwitch()}
-                            startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                            sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                          >
-                            🛑 Kill Switch
-                          </Button>
-                        </Grid>
-                      </Grid>
-                    </Box>
-
-                    <Box sx={{ pt: 1 }}>
-                      <TextField
-                        select
-                        label="Live Watcher Refresh Interval"
-                        size="small"
-                        fullWidth
-                        value={defaultRefreshIntervalSec}
-                        onChange={(e) => setDefaultRefreshIntervalSec(Number(e.target.value))}
-                        helperText="Frequency of live price polls from FYERS / Angel One"
-                      >
-                        <MenuItem value={1}>1 Second (Ultra-Fast Scalping)</MenuItem>
-                        <MenuItem value={2}>2 Seconds (Recommended Low Latency)</MenuItem>
-                        <MenuItem value={5}>5 Seconds (Balanced API Quota)</MenuItem>
-                        <MenuItem value={10}>10 Seconds (Conservative Intraday)</MenuItem>
-                      </TextField>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Giveback Protection Radar */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
-                <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <SpeedRounded sx={{ color: '#F59E0B' }} />
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        Anti-Greed Unrealized Profit Giveback Radar
-                      </Typography>
-                    </Box>
-                    <Switch
-                      checked={givebackAutoExitEnabled}
-                      onChange={(e) => setGivebackAutoExitEnabled(e.target.checked)}
-                      size="small"
-                    />
-                  </Box>
-
-                  <Typography variant="body2" color="text.secondary">
-                    Prevents winning trades from turning into red days. SetupMint tracks peak unrealized profit (MFE) in real time and alerts or auto-squares off if profit retreats beyond your tolerance.
-                  </Typography>
-
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
-                    <TextField
-                      label="Activation Gate (Min Peak Profit in R)"
-                      size="small"
-                      fullWidth
-                      type="number"
-                      value={givebackMinPeakR}
-                      onChange={(e) => setGivebackMinPeakR(Number(e.target.value))}
-                      slotProps={{ htmlInput: { step: '0.1', min: '1.0' } }}
-                      helperText="Protection only activates after trade achieves at least +1.5R profit"
-                    />
-
-                    <Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Max Giveback Tolerance
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 800, color: 'error.main', fontFamily: '"JetBrains Mono", monospace' }}>
-                          {givebackMaxPercent}% Leak Allowed
-                        </Typography>
-                      </Box>
-                      <Slider
-                        value={givebackMaxPercent}
-                        onChange={(_, val) => setGivebackMaxPercent(val as number)}
-                        min={15}
-                        max={60}
-                        step={5}
-                        marks={[
-                          { value: 20, label: '20% (Tight)' },
-                          { value: 35, label: '35% (Standard)' },
-                          { value: 50, label: '50% (Loose)' },
-                        ]}
-                      />
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        If a trade peaks at {formatCurrency(10000, settingsCurrency)} profit and retreats to {formatCurrency(10000 * (1 - givebackMaxPercent / 100), settingsCurrency)}, the radar triggers exit prompt.
-                      </Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Card 4: Institutional Server Automation, Off-Screen Alerts & Discipline Lockout */}
-            <Grid size={{ xs: 12 }}>
-              <Card variant="outlined" sx={{ p: 1 }}>
-                <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                    <Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <NotificationsActiveRounded sx={{ color: 'primary.main' }} />
-                        Off-Screen Execution Daemon, Telegram Alerts & Hard Guardrails
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Institutional-grade safeguards: server-side automation even when your browser tab closes, Telegram push notifications, and opt-in capital preservation lockout.
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Grid container spacing={2.5}>
-                    {/* Paper Execution Mode Toggle */}
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: paperExecutionMode ? 'warning.main' : 'divider', bgcolor: paperExecutionMode ? alpha('#F59E0B', 0.08) : 'transparent' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <ScienceRounded sx={{ color: paperExecutionMode ? 'warning.main' : 'text.secondary', fontSize: 20 }} />
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                              Paper Execution Mode (Simulation)
-                            </Typography>
-                          </Box>
-                          <Switch
-                            checked={paperExecutionMode}
-                            onChange={(e) => setPaperExecutionMode(e.target.checked)}
-                            color="warning"
-                          />
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          When enabled, ladder steps and auto-exits will simulate in SetupMint journal without transmitting live financial orders to FYERS exchange. Great for strategy dry-runs.
-                        </Typography>
-                      </Box>
-                    </Grid>
-
-                    {/* Server-Side Execution Daemon Toggle */}
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: serverSideExecutionEnabled ? 'primary.main' : 'divider', bgcolor: serverSideExecutionEnabled ? alpha('#3B82F6', 0.08) : 'transparent' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CloudSyncRounded sx={{ color: serverSideExecutionEnabled ? 'primary.main' : 'text.secondary', fontSize: 20 }} />
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                              Server-Side Execution Daemon
-                            </Typography>
-                          </Box>
-                          <Switch
-                            checked={serverSideExecutionEnabled}
-                            onChange={(e) => setServerSideExecutionEnabled(e.target.checked)}
-                            color="primary"
-                          />
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          Monitors positions directly on the backend server every 2 seconds. Ladder exits, trailing stops, and giveback safety triggers execute even if your laptop sleeps or your connection drops.
-                        </Typography>
-                      </Box>
-                    </Grid>
-
-                    {/* Hard Discipline Lockout */}
-                    <Grid size={{ xs: 12, md: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: hardDisciplineLockoutEnabled ? 'error.main' : 'divider', bgcolor: hardDisciplineLockoutEnabled ? alpha('#EF4444', 0.08) : 'transparent' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <LockClockRounded sx={{ color: hardDisciplineLockoutEnabled ? 'error.main' : 'text.secondary', fontSize: 20 }} />
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                              Hard Discipline Lockout Mode
-                            </Typography>
-                          </Box>
-                          <Switch
-                            checked={hardDisciplineLockoutEnabled}
-                            onChange={(e) => setHardDisciplineLockoutEnabled(e.target.checked)}
-                            color="error"
-                          />
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                          Opt-in hard guardrail: If daily loss limit is breached or 3 consecutive losses occur, new trade logging and entry actions are hard-locked for the cooldown window to eliminate revenge trading.
-                        </Typography>
-                        {hardDisciplineLockoutEnabled && (
-                          <TextField
-                            size="small"
-                            type="number"
-                            label="Lockout Cooldown (Minutes)"
-                            value={hardDisciplineLockoutDurationMins}
-                            onChange={(e) => setHardDisciplineLockoutDurationMins(Math.max(15, Number(e.target.value)))}
-                            sx={{ width: 220 }}
-                            helperText="Recommended: 45–60 mins"
-                          />
-                        )}
-                      </Box>
-                    </Grid>
-
-                    {/* Telegram Push Alerts */}
-                    <Grid size={{ xs: 12 }}>
-                      <Box sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: telegramAlertsEnabled ? 'info.main' : 'divider', bgcolor: telegramAlertsEnabled ? alpha('#0284C7', 0.04) : 'transparent' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5, mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                            <SendRounded sx={{ color: (user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) ? 'info.main' : 'text.secondary', fontSize: 22 }} />
-                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                              Telegram Off-Screen Terminal & Mobile Remote Control
-                            </Typography>
-                            {(user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) && (user?.liveWatcherSettings?.telegramChatId || telegramChatId) ? (
-                              <Chip
-                                icon={<CheckCircleRounded sx={{ fontSize: '15px !important' }} />}
-                                label={telegramAlertsEnabled ? 'Connected & Active' : 'Configured (Alerts Muted)'}
-                                color={telegramAlertsEnabled ? 'success' : 'default'}
-                                size="small"
-                                variant={telegramAlertsEnabled ? 'filled' : 'outlined'}
-                                sx={{ fontWeight: 700 }}
-                              />
-                            ) : (
-                              <Chip
-                                label="Not Configured"
-                                size="small"
-                                variant="outlined"
-                                sx={{ fontWeight: 600, color: 'text.secondary' }}
-                              />
-                            )}
-                          </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: telegramAlertsEnabled ? 'info.main' : 'text.secondary', fontSize: '0.85rem' }}>
-                              {telegramAlertsEnabled ? 'Alerts Active' : 'Alerts Paused'}
-                            </Typography>
-                            <Switch
-                              checked={telegramAlertsEnabled}
-                              onChange={(e) => setTelegramAlertsEnabled(e.target.checked)}
-                              color="info"
-                            />
-                          </Box>
-                        </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                          Receive loud, real-time risk alerts and interact directly with your trading account from Telegram using inline buttons (1-tap Exit, Lock BE) and two-way chat commands (/pnl, /trades, /panic).
-                        </Typography>
-
-                        {/* Credentials and Testing - ALWAYS VISIBLE */}
-                        <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? alpha('#0284C7', 0.05) : alpha('#0284C7', 0.03), border: '1px solid', borderColor: alpha('#0284C7', 0.2), mb: 2 }}>
-                          <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'info.main', letterSpacing: '0.05em', display: 'block', mb: 1.5 }}>
-                            Bot Credentials & Connection
-                          </Typography>
-                          <Grid container spacing={2}>
-                            <Grid size={{ xs: 12, md: 5 }}>
-                              <TextField
-                                size="small"
-                                type="password"
-                                label="Telegram Bot Token"
-                                placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                                value={telegramBotToken}
-                                onChange={(e) => setTelegramBotToken(e.target.value)}
-                                helperText={
-                                  user?.liveWatcherSettings?.telegramBotToken
-                                    ? 'Token is securely encrypted in database. Leave as •••••••• to keep current token, or paste a new one to replace.'
-                                    : 'Paste your Telegram Bot Token from @BotFather'
-                                }
-                                fullWidth
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, md: 4 }}>
-                              <TextField
-                                size="small"
-                                label="Telegram Chat ID"
-                                placeholder="e.g. 987654321"
-                                value={telegramChatId}
-                                onChange={(e) => setTelegramChatId(e.target.value)}
-                                helperText={user?.liveWatcherSettings?.telegramChatId ? `Connected to Chat ID: ${user.liveWatcherSettings.telegramChatId}` : "Your numeric Telegram chat ID from @userinfobot"}
-                                fullWidth
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, md: 3 }}>
-                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                <Button
-                                  variant="outlined"
-                                  color="info"
-                                  size="small"
-                                  onClick={handleTestTelegram}
-                                  disabled={testingTelegram || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                  sx={{ fontWeight: 700, flex: 1, whiteSpace: 'nowrap' }}
-                                >
-                                  {testingTelegram ? 'Testing...' : 'Test Link'}
-                                </Button>
-                                <Button
-                                  variant="outlined"
-                                  color="warning"
-                                  size="small"
-                                  onClick={handleSendSampleAlert}
-                                  disabled={sendingSampleAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                  sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                  title="Dispatches a realistic formatted risk telemetry card to Telegram"
-                                >
-                                  {sendingSampleAlert ? 'Sending...' : 'Sample Alert'}
-                                </Button>
-                                {hasLiveExecutableAccount && (
-                                  <Button
-                                    variant="outlined"
-                                    color="secondary"
-                                    size="small"
-                                    onClick={handleRegisterWebhook}
-                                    disabled={registeringWebhook || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken)}
-                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                    title="Connects two-way buttons and commands to your Telegram Bot"
-                                  >
-                                    {registeringWebhook ? 'Configuring...' : 'Set Webhook'}
-                                  </Button>
-                                )}
-                                {(user?.liveWatcherSettings?.telegramBotToken || user?.liveWatcherSettings?.telegramChatId) && (
-                                  <Button
-                                    variant="outlined"
-                                    color="error"
-                                    size="small"
-                                    onClick={handleClearTelegramCredentials}
-                                    sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
-                                    title="Disconnect Telegram and remove stored bot credentials"
-                                  >
-                                    Disconnect
-                                  </Button>
-                                )}
-                              </Box>
-                            </Grid>
-                          </Grid>
-                        </Box>
-
-                        {/* Telegram MT5 Fast Execution Presets (Gold XAUUSD & Ethereum ETHUSD) - ALWAYS VISIBLE */}
-                        <Box
-                          sx={{
-                            p: 2.5,
-                            borderRadius: 2,
-                            bgcolor: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(248, 250, 252, 0.9)',
-                            border: '1px solid',
-                            borderColor: isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(14, 165, 233, 0.35)',
-                            mb: 2.5,
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Box
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 1.5,
-                                  bgcolor: 'primary.main',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  color: '#fff',
-                                }}
-                              >
-                                <FlashOnRounded sx={{ fontSize: 20 }} />
-                              </Box>
-                              <Box>
-                                <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
-                                  ⚡ Telegram MT5 Fast-Order Presets (Gold &amp; Ethereum)
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  Default sizing, Stop Loss buffers &amp; Target R:R ratios for instant 1-tap orders sent via Telegram
-                                </Typography>
-                              </Box>
-                            </Box>
-                            <Chip
-                              size="small"
-                              label="Active on /gold, /eth, /trade, /risk"
-                              color="primary"
-                              variant="outlined"
-                              sx={{ fontWeight: 700, fontSize: '0.72rem' }}
-                            />
-                          </Box>
-
-                          {/* Telegram Trade Execution Lock / Restriction Setting */}
-                          <Box
-                            sx={{
-                              p: 2,
-                              borderRadius: 2,
-                              bgcolor: restrictTelegramTradeExecution
-                                ? (isDark ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.04)')
-                                : (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)'),
-                              border: '1px solid',
-                              borderColor: restrictTelegramTradeExecution ? 'error.main' : 'success.main',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 2,
-                              mb: 2,
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Box
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 1.5,
-                                  bgcolor: restrictTelegramTradeExecution ? 'error.main' : 'success.main',
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                              >
-                                <LockRounded sx={{ fontSize: 20 }} />
-                              </Box>
-                              <Box>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                  Restrict Telegram Trade Execution
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {restrictTelegramTradeExecution
-                                    ? '🔒 RESTRICTED: New trade placement from Telegram is blocked. Live position defense (SL, BE, Close) remains active.'
-                                    : '🔓 ALLOWED: Fast 1-tap trade execution from Telegram is active.'}
-                                </Typography>
-                              </Box>
-                            </Box>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={restrictTelegramTradeExecution}
-                                  onChange={(e) => setRestrictTelegramTradeExecution(e.target.checked)}
-                                  color="error"
-                                />
-                              }
-                              label={restrictTelegramTradeExecution ? 'Restricted' : 'Allowed'}
-                              sx={{ m: 0 }}
-                            />
-                          </Box>
-
-                          {/* Telegram Order Pre-Trade Guardrails Setting */}
-                          <Box
-                            sx={{
-                              p: 2,
-                              borderRadius: 2,
-                              bgcolor: enforceTelegramOrderGuardrails
-                                ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
-                                : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
-                              border: '1px solid',
-                              borderColor: enforceTelegramOrderGuardrails ? 'success.main' : 'warning.main',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 2,
-                              mb: 2,
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Box
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 1.5,
-                                  bgcolor: enforceTelegramOrderGuardrails ? 'success.main' : 'warning.main',
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                              >
-                                <ShieldRounded sx={{ fontSize: 20 }} />
-                              </Box>
-                              <Box>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                  Telegram Order Guardrails
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {enforceTelegramOrderGuardrails
-                                    ? '🛡️ ENFORCED: Pre-trade guardrails (max open positions, risk per trade, stale quotes, revenge cooldowns) protect your account from overexposure.'
-                                    : '⚡ BYPASSED (OPTIONAL): Guardrail checks are optional. 1-tap Telegram orders execute directly without being blocked.'}
-                                </Typography>
-                              </Box>
-                            </Box>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={enforceTelegramOrderGuardrails}
-                                  onChange={(e) => setEnforceTelegramOrderGuardrails(e.target.checked)}
-                                  color="success"
-                                />
-                              }
-                              label={enforceTelegramOrderGuardrails ? 'Enforced' : 'Optional'}
-                              sx={{ m: 0 }}
-                            />
-                          </Box>
-
-                          {/* Adaptive Day-Risk Guardrail Blocking Setting */}
-                          <Box
-                            sx={{
-                              p: 2,
-                              borderRadius: 2,
-                              bgcolor: enforceAdaptiveDayRiskGuardrails
-                                ? (isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(14, 165, 233, 0.04)')
-                                : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
-                              border: '1px solid',
-                              borderColor: enforceAdaptiveDayRiskGuardrails ? 'info.main' : 'warning.main',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 2,
-                              mb: 2,
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Box
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  borderRadius: 1.5,
-                                  bgcolor: enforceAdaptiveDayRiskGuardrails ? 'info.main' : 'warning.main',
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                              >
-                                <TrendingUpRounded sx={{ fontSize: 20 }} />
-                              </Box>
-                              <Box>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                  Adaptive Day-Risk Guardrails (Daily Trades, Loss Limit &amp; Defensive Mode)
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {enforceAdaptiveDayRiskGuardrails
-                                    ? '📈 ENFORCED: Dynamic daily trade limits, daily loss thresholds, and defensive mode volume caps block new Telegram orders when triggered.'
-                                    : '⚡ BYPASSED (OPTIONAL): Adaptive day-risk limits do not block Telegram orders. Sizing and telemetry remain visible, but execution is never blocked.'}
-                                </Typography>
-                              </Box>
-                            </Box>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={enforceAdaptiveDayRiskGuardrails}
-                                  onChange={(e) => setEnforceAdaptiveDayRiskGuardrails(e.target.checked)}
-                                  color="info"
-                                />
-                              }
-                              label={enforceAdaptiveDayRiskGuardrails ? 'Enforced' : 'Optional'}
-                              sx={{ m: 0 }}
-                            />
-                          </Box>
-
-                          <Grid container spacing={2}>
-                            {/* Gold (XAUUSD) Card */}
-                            <Grid size={{ xs: 12, md: 6 }}>
-                              <Box
-                                sx={{
-                                  p: 2,
-                                  borderRadius: 2,
-                                  bgcolor: isDark ? 'rgba(234, 179, 8, 0.05)' : 'rgba(254, 240, 138, 0.25)',
-                                  border: '1px solid',
-                                  borderColor: isDark ? 'rgba(234, 179, 8, 0.35)' : 'rgba(234, 179, 8, 0.5)',
-                                  height: '100%',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: 1.5,
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box
-                                      sx={{
-                                        width: 24,
-                                        height: 24,
-                                        borderRadius: '50%',
-                                        bgcolor: 'warning.main',
-                                        color: '#000',
-                                        fontWeight: 900,
-                                        fontSize: '0.75rem',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                      }}
-                                    >
-                                      Au
-                                    </Box>
-                                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#FDE047' : '#854D0E' }}>
-                                      Gold (XAUUSD) MT5 Presets
-                                    </Typography>
-                                  </Box>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'text.secondary' }}>
-                                    100 oz / Lot (Standard Gold Contract)
-                                  </Typography>
-                                </Box>
-
-                                <Grid container spacing={1.5}>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <TextField
-                                      size="small"
-                                      label="Default Lots"
-                                      type="number"
-                                      value={goldDefaultLot}
-                                      onChange={(e) => setGoldDefaultLot(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                      slotProps={{ htmlInput: { step: 'any', min: 0.01, max: 100 } }}
-                                      helperText="e.g. 0.04 or 0.10 lots"
-                                      fullWidth
-                                    />
-                                  </Grid>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <TextField
-                                      size="small"
-                                      label="SL Buffer (pts)"
-                                      type="number"
-                                      value={goldSlPoints}
-                                      onChange={(e) => setGoldSlPoints(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                      slotProps={{ htmlInput: { step: 'any', min: 1, max: 1000 } }}
-                                      helperText={`$${((Number(goldSlPoints) || 0) * 0.10).toFixed(2)}/oz move`}
-                                      fullWidth
-                                    />
-                                  </Grid>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <TextField
-                                      size="small"
-                                      label="Target R:R"
-                                      type="number"
-                                      value={goldRrRatio}
-                                      onChange={(e) => setGoldRrRatio(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                      slotProps={{ htmlInput: { step: 'any', min: 0.1, max: 50 } }}
-                                      helperText={`${((Number(goldSlPoints) || 0) * (Number(goldRrRatio) || 0)).toFixed(0)} pts TP`}
-                                      fullWidth
-                                    />
-                                  </Grid>
-                                </Grid>
-
-                                <Box
-                                  sx={{
-                                    p: 1.25,
-                                    borderRadius: 1.5,
-                                    bgcolor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.85)',
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    mt: 'auto',
-                                  }}
-                                >
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                    Per-Order Sizing Preview:
-                                  </Typography>
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
-                                      Max SL Risk: -${((Number(goldSlPoints) || 0) * 10 * (Number(goldDefaultLot) || 0)).toFixed(2)} (-${((Number(goldSlPoints) || 0) * 0.1).toFixed(2)}/oz)
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main' }}>
-                                      Target Gain: +${((Number(goldSlPoints) || 0) * (Number(goldRrRatio) || 0) * 10 * (Number(goldDefaultLot) || 0)).toFixed(2)} (+${((Number(goldSlPoints) || 0) * (Number(goldRrRatio) || 0) * 0.1).toFixed(2)}/oz)
-                                    </Typography>
-                                  </Box>
-                                </Box>
-                              </Box>
-                            </Grid>
-
-                            {/* Ethereum (ETHUSD) Card */}
-                            <Grid size={{ xs: 12, md: 6 }}>
-                              <Box
-                                sx={{
-                                  p: 2,
-                                  borderRadius: 2,
-                                  bgcolor: isDark ? 'rgba(2, 132, 199, 0.05)' : 'rgba(224, 242, 254, 0.3)',
-                                  border: '1px solid',
-                                  borderColor: isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(14, 165, 233, 0.45)',
-                                  height: '100%',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: 1.5,
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Box
-                                      sx={{
-                                        width: 24,
-                                        height: 24,
-                                        borderRadius: '50%',
-                                        bgcolor: 'info.main',
-                                        color: '#fff',
-                                        fontWeight: 900,
-                                        fontSize: '0.75rem',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                      }}
-                                    >
-                                      Ξ
-                                    </Box>
-                                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#38BDF8' : '#0369A1' }}>
-                                      Ethereum (ETHUSD) MT5 Presets
-                                    </Typography>
-                                  </Box>
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'text.secondary' }}>
-                                    1 ETH / Lot
-                                  </Typography>
-                                </Box>
-
-                                <Grid container spacing={1.5}>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <TextField
-                                      size="small"
-                                      label="Default Lots"
-                                      type="number"
-                                      value={ethDefaultLot}
-                                      onChange={(e) => setEthDefaultLot(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                      slotProps={{ htmlInput: { step: 'any', min: 0.01, max: 1000 } }}
-                                      helperText="e.g. 1.00 or 2.00 ETH"
-                                      fullWidth
-                                    />
-                                  </Grid>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <TextField
-                                      size="small"
-                                      label="SL Buffer ($)"
-                                      type="number"
-                                      value={ethSlPrice}
-                                      onChange={(e) => setEthSlPrice(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                      slotProps={{ htmlInput: { step: 'any', min: 1, max: 1000 } }}
-                                      helperText={`$${(Number(ethSlPrice) || 0).toFixed(0)} stop distance`}
-                                      fullWidth
-                                    />
-                                  </Grid>
-                                  <Grid size={{ xs: 12, sm: 4 }}>
-                                    <TextField
-                                      size="small"
-                                      label="Target R:R"
-                                      type="number"
-                                      value={ethRrRatio}
-                                      onChange={(e) => setEthRrRatio(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                      slotProps={{ htmlInput: { step: 'any', min: 0.1, max: 50 } }}
-                                      helperText={`+$${((Number(ethSlPrice) || 0) * (Number(ethRrRatio) || 0)).toFixed(0)} TP`}
-                                      fullWidth
-                                    />
-                                  </Grid>
-                                </Grid>
-
-                                <Box
-                                  sx={{
-                                    p: 1.25,
-                                    borderRadius: 1.5,
-                                    bgcolor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.85)',
-                                    border: '1px solid',
-                                    borderColor: 'divider',
-                                    mt: 'auto',
-                                  }}
-                                >
-                                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
-                                    Per-Order Sizing Preview:
-                                  </Typography>
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
-                                      Max SL Risk: -${((Number(ethSlPrice) || 0) * (Number(ethDefaultLot) || 0)).toFixed(2)} (-${(Number(ethSlPrice) || 0).toFixed(0)}/coin)
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main' }}>
-                                      Target Gain: +${((Number(ethSlPrice) || 0) * (Number(ethRrRatio) || 0) * (Number(ethDefaultLot) || 0)).toFixed(2)} (+${((Number(ethSlPrice) || 0) * (Number(ethRrRatio) || 0)).toFixed(0)}/coin)
-                                    </Typography>
-                                  </Box>
-                                </Box>
-                              </Box>
-                            </Grid>
-
-                            {/* Risk Budget Sizing (/risk) */}
-                            <Grid size={{ xs: 12 }}>
-                              <Box
-                                sx={{
-                                  p: 1.75,
-                                  borderRadius: 1.5,
-                                  bgcolor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(209, 250, 229, 0.35)',
-                                  border: '1px solid',
-                                  borderColor: isDark ? 'rgba(16, 185, 129, 0.35)' : 'rgba(16, 185, 129, 0.45)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  flexWrap: 'wrap',
-                                  gap: 2,
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                  <TrackChangesRounded sx={{ color: 'success.main', fontSize: 24 }} />
-                                  <Box>
-                                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                      Default Risk-Budget Sizing for <code>/risk</code> Command
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                      When you type <code>/risk gold</code> or <code>/risk eth</code> in Telegram, SetupMint dynamically calculates lots to keep your maximum stop-loss dollar loss strictly capped.
-                                    </Typography>
-                                  </Box>
-                                </Box>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                                  <TextField
-                                    size="small"
-                                    label="Default Dollar Risk ($)"
-                                    type="number"
-                                    value={defaultDollarRisk}
-                                    onChange={(e) => setDefaultDollarRisk(e.target.value === '' ? ('' as any) : Number(e.target.value))}
-                                    slotProps={{ htmlInput: { step: 'any', min: 1, max: 100000 } }}
-                                    sx={{ width: 170 }}
-                                  />
-                                  <Box sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
-                                    <div>Gold: <strong>{(((Number(defaultDollarRisk) || 0) / (((Number(goldSlPoints) || 35) * 10))) || 0).toFixed(2)} Lots</strong> (@ {goldSlPoints} pts)</div>
-                                    <div>ETH: <strong>{(((Number(defaultDollarRisk) || 0) / (Number(ethSlPrice) || 30)) || 0).toFixed(2)} ETH</strong> (@ ${ethSlPrice})</div>
-                                  </Box>
-                                </Box>
-                              </Box>
-                            </Grid>
-                          </Grid>
-                        </Box>
-
-                        {!telegramAlertsEnabled && ((user?.liveWatcherSettings?.telegramBotToken || telegramBotToken) && (user?.liveWatcherSettings?.telegramChatId || telegramChatId)) && (
-                          <Alert severity="info" variant="outlined" sx={{ py: 0.5, px: 2, mb: 2, alignItems: 'center' }}>
-                            Telegram Bot is configured and linked. Real-time push alerts are currently <strong>Paused</strong>. Flip the switch above to &quot;Alerts Active&quot; to receive risk notifications on Telegram.
-                          </Alert>
-                        )}
-
-                        {telegramAlertsEnabled && (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-
-                            <Grid container spacing={2} sx={{ mt: 1 }}>
-                              <Grid size={{ xs: 12, sm: 6 }}>
-                                <TextField
-                                  size="small"
-                                  label="Slippage Guard Threshold (%)"
-                                  type="number"
-                                  slotProps={{ htmlInput: { step: 0.1, min: 0.1, max: 5 } }}
-                                  value={slippageGuardPercent}
-                                  onChange={(e) => setSlippageGuardPercent(Number(e.target.value))}
-                                  helperText="Requires 2nd tap confirm if market moves beyond this % from rendered price"
-                                  fullWidth
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, sm: 6 }}>
-                                <TextField
-                                  size="small"
-                                  label="Default Button Snooze Duration (min)"
-                                  type="number"
-                                  slotProps={{ htmlInput: { step: 1, min: 1, max: 120 } }}
-                                  value={snoozeDefaultMin}
-                                  onChange={(e) => setSnoozeDefaultMin(Number(e.target.value))}
-                                  helperText="Minutes to suppress alerts when tapping 💤 Snooze on a live card"
-                                  fullWidth
-                                />
-                              </Grid>
-                            </Grid>
-
-                            <Grid container spacing={2} sx={{ mt: 1 }}>
-                              <Grid size={{ xs: 12, sm: 6 }}>
-                                <TextField
-                                  size="small"
-                                  label="Stale Quote Threshold (seconds)"
-                                  type="number"
-                                  slotProps={{ htmlInput: { step: 1, min: 2, max: 120 } }}
-                                  value={staleDataThresholdSeconds}
-                                  onChange={(e) => setStaleDataThresholdSeconds(Number(e.target.value))}
-                                  helperText="If market feed is older than this threshold, live broker execution is blocked"
-                                  fullWidth
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, sm: 6 }}>
-                                <Box
-                                  sx={{
-                                    p: 1.5,
-                                    borderRadius: 2,
-                                    border: '1px solid',
-                                    borderColor: requireHoldToConfirm ? 'rgba(16, 185, 129, 0.4)' : 'divider',
-                                    bgcolor: requireHoldToConfirm ? alpha('#10B981', 0.05) : 'transparent',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                  }}
-                                >
-                                  <Box>
-                                    <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
-                                      Hold-to-Confirm Exits (~600ms)
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block' }}>
-                                      Prevents costly mis-clicks on market exits and panic kill switch
-                                    </Typography>
-                                  </Box>
-                                  <Switch
-                                    size="small"
-                                    color="success"
-                                    checked={requireHoldToConfirm}
-                                    onChange={(e) => setRequireHoldToConfirm(e.target.checked)}
-                                  />
-                                </Box>
-                              </Grid>
-                            </Grid>
-
-                            {/* Live Candlestick Snapshot Settings */}
-                            <Grid container spacing={2} sx={{ mt: 0.5 }}>
-                              <Grid size={{ xs: 12, sm: 7 }}>
-                                <Box
-                                  sx={{
-                                    p: 1.5,
-                                    borderRadius: 2,
-                                    border: '1px solid',
-                                    borderColor: telegramAttachLiveChart ? 'rgba(56, 189, 248, 0.4)' : 'divider',
-                                    bgcolor: telegramAttachLiveChart ? alpha('#0284C7', 0.05) : 'transparent',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    height: '100%',
-                                  }}
-                                >
-                                  <Box>
-                                    <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
-                                      📊 Attach Live Candlestick Charts (/trades)
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem', display: 'block' }}>
-                                      Generates and sends live candlestick snapshots with Entry, SL, TP, and LTP levels
-                                    </Typography>
-                                  </Box>
-                                  <Switch
-                                    size="small"
-                                    color="info"
-                                    checked={telegramAttachLiveChart}
-                                    onChange={(e) => setTelegramAttachLiveChart(e.target.checked)}
-                                  />
-                                </Box>
-                              </Grid>
-                              <Grid size={{ xs: 12, sm: 5 }}>
-                                <TextField
-                                  select
-                                  size="small"
-                                  label="Default Chart Timeframe"
-                                  fullWidth
-                                  value={telegramChartTimeframe}
-                                  onChange={(e) => setTelegramChartTimeframe(e.target.value)}
-                                  helperText="Flexible: tap [⏱️ 1m], [⏱️ 5m], [⏱️ 15m], [⏱️ 1h] in Telegram to change anytime"
-                                >
-                                  <MenuItem value="1">⏱️ 1m (1 Minute Micro)</MenuItem>
-                                  <MenuItem value="3">⏱️ 3m (3 Minutes Scalp)</MenuItem>
-                                  <MenuItem value="5">⏱️ 5m (5 Minutes — Recommended)</MenuItem>
-                                  <MenuItem value="15">⏱️ 15m (15 Minutes Intraday)</MenuItem>
-                                  <MenuItem value="30">⏱️ 30m (30 Minutes Swing)</MenuItem>
-                                  <MenuItem value="60">⏱️ 1h (1 Hour Trend)</MenuItem>
-                                  <MenuItem value="D">📅 1D (Daily Macro)</MenuItem>
-                                </TextField>
-                              </Grid>
-                            </Grid>
-
-                            <Divider sx={{ my: 0.5 }} />
-
-                            {/* Event Subscriptions Toggles */}
-                            <Box>
-                              <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary', display: 'block', mb: 1 }}>
-                                Subscribed Push Alert Categories (All alerts sound audibly — zero silent mode)
-                              </Typography>
-                              <Grid container spacing={1}>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.stopThreatCritical !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, stopThreatCritical: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚨 Critical Stop Threats (&lt;25% Runway)</Typography>}
-                                    />
-                                    <Tooltip title="Audition Stop Threat Siren" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playStopThreat()} sx={{ color: 'error.main', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.givebackLeaking !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, givebackLeaking: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⚠️ Profit Giveback Reversals (&gt;35% Leak)</Typography>}
-                                    />
-                                    <Tooltip title="Audition Giveback Leak Chime" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playGivebackAlert()} sx={{ color: 'warning.main', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.ladderMilestoneReached !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, ladderMilestoneReached: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🎯 Ladder Target Met (T1, T2 Hits)</Typography>}
-                                    />
-                                    <Tooltip title="Audition Target Hit Chime" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playTargetHit()} sx={{ color: 'success.main', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.dailyLossBreached !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, dailyLossBreached: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🛑 Daily Max Loss Breach & 75% Warning</Typography>}
-                                    />
-                                    <Tooltip title="Audition Daily Loss Siren" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playDailyLossAlert()} sx={{ color: 'error.main', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.nakedPositionWarning !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, nakedPositionWarning: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⚠️ Naked Positions (No Resting Exchange SL)</Typography>}
-                                  />
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.tokenExpiryWarning !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tokenExpiryWarning: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>⏰ 08:45 AM FYERS Token Expiry Alert</Typography>}
-                                  />
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.tradeOpened !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeOpened: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🚀 Trade Opened &amp; Synced Notice</Typography>}
-                                    />
-                                    <Tooltip title="Audition Order Execution Click" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playOrderExecuted()} sx={{ color: 'info.main', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.tradeClosed !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, tradeClosed: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🏁 Trade Closed &amp; Excursion Summary</Typography>}
-                                    />
-                                    <Tooltip title="Audition Resolution Bell" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playTradeClosed()} sx={{ color: 'secondary.main', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        size="small"
-                                        checked={telegramAlertEvents.eodSummaryDigest !== false}
-                                        onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, eodSummaryDigest: e.target.checked })}
-                                      />
-                                    }
-                                    label={<Typography variant="caption" sx={{ fontWeight: 600 }}>📊 Daily EOD Session Digest (15:35 IST)</Typography>}
-                                  />
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.goldNewsReminder !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsReminder: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#EAB308' }}>👑 Gold Catalyst News Reminder</Typography>}
-                                    />
-                                    <Tooltip title="Audition Gold News Horn" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playNewsAlert()} sx={{ color: '#EAB308', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
-                                    <FormControlLabel
-                                      control={
-                                        <Checkbox
-                                          size="small"
-                                          checked={telegramAlertEvents.goldNewsResultAlert !== false}
-                                          onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, goldNewsResultAlert: e.target.checked })}
-                                        />
-                                      }
-                                      label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#10B981' }}>⚡ Post-News Actual Result Flash</Typography>}
-                                    />
-                                    <Tooltip title="Audition News Flash Chime" arrow>
-                                      <IconButton size="small" onClick={() => soundEngine.playNewsAlert()} sx={{ color: '#10B981', p: 0.5 }}>
-                                        <VolumeUpRounded sx={{ fontSize: 16 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Grid>
-                              </Grid>
-                            </Box>
-
-                            {/* Dedicated Gold (XAUUSD) News & Custom Reminder Configuration */}
-                            <Box
-                              sx={{
-                                p: 2,
-                                borderRadius: 2,
-                                bgcolor: isDark ? 'rgba(234, 179, 8, 0.06)' : 'rgba(254, 240, 138, 0.25)',
-                                border: '1px solid',
-                                borderColor: isDark ? 'rgba(234, 179, 8, 0.3)' : 'rgba(234, 179, 8, 0.45)',
-                              }}
-                            >
-                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Box
-                                    sx={{
-                                      width: 28,
-                                      height: 28,
-                                      borderRadius: '50%',
-                                      bgcolor: 'warning.main',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      color: '#000',
-                                      fontWeight: 900,
-                                      fontSize: '0.85rem',
-                                    }}
-                                  >
-                                    Au
-                                  </Box>
-                                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#FDE047' : '#854D0E' }}>
-                                    Gold (XAUUSD) Catalyst News Reminders &amp; Defense
-                                  </Typography>
-                                  <Chip
-                                    size="small"
-                                    label={telegramAlertEvents.goldNewsReminder !== false ? 'Enabled' : 'Disabled'}
-                                    color={telegramAlertEvents.goldNewsReminder !== false ? 'warning' : 'default'}
-                                    sx={{ fontWeight: 700, height: 20, fontSize: '0.68rem' }}
-                                  />
-                                </Box>
-
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="warning"
-                                    onClick={handleTestGoldNewsAlert}
-                                    disabled={testingGoldNewsAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                    sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
-                                  >
-                                    {testingGoldNewsAlert ? 'Delivering...' : '🔔 Test Pre-News Alert'}
-                                  </Button>
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    color="success"
-                                    onClick={handleTestGoldNewsResultAlert}
-                                    disabled={testingGoldNewsResultAlert || !(telegramBotToken || user?.liveWatcherSettings?.telegramBotToken) || !(telegramChatId || user?.liveWatcherSettings?.telegramChatId)}
-                                    sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
-                                  >
-                                    {testingGoldNewsResultAlert ? 'Delivering...' : '⚡ Test Actual Result Flash'}
-                                  </Button>
-                                </Box>
-                              </Box>
-
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.45 }}>
-                                Gold (XAUUSD) is denominated in US Dollars. Major US macro releases (CPI, Non-Farm Payrolls, FOMC Interest Decisions, Retail Sales, GDP) trigger immediate $20–$60 price sweeps and massive spread expansion. SetupMint scans the economic calendar 24/7 to deliver loud pre-news warnings AND instant post-release result flashes with deviation analysis, Gold bias, and live price reaction.
-                              </Typography>
-
-                              {/* Reminder Lead Times Preset & Custom Picker */}
-                              <Box sx={{ mb: 1.5, p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.8)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>
-                                  ⏰ Alert Lead Time (Select one or multiple notification stages before release):
-                                </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
-                                  {[5, 10, 15, 30, 45, 60, 120].map((mins) => {
-                                    const isSelected = goldNewsLeadTimesMinutes.includes(mins);
-                                    return (
-                                      <Chip
-                                        key={mins}
-                                        label={`${mins}m before`}
-                                        clickable
-                                        color={isSelected ? 'warning' : 'default'}
-                                        variant={isSelected ? 'filled' : 'outlined'}
-                                        size="small"
-                                        onClick={() => {
-                                          let nextTimes: number[];
-                                          if (isSelected) {
-                                            nextTimes = goldNewsLeadTimesMinutes.filter((m) => m !== mins);
-                                            if (nextTimes.length === 0) nextTimes = [15];
-                                          } else {
-                                            nextTimes = [...goldNewsLeadTimesMinutes, mins].sort((a, b) => b - a);
-                                          }
-                                          setGoldNewsLeadTimesMinutes(nextTimes);
-                                          setGoldNewsReminderMinutes(nextTimes[0] || 15);
-                                        }}
-                                        sx={{ fontWeight: isSelected ? 800 : 500 }}
-                                      />
-                                    );
-                                  })}
-                                </Box>
-
-                                {/* Custom minute entry */}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                  <TextField
-                                    size="small"
-                                    type="number"
-                                    placeholder="Custom mins"
-                                    value={customLeadInput}
-                                    onChange={(e) => setCustomLeadInput(e.target.value)}
-                                    sx={{ width: 140 }}
-                                    slotProps={{ htmlInput: { min: 1, max: 720, style: { fontSize: '0.8rem', padding: '4px 8px' } } }}
-                                  />
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => {
-                                      const val = parseInt(customLeadInput, 10);
-                                      if (Number.isFinite(val) && val > 0 && val <= 720) {
-                                        if (!goldNewsLeadTimesMinutes.includes(val)) {
-                                          const nextTimes = [...goldNewsLeadTimesMinutes, val].sort((a, b) => b - a);
-                                          setGoldNewsLeadTimesMinutes(nextTimes);
-                                          setGoldNewsReminderMinutes(nextTimes[0] || 15);
-                                        }
-                                        setCustomLeadInput('');
-                                      }
-                                    }}
-                                    disabled={!customLeadInput}
-                                    sx={{ height: 30, fontWeight: 700, textTransform: 'none' }}
-                                  >
-                                    + Add Custom Time
-                                  </Button>
-
-                                  <Typography variant="caption" sx={{ color: 'text.secondary', ml: 'auto', fontSize: '0.72rem' }}>
-                                    Active Reminders: <strong>{goldNewsLeadTimesMinutes.map((m) => `${m}m`).join(' & ')}</strong> before news + 5m Blackout
-                                  </Typography>
-                                </Box>
-                              </Box>
-
-                              {/* Impact Filter Selector */}
-                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                                    Filter Intensity:
-                                  </Typography>
-                                  <Chip
-                                    label="All Gold Movers (CPI, NFP, FOMC, GDP, Retail, PMI)"
-                                    clickable
-                                    size="small"
-                                    color={goldNewsImpactFilter === 'ALL_GOLD_MOVERS' ? 'warning' : 'default'}
-                                    variant={goldNewsImpactFilter === 'ALL_GOLD_MOVERS' ? 'filled' : 'outlined'}
-                                    onClick={() => setGoldNewsImpactFilter('ALL_GOLD_MOVERS')}
-                                    sx={{ fontWeight: 600, fontSize: '0.7rem' }}
-                                  />
-                                  <Chip
-                                    label="High-Impact Only (Red-Folder Only)"
-                                    clickable
-                                    size="small"
-                                    color={goldNewsImpactFilter === 'HIGH_IMPACT_ONLY' ? 'warning' : 'default'}
-                                    variant={goldNewsImpactFilter === 'HIGH_IMPACT_ONLY' ? 'filled' : 'outlined'}
-                                    onClick={() => setGoldNewsImpactFilter('HIGH_IMPACT_ONLY')}
-                                    sx={{ fontWeight: 600, fontSize: '0.7rem' }}
-                                  />
-                                </Box>
-
-                                <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic', fontSize: '0.7rem' }}>
-                                  Direct Telegram control: <code>/newsremind 15</code> or <code>/news</code>
-                                </Typography>
-                              </Box>
-                            </Box>
-
-                          </Box>
-                        )}
-
-                        {/* Two-Way Bot Interactive Commands Cheatsheet - ALWAYS VISIBLE */}
-                        <Box sx={{ p: 2, borderRadius: 2, bgcolor: isDark ? alpha('#0284C7', 0.05) : alpha('#0284C7', 0.02), border: '1px dashed', borderColor: alpha('#0284C7', 0.3), mt: 2 }}>
-                          <Typography variant="caption" sx={{ fontWeight: 800, color: 'info.main', display: 'block', mb: 1.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            📱 Interactive Mobile Bot Commands (Send anytime in your connected Telegram chat):
-                          </Typography>
-                          <Grid container spacing={1.5}>
-                            {/* Row 1: Fast Execution */}
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#EAB308', display: 'block' }}>
-                                  /gold [buy|sell] [lots]
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  1-tap Gold order with your saved presets or quick cockpit menu (also <code>/xau</code>)
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#38BDF8', display: 'block' }}>
-                                  /eth [buy|sell] [lots]
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  1-tap Ethereum order with your saved presets or quick cockpit menu
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'primary.main', display: 'block' }}>
-                                  /trade or /cockpit
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Live multi-asset price &amp; spread cockpit with 1-click BUY/SELL execution buttons
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#10B981', display: 'block' }}>
-                                  /pin
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Anchors live market prices and floating PnL permanently at the top of your Telegram chat
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'success.main', display: 'block' }}>
-                                  /risk [gold|eth] [$amt]
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Auto-calculate exact lot size capped at your dollar risk budget with 1-tap entry
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'error.main', display: 'block' }}>
-                                  /close [gold|eth]
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Instantly exit all active positions on MT5 for that specific symbol
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            {/* Row 2: Management & Risk */}
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, display: 'block' }}>
-                                  /trades
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  View open trades with 1-tap Exit and Lock BE buttons
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, display: 'block' }}>
-                                  /pnl
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Live floating PnL, Net R &amp; day total
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#EAB308', display: 'block' }}>
-                                  /news
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Gold catalyst schedule &amp; release countdowns
-                                </Typography>
-                              </Box>
-                            </Grid>
-
-                            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                              <Box sx={{ p: 1, borderRadius: 1, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, color: 'error.main', display: 'block' }}>
-                                  /panic
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.68rem', lineHeight: 1.3 }}>
-                                  Emergency market-exit for all open positions
-                                </Typography>
-                              </Box>
-                            </Grid>
-                          </Grid>
-                        </Box>
-                      </Box>
-                    </Grid>
-
-                    {/* In-Car & Apple CarPlay Siri Voice Briefings */}
-                    <Grid size={{ xs: 12 }}>
-                      <Box
-                        sx={{
-                          p: 2.5,
-                          borderRadius: 2,
-                          border: 1,
-                          borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : 'rgba(59, 130, 246, 0.2)',
-                          bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : 'rgba(239, 246, 255, 0.5)',
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <DirectionsCarRounded sx={{ color: 'primary.main', fontSize: 24 }} />
-                            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                              In-Car &amp; Apple CarPlay Siri Voice Briefings
-                            </Typography>
-                            <Chip label="Hands-Free Driving" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700, fontSize: '0.7rem' }} />
-                          </Box>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            color="inherit"
-                            startIcon={<SyncRounded fontSize="small" />}
-                            onClick={() => regenerateCarPlayTokenMutation.mutate()}
-                            disabled={regenerateCarPlayTokenMutation.isPending}
-                            sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                          >
-                            Regenerate CarPlay Key
-                          </Button>
-                        </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                          Query real-time Gold spot prices, check running positions/PnL, and trigger hands-free trade management (Breakeven, Partial TP) from your car steering wheel voice controls or Siri over Bluetooth / Apple CarPlay with zero visual screen distraction.
-                        </Typography>
-
-                        {isLoadingCarPlay ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-                            <CircularProgress size={20} />
-                            <Typography variant="caption" color="text.secondary">Loading your in-car voice endpoints...</Typography>
-                          </Box>
-                        ) : carPlaySetup?.endpoints ? (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <Grid container spacing={2}>
-                              {/* Endpoint 1: Live Gold Price */}
-                              <Grid size={{ xs: 12, md: 4 }}>
-                                <Card variant="outlined" sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', bgcolor: 'background.paper' }}>
-                                  <Box>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                      <VolumeUpRounded sx={{ color: '#EAB308', fontSize: 20 }} />
-                                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                        Live Gold Voice Quote
-                                      </Typography>
-                                    </Box>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                                      Spoken phrase: <em>&quot;Hey Siri, Gold Price&quot;</em>
-                                    </Typography>
-                                    <Box
-                                      onClick={() => handleCopyVoiceUrl('goldPrice', carPlaySetup.endpoints.goldPriceVoice)}
-                                      sx={{
-                                        p: 1,
-                                        borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                        mb: 1.5,
-                                        cursor: 'pointer',
-                                        userSelect: 'all',
-                                        border: '1px solid transparent',
-                                        transition: 'all 0.15s ease',
-                                        '&:hover': { borderColor: 'primary.main', bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'grey.200' },
-                                      }}
-                                      title="Click to copy full URL"
-                                    >
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                        {carPlaySetup.endpoints.goldPriceVoice}
-                                      </Typography>
-                                    </Box>
-                                  </Box>
-                                  <Box sx={{ display: 'flex', gap: 1 }}>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      fullWidth
-                                      startIcon={copiedVoiceKey === 'goldPrice' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                      onClick={() => handleCopyVoiceUrl('goldPrice', carPlaySetup.endpoints.goldPriceVoice)}
-                                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                                    >
-                                      {copiedVoiceKey === 'goldPrice' ? 'Copied' : 'Copy Siri Link'}
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      variant="contained"
-                                      color="primary"
-                                      onClick={() => handleTestCarPlaySpeech('goldPrice', carPlaySetup.endpoints.goldPriceVoice)}
-                                      disabled={speakingEndpoint === 'goldPrice'}
-                                      sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 70 }}
-                                    >
-                                      {speakingEndpoint === 'goldPrice' ? 'Speaking...' : 'Test Voice'}
-                                    </Button>
-                                  </Box>
-                                </Card>
-                              </Grid>
-
-                              {/* Endpoint 2: Open Trades Briefing */}
-                              <Grid size={{ xs: 12, md: 4 }}>
-                                <Card variant="outlined" sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', bgcolor: 'background.paper' }}>
-                                  <Box>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                      <VolumeUpRounded sx={{ color: 'info.main', fontSize: 20 }} />
-                                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                        Open Trades &amp; PnL
-                                      </Typography>
-                                    </Box>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                                      Spoken phrase: <em>&quot;Hey Siri, Check Trades&quot;</em>
-                                    </Typography>
-                                    <Box
-                                      onClick={() => handleCopyVoiceUrl('trades', carPlaySetup.endpoints.openTradesVoice)}
-                                      sx={{
-                                        p: 1,
-                                        borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                        mb: 1.5,
-                                        cursor: 'pointer',
-                                        userSelect: 'all',
-                                        border: '1px solid transparent',
-                                        transition: 'all 0.15s ease',
-                                        '&:hover': { borderColor: 'info.main', bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'grey.200' },
-                                      }}
-                                      title="Click to copy full URL"
-                                    >
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                        {carPlaySetup.endpoints.openTradesVoice}
-                                      </Typography>
-                                    </Box>
-                                  </Box>
-                                  <Box sx={{ display: 'flex', gap: 1 }}>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      fullWidth
-                                      startIcon={copiedVoiceKey === 'trades' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                      onClick={() => handleCopyVoiceUrl('trades', carPlaySetup.endpoints.openTradesVoice)}
-                                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                                    >
-                                      {copiedVoiceKey === 'trades' ? 'Copied' : 'Copy Siri Link'}
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      variant="contained"
-                                      color="info"
-                                      onClick={() => handleTestCarPlaySpeech('trades', carPlaySetup.endpoints.openTradesVoice)}
-                                      disabled={speakingEndpoint === 'trades'}
-                                      sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 70 }}
-                                    >
-                                      {speakingEndpoint === 'trades' ? 'Speaking...' : 'Test Voice'}
-                                    </Button>
-                                  </Box>
-                                </Card>
-                              </Grid>
-
-                              {/* Endpoint 3: Full Market Briefing */}
-                              <Grid size={{ xs: 12, md: 4 }}>
-                                <Card variant="outlined" sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', bgcolor: 'background.paper' }}>
-                                  <Box>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                      <VolumeUpRounded sx={{ color: 'success.main', fontSize: 20 }} />
-                                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                        Full In-Car Briefing
-                                      </Typography>
-                                    </Box>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                                      Spoken phrase: <em>&quot;Hey Siri, Market Briefing&quot;</em>
-                                    </Typography>
-                                    <Box
-                                      onClick={() => handleCopyVoiceUrl('briefing', carPlaySetup.endpoints.marketBriefingVoice)}
-                                      sx={{
-                                        p: 1,
-                                        borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                        mb: 1.5,
-                                        cursor: 'pointer',
-                                        userSelect: 'all',
-                                        border: '1px solid transparent',
-                                        transition: 'all 0.15s ease',
-                                        '&:hover': { borderColor: 'success.main', bgcolor: isDark ? 'rgba(0,0,0,0.5)' : 'grey.200' },
-                                      }}
-                                      title="Click to copy full URL"
-                                    >
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                        {carPlaySetup.endpoints.marketBriefingVoice}
-                                      </Typography>
-                                    </Box>
-                                  </Box>
-                                  <Box sx={{ display: 'flex', gap: 1 }}>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      fullWidth
-                                      startIcon={copiedVoiceKey === 'briefing' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                      onClick={() => handleCopyVoiceUrl('briefing', carPlaySetup.endpoints.marketBriefingVoice)}
-                                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                                    >
-                                      {copiedVoiceKey === 'briefing' ? 'Copied' : 'Copy Siri Link'}
-                                    </Button>
-                                    <Button
-                                      size="small"
-                                      variant="contained"
-                                      color="success"
-                                      onClick={() => handleTestCarPlaySpeech('briefing', carPlaySetup.endpoints.marketBriefingVoice)}
-                                      disabled={speakingEndpoint === 'briefing'}
-                                      sx={{ textTransform: 'none', fontSize: '0.75rem', minWidth: 70 }}
-                                    >
-                                      {speakingEndpoint === 'briefing' ? 'Speaking...' : 'Test Voice'}
-                                    </Button>
-                                  </Box>
-                                </Card>
-                              </Grid>
-                            </Grid>
-
-                            {/* In-Car Voice Driving Actions */}
-                            <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <span>🎙️ Hands-Free In-Car Siri Actions (Voice Control from Steering Wheel)</span>
-                              </Typography>
-                              <Grid container spacing={1.5}>
-                                <Grid size={{ xs: 12, md: 4 }}>
-                                  <Box sx={{ p: 1.5, borderRadius: 1, border: '1px dashed', borderColor: 'divider' }}>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main', display: 'block' }}>
-                                      1. Lock Breakeven (&quot;Hey Siri, Lock Breakeven&quot;)
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
-                                      Moves Stop Loss to entry plus fee buffer on active Gold position.
-                                    </Typography>
-                                    <Box
-                                      onClick={() => handleCopyVoiceUrl('actionBE', carPlaySetup.endpoints.lockBreakevenVoice)}
-                                      sx={{
-                                        p: 0.75,
-                                        borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                        mb: 1,
-                                        cursor: 'pointer',
-                                        userSelect: 'all',
-                                        border: '1px solid transparent',
-                                        '&:hover': { borderColor: 'primary.main' },
-                                      }}
-                                      title="Click to copy action URL"
-                                    >
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                        {carPlaySetup.endpoints.lockBreakevenVoice}
-                                      </Typography>
-                                    </Box>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      fullWidth
-                                      startIcon={copiedVoiceKey === 'actionBE' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                      onClick={() => handleCopyVoiceUrl('actionBE', carPlaySetup.endpoints.lockBreakevenVoice)}
-                                      sx={{ textTransform: 'none', fontSize: '0.72rem' }}
-                                    >
-                                      {copiedVoiceKey === 'actionBE' ? 'Copied' : 'Copy Action URL'}
-                                    </Button>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, md: 4 }}>
-                                  <Box sx={{ p: 1.5, borderRadius: 1, border: '1px dashed', borderColor: 'divider' }}>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'success.main', display: 'block' }}>
-                                      2. Book 50% Profit (&quot;Hey Siri, Bank Half&quot;)
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
-                                      Closes 50% volume and moves SL to Breakeven on remaining lots.
-                                    </Typography>
-                                    <Box
-                                      onClick={() => handleCopyVoiceUrl('actionHalf', carPlaySetup.endpoints.bookHalfProfitVoice)}
-                                      sx={{
-                                        p: 0.75,
-                                        borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                        mb: 1,
-                                        cursor: 'pointer',
-                                        userSelect: 'all',
-                                        border: '1px solid transparent',
-                                        '&:hover': { borderColor: 'success.main' },
-                                      }}
-                                      title="Click to copy action URL"
-                                    >
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                        {carPlaySetup.endpoints.bookHalfProfitVoice}
-                                      </Typography>
-                                    </Box>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      fullWidth
-                                      startIcon={copiedVoiceKey === 'actionHalf' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                      onClick={() => handleCopyVoiceUrl('actionHalf', carPlaySetup.endpoints.bookHalfProfitVoice)}
-                                      sx={{ textTransform: 'none', fontSize: '0.72rem' }}
-                                    >
-                                      {copiedVoiceKey === 'actionHalf' ? 'Copied' : 'Copy Action URL'}
-                                    </Button>
-                                  </Box>
-                                </Grid>
-                                <Grid size={{ xs: 12, md: 4 }}>
-                                  <Box sx={{ p: 1.5, borderRadius: 1, border: '1px dashed', borderColor: 'divider' }}>
-                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main', display: 'block' }}>
-                                      3. Panic Close All (&quot;Hey Siri, Panic Close&quot;)
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.7rem' }}>
-                                      Immediate market flatten for all open positions across all accounts.
-                                    </Typography>
-                                    <Box
-                                      onClick={() => handleCopyVoiceUrl('actionPanic', carPlaySetup.endpoints.panicCloseVoice)}
-                                      sx={{
-                                        p: 0.75,
-                                        borderRadius: 1,
-                                        bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                        mb: 1,
-                                        cursor: 'pointer',
-                                        userSelect: 'all',
-                                        border: '1px solid transparent',
-                                        '&:hover': { borderColor: 'error.main' },
-                                      }}
-                                      title="Click to copy action URL"
-                                    >
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                        {carPlaySetup.endpoints.panicCloseVoice}
-                                      </Typography>
-                                    </Box>
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      fullWidth
-                                      startIcon={copiedVoiceKey === 'actionPanic' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                      onClick={() => handleCopyVoiceUrl('actionPanic', carPlaySetup.endpoints.panicCloseVoice)}
-                                      sx={{ textTransform: 'none', fontSize: '0.72rem' }}
-                                    >
-                                      {copiedVoiceKey === 'actionPanic' ? 'Copied' : 'Copy Action URL'}
-                                    </Button>
-                                  </Box>
-                                </Grid>
-                              </Grid>
-                            </Box>
-
-                            {/* 2-Step Apple Shortcuts Setup Guide */}
-                            <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
-                              <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'text.secondary', display: 'block', mb: 1 }}>
-                                📱 2-Step Apple Shortcuts Setup for CarPlay &amp; In-Car Siri:
-                              </Typography>
-                              <Typography variant="caption" component="div" sx={{ color: 'text.primary', lineHeight: 1.8 }}>
-                                <strong>Step 1:</strong> On your iPhone, open the <strong>Shortcuts</strong> app and tap <strong>+</strong> in top right. Name the shortcut (e.g. <em>&quot;Gold Price&quot;</em> or <em>&quot;Check Trades&quot;</em>).<br />
-                                <strong>Step 2:</strong> Add action: <strong>Get Contents of URL</strong> &rarr; Paste your copied SetupMint Siri Link above.<br />
-                                <strong>Step 3:</strong> Add action: <strong>Speak Text</strong> &rarr; Select the output of &quot;Get Contents of URL&quot;.<br />
-                                <em>That&apos;s it!</em> While driving with Apple CarPlay or Bluetooth connected, just press your car&apos;s steering wheel voice button and say <strong>&quot;Gold Price&quot;</strong> — SetupMint will read the live quote and spread directly through your car speakers.
-                              </Typography>
-                            </Box>
-
-                            {/* Multi-Position Interactive Selection Guide */}
-                            <Box sx={{ p: 2, borderRadius: 1.5, bgcolor: isDark ? 'rgba(30, 41, 59, 0.7)' : 'rgba(240, 249, 255, 0.8)', border: '1px solid', borderColor: 'primary.light' }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, flexWrap: 'wrap', gap: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <TrackChangesRounded sx={{ color: 'primary.main', fontSize: 20 }} />
-                                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                    Multiple Open Positions? Interactive Voice Selection (&quot;Which Trade?&quot;)
-                                  </Typography>
-                                </Box>
-                                {carPlaySetup.endpoints.activeSymbolsUrl && (
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={copiedVoiceKey === 'symbols' ? <CheckRounded fontSize="small" /> : <ContentCopyRounded fontSize="small" />}
-                                    onClick={() => handleCopyVoiceUrl('symbols', carPlaySetup.endpoints.activeSymbolsUrl!)}
-                                    sx={{ textTransform: 'none', fontSize: '0.72rem' }}
-                                  >
-                                    {copiedVoiceKey === 'symbols' ? 'Copied' : 'Copy Active Symbols Link'}
-                                  </Button>
-                                )}
-                              </Box>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                                When you hold multiple trades (e.g. Gold on Elefin + Crude Oil on FYERS), Siri can first ask you <em>&quot;Which position: Gold, or Crude Oil?&quot;</em>, or you can say <em>&quot;All Positions&quot;</em> to adjust both at once.
-                              </Typography>
-                              {carPlaySetup.endpoints.activeSymbolsUrl && (
-                                <Box
-                                  onClick={() => handleCopyVoiceUrl('symbols', carPlaySetup.endpoints.activeSymbolsUrl!)}
-                                  sx={{
-                                    p: 0.75,
-                                    borderRadius: 1,
-                                    bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'grey.100',
-                                    mb: 1.5,
-                                    cursor: 'pointer',
-                                    userSelect: 'all',
-                                    border: '1px solid transparent',
-                                    '&:hover': { borderColor: 'primary.main' },
-                                  }}
-                                  title="Click to copy Active Symbols URL"
-                                >
-                                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.68rem', wordBreak: 'break-all', display: 'block', userSelect: 'all' }}>
-                                    {carPlaySetup.endpoints.activeSymbolsUrl}
-                                  </Typography>
-                                </Box>
-                              )}
-                              <Typography variant="caption" component="div" sx={{ color: 'text.primary', lineHeight: 1.8 }}>
-                                <strong>How to build the Interactive Siri Shortcut:</strong><br />
-                                1. Add action: <strong>Get Contents of URL</strong> &rarr; Paste your Active Symbols link above.<br />
-                                2. Add action: <strong>Split Text</strong> &rarr; Select &quot;by New Lines&quot;.<br />
-                                3. Add action: <strong>Choose from List</strong> &rarr; Select &quot;Split Text&quot; (Prompt: <em>&quot;Which trade would you like to adjust?&quot;</em>).<br />
-                                4. Add action: <strong>Get Contents of URL</strong> &rarr; <code>http://13.205.58.162/api/v1/carplay/action?action=BE&amp;symbol=[Chosen Item]&amp;token=...</code><br />
-                                5. Add action: <strong>Speak Text</strong> &rarr; Siri speaks the confirmation!
-                              </Typography>
-                            </Box>
-                          </Box>
-                        ) : null}
-                      </Box>
-                    </Grid>
-
-                    {/* Live Watcher & Chart Display Customization */}
-                    <Grid size={{ xs: 12 }}>
-                      <Box sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: 'divider', bgcolor: isDark ? 'rgba(30, 41, 59, 0.4)' : 'rgba(248, 250, 252, 0.8)' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          <TuneRounded sx={{ color: 'primary.main', fontSize: 22 }} />
-                          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                            Display &amp; Elements Customization
-                          </Typography>
-                        </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                          Control which visual elements, indicators, and telemetry modules appear in the Live Watcher and Candlestick Charts.
-                        </Typography>
-
-                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: '#8B5CF6', display: 'block', mb: 1 }}>
-                          Candlestick Chart Settings
-                        </Typography>
-                        <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={Boolean(displaySettings.autoExpandCharts)}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, autoExpandCharts: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Auto-Expand Candlestick Charts</Typography>
-                                  <Typography variant="caption" color="text.secondary">If disabled, charts stay collapsed by default to save screen space.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showChartVolume !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showChartVolume: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Show Volume Histogram</Typography>
-                                  <Typography variant="caption" color="text.secondary">Render volume bars below candles.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showChartTradeLevels !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showChartTradeLevels: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Show Trade Price Lines</Typography>
-                                  <Typography variant="caption" color="text.secondary">Draw Entry, Stop Loss (SL), and Target lines.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showChartIndicators !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showChartIndicators: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Show OHLC &amp; Live Bar Stats</Typography>
-                                  <Typography variant="caption" color="text.secondary">Header bar with candle Open, High, Low, Close.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                        </Grid>
-
-                        <Divider sx={{ my: 1.5 }} />
-
-                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: '#10B981', display: 'block', mb: 1 }}>
-                          Live Watcher Panel Elements
-                        </Typography>
-                        <Grid container spacing={1.5}>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showPortfolioRiskBanner !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showPortfolioRiskBanner: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Portfolio Risk Banner</Typography>
-                                  <Typography variant="caption" color="text.secondary">Floating MTM, drawdown limit, and risk gauge.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showCostBreakdown !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showCostBreakdown: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Gross vs Net MTM &amp; Cost</Typography>
-                                  <Typography variant="caption" color="text.secondary">Brokerage, exchange taxes, and net take-home.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showSparklines !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showSparklines: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Intra-Trade Sparklines</Typography>
-                                  <Typography variant="caption" color="text.secondary">Live tick curves showing trade price path.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showScalingLadder !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showScalingLadder: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Multi-Target Scaling Ladder</Typography>
-                                  <Typography variant="caption" color="text.secondary">T1 / T2 / T3 targets and trailing stops.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showGivebackMeter !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showGivebackMeter: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Peak Profit Giveback Meter</Typography>
-                                  <Typography variant="caption" color="text.secondary">Guards peak gains from reversing.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showActionHints !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showActionHints: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Next-Action Tactical Strips</Typography>
-                                  <Typography variant="caption" color="text.secondary">Deterministic guidance advice strips.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showQuickActionButtons !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showQuickActionButtons: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Quick Cockpit Action Buttons</Typography>
-                                  <Typography variant="caption" color="text.secondary">Book 50%, Close 100%, Lock BE buttons.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                          <Grid size={{ xs: 12, sm: 6 }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  size="small"
-                                  checked={displaySettings.showOptionsGreeks !== false}
-                                  onChange={(e) => setDisplaySettings({ ...displaySettings, showOptionsGreeks: e.target.checked })}
-                                />
-                              }
-                              label={
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Options Greeks &amp; IV Card</Typography>
-                                  <Typography variant="caption" color="text.secondary">Delta, Theta, Gamma, IV for F&amp;O contracts.</Typography>
-                                </Box>
-                              }
-                            />
-                          </Grid>
-                        </Grid>
-                      </Box>
-                    </Grid>
-                  </Grid>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-
-          {watcherSuccess && (
-            <Alert severity="success" icon={<CheckCircleRounded />}>
-              Live Trade Watcher & Execution defaults saved successfully. All open positions will now inherit these rules.
-            </Alert>
-          )}
-
-          {watcherError && (
-            <Alert severity="error" onClose={() => setWatcherError(null)}>
-              {watcherError}
-            </Alert>
-          )}
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pt: 1 }}>
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              size="large"
-              disabled={liveWatcherMutation.isPending}
-              sx={{ fontWeight: 700, px: 4 }}
-            >
-              {liveWatcherMutation.isPending ? 'Saving Execution Rules...' : 'Save Live Execution Settings'}
-            </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={handleResetWatcherDefaults}
-              sx={{ fontWeight: 600 }}
-            >
-              Reset to Institutional Defaults
-            </Button>
-          </Box>
-        </form>
+        <ExecutionSettingsTab
+          settingsCurrency={settingsCurrency}
+          defaultAutoExecute={defaultAutoExecute}
+          setDefaultAutoExecute={setDefaultAutoExecute}
+          defaultTargetMode={defaultTargetMode}
+          onApplyPresetMode={handleApplyPresetMode}
+          t1MultipleR={t1MultipleR}
+          setT1MultipleR={setT1MultipleR}
+          t1ExitPercent={t1ExitPercent}
+          setT1ExitPercent={setT1ExitPercent}
+          t1TrailingAction={t1TrailingAction}
+          setT1TrailingAction={setT1TrailingAction}
+          t1TrailPoints={t1TrailPoints}
+          setT1TrailPoints={setT1TrailPoints}
+          t2Enabled={t2Enabled}
+          setT2Enabled={setT2Enabled}
+          t2MultipleR={t2MultipleR}
+          setT2MultipleR={setT2MultipleR}
+          t2ExitPercent={t2ExitPercent}
+          setT2ExitPercent={setT2ExitPercent}
+          t2TrailingAction={t2TrailingAction}
+          setT2TrailingAction={setT2TrailingAction}
+          t2TrailPoints={t2TrailPoints}
+          setT2TrailPoints={setT2TrailPoints}
+          isFreeRunner={isFreeRunner}
+          setIsFreeRunner={setIsFreeRunner}
+          t3MultipleR={t3MultipleR}
+          setT3MultipleR={setT3MultipleR}
+          dynamicTrailingEnabled={dynamicTrailingEnabled}
+          setDynamicTrailingEnabled={setDynamicTrailingEnabled}
+          dynamicTriggerR={dynamicTriggerR}
+          setDynamicTriggerR={setDynamicTriggerR}
+          dynamicTrailType={dynamicTrailType}
+          setDynamicTrailType={setDynamicTrailType}
+          dynamicStepR={dynamicStepR}
+          setDynamicStepR={setDynamicStepR}
+          dynamicTrailPoints={dynamicTrailPoints}
+          setDynamicTrailPoints={setDynamicTrailPoints}
+          givebackAutoExitEnabled={givebackAutoExitEnabled}
+          setGivebackAutoExitEnabled={setGivebackAutoExitEnabled}
+          givebackMinPeakR={givebackMinPeakR}
+          setGivebackMinPeakR={setGivebackMinPeakR}
+          givebackMaxPercent={givebackMaxPercent}
+          setGivebackMaxPercent={setGivebackMaxPercent}
+          misSquareOffEnabled={misSquareOffEnabled}
+          setMisSquareOffEnabled={setMisSquareOffEnabled}
+          misSquareOffTime={misSquareOffTime}
+          setMisSquareOffTime={setMisSquareOffTime}
+          scalperHotkeysEnabled={scalperHotkeysEnabled}
+          setScalperHotkeysEnabled={setScalperHotkeysEnabled}
+          soundAlertsEnabled={soundAlertsEnabled}
+          setSoundAlertsEnabled={setSoundAlertsEnabled}
+          defaultRefreshIntervalSec={defaultRefreshIntervalSec}
+          setDefaultRefreshIntervalSec={setDefaultRefreshIntervalSec}
+          paperExecutionMode={paperExecutionMode}
+          setPaperExecutionMode={setPaperExecutionMode}
+          serverSideExecutionEnabled={serverSideExecutionEnabled}
+          setServerSideExecutionEnabled={setServerSideExecutionEnabled}
+          isSaving={liveWatcherMutation.isPending}
+          saveSuccess={watcherSuccess}
+          saveError={watcherError}
+          onSave={handleWatcherSubmit}
+          onResetDefaults={handleResetWatcherDefaults}
+        />
       )}
 
-      {/* =========================================================================
-          TAB 1: DISCIPLINE & RISK GUARDRAILS
-          ========================================================================= */}
+      {/* TAB 1: RISK & GUARDRAILS */}
       {activeTab === 1 && (
-        <Card variant="outlined" sx={{ p: 1 }}>
-          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <ShieldRounded sx={{ color: 'primary.main' }} />
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                    Discipline & Daily Risk Guardrails
-                  </Typography>
-                  <HelpHint hintKey="settings.riskGuardrails" />
-                </Box>
-                <Typography variant="body2" color="text.secondary">
-                  Parameters used by the financial engine for mistake detection, revenge trade cooldowns, and daily loss warnings.
-                </Typography>
-              </Box>
-            </Box>
-
-            <form onSubmit={handleRiskSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <Grid container spacing={2.5}>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    label={`Max Daily Loss Limit (${currSym}) *`}
-                    type="number"
-                    size="small"
-                    required
-                    fullWidth
-                    value={maxDailyLoss}
-                    onChange={(e) => setMaxDailyLoss(Number(e.target.value))}
-                    helperText="Critical warning banner fires across all tabs when breached"
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    label="Max Trades Per Day *"
-                    type="number"
-                    size="small"
-                    required
-                    fullWidth
-                    value={maxDailyTrades}
-                    onChange={(e) => setMaxDailyTrades(Number(e.target.value))}
-                    helperText="Flags overtrading beyond this threshold"
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    label="Max Concurrent Open Positions *"
-                    type="number"
-                    size="small"
-                    required
-                    fullWidth
-                    value={maxOpenTrades}
-                    onChange={(e) => setMaxOpenTrades(Number(e.target.value))}
-                    helperText="Max allowed simultaneous open risk exposures"
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    label="Max Risk Per Trade (% of Capital) *"
-                    type="number"
-                    size="small"
-                    required
-                    fullWidth
-                    value={maxRiskPerTradePercent}
-                    onChange={(e) => setMaxRiskPerTradePercent(Number(e.target.value))}
-                    helperText="Flags oversized positions as discipline mistakes"
-                    slotProps={{ htmlInput: { step: '0.1', min: '0.1' } }}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <TextField
-                    label="Revenge Trading Cooldown Window (Minutes) *"
-                    type="number"
-                    size="small"
-                    required
-                    fullWidth
-                    value={revengeTradingMinutes}
-                    onChange={(e) => setRevengeTradingMinutes(Number(e.target.value))}
-                    helperText="Flags trades entered with equal or larger size within N minutes of an emotional loss"
-                  />
-                </Grid>
-              </Grid>
-
-              {riskSuccess && (
-                <Alert severity="success" icon={<CheckCircleRounded fontSize="inherit" />}>
-                  Discipline guardrails saved successfully.
-                </Alert>
-              )}
-
-              {riskError && (
-                <Alert severity="error" onClose={() => setRiskError(null)}>
-                  {riskError}
-                </Alert>
-              )}
-
-              <Box sx={{ pt: 1 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  disabled={riskMutation.isPending}
-                  sx={{ fontWeight: 600, px: 3 }}
-                >
-                  {riskMutation.isPending ? 'Saving Guardrails...' : 'Save Guardrails'}
-                </Button>
-              </Box>
-            </form>
-
-            <Divider sx={{ my: 1 }} />
-
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <FlashOnRounded sx={{ fontSize: 18, color: 'primary.main' }} />
-                Telegram &amp; Remote Order Guardrails (MT5 Integration)
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                Control whether discipline guardrails and adaptive day-risk regimes strictly block 1-tap orders placed from Telegram.
-              </Typography>
-
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: enforceTelegramOrderGuardrails ? 'success.main' : 'warning.main',
-                      bgcolor: enforceTelegramOrderGuardrails
-                        ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
-                        : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1.5,
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                        Telegram Order Guardrails
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {enforceTelegramOrderGuardrails
-                          ? 'Enforced (Stale quotes, max positions, per-trade risk, revenge cooldown)'
-                          : 'Optional / Bypassed (Orders execute directly without guardrail blocks)'}
-                      </Typography>
-                    </Box>
-                    <Switch
-                      checked={enforceTelegramOrderGuardrails}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setEnforceTelegramOrderGuardrails(val);
-                        liveWatcherMutation.mutate({
-                          ...user?.liveWatcherSettings,
-                          enforceTelegramOrderGuardrails: val,
-                        } as any);
-                      }}
-                      color="success"
-                    />
-                  </Box>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Box
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: enforceAdaptiveDayRiskGuardrails ? 'info.main' : 'warning.main',
-                      bgcolor: enforceAdaptiveDayRiskGuardrails
-                        ? (isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(14, 165, 233, 0.04)')
-                        : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1.5,
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                        Adaptive Day-Risk Guardrails
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {enforceAdaptiveDayRiskGuardrails
-                          ? 'Enforced (Dynamic daily trade limits, loss limit & defensive lot caps)'
-                          : 'Optional / Bypassed (Adaptive limits do not block trade execution)'}
-                      </Typography>
-                    </Box>
-                    <Switch
-                      checked={enforceAdaptiveDayRiskGuardrails}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setEnforceAdaptiveDayRiskGuardrails(val);
-                        liveWatcherMutation.mutate({
-                          ...user?.liveWatcherSettings,
-                          enforceAdaptiveDayRiskGuardrails: val,
-                        } as any);
-                      }}
-                      color="info"
-                    />
-                  </Box>
-                </Grid>
-              </Grid>
-            </Box>
-          </CardContent>
-        </Card>
+        <RiskGuardrailsTab
+          currSym={currSym}
+          maxDailyLoss={maxDailyLoss}
+          setMaxDailyLoss={setMaxDailyLoss}
+          maxDailyTrades={maxDailyTrades}
+          setMaxDailyTrades={setMaxDailyTrades}
+          maxOpenTrades={maxOpenTrades}
+          setMaxOpenTrades={setMaxOpenTrades}
+          maxRiskPerTradePercent={maxRiskPerTradePercent}
+          setMaxRiskPerTradePercent={setMaxRiskPerTradePercent}
+          revengeTradingMinutes={revengeTradingMinutes}
+          setRevengeTradingMinutes={setRevengeTradingMinutes}
+          hardDisciplineLockoutEnabled={hardDisciplineLockoutEnabled}
+          setHardDisciplineLockoutEnabled={setHardDisciplineLockoutEnabled}
+          hardDisciplineLockoutDurationMins={hardDisciplineLockoutDurationMins}
+          setHardDisciplineLockoutDurationMins={setHardDisciplineLockoutDurationMins}
+          enforceTelegramOrderGuardrails={enforceTelegramOrderGuardrails}
+          setEnforceTelegramOrderGuardrails={setEnforceTelegramOrderGuardrails}
+          enforceAdaptiveDayRiskGuardrails={enforceAdaptiveDayRiskGuardrails}
+          setEnforceAdaptiveDayRiskGuardrails={setEnforceAdaptiveDayRiskGuardrails}
+          isSaving={riskMutation.isPending || liveWatcherMutation.isPending}
+          saveSuccess={riskSuccess}
+          saveError={riskError}
+          onSave={handleRiskSubmit}
+        />
       )}
 
-      {/* =========================================================================
-          TAB 2: MARKET STRUCTURE & STRATEGY ROUTING
-          ========================================================================= */}
+      {/* TAB 2: TELEGRAM & MOBILE */}
       {activeTab === 2 && (
-        <Card variant="outlined" sx={{ p: 1 }}>
-          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
-              <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <TimelineRounded sx={{ color: 'primary.main' }} />
-                  Market Structure & Timeframe Detection Engine
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Institutional trend analysis, lower timeframe confirmation, and instrument-specific rules (e.g. NIFTY 1h+1m, CRUDEOIL 4h+5m).
-                </Typography>
-              </Box>
-              <Chip
-                icon={<AutoAwesomeRounded sx={{ fontSize: '1rem !important' }} />}
-                label="4H Trend + 5M Confirmation Engine"
-                color="primary"
-                variant="outlined"
-                size="small"
-                sx={{ fontWeight: 600, fontFamily: '"JetBrains Mono", monospace' }}
-              />
-            </Box>
-
-            <form onSubmit={handlePatternSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                  border: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <LayersRounded fontSize="small" sx={{ color: 'text.secondary' }} />
-                  Global Timeframe Defaults (Fallback for Any Instrument)
-                </Typography>
-
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <TextField
-                      select
-                      label="Default Higher Timeframe (HTF) Trend"
-                      size="small"
-                      fullWidth
-                      value={defaultHtf}
-                      onChange={(e) => setDefaultHtf(e.target.value)}
-                      helperText="Calculates institutional bias & structural trend (EMA 20/50 + swing points)"
-                    >
-                      <MenuItem value="60">1 Hour (60m) — Fast Intraday Trend</MenuItem>
-                      <MenuItem value="240">4 Hours (240m) — Recommended Institutional Baseline</MenuItem>
-                      <MenuItem value="D">Daily (1D) — Macro Swing Bias</MenuItem>
-                    </TextField>
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <TextField
-                      select
-                      label="Default Lower Timeframe (LTF) Confirmation"
-                      size="small"
-                      fullWidth
-                      value={defaultLtf}
-                      onChange={(e) => setDefaultLtf(e.target.value)}
-                      helperText="Evaluates liquidity sweeps (EQL/EQH/W/M) and entry candlestick window"
-                    >
-                      <MenuItem value="1">1 Minute (1m) — Precision Scalping Confirmation</MenuItem>
-                      <MenuItem value="3">3 Minutes (3m) — Fast Execution Window</MenuItem>
-                      <MenuItem value="5">5 Minutes (5m) — Recommended Confirmation Baseline</MenuItem>
-                      <MenuItem value="15">15 Minutes (15m) — Conservative Setup Confirmation</MenuItem>
-                    </TextField>
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Auto-Classify on Import & Chart Gen
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Automatically evaluate HTF trend + LTF sweep pattern on trade sync
-                        </Typography>
-                      </Box>
-                      <Switch
-                        checked={autoDetectOnImport}
-                        onChange={(e) => setAutoDetectOnImport(e.target.checked)}
-                        color="primary"
-                      />
-                    </Box>
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1, borderRadius: 1.5, border: 1, borderColor: 'divider' }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Auto-Detect Execution Mistakes
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Detect counter-trend entries, missing sweeps, premature entries
-                        </Typography>
-                      </Box>
-                      <Switch
-                        checked={autoDetectMistakes}
-                        onChange={(e) => setAutoDetectMistakes(e.target.checked)}
-                        color="primary"
-                      />
-                    </Box>
-                  </Grid>
-                </Grid>
-              </Box>
-
-              {/* Instrument-Specific Overrides */}
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                  border: 1,
-                  borderColor: 'divider',
-                }}
-              >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <TuneRounded fontSize="small" sx={{ color: 'text.secondary' }} />
-                      Instrument-Specific Overrides & Strategy Routing
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Assign custom timeframes and preferred strategies to specific assets (e.g. NIFTY 1h+1m, CRUDEOIL 4h+5m).
-                    </Typography>
-                  </Box>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<AddRounded />}
-                    onClick={() => handleOpenAddOverride()}
-                    sx={{ textTransform: 'none', fontWeight: 600 }}
-                  >
-                    Add Instrument Override
-                  </Button>
-                </Box>
-
-                {/* Quick Presets */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                    Quick Presets:
-                  </Typography>
-                  <Chip
-                    label="+ NIFTY (1h • 1m)"
-                    size="small"
-                    clickable
-                    onClick={() => handleAddPreset('NIFTY', '60', '1')}
-                    sx={{ fontSize: '0.75rem', fontWeight: 600 }}
-                  />
-                  <Chip
-                    label="+ BANKNIFTY (1h • 1m)"
-                    size="small"
-                    clickable
-                    onClick={() => handleAddPreset('BANKNIFTY', '60', '1')}
-                    sx={{ fontSize: '0.75rem', fontWeight: 600 }}
-                  />
-                  <Chip
-                    label="+ CRUDEOIL (4h • 5m)"
-                    size="small"
-                    clickable
-                    onClick={() => handleAddPreset('CRUDEOIL', '240', '5')}
-                    sx={{ fontSize: '0.75rem', fontWeight: 600 }}
-                  />
-                  <Chip
-                    label="+ GOLD (4h • 5m)"
-                    size="small"
-                    clickable
-                    onClick={() => handleAddPreset('GOLD', '240', '5')}
-                    sx={{ fontSize: '0.75rem', fontWeight: 600 }}
-                  />
-                </Box>
-
-                {/* Overrides List */}
-                {instrumentOverrides.length === 0 ? (
-                  <Box sx={{ py: 3, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No instrument-specific overrides configured. All trades will use global defaults (
-                      {formatResLabel(defaultHtf)} HTF + {formatResLabel(defaultLtf)} LTF).
-                    </Typography>
-                  </Box>
-                ) : (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    {instrumentOverrides.map((item, idx) => (
-                      <Box
-                        key={`${item.symbol}-${idx}`}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          p: 1.5,
-                          borderRadius: 1.5,
-                          bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                          border: 1,
-                          borderColor: 'divider',
-                          gap: 2,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                          <Chip
-                            label={item.symbol}
-                            color="primary"
-                            size="small"
-                            sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}
-                          />
-                          <Chip
-                            label={`HTF: ${formatResLabel(item.htf)}`}
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontFamily: '"JetBrains Mono", monospace' }}
-                          />
-                          <Chip
-                            label={`LTF: ${formatResLabel(item.ltf)}`}
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontFamily: '"JetBrains Mono", monospace' }}
-                          />
-                          {item.preferredStrategyName ? (
-                            <Chip
-                              label={`Preferred: ${item.preferredStrategyName}`}
-                              size="small"
-                              color="info"
-                              variant="outlined"
-                            />
-                          ) : (
-                            <Chip
-                              label="Dynamic Pattern Match"
-                              size="small"
-                              sx={{ color: 'text.secondary', bgcolor: 'transparent' }}
-                            />
-                          )}
-                        </Box>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <Tooltip title="Edit override">
-                            <IconButton size="small" onClick={() => handleEditOverride(idx)}>
-                              <EditRounded fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete override">
-                            <IconButton size="small" color="error" onClick={() => handleDeleteOverride(idx)}>
-                              <DeleteRounded fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      </Box>
-                    ))}
-                  </Box>
-                )}
-              </Box>
-
-              {patternSuccess && (
-                <Alert severity="success" icon={<CheckCircleRounded fontSize="inherit" />}>
-                  Market structure & timeframe detection settings saved successfully.
-                </Alert>
-              )}
-
-              {patternError && (
-                <Alert severity="error" onClose={() => setPatternError(null)}>
-                  {patternError}
-                </Alert>
-              )}
-
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pt: 1 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  disabled={patternMutation.isPending}
-                  sx={{ fontWeight: 600, px: 3 }}
-                >
-                  {patternMutation.isPending ? 'Saving Detection Settings...' : 'Save Detection Settings'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  onClick={handleResetPatternDefaults}
-                  sx={{ fontWeight: 600 }}
-                >
-                  Reset to Recommended Defaults
-                </Button>
-              </Box>
-            </form>
-          </CardContent>
-        </Card>
+        <TelegramMobileTab
+          telegramAlertsEnabled={telegramAlertsEnabled}
+          setTelegramAlertsEnabled={setTelegramAlertsEnabled}
+          telegramBotToken={telegramBotToken}
+          setTelegramBotToken={setTelegramBotToken}
+          telegramChatId={telegramChatId}
+          setTelegramChatId={setTelegramChatId}
+          userBotToken={user?.liveWatcherSettings?.telegramBotToken}
+          userChatId={user?.liveWatcherSettings?.telegramChatId}
+          testingTelegram={testingTelegram}
+          onTestTelegram={handleTestTelegram}
+          sendingSampleAlert={sendingSampleAlert}
+          onSendSampleAlert={handleSendSampleAlert}
+          hasLiveExecutableAccount={hasLiveExecutableAccount}
+          registeringWebhook={registeringWebhook}
+          onRegisterWebhook={handleRegisterWebhook}
+          onClearTelegramCredentials={handleClearTelegramCredentials}
+          restrictTelegramTradeExecution={restrictTelegramTradeExecution}
+          setRestrictTelegramTradeExecution={setRestrictTelegramTradeExecution}
+          goldDefaultLot={goldDefaultLot}
+          setGoldDefaultLot={setGoldDefaultLot}
+          goldSlPoints={goldSlPoints}
+          setGoldSlPoints={setGoldSlPoints}
+          goldRrRatio={goldRrRatio}
+          setGoldRrRatio={setGoldRrRatio}
+          ethDefaultLot={ethDefaultLot}
+          setEthDefaultLot={setEthDefaultLot}
+          ethSlPrice={ethSlPrice}
+          setEthSlPrice={setEthSlPrice}
+          ethRrRatio={ethRrRatio}
+          setEthRrRatio={setEthRrRatio}
+          telegramAttachLiveChart={telegramAttachLiveChart}
+          setTelegramAttachLiveChart={setTelegramAttachLiveChart}
+          telegramChartTimeframe={telegramChartTimeframe}
+          setTelegramChartTimeframe={setTelegramChartTimeframe}
+          telegramAlertEvents={telegramAlertEvents}
+          setTelegramAlertEvents={setTelegramAlertEvents}
+          goldNewsLeadTimesMinutes={goldNewsLeadTimesMinutes}
+          setGoldNewsLeadTimesMinutes={setGoldNewsLeadTimesMinutes}
+          goldNewsReminderMinutes={goldNewsReminderMinutes}
+          setGoldNewsReminderMinutes={setGoldNewsReminderMinutes}
+          goldNewsImpactFilter={goldNewsImpactFilter}
+          setGoldNewsImpactFilter={setGoldNewsImpactFilter}
+          customLeadInput={customLeadInput}
+          setCustomLeadInput={setCustomLeadInput}
+          testingGoldNewsAlert={testingGoldNewsAlert}
+          onTestGoldNewsAlert={handleTestGoldNewsAlert}
+          testingGoldNewsResultAlert={testingGoldNewsResultAlert}
+          onTestGoldNewsResultAlert={handleTestGoldNewsResultAlert}
+          isLoadingCarPlay={isLoadingCarPlay}
+          carPlaySetup={carPlaySetup}
+          copiedVoiceKey={copiedVoiceKey}
+          speakingEndpoint={speakingEndpoint}
+          onCopyVoiceUrl={handleCopyVoiceUrl}
+          onTestCarPlaySpeech={handleTestCarPlaySpeech}
+          onRegenerateCarPlayToken={() => regenerateCarPlayTokenMutation.mutate()}
+          isRegeneratingToken={regenerateCarPlayTokenMutation.isPending}
+          isSaving={liveWatcherMutation.isPending}
+          saveSuccess={watcherSuccess}
+          saveError={watcherError}
+          onSave={handleWatcherSubmit}
+        />
       )}
 
-      {/* =========================================================================
-          TAB 3: BROKER & MARKET DATA CONNECTIONS
-          ========================================================================= */}
+      {/* TAB 3: MARKET STRUCTURE */}
       {activeTab === 3 && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          {!hasFyersAccount && !hasMarketDataAccount && !hasMt5Account && (
-            <Card variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-                No External Broker Integrations Needed
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Your currently configured trading accounts use manual journaling, CSV tradebook imports, or prop simulated feeds. External broker connections appear only when an account adapter requires them.
-              </Typography>
-            </Card>
-          )}
-
-          {/* FYERS Live Broker Card */}
-          {hasFyersAccount && (
-            <Card variant="outlined" sx={{ p: 1 }}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
-                <Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <KeyRounded sx={{ color: 'primary.main' }} />
-                      FYERS Broker Integration (Live API v3)
-                    </Typography>
-                    <HelpHint hintKey="settings.fyersExpiry" />
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Real-time execution, round-trip FIFO tradebook synchronization, and Indian statutory charges
-                  </Typography>
-                </Box>
-                <Chip
-                  icon={
-                    isFyersConnected ? (
-                      <CloudDoneRounded sx={{ fontSize: '1rem !important' }} />
-                    ) : isFyersConfigured ? (
-                      <LinkRounded sx={{ fontSize: '1rem !important' }} />
-                    ) : (
-                      <LinkOffRounded sx={{ fontSize: '1rem !important' }} />
-                    )
-                  }
-                  label={
-                    isFyersConnected
-                      ? 'CONNECTED (LIVE SYNC)'
-                      : isFyersConfigured
-                      ? 'CONFIGURED (NEEDS DAILY LOGIN)'
-                      : 'NOT CONFIGURED'
-                  }
-                  size="small"
-                  color={isFyersConnected ? 'success' : isFyersConfigured ? 'warning' : 'default'}
-                  sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
-                />
-              </Box>
-
-              <Alert
-                severity={isFyersConnected ? 'success' : 'info'}
-                sx={{ fontSize: '0.8125rem', py: 0.75 }}
-              >
-                {isFyersConnected ? (
-                  <span>
-                    <strong>Active Broker Session:</strong> Trades executed on FYERS can be fetched automatically into your journal with exact fills, fees, and auto-backfilled excursion analytics.
-                  </span>
-                ) : (
-                  <span>
-                    <strong>SEBI 24-Hour Token Rule:</strong> Broker API tokens expire daily. Click <strong>"Connect to FYERS (1-Click Daily Auth)"</strong> once per trading day to authorize SetupMint.
-                  </span>
-                )}
-              </Alert>
-
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={fyersData?.hasSecretKey ? 'Secret saved (encrypted)' : 'Secret not saved'}
-                  color={fyersData?.hasSecretKey ? 'success' : 'default'}
-                  sx={{ fontSize: '0.6875rem', fontWeight: 600 }}
-                />
-                {fyersData?.clientId && (
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`Client ${fyersData.clientId}`}
-                    sx={{ fontSize: '0.6875rem', fontFamily: '"JetBrains Mono", monospace' }}
-                  />
-                )}
-                {fyersData?.tokenExpiresAt && (
-                  <Typography variant="caption" color="text.secondary">
-                    Token expires: <strong>{new Date(fyersData.tokenExpiresAt).toLocaleString()}</strong>
-                  </Typography>
-                )}
-              </Box>
-
-              {/* Credentials Inputs */}
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                    FYERS App ID (Client ID)
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="e.g. YOUR_APP_ID-100"
-                    value={fyersAppId}
-                    onChange={(e) => setFyersAppId(e.target.value.trim())}
-                    slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 } } }}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                    FYERS Secret Key
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type={showSecretKey ? 'text' : 'password'}
-                    placeholder={fyersData?.hasSecretKey ? 'Secret saved — enter new key to update' : 'Enter 32-char Secret Key'}
-                    value={fyersSecretKey}
-                    onChange={(e) => setFyersSecretKey(e.target.value.trim())}
-                    slotProps={{
-                      htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } },
-                      input: {
-                        endAdornment: (
-                          <InputAdornment position="end">
-                            <IconButton
-                              size="small"
-                              onClick={() => setShowSecretKey(!showSecretKey)}
-                              edge="end"
-                            >
-                              {showSecretKey ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                  />
-                </Grid>
-              </Grid>
-
-              {/* Real-Time Background Auto-Sync Switch */}
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  bgcolor: isDark ? 'rgba(34, 197, 94, 0.04)' : 'rgba(34, 197, 94, 0.05)',
-                  border: '1px solid',
-                  borderColor: fyersAutoSync ? (isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(34, 197, 94, 0.35)') : 'divider',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 2,
-                }}
-              >
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    ⚡ Real-Time Automated Trade & SL Sync
-                    {fyersAutoSync && isFyersConnected && (
-                      <Chip size="small" color="success" label="ACTIVE (15s Cadence)" sx={{ fontSize: '0.65rem', fontWeight: 800, height: 20 }} />
-                    )}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                    Automatically detects new trades and Stop Loss exits every 15s during market hours, with instant triggers on SL breaches. Zero manual clicking required.
-                  </Typography>
-                </Box>
-                <Switch
-                  checked={fyersAutoSync}
-                  onChange={(e) => {
-                    const val = e.target.checked;
-                    setFyersAutoSync(val);
-                    fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey, autoSyncEnabled: val });
-                  }}
-                  color="success"
-                />
-              </Box>
-
-              {/* Collapsible Developer Details (Cleaned up from old waste box) */}
-              <Box>
-                <Button
-                  size="small"
-                  variant="text"
-                  color="inherit"
-                  onClick={() => setShowFyersDevDetails(!showFyersDevDetails)}
-                  endIcon={showFyersDevDetails ? <ExpandLessRounded /> : <ExpandMoreRounded />}
-                  sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', p: 0 }}
-                >
-                  {showFyersDevDetails ? 'Hide Redirect URI Details' : 'Show Registered Redirect URL for FYERS Dashboard'}
-                </Button>
-                <Collapse in={showFyersDevDetails}>
-                  <Box
-                    sx={{
-                      mt: 1,
-                      p: 1.5,
-                      borderRadius: 1.5,
-                      bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                      border: 1,
-                      borderColor: 'divider',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: 1,
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                        Redirect URL saved in your FYERS API Dashboard:
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: 'primary.main' }}>
-                        {fyersRedirectUri}
-                      </Typography>
-                    </Box>
-                    <Tooltip title="Copy URL">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<ContentCopyRounded fontSize="small" />}
-                        onClick={async () => {
-                          const ok = await copyTextToClipboard(fyersRedirectUri);
-                          if (ok) toast.info('Redirect URL copied');
-                        }}
-                        sx={{ fontSize: '0.6875rem' }}
-                      >
-                        Copy
-                      </Button>
-                    </Tooltip>
-                  </Box>
-                </Collapse>
-              </Box>
-
-              {/* Action Buttons */}
-              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  disabled={fyersConfigMutation.isPending || !fyersAppId}
-                  onClick={() => fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey, autoSyncEnabled: fyersAutoSync })}
-                  sx={{ fontWeight: 600 }}
-                >
-                  {fyersConfigMutation.isPending ? 'Saving...' : 'Save Credentials'}
-                </Button>
-
-                {!isFyersConnected && (
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<LinkRounded />}
-                    disabled={fyersConnectMutation.isPending || !fyersAppId}
-                    onClick={() => fyersConnectMutation.mutate()}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    {fyersConnectMutation.isPending ? 'Opening FYERS...' : 'Connect to FYERS (1-Click Daily Auth)'}
-                  </Button>
-                )}
-
-                <Button
-                  variant={isFyersConnected ? 'contained' : 'outlined'}
-                  color={isFyersConnected ? 'success' : 'inherit'}
-                  startIcon={
-                    <SyncRounded
-                      sx={{
-                        animation: fyersSyncMutation.isPending ? 'spin 1s linear infinite' : 'none',
-                        '@keyframes spin': {
-                          '0%': { transform: 'rotate(0deg)' },
-                          '100%': { transform: 'rotate(360deg)' },
-                        },
-                      }}
-                    />
-                  }
-                  disabled={fyersSyncMutation.isPending || fyersConnectMutation.isPending}
-                  onClick={() => {
-                    if (!isFyersConnected) {
-                      toast.info('FYERS session not authorized for today. Launching 1-Click Daily Auth...');
-                      fyersConnectMutation.mutate();
-                    } else {
-                      fyersSyncMutation.mutate();
-                    }
-                  }}
-                  sx={{ fontWeight: 700 }}
-                >
-                  {fyersSyncMutation.isPending ? 'Syncing...' : 'Sync FYERS Trades Now'}
-                </Button>
-
-                {isFyersConnected && (
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<LinkOffRounded />}
-                    disabled={fyersDisconnectMutation.isPending}
-                    onClick={() => fyersDisconnectMutation.mutate()}
-                    sx={{ fontWeight: 600 }}
-                  >
-                    Disconnect
-                  </Button>
-                )}
-              </Box>
-
-              {fyersSuccess && (
-                <Alert severity="success" icon={<CheckCircleRounded />}>
-                  FYERS credentials saved securely.
-                </Alert>
-              )}
-
-              {fyersError && (
-                <Alert severity="error" onClose={() => setFyersError(null)}>
-                  {fyersError}
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
-          )}
-
-          {/* Angel One SmartAPI Market Data Fallback Card */}
-          {hasMarketDataAccount && (
-          <Card variant="outlined" sx={{ p: 1 }}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
-                <Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <TimelineRounded sx={{ color: '#f59e0b' }} />
-                      Angel One SmartAPI (Market Data Fallback)
-                    </Typography>
-                    <HelpHint hintKey="settings.angelOneFallback" />
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Secondary candle feed for excursion analytics and chart snapshots when primary feeds are unavailable
-                  </Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {isAngelOneLoading ? (
-                    <CircularProgress size={18} color="inherit" />
-                  ) : isAngelOneConnected ? (
-                    <Chip
-                      icon={<CheckCircleRounded />}
-                      label="CONNECTED & ACTIVE"
-                      color="success"
-                      size="small"
-                      sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
-                    />
-                  ) : isAngelOneTokenExpired ? (
-                    <Chip
-                      label="DAILY TOKEN EXPIRED"
-                      color="warning"
-                      size="small"
-                      sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
-                    />
-                  ) : isAngelOneConfigured ? (
-                    <Chip
-                      label="READY TO CONNECT"
-                      color="info"
-                      size="small"
-                      sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
-                    />
-                  ) : (
-                    <Chip
-                      label="NOT CONFIGURED"
-                      size="small"
-                      sx={{ fontWeight: 600, fontSize: '0.6875rem' }}
-                    />
-                  )}
-                </Box>
-              </Box>
-
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <TextField
-                    label="SmartAPI Key"
-                    value={angelOneApiKey}
-                    onChange={(e) => setAngelOneApiKey(e.target.value)}
-                    placeholder={angelOneData?.hasApiKey ? '••••••••••••••••' : 'Enter SmartAPI Key'}
-                    fullWidth
-                    size="small"
-                    type={showAngelOneKey ? 'text' : 'password'}
-                    slotProps={{
-                      input: {
-                        endAdornment: (
-                          <InputAdornment position="end">
-                            <IconButton size="small" onClick={() => setShowAngelOneKey(!showAngelOneKey)}>
-                              {showAngelOneKey ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <TextField
-                    label="Client Code"
-                    value={angelOneClientCode}
-                    onChange={(e) => setAngelOneClientCode(e.target.value.toUpperCase().trim())}
-                    placeholder={angelOneData?.clientCode || 'e.g. A123456'}
-                    fullWidth
-                    size="small"
-                  />
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <TextField
-                    label="Trading PIN / MPIN"
-                    value={angelOnePin}
-                    onChange={(e) => setAngelOnePin(e.target.value)}
-                    placeholder={angelOneData?.hasPin ? '••••' : 'Enter 4-6 digit PIN'}
-                    fullWidth
-                    size="small"
-                    type={showAngelOnePin ? 'text' : 'password'}
-                    slotProps={{
-                      input: {
-                        endAdornment: (
-                          <InputAdornment position="end">
-                            <IconButton size="small" onClick={() => setShowAngelOnePin(!showAngelOnePin)}>
-                              {showAngelOnePin ? <VisibilityOffRounded fontSize="small" /> : <VisibilityRounded fontSize="small" />}
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                  />
-                </Grid>
-              </Grid>
-
-              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  disabled={angelOneConfigMutation.isPending || (!angelOneApiKey && !angelOneClientCode && !angelOnePin)}
-                  onClick={() =>
-                    angelOneConfigMutation.mutate({
-                      apiKey: angelOneApiKey,
-                      clientCode: angelOneClientCode,
-                      pin: angelOnePin,
-                    })
-                  }
-                  sx={{ fontWeight: 600 }}
-                >
-                  {angelOneConfigMutation.isPending ? 'Saving...' : 'Save Credentials'}
-                </Button>
-
-                <Button
-                  variant={isAngelOneConnected ? 'outlined' : 'contained'}
-                  color="warning"
-                  startIcon={<LinkRounded />}
-                  disabled={angelOneConnectMutation.isPending || (!isAngelOneConfigured && !angelOneApiKey)}
-                  onClick={() => setIsTotpDialogOpen(true)}
-                  sx={{ fontWeight: 700 }}
-                >
-                  {isAngelOneConnected ? 'Re-authenticate with TOTP' : 'Connect with TOTP'}
-                </Button>
-
-                {isAngelOneConfigured && (
-                  <Button
-                    variant="outlined"
-                    color="info"
-                    startIcon={<SyncRounded />}
-                    disabled={angelOneRefreshMutation.isPending}
-                    onClick={() => angelOneRefreshMutation.mutate(true)}
-                    sx={{ fontWeight: 600 }}
-                  >
-                    Refresh Instrument Cache
-                  </Button>
-                )}
-
-                {isAngelOneConnected && (
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<LinkOffRounded />}
-                    disabled={angelOneDisconnectMutation.isPending}
-                    onClick={() => angelOneDisconnectMutation.mutate()}
-                    sx={{ fontWeight: 600 }}
-                  >
-                    Disconnect
-                  </Button>
-                )}
-              </Box>
-
-              {angelOneData && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Cached Instruments: <strong>{Number(angelOneData.instrumentCount ?? 0).toLocaleString()} symbols</strong>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Quota: <strong>{angelOneData.dailyCallsUsed ?? 0} / {angelOneData.dailyBudget ?? 500} calls used today</strong>
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-          )}
-
-          {/* MetaTrader 5 (MT5) EA Bridge & Telegram Execution Card */}
-          {hasMt5Account && (
-            <Card variant="outlined" sx={{ p: 1 }}>
-              <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
-                  <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <FlashOnRounded sx={{ color: 'primary.main' }} />
-                        MetaTrader 5 (MT5) EA Bridge &amp; Telegram Execution
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary">
-                      Sub-second order placement, automatic Stop Loss &amp; Take Profit, floating PnL tracking, and Telegram fast entries
-                    </Typography>
-                  </Box>
-
-                  <Chip
-                    icon={<CheckCircleRounded sx={{ fontSize: '1rem !important' }} />}
-                    label="MT5 BRIDGE READY"
-                    color="success"
-                    size="small"
-                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
-                  />
-                </Box>
-
-                <Alert severity="info" sx={{ fontSize: '0.8125rem', py: 0.75 }}>
-                  <span>
-                    <strong>Forex &amp; Crypto Execution:</strong> SetupMint communicates directly with your MT5 terminal via the <code>SetupMint_Elefin_Bridge.mq5</code> Expert Advisor. You can place market orders, manage SL/TP, and track live Gold (<code>XAUUSD</code>) and Ethereum (<code>ETHUSD</code>) quotes from your Telegram Bot.
-                  </span>
-                </Alert>
-
-                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`Gold Presets: ${goldDefaultLot} Lots • ${goldSlPoints} pts SL • 1:${goldRrRatio} RR`}
-                    color="warning"
-                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
-                  />
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`ETH Presets: ${ethDefaultLot} Lots • $${ethSlPrice} SL • 1:${ethRrRatio} RR`}
-                    color="info"
-                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
-                  />
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`Risk Budget: $${defaultDollarRisk} / order`}
-                    color="success"
-                    sx={{ fontSize: '0.75rem', fontWeight: 700 }}
-                  />
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    size="small"
-                    startIcon={<FlashOnRounded />}
-                    onClick={() => {
-                      setActiveTab(0);
-                      window.scrollTo({ top: 600, behavior: 'smooth' });
-                    }}
-                    sx={{ fontWeight: 700, textTransform: 'none' }}
-                  >
-                    ⚡ Edit Telegram MT5 Presets &amp; Sizing
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          )}
-        </Box>
+        <MarketStructureTab
+          defaultHtf={defaultHtf}
+          setDefaultHtf={setDefaultHtf}
+          defaultLtf={defaultLtf}
+          setDefaultLtf={setDefaultLtf}
+          autoDetectOnImport={autoDetectOnImport}
+          setAutoDetectOnImport={setAutoDetectOnImport}
+          autoDetectMistakes={autoDetectMistakes}
+          setAutoDetectMistakes={setAutoDetectMistakes}
+          instrumentOverrides={instrumentOverrides}
+          onOpenAddOverride={handleOpenAddOverride}
+          onEditOverride={handleEditOverride}
+          onDeleteOverride={handleDeleteOverride}
+          onAddPreset={handleAddPreset}
+          onResetDefaults={handleResetPatternDefaults}
+          isSaving={patternMutation.isPending}
+          saveSuccess={patternSuccess}
+          saveError={patternError}
+          onSave={handlePatternSubmit}
+        />
       )}
 
-      {/* =========================================================================
-          TAB 4: ACCOUNT, PREFERENCES & SECURITY
-          ========================================================================= */}
+      {/* TAB 4: BROKER CONNECTIONS */}
       {activeTab === 4 && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          {/* Profile & Password Grid */}
-          <Grid container spacing={2.5}>
-            {/* Profile Card */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
-                <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <PersonRounded sx={{ color: 'primary.main' }} />
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Trader Profile & Preferences
-                    </Typography>
-                  </Box>
-
-                  <form onSubmit={handleProfileSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <TextField
-                      label="Full Name *"
-                      size="small"
-                      required
-                      fullWidth
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-
-                    <TextField
-                      label="Email Address"
-                      size="small"
-                      disabled
-                      fullWidth
-                      value={user?.email || ''}
-                      helperText="Local database login identity (read-only)"
-                      slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-                    />
-
-                    <TextField
-                      select
-                      label="Default Trading Mode (Saved to Account)"
-                      size="small"
-                      fullWidth
-                      value={
-                        selectedScopeValue.startsWith('PROP_FIRM')
-                          ? 'PROP_FIRM:ALL'
-                          : selectedScopeValue.startsWith('TYPE:LIVE')
-                          ? 'TYPE:LIVE'
-                          : 'ALL'
-                      }
-                      onChange={(e) => setScopeValue(e.target.value)}
-                      helperText="Automatically scopes all pages, charts, and analytics on login"
-                    >
-                      <MenuItem value="ALL">🌐 All Accounts (Consolidated)</MenuItem>
-                      <MenuItem value="TYPE:LIVE">
-                        💼 Normal / Personal Account Only{personalAccounts.length === 1 ? ` (${personalAccounts[0].name})` : ''}
-                      </MenuItem>
-                      <MenuItem value="PROP_FIRM:ALL">
-                        🏆 Prop Firm Mode Only{propAccounts.length === 1 ? ` (${propAccounts[0].name})` : ''}
-                      </MenuItem>
-                    </TextField>
-
-                    <TextField
-                      select
-                      label="Default Base Currency"
-                      size="small"
-                      fullWidth
-                      value={baseCurrency}
-                      onChange={(e) => setBaseCurrency(e.target.value)}
-                    >
-                      <MenuItem value="INR">Indian Rupee (INR)</MenuItem>
-                      <MenuItem value="USD">US Dollar (USD)</MenuItem>
-                      <MenuItem value="EUR">Euro (EUR)</MenuItem>
-                      <MenuItem value="GBP">British Pound (GBP)</MenuItem>
-                      <MenuItem value="AED">UAE Dirham (AED)</MenuItem>
-                    </TextField>
-
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                        Theme Mode
-                      </Typography>
-                      <ToggleButtonGroup
-                        exclusive
-                        fullWidth
-                        size="small"
-                        value={theme}
-                        onChange={(_, val) => val && setTheme(val)}
-                      >
-                        <ToggleButton value="dark" sx={{ py: 0.75, fontWeight: 600, gap: 0.5 }}>
-                          <DarkModeRounded sx={{ fontSize: 16 }} />
-                          Dark
-                        </ToggleButton>
-                        <ToggleButton value="light" sx={{ py: 0.75, fontWeight: 600, gap: 0.5 }}>
-                          <LightModeRounded sx={{ fontSize: 16 }} />
-                          Light
-                        </ToggleButton>
-                        <ToggleButton value="system" sx={{ py: 0.75, fontWeight: 600, gap: 0.5 }}>
-                          <SettingsBrightnessRounded sx={{ fontSize: 16 }} />
-                          System
-                        </ToggleButton>
-                      </ToggleButtonGroup>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1 }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          Show Contextual Help Hints
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Display interactive tooltips and calculation explainers
-                        </Typography>
-                      </Box>
-                      <Switch
-                        checked={showHelpHints}
-                        onChange={(e) => {
-                          const val = e.target.checked;
-                          setShowHelpHints(val);
-                          localStorage.setItem('tv_show_help_hints', String(val));
-                          window.dispatchEvent(new Event('tv_help_hints_changed'));
-                        }}
-                      />
-                    </Box>
-
-                    {profileSuccess && (
-                      <Alert severity="success" icon={<CheckCircleRounded />}>
-                        Profile updated successfully
-                      </Alert>
-                    )}
-
-                    {profileError && (
-                      <Alert severity="error" onClose={() => setProfileError(null)}>
-                        {profileError}
-                      </Alert>
-                    )}
-
-                    <Box sx={{ pt: 1 }}>
-                      <Button
-                        type="submit"
-                        variant="contained"
-                        color="primary"
-                        disabled={profileMutation.isPending}
-                        sx={{ fontWeight: 600, px: 3 }}
-                      >
-                        {profileMutation.isPending ? 'Saving...' : 'Save Preferences'}
-                      </Button>
-                    </Box>
-                  </form>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Password Security Card */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
-                <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <LockRounded sx={{ color: 'primary.main' }} />
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                      Security & Password
-                    </Typography>
-                  </Box>
-
-                  <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <TextField
-                      label="Current Password *"
-                      type="password"
-                      size="small"
-                      required
-                      fullWidth
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                    />
-
-                    <TextField
-                      label="New Password (Min 8 chars) *"
-                      type="password"
-                      size="small"
-                      required
-                      fullWidth
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      slotProps={{ htmlInput: { minLength: 8 } }}
-                    />
-
-                    {passwordMsg && (
-                      <Alert severity={passwordMsg.type === 'success' ? 'success' : 'error'}>
-                        {passwordMsg.text}
-                      </Alert>
-                    )}
-
-                    <Box sx={{ pt: 1 }}>
-                      <Button
-                        type="submit"
-                        variant="outlined"
-                        color="inherit"
-                        disabled={passwordMutation.isPending}
-                        sx={{ fontWeight: 600, px: 3 }}
-                      >
-                        {passwordMutation.isPending ? 'Updating...' : 'Change Password'}
-                      </Button>
-                    </Box>
-                  </form>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-
-          {/* Active Sessions & Devices */}
-          <Card variant="outlined" sx={{ p: 1 }}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
-                <Box>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ShieldRounded sx={{ color: 'primary.main' }} />
-                    Active Sessions & Device Management
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Review and manage authenticated sessions
-                  </Typography>
-                </Box>
-                {activeSessions.filter((s) => !s.isCurrent).length > 0 && (
-                  <Button
-                    variant="outlined"
-                    color="warning"
-                    size="small"
-                    disabled={logoutAllMutation.isPending}
-                    onClick={() => {
-                      if (window.confirm('Log out of all other devices?')) {
-                        logoutAllMutation.mutate();
-                      }
-                    }}
-                    sx={{ fontWeight: 600, textTransform: 'none' }}
-                  >
-                    {logoutAllMutation.isPending ? 'Logging out...' : 'Log Out All Other Devices'}
-                  </Button>
-                )}
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {isLoadingSessions ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2 }}>
-                    <CircularProgress size={20} />
-                    <Typography variant="body2" color="text.secondary">
-                      Loading active sessions...
-                    </Typography>
-                  </Box>
-                ) : (
-                  activeSessions.map((session) => {
-                    const uaInfo = parseUserAgent(session.userAgent);
-                    return (
-                      <Box
-                        key={session.id}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          p: 1.25,
-                          borderRadius: 1.5,
-                          border: 1,
-                          borderColor: session.isCurrent ? 'success.main' : 'divider',
-                          bgcolor: session.isCurrent ? (isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.03)') : 'background.paper',
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          {uaInfo.isMobile ? <PhoneAndroidRounded sx={{ fontSize: 20 }} /> : <LaptopRounded sx={{ fontSize: 20 }} />}
-                          <Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                                {uaInfo.full}
-                              </Typography>
-                              {session.isCurrent && (
-                                <Chip label="Current Device" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
-                              )}
-                            </Box>
-                            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6875rem' }}>
-                              IP: {session.ipAddress || 'Unknown'} • Last active: {new Date(session.lastUsedAt).toLocaleDateString()}
-                            </Typography>
-                          </Box>
-                        </Box>
-
-                        {!session.isCurrent && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="error"
-                            disabled={revokeSessionMutation.isPending}
-                            onClick={() => revokeSessionMutation.mutate(session.id)}
-                            sx={{ fontSize: '0.75rem', py: 0.25 }}
-                          >
-                            Revoke
-                          </Button>
-                        )}
-                      </Box>
-                    );
-                  })
-                )}
-              </Box>
-
-              <Divider sx={{ my: 0.5 }} />
-
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  disabled={isLoggingOut}
-                  onClick={handleLogout}
-                  startIcon={<LogoutRounded />}
-                  sx={{ fontWeight: 700 }}
-                >
-                  {isLoggingOut ? 'Signing Out...' : 'Sign Out of Current Device'}
-                </Button>
-
-                {/* Sleek System Status Bar (Consolidated replacement for the old waste box) */}
-                {(() => {
-                  const sysData = (systemStatus as any)?.data || systemStatus;
-                  return (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-                      <Chip
-                        icon={<StorageRounded sx={{ fontSize: '0.875rem !important' }} />}
-                        label={`${sysData?.tradeCount || 0} Trades Stored`}
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontSize: '0.6875rem', fontWeight: 600 }}
-                      />
-                      <Chip
-                        label={sysData?.backup?.result === 'OK' ? 'Backup Healthy' : 'Backup Checked'}
-                        size="small"
-                        color={sysData?.backup?.result === 'OK' ? 'success' : 'default'}
-                        variant="outlined"
-                        sx={{ fontSize: '0.6875rem', fontWeight: 600 }}
-                      />
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6875rem' }}>
-                        100% Private Cloud • v1.0.0
-                      </Typography>
-                    </Box>
-                  );
-                })()}
-              </Box>
-            </CardContent>
-          </Card>
-        </Box>
+        <BrokerConnectionsTab
+          hasFyersAccount={hasFyersAccount}
+          hasMarketDataAccount={hasMarketDataAccount}
+          hasMt5Account={hasMt5Account}
+          isFyersConnected={isFyersConnected}
+          isFyersConfigured={isFyersConfigured}
+          fyersData={fyersData}
+          fyersRedirectUri={fyersRedirectUri}
+          fyersAppId={fyersAppId}
+          setFyersAppId={setFyersAppId}
+          fyersSecretKey={fyersSecretKey}
+          setFyersSecretKey={setFyersSecretKey}
+          showSecretKey={showSecretKey}
+          setShowSecretKey={setShowSecretKey}
+          fyersAutoSync={fyersAutoSync}
+          setFyersAutoSync={setFyersAutoSync}
+          showFyersDevDetails={showFyersDevDetails}
+          setShowFyersDevDetails={setShowFyersDevDetails}
+          onSaveFyersConfig={() => fyersConfigMutation.mutate({ appId: fyersAppId, secretKey: fyersSecretKey, autoSyncEnabled: fyersAutoSync })}
+          onConnectFyers={() => fyersConnectMutation.mutate()}
+          onSyncFyers={() => {
+            if (!isFyersConnected) {
+              toast.info('FYERS session not authorized for today. Launching 1-Click Daily Auth...');
+              fyersConnectMutation.mutate();
+            } else {
+              fyersSyncMutation.mutate();
+            }
+          }}
+          onDisconnectFyers={() => fyersDisconnectMutation.mutate()}
+          isSavingFyers={fyersConfigMutation.isPending}
+          isConnectingFyers={fyersConnectMutation.isPending}
+          isSyncingFyers={fyersSyncMutation.isPending}
+          isDisconnectingFyers={fyersDisconnectMutation.isPending}
+          fyersSuccess={fyersSuccess}
+          fyersError={fyersError}
+          onCopyText={copyTextToClipboard}
+          isAngelOneLoading={isAngelOneLoading}
+          isAngelOneConnected={isAngelOneConnected}
+          isAngelOneConfigured={isAngelOneConfigured}
+          isAngelOneTokenExpired={isAngelOneTokenExpired}
+          angelOneData={angelOneData}
+          angelOneApiKey={angelOneApiKey}
+          setAngelOneApiKey={setAngelOneApiKey}
+          angelOneClientCode={angelOneClientCode}
+          setAngelOneClientCode={setAngelOneClientCode}
+          angelOnePin={angelOnePin}
+          setAngelOnePin={setAngelOnePin}
+          showAngelOneKey={showAngelOneKey}
+          setShowAngelOneKey={setShowAngelOneKey}
+          showAngelOnePin={showAngelOnePin}
+          setShowAngelOnePin={setShowAngelOnePin}
+          onOpenTotpDialog={() => setIsTotpDialogOpen(true)}
+          onSaveAngelOneConfig={() =>
+            angelOneConfigMutation.mutate({
+              apiKey: angelOneApiKey,
+              clientCode: angelOneClientCode,
+              pin: angelOnePin,
+            })
+          }
+          onRefreshAngelOne={() => angelOneRefreshMutation.mutate(true)}
+          onDisconnectAngelOne={() => angelOneDisconnectMutation.mutate()}
+          isSavingAngelOne={angelOneConfigMutation.isPending}
+          isConnectingAngelOne={angelOneConnectMutation.isPending}
+          isRefreshingAngelOne={angelOneRefreshMutation.isPending}
+          isDisconnectingAngelOne={angelOneDisconnectMutation.isPending}
+          goldDefaultLot={goldDefaultLot}
+          goldSlPoints={goldSlPoints}
+          goldRrRatio={goldRrRatio}
+          ethDefaultLot={ethDefaultLot}
+          ethSlPrice={ethSlPrice}
+          ethRrRatio={ethRrRatio}
+          defaultDollarRisk={defaultDollarRisk}
+          onNavigateToTelegramTab={() => setActiveTab(2)}
+        />
       )}
 
-      {/* TOTP Authentication Dialog for Angel One */}
-      <Dialog
+      {/* TAB 5: PROFILE & SYSTEM */}
+      {activeTab === 5 && (
+        <ProfileSystemTab
+          name={name}
+          setName={setName}
+          email={user?.email || ''}
+          selectedScopeValue={selectedScopeValue}
+          setScopeValue={setScopeValue}
+          personalAccounts={personalAccounts}
+          propAccounts={propAccounts}
+          baseCurrency={baseCurrency}
+          setBaseCurrency={setBaseCurrency}
+          theme={theme}
+          setTheme={setTheme}
+          showHelpHints={showHelpHints}
+          setShowHelpHints={setShowHelpHints}
+          displaySettings={displaySettings}
+          setDisplaySettings={setDisplaySettings}
+          onSaveDisplaySettings={() => {
+            liveWatcherMutation.mutate({
+              ...user?.liveWatcherSettings,
+              displaySettings,
+            } as any);
+          }}
+          currentPassword={currentPassword}
+          setCurrentPassword={setCurrentPassword}
+          newPassword={newPassword}
+          setNewPassword={setNewPassword}
+          passwordMsg={passwordMsg}
+          onProfileSubmit={handleProfileSubmit}
+          onPasswordSubmit={handlePasswordSubmit}
+          isSavingProfile={profileMutation.isPending}
+          profileSuccess={profileSuccess}
+          profileError={profileError}
+          isChangingPassword={passwordMutation.isPending}
+          activeSessions={activeSessions}
+          isLoadingSessions={isLoadingSessions}
+          onRevokeSession={(id) => revokeSessionMutation.mutate(id)}
+          isRevokingSession={revokeSessionMutation.isPending}
+          onLogoutAll={() => logoutAllMutation.mutate()}
+          isLoggingOutAll={logoutAllMutation.isPending}
+          onLogout={handleLogout}
+          isLoggingOut={isLoggingOut}
+          systemStatus={systemStatus}
+        />
+      )}
+
+      {/* Angel One TOTP Dialog */}
+      <AngelOneTotpDialog
         open={isTotpDialogOpen}
         onClose={() => {
           setIsTotpDialogOpen(false);
           setAngelOneTotp('');
         }}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <KeyRounded sx={{ color: '#f59e0b' }} />
-          Angel One TOTP Authorization
-        </DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            Enter the 6-digit TOTP code generated by your authenticator app for client code <strong>{angelOneClientCode || 'your account'}</strong>.
-          </Typography>
-          <TextField
-            autoFocus
-            label="6-Digit TOTP Code"
-            value={angelOneTotp}
-            onChange={(e) => setAngelOneTotp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            placeholder="000000"
-            fullWidth
-            slotProps={{
-              htmlInput: {
-                inputMode: 'numeric',
-                maxLength: 6,
-                style: { textAlign: 'center', letterSpacing: '0.5em', fontSize: '1.25rem', fontWeight: 700 },
-              },
-            }}
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setIsTotpDialogOpen(false)} color="inherit">
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="warning"
-            disabled={angelOneTotp.length !== 6 || angelOneConnectMutation.isPending}
-            onClick={() => angelOneConnectMutation.mutate(angelOneTotp)}
-            sx={{ fontWeight: 700 }}
-          >
-            {angelOneConnectMutation.isPending ? 'Verifying...' : 'Authorize'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        clientCode={angelOneClientCode}
+        totp={angelOneTotp}
+        onTotpChange={setAngelOneTotp}
+        onSubmit={() => angelOneConnectMutation.mutate(angelOneTotp)}
+        isPending={angelOneConnectMutation.isPending}
+      />
 
       {/* Instrument Override Dialog */}
-      <Dialog
+      <InstrumentOverrideDialog
         open={overrideDialogOpen}
         onClose={() => setOverrideDialogOpen(false)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 700 }}>
-          {editingOverrideIndex !== null ? 'Edit Instrument Override' : 'Add Instrument Override'}
-        </DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <TextField
-            label="Underlying Symbol *"
-            size="small"
-            required
-            fullWidth
-            placeholder="e.g. NIFTY, BANKNIFTY, CRUDEOIL"
-            value={overrideSymbol}
-            onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase().trim())}
-            slotProps={{ htmlInput: { style: { fontFamily: '"JetBrains Mono", monospace' } } }}
-          />
-
-          <TextField
-            select
-            label="Higher Timeframe (HTF) Trend"
-            size="small"
-            fullWidth
-            value={overrideHtf}
-            onChange={(e) => setOverrideHtf(e.target.value)}
-          >
-            <MenuItem value="60">1 Hour (60m)</MenuItem>
-            <MenuItem value="240">4 Hours (240m) — Recommended</MenuItem>
-            <MenuItem value="D">Daily (1D)</MenuItem>
-          </TextField>
-
-          <TextField
-            select
-            label="Lower Timeframe (LTF) Confirmation"
-            size="small"
-            fullWidth
-            value={overrideLtf}
-            onChange={(e) => setOverrideLtf(e.target.value)}
-          >
-            <MenuItem value="1">1 Minute (1m)</MenuItem>
-            <MenuItem value="3">3 Minutes (3m)</MenuItem>
-            <MenuItem value="5">5 Minutes (5m) — Recommended</MenuItem>
-            <MenuItem value="15">15 Minutes (15m)</MenuItem>
-          </TextField>
-
-          <TextField
-            select
-            label="Preferred Strategy (Optional)"
-            size="small"
-            fullWidth
-            value={overridePreferredStrategyId}
-            onChange={(e) => setOverridePreferredStrategyId(e.target.value)}
-          >
-            <MenuItem value="">Dynamic Pattern Match (No Preference)</MenuItem>
-            {userStrategies.map((strat: any) => (
-              <MenuItem key={strat._id || strat.id} value={strat._id || strat.id}>
-                {strat.name}
-              </MenuItem>
-            ))}
-          </TextField>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setOverrideDialogOpen(false)} color="inherit">
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSaveOverride}
-            variant="contained"
-            color="primary"
-            disabled={!overrideSymbol.trim()}
-            sx={{ fontWeight: 600 }}
-          >
-            Save Override
-          </Button>
-        </DialogActions>
-      </Dialog>
+        isEditing={editingOverrideIndex !== null}
+        symbol={overrideSymbol}
+        onSymbolChange={setOverrideSymbol}
+        htf={overrideHtf}
+        onHtfChange={setOverrideHtf}
+        ltf={overrideLtf}
+        onLtfChange={setOverrideLtf}
+        preferredStrategyId={overridePreferredStrategyId}
+        onPreferredStrategyIdChange={setOverridePreferredStrategyId}
+        userStrategies={userStrategies}
+        onSave={handleSaveOverride}
+      />
     </Box>
   );
 }

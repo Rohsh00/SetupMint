@@ -57,6 +57,7 @@ export interface ITelegramInlineButton {
   text: string;
   callback_data?: string;
   url?: string;
+  web_app?: { url: string };
 }
 
 export interface IForexPresets {
@@ -8458,7 +8459,7 @@ export class TelegramAlertService {
           // Row 4: Lifecycle & Controls
           buttons.push([
             { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
-            { text: '🌙 Sleep Mode', callback_data: `defense_sleep:${s.cleanSymbol}` },
+            { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
             autoExecBtn,
           ]);
         }
@@ -8494,6 +8495,7 @@ export class TelegramAlertService {
       buttons.push([
         { text: '🌐 Other Assets...', callback_data: 'deck:other_assets' },
         { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+        { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
         autoExecBtn,
         isPinned
           ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
@@ -8619,25 +8621,30 @@ export class TelegramAlertService {
 
       const openTradesCount = await Trade.countDocuments({ userId: user._id, status: 'OPEN' });
       const hasLivePositions = openTradesCount > 0;
-      const maxInterval = hasLivePositions ? 5000 : 15000;
-      const minSpacing = 3500;
+      const minSpacing = hasLivePositions ? 6000 : 15000;
 
       const buttonsJson = JSON.stringify(buttons || []);
       const cached = this.lastPinnedPayloadByMessageId.get(messageId);
       const now = Date.now();
+
+      // Strip changing clock timestamp before comparing content so static prices never trigger spam edits
+      const stripTs = (t: string) => t.replace(/⚡ <i>Live Cut-to-Cut.*?<\/i>.*?\n/, '').trim();
+      const contentHasChanged = !cached || stripTs(cached.text) !== stripTs(text) || cached.buttonsJson !== buttonsJson;
+
       if (!force && !isSubmenuActive) {
-        if (cached && (now - cached.lastSentAt < maxInterval)) {
-          const stripTs = (t: string) => t.replace(/⚡ <i>Live Cut-to-Cut<\/i> · <code>.*?<\/code>\n/, '');
-          if (stripTs(cached.text) === stripTs(text) && cached.buttonsJson === buttonsJson) {
-            return true;
-          }
+        // If prices, PnL, and buttons have NOT changed, NEVER edit message just for UTC clock seconds!
+        if (!contentHasChanged) {
+          return true;
         }
 
-        // Minimum spacing between automated ticker edits
+        // Minimum spacing between automated ticker edits to strictly stay under Telegram rate limits
         if (cached && (now - cached.lastSentAt < minSpacing)) {
           return true;
         }
       }
+
+      // Cache timestamp immediately to prevent tight-loop hammering if network errors or 429 occurs
+      this.lastPinnedPayloadByMessageId.set(messageId, { text, buttonsJson, lastSentAt: now });
 
       const res = await this.editMessageText(botToken, chatId, messageId, text, buttons);
       if (res !== null) {

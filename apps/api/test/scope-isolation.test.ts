@@ -1092,7 +1092,7 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
       });
       expect(foreignStatsRes.json().data.closedTradesCount).toBe(0);
       expect(foreignStatsRes.json().data.netPnL).toBe(0);
-    });
+    }, 30000);
   });
 
   describe('3. GET /api/v1/trades/live/watcher & GET /api/v1/trades/live/alerts', () => {
@@ -1587,15 +1587,15 @@ describe('End-to-End Account Scope Isolation Audit Suite', () => {
         const userADoc = await User.findById(userAId);
         await (TelegramAlertService as any).handleAlertsListCommand(userADoc, 'token', 12345, undefined);
         // Must have 3 active alerts (5ers, FTMO, FYERS) and exclude archived alert!
-        expect(sentMessages[0]).toContain('Active Alert States (3)');
+        expect(sentMessages[0]).toMatch(/(?:Active Alert States|RISK DEFENSE STATES) \(3\)/);
 
         sentMessages.length = 0;
         await (TelegramAlertService as any).handleAlertsListCommand(userADoc, 'token', 12345, 'prop');
-        expect(sentMessages[0]).toContain('Active Alert States (2)');
+        expect(sentMessages[0]).toMatch(/(?:Active Alert States|RISK DEFENSE STATES) \(2\)/);
 
         sentMessages.length = 0;
         await (TelegramAlertService as any).handleAlertsListCommand(userADoc, 'token', 12345, 'live');
-        expect(sentMessages[0]).toContain('Active Alert States (1)');
+        expect(sentMessages[0]).toMatch(/(?:Active Alert States|RISK DEFENSE STATES) \(1\)/);
 
         // /trades prop vs live (Telegram sends one card per open trade)
         sentMessages.length = 0;

@@ -270,14 +270,16 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     );
     const riskSettings = scopedRisk.riskSettings;
 
-    // Look back 30 days for review items
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
+    // Look back 60 days for review items (supports optional ?days= query param, default 60)
+    const daysParam = req.query.days ? parseInt(req.query.days, 10) : 60;
+    const lookbackDays = Math.max(isNaN(daysParam) ? 60 : daysParam, 30);
+    const lookbackDate = new Date();
+    lookbackDate.setDate(lookbackDate.getDate() - lookbackDays);
+    lookbackDate.setHours(0, 0, 0, 0);
 
     const trades = await Trade.find({
       userId,
-      tradeDate: { $gte: thirtyDaysAgo },
+      tradeDate: { $gte: lookbackDate },
       accountId: { $in: accountIds },
     })
       .populate('strategyId', 'name')

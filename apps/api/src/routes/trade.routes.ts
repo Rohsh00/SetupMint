@@ -969,6 +969,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         variantKey: newKey || undefined,
         variantStatus: newStatus,
       };
+      trade.markModified('setup');
 
       if (strategyId && targetStrategy) {
         trade.strategyId = targetStrategy._id;

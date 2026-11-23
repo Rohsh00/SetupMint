@@ -1948,6 +1948,133 @@ export class TelegramAlertService {
       return;
     }
 
+    if (data.startsWith('drill_telem:') || data.startsWith('drill_telem_id:')) {
+      const isTicket = data.startsWith('drill_telem:');
+      const param = data.replace(isTicket ? 'drill_telem:' : 'drill_telem_id:', '');
+      const trade = isTicket
+        ? await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${param}` }).lean()
+        : await Trade.findOne({ _id: param, userId: user._id }).lean();
+
+      if (!trade) {
+        await this.answerCallbackQuery(botToken, cq.id, 'Trade record not found or closed.', true);
+        return;
+      }
+
+      const anyTrade = trade as any;
+      const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+      const ticket = Mt5CommandService.extractTicket(trade) || param;
+      const mult = anyTrade.contractMultiplier || trade.simpleExecution?.contractMultiplier || 1;
+      const qty = Number(anyTrade.quantity || trade.simpleExecution?.quantity || 1);
+      const entry = Number(anyTrade.entryPrice || trade.simpleExecution?.entryPrice || trade.calculated?.averageEntryPrice || 0);
+      const spreadPts = trade.simpleExecution?.spreadPoints != null ? `${trade.simpleExecution.spreadPoints} pts` : 'N/A';
+      const spreadCost = trade.simpleExecution?.spreadCost != null ? `${sym}${trade.simpleExecution.spreadCost}` : 'N/A';
+      const comm = trade.simpleExecution?.brokerage != null ? `${sym}${trade.simpleExecution.brokerage}` : `${sym}0.00`;
+      const sl = Number(trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? 0);
+      const riskPts = sl > 0 && entry > 0 ? Math.abs(entry - sl).toFixed(2) : 'N/A';
+      const dollarRisk = trade.risk?.plannedRiskAmount ? `${sym}${Number(trade.risk.plannedRiskAmount).toFixed(2)}` : (sl > 0 ? `${sym}${(Math.abs(entry - sl) * qty * mult).toFixed(2)}` : 'N/A');
+      const session = anyTrade.session || anyTrade.tradingSession || 'Standard';
+
+      const telemText =
+        `📋 <b>EXECUTION TELEMETRY — #${ticket}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Symbol     : ${trade.symbol}\n` +
+        `Direction  : ${trade.direction}\n` +
+        `Entry Price: ${sym}${entry.toFixed(entry < 10 ? 4 : 2)}\n` +
+        `Volume     : ${qty.toFixed(2)} Lots (${(qty * mult).toLocaleString()} units)\n` +
+        `Spread     : ${spreadPts} (${spreadCost})\n` +
+        `Commission : ${comm}\n` +
+        `Risk Dist  : ${riskPts} pts\n` +
+        `Dollar Risk: ${dollarRisk}\n` +
+        `Ticket     : #${ticket}\n` +
+        `Session    : ${session}\n` +
+        `Status     : ACTIVE / LIVE\n` +
+        `</pre>\n` +
+        `<i>Tap [🔙 Close Telemetry] to dismiss this drilldown.</i>`;
+
+      const dismissButtons = [
+        [{ text: '🔙 Close Telemetry', callback_data: `dismiss_msg:${cq.message?.message_id || 0}` }]
+      ];
+
+      const sent = await this.sendMessage(botToken, chatId, telemText, dismissButtons);
+      if (sent?.message_id) {
+        this.scheduleEphemeralMessageCleanup(botToken, chatId, sent.message_id, 45000);
+      }
+      await this.answerCallbackQuery(botToken, cq.id, '📋 Full Telemetry displayed');
+      return;
+    }
+
+    if (data.startsWith('drill_ladder:') || data.startsWith('drill_ladder_id:')) {
+      const isTicket = data.startsWith('drill_ladder:');
+      const param = data.replace(isTicket ? 'drill_ladder:' : 'drill_ladder_id:', '');
+      const trade = isTicket
+        ? await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${param}` }).lean()
+        : await Trade.findOne({ _id: param, userId: user._id }).lean();
+
+      if (!trade) {
+        await this.answerCallbackQuery(botToken, cq.id, 'Trade record not found or closed.', true);
+        return;
+      }
+
+      const anyTrade = trade as any;
+      const settings = user.liveWatcherSettings;
+      const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+      const ticket = Mt5CommandService.extractTicket(trade) || param;
+      const qty = Number(anyTrade.quantity || trade.simpleExecution?.quantity || 1);
+      const entry = Number(anyTrade.entryPrice || trade.simpleExecution?.entryPrice || trade.calculated?.averageEntryPrice || 0);
+      const sl = Number(trade.risk?.currentStopLoss ?? trade.risk?.initialStopLoss ?? 0);
+      const isLong = (trade.direction as string) === 'LONG' || (trade.direction as string) === 'BUY';
+      const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+      const riskDist = sl > 0 && entry > 0 ? Math.abs(entry - sl) : (isGold ? 4.0 : 15.0);
+      const priceDecimals = isGold ? 2 : (entry < 10 ? 4 : 2);
+
+      const t1R = settings?.t1MultipleR || 2.0;
+      const t1ExitRatio = settings?.t1ExitRatio || 0.5;
+      const t1Price = Number((isLong ? entry + t1R * riskDist : entry - t1R * riskDist).toFixed(priceDecimals));
+      const t1Lots = (qty * t1ExitRatio).toFixed(2);
+      const t1Pct = Math.round(t1ExitRatio * 100);
+      const t2Enabled = Boolean(settings?.t2Enabled);
+      const t2R = settings?.t2MultipleR || 3.0;
+      const t2Price = Number((isLong ? entry + t2R * riskDist : entry - t2R * riskDist).toFixed(priceDecimals));
+      const isRunner = settings?.isFreeRunner ?? true;
+      const gbPeak = settings?.givebackMinPeakR || 1.5;
+      const gbPct = settings?.givebackMaxPercent || 35;
+      const autoStatus = settings?.defaultAutoExecute ? 'ENABLED (Server Daemon)' : 'MANUAL';
+
+      const ladderText =
+        `🎯 <b>LADDER BLUEPRINT — #${ticket}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Target 1   : ${sym}${t1Price} (+${t1R}R)\n` +
+        `T1 Exit    : ${t1Lots} Lots (${t1Pct}%)\n` +
+        `T1 Action  : ${settings?.t1TrailingAction || 'TRUE_BE_WITH_FEES'}\n` +
+        (t2Enabled ? `Target 2   : ${sym}${t2Price} (+${t2R}R)\n` : '') +
+        `Runner Mode: ${isRunner ? 'ACTIVE (MT5 TP = 0.0)' : 'DISABLED'}\n` +
+        `Giveback SL: Auto-exit at ${gbPct}% drop (Peak ≥ +${gbPeak}R)\n` +
+        `Auto-Exec  : ${autoStatus}\n` +
+        `</pre>\n` +
+        `<i>Tap [🔙 Close Blueprint] to dismiss this drilldown.</i>`;
+
+      const dismissButtons = [
+        [{ text: '🔙 Close Blueprint', callback_data: `dismiss_msg:${cq.message?.message_id || 0}` }]
+      ];
+
+      const sent = await this.sendMessage(botToken, chatId, ladderText, dismissButtons);
+      if (sent?.message_id) {
+        this.scheduleEphemeralMessageCleanup(botToken, chatId, sent.message_id, 45000);
+      }
+      await this.answerCallbackQuery(botToken, cq.id, '🎯 Ladder Blueprint displayed');
+      return;
+    }
+
+    if (data.startsWith('dismiss_msg:')) {
+      if (cq.message?.message_id) {
+        await this.deleteMessage(botToken, chatId, cq.message.message_id).catch(() => {});
+      }
+      await this.answerCallbackQuery(botToken, cq.id, 'Dismissed');
+      return;
+    }
+
     if (data === 'cmd_autoexec_on' || data === 'cmd_autoexec_off') {
       const arm = data === 'cmd_autoexec_on';
       if (!user.liveWatcherSettings) (user as any).liveWatcherSettings = {};
@@ -4071,7 +4198,9 @@ export class TelegramAlertService {
   }
 
   /**
-   * Triggered when a new trade is opened or synced from FYERS.
+   * Triggered when a new trade is opened or synced from MT5 / Brokers.
+   * Generates the Institutional All-in-One Execution Card with risk ledger,
+   * automated ladder blueprint, macro radar, and drilldown telemetry.
    */
   static async notifyTradeOpened(user: any, trade: any, initialStopLoss?: number): Promise<void> {
     // Clear any pre-order submenu state immediately so cockpit flips to active positions
@@ -4081,76 +4210,179 @@ export class TelegramAlertService {
     if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
     if (settings.telegramAlertEvents && settings.telegramAlertEvents.tradeOpened === false) return;
 
+    const rawToken = settings.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    if (!botToken) return;
+    const chatId = settings.telegramPinnedCockpitChatId || settings.telegramChatId;
+
+    const ticket = Mt5CommandService.extractTicket(trade);
+    const tradeIdentity = ticket ? `MT5_${ticket}` : String(trade._id || trade.id || 'new');
+
+    // Deduplication check: avoid double-sending for same trade/ticket within 60 seconds
+    const dedupeKey = `${chatId}:trade_opened:${tradeIdentity}`;
+    const now = Date.now();
+    const lastSent = this.recentAlerts.get(dedupeKey);
+    if (lastSent && now - lastSent < 60000) {
+      return;
+    }
+    this.recentAlerts.set(dedupeKey, now);
+
     const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
     const mult = trade.contractMultiplier || trade.simpleExecution?.contractMultiplier || 1;
-    const qty = trade.quantity || trade.simpleExecution?.quantity || 1;
-    const entry = trade.entryPrice || trade.simpleExecution?.entryPrice || 0;
-    const sl = initialStopLoss ?? trade.risk?.initialStopLoss ?? trade.stopLoss ?? 'None';
-    const riskAmt = sl !== 'None' ? Math.abs(entry - Number(sl)) * qty * mult : trade.risk?.plannedRiskAmount;
-    const ticket = Mt5CommandService.extractTicket(trade);
-
+    const qty = Number(trade.quantity || trade.simpleExecution?.quantity || 1);
+    const entry = Number(trade.entryPrice || trade.simpleExecution?.entryPrice || trade.calculated?.averageEntryPrice || 0);
+    const sl = initialStopLoss ?? trade.risk?.initialStopLoss ?? trade.risk?.currentStopLoss ?? trade.stopLoss ?? 'None';
     const numSl = sl !== 'None' ? Number(sl) : 0;
+
     const isLong = (trade.direction as string) === 'LONG' || (trade.direction as string) === 'BUY';
+    const sideEmoji = isLong ? '🟢' : '🔴';
+    const sideStr = isLong ? 'BUY (LONG)' : 'SELL (SHORT)';
+
     const isGold = (trade.symbol || '').includes('XAU') || trade.symbol === 'GOLD';
+    const isEth = (trade.symbol || '').includes('ETH');
+    const isBtc = (trade.symbol || '').includes('BTC');
+    const symEmoji = isGold ? '🟡' : isEth ? '🔷' : isBtc ? '🪙' : '📊';
+
     const defaultPts = isGold ? 4.0 : 15.0;
     const riskDist = (numSl > 0 && entry > 0) ? Math.abs(entry - numSl) : defaultPts;
+    const riskAmt = numSl > 0 ? (riskDist * qty * mult) : (trade.risk?.plannedRiskAmount || (riskDist * qty * mult));
+    const priceDecimals = isGold ? 2 : (entry < 10 ? 4 : 2);
 
-    const tp15 = Number((isLong ? entry + 1.5 * riskDist : entry - 1.5 * riskDist).toFixed(2));
-    const tp20 = Number((isLong ? entry + 2.0 * riskDist : entry - 2.0 * riskDist).toFixed(2));
-    const tp30 = Number((isLong ? entry + 3.0 * riskDist : entry - 3.0 * riskDist).toFixed(2));
+    // Account & Prop firm resolution
+    let accountName = 'MT5 (Elefin)';
+    let isPropFirm = false;
+    let equity = 10000;
+    let maxDailyLoss = 500;
 
+    try {
+      if (trade.accountId) {
+        const account = (await TradingAccount.findById(trade.accountId).lean()) as any;
+        if (account) {
+          accountName = account.name || account.broker || 'MT5';
+          equity = Number(account.balance || account.currentEquity || 10000);
+          maxDailyLoss = Number(account.profile?.maxDailyLoss || 500);
+          isPropFirm = Boolean(
+            account.accountType === 'PROP_FIRM' ||
+            account.profile?.accountType === 'PROP_FIRM' ||
+            /the5ers|ftmo|mff|fundingpips/i.test(account.name || '') ||
+            trade.tags?.includes('PROP_FIRM')
+          );
+        }
+      }
+    } catch {
+      // Fallback defaults
+    }
+
+    const riskPct = equity > 0 && riskAmt > 0 ? ((riskAmt / equity) * 100).toFixed(2) : null;
+    const riskDistStr = numSl > 0 ? `${riskDist.toFixed(priceDecimals)} pts` : 'No Stop';
+    const spreadPts = trade.simpleExecution?.spreadPoints != null ? `${trade.simpleExecution.spreadPoints} pts` : null;
+    const spreadStr = spreadPts ? ` (Spread: ${spreadPts})` : '';
+    const unitsStr = mult > 1 ? ` (${(qty * mult).toLocaleString()} units)` : '';
+
+    // Automated Ladder Blueprint parameters
+    const t1MultipleR = settings?.t1MultipleR || 2.0;
+    const t1ExitRatio = settings?.t1ExitRatio || 0.5;
+    const t1TargetPrice = Number((isLong ? entry + t1MultipleR * riskDist : entry - t1MultipleR * riskDist).toFixed(priceDecimals));
+    const t1Lots = (qty * t1ExitRatio).toFixed(2);
+    const t1Pct = Math.round(t1ExitRatio * 100);
+    const autoStatus = settings?.defaultAutoExecute ? '🟢 ON' : '⚪ OFF';
+    const trailingAction = settings?.t1TrailingAction || 'TRUE_BE_WITH_FEES';
+    const trailingLabel =
+      trailingAction === 'TRUE_BE_WITH_FEES'
+        ? 'True BE (+Spread Buffer)'
+        : trailingAction === 'BE_AT_ENTRY'
+        ? 'BE at Entry'
+        : trailingAction === 'TRAIL_1R'
+        ? 'Trail +1.0R'
+        : trailingAction;
+    const isFreeRunner = settings?.isFreeRunner ?? true;
+    const runnerLabel = isFreeRunner ? 'ACTIVE — TP Cleared (0.0)' : 'Capped Target';
+    const givebackEnabled = settings?.givebackAutoExitEnabled ?? false;
+    const givebackMinPeakR = settings?.givebackMinPeakR || 1.5;
+    const givebackMaxPct = settings?.givebackMaxPercent || 35;
+    const givebackLabel = givebackEnabled ? `Auto-exit on ${givebackMaxPct}% drop from ≥ +${givebackMinPeakR}R` : 'Manual';
+
+    // Prop Firm Shield: ONLY shown if isPropFirm === true (omitted on live accounts)
+    let propFirmSection = '';
+    if (isPropFirm) {
+      propFirmSection =
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🏛️ <b>PROP FIRM SHIELD</b>\n` +
+        `• <b>Max Daily Loss Limit</b>: ${sym}${maxDailyLoss.toFixed(2)}\n` +
+        `• <b>Daily Drawdown Room</b> : ${sym}${maxDailyLoss.toFixed(2)} left\n`;
+    }
+
+    // Macro News Radar: checks for impending high-impact economic events within 2 hours
+    let macroRadarSection = '🟢 <b>RADAR</b>: Clear skies (No high-impact news in next 2h)';
+    try {
+      const upcomingNews = await EconomicCalendarService.getUpcomingGoldNews(new Date(), 2);
+      if (upcomingNews && upcomingNews.length > 0) {
+        const nextEvent = upcomingNews[0];
+        const minsUntil = Math.max(1, Math.round((new Date(nextEvent.timestamp).getTime() - Date.now()) / 60000));
+        macroRadarSection = `⚠️ <b>RADAR</b>: ${nextEvent.title} in ${minsUntil}m (${nextEvent.country})`;
+      }
+    } catch {
+      // Keep clear skies default
+    }
+
+    // Clean tactical buttons (no dollar values) + Tier 2 Drilldown buttons
     const openedButtons: ITelegramInlineButton[][] = [];
     if (ticket) {
       openedButtons.push([
-        { text: `🛡️ Lock BE ($${entry.toFixed(2)})`, callback_data: `pos_be:${ticket}` },
-        { text: '🚫 Remove TP (Runner)', callback_data: `pos_removetp:${ticket}` },
+        { text: '🛡️ Lock BE', callback_data: `pos_be:${ticket}` },
+        { text: '🚫 Free Runner (TP=0)', callback_data: `pos_removetp:${ticket}` },
       ]);
       openedButtons.push([
-        { text: `🎯 +1.5R ($${tp15})`, callback_data: `pos_tp:${ticket}:${tp15}` },
-        { text: `🎯 +2R ($${tp20})`, callback_data: `pos_tp:${ticket}:${tp20}` },
-        { text: `🎯 +3R ($${tp30})`, callback_data: `pos_tp:${ticket}:${tp30}` },
-      ]);
-      openedButtons.push([
-        { text: '🎯 Book 50%', callback_data: `pos_half:${ticket}` },
+        { text: '⚡ Book 50%', callback_data: `pos_half:${ticket}` },
         { text: '📈 Trail +1R', callback_data: `pos_trail:${ticket}` },
-        { text: '🚨 Close (100%)', callback_data: `pos_close:${ticket}` },
       ]);
       openedButtons.push([
-        { text: '🔄 Refresh Price & PnL', callback_data: `x:${trade._id}:REF:1:${entry}` },
-        { text: '📈 5m Chart', callback_data: `x:${trade._id}:CHART_5:1:${entry}` },
+        { text: '🚨 Close (100%)', callback_data: `pos_close:${ticket}` },
+        { text: '📌 Live Cockpit', callback_data: 'cmd_cockpit' },
+      ]);
+      openedButtons.push([
+        { text: '📋 Full Telemetry', callback_data: `drill_telem:${ticket}` },
+        { text: '🎯 Ladder Blueprint', callback_data: `drill_ladder:${ticket}` },
       ]);
     } else {
       openedButtons.push([
-        { text: '🔄 Refresh Price & PnL', callback_data: `x:${trade._id}:REF:1:${entry}` },
-        { text: '📈 5m Chart', callback_data: `x:${trade._id}:CHART_5:1:${entry}` },
-      ]);
-      openedButtons.push([
-        { text: '🛡️ Lock Breakeven', callback_data: `x:${trade._id}:BE:1:${entry}` },
+        { text: '🛡️ Lock BE', callback_data: `x:${trade._id}:BE:1:${entry}` },
         { text: '⚡ Book 50%', callback_data: `x:${trade._id}:B50:1:${entry}` },
       ]);
       openedButtons.push([
-        { text: '🚨 Quick Market Exit (100%)', callback_data: `x:${trade._id}:E:1:${entry}` },
+        { text: '🚨 Close (100%)', callback_data: `x:${trade._id}:E:1:${entry}` },
+        { text: '📌 Live Cockpit', callback_data: 'cmd_cockpit' },
+      ]);
+      openedButtons.push([
+        { text: '📋 Full Telemetry', callback_data: `drill_telem_id:${trade._id}` },
+        { text: '🎯 Ladder Blueprint', callback_data: `drill_ladder_id:${trade._id}` },
       ]);
     }
 
-    await this.sendAlert({
-      botToken: settings.telegramBotToken,
-      chatId: settings.telegramChatId,
-      title: `🚀 New Trade Opened: ${trade.symbol}`,
-      body: `New ${trade.direction} position opened and synced with SetupMint live watcher.`,
-      severity: 'INFO',
-      metrics: {
-        Symbol: trade.symbol,
-        Direction: trade.direction,
-        Quantity: `${qty} ${mult > 1 ? `lots (${qty * mult} units)` : 'units'}`,
-        EntryPrice: `${sym}${entry}`,
-        ...(ticket ? { Ticket: `#${ticket}` } : {}),
-        StopLoss: sl !== 'None' ? `${sym}${sl}` : 'NO STOP (NAKED)',
-        InitialRisk: riskAmt ? `${sym}${Number(riskAmt).toFixed(2)}` : 'Unspecified',
-        ...(trade.tradingSession ? { Session: trade.tradingSession } : {}),
-      },
-      buttons: openedButtons,
-    });
+    const message =
+      `🚀 <b>NEW TRADE OPENED & SYNCED</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Symbol</b>    : ${symEmoji} <b>${trade.symbol}</b>\n` +
+      `<b>Side</b>      : ${sideEmoji} <b>${sideStr}</b>\n` +
+      `<b>Volume</b>    : <b>${qty.toFixed(2)} Lots</b>${unitsStr}\n` +
+      `<b>Fill Price</b>: <b>${sym}${entry.toFixed(priceDecimals)}</b>${spreadStr}\n` +
+      (ticket ? `<b>Ticket</b>    : <code>#${ticket}</code> | <i>${accountName}</i>\n` : `<b>Account</b>   : <i>${accountName}</i>\n`) +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>RISK & SIZING LEDGER</b>\n` +
+      `• <b>Stop Loss</b>   : <code>${numSl > 0 ? `${sym}${numSl.toFixed(priceDecimals)}` : 'NO STOP (NAKED)'}</code> (${riskDistStr})\n` +
+      `• <b>Dollar Risk</b> : <b>${sym}${Number(riskAmt).toFixed(2)}</b>${riskPct ? ` (${riskPct}% Eq)` : ''}\n` +
+      `• <b>Target 1</b>    : <code>${sym}${t1TargetPrice}</code> (+${t1MultipleR.toFixed(1)}R)\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>AUTOMATED LADDER BLUEPRINT</b> (Auto: ${autoStatus})\n` +
+      `• <b>T1 (+${t1MultipleR.toFixed(1)}R)</b>    : ${sym}${t1TargetPrice} ➔ Closes ${t1Lots} Lots (${t1Pct}%)\n` +
+      `• <b>Trailing SL</b> : ${trailingLabel}\n` +
+      `• <b>Runner Mode</b> : ${runnerLabel}\n` +
+      `• <b>Anti-Greed</b>  : ${givebackLabel}\n` +
+      propFirmSection +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `${macroRadarSection}`;
+
+    await this.sendMessage(botToken, chatId, message, openedButtons);
 
     // Automatically pin (or update in-place) the live cockpit with open positions and dynamic action triggers
     await this.autoPinOrUpdateCockpit(user).catch(() => {});

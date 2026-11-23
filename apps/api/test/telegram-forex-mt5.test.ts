@@ -2510,4 +2510,189 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     await Trade.deleteMany({ userId: testUser._id });
     await Mt5Command.deleteMany({ accountId: testAccount._id });
   });
+
+  // 59. Trade open generates Institutional Execution Card with risk ledger, ladder blueprint, macro radar, and drilldown callbacks
+  it('Scenario 59: Trade open generates Institutional Execution Card with risk ledger, ladder blueprint, macro radar, and drilldown callbacks', async () => {
+    const sendSpy = vi.spyOn(TelegramAlertService as any, 'sendMessage').mockResolvedValue({ message_id: 887766 } as any);
+    const deleteSpy = vi.spyOn(TelegramAlertService as any, 'deleteMessage').mockResolvedValue(true as any);
+
+    // 1. Test Real Live Trade (Elefin Live - isPropFirm: false)
+    const ticketLive = 77889911;
+    const liveTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tags: [`MT5_TICKET_${ticketLive}`],
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      currency: 'USD',
+      currencySymbol: '$',
+      simpleExecution: {
+        entryPrice: 2680.00,
+        quantity: 0.10,
+        contractMultiplier: 100,
+        spreadPoints: 1.5,
+        spreadCost: 15.00,
+        brokerage: 2.00,
+      },
+      risk: {
+        initialStopLoss: 2674.00,
+        currentStopLoss: 2674.00,
+        initialRiskAmount: 60.00,
+        plannedRiskAmount: 60.00,
+      },
+    });
+
+    // Clear dedupe cache
+    (TelegramAlertService as any).recentAlerts.clear();
+
+    await TelegramAlertService.notifyTradeOpened(testUser, liveTrade, 2674.00);
+
+    expect(sendSpy).toHaveBeenCalled();
+    const openReceiptCall = sendSpy.mock.calls.find((c) => typeof c[2] === 'string' && c[2].includes('NEW TRADE OPENED & SYNCED'));
+    expect(openReceiptCall).toBeDefined();
+    const messageText: string = openReceiptCall[2];
+    const buttons: any[][] = openReceiptCall[3];
+
+    // Assert Institutional Card Sections
+    expect(messageText).toContain('NEW TRADE OPENED & SYNCED');
+    expect(messageText).toContain('XAUUSD');
+    expect(messageText).toContain('BUY (LONG)');
+    expect(messageText).toContain('0.10 Lots');
+    expect(messageText).toContain('RISK & SIZING LEDGER');
+    expect(messageText).toContain('AUTOMATED LADDER BLUEPRINT');
+    expect(messageText).toContain('RADAR');
+
+    // Real live trade must NOT show Prop Firm Shield
+    expect(messageText).not.toContain('PROP FIRM SHIELD');
+
+    // Verify Tactical Buttons: Clean (no dollar signs in button text)
+    const flatButtons = buttons.flat();
+    const buttonTexts = flatButtons.map((b) => b.text);
+    expect(buttonTexts).toContain('🛡️ Lock BE');
+    expect(buttonTexts).toContain('🚫 Free Runner (TP=0)');
+    expect(buttonTexts).toContain('⚡ Book 50%');
+    expect(buttonTexts).toContain('📈 Trail +1R');
+    expect(buttonTexts).toContain('🚨 Close (100%)');
+    expect(buttonTexts).toContain('📋 Full Telemetry');
+    expect(buttonTexts).toContain('🎯 Ladder Blueprint');
+
+    for (const b of flatButtons) {
+      expect(b.text).not.toContain('+$'); // User requested no dollar amounts on buttons
+    }
+
+    // 2. Test Prop Firm Account Trade
+    const propAccount = await TradingAccount.create({
+      userId: testUser._id,
+      broker: 'The5ers',
+      name: 'The5ers $100K High Stakes',
+      accountType: 'PROP_FIRM',
+      baseCurrency: 'USD',
+      profile: {
+        accountType: 'PROP_FIRM',
+        maxDailyLoss: 500,
+      },
+    });
+
+    const ticketProp = 77889922;
+    const propTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: propAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'SHORT',
+      status: 'OPEN',
+      tags: [`MT5_TICKET_${ticketProp}`, 'PROP_FIRM'],
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      currency: 'USD',
+      simpleExecution: {
+        entryPrice: 2700.00,
+        quantity: 0.20,
+        contractMultiplier: 100,
+      },
+      risk: {
+        initialStopLoss: 2705.00,
+        currentStopLoss: 2705.00,
+        initialRiskAmount: 100.00,
+      },
+    });
+
+    (TelegramAlertService as any).recentAlerts.clear();
+    const callsBefore = sendSpy.mock.calls.length;
+    await TelegramAlertService.notifyTradeOpened(testUser, propTrade, 2705.00);
+
+    const propCall = sendSpy.mock.calls.slice(callsBefore).find((c) => typeof c[2] === 'string' && c[2].includes('NEW TRADE OPENED & SYNCED'));
+    expect(propCall).toBeDefined();
+    const propMessageText: string = propCall[2];
+
+    // Prop firm trade MUST display Prop Firm Shield
+    expect(propMessageText).toContain('PROP FIRM SHIELD');
+    expect(propMessageText).toContain('Max Daily Loss Limit');
+
+    // 3. Test Tier-2 Drilldown Callbacks
+    sendSpy.mockClear();
+
+    // A. Drilldown: Full Telemetry
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: `cq_telem_${Date.now()}`,
+        from: { id: chatId },
+        data: `drill_telem:${ticketLive}`,
+        message: { chat: { id: chatId }, message_id: 554433 },
+      },
+    });
+
+    expect(sendSpy).toHaveBeenCalled();
+    const telemCall = sendSpy.mock.calls[0];
+    expect(telemCall[2]).toContain(`EXECUTION TELEMETRY — #${ticketLive}`);
+    expect(telemCall[2]).toContain('Spread');
+    expect(telemCall[2]).toContain('Dollar Risk');
+    expect(telemCall[3][0][0].text).toBe('🔙 Close Telemetry');
+
+    sendSpy.mockClear();
+
+    // B. Drilldown: Ladder Blueprint
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: `cq_ladder_${Date.now()}`,
+        from: { id: chatId },
+        data: `drill_ladder:${ticketLive}`,
+        message: { chat: { id: chatId }, message_id: 554434 },
+      },
+    });
+
+    expect(sendSpy).toHaveBeenCalled();
+    const ladderCall = sendSpy.mock.calls[0];
+    expect(ladderCall[2]).toContain(`LADDER BLUEPRINT — #${ticketLive}`);
+    expect(ladderCall[2]).toContain('Target 1');
+    expect(ladderCall[2]).toContain('Runner Mode');
+    expect(ladderCall[2]).toContain('Giveback SL');
+    expect(ladderCall[3][0][0].text).toBe('🔙 Close Blueprint');
+
+    // C. Dismiss button closes drilldown
+    await TelegramAlertService.processWebhookUpdate({
+      callback_query: {
+        id: `cq_dismiss_${Date.now()}`,
+        from: { id: chatId },
+        data: 'dismiss_msg:554434',
+        message: { chat: { id: chatId }, message_id: 554434 },
+      },
+    });
+
+    expect(deleteSpy).toHaveBeenCalledWith(expect.any(String), expect.any(String), 554434);
+
+    sendSpy.mockRestore();
+    deleteSpy.mockRestore();
+
+    await Trade.deleteMany({ userId: testUser._id });
+    await TradingAccount.deleteOne({ _id: propAccount._id });
+  });
 });

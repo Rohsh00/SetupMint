@@ -501,50 +501,32 @@ export class Mt5CommandService {
 
             if (botToken && chatId) {
               if (r.status === 'SUCCESS') {
-                const isBuy = cmd.side === 'BUY';
-                const sideEmoji = isBuy ? '🟢' : '🔴';
-                const sym = cmd.symbol || 'XAUUSD';
-                const vol = cmd.volume || 0.10;
-                const slText = cmd.stopLoss ? `$${Number(cmd.stopLoss).toFixed(2)}` : 'None';
-                const tpText = cmd.takeProfit ? `$${Number(cmd.takeProfit).toFixed(2)}` : 'Open (Runner)';
-
+                const { Trade } = await import('../db/models/Trade.js');
                 const ticketMatch = (r.message || '').match(/Ticket\s*#?(\d+)/i);
                 const ticket = ticketMatch ? ticketMatch[1] : (cmd.ticket ? String(cmd.ticket) : '');
 
-                const execButtons: any[][] = [];
-                if (ticket) {
-                  execButtons.push([
-                    { text: `🛡️ Lock BE`, callback_data: `pos_be:${ticket}` },
-                    { text: '🎯 Book 50%', callback_data: `pos_half:${ticket}` },
-                  ]);
-                  execButtons.push([
-                    { text: '📈 Trail +1R', callback_data: `pos_trail:${ticket}` },
-                    { text: '🚨 Close (100%)', callback_data: `pos_close:${ticket}` },
-                  ]);
-                }
-                execButtons.push([
-                  { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
-                  { text: '📌 Live Cockpit', callback_data: 'cmd_cockpit' },
-                ]);
+                const existingTrade = ticket ? await Trade.findOne({ userId: cmd.userId, tags: `MT5_TICKET_${ticket}` }).lean() : null;
+                const tradeObj = existingTrade || {
+                  _id: cmd.tradeId || new mongoose.Types.ObjectId(),
+                  userId: cmd.userId,
+                  accountId: cmd.accountId,
+                  symbol: cmd.symbol || 'XAUUSD',
+                  direction: cmd.side === 'BUY' ? 'LONG' : 'SHORT',
+                  quantity: cmd.volume || 0.10,
+                  entryPrice: cmd.requestedPrice || 0,
+                  tags: ticket ? [`MT5_TICKET_${ticket}`] : [],
+                  risk: {
+                    initialStopLoss: cmd.stopLoss,
+                    currentStopLoss: cmd.stopLoss,
+                    plannedTarget: cmd.takeProfit,
+                  },
+                  simpleExecution: {
+                    quantity: cmd.volume || 0.10,
+                    entryPrice: cmd.requestedPrice || 0,
+                  },
+                };
 
-                const text =
-                  `✅ <b>TRADE EXECUTED ON MT5</b>\n` +
-                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                  `<pre>\n` +
-                  `Symbol    : ${sym}\n` +
-                  `Side      : ${sideEmoji} ${cmd.side || 'BUY'}\n` +
-                  `Volume    : ${vol.toFixed(2)} Lots\n` +
-                  (ticket ? `Ticket    : #${ticket}\n` : '') +
-                  `Stop Loss : ${slText}\n` +
-                  `Target    : ${tpText}\n` +
-                  `Status    : FILLED & LIVE\n` +
-                  `</pre>\n` +
-                  `<i>${r.message || 'Order placed successfully on MT5'}</i>\n` +
-                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                  `⚡ <i>Position is now live. Pinned Cockpit updated below.</i>`;
-
-                await TelegramAlertService.sendMessage(botToken, chatId, text, execButtons);
-                await TelegramAlertService.autoPinOrUpdateCockpit(user);
+                await TelegramAlertService.notifyTradeOpened(user, tradeObj, cmd.stopLoss);
               } else {
                 const failText =
                   `❌ <b>MT5 ORDER REJECTED BY BROKER</b>\n` +

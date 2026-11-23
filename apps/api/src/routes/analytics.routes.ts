@@ -11,7 +11,13 @@ import {
 import { Trade } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { computeWhatIf, WhatIfScopeTooLargeError } from '../services/what-if.service.js';
-import { calculateExcursionAggregates, ITradeForExcursionAnalytics, aggregateSlippageMetrics } from '@tradevault/financial-engine';
+import {
+  calculateExcursionAggregates,
+  ITradeForExcursionAnalytics,
+  aggregateSlippageMetrics,
+  calculatePositionSizingDiagnostics,
+  SizingAnalyticsTradeInput,
+} from '@tradevault/financial-engine';
 import { AccountScopeService } from '../services/account-scope.service.js';
 
 export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -502,6 +508,64 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         },
         campaigns,
       },
+    });
+  });
+
+  // Dedicated Position Sizing Evolution & Diagnostics Analytics
+  app.get('/sizing', async (req: any, reply) => {
+    const { startDate, endDate } = req.query;
+
+    const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
+    }
+
+    const trades = await Trade.find(filter).sort({ tradeDate: 1, entryTime: 1 }).lean();
+
+    const tradeInputs: SizingAnalyticsTradeInput[] = trades.map((t: any) => {
+      let qty = t.simpleExecution?.quantity ?? t.calculated?.closedQuantity ?? t.calculated?.openQuantity ?? 0;
+      if (!qty && Array.isArray(t.fills) && t.fills.length > 0) {
+        qty = t.fills
+          .filter((f: any) => f.fillType === 'ENTRY')
+          .reduce((acc: number, f: any) => acc + (f.quantity || 0), 0);
+      }
+      return {
+        id: t._id.toString(),
+        tradeDate: t.tradeDate,
+        entryTime: t.entryTime || t.tradeDate,
+        symbol: t.symbol,
+        direction: t.direction,
+        quantity: qty,
+        netPnL: t.calculated?.netPnL ?? 0,
+        grossPnL: t.calculated?.grossPnL,
+        realizedRMultiple: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
+        disciplineScore: t.psychology?.disciplineScore,
+        status: t.status,
+      };
+    });
+
+    const diagnostics = calculatePositionSizingDiagnostics(tradeInputs);
+
+    return reply.send({
+      success: true,
+      data: diagnostics,
     });
   });
 };

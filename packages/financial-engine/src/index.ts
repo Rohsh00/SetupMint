@@ -42,4 +42,5 @@ export * from './hedging.js';
 export * from './timezone.js';
 export * from './capabilities.js';
 export * from './slippage.js';
+export * from './sizing-analytics.js';
 

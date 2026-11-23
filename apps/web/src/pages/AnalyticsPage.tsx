@@ -36,6 +36,7 @@ import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
+import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded';
 
 import {
   Area,
@@ -61,6 +62,7 @@ import { formatCurrency, formatPercent, getCurrencySymbol, formatDate } from '..
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { PyramidingAnalyticsTab } from '../components/analytics/PyramidingAnalyticsTab.js';
+import { PositionSizingDiagnosticsTab } from '../components/analytics/PositionSizingDiagnosticsTab.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
@@ -75,7 +77,7 @@ export function AnalyticsPage() {
   const { startDate, endDate } = useDateRange();
   const analyticsCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
   const currSym = caps.currency.symbol || getCurrencySymbol(analyticsCurrency);
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>('OVERVIEW');
 
   React.useEffect(() => {
     if (!hasMarketData && (activeTab === 'EXECUTION' || activeTab === 'WHAT_IF')) {
@@ -152,6 +154,17 @@ export function AnalyticsPage() {
         endDate,
       }),
     enabled: activeTab === 'PYRAMIDING',
+  });
+
+  const { data: sizingData, isLoading: isSizingLoading, refetch: refetchSizing } = useQuery({
+    queryKey: ['analytics-sizing', queryParams, startDate, endDate],
+    queryFn: () =>
+      api.analytics.sizing({
+        ...queryParams,
+        startDate,
+        endDate,
+      }),
+    enabled: activeTab === 'SIZING',
   });
 
   const queryClient = useQueryClient();
@@ -257,6 +270,7 @@ export function AnalyticsPage() {
         >
           {[
             { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
+            { id: 'SIZING', label: 'Position Sizing', icon: <StraightenRoundedIcon fontSize="small" /> },
             { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
             { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
             { id: 'PYRAMIDING', label: 'Pyramiding Edge', icon: <AccountTreeRoundedIcon fontSize="small" /> },
@@ -595,6 +609,16 @@ export function AnalyticsPage() {
             </Grid>
           </Grid>
         </Box>
+      )}
+
+      {/* TAB: POSITION SIZING DIAGNOSTICS */}
+      {activeTab === 'SIZING' && (
+        <PositionSizingDiagnosticsTab
+          data={sizingData?.data ?? sizingData}
+          isLoading={isSizingLoading}
+          currencySymbol={currSym}
+          onRefresh={refetchSizing}
+        />
       )}
 
       {/* TAB 2: PSYCHOLOGY & DISCIPLINE */}

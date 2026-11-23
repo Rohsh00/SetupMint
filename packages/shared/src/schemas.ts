@@ -897,6 +897,8 @@ export const liveWatcherSettingsSchema = z.object({
     tradeClosed: z.boolean().optional(),
     eodSummaryDigest: z.boolean().optional(),
     goldNewsReminder: z.boolean().optional(),
+    goldNewsResultAlert: z.boolean().optional(),
+    sessionTransition: z.boolean().optional(),
   }).optional(),
   goldNewsReminderMinutes: z.coerce.number().int().positive().optional(),
   goldNewsLeadTimesMinutes: z.array(z.coerce.number().int().positive()).optional(),

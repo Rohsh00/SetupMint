@@ -2353,6 +2353,7 @@ export interface ILiveWatcherSettings {
     eodSummaryDigest?: boolean;
     goldNewsReminder?: boolean;
     goldNewsResultAlert?: boolean;
+    sessionTransition?: boolean;
   };
   lastDailyLossAlertDate?: string;
   lastDailyLossWarnDate?: string;
@@ -2516,6 +2517,7 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
     eodSummaryDigest: true,
     goldNewsReminder: true,
     goldNewsResultAlert: true,
+    sessionTransition: true,
   },
   goldNewsReminderMinutes: 15,
   goldNewsLeadTimesMinutes: [15, 60],

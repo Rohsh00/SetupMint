@@ -911,6 +911,8 @@ export const api = {
       request<any>('/settings/test-gold-news-alert', { method: 'POST' }),
     testGoldNewsResultAlert: () =>
       request<any>('/settings/test-gold-news-result-alert', { method: 'POST' }),
+    testSessionAlert: () =>
+      request<any>('/settings/test-session-alert', { method: 'POST' }),
   },
 
   // Review Queue & Mistake Detection

@@ -436,4 +436,50 @@ describe('Gold (XAUUSD) Economic News & Telegram Custom Reminders Integration Te
     expect(sentTelegramMessages[0].body.text).toContain('US ECONOMIC DATA FLASH');
     expect(sentTelegramMessages[0].body.text).toContain('BULLISH FOR GOLD');
   });
+
+  it('12. GoldNewsAlertWorker dispatches session transition alerts even when no economic news events exist', async () => {
+    GoldNewsAlertWorker.resetState();
+    sentTelegramMessages.length = 0;
+
+    // Simulate empty news calendar
+    vi.spyOn(EconomicCalendarService, 'getUpcomingGoldNews').mockResolvedValue([]);
+
+    // 08:00 UTC on a Tuesday (London Open)
+    const tuesdayLondonOpen = new Date('2026-11-10T08:00:00Z');
+    const cycle1 = await GoldNewsAlertWorker.runCycle(tuesdayLondonOpen);
+
+    expect(cycle1.alertsDispatched).toBeGreaterThanOrEqual(1);
+    const sessionMessages = sentTelegramMessages.filter(
+      (m) => m.body.chat_id === '88776655' && m.body.text?.includes('London Open')
+    );
+    expect(sessionMessages.length).toBe(1);
+    expect(sessionMessages[0].body.text).toContain('London Open');
+    expect(sessionMessages[0].body.text).toContain('European liquidity');
+
+    // Cycle 2: 30 seconds later, should NOT send duplicate
+    const cycle2 = await GoldNewsAlertWorker.runCycle(new Date('2026-11-10T08:00:30Z'));
+    expect(cycle2.alertsDispatched).toBe(0);
+    const sessionMessages2 = sentTelegramMessages.filter(
+      (m) => m.body.chat_id === '88776655' && m.body.text?.includes('London Open')
+    );
+    expect(sessionMessages2.length).toBe(1);
+  });
+
+  it('13. POST /settings/test-session-alert dispatches sample market session transition to Telegram', async () => {
+    TelegramAlertService.clearRecentAlerts();
+    sentTelegramMessages.length = 0;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/settings/test-session-alert',
+      headers: authHeaders,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(sentTelegramMessages.length).toBeGreaterThan(0);
+    expect(sentTelegramMessages[0].body.text).toContain('Market Session Transition');
+    expect(sentTelegramMessages[0].body.text).toContain('London Open');
+  });
 });

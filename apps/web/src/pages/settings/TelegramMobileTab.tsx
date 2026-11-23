@@ -83,6 +83,8 @@ export interface TelegramMobileTabProps {
   onTestGoldNewsAlert: () => void;
   testingGoldNewsResultAlert: boolean;
   onTestGoldNewsResultAlert: () => void;
+  testingSessionAlert?: boolean;
+  onTestSessionAlert?: () => void;
   isLoadingCarPlay: boolean;
   carPlaySetup: any;
   copiedVoiceKey: string | null;
@@ -145,6 +147,8 @@ export function TelegramMobileTab({
   onTestGoldNewsAlert,
   testingGoldNewsResultAlert,
   onTestGoldNewsResultAlert,
+  testingSessionAlert,
+  onTestSessionAlert,
   isLoadingCarPlay,
   carPlaySetup,
   copiedVoiceKey,
@@ -745,6 +749,26 @@ export function TelegramMobileTab({
             </Grid>
 
             <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 0.5 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={telegramAlertEvents.sessionTransition !== false}
+                      onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, sessionTransition: e.target.checked })}
+                    />
+                  }
+                  label={<Typography variant="caption" sx={{ fontWeight: 600, color: '#3B82F6' }}>🔔 Market Session Transitions</Typography>}
+                />
+                <Tooltip title="Audition Session Chime" arrow>
+                  <IconButton size="small" onClick={() => soundEngine.playPriceAlert()} sx={{ color: '#3B82F6', p: 0.5 }}>
+                    <VolumeUpRounded sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <FormControlLabel
                 control={
                   <Checkbox
@@ -838,6 +862,18 @@ export function TelegramMobileTab({
               >
                 {testingGoldNewsResultAlert ? 'Sending...' : 'Test Result Flash'}
               </Button>
+              {onTestSessionAlert && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="info"
+                  onClick={onTestSessionAlert}
+                  disabled={testingSessionAlert || !hasConfiguredCreds}
+                  sx={{ fontWeight: 700, textTransform: 'none', height: 28 }}
+                >
+                  {testingSessionAlert ? 'Sending...' : 'Test Session Alert'}
+                </Button>
+              )}
             </Box>
           </Box>
 

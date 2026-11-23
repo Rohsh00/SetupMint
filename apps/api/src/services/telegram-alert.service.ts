@@ -145,6 +145,10 @@ export interface ITelegramAlertPayload {
 export class TelegramAlertService {
   private static TELEGRAM_API_BASE = 'https://api.telegram.org';
   private static recentAlerts = new Map<string, number>();
+
+  static clearRecentAlerts(): void {
+    this.recentAlerts.clear();
+  }
   private static DEBOUNCE_MS = 10 * 1000; // 10s throttle for flat alerts
   private static spreadWarningTimestamps = new Map<string, number>();
   private static activeCockpitSubmenus = new Map<string, { menu: string; symbol: string; side?: 'BUY' | 'SELL'; expiresAt: number }>();
@@ -1553,6 +1557,21 @@ export class TelegramAlertService {
     if (data === 'cmd_summary') {
       await this.answerCallbackQuery(botToken, cq.id, 'Loading Performance Summary...');
       if (botToken) await this.handleSummaryCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'cmd_sessions') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Loading market sessions...');
+      await this.handleMarketSessionsCommand(user, botToken, chatId);
+      return;
+    }
+    if (data === 'test_session_alert') {
+      await this.answerCallbackQuery(botToken, cq.id, 'Dispatched test session alert!');
+      await this.sendGoldSessionAlert(
+        user,
+        '🇬🇧 London Open (08:00 UTC / 13:30 IST)',
+        'Major European liquidity injection. Watch for breakout expansions, institutional retests, and initial direction setting.',
+        'High volume surge; false breakout traps common at session open.'
+      );
       return;
     }
     if (data === 'panic_prompt') {
@@ -3087,6 +3106,7 @@ export class TelegramAlertService {
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
           `• <b>/news</b> — Upcoming XAUUSD / Gold catalysts & countdown\n` +
           `• <b>/newsremind &lt;mins&gt;</b> — Set custom alert reminder (e.g. <code>/newsremind 15</code> or <code>/newsremind off</code>)\n` +
+          `• <b>/sessions</b> — Global market session radar & transition schedule (Tokyo, NSE, London, NY, London PM Fix)\n` +
           `• <b>/alerts</b> — List active alert states and snoozed trades\n` +
           `• <b>/snooze</b> — Snooze alerts for 15 minutes\n` +
           `• <b>/mute &lt;mins&gt;</b> — Mute audible notifications\n` +
@@ -3252,6 +3272,13 @@ export class TelegramAlertService {
       case '/news':
       case '/goldnews':
         await this.handleGoldNewsCommand(user, botToken, chatId);
+        break;
+
+      case '/sessions':
+      case '/session':
+      case '/marketsessions':
+      case '/market':
+        await this.handleMarketSessionsCommand(user, botToken, chatId);
         break;
 
       case '/newsremind':
@@ -4622,8 +4649,8 @@ export class TelegramAlertService {
     const dedupeKey = metricIdentity ? `${chatId}:${title}:${metricIdentity}` : `${chatId}:${title}:${body.slice(0, 30)}`;
     const now = Date.now();
     const lastSent = this.recentAlerts.get(dedupeKey);
-    // For session expiry / token expiration notices, enforce a 15-minute debounce to prevent alert spam
-    const isSessionOrExpiryAlert = title.includes('Expired') || title.includes('Expiring') || title.includes('Session');
+    // For broker token / session expiry notices, enforce a 15-minute debounce to prevent alert spam
+    const isSessionOrExpiryAlert = title.includes('Expired') || title.includes('Expiring') || title.includes('Session Expired') || title.includes('Session Expiry');
     const effectiveDebounceMs = isSessionOrExpiryAlert ? 15 * 60 * 1000 : this.DEBOUNCE_MS;
     if (lastSent && now - lastSent < effectiveDebounceMs) {
       return false;
@@ -9574,7 +9601,7 @@ export class TelegramAlertService {
   }
 
   /**
-   * Sends Gold major market session alerts (London Open, NY Open, London Fix).
+   * Sends major market session alerts (Asian Open, NSE Open, London Open, NY Open, London Fix).
    */
   static async sendGoldSessionAlert(
     user: any,
@@ -9584,11 +9611,12 @@ export class TelegramAlertService {
   ): Promise<void> {
     const settings = user.liveWatcherSettings;
     if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
+    if (settings.telegramAlertEvents?.sessionTransition === false) return;
 
     await this.sendAlert({
       botToken: settings.telegramBotToken,
       chatId: settings.telegramChatId,
-      title: `🔔 Gold Session Transition: ${sessionName}`,
+      title: `🔔 Market Session Transition: ${sessionName}`,
       body: `<b>${sessionName}</b> is now active.\n\n` +
         `<b>Focus:</b> ${keyFocus}\n\n` +
         `<i>${description}</i>`,
@@ -9651,6 +9679,91 @@ export class TelegramAlertService {
       await this.sendMessage(botToken, chatId, text, buttons);
     } catch (err: any) {
       await this.sendMessage(botToken, chatId, `❌ Failed to fetch gold news: ${err.message}`);
+    }
+  }
+
+  /**
+   * Responds to /sessions command with live status of global market sessions.
+   */
+  private static async handleMarketSessionsCommand(user: any, botToken: string, chatId: string | number): Promise<void> {
+    try {
+      const now = new Date();
+      const utcHours = now.getUTCHours();
+      const utcMinutes = now.getUTCMinutes();
+      const totalUtcMins = utcHours * 60 + utcMinutes;
+
+      const SESSIONS = [
+        {
+          id: 'ASIAN_OPEN',
+          name: '🇯🇵 Tokyo / Asian Session',
+          openUtc: 0, // 00:00 UTC (05:30 IST)
+          closeUtc: 9 * 60, // 09:00 UTC (14:30 IST)
+          label: '00:00 - 09:00 UTC (05:30 - 14:30 IST)',
+          desc: 'Base range formation & liquidity accumulation',
+        },
+        {
+          id: 'NSE_OPEN',
+          name: '🇮🇳 Indian Market (NSE)',
+          openUtc: 3 * 60 + 45, // 03:45 UTC (09:15 IST)
+          closeUtc: 10 * 60, // 10:00 UTC (15:30 IST)
+          label: '03:45 - 10:00 UTC (09:15 - 15:30 IST)',
+          desc: 'Indian equities, indices & MCX opening range',
+        },
+        {
+          id: 'LONDON_OPEN',
+          name: '🇬🇧 London Session',
+          openUtc: 8 * 60, // 08:00 UTC (13:30 IST)
+          closeUtc: 16 * 60 + 30, // 16:30 UTC (22:00 IST)
+          label: '08:00 - 16:30 UTC (13:30 - 22:00 IST)',
+          desc: 'Peak European liquidity, breakout expansions & initial trend',
+        },
+        {
+          id: 'NY_OPEN',
+          name: '🇺🇸 New York Session',
+          openUtc: 13 * 60 + 30, // 13:30 UTC (19:00 IST)
+          closeUtc: 21 * 60, // 21:00 UTC (02:30 IST)
+          label: '13:30 - 21:00 UTC (19:00 - 02:30 IST)',
+          desc: 'Peak Gold volume, US equity cash open, highest volatility',
+        },
+        {
+          id: 'LONDON_FIX',
+          name: '🇬🇧 London PM Gold Fix',
+          openUtc: 15 * 60, // 15:00 UTC (20:30 IST)
+          closeUtc: 15 * 60 + 30, // 15:30 UTC (21:00 IST)
+          label: '15:00 UTC (20:30 IST)',
+          desc: 'Bullion bank institutional benchmark pricing window',
+        },
+      ];
+
+      const istTimeStr = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+      const utcTimeStr = `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')} UTC`;
+
+      let text = `🌐 <b>GLOBAL MARKET SESSIONS RADAR</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `⏰ <b>Current Time:</b> ${istTimeStr} IST (${utcTimeStr})\n\n`;
+
+      for (const s of SESSIONS) {
+        const isActive = totalUtcMins >= s.openUtc && totalUtcMins < s.closeUtc;
+        const statusBadge = isActive ? '🟢 <b>ACTIVE NOW</b>' : '⚪ <i>Closed</i>';
+        text += `• <b>${s.name}</b>\n` +
+          `  Status: ${statusBadge}\n` +
+          `  Hours: <code>${s.label}</code>\n` +
+          `  Focus: <i>${s.desc}</i>\n\n`;
+      }
+
+      const isSubscribed = user.liveWatcherSettings?.telegramAlertEvents?.sessionTransition !== false;
+      text += `⚙️ <i>Session Transition Alerts: <b>${isSubscribed ? '🔔 Subscribed' : '🔕 Muted'}</b></i>`;
+
+      const buttons: ITelegramInlineButton[][] = [
+        [
+          { text: '🧪 Send Test Session Alert', callback_data: 'test_session_alert' },
+          { text: '📊 Open Trades', callback_data: 'cmd_trades' },
+        ],
+      ];
+
+      await this.sendMessage(botToken, chatId, text, buttons);
+    } catch (err: any) {
+      await this.sendMessage(botToken, chatId, `❌ Failed to generate sessions overview: ${err.message}`);
     }
   }
 

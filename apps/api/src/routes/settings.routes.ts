@@ -520,6 +520,40 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     });
   });
 
+  // Test Telegram Market Session Transition Alert
+  app.post('/test-session-alert', async (req: any, reply) => {
+    const user = await User.findById(req.user!.id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+    }
+
+    const settings = user.liveWatcherSettings;
+    const rawToken = settings?.telegramBotToken;
+    const botToken = rawToken ? safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken) : null;
+    const chatId = settings?.telegramChatId;
+
+    if (!botToken || !chatId) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Please connect your Telegram bot and enter your Chat ID in Settings first.',
+        },
+      });
+    }
+
+    const sessionName = '🇬🇧 London Open (08:00 UTC / 13:30 IST)';
+    const description = 'Major European liquidity injection. Watch for breakout expansions, institutional retests, and initial direction setting.';
+    const keyFocus = 'High volume surge; false breakout traps common at session open.';
+
+    await TelegramAlertService.sendGoldSessionAlert(user, sessionName, description, keyFocus);
+
+    return reply.send({
+      success: true,
+      message: 'Test market session transition notification sent to your Telegram!',
+    });
+  });
+
   // Register Telegram Webhook URL for interactive buttons and two-way commands
   app.post('/register-telegram-webhook', async (req: any, reply) => {
     let { botToken, webhookUrl } = req.body || {};

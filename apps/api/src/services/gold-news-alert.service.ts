@@ -52,18 +52,13 @@ export class GoldNewsAlertWorker {
   }
 
   /**
-   * Evaluates all upcoming Gold news events and dispatches alerts for matching users.
+   * Evaluates all upcoming Gold news events and market session transitions,
+   * dispatching alerts for matching users.
    */
   static async runCycle(now: Date = new Date()): Promise<{ checkedUsers: number; alertsDispatched: number }> {
     this.pruneOldKeys(now.getTime());
 
-    // 1. Fetch upcoming Gold catalysts for next 24 hours
-    const goldEvents = await EconomicCalendarService.getUpcomingGoldNews(now, 24);
-    if (!goldEvents || goldEvents.length === 0) {
-      return { checkedUsers: 0, alertsDispatched: 0 };
-    }
-
-    // 2. Find all active users with Telegram alerts enabled
+    // 1. Find all active users with Telegram alerts enabled
     const activeUsers = await User.find({
       'liveWatcherSettings.telegramAlertsEnabled': true,
       'liveWatcherSettings.telegramBotToken': { $exists: true, $ne: null },
@@ -76,6 +71,26 @@ export class GoldNewsAlertWorker {
 
     let alertsDispatched = 0;
     const nowMs = now.getTime();
+
+    // 2. ALWAYS evaluate major market session transitions independently of economic news calendar!
+    try {
+      const sessionAlerts = await this.checkGoldSessionTransitions(activeUsers, now);
+      alertsDispatched += sessionAlerts;
+    } catch (err: any) {
+      console.error('[GoldNewsAlertWorker] Error evaluating market session transitions:', err?.message || err);
+    }
+
+    // 3. Fetch upcoming Gold catalysts for next 24 hours (safely wrapped)
+    let goldEvents: IEconomicCalendarEvent[] = [];
+    try {
+      goldEvents = await EconomicCalendarService.getUpcomingGoldNews(now, 24);
+    } catch (err: any) {
+      console.error('[GoldNewsAlertWorker] Error fetching upcoming gold news:', err?.message || err);
+    }
+
+    if (!goldEvents || goldEvents.length === 0) {
+      return { checkedUsers: activeUsers.length, alertsDispatched };
+    }
 
     for (const user of activeUsers) {
       const watcherSettings = user.liveWatcherSettings;
@@ -150,60 +165,83 @@ export class GoldNewsAlertWorker {
       }
     }
 
-    // Evaluate major Gold session transitions (London Open, NY Open, London Fix)
-    await this.checkGoldSessionTransitions(activeUsers, now);
-
     return { checkedUsers: activeUsers.length, alertsDispatched };
   }
 
   /**
-   * Checks for major Gold session transitions and dispatches timely notifications.
+   * Checks for major global market session transitions and dispatches timely notifications.
    */
-  static async checkGoldSessionTransitions(activeUsers: any[], now: Date): Promise<void> {
+  static async checkGoldSessionTransitions(activeUsers: any[], now: Date): Promise<number> {
     const dayOfWeek = now.getUTCDay();
-    // Monday = 1, Friday = 5. Skip weekends.
-    if (dayOfWeek === 0 || dayOfWeek === 6) return;
+    // Monday = 1, Friday = 5. Skip weekends (Sunday = 0, Saturday = 6).
+    if (dayOfWeek === 0 || dayOfWeek === 6) return 0;
 
     const utcHours = now.getUTCHours();
     const utcMinutes = now.getUTCMinutes();
     const totalUtcMins = utcHours * 60 + utcMinutes;
     const dateStr = now.toISOString().slice(0, 10);
+    let alertsSent = 0;
 
     const SESSIONS = [
       {
+        id: 'ASIAN_OPEN',
+        name: '🇯🇵 Tokyo / Asian Session Open (00:00 UTC / 05:30 IST)',
+        targetMinute: 0, // 00:00 UTC
+        description: 'Asian trading session commences. Lower volatility, baseline range establishment, liquidity building ahead of European open.',
+        keyFocus: 'Initial daily range formation; respect Asian session high/low boundaries.',
+      },
+      {
+        id: 'NSE_OPEN',
+        name: '🇮🇳 Indian Market Open (03:45 UTC / 09:15 IST)',
+        targetMinute: 3 * 60 + 45, // 03:45 UTC = 09:15 IST
+        description: 'NSE equity and commodities cash market open. High opening tick volume across Indian indices and MCX.',
+        keyFocus: 'Opening gap fill dynamics, opening range breakout (ORB), and high volatility at 09:15 - 09:30 IST.',
+      },
+      {
         id: 'LONDON_OPEN',
         name: '🇬🇧 London Open (08:00 UTC / 13:30 IST)',
-        targetMinute: 8 * 60, // 08:00 UTC
+        targetMinute: 8 * 60, // 08:00 UTC = 13:30 IST
         description: 'Major European liquidity injection. Watch for breakout expansions, institutional retests, and initial direction setting.',
         keyFocus: 'High volume surge; false breakout traps common at session open.',
       },
       {
         id: 'NY_OPEN',
         name: '🇺🇸 New York Open (13:30 UTC / 19:00 IST)',
-        targetMinute: 13 * 60 + 30, // 13:30 UTC
+        targetMinute: 13 * 60 + 30, // 13:30 UTC = 19:00 IST
         description: 'US equity and commodity cash open. Peak volatility window for XAUUSD with highest daily volume and trend acceleration.',
         keyFocus: 'Aggressive trending moves and rapid stop sweeps.',
       },
       {
         id: 'LONDON_FIX',
         name: '🇬🇧 London PM Gold Fix (15:00 UTC / 20:30 IST)',
-        targetMinute: 15 * 60, // 15:00 UTC
+        targetMinute: 15 * 60, // 15:00 UTC = 20:30 IST
         description: 'Global benchmark pricing window by bullion banks. Large institutional order balancing occurs now.',
         keyFocus: 'Sharp mean-reversion spikes and sudden liquidity withdrawals.',
       },
     ];
 
     for (const session of SESSIONS) {
-      if (Math.abs(totalUtcMins - session.targetMinute) <= 1) {
+      if (Math.abs(totalUtcMins - session.targetMinute) <= 2) {
         for (const user of activeUsers) {
+          const watcherSettings = user.liveWatcherSettings;
+          if (watcherSettings?.telegramAlertEvents?.sessionTransition === false) {
+            continue;
+          }
           const key = `session:${user._id}:${session.id}:${dateStr}`;
           if (!this.sentAlertKeys.has(key)) {
             this.sentAlertKeys.set(key, now.getTime());
-            TelegramAlertService.sendGoldSessionAlert(user, session.name, session.description, session.keyFocus).catch(() => {});
+            try {
+              await TelegramAlertService.sendGoldSessionAlert(user, session.name, session.description, session.keyFocus);
+              alertsSent++;
+            } catch (err: any) {
+              console.error(`[GoldNewsAlertWorker] Failed to dispatch session alert (${session.id}) to user ${user._id}:`, err?.message || err);
+            }
           }
         }
       }
     }
+
+    return alertsSent;
   }
 
   /**

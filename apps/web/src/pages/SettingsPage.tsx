@@ -192,6 +192,7 @@ export function SettingsPage() {
   const [sendingSampleAlert, setSendingSampleAlert] = useState(false);
   const [testingGoldNewsAlert, setTestingGoldNewsAlert] = useState(false);
   const [testingGoldNewsResultAlert, setTestingGoldNewsResultAlert] = useState(false);
+  const [testingSessionAlert, setTestingSessionAlert] = useState(false);
   const [goldNewsReminderMinutes, setGoldNewsReminderMinutes] = useState(initialWatcher.goldNewsReminderMinutes ?? 15);
   const [goldNewsLeadTimesMinutes, setGoldNewsLeadTimesMinutes] = useState<number[]>(
     Array.isArray(initialWatcher.goldNewsLeadTimesMinutes) && initialWatcher.goldNewsLeadTimesMinutes.length > 0
@@ -214,6 +215,7 @@ export function SettingsPage() {
     eodSummaryDigest: true,
     goldNewsReminder: true,
     goldNewsResultAlert: true,
+    sessionTransition: true,
     ...(initialWatcher.telegramAlertEvents || {}),
   });
 
@@ -316,6 +318,7 @@ export function SettingsPage() {
           ...s.telegramAlertEvents,
           goldNewsReminder: s.telegramAlertEvents?.goldNewsReminder ?? true,
           goldNewsResultAlert: s.telegramAlertEvents?.goldNewsResultAlert ?? true,
+          sessionTransition: s.telegramAlertEvents?.sessionTransition ?? true,
         });
       }
       if (s.telegramForexPresets) {
@@ -456,6 +459,7 @@ export function SettingsPage() {
       ...(d.telegramAlertEvents || {}),
       goldNewsReminder: d.telegramAlertEvents?.goldNewsReminder ?? true,
       goldNewsResultAlert: d.telegramAlertEvents?.goldNewsResultAlert ?? true,
+      sessionTransition: d.telegramAlertEvents?.sessionTransition ?? true,
     });
     setDisplaySettings({ ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS });
     toast.info('Reset live watcher settings to institutional defaults. Click "Save" to persist.');
@@ -583,6 +587,28 @@ export function SettingsPage() {
       toast.error(err.message || 'Error delivering Gold news result flash to Telegram.');
     } finally {
       setTestingGoldNewsResultAlert(false);
+    }
+  };
+
+  const handleTestSessionAlert = async () => {
+    const tokenToTest = telegramBotToken || user?.liveWatcherSettings?.telegramBotToken;
+    const chatIdToTest = telegramChatId || user?.liveWatcherSettings?.telegramChatId;
+    if (!tokenToTest || !chatIdToTest) {
+      toast.error('Please configure and test your Telegram Bot Token and Chat ID first.');
+      return;
+    }
+    setTestingSessionAlert(true);
+    try {
+      const res = await api.settings.testSessionAlert();
+      if (res.success) {
+        toast.success(res.message || 'Market session transition notification delivered to Telegram!');
+      } else {
+        toast.error(res.error?.message || 'Failed to send session alert to Telegram.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error dispatching session alert');
+    } finally {
+      setTestingSessionAlert(false);
     }
   };
 
@@ -1541,6 +1567,8 @@ export function SettingsPage() {
           onTestGoldNewsAlert={handleTestGoldNewsAlert}
           testingGoldNewsResultAlert={testingGoldNewsResultAlert}
           onTestGoldNewsResultAlert={handleTestGoldNewsResultAlert}
+          testingSessionAlert={testingSessionAlert}
+          onTestSessionAlert={handleTestSessionAlert}
           isLoadingCarPlay={isLoadingCarPlay}
           carPlaySetup={carPlaySetup}
           copiedVoiceKey={copiedVoiceKey}

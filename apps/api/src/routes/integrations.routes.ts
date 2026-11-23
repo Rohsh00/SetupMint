@@ -642,7 +642,8 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       const rawSym = String(item.symbol || '').toUpperCase().trim();
       const spec = getMt5ContractSpec(rawSym);
       const symbol = spec.symbol;
-      const rawSide = String(item.type || item.side || '').toUpperCase().trim();
+      const rawType = item.type !== undefined && item.type !== null ? String(item.type) : String(item.side || '');
+      const rawSide = rawType.toUpperCase().trim();
       const direction: 'LONG' | 'SHORT' =
         rawSide === 'BUY' || rawSide === '0' || rawSide === 'LONG' ? 'LONG' : 'SHORT';
       const volume = Math.abs(parseFloat(item.volume || item.lots || item.qty || 0.01) || 0.01);
@@ -1224,13 +1225,94 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             });
           }
 
+          // Pyramiding Campaign Auto-Linking:
+          // Check if an open trade in the same direction and symbol already exists for this account
+          const existingCampaignParent = await Trade.findOne({
+            userId: account.userId,
+            accountId: account._id,
+            symbol,
+            direction,
+            status: 'OPEN',
+          }).sort({ entryTime: 1 });
+
+          let assignedCampaignId: string | undefined;
+          let isParent = false;
+          let isLayer = false;
+          let layerIdx = 0;
+          let pyramidDetails: any = undefined;
+
+          if (existingCampaignParent) {
+            // A prior trade exists! This new trade is a Pyramid Layer.
+            isLayer = true;
+            if (!existingCampaignParent.campaignId) {
+              // Upgrade the first trade to be the Campaign Parent
+              const baseCampaignId = `CMP_${symbol}_${existingCampaignParent._id.toString()}`;
+              existingCampaignParent.campaignId = baseCampaignId;
+              existingCampaignParent.isCampaignParent = true;
+              existingCampaignParent.layerIndex = 0;
+              if (!existingCampaignParent.tags.includes('PYRAMID_CAMPAIGN')) {
+                existingCampaignParent.tags.push('PYRAMID_CAMPAIGN');
+              }
+              await existingCampaignParent.save().catch(() => {});
+              assignedCampaignId = baseCampaignId;
+            } else {
+              assignedCampaignId = existingCampaignParent.campaignId;
+            }
+
+            // Count existing layers in this campaign
+            const existingLayerCount = await Trade.countDocuments({
+              userId: account.userId,
+              campaignId: assignedCampaignId,
+            });
+            layerIdx = existingLayerCount; // e.g. 1 for first add, 2 for second add
+
+            // Telemetry & Rules Check: Was the base trade stop loss protected to breakeven?
+            const baseEntry = Number(existingCampaignParent.simpleExecution?.entryPrice || 0);
+            const baseCurrentSl = Number(existingCampaignParent.risk?.currentStopLoss || 0);
+            const isLong = direction === 'LONG' || direction === 'BUY';
+            const wasBeProtected = baseCurrentSl > 0 && (isLong ? baseCurrentSl >= baseEntry : baseCurrentSl <= baseEntry);
+
+            // Compute blended entry across existing layers and this new layer
+            const existingTradesInCamp = await Trade.find({
+              userId: account.userId,
+              campaignId: assignedCampaignId,
+            }).lean();
+            let totalVolumeSum = volume;
+            let weightedPriceSum = entryPrice * volume;
+            for (const prevT of existingTradesInCamp) {
+              const pQty = Number(prevT.simpleExecution?.quantity || 1);
+              const pEntry = Number(prevT.simpleExecution?.entryPrice || 0);
+              totalVolumeSum += pQty;
+              weightedPriceSum += pEntry * pQty;
+            }
+            const blendedEntry = totalVolumeSum > 0 ? Number((weightedPriceSum / totalVolumeSum).toFixed(2)) : entryPrice;
+
+            pyramidDetails = {
+              parentTicket: Mt5CommandService.extractTicket(existingCampaignParent) || existingCampaignParent._id.toString(),
+              wasBaseStopProtectedToBE: wasBeProtected,
+              rMultipleAtScaleIn: Number(existingCampaignParent.calculated?.realizedRMultiple ?? 0),
+              blendedEntryAfterAdd: blendedEntry,
+            };
+          }
+
+          const layerTags = isLayer
+            ? ['ELEFIN', 'MT5', ticketTag, 'PYRAMID_LAYER', `LAYER_${layerIdx}`]
+            : ['ELEFIN', 'MT5', ticketTag];
+
           trade = await Trade.create({
             userId: account.userId,
             accountId: account._id,
             instrumentId: instrument._id,
             underlying: symbol,
             symbol,
-            tradeTitle: `${symbol} ${direction} (Elefin #${ticketStr})`,
+            campaignId: assignedCampaignId,
+            isCampaignParent: isParent,
+            isPyramidLayer: isLayer,
+            layerIndex: layerIdx,
+            pyramidDetails,
+            tradeTitle: isLayer
+              ? `${symbol} ${direction} (Elefin #${ticketStr} · Layer ${layerIdx})`
+              : `${symbol} ${direction} (Elefin #${ticketStr})`,
             assetClass: spec.assetClass,
             exchange: spec.exchange,
             marketSegment: spec.marketSegment,
@@ -1246,7 +1328,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               account.profile?.sessionCalendarKey || 'FOREX_24_5',
               symbol
             ),
-            tags: ['ELEFIN', 'MT5', ticketTag],
+            tags: layerTags,
             importBatchId: `MT5_${ticketStr}`,
             executionMode: 'SIMPLE',
             simpleExecution: {

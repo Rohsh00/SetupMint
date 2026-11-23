@@ -6281,6 +6281,15 @@ export class TelegramAlertService {
     const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
     const accountId = (account?._id || trade.accountId)!;
 
+    if (!trade.campaignId) {
+      trade.campaignId = `CMP_${sym}_${trade._id.toString()}`;
+      trade.isCampaignParent = true;
+      trade.layerIndex = 0;
+      if (!trade.tags.includes('PYRAMID_CAMPAIGN')) {
+        trade.tags.push('PYRAMID_CAMPAIGN');
+      }
+    }
+
     if (needsBeLock && ticket && accountId) {
       await Mt5CommandService.queueModifySl({
         userId: user._id,
@@ -6290,8 +6299,8 @@ export class TelegramAlertService {
         stopLoss: entry,
       });
       trade.risk = { ...(trade.risk || {}), currentStopLoss: entry };
-      await trade.save().catch(() => {});
     }
+    await trade.save().catch(() => {});
 
     const presets = user?.liveWatcherSettings?.telegramForexPresets;
     const slPts = isGold ? (presets?.goldSlPoints ?? 35) : (isEth ? (presets?.ethSlPrice ?? 30) : 50);

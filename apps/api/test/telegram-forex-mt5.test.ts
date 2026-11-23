@@ -8,7 +8,9 @@ import {
   Trade,
   TradingAccount,
   Mt5Command,
+  Session,
 } from '../src/db/models/index.js';
+import { hashSessionToken } from '../src/middleware/auth.js';
 import { TelegramAlertService, DEFAULT_FOREX_PRESETS } from '../src/services/telegram-alert.service.js';
 import { Mt5CommandService } from '../src/services/mt5-command.service.js';
 import { TelegramCockpitTickerWorker } from '../src/services/telegram-cockpit-ticker.service.js';
@@ -2694,5 +2696,123 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     await Trade.deleteMany({ userId: testUser._id });
     await TradingAccount.deleteOne({ _id: propAccount._id });
+  });
+
+  // 60. Pyramiding Campaign Auto-Linking & Layer Telemetry
+  it('Scenario 60: Pyramiding scale-in automatically binds to parent campaign, assigns layerIndex, and records BE protection telemetry', async () => {
+    await Trade.deleteMany({ userId: testUser._id, status: 'OPEN' });
+
+    // 1. Create Base Entry Trade (0.04L @ 2650.00) with SL protected to BE
+    const baseTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      marketSegment: 'FOREX',
+      entryTime: new Date(Date.now() - 300000),
+      tradeDate: new Date(),
+      tags: ['MT5', 'MT5_TICKET_112233'],
+      simpleExecution: {
+        entryPrice: 2650.00,
+        quantity: 0.04,
+        contractMultiplier: 100,
+      },
+      risk: {
+        initialStopLoss: 2645.00,
+        currentStopLoss: 2650.00, // Locked to breakeven!
+      },
+    });
+
+    // 2. MT5 reports a new scale-in position (0.02L @ 2658.00) via webhook targeting testAccount
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/integrations/mt5/webhook?token=${testAccount._id}`,
+      payload: {
+        event: 'positions',
+        positions: [
+          {
+            ticket: '112233',
+            symbol: 'XAUUSD',
+            type: 0, // BUY
+            volume: 0.04,
+            open_price: 2650.00,
+            sl: 2650.00,
+            tp: 2670.00,
+            profit: 40.00,
+          },
+          {
+            ticket: '445566',
+            symbol: 'XAUUSD',
+            type: 0, // BUY (Pyramid Layer 2)
+            volume: 0.02,
+            open_price: 2658.00,
+            sl: 2652.00,
+            tp: 2670.00,
+            profit: 10.00,
+          },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    // 3. Verify Base Trade was upgraded to Campaign Parent
+    const refreshedBase = await Trade.findById(baseTrade._id);
+    expect(refreshedBase?.campaignId).toBeDefined();
+    expect(refreshedBase?.campaignId).toBe(`CMP_XAUUSD_${baseTrade._id.toString()}`);
+    expect(refreshedBase?.isCampaignParent).toBe(true);
+    expect(refreshedBase?.layerIndex).toBe(0);
+    expect(refreshedBase?.tags).toContain('PYRAMID_CAMPAIGN');
+
+    // 4. Verify Second Trade was auto-bound as Pyramid Layer 1
+    const pyramidTrade = await Trade.findOne({ 'tags': 'MT5_TICKET_445566' });
+    expect(pyramidTrade).toBeDefined();
+    expect(pyramidTrade?.campaignId).toBe(refreshedBase?.campaignId);
+    expect(pyramidTrade?.isPyramidLayer).toBe(true);
+    expect(pyramidTrade?.layerIndex).toBe(1);
+    expect(pyramidTrade?.tags).toContain('PYRAMID_LAYER');
+    expect(pyramidTrade?.tags).toContain('LAYER_1');
+
+    // 5. Verify Telemetry: BE protection checked & blended entry computed
+    expect(pyramidTrade?.pyramidDetails?.wasBaseStopProtectedToBE).toBe(true);
+    expect(pyramidTrade?.pyramidDetails?.parentTicket).toBe('112233');
+    // Blended entry: ((0.04 * 2650) + (0.02 * 2658)) / 0.06 = (106 + 53.16) / 0.06 = 159.16 / 0.06 = 2652.67
+    expect(pyramidTrade?.pyramidDetails?.blendedEntryAfterAdd).toBe(2652.67);
+
+    // 6. Test GET /api/v1/trades returns campaign telemetry
+    const testRawToken = `raw_token_pyramid_${Date.now()}`;
+    await Session.create({
+      userId: testUser._id,
+      tokenHash: hashSessionToken(testRawToken),
+      expiresAt: new Date(Date.now() + 86400000),
+      ipAddress: '127.0.0.1',
+      userAgent: 'Vitest Test Runner',
+      lastActiveAt: new Date(),
+    });
+
+    const tradesRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/trades',
+      headers: {
+        authorization: `Bearer ${testRawToken}`,
+      },
+    });
+
+    expect(tradesRes.statusCode).toBe(200);
+    const tradesBody = JSON.parse(tradesRes.body);
+    const parentInApi = tradesBody.data.find((t: any) => t.id === baseTrade._id.toString());
+    const layerInApi = tradesBody.data.find((t: any) => t.id === pyramidTrade?._id.toString());
+
+    expect(parentInApi.campaignId).toBe(refreshedBase?.campaignId);
+    expect(parentInApi.isCampaignParent).toBe(true);
+    expect(layerInApi.campaignId).toBe(refreshedBase?.campaignId);
+    expect(layerInApi.isPyramidLayer).toBe(true);
+    expect(layerInApi.layerIndex).toBe(1);
+    expect(layerInApi.pyramidDetails.wasBaseStopProtectedToBE).toBe(true);
+
+    await Trade.deleteMany({ userId: testUser._id });
   });
 });

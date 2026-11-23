@@ -43,6 +43,19 @@ export interface ITradeDoc extends Document {
   importBatchId?: string;
   templateId?: string;
 
+  // Pyramiding & Campaign Grouping
+  campaignId?: string;
+  isCampaignParent?: boolean;
+  isPyramidLayer?: boolean;
+  layerIndex?: number;
+  pyramidDetails?: {
+    parentTicket?: string;
+    wasBaseStopProtectedToBE?: boolean;
+    rMultipleAtScaleIn?: number;
+    standalonePnL?: number;
+    blendedEntryAfterAdd?: number;
+  };
+
   executionMode: ExecutionMode;
   simpleExecution?: {
     entryPrice: number;
@@ -316,6 +329,19 @@ const TradeSchema = new Schema<ITradeDoc>(
     externalBrokerOrderRef: { type: String },
     importBatchId: { type: String, index: true },
     templateId: { type: String, index: true },
+
+    // Pyramiding & Campaign Grouping
+    campaignId: { type: String, index: true },
+    isCampaignParent: { type: Boolean, default: false },
+    isPyramidLayer: { type: Boolean, default: false },
+    layerIndex: { type: Number, default: 0 },
+    pyramidDetails: {
+      parentTicket: { type: String },
+      wasBaseStopProtectedToBE: { type: Boolean },
+      rMultipleAtScaleIn: { type: Number },
+      standalonePnL: { type: Number },
+      blendedEntryAfterAdd: { type: Number },
+    },
 
     executionMode: {
       type: String,

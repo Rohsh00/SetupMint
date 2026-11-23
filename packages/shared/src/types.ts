@@ -1129,6 +1129,19 @@ export interface ITrade {
   customLadderRules?: ICustomLadderRules;
   auditLog: IAuditEntry[];
 
+  // Pyramiding & Campaign Grouping
+  campaignId?: string;
+  isCampaignParent?: boolean;
+  isPyramidLayer?: boolean;
+  layerIndex?: number;
+  pyramidDetails?: {
+    parentTicket?: string;
+    wasBaseStopProtectedToBE?: boolean;
+    rMultipleAtScaleIn?: number;
+    standalonePnL?: number;
+    blendedEntryAfterAdd?: number;
+  };
+
   createdAt: string;
   updatedAt: string;
 }

@@ -1269,7 +1269,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             // Telemetry & Rules Check: Was the base trade stop loss protected to breakeven?
             const baseEntry = Number(existingCampaignParent.simpleExecution?.entryPrice || 0);
             const baseCurrentSl = Number(existingCampaignParent.risk?.currentStopLoss || 0);
-            const isLong = direction === 'LONG' || direction === 'BUY';
+            const isLong = direction === 'LONG';
             const wasBeProtected = baseCurrentSl > 0 && (isLong ? baseCurrentSl >= baseEntry : baseCurrentSl <= baseEntry);
 
             // Compute blended entry across existing layers and this new layer

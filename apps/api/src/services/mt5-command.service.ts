@@ -546,6 +546,97 @@ export class Mt5CommandService {
         } catch (err: any) {
           console.warn('[Mt5CommandService] Execution dispatch error:', err?.message || err);
         }
+      } else if (r.status === 'FAILED') {
+        // Dispatch instant failure alert for CLOSE_POSITION, MODIFY_SL, MODIFY_TP
+        const isHarmlessNoChange = (r.message || '').includes('no changes') && (cmd.action === 'MODIFY_TP' || cmd.action === 'MODIFY_SL');
+        if (!isHarmlessNoChange) {
+          try {
+            const { User } = await import('../db/models/User.js');
+            const user = await User.findById(cmd.userId);
+            if (user) {
+              const { TelegramAlertService } = await import('./telegram-alert.service.js');
+              const { safeDecryptSecret } = await import('./crypto.service.js');
+              const rawToken = user.liveWatcherSettings?.telegramBotToken;
+              const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+              const chatId = user.liveWatcherSettings?.telegramPinnedCockpitChatId || user.liveWatcherSettings?.telegramChatId;
+
+              if (botToken && chatId) {
+                let sym = cmd.symbol;
+                if (!sym && cmd.tradeId) {
+                  const { Trade } = await import('../db/models/Trade.js');
+                  const t = await Trade.findById(cmd.tradeId).lean();
+                  if (t) sym = t.symbol;
+                }
+                if (!sym && cmd.ticket) {
+                  const { Trade } = await import('../db/models/Trade.js');
+                  const t = await Trade.findOne({ tags: `MT5_TICKET_${cmd.ticket}` }).lean();
+                  if (t) sym = t.symbol;
+                }
+                sym = sym || 'Position';
+
+                let actionDesc = 'Order Execution';
+                if (cmd.action === 'CLOSE_POSITION') {
+                  actionDesc = cmd.volume ? `Close Partial (${cmd.volume.toFixed(2)} Lots)` : 'Close Position';
+                } else if (cmd.action === 'MODIFY_SL') {
+                  actionDesc = `Modify Stop Loss (${cmd.stopLoss})`;
+                } else if (cmd.action === 'MODIFY_TP') {
+                  actionDesc = cmd.takeProfit ? `Modify Take Profit (${cmd.takeProfit})` : 'Clear Take Profit (Runner)';
+                }
+
+                const failText =
+                  `🚨 <b>BROKER EXECUTION REJECTED</b>\n` +
+                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                  `<pre>\n` +
+                  `Symbol : ${sym}\n` +
+                  `Action : ${actionDesc}\n` +
+                  (cmd.ticket ? `Ticket : #${cmd.ticket}\n` : '') +
+                  `Reason : ${r.message || 'Execution failed on MT5 Bridge'}\n` +
+                  `</pre>\n` +
+                  `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                  `<i>Please manage or close directly on your terminal.</i>`;
+
+                await TelegramAlertService.sendMessage(botToken, chatId, failText);
+              }
+            }
+          } catch (err: any) {
+            console.warn('[Mt5CommandService] Rejection dispatch error:', err?.message || err);
+          }
+        }
+      } else if (r.status === 'SUCCESS' && cmd.action === 'CLOSE_POSITION' && cmd.volume && cmd.volume > 0) {
+        // Dispatch confirmation for partial position harvest
+        try {
+          const { User } = await import('../db/models/User.js');
+          const user = await User.findById(cmd.userId);
+          if (user) {
+            const { TelegramAlertService } = await import('./telegram-alert.service.js');
+            const { safeDecryptSecret } = await import('./crypto.service.js');
+            const rawToken = user.liveWatcherSettings?.telegramBotToken;
+            const botToken = safeDecryptSecret(rawToken) || (rawToken?.startsWith('enc:') ? null : rawToken);
+            const chatId = user.liveWatcherSettings?.telegramPinnedCockpitChatId || user.liveWatcherSettings?.telegramChatId;
+
+            if (botToken && chatId) {
+              let sym = cmd.symbol;
+              if (!sym && cmd.ticket) {
+                const { Trade } = await import('../db/models/Trade.js');
+                const t = await Trade.findOne({ tags: `MT5_TICKET_${cmd.ticket}` }).lean();
+                if (t) sym = t.symbol;
+              }
+              const okText =
+                `✅ <b>BROKER PARTIAL EXIT CONFIRMED</b>\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                `<pre>\n` +
+                `Symbol : ${sym || 'Position'}\n` +
+                `Closed : ${cmd.volume.toFixed(2)} Lots\n` +
+                (cmd.ticket ? `Ticket : #${cmd.ticket}\n` : '') +
+                `Status : Executed on Broker\n` +
+                `</pre>`;
+              await TelegramAlertService.sendMessage(botToken, chatId, okText);
+              await TelegramAlertService.updatePinnedCockpitMessage(user);
+            }
+          }
+        } catch (err: any) {
+          console.warn('[Mt5CommandService] Success dispatch error:', err?.message || err);
+        }
       }
     }
   }

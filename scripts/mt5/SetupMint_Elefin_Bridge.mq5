@@ -227,6 +227,20 @@ bool SendJsonToSetupMint(string jsonPayload, bool handleCommands = true)
 }
 
 //+------------------------------------------------------------------+
+//| Helper: Configure optimal trade filling mode dynamically per sym |
+//+------------------------------------------------------------------+
+void SetFillingModeForSymbol(string sym)
+{
+   uint filling = (uint)SymbolInfoInteger(sym, SYMBOL_FILLING_MODE);
+   if((filling & SYMBOL_FILLING_IOC) != 0)
+      m_trade.SetTypeFilling(ORDER_FILLING_IOC);
+   else if((filling & SYMBOL_FILLING_FOK) != 0)
+      m_trade.SetTypeFilling(ORDER_FILLING_FOK);
+   else
+      m_trade.SetTypeFilling(ORDER_FILLING_RETURN);
+}
+
+//+------------------------------------------------------------------+
 //| Process and execute inbound broker commands from SetupMint       |
 //+------------------------------------------------------------------+
 void ProcessSetupMintCommands(string responseJson)
@@ -285,6 +299,8 @@ void ProcessSetupMintCommands(string responseJson)
          string comment = ExtractJsonString(cmdObj, "comment");
          if(StringLen(symbol) == 0) symbol = _Symbol;
          if(StringLen(comment) == 0) comment = "SetupMint-Telegram";
+
+         SetFillingModeForSymbol(symbol);
 
          double minVol = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
          if(volume <= 0) volume = minVol > 0 ? minVol : 0.01;
@@ -365,7 +381,9 @@ void ProcessSetupMintCommands(string responseJson)
          {
             double curTp = tp > 0 ? tp : PositionGetDouble(POSITION_TP);
             ResetLastError();
-            if(m_trade.PositionModify(ticket, sl, curTp))
+            bool modRes = m_trade.PositionModify(ticket, sl, curTp);
+            uint retcode = m_trade.ResultRetcode();
+            if(modRes || retcode == 10025 || retcode == 10009)
             {
                success = true;
                msg = "Stop Loss modified to " + DoubleToString(sl, 2);
@@ -374,7 +392,7 @@ void ProcessSetupMintCommands(string responseJson)
             else
             {
                success = false;
-               msg = "PositionModify failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+               msg = "PositionModify failed: " + IntegerToString(GetLastError()) + " (retcode " + IntegerToString(retcode) + ") - " + m_trade.ResultRetcodeDescription();
                Print("[SetupMint] ❌ PositionModify FAILED on Ticket #", ticket, " - ", msg);
             }
          }
@@ -392,7 +410,9 @@ void ProcessSetupMintCommands(string responseJson)
             double curSl = sl > 0 ? sl : PositionGetDouble(POSITION_SL);
             double newTp = tp; // In MT5, 0.0 clears TP completely for runner mode
             ResetLastError();
-            if(m_trade.PositionModify(ticket, curSl, newTp))
+            bool modRes = m_trade.PositionModify(ticket, curSl, newTp);
+            uint retcode = m_trade.ResultRetcode();
+            if(modRes || retcode == 10025 || retcode == 10009)
             {
                success = true;
                msg = (newTp <= 0.0) ? "Take Profit removed (open runner)" : ("Take Profit modified to " + DoubleToString(newTp, 2));
@@ -401,7 +421,7 @@ void ProcessSetupMintCommands(string responseJson)
             else
             {
                success = false;
-               msg = "PositionModify TP failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+               msg = "PositionModify TP failed: " + IntegerToString(GetLastError()) + " (retcode " + IntegerToString(retcode) + ") - " + m_trade.ResultRetcodeDescription();
                Print("[SetupMint] ❌ PositionModify TP FAILED on Ticket #", ticket, " - ", msg);
             }
          }
@@ -416,18 +436,27 @@ void ProcessSetupMintCommands(string responseJson)
       {
          if(PositionSelectByTicket(ticket))
          {
+            string posSym = PositionGetString(POSITION_SYMBOL);
+            SetFillingModeForSymbol(posSym);
             ResetLastError();
             bool closeRes = false;
             double openVol = PositionGetDouble(POSITION_VOLUME);
+            ulong dev = 50;
             if(volume > 0 && volume < openVol)
             {
-               closeRes = m_trade.PositionClosePartial(ticket, volume);
+               closeRes = m_trade.PositionClosePartial(ticket, volume, dev);
             }
             else
             {
-               closeRes = m_trade.PositionClose(ticket);
+               closeRes = m_trade.PositionClose(ticket, dev);
             }
             
+            uint retcode = m_trade.ResultRetcode();
+            if(!closeRes && (retcode == 10009 || retcode == 10008))
+            {
+               closeRes = true;
+            }
+
             if(closeRes)
             {
                success = true;
@@ -437,7 +466,7 @@ void ProcessSetupMintCommands(string responseJson)
             else
             {
                success = false;
-               msg = "PositionClose failed: " + IntegerToString(GetLastError()) + " - " + m_trade.ResultRetcodeDescription();
+               msg = "PositionClose failed: " + IntegerToString(GetLastError()) + " (retcode " + IntegerToString(retcode) + ") - " + m_trade.ResultRetcodeDescription();
                Print("[SetupMint] ❌ PositionClose FAILED on Ticket #", ticket, " - ", msg);
             }
          }

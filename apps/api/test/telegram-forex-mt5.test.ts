@@ -3358,4 +3358,62 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     await Trade.deleteMany({ userId: testUser._id });
     await TradingAccount.deleteMany({ _id: inrAccount._id });
   });
+
+  // 67. MT5 Command execution result dispatches immediate Telegram feedback
+  it('Scenario 67: processCommandResults dispatches immediate Telegram feedback on broker rejection or partial close confirmation', async () => {
+    // 1. Create a pending CLOSE_POSITION command
+    const cmd = await Mt5Command.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      ticket: 16700861,
+      action: 'CLOSE_POSITION',
+      volume: 0.02,
+      status: 'PENDING',
+    });
+
+    // 2. Simulate MT5 EA reporting failure
+    await Mt5CommandService.processCommandResults([
+      {
+        commandId: cmd._id.toString(),
+        status: 'FAILED',
+        message: 'PositionClose failed: 0 - Broker rejected order filling mode',
+      },
+    ]);
+
+    // Check sentMessages contains rejection alert
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg).toBeDefined();
+    expect(lastMsg.text).toContain('BROKER EXECUTION REJECTED');
+    expect(lastMsg.text).toContain('XAUUSD');
+    expect(lastMsg.text).toContain('#16700861');
+    expect(lastMsg.text).toContain('0.02 Lots');
+    expect(lastMsg.text).toContain('Broker rejected order filling mode');
+
+    // 3. Create another pending command and simulate SUCCESS
+    const cmdSuccess = await Mt5Command.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      ticket: 16700861,
+      action: 'CLOSE_POSITION',
+      volume: 0.02,
+      status: 'PENDING',
+    });
+
+    await Mt5CommandService.processCommandResults([
+      {
+        commandId: cmdSuccess._id.toString(),
+        status: 'SUCCESS',
+        message: 'Position closed successfully',
+      },
+    ]);
+
+    const successMsg = sentMessages[sentMessages.length - 1];
+    expect(successMsg.text).toContain('BROKER PARTIAL EXIT CONFIRMED');
+    expect(successMsg.text).toContain('0.02 Lots');
+    expect(successMsg.text).toContain('#16700861');
+
+    await Mt5Command.deleteMany({ ticket: 16700861 });
+  });
 });

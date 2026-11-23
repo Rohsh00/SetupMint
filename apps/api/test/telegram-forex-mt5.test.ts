@@ -3336,6 +3336,12 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     expect(payload.text).not.toContain('-$121$');
     expect(payload.text).not.toContain('$-16.54');
 
+    // Verify Line 1 pinned preview has no redundant '(CRUDEOILMINI 🔺Long)' title covering prices
+    const line1 = payload.text.split('\n')[0];
+    expect(line1).not.toContain('CRUDEOILMINI 🔺');
+    // Verify Line 1 prioritizes active position prices first with clean short labels
+    expect(line1).toContain('CRUDE: ₹7640.00');
+
     // Verify position detail lines show ₹ for Crude and $ for ETH
     expect(payload.text).toContain('CRUDEOILMINI');
     expect(payload.text).toContain('₹7608.00');

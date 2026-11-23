@@ -219,6 +219,28 @@ export class TelegramAlertService {
   }
 
   /**
+   * Compact Symbol & Emoji resolver for Cockpit telemetry & pinned header preview.
+   */
+  static getCockpitSymbolMeta(rawSymbol: string): { shortLabel: string; emoji: string } {
+    const sym = (rawSymbol || '').toUpperCase().trim();
+    if (sym.includes('XAU') || sym === 'GOLD') return { shortLabel: 'Au', emoji: '🟡' };
+    if (sym.includes('ETH')) return { shortLabel: 'ETH', emoji: '🔷' };
+    if (sym.includes('BTC')) return { shortLabel: 'BTC', emoji: '₿' };
+    if (sym.includes('CRUDE') || sym.includes('OIL')) return { shortLabel: 'CRUDE', emoji: '🛢️' };
+    if (sym.includes('NATURALGAS') || sym.includes('NATGAS') || sym.startsWith('NG')) return { shortLabel: 'NG', emoji: '🔥' };
+    if (sym.includes('SILVER')) return { shortLabel: 'SILVER', emoji: '⚪' };
+    if (sym.includes('COPPER')) return { shortLabel: 'COPPER', emoji: '🧱' };
+    if (sym.includes('US30') || sym.includes('DOW')) return { shortLabel: 'US30', emoji: '📈' };
+    if (sym.includes('NAS') || sym.includes('USTEC') || sym.includes('NDX')) return { shortLabel: 'NAS100', emoji: '📈' };
+    if (sym.includes('BANKNIFTY')) return { shortLabel: 'BNF', emoji: '🏦' };
+    if (sym.includes('NIFTY')) return { shortLabel: 'NIFTY', emoji: '📊' };
+
+    // Strip common suffixes for custom Indian or Forex tickers: MINI, MIC, FUT, etc.
+    const clean = sym.replace(/(MINI|MIC|FUT|\.NS|\.BO)$/i, '').trim();
+    return { shortLabel: clean || sym, emoji: '📈' };
+  }
+
+  /**
    * Tests connection to Telegram bot and chat ID.
    */
   static async testConnection(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
@@ -8752,12 +8774,15 @@ export class TelegramAlertService {
       totalQty: number;
     }
 
+    const goldMeta = TelegramAlertService.getCockpitSymbolMeta('XAUUSD');
+    const ethMeta = TelegramAlertService.getCockpitSymbolMeta('ETHUSD');
+
     const assetList: ICockpitAsset[] = [
       {
         symbol: 'XAUUSD',
         cleanSymbol: 'XAUUSD',
-        shortLabel: 'Au',
-        emoji: '🟡',
+        shortLabel: goldMeta.shortLabel,
+        emoji: goldMeta.emoji,
         ltp: goldLtp,
         spread: goldSpread,
         currencySymbol: '$',
@@ -8768,8 +8793,8 @@ export class TelegramAlertService {
       {
         symbol: 'ETHUSD',
         cleanSymbol: 'ETHUSD',
-        shortLabel: 'ETH',
-        emoji: '🔷',
+        shortLabel: ethMeta.shortLabel,
+        emoji: ethMeta.emoji,
         ltp: ethLtp,
         spread: ethSpread,
         currencySymbol: '$',
@@ -8782,11 +8807,12 @@ export class TelegramAlertService {
     // Include any other active symbols with open positions (e.g. US30, NAS100, CRUDEOILMINI)
     for (const [symKey, s] of stackMap.entries()) {
       if (!assetList.some((a) => a.cleanSymbol === symKey)) {
+        const meta = TelegramAlertService.getCockpitSymbolMeta(s.cleanSymbol);
         assetList.push({
           symbol: s.cleanSymbol,
           cleanSymbol: s.cleanSymbol,
-          shortLabel: s.cleanSymbol,
-          emoji: '📈',
+          shortLabel: meta.shortLabel,
+          emoji: meta.emoji,
           ltp: s.currentLtp,
           spread: s.currencySymbol === '₹' ? '₹1.00' : '$1.00',
           currencySymbol: s.currencySymbol || '$',
@@ -8811,24 +8837,15 @@ export class TelegramAlertService {
       return 0;
     });
 
-    // Top 2 assets for Line 1 pinned header preview
+    // Top 2 assets for Line 1 pinned header preview (Active positions prioritized first!)
     const top2Assets = assetList.slice(0, 2);
     const assetHeaderTags = top2Assets.map((a) => `${a.emoji} <b>${a.shortLabel}: ${a.currencySymbol || '$'}${a.ltp.toFixed(2)}</b>`).join(' ｜ ');
-
-    let activeAssetBadge = '';
-    if (hasOpenTrades) {
-      const leadingAsset = assetList.find((a) => a.hasPosition) || assetList[0];
-      const stack = stackMap.get(leadingAsset.cleanSymbol);
-      const dirIcon = stack?.direction === 'LONG' ? '🔺' : '🔻';
-      const dirText = stack?.direction === 'LONG' ? 'Long' : 'Short';
-      activeAssetBadge = ` (${leadingAsset.shortLabel} ${dirIcon}${dirText})`;
-    }
 
     const isExecutionRestricted = Boolean(user?.liveWatcherSettings?.restrictTelegramTradeExecution);
     const cockpitTag = isExecutionRestricted ? '<b>COCKPIT (LOCKED)</b>' : '<b>COCKPIT</b>';
 
     const line1 = hasOpenTrades
-      ? `${pnlBadge}${activeAssetBadge} ｜ ${assetHeaderTags} ｜ <b>LIVE</b>`
+      ? `${pnlBadge} ｜ ${assetHeaderTags}`
       : `${assetHeaderTags} ｜ ${regimeTag}${cockpitTag}`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);

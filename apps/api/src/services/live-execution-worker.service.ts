@@ -518,7 +518,11 @@ export class LiveExecutionWorker {
       }
 
       // 3. For MT5, if runner mode is active, clear Take Profit to 0 so runner runs uncapped
-      if (isMt5 && ticket && (rules.t3?.isFreeRunner || rules.targetMode === 'T1_FREE_RUNNER')) {
+      const isBecomingRunner =
+        rules.targetMode === 'T1_FREE_RUNNER' ||
+        (Boolean(rules.t3?.isFreeRunner) && (step.targetIndex >= 2 || !rules.t2?.enabled));
+
+      if (isMt5 && ticket && isBecomingRunner) {
         await Mt5CommandService.queueModifyTp({
           userId: user._id.toString(),
           accountId: trade.accountId?.toString(),

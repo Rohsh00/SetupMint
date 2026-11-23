@@ -21,6 +21,7 @@ import {
   evaluateAlert,
   buildAlertContext,
   calculateTrueBreakeven,
+  getAccountDayBoundaries,
   DEFAULT_ALERT_POLICIES,
   AlertPolicy,
   AlertDecision,
@@ -1588,9 +1589,10 @@ export class TelegramAlertService {
       await this.handleRiskCommand(user, botToken, chatId);
       return;
     }
-    if (data === 'cmd_summary') {
+    if (data === 'cmd_summary' || data.startsWith('cmd_summary:')) {
       await this.answerCallbackQuery(botToken, cq.id, 'Loading Performance Summary...');
-      if (botToken) await this.handleSummaryCommand(user, botToken, chatId);
+      const targetScope = data.includes(':') ? data.split(':')[1] : undefined;
+      if (botToken) await this.handleSummaryCommand(user, botToken, chatId, targetScope);
       return;
     }
     if (data === 'cmd_sessions') {
@@ -3760,12 +3762,15 @@ export class TelegramAlertService {
     const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
     const summary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), accountIds);
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const userTz = user.settings?.timezone || 'Asia/Kolkata';
+    const { start: startOfDay } = getAccountDayBoundaries(new Date(), userTz);
     const todayTrades = await Trade.find({
       userId: user._id,
       status: 'CLOSED',
-      exitTime: { $gte: startOfDay },
+      $or: [
+        { exitTime: { $gte: startOfDay } },
+        { tradeDate: { $gte: startOfDay } },
+      ],
       accountId: { $in: accountIds },
     }).lean();
 
@@ -4654,60 +4659,221 @@ export class TelegramAlertService {
   }
 
   /**
-   * Generates summary statistics for /summary command.
+   * Generates summary statistics for /summary command or 'cmd_summary' callbacks.
+   * Strictly enforces Zero Cross-Currency Aggregation: separates accounts & currencies cleanly.
    */
   private static async handleSummaryCommand(user: any, botToken: string, chatId: string | number, scopeArg?: string): Promise<void> {
-    const argLower = scopeArg?.toLowerCase() || '';
-    const isProp = argLower.includes('prop');
-    const isLive = argLower.includes('live') || argLower.includes('personal');
-    const scope = isProp
-      ? { mode: 'PROP_FIRM' as const }
-      : isLive
-      ? { mode: 'TYPE' as const, accountType: 'LIVE' as const }
-      : { mode: 'ALL' as const };
-    const accountIds = await AccountScopeService.resolveAccountScope(user._id, scope);
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const accounts = await TradingAccount.find({
+      userId: user._id,
+      status: 'ACTIVE',
+    }).lean();
+
+    const accountMap = new Map<string, any>();
+    for (const a of accounts) {
+      accountMap.set(a._id.toString(), a);
+    }
+
+    const argTrimmed = scopeArg?.trim() || '';
+    const argLower = argTrimmed.toLowerCase();
+
+    let targetAccounts: any[] = [];
+    let isSpecificSingleAccount = false;
+
+    // 1. Check if argument is a specific account ObjectId
+    if (mongoose.Types.ObjectId.isValid(argTrimmed) && accountMap.has(argTrimmed)) {
+      targetAccounts = [accountMap.get(argTrimmed)];
+      isSpecificSingleAccount = true;
+    } else if (argLower && argLower !== 'all') {
+      // 2. Check for named broker/account matches e.g. "elefin", "fyers", "the5ers"
+      const matched = accounts.filter(
+        (a) =>
+          (a.name && a.name.toLowerCase().includes(argLower)) ||
+          (a.broker && a.broker.toLowerCase().includes(argLower))
+      );
+      if (matched.length > 0) {
+        targetAccounts = matched;
+        if (matched.length === 1) isSpecificSingleAccount = true;
+      } else if (argLower.includes('prop')) {
+        targetAccounts = accounts.filter((a) => AccountScopeService.isPropAccount(a));
+      } else if (argLower.includes('live') || argLower.includes('personal')) {
+        targetAccounts = accounts.filter((a) => !AccountScopeService.isPropAccount(a));
+      } else {
+        targetAccounts = accounts;
+      }
+    } else {
+      targetAccounts = accounts;
+    }
+
+    if (targetAccounts.length === 0) {
+      targetAccounts = accounts;
+    }
+
+    const targetAccountIds = targetAccounts.map((a) => a._id);
+
+    // Compute start of day in target account's timezone or user's primary timezone
+    const primaryTz = isSpecificSingleAccount
+      ? targetAccounts[0].profile?.timezone || targetAccounts[0].timezone || 'Asia/Kolkata'
+      : user.settings?.timezone || 'Asia/Kolkata';
+
+    const { start: startOfDay } = getAccountDayBoundaries(new Date(), primaryTz);
 
     const trades = await Trade.find({
       userId: user._id,
       status: 'CLOSED',
-      exitTime: { $gte: startOfDay },
-      accountId: { $in: accountIds },
-    }).lean();
-
-    const hasUsd = isProp || trades.some((t: any) => t.currency === 'USD' || t.exchange === 'FOREX' || (t.symbol && t.symbol.includes('XAU')));
-    const sym = hasUsd ? '$' : '₹';
-    const locale = hasUsd ? 'en-US' : 'en-IN';
+      accountId: { $in: targetAccountIds },
+      $or: [
+        { exitTime: { $gte: startOfDay } },
+        { tradeDate: { $gte: startOfDay } },
+      ],
+    }).sort({ exitTime: -1 }).lean();
 
     const count = trades.length;
     if (count === 0) {
+      const scopeLabel = isSpecificSingleAccount ? ` for <b>${targetAccounts[0].name}</b>` : '';
+      const emptyButtons: ITelegramInlineButton[][] = [];
+      if (isSpecificSingleAccount) {
+        emptyButtons.push([{ text: '🌐 View All Accounts Summary', callback_data: 'cmd_summary:all' }]);
+      }
+      emptyButtons.push([
+        { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+        { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+      ]);
       await this.sendMessage(
         botToken,
         chatId,
-        `📊 <b>Today's Session Digest</b>\n\nNo closed trades recorded yet today.`
+        `📊 <b>Today's Session Digest</b>\n\nNo closed trades recorded yet today${scopeLabel}.\n\n<i>Date: ${new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</i>`,
+        emptyButtons
       );
       return;
     }
 
-    const wins = trades.filter((t) => (t.calculated?.netPnL || 0) > 0).length;
-    const losses = trades.filter((t) => (t.calculated?.netPnL || 0) < 0).length;
-    const winRate = Number(((wins / count) * 100).toFixed(1));
-    const netPnL = trades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
-    const netR = trades.reduce((acc, t) => acc + (t.calculated?.realizedRMultiple || 0), 0);
+    const buttons: ITelegramInlineButton[][] = [];
 
-    const text =
-      `📊 <b>Today's Trading Performance Digest${isProp ? ' (PROP MODE)' : ''}</b>\n` +
+    if (isSpecificSingleAccount) {
+      // Single Account Deep Dive
+      const acc = targetAccounts[0];
+      const accTrades = trades;
+      const curr = TelegramAlertService.getTradeCurrency(accTrades[0]) || acc.baseCurrency || 'USD';
+      const sym = curr === 'INR' ? '₹' : (curr === 'EUR' ? '€' : (curr === 'GBP' ? '£' : '$'));
+      const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+
+      const wins = accTrades.filter((t) => (t.calculated?.netPnL || 0) > 0);
+      const losses = accTrades.filter((t) => (t.calculated?.netPnL || 0) < 0);
+      const winRate = count > 0 ? Number(((wins.length / count) * 100).toFixed(1)) : 0;
+      const netPnL = accTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
+      const grossPnL = accTrades.reduce((acc, t) => acc + (t.calculated?.grossPnL ?? t.calculated?.netPnL ?? 0), 0);
+      const totalCosts = accTrades.reduce((acc, t) => acc + (t.calculated?.totalCosts || 0), 0);
+      const netR = accTrades.reduce((acc, t) => acc + (t.calculated?.realizedRMultiple || 0), 0);
+
+      let bestWin: any = null;
+      let worstLoss: any = null;
+      for (const t of accTrades) {
+        const p = t.calculated?.netPnL || 0;
+        if (p > 0 && (!bestWin || p > (bestWin.calculated?.netPnL || 0))) bestWin = t;
+        if (p < 0 && (!worstLoss || p < (worstLoss.calculated?.netPnL || 0))) worstLoss = t;
+      }
+
+      const pnlSign = netPnL >= 0 ? '+' : '-';
+      const rSign = netR >= 0 ? '+' : '';
+      const grossSign = grossPnL >= 0 ? '+' : '-';
+
+      let text =
+        `📊 <b>Today's Performance: ${acc.name}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<pre>\n` +
+        `Total Trades : ${count}\n` +
+        `Win / Loss   : ${wins.length}W / ${losses.length}L (${winRate}%)\n` +
+        `Net PnL      : ${pnlSign}${sym}${Math.abs(netPnL).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `Harvested R  : ${rSign}${netR.toFixed(2)}R\n` +
+        `Gross PnL    : ${grossSign}${sym}${Math.abs(grossPnL).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `Total Costs  : -${sym}${Math.abs(totalCosts).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `</pre>\n`;
+
+      if (bestWin) {
+        text += `🏆 <b>Best Win:</b> ${bestWin.symbol} (+${sym}${Math.abs(bestWin.calculated?.netPnL || 0).toFixed(2)})\n`;
+      }
+      if (worstLoss) {
+        text += `🛑 <b>Max Loss:</b> ${worstLoss.symbol} (-${sym}${Math.abs(worstLoss.calculated?.netPnL || 0).toFixed(2)})\n`;
+      }
+
+      text += `\n<i>Date: ${new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} • ${acc.broker || 'Broker'}</i>`;
+
+      buttons.push([
+        { text: '🌐 View All Accounts Summary', callback_data: 'cmd_summary:all' },
+        { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+      ]);
+
+      await this.sendMessage(botToken, chatId, text, buttons);
+      return;
+    }
+
+    // Multi-Account / Multi-Currency View:
+    // Group trades strictly by accountId to NEVER aggregate cross-currency money
+    const tradesByAccount = new Map<string, any[]>();
+    for (const t of trades) {
+      const accIdStr = String(t.accountId);
+      if (!tradesByAccount.has(accIdStr)) {
+        tradesByAccount.set(accIdStr, []);
+      }
+      tradesByAccount.get(accIdStr)!.push(t);
+    }
+
+    const sections: string[] = [];
+    const accountButtons: ITelegramInlineButton[] = [];
+
+    for (const [accIdStr, accTrades] of tradesByAccount.entries()) {
+      const acc = accountMap.get(accIdStr);
+      const accName = acc?.name || (acc?.broker ? `${acc.broker} Account` : 'Trading Account');
+      const curr = TelegramAlertService.getTradeCurrency(accTrades[0]) || acc?.baseCurrency || 'USD';
+      const sym = curr === 'INR' ? '₹' : (curr === 'EUR' ? '€' : (curr === 'GBP' ? '£' : '$'));
+      const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+      const flag = curr === 'USD' ? '🇺🇸' : (curr === 'INR' ? '🇮🇳' : '🌐');
+
+      const accCount = accTrades.length;
+      const wins = accTrades.filter((t) => (t.calculated?.netPnL || 0) > 0).length;
+      const losses = accTrades.filter((t) => (t.calculated?.netPnL || 0) < 0).length;
+      const winRate = Number(((wins / accCount) * 100).toFixed(1));
+      const netPnL = accTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
+      const netR = accTrades.reduce((acc, t) => acc + (t.calculated?.realizedRMultiple || 0), 0);
+
+      const pnlSign = netPnL >= 0 ? '+' : '-';
+      const rSign = netR >= 0 ? '+' : '';
+
+      sections.push(
+        `${flag} <b>${accName} (${curr})</b>\n` +
+        `<pre>\n` +
+        `Trades   : ${accCount} (${wins}W / ${losses}L • ${winRate}%)\n` +
+        `Net PnL  : ${pnlSign}${sym}${Math.abs(netPnL).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `Harvest R: ${rSign}${netR.toFixed(2)}R\n` +
+        `</pre>`
+      );
+
+      accountButtons.push({
+        text: `${flag} ${accName}`,
+        callback_data: `cmd_summary:${accIdStr}`,
+      });
+    }
+
+    let text =
+      `📊 <b>Today's Trading Performance Digest</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<pre>\n` +
-      `Total Trades : ${count}\n` +
-      `Win / Loss   : ${wins}W / ${losses}L (${winRate}%)\n` +
-      `Net PnL      : ${netPnL >= 0 ? '+' : ''}${sym}${netPnL.toFixed(2)}\n` +
-      `Harvested R  : ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R\n` +
-      `</pre>\n` +
+      sections.join('\n') + '\n' +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<i>Date: ${new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</i>`;
 
-    await this.sendMessage(botToken, chatId, text);
+    if (accountButtons.length > 1) {
+      const chunked: ITelegramInlineButton[][] = [];
+      for (let i = 0; i < accountButtons.length; i += 2) {
+        chunked.push(accountButtons.slice(i, i + 2));
+      }
+      buttons.push(...chunked);
+    }
+    buttons.push([
+      { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+      { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+    ]);
+
+    await this.sendMessage(botToken, chatId, text, buttons);
   }
 
   /**
@@ -5070,7 +5236,7 @@ export class TelegramAlertService {
       buttons: [
         [
           { text: '🎙️ Record Voice Debrief', callback_data: `pos_voice_hint:${trade._id}` },
-          { text: '📊 Daily Summary', callback_data: 'cmd_summary' },
+          { text: '📊 Daily Summary', callback_data: `cmd_summary:${trade.accountId || ''}` },
         ],
         [
           { text: '🛡️ Prop Risk (/risk)', callback_data: 'cmd_risk' },
@@ -5247,12 +5413,37 @@ export class TelegramAlertService {
       return;
     }
 
-    const wins = trades.filter((t) => (t.calculated?.netPnL || 0) > 0);
-    const losses = trades.filter((t) => (t.calculated?.netPnL || 0) < 0);
-    const winRate = Number(((wins.length / count) * 100).toFixed(1));
-    const totalCosts = trades.reduce((acc, t) => acc + (t.calculated?.totalCosts || 0), 0);
-    const netPnL = trades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
+    // Group trades strictly by currency to prevent cross-currency summation
+    const byCurr = new Map<string, any[]>();
+    for (const t of trades) {
+      const c = TelegramAlertService.getTradeCurrency(t);
+      if (!byCurr.has(c)) byCurr.set(c, []);
+      byCurr.get(c)!.push(t);
+    }
+
+    let pnlBlocks = '';
+    for (const [curr, currTrades] of byCurr.entries()) {
+      const sym = curr === 'INR' ? '₹' : (curr === 'EUR' ? '€' : (curr === 'GBP' ? '£' : '$'));
+      const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+      const cNet = currTrades.reduce((acc, t) => acc + (t.calculated?.netPnL || 0), 0);
+      const cCosts = currTrades.reduce((acc, t) => acc + (t.calculated?.totalCosts || 0), 0);
+      const cSign = cNet >= 0 ? '+' : '';
+      const cWins = currTrades.filter((t) => (t.calculated?.netPnL || 0) > 0).length;
+      const cLosses = currTrades.filter((t) => (t.calculated?.netPnL || 0) < 0).length;
+      const cWinRate = currTrades.length > 0 ? Number(((cWins / currTrades.length) * 100).toFixed(1)) : 0;
+      const prefix = byCurr.size > 1 ? `[${curr}] ` : '';
+
+      pnlBlocks +=
+        `<pre>\n` +
+        `${prefix}Net P&L      : ${cSign}${sym}${Math.abs(cNet).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `${prefix}Win Rate     : ${cWinRate}% (${cWins}W / ${cLosses}L)\n` +
+        `${prefix}Total Trades : ${currTrades.length}\n` +
+        `${prefix}Broker Costs : -${sym}${Math.abs(cCosts).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+        `</pre>\n`;
+    }
+
     const netR = trades.reduce((acc, t) => acc + (t.calculated?.realizedRMultiple || 0), 0);
+    const rSign = netR >= 0 ? '+' : '';
 
     let bestWin: any = null;
     let worstLoss: any = null;
@@ -5266,30 +5457,22 @@ export class TelegramAlertService {
       }
     }
 
-    const pnlSign = netPnL >= 0 ? '+' : '';
-    const rSign = netR >= 0 ? '+' : '';
-    const hasUsdTrades = trades.some((t: any) => t.currency === 'USD' || t.exchange === 'FOREX');
-    const sym = hasUsdTrades ? '$' : '₹';
-
     let text =
       `📊 <b>EOD Trading Performance Digest</b>\n` +
       `📅 <i>${nowIST.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<pre>\n` +
-      `Net P&L      : ${pnlSign}${sym}${netPnL.toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-      `Win Rate     : ${winRate}% (${wins.length}W / ${losses.length}L)\n` +
-      `Total Trades : ${count}\n` +
-      `Harvested R  : ${rSign}${netR.toFixed(2)}R\n` +
-      `Broker Costs : -${sym}${totalCosts.toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
-      `</pre>\n`;
+      pnlBlocks +
+      `<b>Total Harvested R:</b> ${rSign}${netR.toFixed(2)}R\n`;
 
     if (bestWin) {
+      const winCurr = TelegramAlertService.getTradeCurrency(bestWin);
       const winSym = TelegramAlertService.getTradeCurrencySymbol(bestWin);
-      text += `🏆 <b>Best Win:</b> ${bestWin.symbol} (+${winSym}${(bestWin.calculated?.netPnL || 0).toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN')})\n`;
+      text += `🏆 <b>Best Win:</b> ${bestWin.symbol} (+${winSym}${(bestWin.calculated?.netPnL || 0).toLocaleString(winCurr === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})\n`;
     }
     if (worstLoss) {
+      const lossCurr = TelegramAlertService.getTradeCurrency(worstLoss);
       const lossSym = TelegramAlertService.getTradeCurrencySymbol(worstLoss);
-      text += `🛑 <b>Max Loss:</b> ${worstLoss.symbol} (-${lossSym}${Math.abs(worstLoss.calculated?.netPnL || 0).toLocaleString(hasUsdTrades ? 'en-US' : 'en-IN')})\n`;
+      text += `🛑 <b>Max Loss:</b> ${worstLoss.symbol} (-${lossSym}${Math.abs(worstLoss.calculated?.netPnL || 0).toLocaleString(lossCurr === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})\n`;
     }
 
     text += `\n💾 <i>All excursion analytics and SVG chart snapshots are archived in SetupMint Pro.</i>`;

@@ -6,6 +6,7 @@ import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
 import {
   User,
   Trade,
+  TradingAccount,
   AlertState,
   AlertEvent,
   TelegramUpdateAudit,
@@ -444,5 +445,111 @@ describe('SetupMint Telegram Alerting Engine Integration Tests', () => {
     expect(sendAlertSpy).toHaveBeenCalledTimes(1);
 
     sendAlertSpy.mockRestore();
+  });
+
+  it('13. handleSummaryCommand isolates currencies and accounts with zero cross-currency summation', async () => {
+    // Create an INR account and a USD account for User A
+    const accINR = await TradingAccount.create({
+      userId: userA._id,
+      name: 'FYERS Account',
+      broker: 'FYERS',
+      accountType: 'EQUITY',
+      baseCurrency: 'INR',
+      status: 'ACTIVE',
+    });
+
+    const accUSD = await TradingAccount.create({
+      userId: userA._id,
+      name: 'Elefin Forex',
+      broker: 'Elefin',
+      accountType: 'FOREX',
+      baseCurrency: 'USD',
+      status: 'ACTIVE',
+    });
+
+    const today = new Date();
+
+    // 1 Closed INR Trade: +₹5,000
+    await Trade.create({
+      userId: userA._id,
+      accountId: accINR._id,
+      symbol: 'CRUDEOIL',
+      currency: 'INR',
+      exchange: 'MCX',
+      marketSegment: 'MCX',
+      assetClass: 'COMMODITY',
+      direction: 'LONG',
+      status: 'CLOSED',
+      executionMode: 'SIMPLE',
+      tradeDate: today,
+      entryTime: today,
+      exitTime: today,
+      calculated: {
+        netPnL: 5000,
+        grossPnL: 5050,
+        totalCosts: 50,
+        realizedRMultiple: 1.5,
+        outcome: 'WIN',
+        closedQuantity: 100,
+        openQuantity: 0,
+        averageEntryPrice: 6000,
+        averageExitPrice: 6050,
+      },
+    });
+
+    // 1 Closed USD Trade: +$35.00
+    await Trade.create({
+      userId: userA._id,
+      accountId: accUSD._id,
+      symbol: 'XAUUSD',
+      currency: 'USD',
+      exchange: 'FOREX',
+      marketSegment: 'FOREX',
+      assetClass: 'COMMODITY',
+      direction: 'LONG',
+      status: 'CLOSED',
+      executionMode: 'SIMPLE',
+      tradeDate: today,
+      entryTime: today,
+      exitTime: today,
+      calculated: {
+        netPnL: 35.0,
+        grossPnL: 35.0,
+        totalCosts: 0,
+        realizedRMultiple: 2.0,
+        outcome: 'WIN',
+        closedQuantity: 0.05,
+        openQuantity: 0,
+        averageEntryPrice: 2600,
+        averageExitPrice: 2607,
+      },
+    });
+
+    let sentMessageText = '';
+    const sendMsgSpy = vi.spyOn(TelegramAlertService, 'sendMessage' as any).mockImplementation(async (_token, _chatId, text) => {
+      sentMessageText = String(text);
+      return { ok: true };
+    });
+
+    // Call /summary without scope argument -> Should render multi-currency digest without summing 5000 + 35
+    await (TelegramAlertService as any).handleSummaryCommand(userA, 'mock_token', '10000001');
+
+    expect(sentMessageText).toContain('Today\'s Trading Performance Digest');
+    // Must contain separate INR and USD blocks
+    expect(sentMessageText).toContain('₹5,000.00');
+    expect(sentMessageText).toContain('$35.00');
+    // Must NOT contain blended cross-currency sum $5035 or ₹5035
+    expect(sentMessageText).not.toContain('5,035');
+    expect(sentMessageText).not.toContain('5035');
+
+    // Call /summary with explicit accountId for USD account -> Should render single account card
+    await (TelegramAlertService as any).handleSummaryCommand(userA, 'mock_token', '10000001', String(accUSD._id));
+    expect(sentMessageText).toContain('Today\'s Performance: Elefin Forex');
+    expect(sentMessageText).toContain('+$35.00');
+    expect(sentMessageText).not.toContain('5,000');
+
+    sendMsgSpy.mockRestore();
+    await Trade.deleteMany({ userId: userA._id, accountId: { $in: [accINR._id, accUSD._id] } });
+    await TradingAccount.deleteMany({ _id: { $in: [accINR._id, accUSD._id] } });
   });
 });

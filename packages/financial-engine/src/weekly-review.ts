@@ -575,7 +575,10 @@ export function buildWeeklyReview(input: BuildWeeklyReviewInput): IWeeklyReviewS
     sessionMap.set(sessName, sRec);
   }
 
-  const standardWeekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const hasWeekendTrades = (weekdayMap.get('Saturday')?.tradeIds?.length || 0) > 0 || (weekdayMap.get('Sunday')?.tradeIds?.length || 0) > 0;
+  const standardWeekdays = hasWeekendTrades
+    ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const byWeekday: IWeeklyWeekdayItem[] = standardWeekdays.map((day) => {
     const val = weekdayMap.get(day) || { netPnL: new Decimal(0), wins: 0, tradeIds: [] };
     const count = val.tradeIds.length;

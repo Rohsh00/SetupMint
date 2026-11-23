@@ -285,4 +285,223 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       });
     }
   });
+
+  // Dedicated Pyramiding & Scale-In Campaign Analytics
+  app.get('/pyramiding', async (req: any, reply) => {
+    const { startDate, endDate } = req.query;
+
+    const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, accountId: { $in: accountIds } };
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
+    }
+
+    // Retrieve trades in scope, sorted chronologically
+    const allTrades = await Trade.find(filter).sort({ entryTime: 1 }).lean();
+
+    // 1. Group trades into campaigns:
+    // First by explicit campaignId
+    const campaignMap = new Map<string, any[]>();
+    const unassignedTrades: any[] = [];
+
+    for (const t of allTrades) {
+      if (t.campaignId) {
+        if (!campaignMap.has(t.campaignId)) {
+          campaignMap.set(t.campaignId, []);
+        }
+        campaignMap.get(t.campaignId)!.push(t);
+      } else {
+        unassignedTrades.push(t);
+      }
+    }
+
+    // 2. Smart Cluster Detection for legacy/unassigned trades (e.g. weekend ETH trades):
+    const visited = new Set<string>();
+    for (let i = 0; i < unassignedTrades.length; i++) {
+      const base = unassignedTrades[i];
+      const baseId = base._id.toString();
+      if (visited.has(baseId)) continue;
+
+      const cluster = [base];
+      visited.add(baseId);
+
+      const baseEntry = new Date(base.entryTime || base.tradeDate).getTime();
+      const baseExit = base.exitTime ? new Date(base.exitTime).getTime() : Infinity;
+
+      for (let j = i + 1; j < unassignedTrades.length; j++) {
+        const candidate = unassignedTrades[j];
+        const candId = candidate._id.toString();
+        if (visited.has(candId)) continue;
+
+        const sameAccount = String(candidate.accountId) === String(base.accountId);
+        const sameSymbol = candidate.symbol === base.symbol;
+        const sameDirection = candidate.direction === base.direction;
+
+        if (sameAccount && sameSymbol && sameDirection) {
+          const candEntry = new Date(candidate.entryTime || candidate.tradeDate).getTime();
+          const candExit = candidate.exitTime ? new Date(candidate.exitTime).getTime() : Infinity;
+
+          // Check if candidate opened while base was still open (or within 5 mins of exit), or exited together (within 120s)
+          const openedWhileBaseOpen = candEntry >= baseEntry && candEntry <= baseExit + 300000;
+          const exitedTogether = Math.abs(candExit - baseExit) <= 120000 && isFinite(baseExit);
+
+          if (openedWhileBaseOpen || exitedTogether) {
+            cluster.push(candidate);
+            visited.add(candId);
+          }
+        }
+      }
+
+      if (cluster.length > 1) {
+        const clusterCampId = `CMP_${base.symbol}_${baseId}`;
+        campaignMap.set(clusterCampId, cluster);
+      }
+    }
+
+    // 3. Compute Campaign Analytics
+    const campaigns: any[] = [];
+    let totalPyramidAlpha = 0;
+    let totalCampaignPnL = 0;
+    let totalBaseOnlyPnL = 0;
+    let winningCampaignsCount = 0;
+    let beProtectedCount = 0;
+
+    for (const [campId, layerTrades] of campaignMap.entries()) {
+      if (layerTrades.length < 2) continue; // Only multi-layer campaigns
+
+      // Sort layers by entryTime
+      layerTrades.sort((a, b) => new Date(a.entryTime || a.tradeDate).getTime() - new Date(b.entryTime || b.tradeDate).getTime());
+
+      const baseTrade = layerTrades[0];
+      const symbol = baseTrade.symbol;
+      const direction = baseTrade.direction;
+
+      let totalVolume = 0;
+      let weightedEntrySum = 0;
+      let campaignNetPnL = 0;
+      let campaignGrossPnL = 0;
+      let totalCosts = 0;
+
+      const layers = layerTrades.map((t, idx) => {
+        const qty = Number(t.simpleExecution?.quantity ?? t.calculated?.openQuantity ?? 1);
+        const entry = Number(t.simpleExecution?.entryPrice ?? t.calculated?.averageEntryPrice ?? 0);
+        const exit = Number(t.simpleExecution?.exitPrice ?? t.calculated?.averageExitPrice ?? 0);
+        const net = Number(t.calculated?.netPnL ?? 0);
+        const gross = Number(t.calculated?.grossPnL ?? 0);
+        const costs = Number(t.calculated?.totalCosts ?? 0);
+        const rMult = t.calculated?.realizedRMultiple !== undefined ? Number(t.calculated.realizedRMultiple) : undefined;
+
+        totalVolume += qty;
+        weightedEntrySum += entry * qty;
+        campaignNetPnL += net;
+        campaignGrossPnL += gross;
+        totalCosts += costs;
+
+        // Check if base trade was BE protected when this layer was added
+        const baseEntry = Number(baseTrade.simpleExecution?.entryPrice || 0);
+        const baseSl = Number(baseTrade.risk?.currentStopLoss || 0);
+        const isLong = direction === 'LONG';
+        const isBeProtected = baseSl > 0 && (isLong ? baseSl >= baseEntry : baseSl <= baseEntry);
+
+        return {
+          id: t._id.toString(),
+          ticket: t.tags?.find((tag: string) => tag.startsWith('MT5_TICKET_'))?.replace('MT5_TICKET_', '') || `#${idx + 1}`,
+          layerIndex: idx,
+          isParent: idx === 0,
+          entryTime: t.entryTime || t.tradeDate,
+          exitTime: t.exitTime,
+          quantity: Number(qty.toFixed(2)),
+          entryPrice: Number(entry.toFixed(2)),
+          exitPrice: Number(exit.toFixed(2)),
+          netPnL: Number(net.toFixed(2)),
+          realizedR: rMult,
+          isBeProtected: idx === 0 ? true : isBeProtected,
+        };
+      });
+
+      const blendedEntry = totalVolume > 0 ? Number((weightedEntrySum / totalVolume).toFixed(2)) : 0;
+      const baseEntry = Number(baseTrade.simpleExecution?.entryPrice ?? 0);
+      const baseNetPnL = Number(baseTrade.calculated?.netPnL ?? 0);
+
+      const baseOnlyPnL = Number(baseNetPnL.toFixed(2));
+      const pyramidAlpha = Number((campaignNetPnL - baseOnlyPnL).toFixed(2));
+
+      const allScaledLayersProtected = layers.slice(1).every((l) => l.isBeProtected);
+      if (allScaledLayersProtected) beProtectedCount++;
+
+      campaignNetPnL = Number(campaignNetPnL.toFixed(2));
+      totalCampaignPnL += campaignNetPnL;
+      totalBaseOnlyPnL += baseOnlyPnL;
+      totalPyramidAlpha += pyramidAlpha;
+
+      if (campaignNetPnL > 0) winningCampaignsCount++;
+
+      const startTime = new Date(baseTrade.entryTime || baseTrade.tradeDate);
+      const endTime = layerTrades[layerTrades.length - 1].exitTime
+        ? new Date(layerTrades[layerTrades.length - 1].exitTime)
+        : new Date();
+      const durationMinutes = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / 60000));
+
+      campaigns.push({
+        campaignId: campId,
+        symbol,
+        direction,
+        startTime,
+        endTime,
+        durationMinutes,
+        layerCount: layerTrades.length,
+        totalVolume: Number(totalVolume.toFixed(2)),
+        blendedEntry,
+        baseEntry,
+        campaignNetPnL,
+        baseOnlyPnL,
+        pyramidAlpha,
+        wasProtected: allScaledLayersProtected,
+        status: layerTrades.every((t) => t.status === 'CLOSED') ? 'CLOSED' : 'OPEN',
+        layers,
+      });
+    }
+
+    // Sort campaigns descending by startTime
+    campaigns.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+    const totalCampaigns = campaigns.length;
+    const campaignWinRate = totalCampaigns > 0 ? Number(((winningCampaignsCount / totalCampaigns) * 100).toFixed(1)) : 0;
+    const beProtectionRate = totalCampaigns > 0 ? Number(((beProtectedCount / totalCampaigns) * 100).toFixed(1)) : 0;
+    const avgAlphaPerCampaign = totalCampaigns > 0 ? Number((totalPyramidAlpha / totalCampaigns).toFixed(2)) : 0;
+
+    return reply.send({
+      success: true,
+      data: {
+        summary: {
+          totalCampaigns,
+          winningCampaignsCount,
+          campaignWinRate,
+          totalCampaignPnL: Number(totalCampaignPnL.toFixed(2)),
+          totalBaseOnlyPnL: Number(totalBaseOnlyPnL.toFixed(2)),
+          totalPyramidAlpha: Number(totalPyramidAlpha.toFixed(2)),
+          avgAlphaPerCampaign,
+          beProtectionRate,
+          avgLayersPerCampaign: totalCampaigns > 0 ? Number((campaigns.reduce((acc, c) => acc + c.layerCount, 0) / totalCampaigns).toFixed(1)) : 0,
+        },
+        campaigns,
+      },
+    });
+  });
 };

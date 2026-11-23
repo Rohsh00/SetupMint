@@ -35,6 +35,7 @@ import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 
 import {
   Area,
@@ -59,6 +60,7 @@ import { api } from '../lib/api.js';
 import { formatCurrency, formatPercent, getCurrencySymbol, formatDate } from '../lib/utils.js';
 import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
+import { PyramidingAnalyticsTab } from '../components/analytics/PyramidingAnalyticsTab.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
@@ -73,7 +75,7 @@ export function AnalyticsPage() {
   const { startDate, endDate } = useDateRange();
   const analyticsCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
   const currSym = caps.currency.symbol || getCurrencySymbol(analyticsCurrency);
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>('OVERVIEW');
 
   React.useEffect(() => {
     if (!hasMarketData && (activeTab === 'EXECUTION' || activeTab === 'WHAT_IF')) {
@@ -139,6 +141,17 @@ export function AnalyticsPage() {
         customMfeSteps: funnelMode === 'CUSTOM' ? customMfeStepsInput : undefined,
       }),
     enabled: activeTab === 'EXECUTION',
+  });
+
+  const { data: pyramidingData, isLoading: isPyramidLoading, refetch: refetchPyramiding } = useQuery({
+    queryKey: ['analytics-pyramiding', queryParams, startDate, endDate],
+    queryFn: () =>
+      api.analytics.pyramiding({
+        ...queryParams,
+        startDate,
+        endDate,
+      }),
+    enabled: activeTab === 'PYRAMIDING',
   });
 
   const queryClient = useQueryClient();
@@ -246,6 +259,7 @@ export function AnalyticsPage() {
             { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
             { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
             { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
+            { id: 'PYRAMIDING', label: 'Pyramiding Edge', icon: <AccountTreeRoundedIcon fontSize="small" /> },
             ...(hasMarketData
               ? [
                   { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
@@ -2261,6 +2275,16 @@ export function AnalyticsPage() {
           endDate={endDate}
           initialSuggestedStopR={whatIfPrefill?.stopR}
           initialSuggestedTargetR={whatIfPrefill?.targetR}
+        />
+      )}
+
+      {/* TAB 6: PYRAMIDING & CAMPAIGN EDGE */}
+      {activeTab === 'PYRAMIDING' && (
+        <PyramidingAnalyticsTab
+          data={pyramidingData?.data}
+          isLoading={isPyramidLoading}
+          currencySymbol={currSym}
+          onRefresh={refetchPyramiding}
         />
       )}
     </Box>

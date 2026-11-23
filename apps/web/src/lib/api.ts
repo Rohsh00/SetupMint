@@ -727,6 +727,13 @@ export const api = {
         body: JSON.stringify(params),
       });
     },
+    pyramiding: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') query.set(key, String(val));
+      }
+      return request<any>(`/analytics/pyramiding?${query.toString()}`);
+    },
   },
 
   // Risk Calculator

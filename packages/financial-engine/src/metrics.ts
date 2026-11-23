@@ -451,7 +451,12 @@ export function calculateDashboardMetrics(
     })
     .sort((a, b) => b.netPnL - a.netPnL);
 
-  const performanceByWeekday: IDashboardStats['performanceByWeekday'] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  const hasWeekendTrades = (weekdayMap.get('Saturday')?.count || 0) > 0 || (weekdayMap.get('Sunday')?.count || 0) > 0;
+  const targetDays = hasWeekendTrades
+    ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+  const performanceByWeekday: IDashboardStats['performanceByWeekday'] = targetDays
     .map((day) => {
       const val = weekdayMap.get(day) ?? { netPnL: new Decimal(0), count: 0, wins: 0 };
       return {

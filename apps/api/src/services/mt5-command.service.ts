@@ -281,8 +281,8 @@ export class Mt5CommandService {
     if (!trade) return null;
     const tags = Array.isArray(trade.tags) ? trade.tags : [];
     for (const tag of tags) {
-      if (typeof tag === 'string' && tag.startsWith('MT5_TICKET_')) {
-        const num = parseInt(tag.replace('MT5_TICKET_', ''), 10);
+      if (typeof tag === 'string' && tag.toUpperCase().startsWith('MT5_TICKET_')) {
+        const num = parseInt(tag.toUpperCase().replace('MT5_TICKET_', ''), 10);
         if (!isNaN(num) && num > 0) return num;
       }
     }
@@ -387,6 +387,9 @@ export class Mt5CommandService {
     ticket: number;
     volume?: number;
   }): Promise<IMt5CommandDoc> {
+    if (params.volume === 2) {
+      console.error('[CRITICAL_TRACE_MT5_CLOSE_2]', new Error().stack);
+    }
     const cmd = await Mt5Command.create({
       userId: params.userId,
       accountId: params.accountId,

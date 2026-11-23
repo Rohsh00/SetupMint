@@ -13,6 +13,7 @@ import { TelegramAlertService, DEFAULT_FOREX_PRESETS } from '../src/services/tel
 import { Mt5CommandService } from '../src/services/mt5-command.service.js';
 import { TelegramCockpitTickerWorker } from '../src/services/telegram-cockpit-ticker.service.js';
 import { AudioChimeService } from '../src/services/audio-chime.service.js';
+import { LiveExecutionWorker } from '../src/services/live-execution-worker.service.js';
 
 describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30000 }, () => {
   let app: FastifyInstance;
@@ -2128,8 +2129,8 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
       direction: 'LONG',
       status: 'CLOSED',
       tradeDate: new Date(),
-      entryTime: new Date(Date.now() - 3600000),
-      exitTime: new Date(Date.now() - 3600000),
+      entryTime: new Date(Date.now() - 20000),
+      exitTime: new Date(Date.now() - 10000),
       marketSegment: 'FOREX',
       exchange: 'FOREX',
       assetClass: 'FOREX',
@@ -2383,5 +2384,130 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
     // Triggering user callback interaction immediately flushes pending ephemeral messages
     await (TelegramAlertService as any).cleanPendingEphemeralMessages(chatId);
     expect((TelegramAlertService as any).ephemeralQueue.filter((item: any) => String(item.chatId) === String(chatId)).length).toBe(0);
+  });
+
+  // 58. Automated execution strictly follows user settings ladder
+  it('Scenario 58: Auto-execution follows exact settings ladder (T1 +2.0R 50% exit, True BE, MT5 TP cleared for runner)', async () => {
+    // 1. Configure user settings exactly as komal@gmail.com
+    await User.updateOne(
+      { _id: testUser._id },
+      {
+        $set: {
+          'liveWatcherSettings.defaultTargetMode': 'T1_FREE_RUNNER',
+          'liveWatcherSettings.defaultAutoExecute': true,
+          'liveWatcherSettings.serverSideExecutionEnabled': false, // Prevents external remote server daemon from racing
+          'liveWatcherSettings.t1MultipleR': 2.0,
+          'liveWatcherSettings.t1ExitRatio': 0.5,
+          'liveWatcherSettings.t1TrailingAction': 'TRUE_BE_WITH_FEES',
+          'liveWatcherSettings.t2Enabled': false,
+          'liveWatcherSettings.isFreeRunner': true,
+          'liveWatcherSettings.givebackAutoExitEnabled': true,
+          'liveWatcherSettings.givebackMinPeakR': 1.5,
+          'liveWatcherSettings.givebackMaxPercent': 35,
+        },
+      }
+    );
+
+    // Pause background timer to test cycle deterministically
+    LiveExecutionWorker.stop();
+
+    // Clean up commands and trades for test user
+    await Mt5Command.deleteMany({ accountId: testAccount._id });
+    await Trade.deleteMany({ userId: testUser._id });
+
+    // Reload testUser from database to pick up updated liveWatcherSettings
+    const freshUser = await User.findById(testUser._id).lean();
+
+    const ticket = 33445566;
+    // Create an open MT5 trade: Short ETHUSD at 1700, SL at 1710 (10 pts risk, 1R = 10 pts, T1 = 1700 - 20 = 1680)
+    const trade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'ETHUSD',
+      direction: 'SHORT',
+      status: 'OPEN',
+      tags: [`MT5_TICKET_${ticket}`],
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'CRYPTO',
+      exchange: 'FOREX',
+      assetClass: 'CRYPTO',
+      currency: 'USD',
+      currencySymbol: '$',
+      simpleExecution: {
+        entryPrice: 1700,
+        quantity: 2.0,
+      },
+      risk: {
+        initialStopLoss: 1710,
+        currentStopLoss: 1710,
+        initialRiskAmount: 20, // 10 pts * 2.0 qty
+        plannedRiskAmount: 20,
+      },
+      calculated: {
+        excursion: {
+          initialStopLoss: 1710,
+          initialRiskAmount: 20,
+        },
+      },
+    });
+
+    // Price reaches 1680 (exactly +2.0R for Short: 1700 - 2 * 10 = 1680)
+    Mt5CommandService.recordPositionQuote(ticket, {
+      ticket,
+      symbol: 'ETHUSD',
+      curPrice: 1680,
+      openPrice: 1700,
+      pnl: 40,
+    });
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'ETHUSD',
+      ltp: 1680,
+      bid: 1679.90,
+      ask: 1680.10,
+      timestamp: new Date(),
+    });
+
+    // Run execution cycle locally with fresh user settings
+    await (LiveExecutionWorker as any).evaluateTrade(freshUser, trade, true);
+
+    // Verify MT5 commands generated:
+    // 1. Partial close of exactly 50% (1.00 out of 2.00)
+    const closeCmd = await Mt5Command.findOne({
+      accountId: testAccount._id,
+      ticket,
+      action: 'CLOSE_POSITION',
+    });
+    expect(closeCmd).toBeDefined();
+    expect(closeCmd?.volume).toBe(1.0);
+
+    // 2. Stop loss trailed to True BE (entry price 1700 or buffered)
+    const slCmd = await Mt5Command.findOne({
+      accountId: testAccount._id,
+      ticket,
+      action: 'MODIFY_SL',
+    });
+    expect(slCmd).toBeDefined();
+    expect(slCmd?.stopLoss).toBeLessThanOrEqual(1700);
+
+    // 3. Take Profit cleared (TP = 0) for Free Runner
+    const tpCmd = await Mt5Command.findOne({
+      accountId: testAccount._id,
+      ticket,
+      action: 'MODIFY_TP',
+    });
+    expect(tpCmd).toBeDefined();
+    expect(tpCmd?.takeProfit).toBe(0);
+
+    // 4. Verify runner is NOT closed by ladder step
+    const allCloseCmds = await Mt5Command.find({
+      accountId: testAccount._id,
+      ticket,
+      action: 'CLOSE_POSITION',
+    });
+    expect(allCloseCmds.length).toBe(1); // ONLY 1 close command for 1.0 lot, NOT closing the remaining runner!
+
+    await Trade.deleteMany({ userId: testUser._id });
+    await Mt5Command.deleteMany({ accountId: testAccount._id });
   });
 });

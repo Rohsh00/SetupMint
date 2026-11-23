@@ -81,6 +81,11 @@ export class LiveExecutionWorker {
       const user = await User.findById(userId).lean();
       if (!user) continue;
 
+      // STRICT TEST ISOLATION: Production daemon must NEVER evaluate ephemeral test users
+      if (process.env.NODE_ENV !== 'test' && user.email && (user.email.endsWith('@test.local') || user.email.endsWith('@setupmint.internal'))) {
+        continue;
+      }
+
       const broker = connectedBrokers.find((b) => b.userId?.toString() === userId);
 
       const watcherSettings = user.liveWatcherSettings;
@@ -381,25 +386,41 @@ export class LiveExecutionWorker {
       }).catch(() => {});
 
       // If auto-exit is enabled on giveback leak
-      if (effectiveAutoExecute && rules.givebackAutoExit?.enabled && metric.giveback.givebackPercent >= rules.givebackAutoExit.maxGivebackPercent) {
-        const givebackKey = `giveback_auto:${tradeId}`;
-        if (!this.executedMilestones.has(givebackKey)) {
-          this.executedMilestones.add(givebackKey);
-          console.log(`[LiveExecutionWorker] Auto-exiting runner for ${metric.symbol} due to ${metric.giveback.givebackPercent}% profit giveback`);
-          const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
-          if (isMt5 && ticket) {
-            await Mt5CommandService.queueClosePosition({
+      if (effectiveAutoExecute && rules.givebackAutoExit?.enabled) {
+        const gbEval = evaluateGivebackAutoExit({
+          giveback: metric.giveback,
+          rule: rules.givebackAutoExit,
+        });
+
+        if (gbEval.shouldExit) {
+          const givebackKey = `giveback_auto:${tradeId}`;
+          if (!this.executedMilestones.has(givebackKey)) {
+            this.executedMilestones.add(givebackKey);
+            console.log(`[LiveExecutionWorker] Auto-exiting runner for ${metric.symbol}: ${gbEval.reason}`);
+
+            await ExecutionPipelineService.execute({
               userId: user._id.toString(),
-              accountId: trade.accountId?.toString(),
+              accountId: trade.accountId,
               tradeId: tradeId,
-              ticket,
-              volume: metric.quantity,
+              action: 'EXIT_POSITION',
+              executeBroker: true,
+              isAutomated: true,
+              payload: {
+                quantity: metric.quantity,
+                exitReason: `Auto Giveback Exit: ${gbEval.reason}`,
+              },
             });
-          } else {
-            await FyersService.executeBrokerExit(user._id, tradeId, {
-              exitQty: metric.quantity,
-              isFullClose: true,
-            });
+
+            if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+              const currSym = TelegramAlertService.getTradeCurrencySymbol(trade);
+              TelegramAlertService.sendAlert({
+                botToken: watcherSettings.telegramBotToken,
+                chatId: watcherSettings.telegramChatId,
+                title: `🛡️ Giveback Auto-Exit: ${metric.symbol}`,
+                body: `SetupMint auto-closed runner at ${currSym}${metric.currentLtp} to protect banked profits. (${gbEval.reason})`,
+                severity: 'WARNING',
+              }).catch(() => {});
+            }
           }
         }
       }
@@ -425,6 +446,7 @@ export class LiveExecutionWorker {
     if (!ladder || !ladder.steps) return;
 
     for (const step of ladder.steps) {
+      if (step.isFreeRunner) continue; // Free runner has no fixed target price trigger - it runs uncapped!
       if (!step.isActionable && step.status !== 'MET') continue;
 
       const triggerKey = `ladder:${tradeId}:step${step.targetIndex}`;
@@ -495,7 +517,18 @@ export class LiveExecutionWorker {
         });
       }
 
-      // 3. Telegram success alert
+      // 3. For MT5, if runner mode is active, clear Take Profit to 0 so runner runs uncapped
+      if (isMt5 && ticket && (rules.t3?.isFreeRunner || rules.targetMode === 'T1_FREE_RUNNER')) {
+        await Mt5CommandService.queueModifyTp({
+          userId: user._id.toString(),
+          accountId: trade.accountId?.toString(),
+          tradeId: tradeId,
+          ticket,
+          takeProfit: 0,
+        }).catch((err: any) => console.warn(`[LiveExecutionWorker] Failed to clear MT5 TP:`, err.message));
+      }
+
+      // 4. Telegram success alert
       if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
         const currSym = TelegramAlertService.getTradeCurrencySymbol(trade);
         const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'Broker';

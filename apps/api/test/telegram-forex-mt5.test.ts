@@ -2815,4 +2815,132 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
 
     await Trade.deleteMany({ userId: testUser._id });
   });
+
+  it('Scenario 61: Telegram trade restriction setting blocks new orders when enabled, permits execution when unlocked, and allows /lock and /unlock commands', async () => {
+    const restrictedUser = await User.create({
+      email: `lock_test_${Date.now()}@test.local`,
+      passwordHash: 'hash123',
+      name: 'Lock Test Trader',
+      role: 'USER',
+      liveWatcherSettings: {
+        telegramChatId: '888999111',
+        telegramBotToken: 'mock_token',
+        restrictTelegramTradeExecution: true,
+        telegramForexPresets: {
+          goldDefaultLot: 0.10,
+          goldSlPoints: 35,
+          goldRrRatio: 2.0,
+          ethDefaultLot: 1.0,
+          ethSlPrice: 30,
+          ethRrRatio: 2.5,
+          defaultDollarRisk: 50,
+        },
+      },
+    });
+
+    const testAccount = await TradingAccount.create({
+      userId: restrictedUser._id,
+      broker: 'ELEFIN_MT5',
+      name: 'Lock Test Account',
+      accountNumber: `MT5_LOCK_${Date.now()}`,
+      environment: 'LIVE',
+      baseCurrency: 'USD',
+      isActive: true,
+    });
+
+    Mt5CommandService.recordQuote(testAccount._id, {
+      symbol: 'XAUUSD',
+      bid: 3620.0,
+      ask: 3620.25,
+      ltp: 3620.0,
+      timestamp: new Date(),
+    });
+
+    let sentMessages: string[] = [];
+    const origSend = TelegramAlertService.sendMessage;
+    (TelegramAlertService as any).sendMessage = async (_botToken: any, _chatId: any, text: string) => {
+      sentMessages.push(text);
+      return { ok: true };
+    };
+
+    try {
+      // 1. Attempt to execute order while locked
+      await TelegramAlertService.handleForexOrderCommand(
+        restrictedUser,
+        'mock_token',
+        '888999111',
+        'XAUUSD',
+        ['buy', '0.10']
+      );
+
+      expect(sentMessages.length).toBeGreaterThan(0);
+      const blockedMsg = sentMessages.find((m) => m.includes('TELEGRAM TRADE EXECUTION IS RESTRICTED'));
+      expect(blockedMsg).toBeDefined();
+
+      // Check no command was queued on MT5
+      const queuedOrders = await Mt5Command.find({
+        userId: restrictedUser._id,
+        action: 'OPEN_ORDER',
+      });
+      expect(queuedOrders.length).toBe(0);
+
+      // 2. Send /unlock command
+      sentMessages = [];
+      await TelegramAlertService.processWebhookUpdate(
+        {
+          update_id: Date.now(),
+          message: {
+            text: '/unlock',
+            chat: { id: 888999111 },
+            from: { id: 888999111 },
+          },
+        },
+        'mock_token'
+      );
+
+      const refreshedUser = await User.findById(restrictedUser._id);
+      expect(refreshedUser?.liveWatcherSettings?.restrictTelegramTradeExecution).toBe(false);
+      expect(sentMessages.some((m) => m.includes('TELEGRAM TRADE EXECUTION IS NOW UNLOCKED'))).toBe(true);
+
+      // 3. Now execute order while unlocked
+      sentMessages = [];
+      await TelegramAlertService.handleForexOrderCommand(
+        refreshedUser,
+        'mock_token',
+        '888999111',
+        'XAUUSD',
+        ['buy', '0.10']
+      );
+
+      const queuedOrdersUnlocked = await Mt5Command.find({
+        userId: restrictedUser._id,
+        action: 'OPEN_ORDER',
+      });
+      expect(queuedOrdersUnlocked.length).toBe(1);
+      expect(queuedOrdersUnlocked[0].symbol).toBe('XAUUSD');
+
+      // 4. Send /lock command to re-lock
+      sentMessages = [];
+      await TelegramAlertService.processWebhookUpdate(
+        {
+          update_id: Date.now() + 1,
+          message: {
+            text: '/lock',
+            chat: { id: 888999111 },
+            from: { id: 888999111 },
+          },
+        },
+        'mock_token'
+      );
+
+      const relockedUser = await User.findById(restrictedUser._id);
+      expect(relockedUser?.liveWatcherSettings?.restrictTelegramTradeExecution).toBe(true);
+      expect(sentMessages.some((m) => m.includes('TELEGRAM TRADE EXECUTION IS NOW LOCKED'))).toBe(true);
+    } finally {
+      (TelegramAlertService as any).sendMessage = origSend;
+      await Mt5Command.deleteMany({ userId: restrictedUser._id });
+      await TradingAccount.deleteMany({ _id: testAccount._id });
+      await User.deleteMany({ _id: restrictedUser._id });
+    }
+  });
 });

@@ -106,6 +106,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'hardDisciplineLockoutEnabled',
         'requireHoldToConfirm',
         'telegramAttachLiveChart',
+        'restrictTelegramTradeExecution',
       ] as const;
 
       for (const k of booleanKeys) {

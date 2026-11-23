@@ -2387,6 +2387,7 @@ export interface ILiveWatcherSettings {
   telegramForexPresets?: ITelegramForexPresets;
   telegramPinnedCockpitMessageId?: number;
   telegramPinnedCockpitChatId?: string | number;
+  restrictTelegramTradeExecution?: boolean;
 }
 
 export interface ITelegramForexPresets {

@@ -3055,6 +3055,7 @@ export class TelegramAlertService {
           `• <b>/alerts</b> — List active alert states and snoozed trades\n` +
           `• <b>/snooze</b> — Snooze alerts for 15 minutes\n` +
           `• <b>/mute &lt;mins&gt;</b> — Mute audible notifications\n` +
+          `• <b>/lock</b> / <b>/unlock</b> — Restrict or allow new trade placement from Telegram\n` +
           `• <b>/panic</b> — Emergency killswitch to market-exit all positions across MT5 & FYERS\n\n` +
           `<i>Connected account: ${user.name || user.email}</i>`
         );
@@ -3241,6 +3242,48 @@ export class TelegramAlertService {
           [[{ text: '🛑 YES, CLOSE ALL POSITIONS NOW', callback_data: 'confirm_panic' }]]
         );
         break;
+
+      case '/lock':
+      case 'lock': {
+        const u = await User.findById(user._id);
+        if (u) {
+          u.liveWatcherSettings = {
+            ...(u.liveWatcherSettings || {}),
+            restrictTelegramTradeExecution: true,
+          } as any;
+          await u.save();
+        }
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `🔒 <b>TELEGRAM TRADE EXECUTION IS NOW LOCKED</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `New trade placement from Telegram is restricted to protect against impulsive entries.\n\n` +
+          `• Existing open positions can still be defended and closed.\n` +
+          `• Send <code>/unlock</code> or toggle in SetupMint Settings when ready to trade again.`
+        );
+        break;
+      }
+
+      case '/unlock':
+      case 'unlock': {
+        const u = await User.findById(user._id);
+        if (u) {
+          u.liveWatcherSettings = {
+            ...(u.liveWatcherSettings || {}),
+            restrictTelegramTradeExecution: false,
+          } as any;
+          await u.save();
+        }
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `🔓 <b>TELEGRAM TRADE EXECUTION IS NOW UNLOCKED</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `You can now execute market orders and lot sizing presets directly from Telegram.`
+        );
+        break;
+      }
 
       default: {
         // Check if user sent a bare numeric price (e.g. "4005.50" or "$4005.5") or replied to an alert
@@ -6266,6 +6309,19 @@ export class TelegramAlertService {
     const isLong = (trade.direction as string) === 'LONG' || (trade.direction as string) === 'BUY';
     const isWinning = isLong ? ltp > entry : ltp < entry;
 
+    const isExecutionRestricted = Boolean(user?.liveWatcherSettings?.restrictTelegramTradeExecution);
+    if (isExecutionRestricted) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        '🔒 <b>ORDER BLOCKED: TELEGRAM TRADE EXECUTION IS RESTRICTED</b>\n\n' +
+        'New trade placement from Telegram is currently locked by your safety settings to prevent impulsive execution.\n\n' +
+        '• To execute trades, disable <b>Restrict Telegram Trade Execution</b> in SetupMint Settings or send <code>/unlock</code>.\n' +
+        '• Position defense controls (Stop Loss, Breakeven, Close) remain fully operational.'
+      );
+      return;
+    }
+
     if (!isWinning) {
       await this.sendMessage(
         botToken,
@@ -6437,6 +6493,19 @@ export class TelegramAlertService {
     ltp: number,
     quoteTimestamp?: Date
   ): Promise<{ allowed: boolean; reason?: string }> {
+    // 0. Telegram Trade Execution Restriction Setting
+    const isExecutionRestricted = Boolean(user?.liveWatcherSettings?.restrictTelegramTradeExecution);
+    if (isExecutionRestricted) {
+      return {
+        allowed: false,
+        reason:
+          '🔒 <b>ORDER BLOCKED: TELEGRAM TRADE EXECUTION IS RESTRICTED</b>\n\n' +
+          'New trade placement from Telegram is currently locked by your safety settings to prevent impulsive execution.\n\n' +
+          '• To execute trades, disable <b>Restrict Telegram Trade Execution</b> in SetupMint Settings or send <code>/unlock</code>.\n' +
+          '• Position defense controls (Stop Loss, Breakeven, Close) remain fully operational.',
+      };
+    }
+
     // 1. Mandatory Stop Loss Check
     if (!slPoints || slPoints <= 0) {
       return {
@@ -8173,9 +8242,12 @@ export class TelegramAlertService {
       activeAssetBadge = ` (${leadingAsset.shortLabel} ${dirIcon}${dirText})`;
     }
 
+    const isExecutionRestricted = Boolean(user?.liveWatcherSettings?.restrictTelegramTradeExecution);
+    const cockpitTag = isExecutionRestricted ? '<b>COCKPIT (LOCKED)</b>' : '<b>COCKPIT</b>';
+
     const line1 = hasOpenTrades
       ? `${pnlBadge}${activeAssetBadge} ｜ ${assetHeaderTags} ｜ <b>LIVE</b>`
-      : `${assetHeaderTags} ｜ ${regimeTag}<b>COCKPIT</b>`;
+      : `${assetHeaderTags} ｜ ${regimeTag}${cockpitTag}`;
 
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(11, 19);
 
@@ -8196,7 +8268,9 @@ export class TelegramAlertService {
 
     const actionHint = hasOpenTrades
       ? `<i>⚡ Dynamic Position Controls:</i>`
-      : `<i>1-Tap Preset Execution & Lot Sizing:</i>`;
+      : (isExecutionRestricted
+        ? `<i>🔒 Telegram Trade Execution is RESTRICTED (/unlock to trade):</i>`
+        : `<i>1-Tap Preset Execution & Lot Sizing:</i>`);
 
     const telemetryLines = assetList
       .slice(0, 4)

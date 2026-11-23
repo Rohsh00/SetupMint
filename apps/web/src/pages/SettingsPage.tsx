@@ -299,6 +299,7 @@ export function SettingsPage() {
   const [ethSlPrice, setEthSlPrice] = useState<number>(initialForex.ethSlPrice ?? 30);
   const [ethRrRatio, setEthRrRatio] = useState<number>(initialForex.ethRrRatio ?? 2.5);
   const [defaultDollarRisk, setDefaultDollarRisk] = useState<number>(initialForex.defaultDollarRisk ?? 50);
+  const [restrictTelegramTradeExecution, setRestrictTelegramTradeExecution] = useState<boolean>(Boolean(initialWatcher.restrictTelegramTradeExecution));
 
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
@@ -387,6 +388,9 @@ export function SettingsPage() {
         if (s.telegramForexPresets.ethSlPrice !== undefined) setEthSlPrice(s.telegramForexPresets.ethSlPrice);
         if (s.telegramForexPresets.ethRrRatio !== undefined) setEthRrRatio(s.telegramForexPresets.ethRrRatio);
         if (s.telegramForexPresets.defaultDollarRisk !== undefined) setDefaultDollarRisk(s.telegramForexPresets.defaultDollarRisk);
+      }
+      if (s.restrictTelegramTradeExecution !== undefined) {
+        setRestrictTelegramTradeExecution(Boolean(s.restrictTelegramTradeExecution));
       }
     }
   }, [user?.liveWatcherSettings]);
@@ -493,6 +497,7 @@ export function SettingsPage() {
     setEthSlPrice(DEFAULT_TELEGRAM_FOREX_PRESETS.ethSlPrice);
     setEthRrRatio(DEFAULT_TELEGRAM_FOREX_PRESETS.ethRrRatio);
     setDefaultDollarRisk(DEFAULT_TELEGRAM_FOREX_PRESETS.defaultDollarRisk);
+    setRestrictTelegramTradeExecution(false);
     setTelegramAlertEvents({
       stopThreatCritical: true,
       givebackLeaking: true,
@@ -697,6 +702,7 @@ export function SettingsPage() {
       requireHoldToConfirm,
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
+      restrictTelegramTradeExecution: Boolean(restrictTelegramTradeExecution),
       displaySettings,
       telegramForexPresets: {
         goldDefaultLot: Number(goldDefaultLot),
@@ -2174,6 +2180,62 @@ export function SettingsPage() {
                               color="primary"
                               variant="outlined"
                               sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                            />
+                          </Box>
+
+                          {/* Telegram Trade Execution Lock / Restriction Setting */}
+                          <Box
+                            sx={{
+                              p: 2,
+                              borderRadius: 2,
+                              bgcolor: restrictTelegramTradeExecution
+                                ? (isDark ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.04)')
+                                : (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)'),
+                              border: '1px solid',
+                              borderColor: restrictTelegramTradeExecution ? 'error.main' : 'success.main',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 2,
+                              mb: 2,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Box
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 1.5,
+                                  bgcolor: restrictTelegramTradeExecution ? 'error.main' : 'success.main',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <LockRounded sx={{ fontSize: 20 }} />
+                              </Box>
+                              <Box>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                  Restrict Telegram Trade Execution
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {restrictTelegramTradeExecution
+                                    ? '🔒 RESTRICTED: New trade placement from Telegram is blocked. Live position defense (SL, BE, Close) remains active.'
+                                    : '🔓 ALLOWED: Fast 1-tap trade execution from Telegram is active.'}
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={restrictTelegramTradeExecution}
+                                  onChange={(e) => setRestrictTelegramTradeExecution(e.target.checked)}
+                                  color="error"
+                                />
+                              }
+                              label={restrictTelegramTradeExecution ? 'Restricted' : 'Allowed'}
+                              sx={{ m: 0 }}
                             />
                           </Box>
 

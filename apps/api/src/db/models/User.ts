@@ -172,6 +172,7 @@ const UserSchema = new Schema<IUserDoc>(
       },
       telegramPinnedCockpitMessageId: { type: Number },
       telegramPinnedCockpitChatId: { type: Schema.Types.Mixed },
+      restrictTelegramTradeExecution: { type: Boolean, default: false },
     },
   },
   {

@@ -8398,26 +8398,39 @@ export class TelegramAlertService {
           const halfCb = ticket ? `pos_half:${ticket}` : (isGold ? 'cmd_half_gold' : 'cmd_half_eth');
           const trailCb = ticket ? `pos_trail:${ticket}` : (isGold ? 'cmd_trail_gold' : 'cmd_trail_eth');
 
+          // Row 1: Capital Defense & Close
           buttons.push([
             { text: `🚨 Close ${symLabel} (${qtyStr}L)`, callback_data: closeCb },
             { text: `🛡️ Lock BE (${symLabel})`, callback_data: beCb },
           ]);
 
           const halfQty = Math.max(0.01, Number((qty / 2).toFixed(2)));
+          // Row 2: Tactical Harvest & Runner Trail
           buttons.push([
             { text: `🎯 Book 50% (${halfQty}L)`, callback_data: halfCb },
             { text: `📈 Trail +1R (${symLabel})`, callback_data: trailCb },
           ]);
 
+          // Row 3: Tactical Submenus (Clean 2-button grid)
           buttons.push([
             { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${cleanSym}` },
             { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${cleanSym}` },
+          ]);
+
+          // Row 4: Protection & Stack Inspection
+          buttons.push([
             { text: `🛡️ Defense...`, callback_data: `deck:defense:${cleanSym}` },
             { text: `📋 Layers (1)...`, callback_data: `deck:layers:${cleanSym}` },
           ]);
 
+          // Row 5: Real-Time Stream & PnL Refresh
           buttons.push([
+            { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
             { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+          ]);
+
+          // Row 6: Auto-Exec & Header Pin Lifecycle
+          buttons.push([
             autoExecBtn,
             isPinned
               ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
@@ -8449,18 +8462,27 @@ export class TelegramAlertService {
             { text: `🎯 Book 50% (${halfQty}L)`, callback_data: `harvest_pct:${s.cleanSymbol}:50` },
             { text: '🎰 Free-Ride Mode', callback_data: `harvest_freeride:${s.cleanSymbol}` },
           ]);
-          // Row 3: Submenu Drilldown Deck
+          // Row 3: Tactical Submenus (Clean 2-button grid)
           buttons.push([
             { text: `🎯 Harvest ${symLabel}...`, callback_data: `deck:harvest:${s.cleanSymbol}` },
             { text: `➕ Pyramid ${symLabel}...`, callback_data: `deck:pyramid:${s.cleanSymbol}` },
+          ]);
+          // Row 4: Protection & Stack Inspection
+          buttons.push([
             { text: `🛡️ Defense...`, callback_data: `deck:defense:${s.cleanSymbol}` },
             { text: `📋 Layers (${s.layers.length})...`, callback_data: `deck:layers:${s.cleanSymbol}` },
           ]);
-          // Row 4: Lifecycle & Controls
+          // Row 5: Real-Time Stream & PnL Refresh
           buttons.push([
-            { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
             { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
+            { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+          ]);
+          // Row 6: Auto-Exec & Header Pin Lifecycle
+          buttons.push([
             autoExecBtn,
+            isPinned
+              ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
+              : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
           ]);
         }
       }
@@ -8473,33 +8495,41 @@ export class TelegramAlertService {
         ethBtnLot = (adaptive.tiers.bestOptionLot || (ethLot * 0.5)).toFixed(2);
       }
 
-      // 1. Gold Execution (Crisp, self-explanatory, never truncated with ...)
+      // 1. Gold Execution (Clean & punchy, never truncated)
       buttons.push([
-        { text: `🟢 BUY Gold (${goldBtnLot}) • $${goldLtp.toFixed(2)}`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
-        { text: `🔴 SELL Gold (${goldBtnLot}) • $${goldLtp.toFixed(2)}`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
+        { text: `🟢 BUY Gold (${goldBtnLot})`, callback_data: 'deck:order_prep:XAUUSD:BUY' },
+        { text: `🔴 SELL Gold (${goldBtnLot})`, callback_data: 'deck:order_prep:XAUUSD:SELL' },
       ]);
 
-      // 2. ETH Execution (Crisp, self-explanatory, never truncated with ...)
+      // 2. ETH Execution (Clean & punchy, never truncated)
       buttons.push([
-        { text: `🟢 BUY ETH (${ethBtnLot}) • $${ethLtp.toFixed(2)}`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
-        { text: `🔴 SELL ETH (${ethBtnLot}) • $${ethLtp.toFixed(2)}`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
+        { text: `🟢 BUY ETH (${ethBtnLot})`, callback_data: 'deck:order_prep:ETHUSD:BUY' },
+        { text: `🔴 SELL ETH (${ethBtnLot})`, callback_data: 'deck:order_prep:ETHUSD:SELL' },
       ]);
 
-      // 3. Asset Drilldown & Deep Options
+      // 3. Asset Sizing & Deep Options
       buttons.push([
         { text: '🌟 Gold Lot Options', callback_data: 'deck:order_prep:XAUUSD:BUY' },
         { text: '🌟 ETH Lot Options', callback_data: 'deck:order_prep:ETHUSD:BUY' },
       ]);
 
-      // 4. Other Assets, Refresh & Controls
+      // 4. Global Market Coverage & Real-Time Stream (ms)
       buttons.push([
-        { text: '🌐 Other Assets...', callback_data: 'deck:other_assets' },
-        { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
+        { text: '🌐 Other Assets (BTC/US30)', callback_data: 'deck:other_assets' },
         { text: '⚡ Live Stream (ms)', web_app: { url: 'https://13-205-58-162.sslip.io' } },
+      ]);
+
+      // 5. PnL Refresh & Auto-Exec Controls
+      buttons.push([
+        { text: '🔄 Refresh PnL', callback_data: 'cmd_refresh_cockpit' },
         autoExecBtn,
+      ]);
+
+      // 6. Header Pin Lifecycle
+      buttons.push([
         isPinned
-          ? { text: '🛑 Unpin', callback_data: 'cmd_unpin_cockpit' }
-          : { text: '📌 Pin', callback_data: 'cmd_pin_cockpit' },
+          ? { text: '🛑 Unpin Cockpit', callback_data: 'cmd_unpin_cockpit' }
+          : { text: '📌 Pin Cockpit', callback_data: 'cmd_pin_cockpit' },
       ]);
     }
 

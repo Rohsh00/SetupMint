@@ -301,6 +301,12 @@ export function SettingsPage() {
   const [ethRrRatio, setEthRrRatio] = useState<number>(initialForex.ethRrRatio ?? 2.5);
   const [defaultDollarRisk, setDefaultDollarRisk] = useState<number>(initialForex.defaultDollarRisk ?? 50);
   const [restrictTelegramTradeExecution, setRestrictTelegramTradeExecution] = useState<boolean>(Boolean(initialWatcher.restrictTelegramTradeExecution));
+  const [enforceTelegramOrderGuardrails, setEnforceTelegramOrderGuardrails] = useState<boolean>(
+    initialWatcher.enforceTelegramOrderGuardrails ?? true
+  );
+  const [enforceAdaptiveDayRiskGuardrails, setEnforceAdaptiveDayRiskGuardrails] = useState<boolean>(
+    initialWatcher.enforceAdaptiveDayRiskGuardrails ?? true
+  );
 
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
@@ -392,6 +398,12 @@ export function SettingsPage() {
       }
       if (s.restrictTelegramTradeExecution !== undefined) {
         setRestrictTelegramTradeExecution(Boolean(s.restrictTelegramTradeExecution));
+      }
+      if (s.enforceTelegramOrderGuardrails !== undefined) {
+        setEnforceTelegramOrderGuardrails(Boolean(s.enforceTelegramOrderGuardrails));
+      }
+      if (s.enforceAdaptiveDayRiskGuardrails !== undefined) {
+        setEnforceAdaptiveDayRiskGuardrails(Boolean(s.enforceAdaptiveDayRiskGuardrails));
       }
     }
   }, [user?.liveWatcherSettings]);
@@ -499,6 +511,8 @@ export function SettingsPage() {
     setEthRrRatio(DEFAULT_TELEGRAM_FOREX_PRESETS.ethRrRatio);
     setDefaultDollarRisk(DEFAULT_TELEGRAM_FOREX_PRESETS.defaultDollarRisk);
     setRestrictTelegramTradeExecution(false);
+    setEnforceTelegramOrderGuardrails(true);
+    setEnforceAdaptiveDayRiskGuardrails(true);
     setTelegramAlertEvents({
       stopThreatCritical: true,
       givebackLeaking: true,
@@ -704,6 +718,8 @@ export function SettingsPage() {
       hardDisciplineLockoutEnabled,
       hardDisciplineLockoutDurationMins: Number(hardDisciplineLockoutDurationMins),
       restrictTelegramTradeExecution: Boolean(restrictTelegramTradeExecution),
+      enforceTelegramOrderGuardrails: Boolean(enforceTelegramOrderGuardrails),
+      enforceAdaptiveDayRiskGuardrails: Boolean(enforceAdaptiveDayRiskGuardrails),
       displaySettings,
       telegramForexPresets: {
         goldDefaultLot: Number(goldDefaultLot),
@@ -2348,6 +2364,118 @@ export function SettingsPage() {
                                 />
                               }
                               label={restrictTelegramTradeExecution ? 'Restricted' : 'Allowed'}
+                              sx={{ m: 0 }}
+                            />
+                          </Box>
+
+                          {/* Telegram Order Pre-Trade Guardrails Setting */}
+                          <Box
+                            sx={{
+                              p: 2,
+                              borderRadius: 2,
+                              bgcolor: enforceTelegramOrderGuardrails
+                                ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                                : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
+                              border: '1px solid',
+                              borderColor: enforceTelegramOrderGuardrails ? 'success.main' : 'warning.main',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 2,
+                              mb: 2,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Box
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 1.5,
+                                  bgcolor: enforceTelegramOrderGuardrails ? 'success.main' : 'warning.main',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <ShieldRounded sx={{ fontSize: 20 }} />
+                              </Box>
+                              <Box>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                  Telegram Order Guardrails
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {enforceTelegramOrderGuardrails
+                                    ? '🛡️ ENFORCED: Pre-trade guardrails (max open positions, risk per trade, stale quotes, revenge cooldowns) protect your account from overexposure.'
+                                    : '⚡ BYPASSED (OPTIONAL): Guardrail checks are optional. 1-tap Telegram orders execute directly without being blocked.'}
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={enforceTelegramOrderGuardrails}
+                                  onChange={(e) => setEnforceTelegramOrderGuardrails(e.target.checked)}
+                                  color="success"
+                                />
+                              }
+                              label={enforceTelegramOrderGuardrails ? 'Enforced' : 'Optional'}
+                              sx={{ m: 0 }}
+                            />
+                          </Box>
+
+                          {/* Adaptive Day-Risk Guardrail Blocking Setting */}
+                          <Box
+                            sx={{
+                              p: 2,
+                              borderRadius: 2,
+                              bgcolor: enforceAdaptiveDayRiskGuardrails
+                                ? (isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(14, 165, 233, 0.04)')
+                                : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
+                              border: '1px solid',
+                              borderColor: enforceAdaptiveDayRiskGuardrails ? 'info.main' : 'warning.main',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 2,
+                              mb: 2,
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Box
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 1.5,
+                                  bgcolor: enforceAdaptiveDayRiskGuardrails ? 'info.main' : 'warning.main',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <TrendingUpRounded sx={{ fontSize: 20 }} />
+                              </Box>
+                              <Box>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                  Adaptive Day-Risk Guardrails (Daily Trades, Loss Limit &amp; Defensive Mode)
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {enforceAdaptiveDayRiskGuardrails
+                                    ? '📈 ENFORCED: Dynamic daily trade limits, daily loss thresholds, and defensive mode volume caps block new Telegram orders when triggered.'
+                                    : '⚡ BYPASSED (OPTIONAL): Adaptive day-risk limits do not block Telegram orders. Sizing and telemetry remain visible, but execution is never blocked.'}
+                                </Typography>
+                              </Box>
+                            </Box>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={enforceAdaptiveDayRiskGuardrails}
+                                  onChange={(e) => setEnforceAdaptiveDayRiskGuardrails(e.target.checked)}
+                                  color="info"
+                                />
+                              }
+                              label={enforceAdaptiveDayRiskGuardrails ? 'Enforced' : 'Optional'}
                               sx={{ m: 0 }}
                             />
                           </Box>
@@ -4037,6 +4165,102 @@ export function SettingsPage() {
                 </Button>
               </Box>
             </form>
+
+            <Divider sx={{ my: 1 }} />
+
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <FlashOnRounded sx={{ fontSize: 18, color: 'primary.main' }} />
+                Telegram &amp; Remote Order Guardrails (MT5 Integration)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                Control whether discipline guardrails and adaptive day-risk regimes strictly block 1-tap orders placed from Telegram.
+              </Typography>
+
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: enforceTelegramOrderGuardrails ? 'success.main' : 'warning.main',
+                      bgcolor: enforceTelegramOrderGuardrails
+                        ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)')
+                        : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1.5,
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                        Telegram Order Guardrails
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {enforceTelegramOrderGuardrails
+                          ? 'Enforced (Stale quotes, max positions, per-trade risk, revenge cooldown)'
+                          : 'Optional / Bypassed (Orders execute directly without guardrail blocks)'}
+                      </Typography>
+                    </Box>
+                    <Switch
+                      checked={enforceTelegramOrderGuardrails}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setEnforceTelegramOrderGuardrails(val);
+                        liveWatcherMutation.mutate({
+                          ...user?.liveWatcherSettings,
+                          enforceTelegramOrderGuardrails: val,
+                        } as any);
+                      }}
+                      color="success"
+                    />
+                  </Box>
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: enforceAdaptiveDayRiskGuardrails ? 'info.main' : 'warning.main',
+                      bgcolor: enforceAdaptiveDayRiskGuardrails
+                        ? (isDark ? 'rgba(56, 189, 248, 0.08)' : 'rgba(14, 165, 233, 0.04)')
+                        : (isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(234, 179, 8, 0.04)'),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1.5,
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                        Adaptive Day-Risk Guardrails
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {enforceAdaptiveDayRiskGuardrails
+                          ? 'Enforced (Dynamic daily trade limits, loss limit & defensive lot caps)'
+                          : 'Optional / Bypassed (Adaptive limits do not block trade execution)'}
+                      </Typography>
+                    </Box>
+                    <Switch
+                      checked={enforceAdaptiveDayRiskGuardrails}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setEnforceAdaptiveDayRiskGuardrails(val);
+                        liveWatcherMutation.mutate({
+                          ...user?.liveWatcherSettings,
+                          enforceAdaptiveDayRiskGuardrails: val,
+                        } as any);
+                      }}
+                      color="info"
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
+            </Box>
           </CardContent>
         </Card>
       )}

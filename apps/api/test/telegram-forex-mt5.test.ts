@@ -3044,4 +3044,185 @@ describe('Telegram MT5 Forex & Risk Management Integration Tests', { timeout: 30
       await PriceAlert.deleteMany({ userId: testUser._id });
     }
   });
+
+  // 63. Optional Guardrails Setting: When enforceTelegramOrderGuardrails is false, orders bypass guardrails
+  it('Scenario 63: When enforceTelegramOrderGuardrails is false, orders bypass pre-trade guardrails', async () => {
+    // 1. Configure user with maxOpenTrades: 1 and enforceTelegramOrderGuardrails: false
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: {
+        'riskSettings.maxOpenTrades': 1,
+        'liveWatcherSettings.enforceTelegramOrderGuardrails': false,
+      },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    // 2. Create 1 active open trade
+    const activeTrade = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+    });
+
+    sentMessages.length = 0;
+    // With guardrails bypassed, the order should NOT be blocked by MAX OPEN POSITIONS REACHED
+    await TelegramAlertService.handleForexOrderCommand(freshUser, botToken, chatId, 'XAUUSD', ['buy', '0.04']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).not.toContain('MAX OPEN POSITIONS REACHED');
+    expect(lastMsg.text).toContain('MT5 ORDER QUEUED ON BRIDGE');
+
+    // Clean up
+    await Trade.deleteOne({ _id: activeTrade._id });
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: {
+        'riskSettings.maxOpenTrades': 5,
+        'liveWatcherSettings.enforceTelegramOrderGuardrails': true,
+      },
+    });
+  });
+
+  // 64. Optional Adaptive Day-Risk Guardrails: When enforceAdaptiveDayRiskGuardrails is false, adaptive limits do not block
+  it('Scenario 64: When enforceAdaptiveDayRiskGuardrails is false, adaptive day risk limits and defensive caps do not block', async () => {
+    await Trade.deleteMany({ userId: testUser._id });
+
+    // 1. Create 2 consecutive closed losses to push into DEFENSIVE mode
+    const loss1 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(Date.now() - 60000),
+      exitTime: new Date(Date.now() - 60000),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -50 },
+      netPnL: -50,
+    });
+    const loss2 = await Trade.create({
+      userId: testUser._id,
+      accountId: testAccount._id,
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'CLOSED',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      exitTime: new Date(),
+      marketSegment: 'FOREX',
+      exchange: 'FOREX',
+      assetClass: 'FOREX',
+      calculated: { netPnL: -50 },
+      netPnL: -50,
+    });
+
+    // Configure user with maxOpenTrades: 5, revengeTradingMinutes: 0, enforceTelegramOrderGuardrails: true BUT enforceAdaptiveDayRiskGuardrails: false
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: {
+        'riskSettings.maxOpenTrades': 5,
+        'riskSettings.revengeTradingMinutes': 0,
+        'liveWatcherSettings.enforceTelegramOrderGuardrails': true,
+        'liveWatcherSettings.enforceAdaptiveDayRiskGuardrails': false,
+      },
+    });
+    const freshUser = await User.findById(testUser._id);
+
+    sentMessages.length = 0;
+    // Attempting 0.50L would normally trigger DEFENSIVE MODE LOT CAP ACTIVE, but adaptive enforcement is off!
+    await TelegramAlertService.handleForexOrderCommand(freshUser, botToken, chatId, 'XAUUSD', ['buy', '0.50', 'sl=35']);
+
+    expect(sentMessages.length).toBeGreaterThanOrEqual(1);
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.text).not.toContain('DEFENSIVE MODE LOT CAP ACTIVE');
+    expect(lastMsg.text).toContain('MT5 ORDER QUEUED ON BRIDGE');
+
+    // Clean up
+    await Trade.deleteMany({ userId: testUser._id });
+    await User.findByIdAndUpdate(testUser._id, {
+      $set: {
+        'riskSettings.revengeTradingMinutes': 30,
+        'liveWatcherSettings.enforceAdaptiveDayRiskGuardrails': true,
+      },
+    });
+  });
+
+  // 65. Telegram /guardrails and /adaptive commands
+  it('Scenario 65: /guardrails and /adaptive chat commands toggle enforcement settings', async () => {
+    // 1. /guardrails off
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate(
+      {
+        update_id: Date.now(),
+        message: {
+          text: '/guardrails off',
+          chat: { id: chatId },
+          from: { id: chatId },
+        },
+      },
+      botToken
+    );
+    expect(sentMessages[sentMessages.length - 1].text).toContain('GUARDRAILS BYPASSED');
+    let u = await User.findById(testUser._id);
+    expect(u?.liveWatcherSettings?.enforceTelegramOrderGuardrails).toBe(false);
+
+    // 2. /guardrails on
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate(
+      {
+        update_id: Date.now() + 1,
+        message: {
+          text: '/guardrails on',
+          chat: { id: chatId },
+          from: { id: chatId },
+        },
+      },
+      botToken
+    );
+    expect(sentMessages[sentMessages.length - 1].text).toContain('GUARDRAILS ENFORCED');
+    u = await User.findById(testUser._id);
+    expect(u?.liveWatcherSettings?.enforceTelegramOrderGuardrails).toBe(true);
+
+    // 3. /adaptive off
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate(
+      {
+        update_id: Date.now() + 2,
+        message: {
+          text: '/adaptive off',
+          chat: { id: chatId },
+          from: { id: chatId },
+        },
+      },
+      botToken
+    );
+    expect(sentMessages[sentMessages.length - 1].text).toContain('ADAPTIVE DAY-RISK BLOCKING DISABLED');
+    u = await User.findById(testUser._id);
+    expect(u?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails).toBe(false);
+
+    // 4. /adaptive on
+    sentMessages.length = 0;
+    await TelegramAlertService.processWebhookUpdate(
+      {
+        update_id: Date.now() + 3,
+        message: {
+          text: '/adaptive on',
+          chat: { id: chatId },
+          from: { id: chatId },
+        },
+      },
+      botToken
+    );
+    expect(sentMessages[sentMessages.length - 1].text).toContain('ADAPTIVE DAY-RISK BLOCKING ENFORCED');
+    u = await User.findById(testUser._id);
+    expect(u?.liveWatcherSettings?.enforceAdaptiveDayRiskGuardrails).toBe(true);
+  });
 });

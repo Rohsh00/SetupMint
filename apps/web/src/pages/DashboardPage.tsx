@@ -470,303 +470,329 @@ export function DashboardPage() {
       <Grid container spacing={2.5}>
         {/* Card 1: Net Realized P&L */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { status: 'CLOSED', startDate, endDate },
-                label: 'All Closed Portfolio Trades',
-              })
-            }
-            sx={{
-              height: '100%',
-              position: 'relative',
-              overflow: 'hidden',
-              cursor: 'pointer',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Net Realized P&L
-                </Typography>
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: isNetPositive ? muiTheme.palette.profit.bg : muiTheme.palette.loss.bg,
-                    color: isNetPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                  }}
-                >
-                  {isNetPositive ? <TrendingUpIcon fontSize="small" /> : <TrendingDownIcon fontSize="small" />}
+          <Tooltip title="Net Realized P&L: Total closed profits minus closed losses, broker commissions, and swap fees across the selected date range. Click to inspect all closed trades." arrow>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { status: 'CLOSED', startDate, endDate },
+                  label: 'All Closed Portfolio Trades',
+                })
+              }
+              sx={{
+                height: '100%',
+                position: 'relative',
+                overflow: 'hidden',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+              }}
+            >
+              <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Net Realized P&L
+                  </Typography>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 1.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isNetPositive ? muiTheme.palette.profit.bg : muiTheme.palette.loss.bg,
+                      color: isNetPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                    }}
+                  >
+                    {isNetPositive ? <TrendingUpIcon fontSize="small" /> : <TrendingDownIcon fontSize="small" />}
+                  </Box>
                 </Box>
-              </Box>
 
-              {stats?.byCurrency && Object.keys(stats.byCurrency).length > 1 ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
-                  {Object.entries(stats.byCurrency).map(([curr, currStat]: [string, any]) => (
-                    <Box key={curr} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Chip label={curr} size="small" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          fontWeight: 800,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: currStat.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                        }}
-                      >
-                        {formatCurrency(currStat.netPnL, curr)}
-                      </Typography>
-                    </Box>
-                  ))}
+                {stats?.byCurrency && Object.keys(stats.byCurrency).length > 1 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1.5 }}>
+                    {Object.entries(stats.byCurrency).map(([curr, currStat]: [string, any]) => (
+                      <Box key={curr} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Chip label={curr} size="small" sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }} />
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            fontWeight: 800,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: currStat.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {formatCurrency(currStat.netPnL, curr)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      fontWeight: 800,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: isNetPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                      mb: 1.5,
+                    }}
+                  >
+                    {formatCurrency(stats?.netPnL, activeCurrency)}
+                  </Typography>
+                )}
+
+                <Divider sx={{ mb: 1.5 }} />
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
+                  <Tooltip title="Gross trading profits before broker commissions and exchange transaction fees" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Gross: <strong>{formatCurrency(stats?.grossPnL, activeCurrency)}</strong></Box>
+                  </Tooltip>
+                  <Tooltip title="Total broker commissions, exchange transaction charges, GST, and overnight swap fees deducted" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Fees: <strong>{formatCurrency(stats?.totalCosts, activeCurrency)}</strong></Box>
+                  </Tooltip>
                 </Box>
-              ) : (
+              </CardContent>
+            </Card>
+          </Tooltip>
+        </Grid>
+
+        {/* Card 2: Win Rate & Outcome */}
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <Tooltip title="Win Rate: Percentage of closed trades that resulted in a positive net profit. Click to inspect all winning trades." arrow>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { outcome: 'WIN', startDate, endDate },
+                  label: 'Winning Trades',
+                })
+              }
+              sx={{
+                height: '100%',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+              }}
+            >
+              <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Win Rate & Outcome
+                    </Typography>
+                    <HelpHint hintKey="metric.winRateCredible" />
+                  </Box>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 1.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)',
+                      color: '#3B82F6',
+                    }}
+                  >
+                    <PercentIcon fontSize="small" />
+                  </Box>
+                </Box>
+
                 <Typography
                   variant="h4"
                   sx={{
                     fontWeight: 800,
                     fontFamily: `'JetBrains Mono', monospace`,
-                    color: isNetPositive ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                    color: muiTheme.palette.text.primary,
                     mb: 1.5,
                   }}
                 >
-                  {formatCurrency(stats?.netPnL, activeCurrency)}
+                  {formatPercent(stats?.winRate)}
                 </Typography>
-              )}
 
-              <Divider sx={{ mb: 1.5 }} />
+                <Divider sx={{ mb: 1.5 }} />
 
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-                <span>Gross: <strong>{formatCurrency(stats?.grossPnL, activeCurrency)}</strong></span>
-                <span>Fees: <strong>{formatCurrency(stats?.totalCosts, activeCurrency)}</strong></span>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Card 2: Win Rate & Outcome */}
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { outcome: 'WIN', startDate, endDate },
-                label: 'Winning Trades',
-              })
-            }
-            sx={{
-              height: '100%',
-              cursor: 'pointer',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Win Rate & Outcome
-                  </Typography>
-                  <HelpHint hintKey="metric.winRateCredible" />
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                  <Tooltip title="Total winning executions. Click to inspect." arrow>
+                    <Box
+                      component="span"
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        openDrill({ kind: 'FILTER', filter: { outcome: 'WIN', startDate, endDate }, label: 'Winning Trades' });
+                      }}
+                      sx={{ color: muiTheme.palette.profit.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                      {stats?.winningTradesCount || 0} Wins
+                    </Box>
+                  </Tooltip>
+                  <Tooltip title="Total losing executions. Click to inspect." arrow>
+                    <Box
+                      component="span"
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        openDrill({ kind: 'FILTER', filter: { outcome: 'LOSS', startDate, endDate }, label: 'Losing Trades' });
+                      }}
+                      sx={{ color: muiTheme.palette.loss.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                      {stats?.losingTradesCount || 0} Losses
+                    </Box>
+                  </Tooltip>
+                  <Tooltip title="Total closed executions in current date range. Click to inspect." arrow>
+                    <Box
+                      component="span"
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        openDrill({ kind: 'FILTER', filter: { status: 'CLOSED', startDate, endDate }, label: 'All Closed Trades' });
+                      }}
+                      sx={{ color: muiTheme.palette.text.secondary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                    >
+                      {stats?.closedTradesCount || 0} Total
+                    </Box>
+                  </Tooltip>
                 </Box>
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(37, 99, 235, 0.1)',
-                    color: '#3B82F6',
-                  }}
-                >
-                  <PercentIcon fontSize="small" />
-                </Box>
-              </Box>
-
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 800,
-                  fontFamily: `'JetBrains Mono', monospace`,
-                  color: muiTheme.palette.text.primary,
-                  mb: 1.5,
-                }}
-              >
-                {formatPercent(stats?.winRate)}
-              </Typography>
-
-              <Divider sx={{ mb: 1.5 }} />
-
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                <Box
-                  component="span"
-                  onClick={(e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    openDrill({ kind: 'FILTER', filter: { outcome: 'WIN', startDate, endDate }, label: 'Winning Trades' });
-                  }}
-                  sx={{ color: muiTheme.palette.profit.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-                >
-                  {stats?.winningTradesCount || 0} Wins
-                </Box>
-                <Box
-                  component="span"
-                  onClick={(e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    openDrill({ kind: 'FILTER', filter: { outcome: 'LOSS', startDate, endDate }, label: 'Losing Trades' });
-                  }}
-                  sx={{ color: muiTheme.palette.loss.main, fontWeight: 700, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-                >
-                  {stats?.losingTradesCount || 0} Losses
-                </Box>
-                <Box
-                  component="span"
-                  onClick={(e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    openDrill({ kind: 'FILTER', filter: { status: 'CLOSED', startDate, endDate }, label: 'All Closed Trades' });
-                  }}
-                  sx={{ color: muiTheme.palette.text.secondary, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-                >
-                  {stats?.closedTradesCount || 0} Total
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 3: Profit Factor & Expectancy */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { status: 'CLOSED', startDate, endDate },
-                label: 'Closed Trades (Expectancy Subset)',
-              })
-            }
-            sx={{
-              height: '100%',
-              cursor: 'pointer',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Profit Factor & Expectancy
-                  </Typography>
-                  <HelpHint hintKey="metric.profitFactor" />
+          <Tooltip title="Profit Factor: Gross Profit divided by Gross Loss. Above 1.5 is a solid mathematical edge; below 1.0 means you lost more than you made. Click to inspect trades." arrow>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { status: 'CLOSED', startDate, endDate },
+                  label: 'Closed Trades (Expectancy Subset)',
+                })
+              }
+              sx={{
+                height: '100%',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+              }}
+            >
+              <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Profit Factor & Expectancy
+                    </Typography>
+                    <HelpHint hintKey="metric.profitFactor" />
+                  </Box>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 1.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(217, 119, 6, 0.1)',
+                      color: '#F59E0B',
+                    }}
+                  >
+                    <EmojiEventsIcon fontSize="small" />
+                  </Box>
                 </Box>
-                <Box
+
+                <Typography
+                  variant="h4"
                   sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(217, 119, 6, 0.1)',
-                    color: '#F59E0B',
+                    fontWeight: 800,
+                    fontFamily: `'JetBrains Mono', monospace`,
+                    color: muiTheme.palette.text.primary,
+                    mb: 1.5,
                   }}
                 >
-                  <EmojiEventsIcon fontSize="small" />
+                  {stats?.profitFactor ? stats.profitFactor.toFixed(2) : '—'}
+                </Typography>
+
+                <Divider sx={{ mb: 1.5 }} />
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
+                  <Tooltip title="Expected average profit or loss per trade based on win rate and payoff ratio" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Expectancy: <strong>{formatCurrency(stats?.expectancy, activeCurrency)}</strong></Box>
+                  </Tooltip>
+                  <Tooltip title="Average realized Return-to-Risk multiple per trade (+1.5R means average win is 1.5x planned risk)" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Avg R: <strong>{formatR(stats?.avgRealizedR)}</strong></Box>
+                  </Tooltip>
                 </Box>
-              </Box>
-
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 800,
-                  fontFamily: `'JetBrains Mono', monospace`,
-                  color: muiTheme.palette.text.primary,
-                  mb: 1.5,
-                }}
-              >
-                {stats?.profitFactor ? stats.profitFactor.toFixed(2) : '—'}
-              </Typography>
-
-              <Divider sx={{ mb: 1.5 }} />
-
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-                <span>Expectancy: <strong>{formatCurrency(stats?.expectancy, activeCurrency)}</strong></span>
-                <span>Avg R: <strong>{formatR(stats?.avgRealizedR)}</strong></span>
-              </Box>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 4: Drawdown & Discipline */}
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { outcome: 'LOSS', startDate, endDate },
-                label: 'Drawdown / Losing Trades',
-              })
-            }
-            sx={{
-              height: '100%',
-              cursor: 'pointer',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Max Drawdown & Discipline
-                  </Typography>
-                  <HelpHint hintKey="metric.drawdown" />
+          <Tooltip title="Max Drawdown: Largest percentage drop in account equity from its historical high watermark. Click to inspect losing trades." arrow>
+            <Card
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { outcome: 'LOSS', startDate, endDate },
+                  label: 'Drawdown / Losing Trades',
+                })
+              }
+              sx={{
+                height: '100%',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+              }}
+            >
+              <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Max Drawdown & Discipline
+                    </Typography>
+                    <HelpHint hintKey="metric.drawdown" />
+                  </Box>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 1.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: muiTheme.palette.loss.bg,
+                      color: muiTheme.palette.loss.main,
+                    }}
+                  >
+                    <WarningAmberIcon fontSize="small" />
+                  </Box>
                 </Box>
-                <Box
+
+                <Typography
+                  variant="h4"
                   sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: muiTheme.palette.loss.bg,
+                    fontWeight: 800,
+                    fontFamily: `'JetBrains Mono', monospace`,
                     color: muiTheme.palette.loss.main,
+                    mb: 1.5,
                   }}
                 >
-                  <WarningAmberIcon fontSize="small" />
+                  {stats?.maxDrawdownPercent ? `-${formatPercent(stats.maxDrawdownPercent)}` : '0.0%'}
+                </Typography>
+
+                <Divider sx={{ mb: 1.5 }} />
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
+                  <Tooltip title="Maximum monetary loss experienced from peak to trough in portfolio currency" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Peak DD: <strong>{formatCurrency(stats?.maxDrawdownAmount, activeCurrency)}</strong></Box>
+                  </Tooltip>
+                  <Tooltip title="Trading Rule Adherence: Percentage of closed trades executed without violating your trade plan or logging mistakes" arrow>
+                    <Box component="span" sx={{ color: muiTheme.palette.profit.main, fontWeight: 600, cursor: 'help' }}>
+                      Rules: {formatPercent(stats?.ruleAdherencePercent)}
+                    </Box>
+                  </Tooltip>
                 </Box>
-              </Box>
-
-              <Typography
-                variant="h4"
-                sx={{
-                  fontWeight: 800,
-                  fontFamily: `'JetBrains Mono', monospace`,
-                  color: muiTheme.palette.loss.main,
-                  mb: 1.5,
-                }}
-              >
-                {stats?.maxDrawdownPercent ? `-${formatPercent(stats.maxDrawdownPercent)}` : '0.0%'}
-              </Typography>
-
-              <Divider sx={{ mb: 1.5 }} />
-
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: muiTheme.palette.text.secondary }}>
-                <span>Peak DD: <strong>{formatCurrency(stats?.maxDrawdownAmount, activeCurrency)}</strong></span>
-                <Box component="span" sx={{ color: muiTheme.palette.profit.main, fontWeight: 600 }}>
-                  Rules: {formatPercent(stats?.ruleAdherencePercent)}
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Tooltip>
         </Grid>
       </Grid>
 
@@ -1239,13 +1265,41 @@ export function DashboardPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Symbol</TableCell>
-                <TableCell>Direction</TableCell>
-                <TableCell>Setup</TableCell>
-                <TableCell align="right">Net P&L</TableCell>
-                <TableCell align="right">R-Multiple</TableCell>
-                <TableCell align="center">Status</TableCell>
+                <TableCell>
+                  <Tooltip title="Date on which the trade was executed" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Date</Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="Traded instrument or contract ticker" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Symbol</Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="Trade direction: LONG (buy) or SHORT (sell)" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Direction</Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="Playbook strategy or setup model applied to this trade" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Setup</Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Net Realized P&L after deducting broker commissions and fees" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Net P&L</Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Realized Return-to-Risk multiple based on initial stop loss" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>R-Multiple</Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="center">
+                  <Tooltip title="Trade execution lifecycle status: OPEN or CLOSED" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Status</Box>
+                  </Tooltip>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>

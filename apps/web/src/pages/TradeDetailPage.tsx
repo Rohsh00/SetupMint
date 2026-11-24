@@ -660,9 +660,11 @@ export function TradeDetailPage() {
           <Grid container spacing={2.5}>
             {/* Current LTP & Price Delta */}
             <Grid size={{ xs: 6, sm: 3 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block' }}>
-                CURRENT LTP
-              </Typography>
+              <Tooltip title="Last Traded Price received live from market feed" arrow>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                  CURRENT LTP
+                </Typography>
+              </Tooltip>
               <Typography
                 variant="h5"
                 sx={{
@@ -689,9 +691,11 @@ export function TradeDetailPage() {
 
             {/* Floating Net MTM */}
             <Grid size={{ xs: 6, sm: 3 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block' }}>
-                FLOATING NET MTM
-              </Typography>
+              <Tooltip title="Mark-to-Market unrealized profit or loss if position were closed at current price" arrow>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                  FLOATING NET MTM
+                </Typography>
+              </Tooltip>
               <Typography
                 variant="h5"
                 sx={{
@@ -713,9 +717,11 @@ export function TradeDetailPage() {
             {/* Distance to Stop Loss */}
             <Grid size={{ xs: 6, sm: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  DISTANCE TO SL
-                </Typography>
+                <Tooltip title="Buffer distance in price points between current market price and Stop Loss level" arrow>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, cursor: 'help' }}>
+                    DISTANCE TO SL
+                  </Typography>
+                </Tooltip>
                 <Chip
                   label={liveMetric.stopThreatLevel}
                   size="small"
@@ -744,9 +750,11 @@ export function TradeDetailPage() {
             {/* Distance to Target */}
             <Grid size={{ xs: 6, sm: 3 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  DISTANCE TO TARGET
-                </Typography>
+                <Tooltip title="Distance in price points between current market price and Take Profit target" arrow>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, cursor: 'help' }}>
+                    DISTANCE TO TARGET
+                  </Typography>
+                </Tooltip>
                 {liveMetric.targetProgressPercent !== null && (
                   <Typography variant="caption" sx={{ fontWeight: 700, color: '#3B82F6' }}>
                     {liveMetric.targetProgressPercent}%
@@ -772,9 +780,11 @@ export function TradeDetailPage() {
       <Card sx={{ p: 2.5 }}>
         <Grid container spacing={2.5}>
           <Grid size={{ xs: 6, sm: 2.4 }}>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-              Net Realized P&L
-            </Typography>
+            <Tooltip title="Total closed profit or loss after deducting all broker fees and commissions" arrow>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', cursor: 'help' }}>
+                Net Realized P&L
+              </Typography>
+            </Tooltip>
             <Typography
               variant="h5"
               sx={{
@@ -789,9 +799,11 @@ export function TradeDetailPage() {
           </Grid>
 
           <Grid size={{ xs: 6, sm: 2.4 }}>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-              Gross P&L
-            </Typography>
+            <Tooltip title="Gross profit or loss calculated purely from price difference (Exit Price minus Entry Price times Volume)" arrow>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', cursor: 'help' }}>
+                Gross P&L
+              </Typography>
+            </Tooltip>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
               {formatCurrency(effectiveGrossPnL, trade.currency)}
             </Typography>
@@ -799,9 +811,11 @@ export function TradeDetailPage() {
 
           <Grid size={{ xs: 6, sm: 2.4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Total Costs
-              </Typography>
+              <Tooltip title="Total broker commissions, exchange turnover costs, GST, and overnight swap fees deducted" arrow>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                  Total Costs
+                </Typography>
+              </Tooltip>
               <HelpHint hintKey="trade.fees.autoManual" />
             </Box>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.secondary, mt: 0.5 }}>
@@ -811,9 +825,11 @@ export function TradeDetailPage() {
 
           <Grid size={{ xs: 6, sm: 2.4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Realized R
-              </Typography>
+              <Tooltip title="Realized Return-to-Risk multiple (Net P&L divided by Initial Planned Stop Loss Dollar Risk)" arrow>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
+                  Realized R
+                </Typography>
+              </Tooltip>
               <HelpHint hintKey="metric.rMultiple" />
             </Box>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
@@ -822,9 +838,11 @@ export function TradeDetailPage() {
           </Grid>
 
           <Grid size={{ xs: 6, sm: 2.4 }}>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
-              Duration
-            </Typography>
+            <Tooltip title="Total elapsed holding time from first entry execution fill to final closing exit fill" arrow>
+              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', cursor: 'help' }}>
+                Duration
+              </Typography>
+            </Tooltip>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.text.primary, mt: 0.5 }}>
               {trade.calculated?.holdingTimeMinutes ? `${trade.calculated.holdingTimeMinutes}m` : '—'}
             </Typography>

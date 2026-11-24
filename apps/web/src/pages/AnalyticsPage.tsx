@@ -559,47 +559,55 @@ export function AnalyticsPage() {
 
                   <Grid container spacing={2} sx={{ mt: 1 }}>
                     <Grid size={{ xs: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
-                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Current Run</Typography>
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 800,
-                            fontFamily: `'JetBrains Mono', monospace`,
-                            color: (stats?.currentStreak || 0) > 0 ? muiTheme.palette.profit.main : (stats?.currentStreak || 0) < 0 ? muiTheme.palette.loss.main : muiTheme.palette.text.primary,
-                            mt: 0.5,
-                          }}
-                        >
-                          {stats?.currentStreak ? `${Math.abs(stats.currentStreak)} ${stats.currentStreak > 0 ? 'Wins' : 'Losses'}` : 'None'}
-                        </Typography>
-                      </Box>
+                      <Tooltip title="Current active consecutive streak of winning or losing closed trades" arrow>
+                        <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Current Run</Typography>
+                          <Typography
+                            variant="h6"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: (stats?.currentStreak || 0) > 0 ? muiTheme.palette.profit.main : (stats?.currentStreak || 0) < 0 ? muiTheme.palette.loss.main : muiTheme.palette.text.primary,
+                              mt: 0.5,
+                            }}
+                          >
+                            {stats?.currentStreak ? `${Math.abs(stats.currentStreak)} ${stats.currentStreak > 0 ? 'Wins' : 'Losses'}` : 'None'}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     </Grid>
 
                     <Grid size={{ xs: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
-                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Max Win Streak</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
-                          {stats?.maxConsecutiveWins || 0} Trades
-                        </Typography>
-                      </Box>
+                      <Tooltip title="Highest number of consecutive winning trades recorded in the selected period" arrow>
+                        <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Max Win Streak</Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                            {stats?.maxConsecutiveWins || 0} Trades
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     </Grid>
 
                     <Grid size={{ xs: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
-                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Max Loss Streak</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
-                          {stats?.maxConsecutiveLosses || 0} Trades
-                        </Typography>
-                      </Box>
+                      <Tooltip title="Highest number of consecutive losing trades recorded in the selected period" arrow>
+                        <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Max Loss Streak</Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                            {stats?.maxConsecutiveLosses || 0} Trades
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     </Grid>
 
                     <Grid size={{ xs: 6 }}>
-                      <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)' }}>
-                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Avg Win / Loss Ratio</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                          {stats?.avgLosingTrade ? (stats.avgWinningTrade / stats.avgLosingTrade).toFixed(2) : '—'}x
-                        </Typography>
-                      </Box>
+                      <Tooltip title="Payoff Ratio: Average dollar profit on wins divided by average dollar loss on losses" arrow>
+                        <Box sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Avg Win / Loss Ratio</Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                            {stats?.avgLosingTrade ? (stats.avgWinningTrade / stats.avgLosingTrade).toFixed(2) : '—'}x
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     </Grid>
                   </Grid>
                 </Box>
@@ -647,52 +655,53 @@ export function AnalyticsPage() {
 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {psychologyData?.performanceByDiscipline?.map((d: any) => (
-                    <Box
-                      key={d.score}
-                      onClick={() =>
-                        openDrill({
-                          kind: 'FILTER',
-                          filter: { ...(queryParams as any), disciplineScore: d.score },
-                          label: `Discipline Rating ${d.score}/5`,
-                        })
-                      }
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        py: 1.25,
-                        px: 1.5,
-                        borderRadius: 1.5,
-                        border: `1px solid ${muiTheme.palette.divider}`,
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          borderColor: muiTheme.palette.primary.main,
-                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
-                        },
-                      }}
-                    >
-                      <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
-                        Score {d.score}/5
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                        {d.tradesCount} trades
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
-                        {d.winRate}% Win
-                      </Typography>
-                      <Typography
-                        variant="body2"
+                    <Tooltip key={d.score} title={`Click to inspect all trades executed with a discipline score of ${d.score}/5`} arrow>
+                      <Box
+                        onClick={() =>
+                          openDrill({
+                            kind: 'FILTER',
+                            filter: { ...(queryParams as any), disciplineScore: d.score },
+                            label: `Discipline Rating ${d.score}/5`,
+                          })
+                        }
                         sx={{
-                          fontWeight: 700,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          py: 1.25,
+                          px: 1.5,
+                          borderRadius: 1.5,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            borderColor: muiTheme.palette.primary.main,
+                            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                          },
                         }}
                       >
-                        {formatCurrency(d.netPnL)}
-                      </Typography>
-                    </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          Score {d.score}/5
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          {d.tradesCount} trades
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                          {d.winRate}% Win
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 700,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {formatCurrency(d.netPnL)}
+                        </Typography>
+                      </Box>
+                    </Tooltip>
                   ))}
                 </Box>
               </Card>
@@ -716,52 +725,53 @@ export function AnalyticsPage() {
 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {psychologyData?.performanceByEmotion?.map((e: any) => (
-                    <Box
-                      key={e.emotion}
-                      onClick={() =>
-                        openDrill({
-                          kind: 'FILTER',
-                          filter: { ...(queryParams as any), emotion: e.emotion },
-                          label: `Emotion: ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`,
-                        })
-                      }
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        py: 1.25,
-                        px: 1.5,
-                        borderRadius: 1.5,
-                        border: `1px solid ${muiTheme.palette.divider}`,
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          borderColor: '#8B5CF6',
-                          backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
-                        },
-                      }}
-                    >
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {EMOTION_LABEL_MAP[e.emotion] || e.emotion}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                        {e.tradesCount} trades
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
-                        {e.winRate}% Win
-                      </Typography>
-                      <Typography
-                        variant="body2"
+                    <Tooltip key={e.emotion} title={`Click to inspect all trades taken while feeling ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`} arrow>
+                      <Box
+                        onClick={() =>
+                          openDrill({
+                            kind: 'FILTER',
+                            filter: { ...(queryParams as any), emotion: e.emotion },
+                            label: `Emotion: ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`,
+                          })
+                        }
                         sx={{
-                          fontWeight: 700,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: e.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          py: 1.25,
+                          px: 1.5,
+                          borderRadius: 1.5,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            borderColor: '#8B5CF6',
+                            backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
+                          },
                         }}
                       >
-                        {formatCurrency(e.netPnL)}
-                      </Typography>
-                    </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {EMOTION_LABEL_MAP[e.emotion] || e.emotion}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          {e.tradesCount} trades
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                          {e.winRate}% Win
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 700,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: e.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {formatCurrency(e.netPnL)}
+                        </Typography>
+                      </Box>
+                    </Tooltip>
                   ))}
                 </Box>
               </Card>
@@ -785,46 +795,48 @@ export function AnalyticsPage() {
             <Grid container spacing={2}>
               {psychologyData?.mistakeAnalysis?.map((m: any) => (
                 <Grid key={m.mistake} size={{ xs: 12, sm: 6, md: 2.4 }}>
-                  <Box
-                    onClick={() =>
-                      openDrill({
-                        kind: 'FILTER',
-                        filter: { ...(queryParams as any), mistakeTag: m.mistake },
-                        label: `Mistake: ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}`,
-                      })
-                    }
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: `1px solid ${muiTheme.palette.divider}`,
-                      backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(248, 250, 252, 0.8)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        borderColor: muiTheme.palette.loss.main,
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 4px 12px rgba(244, 63, 94, 0.15)',
-                      },
-                    }}
-                  >
-                    <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: muiTheme.palette.text.primary }}>
-                      {m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.5 }}>
-                      Occurred: {m.occurrences} times
-                    </Typography>
-                    <Typography
-                      variant="h6"
+                  <Tooltip title={`Total loss caused by ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}. Click to view trades.`} arrow>
+                    <Box
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { ...(queryParams as any), mistakeTag: m.mistake },
+                          label: `Mistake: ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}`,
+                        })
+                      }
                       sx={{
-                        fontWeight: 800,
-                        fontFamily: `'JetBrains Mono', monospace`,
-                        color: muiTheme.palette.loss.main,
-                        mt: 1,
+                        p: 2,
+                        borderRadius: 2,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(17, 24, 39, 0.6)' : 'rgba(248, 250, 252, 0.8)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.loss.main,
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 12px rgba(244, 63, 94, 0.15)',
+                        },
                       }}
                     >
-                      -{formatCurrency(m.totalLoss)}
-                    </Typography>
-                  </Box>
+                      <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: muiTheme.palette.text.primary }}>
+                        {m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', mt: 0.5 }}>
+                        Occurred: {m.occurrences} times
+                      </Typography>
+                      <Typography
+                        variant="h6"
+                        sx={{
+                          fontWeight: 800,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: muiTheme.palette.loss.main,
+                          mt: 1,
+                        }}
+                      >
+                        -{formatCurrency(m.totalLoss)}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
                 </Grid>
               ))}
             </Grid>

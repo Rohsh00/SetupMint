@@ -703,47 +703,57 @@ export function AccountsPage() {
                         borderColor: 'divider',
                       }}
                     >
-                      <Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                          Current Equity
-                        </Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
-                          {formatCurrency(acc.currentBalance, acc.baseCurrency)}
-                        </Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                          Realized P&L
-                        </Typography>
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            fontWeight: 700,
-                            fontFamily: '"JetBrains Mono", monospace',
-                            color: isProfitable ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                          }}
-                        >
-                          {formatCurrency(acc.realizedPnL, acc.baseCurrency)}
-                        </Typography>
-                      </Box>
+                      <Tooltip title="Total account equity = Opening Balance + Realized P&L + Deposits - Withdrawals + Adjustments" arrow>
+                        <Box sx={{ cursor: 'help' }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                            Current Equity
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+                            {formatCurrency(acc.currentBalance, acc.baseCurrency)}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                      <Tooltip title="Cumulative net profit or loss from all closed trades recorded in this account" arrow>
+                        <Box sx={{ cursor: 'help' }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                            Realized P&L
+                          </Typography>
+                          <Typography
+                            variant="h6"
+                            sx={{
+                              fontWeight: 700,
+                              fontFamily: '"JetBrains Mono", monospace',
+                              color: isProfitable ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {formatCurrency(acc.realizedPnL, acc.baseCurrency)}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     </Box>
 
                     {/* Cash Flow Details */}
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', color: 'text.secondary' }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Opening Balance:</span>
+                        <Tooltip title="Starting capital when the account was first configured" arrow>
+                          <span style={{ cursor: 'help' }}>Opening Balance:</span>
+                        </Tooltip>
                         <Typography variant="caption" sx={{ fontFamily: 'inherit', fontWeight: 600, color: 'text.primary' }}>
                           {formatCurrency(acc.initialBalance, acc.baseCurrency)}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Total Deposits:</span>
+                        <Tooltip title="Cumulative external funds deposited into this account" arrow>
+                          <span style={{ cursor: 'help' }}>Total Deposits:</span>
+                        </Tooltip>
                         <Typography variant="caption" sx={{ fontFamily: 'inherit', fontWeight: 600, color: muiTheme.palette.profit.main }}>
                           +{formatCurrency(acc.totalDeposits, acc.baseCurrency)}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Total Withdrawals:</span>
+                        <Tooltip title="Cumulative external funds withdrawn or paid out from this account" arrow>
+                          <span style={{ cursor: 'help' }}>Total Withdrawals:</span>
+                        </Tooltip>
                         <Typography variant="caption" sx={{ fontFamily: 'inherit', fontWeight: 600, color: muiTheme.palette.loss.main }}>
                           -{formatCurrency(acc.totalWithdrawals, acc.baseCurrency)}
                         </Typography>

@@ -493,212 +493,220 @@ export function WeeklyReviewPage() {
       <Grid container spacing={2}>
         {/* Net P&L */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            variant="outlined"
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
-                label: `Week ${currentWeek} All Closed Trades`,
-              })
-            }
-            sx={{
-              p: 2.2,
-              borderRadius: 3,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
-                borderColor: weekSummary.netPnL >= 0 ? '#10B981' : '#F43F5E',
-              },
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Net P&amp;L
-              </Typography>
-              <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-            </Box>
-            <Typography
-              variant="h5"
+          <Tooltip title="Total closed profit or loss across this ISO week. Click to inspect all closed trades." arrow>
+            <Card
+              variant="outlined"
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
+                  label: `Week ${currentWeek} All Closed Trades`,
+                })
+              }
               sx={{
-                fontWeight: 800,
-                color: weekSummary.netPnL >= 0 ? '#10B981' : '#F43F5E',
-                fontFamily: 'monospace',
-                mb: 0.5,
+                p: 2.2,
+                borderRadius: 3,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
+                  borderColor: weekSummary.netPnL >= 0 ? '#10B981' : '#F43F5E',
+                },
               }}
             >
-              {formatCurrency(weekSummary.netPnL)}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {vsPreviousWeek.deltaNetPnL > 0 ? (
-                <TrendingUpIcon sx={{ color: '#10B981', fontSize: 16 }} />
-              ) : vsPreviousWeek.deltaNetPnL < 0 ? (
-                <TrendingDownIcon sx={{ color: '#F43F5E', fontSize: 16 }} />
-              ) : (
-                <TrendingFlatIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
-              )}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Net P&amp;L
+                </Typography>
+                <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </Box>
               <Typography
-                variant="caption"
+                variant="h5"
                 sx={{
-                  fontWeight: 600,
-                  color: vsPreviousWeek.deltaNetPnL >= 0 ? '#10B981' : '#F43F5E',
+                  fontWeight: 800,
+                  color: weekSummary.netPnL >= 0 ? '#10B981' : '#F43F5E',
+                  fontFamily: 'monospace',
+                  mb: 0.5,
                 }}
               >
-                {vsPreviousWeek.deltaNetPnL >= 0 ? '+' : ''}
-                {formatCurrency(vsPreviousWeek.deltaNetPnL)} vs prev week
+                {formatCurrency(weekSummary.netPnL)}
               </Typography>
-            </Box>
-          </Card>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {vsPreviousWeek.deltaNetPnL > 0 ? (
+                  <TrendingUpIcon sx={{ color: '#10B981', fontSize: 16 }} />
+                ) : vsPreviousWeek.deltaNetPnL < 0 ? (
+                  <TrendingDownIcon sx={{ color: '#F43F5E', fontSize: 16 }} />
+                ) : (
+                  <TrendingFlatIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
+                )}
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 600,
+                    color: vsPreviousWeek.deltaNetPnL >= 0 ? '#10B981' : '#F43F5E',
+                  }}
+                >
+                  {vsPreviousWeek.deltaNetPnL >= 0 ? '+' : ''}
+                  {formatCurrency(vsPreviousWeek.deltaNetPnL)} vs prev week
+                </Typography>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Win Rate */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            variant="outlined"
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, outcome: 'WIN' },
-                label: `Week ${currentWeek} Winning Trades`,
-              })
-            }
-            sx={{
-              p: 2.2,
-              borderRadius: 3,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
-                borderColor: '#10B981',
-              },
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Win Rate
+          <Tooltip title="Percentage of winning closed trades this week. Click to inspect winning trades." arrow>
+            <Card
+              variant="outlined"
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, outcome: 'WIN' },
+                  label: `Week ${currentWeek} Winning Trades`,
+                })
+              }
+              sx={{
+                p: 2.2,
+                borderRadius: 3,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
+                  borderColor: '#10B981',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Win Rate
+                </Typography>
+                <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: 'monospace', mb: 0.5 }}>
+                {formatPercent(weekSummary.winRate)}
               </Typography>
-              <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: 'monospace', mb: 0.5 }}>
-              {formatPercent(weekSummary.winRate)}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {vsPreviousWeek.deltaWinRate > 0 ? (
-                <TrendingUpIcon sx={{ color: '#10B981', fontSize: 16 }} />
-              ) : vsPreviousWeek.deltaWinRate < 0 ? (
-                <TrendingDownIcon sx={{ color: '#F43F5E', fontSize: 16 }} />
-              ) : (
-                <TrendingFlatIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
-              )}
-              <Typography
-                variant="caption"
-                sx={{
-                  fontWeight: 600,
-                  color: vsPreviousWeek.deltaWinRate >= 0 ? '#10B981' : '#F43F5E',
-                }}
-              >
-                {vsPreviousWeek.deltaWinRate >= 0 ? '+' : ''}
-                {formatPercent(vsPreviousWeek.deltaWinRate)} vs prev week
-              </Typography>
-            </Box>
-          </Card>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {vsPreviousWeek.deltaWinRate > 0 ? (
+                  <TrendingUpIcon sx={{ color: '#10B981', fontSize: 16 }} />
+                ) : vsPreviousWeek.deltaWinRate < 0 ? (
+                  <TrendingDownIcon sx={{ color: '#F43F5E', fontSize: 16 }} />
+                ) : (
+                  <TrendingFlatIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
+                )}
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 600,
+                    color: vsPreviousWeek.deltaWinRate >= 0 ? '#10B981' : '#F43F5E',
+                  }}
+                >
+                  {vsPreviousWeek.deltaWinRate >= 0 ? '+' : ''}
+                  {formatPercent(vsPreviousWeek.deltaWinRate)} vs prev week
+                </Typography>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Avg Realized R */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            variant="outlined"
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
-                label: `Week ${currentWeek} Closed Trades`,
-              })
-            }
-            sx={{
-              p: 2.2,
-              borderRadius: 3,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
-                borderColor: '#0EA5E9',
-              },
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Avg Realized R
+          <Tooltip title="Average Return-to-Risk multiple realized across closed trades with a defined stop loss. Click to inspect trades." arrow>
+            <Card
+              variant="outlined"
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
+                  label: `Week ${currentWeek} Closed Trades`,
+                })
+              }
+              sx={{
+                p: 2.2,
+                borderRadius: 3,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
+                  borderColor: '#0EA5E9',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Avg Realized R
+                </Typography>
+                <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: 'monospace', mb: 0.5 }}>
+                {formatR(weekSummary.avgRealizedR)}
               </Typography>
-              <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: 'monospace', mb: 0.5 }}>
-              {formatR(weekSummary.avgRealizedR)}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {vsPreviousWeek.deltaAvgRealizedR > 0 ? (
-                <TrendingUpIcon sx={{ color: '#10B981', fontSize: 16 }} />
-              ) : vsPreviousWeek.deltaAvgRealizedR < 0 ? (
-                <TrendingDownIcon sx={{ color: '#F43F5E', fontSize: 16 }} />
-              ) : (
-                <TrendingFlatIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
-              )}
-              <Typography
-                variant="caption"
-                sx={{
-                  fontWeight: 600,
-                  color: vsPreviousWeek.deltaAvgRealizedR >= 0 ? '#10B981' : '#F43F5E',
-                }}
-              >
-                {vsPreviousWeek.deltaAvgRealizedR >= 0 ? '+' : ''}
-                {formatR(vsPreviousWeek.deltaAvgRealizedR)} vs prev week
-              </Typography>
-            </Box>
-          </Card>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {vsPreviousWeek.deltaAvgRealizedR > 0 ? (
+                  <TrendingUpIcon sx={{ color: '#10B981', fontSize: 16 }} />
+                ) : vsPreviousWeek.deltaAvgRealizedR < 0 ? (
+                  <TrendingDownIcon sx={{ color: '#F43F5E', fontSize: 16 }} />
+                ) : (
+                  <TrendingFlatIcon sx={{ color: 'text.secondary', fontSize: 16 }} />
+                )}
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 600,
+                    color: vsPreviousWeek.deltaAvgRealizedR >= 0 ? '#10B981' : '#F43F5E',
+                  }}
+                >
+                  {vsPreviousWeek.deltaAvgRealizedR >= 0 ? '+' : ''}
+                  {formatR(vsPreviousWeek.deltaAvgRealizedR)} vs prev week
+                </Typography>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Profit Factor & Max DD */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            variant="outlined"
-            onClick={() =>
-              openDrill({
-                kind: 'FILTER',
-                filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
-                label: `Week ${currentWeek} Closed Trades`,
-              })
-            }
-            sx={{
-              p: 2.2,
-              borderRadius: 3,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
-                borderColor: '#8B5CF6',
-              },
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Profit Factor / Max DD
+          <Tooltip title="Profit Factor (Gross Profit / Gross Loss) and Maximum Peak-to-Trough Drawdown this week. Click to inspect trades." arrow>
+            <Card
+              variant="outlined"
+              onClick={() =>
+                openDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), startDate: dateRange.startDate, endDate: dateRange.endDate, status: 'CLOSED' },
+                  label: `Week ${currentWeek} Closed Trades`,
+                })
+              }
+              sx={{
+                p: 2.2,
+                borderRadius: 3,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 6px 20px rgba(0,0,0,0.06)',
+                  borderColor: '#8B5CF6',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Profit Factor / Max DD
+                </Typography>
+                <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </Box>
+              <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: 'monospace', mb: 0.5 }}>
+                {weekSummary.profitFactor >= 999
+                  ? '999.99'
+                  : Number(weekSummary.profitFactor).toFixed(2)}
               </Typography>
-              <OpenInNewRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, fontFamily: 'monospace', mb: 0.5 }}>
-              {weekSummary.profitFactor >= 999
-                ? '999.99'
-                : Number(weekSummary.profitFactor).toFixed(2)}
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              Max DD: {formatCurrency(weekSummary.maxDrawdown)} ({weekSummary.tradeCount} trades, {formatPercent(weekSummary.rCoveragePercent)} R-cov)
-            </Typography>
-          </Card>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                Max DD: {formatCurrency(weekSummary.maxDrawdown)} ({weekSummary.tradeCount} trades, {formatPercent(weekSummary.rCoveragePercent)} R-cov)
+              </Typography>
+            </Card>
+          </Tooltip>
         </Grid>
       </Grid>
 

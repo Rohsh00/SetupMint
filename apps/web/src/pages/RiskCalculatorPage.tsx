@@ -564,9 +564,11 @@ export function RiskCalculatorPage() {
             {/* Account & Equity */}
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                  Trading Account
-                </Typography>
+                <Tooltip title="Select the account to size for. Balance, currency, and prop firm risk rules are loaded automatically." arrow>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'inline-flex', alignItems: 'center', gap: 0.5, mb: 0.5, cursor: 'help' }}>
+                    Trading Account <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                  </Typography>
+                </Tooltip>
                 <FormControl size="small" fullWidth>
                   <Select
                     value={selectedAccountId}
@@ -582,9 +584,11 @@ export function RiskCalculatorPage() {
               </Grid>
 
               <Grid size={{ xs: 12, sm: 6 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                  Account Equity ({currSym})
-                </Typography>
+                <Tooltip title="Total account capital or equity used to compute your risk budget" arrow>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'inline-flex', alignItems: 'center', gap: 0.5, mb: 0.5, cursor: 'help' }}>
+                    Account Equity ({currSym}) <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                  </Typography>
+                </Tooltip>
                 <TextField
                   fullWidth
                   size="small"
@@ -598,9 +602,11 @@ export function RiskCalculatorPage() {
 
             {/* Strategy Selection (Edge & Fractional Kelly) */}
             <Box>
-              <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'block', mb: 0.5 }}>
-                Strategy Setup (Edge & Kelly Sizing)
-              </Typography>
+              <Tooltip title="Optionally select a playbook strategy to calculate your mathematical edge and Quarter-Kelly recommended risk" arrow>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'inline-flex', alignItems: 'center', gap: 0.5, mb: 0.5, cursor: 'help' }}>
+                  Strategy Setup (Edge & Kelly Sizing) <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                </Typography>
+              </Tooltip>
               <FormControl size="small" fullWidth>
                 <Select
                   value={selectedStrategyId}
@@ -622,9 +628,11 @@ export function RiskCalculatorPage() {
             {/* Risk Mode Toggle & 2-Way Live Sync */}
             <Box>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
-                  Risk Budget Allocation
-                </Typography>
+                <Tooltip title="How much capital you are prepared to risk on this trade thesis if your stop loss is hit" arrow>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                    Risk Budget Allocation <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                  </Typography>
+                </Tooltip>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.primary.main, fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 }}>
                   Active Budget: {formatCurrency(plannedBudget)} ({formatPercent(riskMode === 'PERCENT' ? riskPercent : (accountEquity > 0 ? (fixedRiskAmount / accountEquity) * 100 : 0))})
                 </Typography>
@@ -848,9 +856,11 @@ export function RiskCalculatorPage() {
               {/* Entry Price */}
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary }}>
-                    Entry Price
-                  </Typography>
+                  <Tooltip title="Planned or actual execution entry price fill" arrow>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.text.secondary, display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      Entry Price <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Typography>
+                  </Tooltip>
                   {activeQuote && activeQuote.ltp > 0 && (
                     <Button
                       size="small"
@@ -888,9 +898,11 @@ export function RiskCalculatorPage() {
               {/* Stop Loss Price */}
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.loss.main }}>
-                    Stop Loss Price
-                  </Typography>
+                  <Tooltip title="Price level where trade setup is invalidated and position is automatically closed to cap losses at 1R" arrow>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.loss.main, display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      Stop Loss Price <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Typography>
+                  </Tooltip>
                   {isGeometryValid && (
                     <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, fontWeight: 700 }}>
                       {stopDistance.toFixed(2)} pts ({stopDistancePercent.toFixed(2)}%)
@@ -931,9 +943,11 @@ export function RiskCalculatorPage() {
               {/* Target Price & Live R:R Selector */}
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.profit.main }}>
-                    Target Price
-                  </Typography>
+                  <Tooltip title="Planned take-profit level based on technical resistance or target Reward-to-Risk ratio" arrow>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: muiTheme.palette.profit.main, display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      Target Price <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Typography>
+                  </Tooltip>
                   {targetPrice > 0 && structuralRR !== undefined && (
                     <Typography variant="caption" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, fontWeight: 700 }}>
                       1 : {structuralRR.toFixed(2)} R:R
@@ -1103,9 +1117,11 @@ export function RiskCalculatorPage() {
                   }`,
                 }}
               >
-                <Typography variant="caption" sx={{ fontWeight: 700, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Recommended Position Size
-                </Typography>
+                <Tooltip title="Exact position size calculated so that hitting your stop loss will not exceed your specified risk budget" arrow>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: muiTheme.palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                    Recommended Position Size <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                  </Typography>
+                </Tooltip>
                 <Typography
                   variant="h3"
                   sx={{
@@ -1160,81 +1176,91 @@ export function RiskCalculatorPage() {
               <Grid container spacing={1.5}>
                 {/* Risk per share */}
                 <Grid size={{ xs: 6 }}>
-                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Risk per Point / Share</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
-                      {stopDistance > 0 ? `${stopDistance.toFixed(2)} pts` : '—'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem' }}>
-                      {stopDistancePercent > 0 ? `${stopDistancePercent.toFixed(2)}% distance` : ''}
-                    </Typography>
-                  </Box>
+                  <Tooltip title="Distance in price points from Entry to Stop Loss" arrow>
+                    <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, cursor: 'help' }}>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Risk per Point / Share</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, mt: 0.5 }}>
+                        {stopDistance > 0 ? `${stopDistance.toFixed(2)} pts` : '—'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem' }}>
+                        {stopDistancePercent > 0 ? `${stopDistancePercent.toFixed(2)}% distance` : ''}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
                 </Grid>
 
                 {/* Estimated Total Risk */}
                 <Grid size={{ xs: 6 }}>
-                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Estimated Total Risk</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
-                      {isGeometryValid ? formatCurrency(effectiveRiskMonetary, calcCurrency) : '—'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.loss.main, fontSize: '0.6875rem' }}>
-                      {isGeometryValid ? `${effectiveRiskPercent.toFixed(2)}% of equity` : ''}
-                    </Typography>
-                  </Box>
+                  <Tooltip title="Total capital lost if Stop Loss is hit, including broker fees" arrow>
+                    <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, cursor: 'help' }}>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Estimated Total Risk</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.loss.main, mt: 0.5 }}>
+                        {isGeometryValid ? formatCurrency(effectiveRiskMonetary, calcCurrency) : '—'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.loss.main, fontSize: '0.6875rem' }}>
+                        {isGeometryValid ? `${effectiveRiskPercent.toFixed(2)}% of equity` : ''}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
                 </Grid>
 
                 {/* Reward to Risk Ratio (Always Live) */}
                 <Grid size={{ xs: 6 }}>
-                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>Reward-to-Risk (R:R)</Typography>
-                      <HelpHint hintKey="metric.plannedRR" />
+                  <Tooltip title="Reward-to-Risk ratio: Projected dollar gain divided by planned stop loss risk" arrow>
+                    <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, cursor: 'help' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>Reward-to-Risk (R:R)</Typography>
+                        <HelpHint hintKey="metric.plannedRR" />
+                      </Box>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                        {structuralRR !== undefined ? `1 : ${structuralRR.toFixed(2)}` : '—'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem', display: 'block' }}>
+                        {targetDistance > 0
+                          ? `+${targetDistance.toFixed(2)} pts target${
+                              calcResult.costAdjustedRewardRiskRatio !== undefined && estimatedCosts > 0
+                                ? ` · Cost-adj 1 : ${calcResult.costAdjustedRewardRiskRatio.toFixed(2)}`
+                                : ''
+                            }`
+                          : 'Set target price'}
+                      </Typography>
                     </Box>
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
-                      {structuralRR !== undefined ? `1 : ${structuralRR.toFixed(2)}` : '—'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontSize: '0.6875rem', display: 'block' }}>
-                      {targetDistance > 0
-                        ? `+${targetDistance.toFixed(2)} pts target${
-                            calcResult.costAdjustedRewardRiskRatio !== undefined && estimatedCosts > 0
-                              ? ` · Cost-adj 1 : ${calcResult.costAdjustedRewardRiskRatio.toFixed(2)}`
-                              : ''
-                          }`
-                        : 'Set target price'}
-                    </Typography>
-                  </Box>
+                  </Tooltip>
                 </Grid>
 
                 {/* Potential Reward */}
                 <Grid size={{ xs: 6 }}>
-                  <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Potential Reward</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
-                      {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNetReward, calcCurrency) : (targetDistance > 0 && effectiveQuantity === 0 ? `(1 lot: ${formatCurrency(targetDistance * contractMultiplier * lotSize, calcCurrency)})` : formatCurrency(0, calcCurrency))}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.profit.main, fontSize: '0.6875rem' }}>
-                      {accountEquity > 0 && effectiveNetReward > 0 ? `+${((effectiveNetReward / accountEquity) * 100).toFixed(2)}% gain` : ''}
-                    </Typography>
-                  </Box>
+                  <Tooltip title="Projected net dollar profit if Target Price is reached" arrow>
+                    <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, cursor: 'help' }}>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Potential Reward</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, color: muiTheme.palette.profit.main, mt: 0.5 }}>
+                        {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNetReward, calcCurrency) : (targetDistance > 0 && effectiveQuantity === 0 ? `(1 lot: ${formatCurrency(targetDistance * contractMultiplier * lotSize, calcCurrency)})` : formatCurrency(0, calcCurrency))}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.profit.main, fontSize: '0.6875rem' }}>
+                        {accountEquity > 0 && effectiveNetReward > 0 ? `+${((effectiveNetReward / accountEquity) * 100).toFixed(2)}% gain` : ''}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
                 </Grid>
 
                 {/* Capital Required / Notional Value */}
                 <Grid size={{ xs: 12 }}>
-                  <Box sx={{ p: 1.25, px: 1.75, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Total Trade Capital (Notional)</Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
-                        {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNotionalCapital, calcCurrency) : formatCurrency(0, calcCurrency)}
-                      </Typography>
+                  <Tooltip title="Total notional contract value controlled by this position (Entry Price × Position Size × Multiplier)" arrow>
+                    <Box sx={{ p: 1.25, px: 1.75, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'help' }}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Total Trade Capital (Notional)</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {isGeometryValid && effectiveQuantity > 0 ? formatCurrency(effectiveNotionalCapital, calcCurrency) : formatCurrency(0, calcCurrency)}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Capital Utilization</Typography>
+                        <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: effectiveCapitalPercent > 100 ? 'warning.main' : 'text.primary' }}>
+                          {isGeometryValid && effectiveQuantity > 0 ? `${effectiveCapitalPercent.toFixed(1)}% of Account` : '0%'}
+                        </Typography>
+                      </Box>
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>Capital Utilization</Typography>
-                      <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: effectiveCapitalPercent > 100 ? 'warning.main' : 'text.primary' }}>
-                        {isGeometryValid && effectiveQuantity > 0 ? `${effectiveCapitalPercent.toFixed(1)}% of Account` : '0%'}
-                      </Typography>
-                    </Box>
-                  </Box>
+                  </Tooltip>
                 </Grid>
               </Grid>
 

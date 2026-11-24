@@ -721,117 +721,151 @@ export function TradesPage() {
                   </TableCell>
                 )}
                 <TableCell>
-                  <TableSortLabel
-                    active={sortBy === 'tradeDate' || sortBy === 'entryTime'}
-                    direction={sortBy === 'tradeDate' || sortBy === 'entryTime' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('tradeDate')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Date / Time
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>Account</TableCell>
-                <TableCell>
-                  <TableSortLabel
-                    active={sortBy === 'symbol'}
-                    direction={sortBy === 'symbol' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('symbol')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Symbol
-                  </TableSortLabel>
+                  <Tooltip title="Execution date and timestamp of the first entry fill" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'tradeDate' || sortBy === 'entryTime'}
+                      direction={sortBy === 'tradeDate' || sortBy === 'entryTime' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('tradeDate')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Date / Time
+                    </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <TableSortLabel
-                    active={sortBy === 'direction'}
-                    direction={sortBy === 'direction' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('direction')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Side
-                  </TableSortLabel>
+                  <Tooltip title="The specific trading account or prop firm challenge this trade belongs to" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Account</Box>
+                  </Tooltip>
                 </TableCell>
-                <TableCell>Setup</TableCell>
-                <TableCell align="right">
-                  <TableSortLabel
-                    active={sortBy === 'entryPrice'}
-                    direction={sortBy === 'entryPrice' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('entryPrice')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Entry
-                  </TableSortLabel>
+                <TableCell>
+                  <Tooltip title="Traded instrument or contract ticker" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'symbol'}
+                      direction={sortBy === 'symbol' ? sortOrder : 'asc'}
+                      onClick={() => handleSort('symbol')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Symbol
+                    </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
-                <TableCell align="right">
-                  <TableSortLabel
-                    active={sortBy === 'exitPrice'}
-                    direction={sortBy === 'exitPrice' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('exitPrice')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Exit
-                  </TableSortLabel>
+                <TableCell>
+                  <Tooltip title="Trade direction: LONG (buy) or SHORT (sell)" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'direction'}
+                      direction={sortBy === 'direction' ? sortOrder : 'asc'}
+                      onClick={() => handleSort('direction')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Side
+                    </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
-                <TableCell align="right">
-                  <TableSortLabel
-                    active={sortBy === 'quantity'}
-                    direction={sortBy === 'quantity' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('quantity')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Qty
-                  </TableSortLabel>
+                <TableCell>
+                  <Tooltip title="Playbook strategy and setup variant used for this trade" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Setup</Box>
+                  </Tooltip>
                 </TableCell>
                 <TableCell align="right">
-                  <TableSortLabel
-                    active={sortBy === 'fees'}
-                    direction={sortBy === 'fees' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('fees')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Fees
-                  </TableSortLabel>
+                  <Tooltip title="Volume-weighted average entry execution price" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'entryPrice'}
+                      direction={sortBy === 'entryPrice' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('entryPrice')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Entry
+                    </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
                 <TableCell align="right">
-                  <TableSortLabel
-                    active={sortBy === 'calculated.netPnL'}
-                    direction={sortBy === 'calculated.netPnL' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('calculated.netPnL')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Net P&L
-                  </TableSortLabel>
+                  <Tooltip title="Volume-weighted average exit price (blank if trade is still open)" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'exitPrice'}
+                      direction={sortBy === 'exitPrice' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('exitPrice')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Exit
+                    </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
                 <TableCell align="right">
-                  <TableSortLabel
-                    active={sortBy === 'calculated.realizedRMultiple'}
-                    direction={sortBy === 'calculated.realizedRMultiple' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('calculated.realizedRMultiple')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                      R-Mult
-                      <HelpHint hintKey="metric.rMultiple" />
+                  <Tooltip title="Total executed position size in contracts or lots" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'quantity'}
+                      direction={sortBy === 'quantity' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('quantity')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Qty
+                    </TableSortLabel>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Total broker commissions, exchange transaction costs, and swap charges" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'fees'}
+                      direction={sortBy === 'fees' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('fees')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Fees
+                    </TableSortLabel>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Total closed profit or loss after deducting all broker fees and commissions" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'calculated.netPnL'}
+                      direction={sortBy === 'calculated.netPnL' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('calculated.netPnL')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Net P&L
+                    </TableSortLabel>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Realized Return-to-Risk multiple relative to initial planned stop loss" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'calculated.realizedRMultiple'}
+                      direction={sortBy === 'calculated.realizedRMultiple' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('calculated.realizedRMultiple')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                        R-Mult
+                        <HelpHint hintKey="metric.rMultiple" />
+                      </Box>
+                    </TableSortLabel>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="center">
+                  <Tooltip title="Execution discipline rating (1 to 5 stars) and logged mistake tags" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, cursor: 'help' }}>
+                      Discipline
+                      <HelpHint hintKey="journal.disciplineScore" />
                     </Box>
-                  </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
                 <TableCell align="center">
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                    Discipline
-                    <HelpHint hintKey="journal.disciplineScore" />
-                  </Box>
+                  <Tooltip title="Trade execution lifecycle state: OPEN, CLOSED, or PLANNED" arrow>
+                    <TableSortLabel
+                      active={sortBy === 'status'}
+                      direction={sortBy === 'status' ? sortOrder : 'desc'}
+                      onClick={() => handleSort('status')}
+                      sx={{ fontWeight: 700 }}
+                    >
+                      Status
+                    </TableSortLabel>
+                  </Tooltip>
                 </TableCell>
-                <TableCell align="center">
-                  <TableSortLabel
-                    active={sortBy === 'status'}
-                    direction={sortBy === 'status' ? sortOrder : 'desc'}
-                    onClick={() => handleSort('status')}
-                    sx={{ fontWeight: 700 }}
-                  >
-                    Status
-                  </TableSortLabel>
+                <TableCell align="right">
+                  <Tooltip title="Available actions: Quick Close, View, Edit, Duplicate, or Delete" arrow>
+                    <Box component="span" sx={{ cursor: 'help' }}>Actions</Box>
+                  </Tooltip>
                 </TableCell>
-                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>

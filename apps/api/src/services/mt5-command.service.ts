@@ -583,6 +583,22 @@ export class Mt5CommandService {
                   actionDesc = cmd.takeProfit ? `Modify Take Profit (${cmd.takeProfit})` : 'Clear Take Profit (Runner)';
                 }
 
+                // If position was already closed on terminal, surface as informational rather than rejection
+                const isAlreadyClosed = (r.message || '').includes('already closed') || (r.message || '').includes('not found');
+                if (isAlreadyClosed && cmd.action === 'CLOSE_POSITION') {
+                  const infoText =
+                    `ℹ️ <b>POSITION ALREADY CLOSED</b>\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `<pre>\n` +
+                    `Symbol : ${sym}\n` +
+                    `Action : ${actionDesc}\n` +
+                    (cmd.ticket ? `Ticket : #${cmd.ticket}\n` : '') +
+                    `Status : Position is already closed on MT5\n` +
+                    `</pre>`;
+                  await TelegramAlertService.sendMessage(botToken, chatId, infoText);
+                  return;
+                }
+
                 const failText =
                   `🚨 <b>BROKER EXECUTION REJECTED</b>\n` +
                   `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +

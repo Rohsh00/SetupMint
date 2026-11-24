@@ -1843,9 +1843,31 @@ export class TelegramAlertService {
     // Dynamic Position Actions (Triggered directly from active position buttons in pinned cockpit)
     if (data.startsWith('pos_close:')) {
       const ticket = parseInt(data.replace('pos_close:', ''), 10);
-      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
-      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
-      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      let trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      if (!trade) {
+        trade = await Trade.findOne({
+          userId: user._id,
+          status: 'OPEN',
+          $or: [
+            { tags: new RegExp(`MT5.*${ticket}`, 'i') },
+            { importBatchId: `MT5_${ticket}` },
+          ],
+        });
+      }
+      let accountId: string | mongoose.Types.ObjectId | undefined = trade?.accountId;
+      if (!accountId) {
+        const acc = await TradingAccount.findOne({
+          userId: user._id,
+          $or: [
+            { broker: /elefin/i },
+            { name: /elefin/i },
+            { 'profile.executionAdapterKey': 'ELEFIN_MT5' },
+            { broker: /mt5/i },
+          ],
+          status: 'ACTIVE',
+        });
+        accountId = acc?._id || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      }
       const openQty = Number((trade?.calculated?.openQuantity && trade.calculated.openQuantity > 0)
         ? trade.calculated.openQuantity
         : (trade?.simpleExecution?.quantity || 1));
@@ -1865,12 +1887,34 @@ export class TelegramAlertService {
 
     if (data.startsWith('pos_half:')) {
       const ticket = parseInt(data.replace('pos_half:', ''), 10);
-      const trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
-      const account = trade?.accountId ? await TradingAccount.findById(trade.accountId) : null;
-      const accountId = account?._id || trade?.accountId || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      let trade = await Trade.findOne({ userId: user._id, status: 'OPEN', tags: `MT5_TICKET_${ticket}` });
+      if (!trade) {
+        trade = await Trade.findOne({
+          userId: user._id,
+          status: 'OPEN',
+          $or: [
+            { tags: new RegExp(`MT5.*${ticket}`, 'i') },
+            { importBatchId: `MT5_${ticket}` },
+          ],
+        });
+      }
+      let accountId: string | mongoose.Types.ObjectId | undefined = trade?.accountId;
+      if (!accountId) {
+        const acc = await TradingAccount.findOne({
+          userId: user._id,
+          $or: [
+            { broker: /elefin/i },
+            { name: /elefin/i },
+            { 'profile.executionAdapterKey': 'ELEFIN_MT5' },
+            { broker: /mt5/i },
+          ],
+          status: 'ACTIVE',
+        });
+        accountId = acc?._id || user.defaultAccountScope?.replace('ACCOUNT:', '');
+      }
       const openQty = Number((trade?.calculated?.openQuantity && trade.calculated.openQuantity > 0)
         ? trade.calculated.openQuantity
-        : (trade?.simpleExecution?.quantity || 1));
+        : (trade?.simpleExecution?.quantity || 0.04));
       const halfQty = Math.max(0.01, Number((openQty / 2).toFixed(2)));
       if (ticket > 0 && accountId) {
         await Mt5CommandService.queueClosePosition({

@@ -232,12 +232,161 @@ bool SendJsonToSetupMint(string jsonPayload, bool handleCommands = true)
 void SetFillingModeForSymbol(string sym)
 {
    uint filling = (uint)SymbolInfoInteger(sym, SYMBOL_FILLING_MODE);
+   ENUM_SYMBOL_TRADE_EXECUTION exec = (ENUM_SYMBOL_TRADE_EXECUTION)SymbolInfoInteger(sym, SYMBOL_TRADE_EXEMODE);
+
    if((filling & SYMBOL_FILLING_IOC) != 0)
       m_trade.SetTypeFilling(ORDER_FILLING_IOC);
    else if((filling & SYMBOL_FILLING_FOK) != 0)
       m_trade.SetTypeFilling(ORDER_FILLING_FOK);
+   else if(exec == SYMBOL_TRADE_EXECUTION_MARKET)
+      m_trade.SetTypeFilling(ORDER_FILLING_IOC);
    else
       m_trade.SetTypeFilling(ORDER_FILLING_RETURN);
+}
+
+//+------------------------------------------------------------------+
+//| Resilient Position Close / Partial Close Helper                  |
+//| Closes position completely or partially by ticket                |
+//| Works on Hedging & Netting, auto-resolves filling modes & steps  |
+//+------------------------------------------------------------------+
+bool ClosePositionByTicket(ulong ticket, double requestedVolume, string &outMsg)
+{
+   if(!PositionSelectByTicket(ticket))
+   {
+      outMsg = "Position ticket #" + IntegerToString(ticket) + " not found or already closed";
+      return false;
+   }
+
+   string symbol = PositionGetString(POSITION_SYMBOL);
+   double posVolume = PositionGetDouble(POSITION_VOLUME);
+   ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+
+   double closeVol = requestedVolume;
+   if(closeVol <= 0 || closeVol >= posVolume)
+      closeVol = posVolume;
+
+   // Volume normalization according to broker constraints
+   double minLot  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double maxLot  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(lotStep <= 0) lotStep = 0.01;
+   if(minLot <= 0) minLot = 0.01;
+
+   closeVol = MathRound(closeVol / lotStep) * lotStep;
+   closeVol = NormalizeDouble(closeVol, 2);
+   if(closeVol < minLot) closeVol = minLot;
+   if(closeVol > posVolume) closeVol = posVolume;
+
+   // 1. Determine execution and filling modes
+   uint fillingMode = (uint)SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
+   ENUM_SYMBOL_TRADE_EXECUTION execMode = (ENUM_SYMBOL_TRADE_EXECUTION)SymbolInfoInteger(symbol, SYMBOL_TRADE_EXEMODE);
+
+   ENUM_ORDER_TYPE_FILLING fillModes[3];
+   int fillModesCount = 0;
+
+   // Prioritize IOC for Market Execution, then FOK, then RETURN
+   if((fillingMode & SYMBOL_FILLING_IOC) != 0) fillModes[fillModesCount++] = ORDER_FILLING_IOC;
+   if((fillingMode & SYMBOL_FILLING_FOK) != 0) fillModes[fillModesCount++] = ORDER_FILLING_FOK;
+   if((fillingMode & SYMBOL_FILLING_RETURN) != 0) fillModes[fillModesCount++] = ORDER_FILLING_RETURN;
+
+   if(fillModesCount == 0)
+   {
+      fillModes[0] = ORDER_FILLING_IOC;
+      fillModes[1] = ORDER_FILLING_FOK;
+      fillModes[2] = ORDER_FILLING_RETURN;
+      fillModesCount = 3;
+   }
+
+   MqlTradeRequest request;
+   MqlTradeResult  result;
+
+   int lastErr = 0;
+   uint lastRetcode = 0;
+   string lastDesc = "";
+
+   // Try sending native TRADE_ACTION_DEAL targeting position ticket with supported filling modes
+   for(int f = 0; f < fillModesCount; f++)
+   {
+      ZeroMemory(request);
+      ZeroMemory(result);
+
+      request.action       = TRADE_ACTION_DEAL;
+      request.position     = ticket;
+      request.symbol       = symbol;
+      request.volume       = closeVol;
+      request.deviation    = 50;
+      request.magic        = 1998;
+      request.type_filling = fillModes[f];
+
+      if(posType == POSITION_TYPE_BUY)
+      {
+         request.type  = ORDER_TYPE_SELL;
+         request.price = SymbolInfoDouble(symbol, SYMBOL_BID);
+      }
+      else
+      {
+         request.type  = ORDER_TYPE_BUY;
+         request.price = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      }
+
+      ResetLastError();
+      bool sent = OrderSend(request, result);
+      lastRetcode = result.retcode;
+      lastErr = GetLastError();
+      lastDesc = result.comment;
+      if(StringLen(lastDesc) == 0) lastDesc = IntegerToString(lastRetcode);
+
+      if(sent && (result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_DONE_PARTIAL || result.retcode == TRADE_RETCODE_PLACED))
+      {
+         outMsg = (closeVol < posVolume)
+            ? ("Partial " + DoubleToString(closeVol, 2) + " lots closed successfully on ticket #" + IntegerToString(ticket))
+            : ("Position #" + IntegerToString(ticket) + " closed completely (" + DoubleToString(closeVol, 2) + " lots)");
+         return true;
+      }
+
+      // If invalid filling mode (retcode 10030 or error 4756), try next filling mode
+      if(result.retcode == 10030 || lastErr == 4756 || result.retcode == 10016)
+      {
+         Print("[SetupMint] OrderSend filling mode ", EnumToString(fillModes[f]), " rejected on #", ticket, " (retcode ", result.retcode, "), trying alternate...");
+         continue;
+      }
+
+      // If already closed / no changes
+      if(result.retcode == 10025 || result.retcode == 10009 || result.retcode == 10004)
+      {
+         outMsg = "Position #" + IntegerToString(ticket) + " processed (retcode " + IntegerToString(result.retcode) + ")";
+         return true;
+      }
+
+      break;
+   }
+
+   // 2. Secondary fallback via CTrade class
+   ResetLastError();
+   SetFillingModeForSymbol(symbol);
+   bool fallbackRes = false;
+   if(closeVol < posVolume)
+   {
+      fallbackRes = m_trade.PositionClosePartial(ticket, closeVol, 50);
+   }
+   else
+   {
+      fallbackRes = m_trade.PositionClose(ticket, 50);
+   }
+
+   uint fbRetcode = m_trade.ResultRetcode();
+   if(fallbackRes || fbRetcode == TRADE_RETCODE_DONE || fbRetcode == TRADE_RETCODE_DONE_PARTIAL || fbRetcode == TRADE_RETCODE_PLACED)
+   {
+      outMsg = (closeVol < posVolume)
+         ? ("Partial " + DoubleToString(closeVol, 2) + " lots closed successfully (via fallback) on ticket #" + IntegerToString(ticket))
+         : ("Position #" + IntegerToString(ticket) + " closed successfully (via fallback)");
+      return true;
+   }
+
+   outMsg = "PositionClose failed: " + IntegerToString(lastErr > 0 ? lastErr : GetLastError()) +
+            " (retcode " + IntegerToString(lastRetcode > 0 ? lastRetcode : fbRetcode) + ") - " +
+            (StringLen(lastDesc) > 0 ? lastDesc : m_trade.ResultRetcodeDescription());
+   return false;
 }
 
 //+------------------------------------------------------------------+
@@ -436,37 +585,16 @@ void ProcessSetupMintCommands(string responseJson)
       {
          if(PositionSelectByTicket(ticket))
          {
-            string posSym = PositionGetString(POSITION_SYMBOL);
-            SetFillingModeForSymbol(posSym);
-            ResetLastError();
-            bool closeRes = false;
             double openVol = PositionGetDouble(POSITION_VOLUME);
-            ulong dev = 50;
-            if(volume > 0 && volume < openVol)
-            {
-               closeRes = m_trade.PositionClosePartial(ticket, volume, dev);
-            }
-            else
-            {
-               closeRes = m_trade.PositionClose(ticket, dev);
-            }
-            
-            uint retcode = m_trade.ResultRetcode();
-            if(!closeRes && (retcode == 10009 || retcode == 10008))
-            {
-               closeRes = true;
-            }
+            double closeVol = (volume > 0 && volume < openVol) ? volume : openVol;
 
-            if(closeRes)
+            success = ClosePositionByTicket(ticket, closeVol, msg);
+            if(success)
             {
-               success = true;
-               msg = "Position closed successfully";
-               Print("[SetupMint] ⚡ PositionClose SUCCESS on Ticket #", ticket);
+               Print("[SetupMint] ⚡ PositionClose SUCCESS on Ticket #", ticket, " -> ", msg);
             }
             else
             {
-               success = false;
-               msg = "PositionClose failed: " + IntegerToString(GetLastError()) + " (retcode " + IntegerToString(retcode) + ") - " + m_trade.ResultRetcodeDescription();
                Print("[SetupMint] ❌ PositionClose FAILED on Ticket #", ticket, " - ", msg);
             }
          }
@@ -899,9 +1027,10 @@ void CreateOnChartSyncButton()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.20 (Zero-Discrepancy Engine)...");
+   Print("[SetupMint] Initializing SetupMint Elefin MT5 2-Way Execution Bridge EA v2.30 (Resilient Partial Execution Engine)...");
    m_trade.SetExpertMagicNumber(1998);
    m_trade.SetDeviationInPoints(30);
+   m_trade.SetMarginMode();
 
    EventSetTimer(InpSyncTimerSec);
    

@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { BrokerIntegration, MarketDataIntegration, Trade, Instrument, TradingAccount, User } from '../db/models/index.js';
+import { BrokerIntegration, MarketDataIntegration, Trade, Instrument, TradingAccount, User, Attachment } from '../db/models/index.js';
+import { getStorage, optimizeImage } from '../storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { FyersService } from '../services/fyers.service.js';
 import { TelegramAlertService } from '../services/telegram-alert.service.js';
@@ -1396,8 +1397,202 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     });
   });
 
+  // Public MT5 Chart Screenshot Upload Endpoint
+  // Receives automated or on-demand chart screenshots directly from SetupMint MT5 EA Bridge
+  app.post('/mt5/screenshot', async (req: any, reply: any) => {
+    const rawToken =
+      req.headers['x-api-key'] ||
+      req.headers['x-webhook-token'] ||
+      req.query?.token ||
+      req.query?.key ||
+      req.body?.token;
+
+    let account: any = null;
+    if (rawToken && mongoose.isValidObjectId(rawToken)) {
+      account = await TradingAccount.findById(rawToken);
+    }
+    if (!account && (rawToken === 'elefin' || !rawToken)) {
+      account = await TradingAccount.findOne({ broker: /elefin/i, status: 'ACTIVE' });
+    }
+    if (!account) {
+      account = await TradingAccount.findOne({
+        $or: [
+          { broker: /elefin/i },
+          { name: /elefin/i },
+          { broker: /mt5/i },
+          { name: /mt5/i },
+          { 'profile.executionAdapterKey': 'ELEFIN_MT5' },
+        ],
+        status: 'ACTIVE',
+      });
+    }
+
+    if (!account) {
+      req.log.warn('[MT5Screenshot] Target trading account not found for token: %s', rawToken);
+      return reply.status(404).send({ success: false, error: 'Trading account not found' });
+    }
+
+    const { ticket, eventType = 'ENTRY', symbol = '', timeframe = 'M15', imageBase64, mimeType = 'image/png' } = req.body || {};
+
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return reply.status(400).send({ success: false, error: 'imageBase64 string is required' });
+    }
+
+    try {
+      const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '').trim();
+      const rawBuffer = Buffer.from(cleanBase64, 'base64');
+
+      if (rawBuffer.length < 10) {
+        return reply.status(400).send({ success: false, error: 'Invalid or empty screenshot buffer' });
+      }
+
+      // Optimize image buffer
+      const optimized = await optimizeImage(rawBuffer, mimeType, '.png');
+      const safeFilename = `mt5-${ticket || Date.now()}-${crypto.randomUUID()}.${optimized.ext.replace(/^\./, '')}`;
+
+      const storage = getStorage();
+      await storage.save(safeFilename, optimized.buffer, optimized.mimeType);
+
+      // Locate associated Trade
+      const ticketNum = Number(ticket);
+      let trade: any = null;
+      if (ticketNum > 0) {
+        trade = await Trade.findOne({
+          accountId: account._id,
+          tags: `MT5_TICKET_${ticketNum}`,
+        });
+        if (!trade) {
+          trade = await Trade.findOne({
+            accountId: account._id,
+            brokerTradeId: String(ticketNum),
+          });
+        }
+      }
+      if (!trade && symbol) {
+        // Try finding recent trade by symbol in this account
+        trade = await Trade.findOne({
+          accountId: account._id,
+          symbol: { $regex: new RegExp(`^${symbol}$`, 'i') },
+        }).sort({ createdAt: -1 });
+      }
+
+      const rawCategory = (eventType || '').toUpperCase();
+      const category = rawCategory === 'EXIT' ? 'EXIT' : rawCategory === 'MANUAL' ? 'REVIEW' : 'ENTRY';
+      const cleanSymbol = symbol ? symbol.toUpperCase() : trade?.symbol || 'CHART';
+
+      const attachment = await Attachment.create({
+        userId: account.userId,
+        tradeId: trade ? trade._id : undefined,
+        originalName: `MT5_${cleanSymbol}_${ticketNum || 'manual'}_${category}.png`,
+        storedFilename: safeFilename,
+        mimeType: optimized.mimeType,
+        sizeBytes: optimized.optimizedBytes,
+        category,
+        description: `Automated MT5 ${category} chart capture for #${ticketNum || 'manual'} (${cleanSymbol}) [${timeframe}]`,
+        timeframe,
+        chartTimestamp: new Date().toISOString(),
+      });
+
+      if (trade) {
+        trade.screenshotIds = trade.screenshotIds || [];
+        if (!trade.screenshotIds.some((id: any) => id.toString() === attachment._id.toString())) {
+          trade.screenshotIds.push(attachment._id);
+          await trade.save();
+        }
+      }
+
+      req.log.info(
+        { attachmentId: attachment._id, tradeId: trade?._id, ticket: ticketNum, sizeBytes: optimized.optimizedBytes },
+        '[MT5Screenshot] Chart screenshot saved and linked successfully'
+      );
+
+      return reply.send({
+        success: true,
+        attachmentId: attachment._id.toString(),
+        tradeId: trade ? trade._id.toString() : null,
+        message: 'MT5 chart screenshot processed and linked',
+      });
+    } catch (err: any) {
+      req.log.error({ err }, '[MT5Screenshot] Failed to process screenshot');
+      return reply.status(500).send({ success: false, error: err.message || 'Failed to process screenshot' });
+    }
+  });
+
   app.register(async (protectedApp) => {
     protectedApp.addHook('preHandler', requireAuth);
+
+    // On-demand trigger to capture screenshot directly from running MT5 terminal
+    protectedApp.post('/mt5/capture-screenshot', async (req: any, reply) => {
+      const { tradeId, accountId, ticket, symbol } = req.body || {};
+      let resolvedAccount: any = null;
+      let targetTrade: any = null;
+
+      if (tradeId && mongoose.isValidObjectId(tradeId)) {
+        targetTrade = await Trade.findOne({ _id: tradeId, userId: req.user!.id });
+        if (targetTrade && targetTrade.accountId) {
+          resolvedAccount = await TradingAccount.findOne({ _id: targetTrade.accountId, userId: req.user!.id });
+        }
+      }
+
+      if (!resolvedAccount && accountId && mongoose.isValidObjectId(accountId)) {
+        resolvedAccount = await TradingAccount.findOne({ _id: accountId, userId: req.user!.id });
+      }
+
+      if (!resolvedAccount) {
+        resolvedAccount = await TradingAccount.findOne({
+          userId: req.user!.id,
+          $or: [
+            { broker: /elefin/i },
+            { name: /elefin/i },
+            { broker: /mt5/i },
+            { name: /mt5/i },
+            { 'profile.executionAdapterKey': 'ELEFIN_MT5' },
+          ],
+          status: 'ACTIVE',
+        });
+      }
+
+      if (!resolvedAccount) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'ACCOUNT_NOT_FOUND', message: 'No active MT5/Elefin trading account found' },
+        });
+      }
+
+      let ticketNum = Number(ticket) || 0;
+      if (!ticketNum && targetTrade) {
+        const ticketTag = (targetTrade.tags || []).find((t: string) => t.startsWith('MT5_TICKET_'));
+        if (ticketTag) {
+          ticketNum = Number(ticketTag.replace('MT5_TICKET_', '')) || 0;
+        }
+        if (!ticketNum && (targetTrade as any).brokerTradeId) {
+          ticketNum = Number((targetTrade as any).brokerTradeId) || 0;
+        }
+      }
+
+      const sym = symbol || targetTrade?.symbol || '';
+      const eaStatus = Mt5CommandService.getLastActive(resolvedAccount._id);
+
+      const cmd = await Mt5CommandService.queueCaptureScreenshot({
+        userId: req.user!.id,
+        accountId: resolvedAccount._id,
+        tradeId: targetTrade?._id,
+        ticket: ticketNum,
+        symbol: sym,
+      });
+
+      return reply.send({
+        success: true,
+        queued: true,
+        commandId: cmd._id.toString(),
+        eaActive: eaStatus.isActive,
+        lastActiveSecondsAgo: eaStatus.secondsAgo,
+        message: eaStatus.isActive
+          ? 'Screenshot capture command sent to MT5 terminal'
+          : 'Command queued. MT5 EA is currently disconnected (will execute on next heartbeat).',
+      });
+    });
+
 
     const userHasFyers = async (userId: string): Promise<boolean> => {
       const accs = await TradingAccount.find({ userId }).lean();

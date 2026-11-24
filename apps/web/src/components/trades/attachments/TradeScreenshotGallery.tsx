@@ -55,6 +55,9 @@ interface TradeScreenshotGalleryProps {
   symbol?: string;
   onRefresh?: () => void;
   readOnly?: boolean;
+  isMt5Trade?: boolean;
+  onCaptureMt5?: () => void;
+  isCapturingMt5?: boolean;
 }
 
 function SnapshotThumbnail({
@@ -119,6 +122,9 @@ export function TradeScreenshotGallery({
   symbol,
   onRefresh,
   readOnly = false,
+  isMt5Trade = false,
+  onCaptureMt5,
+  isCapturingMt5 = false,
 }: TradeScreenshotGalleryProps) {
   const muiTheme = useTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -394,6 +400,36 @@ export function TradeScreenshotGallery({
             Interactive Real Chart
           </Button>
 
+          {isMt5Trade && onCaptureMt5 && !readOnly && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={
+                isCapturingMt5 ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <PhotoCameraRounded sx={{ color: '#3B82F6' }} />
+                )
+              }
+              onClick={onCaptureMt5}
+              disabled={isCapturingMt5}
+              sx={{
+                fontWeight: 800,
+                fontSize: '0.8125rem',
+                borderRadius: 2,
+                textTransform: 'none',
+                borderColor: 'rgba(59, 130, 246, 0.4)',
+                color: isDark ? '#60A5FA' : '#2563EB',
+                '&:hover': {
+                  borderColor: '#3B82F6',
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                },
+              }}
+            >
+              {isCapturingMt5 ? 'Capturing MT5...' : 'Capture MT5 Chart'}
+            </Button>
+          )}
+
           {!readOnly && (
             <>
               <Button
@@ -640,26 +676,52 @@ export function TradeScreenshotGallery({
                       />
 
                       {/* Category Chip Badge */}
-                      <Chip
-                        icon={
-                          att.category === 'AUTO_CHART' ? (
-                            <ElectricBoltRounded sx={{ fontSize: 13, color: '#06b6d4 !important' }} />
-                          ) : undefined
-                        }
-                        label={att.category === 'AUTO_CHART' ? 'Auto Chart' : catMeta?.label || att.category}
-                        size="small"
-                        sx={{
-                          position: 'absolute',
-                          top: 10,
-                          left: 10,
-                          fontWeight: 700,
-                          fontSize: '0.6875rem',
-                          backgroundColor: att.category === 'AUTO_CHART' ? 'rgba(8, 51, 68, 0.92)' : 'rgba(0, 0, 0, 0.8)',
-                          color: catMeta?.badgeColor || '#fff',
-                          backdropFilter: 'blur(6px)',
-                          border: `1px solid ${catMeta?.badgeColor ? `${catMeta.badgeColor}88` : 'rgba(255,255,255,0.2)'}`,
-                        }}
-                      />
+                      {(() => {
+                        const isMt5 =
+                          att.originalName?.startsWith('MT5_') ||
+                          att.description?.includes('MT5') ||
+                          (att.storedFilename && att.storedFilename.startsWith('mt5-'));
+                        return (
+                          <Chip
+                            icon={
+                              isMt5 ? (
+                                <ElectricBoltRounded sx={{ fontSize: 13, color: '#60A5FA !important' }} />
+                              ) : att.category === 'AUTO_CHART' ? (
+                                <ElectricBoltRounded sx={{ fontSize: 13, color: '#06b6d4 !important' }} />
+                              ) : undefined
+                            }
+                            label={
+                              isMt5
+                                ? `MT5 ${catMeta?.label || att.category}`
+                                : att.category === 'AUTO_CHART'
+                                ? 'Auto Chart'
+                                : catMeta?.label || att.category
+                            }
+                            size="small"
+                            sx={{
+                              position: 'absolute',
+                              top: 10,
+                              left: 10,
+                              fontWeight: 800,
+                              fontSize: '0.6875rem',
+                              backgroundColor: isMt5
+                                ? 'rgba(30, 58, 138, 0.92)'
+                                : att.category === 'AUTO_CHART'
+                                ? 'rgba(8, 51, 68, 0.92)'
+                                : 'rgba(0, 0, 0, 0.8)',
+                              color: isMt5 ? '#93C5FD' : catMeta?.badgeColor || '#fff',
+                              backdropFilter: 'blur(6px)',
+                              border: `1px solid ${
+                                isMt5
+                                  ? 'rgba(147, 197, 253, 0.4)'
+                                  : catMeta?.badgeColor
+                                  ? `${catMeta.badgeColor}88`
+                                  : 'rgba(255,255,255,0.2)'
+                              }`,
+                            }}
+                          />
+                        );
+                      })()}
 
                       {/* Timeframe Badge */}
                       {(att.timeframe || att.chartMeta?.resolution) && (

@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type Mt5Action = 'MODIFY_SL' | 'MODIFY_TP' | 'CLOSE_POSITION' | 'FETCH_HISTORY' | 'OPEN_ORDER';
+export type Mt5Action = 'MODIFY_SL' | 'MODIFY_TP' | 'CLOSE_POSITION' | 'FETCH_HISTORY' | 'OPEN_ORDER' | 'CAPTURE_SCREENSHOT';
 export type Mt5CommandStatus = 'PENDING' | 'SENT' | 'EXECUTED' | 'FAILED';
 
 export interface IMt5CommandDoc extends Document {
@@ -32,7 +32,7 @@ const Mt5CommandSchema = new Schema<IMt5CommandDoc>(
     ticket: { type: Number, default: 0 },
     action: {
       type: String,
-      enum: ['MODIFY_SL', 'MODIFY_TP', 'CLOSE_POSITION', 'FETCH_HISTORY', 'OPEN_ORDER'],
+      enum: ['MODIFY_SL', 'MODIFY_TP', 'CLOSE_POSITION', 'FETCH_HISTORY', 'OPEN_ORDER', 'CAPTURE_SCREENSHOT'],
       required: true,
     },
     symbol: { type: String },

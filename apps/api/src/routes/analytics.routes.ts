@@ -17,6 +17,8 @@ import {
   aggregateSlippageMetrics,
   calculatePositionSizingDiagnostics,
   SizingAnalyticsTradeInput,
+  calculateKillZoneAnalytics,
+  KillZoneTradeInput,
 } from '@tradevault/financial-engine';
 import { AccountScopeService } from '../services/account-scope.service.js';
 
@@ -577,6 +579,70 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       success: true,
       data: {
         ...diagnostics,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
+      },
+    });
+  });
+
+  // Dedicated Forex & Market Session "Kill-Zone" Performance Analytics
+  app.get('/killzones', async (req: any, reply) => {
+    const { startDate, endDate, symbol } = req.query;
+
+    const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
+    }
+
+    const trades = await Trade.find(filter).sort({ tradeDate: 1, entryTime: 1 }).lean();
+
+    // Unique symbols in this account scope
+    const availableSymbols = Array.from(
+      new Set(trades.map((t: any) => (t.symbol || '').toUpperCase().trim()).filter(Boolean))
+    ).sort();
+
+    const activeTrades = symbol && symbol !== 'ALL'
+      ? trades.filter((t: any) => (t.symbol || '').toUpperCase().trim() === String(symbol).toUpperCase().trim())
+      : trades;
+
+    const tradeInputs: KillZoneTradeInput[] = activeTrades.map((t: any) => ({
+      id: t._id.toString(),
+      symbol: t.symbol,
+      exchange: t.exchange,
+      marketSegment: t.marketSegment,
+      entryTime: t.entryTime || t.tradeDate,
+      tradeDate: t.tradeDate,
+      exitTime: t.exitTime,
+      netPnL: t.calculated?.netPnL ?? 0,
+      grossPnL: t.calculated?.grossPnL,
+      realizedR: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
+      tags: t.tags,
+      status: t.status,
+    }));
+
+    const report = calculateKillZoneAnalytics(tradeInputs);
+
+    return reply.send({
+      success: true,
+      data: {
+        ...report,
         availableSymbols,
         selectedSymbol: symbol || 'ALL',
       },

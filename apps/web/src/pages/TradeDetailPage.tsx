@@ -114,6 +114,33 @@ export function TradeDetailPage() {
   const tradeCurrency = trade?.currency || caps.currency.code || tradeAccount?.baseCurrency || trade?.accountId?.baseCurrency || 'USD';
   const currSym = caps.currency.symbol || getCurrencySymbol(tradeCurrency);
 
+  const isMt5Trade = useMemo(() => {
+    if (!trade) return false;
+    const tags = Array.isArray(trade.tags) ? trade.tags : [];
+    if (tags.some((t: string) => t.includes('MT5') || t.includes('ELEFIN'))) return true;
+    if (trade.importBatchId?.startsWith('MT5_')) return true;
+    const broker = tradeAccount?.broker || trade.broker || '';
+    if (typeof broker === 'string' && (/elefin/i.test(broker) || /mt5/i.test(broker))) return true;
+    return false;
+  }, [trade, tradeAccount]);
+
+  const captureMt5ScreenshotMutation = useMutation({
+    mutationFn: () => api.trades.captureMt5Screenshot(id!),
+    onSuccess: (res: any) => {
+      if (res?.eaActive) {
+        toast.success('Capture command sent to MT5! Screenshot will attach in 2-3 seconds.');
+      } else {
+        toast.info(res?.message || 'Screenshot command queued for next MT5 heartbeat.');
+      }
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['trade', id] });
+      }, 3000);
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to request screenshot from MT5.');
+    },
+  });
+
   const {
     data: liveMetric,
     refetch: refetchLiveMetric,
@@ -2649,6 +2676,9 @@ export function TradeDetailPage() {
         tradeId={id!}
         attachments={trade.attachments || []}
         symbol={trade.symbol}
+        isMt5Trade={isMt5Trade}
+        onCaptureMt5={() => captureMt5ScreenshotMutation.mutate()}
+        isCapturingMt5={captureMt5ScreenshotMutation.isPending}
         onRefresh={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
       />
 

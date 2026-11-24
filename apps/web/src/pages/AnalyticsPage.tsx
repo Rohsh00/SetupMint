@@ -63,6 +63,7 @@ import { HelpHint, WithHelp } from '../components/help/index.js';
 import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.js';
 import { PyramidingAnalyticsTab } from '../components/analytics/PyramidingAnalyticsTab.js';
 import { PositionSizingDiagnosticsTab } from '../components/analytics/PositionSizingDiagnosticsTab.js';
+import { KillZoneAnalyticsCard } from '../components/analytics/KillZoneAnalyticsCard.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
@@ -79,6 +80,7 @@ export function AnalyticsPage() {
   const currSym = caps.currency.symbol || getCurrencySymbol(analyticsCurrency);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>('OVERVIEW');
   const [selectedSizingSymbol, setSelectedSizingSymbol] = useState<string>('ALL');
+  const [selectedKillZoneSymbol, setSelectedKillZoneSymbol] = useState<string>('ALL');
 
   React.useEffect(() => {
     if (!hasMarketData && (activeTab === 'EXECUTION' || activeTab === 'WHAT_IF')) {
@@ -167,6 +169,18 @@ export function AnalyticsPage() {
         symbol: selectedSizingSymbol !== 'ALL' ? selectedSizingSymbol : undefined,
       }),
     enabled: activeTab === 'SIZING',
+  });
+
+  const { data: killZoneData, isLoading: isKillZoneLoading, refetch: refetchKillZone } = useQuery({
+    queryKey: ['analytics-killzones', queryParams, startDate, endDate, selectedKillZoneSymbol],
+    queryFn: () =>
+      api.analytics.killZones({
+        ...queryParams,
+        startDate,
+        endDate,
+        symbol: selectedKillZoneSymbol !== 'ALL' ? selectedKillZoneSymbol : undefined,
+      }),
+    enabled: activeTab === 'TIME',
   });
 
   const queryClient = useQueryClient();
@@ -846,7 +860,19 @@ export function AnalyticsPage() {
 
       {/* TAB 3: TIME & SESSION */}
       {activeTab === 'TIME' && (
-        <Grid container spacing={3}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Institutional Forex & Market Kill-Zone Performance Card */}
+          <KillZoneAnalyticsCard
+            data={(killZoneData as any)?.data ?? killZoneData}
+            isLoading={isKillZoneLoading}
+            currencySymbol={currSym}
+            selectedSymbol={selectedKillZoneSymbol}
+            onSelectSymbol={(sym) => setSelectedKillZoneSymbol(sym)}
+            onRefresh={() => refetchKillZone()}
+            onDrillDown={(filter, label) => openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), ...filter }, label })}
+          />
+
+          <Grid container spacing={3}>
           {/* Weekday Breakdown */}
           <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ p: 2.5, height: '100%' }}>
@@ -1021,6 +1047,7 @@ export function AnalyticsPage() {
             </Card>
           </Grid>
         </Grid>
+        </Box>
       )}
 
       {/* TAB 4: EXECUTION QUALITY (MAE / MFE) */}

@@ -5,8 +5,8 @@
 //+------------------------------------------------------------------+
 #property copyright   "SetupMint"
 #property link        "https://setupmint.com"
-#property version     "2.00"
-#property description "Automated Real-Time 2-Way Execution & Live Trade Sync Bridge for SetupMint"
+#property version     "2.40"
+#property description "Automated Real-Time 2-Way Execution, Live Trade Sync & Direct Chart Capture Bridge for SetupMint"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -15,6 +15,7 @@
 input string   InpSetupMintUrl = "http://13.205.58.162/api/v1/integrations/mt5/webhook"; // SetupMint Webhook URL
 input string   InpToken        = "6af1fa0735d0f0f584d918bf"; // Account Webhook Token (or 'elefin')
 input int      InpSyncTimerSec = 1;                           // Periodic Sync Interval (Seconds, 1s for instant live ticks)
+input bool     InpAutoCaptureScreenshots = true;              // Auto-Capture Chart Screenshot on Trade Entry & Exit
 
 //--- Global Variables
 datetime lastHistoryCheckTime = 0;
@@ -225,6 +226,124 @@ bool SendJsonToSetupMint(string jsonPayload, bool handleCommands = true)
 
    return true;
 }
+
+//--- Entry Screenshot Tracking (Prevent duplicate entry screenshots for same ticket)
+ulong g_capturedEntryTickets[1024];
+int g_capturedEntryCount = 0;
+
+bool HasCapturedEntryScreenshot(ulong ticket)
+{
+   for(int i = 0; i < g_capturedEntryCount; i++)
+   {
+      if(g_capturedEntryTickets[i] == ticket) return true;
+   }
+   return false;
+}
+
+void MarkEntryScreenshotCaptured(ulong ticket)
+{
+   if(g_capturedEntryCount >= 1024)
+   {
+      for(int i = 0; i < 1023; i++)
+      {
+         g_capturedEntryTickets[i] = g_capturedEntryTickets[i + 1];
+      }
+      g_capturedEntryCount = 1023;
+   }
+   g_capturedEntryTickets[g_capturedEntryCount++] = ticket;
+}
+
+//+------------------------------------------------------------------+
+//| Capture & Upload Chart Screenshot Direct from MT5 Terminal       |
+//+------------------------------------------------------------------+
+bool CaptureAndSendScreenshot(ulong ticket, string eventType, string sym = "")
+{
+   if(!InpAutoCaptureScreenshots && eventType != "MANUAL") return false;
+   if(StringLen(sym) == 0) sym = _Symbol;
+
+   string filename = "sm_shot_" + IntegerToString(ticket) + "_" + eventType + ".png";
+
+   // ChartScreenShot saves relative to MQL5\Files directory
+   ResetLastError();
+   bool shotOk = ChartScreenShot(0, filename, 1280, 720, ALIGN_RIGHT);
+   if(!shotOk)
+   {
+      Print("[SetupMint] ChartScreenShot failed for ticket #", ticket, ", error: ", GetLastError());
+      return false;
+   }
+
+   int hFile = FileOpen(filename, FILE_READ | FILE_BIN);
+   if(hFile == INVALID_HANDLE)
+   {
+      Print("[SetupMint] Failed to open screenshot file: ", filename, ", error: ", GetLastError());
+      return false;
+   }
+
+   ulong fSize = FileSize(hFile);
+   if(fSize <= 0)
+   {
+      FileClose(hFile);
+      FileDelete(filename);
+      return false;
+   }
+
+   uchar fileBytes[];
+   ArrayResize(fileBytes, (int)fSize);
+   FileReadArray(hFile, fileBytes, 0, (int)fSize);
+   FileClose(hFile);
+   FileDelete(filename); // Clean up temporary screenshot file
+
+   // Base64 encode file buffer using native CryptEncode
+   uchar key[] = {};
+   uchar base64Bytes[];
+   ResetLastError();
+   int encRes = CryptEncode(CRYPT_BASE64, fileBytes, key, base64Bytes);
+   if(encRes <= 0)
+   {
+      Print("[SetupMint] CryptEncode BASE64 failed, error: ", GetLastError());
+      return false;
+   }
+
+   string b64Str = CharArrayToString(base64Bytes, 0, WHOLE_ARRAY, CP_UTF8);
+
+   // Derive screenshot upload URL from webhook URL
+   string shotUrl = InpSetupMintUrl;
+   StringReplace(shotUrl, "/webhook", "/screenshot");
+
+   string json = "{" +
+      "\"ticket\":" + IntegerToString(ticket) + "," +
+      "\"eventType\":\"" + eventType + "\"," +
+      "\"symbol\":\"" + sym + "\"," +
+      "\"timeframe\":\"" + EnumToString((ENUM_TIMEFRAMES)_Period) + "\"," +
+      "\"mimeType\":\"image/png\"," +
+      "\"imageBase64\":\"" + b64Str + "\"" +
+   "}";
+
+   char postData[];
+   char resultData[];
+   string resultHeaders;
+   string headers = "Content-Type: application/json\r\n" +
+                    "x-webhook-token: " + InpToken + "\r\n";
+
+   StringToCharArray(json, postData, 0, WHOLE_ARRAY, CP_UTF8);
+   int dataSize = ArraySize(postData) - 1;
+   if(dataSize <= 0) return false;
+   ArrayResize(postData, dataSize);
+
+   ResetLastError();
+   int res = WebRequest("POST", shotUrl, headers, 6000, postData, resultData, resultHeaders);
+   if(res >= 200 && res < 300)
+   {
+      Print("[SetupMint] 📸 Direct MT5 chart screenshot uploaded for ticket #", ticket, " (", eventType, ", ", sym, ")");
+      return true;
+   }
+   else
+   {
+      Print("[SetupMint] Screenshot upload HTTP error: ", res, ", code: ", GetLastError());
+      return false;
+   }
+}
+
 
 //+------------------------------------------------------------------+
 //| Helper: Configure optimal trade filling mode dynamically per sym |
@@ -605,6 +724,13 @@ void ProcessSetupMintCommands(string responseJson)
             Print("[SetupMint] ⚠️ ", msg);
          }
       }
+      else if(action == "CAPTURE_SCREENSHOT")
+      {
+         string shotSym = ExtractJsonString(cmdObj, "symbol");
+         Print("[SetupMint] 📸 CAPTURE_SCREENSHOT command received from SetupMint for ticket #", ticket);
+         success = CaptureAndSendScreenshot(ticket, "MANUAL", shotSym);
+         msg = success ? "MT5 chart screenshot captured and uploaded" : "Chart screenshot capture failed";
+      }
       
       if(StringLen(commandId) > 0)
       {
@@ -703,6 +829,13 @@ void SyncAllActivePositions()
       if(ticket > 0)
       {
          string sym = PositionGetString(POSITION_SYMBOL);
+
+         // Auto-capture chart screenshot on position open
+         if(InpAutoCaptureScreenshots && !HasCapturedEntryScreenshot(ticket))
+         {
+            MarkEntryScreenshotCaptured(ticket);
+            CaptureAndSendScreenshot(ticket, "ENTRY", sym);
+         }
          ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
          double vol = PositionGetDouble(POSITION_VOLUME);
          double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
@@ -976,6 +1109,12 @@ void CheckClosedDeals()
             json += "}";
 
             SendJsonToSetupMint(json, false);
+
+            // Auto-capture chart screenshot on position close
+            if(InpAutoCaptureScreenshots)
+            {
+               CaptureAndSendScreenshot(posTicket > 0 ? posTicket : dealTicket, "EXIT", sym);
+            }
    }
    lastHistoryCheckTime = now;
 }

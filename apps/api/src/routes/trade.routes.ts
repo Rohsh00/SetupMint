@@ -2774,6 +2774,55 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     return reply.send(responsePayload);
   });
 
+  // Request MT5 EA to capture & attach an on-demand chart screenshot for this trade
+  app.post('/:id/mt5-capture-screenshot', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });
+    if (!trade) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'TRADE_NOT_FOUND', message: 'Trade not found' },
+      });
+    }
+
+    const account = trade.accountId ? await TradingAccount.findById(trade.accountId) : null;
+    if (!account) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'ACCOUNT_NOT_FOUND', message: 'Associated trading account not found' },
+      });
+    }
+
+    let ticketNum = 0;
+    const ticketTag = (trade.tags || []).find((t: string) => t.startsWith('MT5_TICKET_'));
+    if (ticketTag) {
+      ticketNum = Number(ticketTag.replace('MT5_TICKET_', '')) || 0;
+    }
+    if (!ticketNum && (trade as any).brokerTradeId) {
+      ticketNum = Number((trade as any).brokerTradeId) || 0;
+    }
+
+    const eaStatus = Mt5CommandService.getLastActive(account._id);
+
+    const cmd = await Mt5CommandService.queueCaptureScreenshot({
+      userId: req.user!.id,
+      accountId: account._id,
+      tradeId: trade._id,
+      ticket: ticketNum,
+      symbol: trade.symbol,
+    });
+
+    return reply.send({
+      success: true,
+      queued: true,
+      commandId: cmd._id.toString(),
+      eaActive: eaStatus.isActive,
+      lastActiveSecondsAgo: eaStatus.secondsAgo,
+      message: eaStatus.isActive
+        ? 'Screenshot capture requested from MT5 terminal'
+        : 'Screenshot command queued (MT5 EA disconnected; will execute on next heartbeat)',
+    });
+  });
+
   // Delete trade
   app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     const trade = await Trade.findOne({ _id: req.params.id, userId: req.user!.id });

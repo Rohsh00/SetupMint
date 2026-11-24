@@ -48,6 +48,7 @@ export type HelpKey =
   | 'analytics.psychology.emotions'
   | 'analytics.psychology.mistakes'
   | 'analytics.time.weekday'
+  | 'analytics.time.killzones'
   | 'analytics.execution.rLeftOnTable'
   | 'analytics.execution.followThrough'
   | 'analytics.execution.winnersMae'
@@ -663,6 +664,16 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     caveats: 'Do not eliminate a weekday from your trading routine without at least 30 recorded trades.',
     seeAlso: ['metric.sampleReliability', 'trade.form.sessionCodes'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#time-analytics',
+  },
+
+  'analytics.time.killzones': {
+    title: 'Market Kill-Zones & Institutional Volatility Windows',
+    summary: 'High-probability execution windows (London Open, New York Open, London Close, Asian Range) where global bank liquidity expands.',
+    details: 'Institutional order flow clusters into specific UTC hours. Trading strictly within primary Kill-Zones drastically reduces chop, avoids wide spreads during broker rollover (21-24 UTC), and concentrates trades when trends have genuine momentum.',
+    example: 'Trading XAUUSD exclusively between 12:00-15:00 UTC (New York Open) yields an 80% win rate and $1,800 edge delta compared to trading random off-hours.',
+    caveats: 'Always monitor spread expansion during session opens and major news announcements (CPI, NFP).',
+    seeAlso: ['trade.form.sessionCodes', 'analytics.time.weekday', 'metric.profitFactor'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#kill-zones',
   },
 
   'analytics.execution.rLeftOnTable': {

@@ -650,6 +650,17 @@ export const api = {
         headers: payload.idempotencyKey ? { 'X-Idempotency-Key': payload.idempotencyKey } : undefined,
         body: JSON.stringify(payload),
       }),
+    captureMt5Screenshot: (id: string) =>
+      request<{
+        success: boolean;
+        queued: boolean;
+        commandId: string;
+        eaActive: boolean;
+        lastActiveSecondsAgo: number | null;
+        message: string;
+      }>(`/trades/${id}/mt5-capture-screenshot`, {
+        method: 'POST',
+      }),
   },
 
   // Dashboard
@@ -740,6 +751,13 @@ export const api = {
         if (val !== undefined && val !== null && val !== '') query.set(key, String(val));
       }
       return request<any>(`/analytics/sizing?${query.toString()}`);
+    },
+    killZones: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') query.set(key, String(val));
+      }
+      return request<any>(`/analytics/killzones?${query.toString()}`);
     },
   },
 

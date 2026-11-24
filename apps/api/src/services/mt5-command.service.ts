@@ -261,6 +261,29 @@ export class Mt5CommandService {
 
     return cmd;
   }
+
+  /**
+   * Queues an on-demand chart screenshot capture command for the MT5 EA bridge.
+   */
+  static async queueCaptureScreenshot(params: {
+    userId: string | mongoose.Types.ObjectId;
+    accountId: string | mongoose.Types.ObjectId;
+    tradeId?: string | mongoose.Types.ObjectId;
+    ticket?: number;
+    symbol?: string;
+  }): Promise<IMt5CommandDoc> {
+    const cmd = await Mt5Command.create({
+      userId: params.userId,
+      accountId: params.accountId,
+      tradeId: params.tradeId,
+      ticket: params.ticket || 0,
+      symbol: params.symbol,
+      action: 'CAPTURE_SCREENSHOT',
+      status: 'PENDING',
+    });
+
+    return cmd;
+  }
   /**
    * Checks whether a trade belongs to an MT5 / Elefin account.
    */

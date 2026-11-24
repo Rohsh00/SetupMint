@@ -570,6 +570,11 @@ export class Mt5CommandService {
           console.warn('[Mt5CommandService] Execution dispatch error:', err?.message || err);
         }
       } else if (r.status === 'FAILED') {
+        // Non-trading utility commands: do NOT dispatch broker trade rejection alert to Telegram
+        if (cmd.action === 'CAPTURE_SCREENSHOT' || cmd.action === 'FETCH_HISTORY') {
+          return;
+        }
+
         // Dispatch instant failure alert for CLOSE_POSITION, MODIFY_SL, MODIFY_TP
         const isHarmlessNoChange = (r.message || '').includes('no changes') && (cmd.action === 'MODIFY_TP' || cmd.action === 'MODIFY_SL');
         if (!isHarmlessNoChange) {

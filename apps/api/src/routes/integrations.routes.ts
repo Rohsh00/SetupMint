@@ -455,6 +455,84 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       });
     }
 
+    // Direct MT5 Chart Screenshot Upload inside the main webhook
+    if (req.body?.action === 'UPLOAD_SCREENSHOT' || (req.body?.imageBase64 && req.body?.ticket)) {
+      try {
+        const { ticket, eventType = 'ENTRY', symbol = '', timeframe = 'M15', imageBase64, mimeType = 'image/png' } = req.body;
+        const cleanBase64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '').trim();
+        const rawBuffer = Buffer.from(cleanBase64, 'base64');
+
+        if (rawBuffer.length >= 10) {
+          const optimized = await optimizeImage(rawBuffer, mimeType, '.png');
+          const safeFilename = `mt5-${ticket || Date.now()}-${crypto.randomUUID()}.${optimized.ext.replace(/^\./, '')}`;
+
+          const storage = getStorage();
+          await storage.save(safeFilename, optimized.buffer, optimized.mimeType);
+
+          const ticketNum = Number(ticket);
+          let trade: any = null;
+          if (ticketNum > 0) {
+            trade = await Trade.findOne({
+              accountId: account._id,
+              tags: `MT5_TICKET_${ticketNum}`,
+            });
+            if (!trade) {
+              trade = await Trade.findOne({
+                accountId: account._id,
+                brokerTradeId: String(ticketNum),
+              });
+            }
+          }
+          if (!trade && symbol) {
+            trade = await Trade.findOne({
+              accountId: account._id,
+              symbol: { $regex: new RegExp(`^${symbol}$`, 'i') },
+            }).sort({ createdAt: -1 });
+          }
+
+          const rawCategory = (eventType || '').toUpperCase();
+          const category = rawCategory === 'EXIT' ? 'EXIT' : rawCategory === 'MANUAL' ? 'REVIEW' : 'ENTRY';
+          const cleanSymbol = symbol ? symbol.toUpperCase() : trade?.symbol || 'CHART';
+
+          const attachment = await Attachment.create({
+            userId: account.userId,
+            tradeId: trade ? trade._id : undefined,
+            originalName: `MT5_${cleanSymbol}_${ticketNum || 'manual'}_${category}.png`,
+            storedFilename: safeFilename,
+            mimeType: optimized.mimeType,
+            sizeBytes: optimized.optimizedBytes,
+            category,
+            description: `Automated MT5 ${category} chart capture for #${ticketNum || 'manual'} (${cleanSymbol}) [${timeframe}]`,
+            timeframe,
+            chartTimestamp: new Date().toISOString(),
+          });
+
+          if (trade) {
+            trade.screenshotIds = trade.screenshotIds || [];
+            if (!trade.screenshotIds.some((id: any) => id.toString() === attachment._id.toString())) {
+              trade.screenshotIds.push(attachment._id);
+              await trade.save();
+            }
+          }
+
+          req.log.info(
+            { attachmentId: attachment._id, tradeId: trade?._id, ticket: ticketNum },
+            '[MT5Webhook] Chart screenshot uploaded via webhook and linked successfully'
+          );
+
+          return reply.send({
+            ok: true,
+            status: 'SCREENSHOT_SAVED',
+            attachmentId: attachment._id.toString(),
+            tradeId: trade ? trade._id.toString() : null,
+            commands: pendingCommands,
+          });
+        }
+      } catch (err: any) {
+        req.log.error({ err }, '[MT5Webhook] Failed to process screenshot payload in webhook');
+      }
+    }
+
     return Mt5CommandService.withAccountWebhookLock(account._id.toString(), async () => {
     // Update account balance if provided in payload
     if (req.body?.balance !== undefined) {

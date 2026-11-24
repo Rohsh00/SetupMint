@@ -128,13 +128,16 @@ export function TradeDetailPage() {
     mutationFn: () => api.trades.captureMt5Screenshot(id!),
     onSuccess: (res: any) => {
       if (res?.eaActive) {
-        toast.success('Capture command sent to MT5! Screenshot will attach in 2-3 seconds.');
+        toast.success('Capture command sent to MT5! Ensure Bridge EA v2.40 is running on your terminal.');
       } else {
         toast.info(res?.message || 'Screenshot command queued for next MT5 heartbeat.');
       }
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['trade', id] });
       }, 3000);
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['trade', id] });
+      }, 6000);
     },
     onError: (err: any) => {
       toast.error(err?.message || 'Failed to request screenshot from MT5.');

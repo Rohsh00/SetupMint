@@ -306,11 +306,12 @@ bool CaptureAndSendScreenshot(ulong ticket, string eventType, string sym = "")
 
    string b64Str = CharArrayToString(base64Bytes, 0, WHOLE_ARRAY, CP_UTF8);
 
-   // Derive screenshot upload URL from webhook URL
+   // Send directly to InpSetupMintUrl (already whitelisted in MT5 WebRequest settings)
    string shotUrl = InpSetupMintUrl;
-   StringReplace(shotUrl, "/webhook", "/screenshot");
 
    string json = "{" +
+      "\"token\":\"" + InpToken + "\"," +
+      "\"action\":\"UPLOAD_SCREENSHOT\"," +
       "\"ticket\":" + IntegerToString(ticket) + "," +
       "\"eventType\":\"" + eventType + "\"," +
       "\"symbol\":\"" + sym + "\"," +
@@ -546,7 +547,7 @@ void ProcessSetupMintCommands(string responseJson)
       double tp = ExtractJsonNumber(cmdObj, "takeProfit");
       double volume = ExtractJsonNumber(cmdObj, "volume");
       
-      if((ticket <= 0 && action != "FETCH_HISTORY" && action != "OPEN_ORDER") || StringLen(action) == 0) continue;
+      if((ticket <= 0 && action != "FETCH_HISTORY" && action != "OPEN_ORDER" && action != "CAPTURE_SCREENSHOT") || StringLen(action) == 0) continue;
       
       bool success = false;
       string msg = "";

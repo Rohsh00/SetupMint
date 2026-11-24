@@ -78,6 +78,7 @@ export function AnalyticsPage() {
   const analyticsCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
   const currSym = caps.currency.symbol || getCurrencySymbol(analyticsCurrency);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>('OVERVIEW');
+  const [selectedSizingSymbol, setSelectedSizingSymbol] = useState<string>('ALL');
 
   React.useEffect(() => {
     if (!hasMarketData && (activeTab === 'EXECUTION' || activeTab === 'WHAT_IF')) {
@@ -157,12 +158,13 @@ export function AnalyticsPage() {
   });
 
   const { data: sizingData, isLoading: isSizingLoading, refetch: refetchSizing } = useQuery({
-    queryKey: ['analytics-sizing', queryParams, startDate, endDate],
+    queryKey: ['analytics-sizing', queryParams, startDate, endDate, selectedSizingSymbol],
     queryFn: () =>
       api.analytics.sizing({
         ...queryParams,
         startDate,
         endDate,
+        symbol: selectedSizingSymbol !== 'ALL' ? selectedSizingSymbol : undefined,
       }),
     enabled: activeTab === 'SIZING',
   });
@@ -617,6 +619,8 @@ export function AnalyticsPage() {
           data={sizingData?.data ?? sizingData}
           isLoading={isSizingLoading}
           currencySymbol={currSym}
+          selectedSymbol={selectedSizingSymbol}
+          onSelectSymbol={setSelectedSizingSymbol}
           onRefresh={refetchSizing}
         />
       )}

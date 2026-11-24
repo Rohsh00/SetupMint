@@ -90,6 +90,8 @@ export interface ISizingAnalyticsResult {
   tiers: ISizingTierSummary[];
   progression: ISizingProgressionPoint[];
   triggerAnalysis: ISizingTriggerAnalysis;
+  availableSymbols?: string[];
+  selectedSymbol?: string;
 }
 
 /**

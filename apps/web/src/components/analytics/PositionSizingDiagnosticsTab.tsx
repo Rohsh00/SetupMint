@@ -31,6 +31,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded';
+import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
 
 import {
   CartesianGrid,
@@ -53,6 +54,8 @@ interface IPositionSizingDiagnosticsTabProps {
   data?: ISizingAnalyticsResult;
   isLoading?: boolean;
   currencySymbol?: string;
+  selectedSymbol?: string;
+  onSelectSymbol?: (symbol: string) => void;
   onRefresh?: () => void;
 }
 
@@ -60,6 +63,8 @@ export function PositionSizingDiagnosticsTab({
   data,
   isLoading,
   currencySymbol = '$',
+  selectedSymbol,
+  onSelectSymbol,
   onRefresh,
 }: IPositionSizingDiagnosticsTabProps) {
   const muiTheme = useMuiTheme();
@@ -67,6 +72,9 @@ export function PositionSizingDiagnosticsTab({
 
   const [activeChart, setActiveChart] = useState<'EQUITY_COMPARISON' | 'SIZE_PROGRESSION'>('EQUITY_COMPARISON');
   const [selectedTierKey, setSelectedTierKey] = useState<string | null>(null);
+
+  const availableSymbols = data?.availableSymbols || [];
+  const currentSymbol = selectedSymbol || data?.selectedSymbol || 'ALL';
 
   if (isLoading) {
     return (
@@ -90,15 +98,70 @@ export function PositionSizingDiagnosticsTab({
 
   if (!summary || summary.totalTrades === 0) {
     return (
-      <Card sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
-        <StraightenRoundedIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1, opacity: 0.5 }} />
-        <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-          No Sizing Analytics Available
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 480, mx: 'auto' }}>
-          Log more closed trades with recorded lot sizes (e.g. 0.01, 0.02, 0.04) to analyze your position sizing evolution, tier performance, and Sizing Alpha.
-        </Typography>
-      </Card>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {availableSymbols.length > 1 && (
+          <Card
+            sx={{
+              p: 1.5,
+              px: 2,
+              borderRadius: 2,
+              border: `1px solid ${muiTheme.palette.divider}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 1.5,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FilterListRoundedIcon sx={{ fontSize: 18, color: muiTheme.palette.primary.main }} />
+              <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>
+                Asset Filter:
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Chip
+                label="All Assets (Combined)"
+                onClick={() => onSelectSymbol?.('ALL')}
+                color={currentSymbol === 'ALL' ? 'primary' : 'default'}
+                variant={currentSymbol === 'ALL' ? 'filled' : 'outlined'}
+                size="small"
+                sx={{ fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem' }}
+              />
+              {availableSymbols.map((sym) => {
+                const isSelected = currentSymbol === sym;
+                return (
+                  <Chip
+                    key={sym}
+                    label={sym}
+                    onClick={() => onSelectSymbol?.(sym)}
+                    color={isSelected ? 'primary' : 'default'}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    size="small"
+                    sx={{
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontFamily: `'JetBrains Mono', monospace`,
+                    }}
+                  />
+                );
+              })}
+            </Box>
+          </Card>
+        )}
+        <Card sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
+          <StraightenRoundedIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1, opacity: 0.5 }} />
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+            No Sizing Analytics Available {currentSymbol !== 'ALL' ? `for ${currentSymbol}` : ''}
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 480, mx: 'auto' }}>
+            {currentSymbol !== 'ALL'
+              ? `No closed trades recorded with lot sizes for ${currentSymbol}. Switch to "All Assets" or choose another instrument.`
+              : 'Log more closed trades with recorded lot sizes (e.g. 0.01, 0.02, 0.04) to analyze your position sizing evolution, tier performance, and Sizing Alpha.'}
+          </Typography>
+        </Card>
+      </Box>
     );
   }
 
@@ -126,157 +189,291 @@ export function PositionSizingDiagnosticsTab({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Symbol Filter Bar (Multi-Asset Sizing Isolation) */}
+      {availableSymbols.length > 1 && (
+        <Card
+          sx={{
+            p: 1.5,
+            px: 2,
+            borderRadius: 2,
+            border: `1px solid ${muiTheme.palette.divider}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 1.5,
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.01)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FilterListRoundedIcon sx={{ fontSize: 18, color: muiTheme.palette.primary.main }} />
+            <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>
+              Asset Filter:
+            </Typography>
+            <Tooltip
+              title="Different instruments use different contract lot values (for example: 1 lot of ETH is 1 coin, whereas 0.02 lots of Gold is 2 ounces). Filtering by individual asset isolates your true sizing discipline without cross-asset distortion."
+              arrow
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'help' }} />
+            </Tooltip>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            <Tooltip title="View combined diagnostics across all traded assets" arrow>
+              <Chip
+                label="All Assets (Combined)"
+                onClick={() => onSelectSymbol?.('ALL')}
+                color={currentSymbol === 'ALL' ? 'primary' : 'default'}
+                variant={currentSymbol === 'ALL' ? 'filled' : 'outlined'}
+                size="small"
+                sx={{ fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem' }}
+              />
+            </Tooltip>
+            {availableSymbols.map((sym) => {
+              const isSelected = currentSymbol === sym;
+              return (
+                <Tooltip key={sym} title={`Isolate sizing analytics exclusively for ${sym}`} arrow>
+                  <Chip
+                    label={sym}
+                    onClick={() => onSelectSymbol?.(sym)}
+                    color={isSelected ? 'primary' : 'default'}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    size="small"
+                    sx={{
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontFamily: `'JetBrains Mono', monospace`,
+                    }}
+                  />
+                </Tooltip>
+              );
+            })}
+          </Box>
+        </Card>
+      )}
+
+      {/* Multi-Asset Scaling Guidance Banner */}
+      {currentSymbol === 'ALL' && availableSymbols.length > 1 && (
+        <Alert
+          severity="info"
+          icon={<InfoOutlinedIcon fontSize="small" />}
+          sx={{
+            borderRadius: 2,
+            fontSize: '0.8125rem',
+            py: 0.75,
+            border: `1px solid ${alpha(muiTheme.palette.info.main, 0.2)}`,
+            backgroundColor: isDark ? 'rgba(2, 136, 209, 0.08)' : 'rgba(2, 136, 209, 0.05)',
+            '& .MuiAlert-message': { width: '100%' },
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+            <Box>
+              <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', color: 'info.main', fontSize: '0.8125rem' }}>
+                Multi-Asset Lot Scaling Detected
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                You trade different contract lot scales across instruments (e.g. 1–2 lots on Crypto vs 0.02–0.04 lots on Gold/Forex). In "All Assets" view, lot numbers are combined. Click any asset pill above to isolate pure sizing analytics for that specific instrument.
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+              {availableSymbols.map((sym) => (
+                <Button
+                  key={sym}
+                  size="small"
+                  variant="outlined"
+                  color="info"
+                  onClick={() => onSelectSymbol?.(sym)}
+                  sx={{ textTransform: 'none', py: 0.25, px: 1, fontSize: '0.7rem', fontWeight: 700 }}
+                >
+                  View {sym}
+                </Button>
+              ))}
+            </Box>
+          </Box>
+        </Alert>
+      )}
+
       {/* Top Hero KPI Cards */}
       <Grid container spacing={2}>
         {/* Card 1: Sizing Alpha */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${isAlphaPositive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-              backgroundColor: isAlphaPositive
-                ? isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.03)'
-                : isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.03)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
+          <Tooltip
+            title="Sizing Alpha measures whether varying your position size added or subtracted value compared to trading the exact same average lot size every time. Positive (+) means your sizing adjustments created excess profit. Negative (-) means sizing up on losing trades destroyed profits."
+            arrow
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Sizing Alpha
-              </Typography>
-              <Tooltip title="Actual Net P&L minus what you would have made trading constant average lot size. Positive means your sizing decisions created value. Negative means sizing escalation destroyed profits." arrow>
-                <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'help' }} />
-              </Tooltip>
-            </Box>
-            <Typography
-              variant="h4"
+            <Card
               sx={{
-                fontWeight: 900,
-                fontFamily: `'JetBrains Mono', monospace`,
-                color: isAlphaPositive ? '#10B981' : '#EF4444',
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${isAlphaPositive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                backgroundColor: isAlphaPositive
+                  ? isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.03)'
+                  : isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'help',
               }}
             >
-              {isAlphaPositive ? '+' : ''}{formatCurrency(summary.sizingAlpha, currencySymbol)}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                label={summary.sizingAlphaVerdict === 'POSITIVE_ALPHA' ? 'POSITIVE ALPHA (+GOOD)' : 'VALUE DESTRUCTIVE (-BAD)'}
-                size="small"
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Sizing Alpha
+                </Typography>
+                <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              </Box>
+              <Typography
+                variant="h4"
                 sx={{
-                  height: 20,
-                  fontSize: '0.625rem',
-                  fontWeight: 800,
-                  backgroundColor: isAlphaPositive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  fontWeight: 900,
+                  fontFamily: `'JetBrains Mono', monospace`,
                   color: isAlphaPositive ? '#10B981' : '#EF4444',
                 }}
-              />
-            </Box>
-          </Card>
+              >
+                {isAlphaPositive ? '+' : ''}{formatCurrency(summary.sizingAlpha, currencySymbol)}
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Tooltip
+                  title={
+                    summary.sizingAlphaVerdict === 'POSITIVE_ALPHA'
+                      ? 'Your sizing decisions amplified your returns: you sized up effectively on your winning setups!'
+                      : 'Your sizing decisions cost you money: you tended to trade larger lots on losing trades and smaller lots on winning trades.'
+                  }
+                  arrow
+                >
+                  <Chip
+                    label={summary.sizingAlphaVerdict === 'POSITIVE_ALPHA' ? 'POSITIVE ALPHA (+GOOD)' : 'VALUE DESTRUCTIVE (-BAD)'}
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.625rem',
+                      fontWeight: 800,
+                      backgroundColor: isAlphaPositive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: isAlphaPositive ? '#10B981' : '#EF4444',
+                    }}
+                  />
+                </Tooltip>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 2: Sizing Health Score & Grade */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${muiTheme.palette.divider}`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
+          <Tooltip
+            title="A comprehensive 0–100 score and letter grade (A/B/C/D) evaluating your sizing discipline. Factors include: 1) Profitability of higher lot tiers, 2) Containment of drawdowns at base size, and 3) Absence of post-loss revenge sizing spikes."
+            arrow
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Sizing Health Grade
+            <Card
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'help',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Sizing Health Grade
+                </Typography>
+                <ShieldRoundedIcon sx={{ fontSize: 20, color: gradeColor }} />
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5 }}>
+                <Typography variant="h4" sx={{ fontWeight: 900, color: gradeColor }}>
+                  Grade {summary.sizingHealthGrade}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 }}>
+                  {summary.sizingHealthScore}/100
+                </Typography>
+              </Box>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                {summary.sizingHealthGrade === 'A' || summary.sizingHealthGrade === 'B'
+                  ? 'Healthy scaling discipline with positive edge amplification'
+                  : 'Size escalation friction detected; review larger tiers'}
               </Typography>
-              <ShieldRoundedIcon sx={{ fontSize: 20, color: gradeColor }} />
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5 }}>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: gradeColor }}>
-                Grade {summary.sizingHealthGrade}
-              </Typography>
-              <Typography variant="body2" sx={{ color: 'text.secondary', fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700 }}>
-                {summary.sizingHealthScore}/100
-              </Typography>
-            </Box>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
-              {summary.sizingHealthGrade === 'A' || summary.sizingHealthGrade === 'B'
-                ? 'Healthy scaling discipline with positive edge amplification'
-                : 'Size escalation friction detected; review larger tiers'}
-            </Typography>
-          </Card>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 3: Lot Tiers Detected */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${muiTheme.palette.divider}`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
+          <Tooltip
+            title="Groups your trades into volume clusters (e.g. Base 0.01, 2x 0.02, 4x 0.04). Base is the smallest standard volume you trade, while Average is the volume-weighted mean across all trades."
+            arrow
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Lot Tiers Active
+            <Card
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'help',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Lot Tiers Active
+                </Typography>
+                <LayersRoundedIcon sx={{ fontSize: 20, color: '#8B5CF6' }} />
+              </Box>
+              <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                {tiers.length} Tiers
               </Typography>
-              <LayersRoundedIcon sx={{ fontSize: 20, color: '#8B5CF6' }} />
-            </Box>
-            <Typography variant="h4" sx={{ fontWeight: 800 }}>
-              {tiers.length} Tiers
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: `'JetBrains Mono', monospace` }}>
-              Base: {summary.baseLotQuantity} Lots • Avg: {summary.averageLotQuantity} Lots
-            </Typography>
-          </Card>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: `'JetBrains Mono', monospace` }}>
+                Base: {summary.baseLotQuantity} Lots • Avg: {summary.averageLotQuantity} Lots
+              </Typography>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 4: Revenge Escalation Rate */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${muiTheme.palette.divider}`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
+          <Tooltip
+            title="The percentage of lot size increases that occurred directly after a loss (Martingale tilt pattern). In prop firm and professional trading, sizing up after a loss is the leading cause of account breaches. Disciplined traders keep this below 15%."
+            arrow
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Revenge Escalation Rate
-              </Typography>
-              <Tooltip title="Percentage of lot size increases that occurred directly following a loss (Martingale tilt pattern). Under 15% is healthy." arrow>
+            <Card
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'help',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Revenge Escalation Rate
+                </Typography>
                 <WarningAmberRoundedIcon
                   sx={{
                     fontSize: 20,
                     color: (triggerAnalysis?.revengeEscalationRate ?? 0) > 25 ? '#EF4444' : '#10B981',
                   }}
                 />
-              </Tooltip>
-            </Box>
-            <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 800,
-                fontFamily: `'JetBrains Mono', monospace`,
-                color: (triggerAnalysis?.revengeEscalationRate ?? 0) > 25 ? '#EF4444' : muiTheme.palette.text.primary,
-              }}
-            >
-              {triggerAnalysis?.revengeEscalationRate ?? 0}%
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
-              {triggerAnalysis?.revengeEscalations ?? 0} of {triggerAnalysis?.totalEscalations ?? 0} escalations after losses
-            </Typography>
-          </Card>
+              </Box>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 800,
+                  fontFamily: `'JetBrains Mono', monospace`,
+                  color: (triggerAnalysis?.revengeEscalationRate ?? 0) > 25 ? '#EF4444' : muiTheme.palette.text.primary,
+                }}
+              >
+                {triggerAnalysis?.revengeEscalationRate ?? 0}%
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                {triggerAnalysis?.revengeEscalations ?? 0} of {triggerAnalysis?.totalEscalations ?? 0} escalations after losses
+              </Typography>
+            </Card>
+          </Tooltip>
         </Grid>
       </Grid>
 
@@ -317,26 +514,30 @@ export function PositionSizingDiagnosticsTab({
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               {activeChart === 'EQUITY_COMPARISON'
-                ? 'Compares your actual journey (0.01 -> 0.02 -> 0.04) against what your P&L would be if you had traded constant average lot size with identical volume.'
+                ? 'Compares your actual journey against what your P&L would be if you had traded a constant average lot size with identical total volume.'
                 : 'Chronological sequence of all trades showing lot sizes and color-coded win/loss outcomes.'}
             </Typography>
           </Box>
 
           <ButtonGroup size="small" variant="outlined">
-            <Button
-              variant={activeChart === 'EQUITY_COMPARISON' ? 'contained' : 'outlined'}
-              onClick={() => setActiveChart('EQUITY_COMPARISON')}
-              sx={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'none' }}
-            >
-              Equity Comparison
-            </Button>
-            <Button
-              variant={activeChart === 'SIZE_PROGRESSION' ? 'contained' : 'outlined'}
-              onClick={() => setActiveChart('SIZE_PROGRESSION')}
-              sx={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'none' }}
-            >
-              Size Progression Timeline
-            </Button>
+            <Tooltip title="Compare your actual equity curve against a constant lot size baseline" arrow>
+              <Button
+                variant={activeChart === 'EQUITY_COMPARISON' ? 'contained' : 'outlined'}
+                onClick={() => setActiveChart('EQUITY_COMPARISON')}
+                sx={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'none' }}
+              >
+                Equity Comparison
+              </Button>
+            </Tooltip>
+            <Tooltip title="View every trade plotted chronologically by lot size with win/loss and revenge indicators" arrow>
+              <Button
+                variant={activeChart === 'SIZE_PROGRESSION' ? 'contained' : 'outlined'}
+                onClick={() => setActiveChart('SIZE_PROGRESSION')}
+                sx={{ fontWeight: 700, fontSize: '0.75rem', textTransform: 'none' }}
+              >
+                Size Progression Timeline
+              </Button>
+            </Tooltip>
           </ButtonGroup>
         </Box>
 
@@ -364,7 +565,7 @@ export function PositionSizingDiagnosticsTab({
                       ? 'Actual Equity'
                       : name === 'constantSizeCumulativePnL'
                       ? 'Constant Size Baseline'
-                      : 'Flat Base (0.01) Baseline',
+                      : 'Flat Base Baseline',
                   ]}
                   labelFormatter={(idx) => {
                     const pt = progression[Number(idx) - 1];
@@ -378,7 +579,7 @@ export function PositionSizingDiagnosticsTab({
                       ? 'Actual P&L (Escalating Size)'
                       : value === 'constantSizeCumulativePnL'
                       ? 'Constant Size Baseline (Identical Volume)'
-                      : 'Flat Base 0.01 Baseline'
+                      : 'Flat Base Baseline'
                   }
                 />
                 <ReferenceLine y={0} stroke={muiTheme.palette.divider} strokeWidth={1.5} />
@@ -501,13 +702,21 @@ export function PositionSizingDiagnosticsTab({
 
       {/* Lot Size Tier Matrix (Cards & Comparative Table) */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <LayersRoundedIcon sx={{ color: muiTheme.palette.primary.main }} />
-            Performance by Lot Size Tier (0.01 vs 0.02 vs 0.04...)
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LayersRoundedIcon sx={{ color: muiTheme.palette.primary.main }} />
+              Performance by Lot Size Tier
+            </Typography>
+            <Tooltip
+              title="Breaks down your win rate, profit factor, average win/loss, and payoff ratio across each distinct lot size cluster you trade to identify where your edge is strongest."
+              arrow
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'help' }} />
+            </Tooltip>
+          </Box>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            Click a tier to inspect drilldown metrics
+            Click any tier card or row to highlight drilldown metrics
           </Typography>
         </Box>
 
@@ -524,109 +733,130 @@ export function PositionSizingDiagnosticsTab({
                 ? '#F59E0B'
                 : '#EF4444';
 
+            const verdictTooltip =
+              t.verdict === 'OPTIMAL'
+                ? 'Optimal Tier: High win rate, great profit factor, and strong positive expectancy. Your edge is strongest at this size.'
+                : t.verdict === 'HEALTHY'
+                ? 'Healthy Tier: Consistently profitable with solid risk-reward and controlled drawdown.'
+                : t.verdict === 'MARGINAL'
+                ? 'Marginal Tier: Near breakeven. The risk taken at this volume is not producing commensurate profit.'
+                : 'Value Destructive: Net losing tier. Trading at this size is actively draining profits from your account.';
+
             return (
               <Grid key={t.tierKey} size={{ xs: 12, sm: 6, md: 4, lg: Math.max(3, Math.floor(12 / Math.min(tiers.length, 4))) }}>
-                <Card
-                  onClick={() => setSelectedTierKey(isSelected ? null : t.tierKey)}
-                  sx={{
-                    p: 2.25,
-                    borderRadius: 2,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease-in-out',
-                    border: `1.5px solid ${isSelected ? muiTheme.palette.primary.main : muiTheme.palette.divider}`,
-                    backgroundColor: isSelected
-                      ? isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)'
-                      : muiTheme.palette.background.paper,
-                    '&:hover': {
-                      borderColor: muiTheme.palette.primary.main,
-                      transform: 'translateY(-2px)',
-                    },
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.9rem' }}>
-                      {t.label}
-                    </Typography>
-                    <Chip
-                      label={t.verdict}
-                      size="small"
-                      sx={{
-                        height: 20,
-                        fontSize: '0.625rem',
-                        fontWeight: 800,
-                        backgroundColor: alpha(verdictColor, 0.15),
-                        color: verdictColor,
-                      }}
-                    />
-                  </Box>
-
-                  <Typography
-                    variant="h5"
+                <Tooltip title="Click to filter/highlight this lot size tier" arrow>
+                  <Card
+                    onClick={() => setSelectedTierKey(isSelected ? null : t.tierKey)}
                     sx={{
-                      fontWeight: 900,
-                      fontFamily: `'JetBrains Mono', monospace`,
-                      color: isProfitable ? '#10B981' : '#EF4444',
-                      mb: 0.5,
+                      p: 2.25,
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease-in-out',
+                      border: `1.5px solid ${isSelected ? muiTheme.palette.primary.main : muiTheme.palette.divider}`,
+                      backgroundColor: isSelected
+                        ? isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)'
+                        : muiTheme.palette.background.paper,
+                      '&:hover': {
+                        borderColor: muiTheme.palette.primary.main,
+                        transform: 'translateY(-2px)',
+                      },
                     }}
                   >
-                    {isProfitable ? '+' : ''}{formatCurrency(t.netPnL, currencySymbol)}
-                  </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, fontSize: '0.9rem' }}>
+                        {t.label}
+                      </Typography>
+                      <Tooltip title={verdictTooltip} arrow>
+                        <Chip
+                          label={t.verdict}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.625rem',
+                            fontWeight: 800,
+                            backgroundColor: alpha(verdictColor, 0.15),
+                            color: verdictColor,
+                          }}
+                        />
+                      </Tooltip>
+                    </Box>
 
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1.5 }}>
-                    {t.tradeCount} trades ({t.tradePercent}% of total) • {t.winningTrades}W / {t.losingTrades}L
-                  </Typography>
+                    <Typography
+                      variant="h5"
+                      sx={{
+                        fontWeight: 900,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: isProfitable ? '#10B981' : '#EF4444',
+                        mb: 0.5,
+                      }}
+                    >
+                      {isProfitable ? '+' : ''}{formatCurrency(t.netPnL, currencySymbol)}
+                    </Typography>
 
-                  <Divider sx={{ my: 1 }} />
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1.5 }}>
+                      {t.tradeCount} trades ({t.tradePercent}% of total) • {t.winningTrades}W / {t.losingTrades}L
+                    </Typography>
 
-                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, pt: 0.5 }}>
-                    <Box>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
-                        Win Rate
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
-                        {t.winRate}%
-                      </Typography>
+                    <Divider sx={{ my: 1 }} />
+
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, pt: 0.5 }}>
+                      <Tooltip title="Percentage of winning trades taken at this specific lot size" arrow>
+                        <Box sx={{ cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
+                            Win Rate
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                            {t.winRate}%
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                      <Tooltip title="Gross Profit divided by Gross Loss at this size (values above 1.5 indicate a strong edge)" arrow>
+                        <Box sx={{ cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
+                            Profit Factor
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: t.profitFactor >= 1.5 ? '#10B981' : t.profitFactor >= 1.0 ? '#F59E0B' : '#EF4444',
+                            }}
+                          >
+                            {t.profitFactor}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                      <Tooltip title="Average dollar gain on winning trades versus average dollar loss on losing trades at this size" arrow>
+                        <Box sx={{ cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
+                            Avg Win / Loss
+                          </Typography>
+                          <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: 'text.secondary' }}>
+                            +{t.avgWin} / -{t.avgLoss}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                      <Tooltip title="Average dollar profit or loss expected per trade at this size based on win rate and payoff ratio" arrow>
+                        <Box sx={{ cursor: 'help' }}>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
+                            Expectancy
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: t.expectancyPerTrade >= 0 ? '#10B981' : '#EF4444',
+                            }}
+                          >
+                            {t.expectancyPerTrade >= 0 ? '+' : ''}{t.expectancyPerTrade} / trd
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     </Box>
-                    <Box>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
-                        Profit Factor
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 800,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: t.profitFactor >= 1.5 ? '#10B981' : t.profitFactor >= 1.0 ? '#F59E0B' : '#EF4444',
-                        }}
-                      >
-                        {t.profitFactor}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
-                        Avg Win / Loss
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace`, color: 'text.secondary' }}>
-                        +{t.avgWin} / -{t.avgLoss}
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
-                        Expectancy
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontWeight: 800,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: t.expectancyPerTrade >= 0 ? '#10B981' : '#EF4444',
-                        }}
-                      >
-                        {t.expectancyPerTrade >= 0 ? '+' : ''}{t.expectancyPerTrade} / trd
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Card>
+                  </Card>
+                </Tooltip>
               </Grid>
             );
           })}
@@ -637,17 +867,83 @@ export function PositionSizingDiagnosticsTab({
           <Table size="small">
             <TableHead>
               <TableRow sx={{ backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.02)' }}>
-                <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Lot Size Tier</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Trades</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Win Rate</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Profit Factor</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Net P&L</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Avg Win</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Avg Loss</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Payoff Ratio</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Avg R</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Max Drawdown</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>Sizing Verdict</TableCell>
+                <TableCell sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="The specific lot quantity range or tier (e.g. 0.01 Lots vs 0.02 Lots vs 0.04 Lots)" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      Lot Size Tier <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Total number of closed trades executed at this lot size and percentage of your overall trade count" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Trades <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Percentage of closed trades in this tier that ended in a profit" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Win Rate <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Gross Profit divided by Gross Loss at this lot size. Over 1.5 is strong, below 1.0 is net losing." arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Profit Factor <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Total real dollar profit or loss generated exclusively by trades in this lot tier" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Net P&L <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Average dollar amount won on profitable trades at this size" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Avg Win <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Average dollar amount lost on losing trades at this size" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Avg Loss <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Reward-to-Risk ratio: Average Win divided by Average Loss (e.g. 1 : 1.8 means wins are 1.8x losses)" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Payoff Ratio <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Average multiple of planned risk (R) realized per trade at this size" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Avg R <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Maximum peak-to-trough dollar decline experienced exclusively while trading at this lot size" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Max Drawdown <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Automated edge classification based on expectancy, profit factor, and net return" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                      Sizing Verdict <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -706,31 +1002,44 @@ export function PositionSizingDiagnosticsTab({
                     -{formatCurrency(t.maxDrawdownInTier, currencySymbol)}
                   </TableCell>
                   <TableCell align="right">
-                    <Chip
-                      label={t.verdict}
-                      size="small"
-                      sx={{
-                        height: 20,
-                        fontSize: '0.625rem',
-                        fontWeight: 800,
-                        backgroundColor:
-                          t.verdict === 'OPTIMAL'
-                            ? 'rgba(16, 185, 129, 0.15)'
-                            : t.verdict === 'HEALTHY'
-                            ? 'rgba(59, 130, 246, 0.15)'
-                            : t.verdict === 'MARGINAL'
-                            ? 'rgba(245, 158, 11, 0.15)'
-                            : 'rgba(239, 68, 68, 0.15)',
-                        color:
-                          t.verdict === 'OPTIMAL'
-                            ? '#10B981'
-                            : t.verdict === 'HEALTHY'
-                            ? '#3B82F6'
-                            : t.verdict === 'MARGINAL'
-                            ? '#F59E0B'
-                            : '#EF4444',
-                      }}
-                    />
+                    <Tooltip
+                      title={
+                        t.verdict === 'OPTIMAL'
+                          ? 'Optimal Tier: Highest edge and positive expectancy'
+                          : t.verdict === 'HEALTHY'
+                          ? 'Healthy Tier: Consistently profitable'
+                          : t.verdict === 'MARGINAL'
+                          ? 'Marginal Tier: Near breakeven'
+                          : 'Value Destructive Tier: Net losing at this size'
+                      }
+                      arrow
+                    >
+                      <Chip
+                        label={t.verdict}
+                        size="small"
+                        sx={{
+                          height: 20,
+                          fontSize: '0.625rem',
+                          fontWeight: 800,
+                          backgroundColor:
+                            t.verdict === 'OPTIMAL'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : t.verdict === 'HEALTHY'
+                              ? 'rgba(59, 130, 246, 0.15)'
+                              : t.verdict === 'MARGINAL'
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
+                          color:
+                            t.verdict === 'OPTIMAL'
+                              ? '#10B981'
+                              : t.verdict === 'HEALTHY'
+                              ? '#3B82F6'
+                              : t.verdict === 'MARGINAL'
+                              ? '#F59E0B'
+                              : '#EF4444',
+                        }}
+                      />
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
@@ -742,10 +1051,18 @@ export function PositionSizingDiagnosticsTab({
       {/* Escalation Trigger Diagnostics: Compounding vs Revenge Martingale */}
       {triggerAnalysis && triggerAnalysis.totalEscalations > 0 && (
         <Card sx={{ p: 3, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-          <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <AutoAwesomeRoundedIcon sx={{ color: muiTheme.palette.primary.main }} />
-            Escalation Trigger Diagnostics: Why Did You Size Up?
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AutoAwesomeRoundedIcon sx={{ color: muiTheme.palette.primary.main }} />
+              Escalation Trigger Diagnostics: Why Did You Size Up?
+            </Typography>
+            <Tooltip
+              title="Answers the psychological question: When you increased lot size, was it done systematically after a WIN (compounding) or emotionally after a LOSS (revenge)?"
+              arrow
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'help' }} />
+            </Tooltip>
+          </Box>
           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2 }}>
             Analyzes whether sizing up after a WIN (compounding) vs sizing up after a LOSS (revenge Martingale) was more successful.
           </Typography>
@@ -753,92 +1070,104 @@ export function PositionSizingDiagnosticsTab({
           <Grid container spacing={2}>
             {/* Rational Compounding */}
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.03)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                }}
+              <Tooltip
+                title="Increasing lot size after a WIN is healthy capital expansion. Sizing up while in profit cushion compounds returns without emotional distress."
+                arrow
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#10B981' }}>
-                    🟢 Sized Up After a WIN (Compounding)
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.03)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1,
+                    cursor: 'help',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#10B981' }}>
+                      🟢 Sized Up After a WIN (Compounding)
+                    </Typography>
+                    <Chip
+                      label={`${triggerAnalysis.compoundingEscalations} trades`}
+                      size="small"
+                      color="success"
+                      sx={{ height: 20, fontSize: '0.625rem', fontWeight: 800 }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Rational expansion: Increasing size while in a profit cushion or after winning execution.
                   </Typography>
-                  <Chip
-                    label={`${triggerAnalysis.compoundingEscalations} trades`}
-                    size="small"
-                    color="success"
-                    sx={{ height: 20, fontSize: '0.625rem', fontWeight: 800 }}
-                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Win Rate: <strong>{triggerAnalysis.compoundingWinRate}%</strong>
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: triggerAnalysis.compoundingAvgPnL >= 0 ? '#10B981' : '#EF4444',
+                      }}
+                    >
+                      Avg: {triggerAnalysis.compoundingAvgPnL >= 0 ? '+' : ''}{formatCurrency(triggerAnalysis.compoundingAvgPnL, currencySymbol)}
+                    </Typography>
+                  </Box>
                 </Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                  Rational expansion: Increasing size while in a profit cushion or after winning execution.
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    Win Rate: <strong>{triggerAnalysis.compoundingWinRate}%</strong>
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      fontWeight: 800,
-                      fontFamily: `'JetBrains Mono', monospace`,
-                      color: triggerAnalysis.compoundingAvgPnL >= 0 ? '#10B981' : '#EF4444',
-                    }}
-                  >
-                    Avg: {triggerAnalysis.compoundingAvgPnL >= 0 ? '+' : ''}{formatCurrency(triggerAnalysis.compoundingAvgPnL, currencySymbol)}
-                  </Typography>
-                </Box>
-              </Box>
+              </Tooltip>
             </Grid>
 
             {/* Revenge Martingale Escalation */}
             <Grid size={{ xs: 12, sm: 6 }}>
-              <Box
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.03)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                }}
+              <Tooltip
+                title="Increasing lot size after a LOSS is an emotional Martingale trap. Trying to 'make back' a loss in one trade is the leading cause of account breaches."
+                arrow
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#EF4444' }}>
-                    🔴 Sized Up After a LOSS (Revenge / Tilt)
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.03)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1,
+                    cursor: 'help',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#EF4444' }}>
+                      🔴 Sized Up After a LOSS (Revenge / Tilt)
+                    </Typography>
+                    <Chip
+                      label={`${triggerAnalysis.revengeEscalations} trades`}
+                      size="small"
+                      color="error"
+                      sx={{ height: 20, fontSize: '0.625rem', fontWeight: 800 }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Emotional trap: Doubling lot size to "make back" the previous loss in one trade.
                   </Typography>
-                  <Chip
-                    label={`${triggerAnalysis.revengeEscalations} trades`}
-                    size="small"
-                    color="error"
-                    sx={{ height: 20, fontSize: '0.625rem', fontWeight: 800 }}
-                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Win Rate: <strong>{triggerAnalysis.revengeWinRate}%</strong>
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: triggerAnalysis.revengeAvgPnL >= 0 ? '#10B981' : '#EF4444',
+                      }}
+                    >
+                      Avg: {triggerAnalysis.revengeAvgPnL >= 0 ? '+' : ''}{formatCurrency(triggerAnalysis.revengeAvgPnL, currencySymbol)}
+                    </Typography>
+                  </Box>
                 </Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                  Emotional trap: Doubling lot size to "make back" the previous loss in one trade.
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    Win Rate: <strong>{triggerAnalysis.revengeWinRate}%</strong>
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      fontWeight: 800,
-                      fontFamily: `'JetBrains Mono', monospace`,
-                      color: triggerAnalysis.revengeAvgPnL >= 0 ? '#10B981' : '#EF4444',
-                    }}
-                  >
-                    Avg: {triggerAnalysis.revengeAvgPnL >= 0 ? '+' : ''}{formatCurrency(triggerAnalysis.revengeAvgPnL, currencySymbol)}
-                  </Typography>
-                </Box>
-              </Box>
+              </Tooltip>
             </Grid>
           </Grid>
         </Card>
@@ -846,4 +1175,3 @@ export function PositionSizingDiagnosticsTab({
     </Box>
   );
 }
-

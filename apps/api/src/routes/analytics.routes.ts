@@ -513,7 +513,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
   // Dedicated Position Sizing Evolution & Diagnostics Analytics
   app.get('/sizing', async (req: any, reply) => {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, symbol } = req.query;
 
     const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
     if (!dateRangeResult.success) {
@@ -539,7 +539,17 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const trades = await Trade.find(filter).sort({ tradeDate: 1, entryTime: 1 }).lean();
 
-    const tradeInputs: SizingAnalyticsTradeInput[] = trades.map((t: any) => {
+    // Collect all unique traded symbols available in this account scope
+    const availableSymbols = Array.from(
+      new Set(trades.map((t: any) => (t.symbol || '').toUpperCase().trim()).filter(Boolean))
+    ).sort();
+
+    // Filter by specific symbol if selected
+    const activeTrades = symbol && symbol !== 'ALL'
+      ? trades.filter((t: any) => (t.symbol || '').toUpperCase().trim() === String(symbol).toUpperCase().trim())
+      : trades;
+
+    const tradeInputs: SizingAnalyticsTradeInput[] = activeTrades.map((t: any) => {
       let qty = t.simpleExecution?.quantity ?? t.calculated?.closedQuantity ?? t.calculated?.openQuantity ?? 0;
       if (!qty && Array.isArray(t.fills) && t.fills.length > 0) {
         qty = t.fills
@@ -565,7 +575,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     return reply.send({
       success: true,
-      data: diagnostics,
+      data: {
+        ...diagnostics,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
+      },
     });
   });
 };

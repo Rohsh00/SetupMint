@@ -246,9 +246,11 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       },
     }));
 
+    const primaryCurrency = (accountCtx.primaryCurrency && accountCtx.primaryCurrency !== 'MULTI' ? accountCtx.primaryCurrency : null) || formattedTrades[0]?.currency || 'USD';
     const stats = calculateDashboardMetrics(formattedTrades, startingEquity, {
       timezone: metricsTimezone,
       cashFlows: mappedCashFlows,
+      currency: primaryCurrency,
     });
 
     // Multi-currency handling: never blend money totals across distinct currencies
@@ -261,6 +263,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         byCurrency[curr] = calculateDashboardMetrics(currTrades, currStartingEquity, {
           timezone: metricsTimezone,
           cashFlows: currCashFlows,
+          currency: curr,
         });
       }
     }

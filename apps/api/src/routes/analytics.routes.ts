@@ -648,4 +648,161 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       },
     });
   });
+
+  // Dedicated Gold & Macro News Catalyst Impact Analytics
+  app.get('/news-impact', async (req: any, reply) => {
+    const { startDate, endDate, symbol } = req.query;
+
+    const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
+
+    const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
+    }
+
+    const trades = await Trade.find(filter).sort({ tradeDate: 1, entryTime: 1 }).lean();
+
+    // Available symbols
+    const availableSymbols = Array.from(
+      new Set(trades.map((t: any) => (t.symbol || '').toUpperCase().trim()).filter(Boolean))
+    ).sort();
+
+    const activeTrades = symbol && symbol !== 'ALL'
+      ? trades.filter((t: any) => (t.symbol || '').toUpperCase().trim() === String(symbol).toUpperCase().trim())
+      : trades;
+
+    // Identify trades taken around high-impact news catalysts vs calm conditions
+    const newsRegex = /NEWS|CPI|NFP|FOMC|FED|PPI|RATE|POWELL|CATALYST|PAYROLL|GDP|UNEMPLOYMENT/i;
+    
+    // Macro release UTC minutes: 12:30 UTC (750m), 13:30 UTC (810m), 14:00 UTC (840m), 18:00 UTC (1080m), 19:00 UTC (1140m)
+    const isMacroReleaseTime = (dateObj: Date) => {
+      const day = dateObj.getUTCDay();
+      if (day === 0 || day === 6) return false;
+      const mins = dateObj.getUTCHours() * 60 + dateObj.getUTCMinutes();
+      const targets = [750, 810, 840, 1080, 1140, 1200];
+      return targets.some((t) => Math.abs(mins - t) <= 30);
+    };
+
+    const newsTrades: any[] = [];
+    const calmTrades: any[] = [];
+
+    for (const t of activeTrades) {
+      const entryDate = new Date(t.entryTime || t.tradeDate);
+      const tagsStr = (t.tags || []).join(' ');
+      const notesStr = String((t as any).notes || t.psychology?.notes || '') + ' ' + String((t as any).setupName || '') + ' ' + String(t.strategyName || '');
+      const isExplicitNews = newsRegex.test(tagsStr) || newsRegex.test(notesStr);
+      const isNewsTiming = isMacroReleaseTime(entryDate);
+
+      if (isExplicitNews || isNewsTiming) {
+        newsTrades.push({ ...t, newsTag: isExplicitNews ? 'EXPLICIT_NEWS' : 'RELEASE_WINDOW' });
+      } else {
+        calmTrades.push(t);
+      }
+    }
+
+    const calcCohort = (tList: any[]) => {
+      let netPnL = 0;
+      let grossPnL = 0;
+      let wins = 0;
+      let losses = 0;
+      let sumWin = 0;
+      let sumLoss = 0;
+      let sumR = 0;
+      let rCount = 0;
+      let totalSwap = 0;
+      let totalSpreadCost = 0;
+
+      for (const tr of tList) {
+        const net = Number(tr.calculated?.netPnL ?? 0);
+        const gross = Number(tr.calculated?.grossPnL ?? net);
+        const r = tr.calculated?.realizedRMultiple ?? tr.risk?.realizedRMultiple;
+        const swap = Number(tr.simpleExecution?.otherFees ?? 0);
+        const spreadCost = Number(tr.simpleExecution?.spreadCost ?? 0);
+
+        netPnL += net;
+        grossPnL += gross;
+        totalSwap += swap;
+        totalSpreadCost += spreadCost;
+
+        if (net > 0) {
+          wins++;
+          sumWin += net;
+        } else if (net < 0) {
+          losses++;
+          sumLoss += Math.abs(net);
+        }
+
+        if (typeof r === 'number' && Number.isFinite(r)) {
+          sumR += r;
+          rCount++;
+        }
+      }
+
+      const total = tList.length;
+      const winRate = total > 0 ? Number(((wins / total) * 100).toFixed(1)) : 0;
+      const profitFactor = sumLoss > 0 ? Number((sumWin / sumLoss).toFixed(2)) : (sumWin > 0 ? 999.99 : 0);
+      const avgWin = wins > 0 ? Number((sumWin / wins).toFixed(2)) : 0;
+      const avgLoss = losses > 0 ? Number((sumLoss / losses).toFixed(2)) : 0;
+      const avgR = rCount > 0 ? Number((sumR / rCount).toFixed(2)) : 0;
+      const expectancy = total > 0 ? Number((netPnL / total).toFixed(2)) : 0;
+
+      return {
+        tradeCount: total,
+        winCount: wins,
+        lossCount: losses,
+        winRate,
+        netPnL: Number(netPnL.toFixed(2)),
+        grossPnL: Number(grossPnL.toFixed(2)),
+        profitFactor,
+        avgWin,
+        avgLoss,
+        avgR,
+        expectancy,
+        totalSwap: Number(totalSwap.toFixed(2)),
+        totalSpreadCost: Number(totalSpreadCost.toFixed(2)),
+      };
+    };
+
+    const newsStats = calcCohort(newsTrades);
+    const calmStats = calcCohort(calmTrades);
+    const overallStats = calcCohort(activeTrades);
+
+    // Friction summary (Spread & Swap)
+    const totalFrictionCost = Number((overallStats.totalSwap + overallStats.totalSpreadCost).toFixed(2));
+    const friction = {
+      totalSwap: overallStats.totalSwap,
+      totalSpreadCost: overallStats.totalSpreadCost,
+      totalFrictionCost,
+      frictionSharePercent: overallStats.grossPnL !== 0
+        ? Number(((totalFrictionCost / Math.abs(overallStats.grossPnL)) * 100).toFixed(1))
+        : 0,
+    };
+
+    return reply.send({
+      success: true,
+      data: {
+        symbol: symbol || 'ALL',
+        availableSymbols,
+        newsStats,
+        calmStats,
+        overallStats,
+        friction,
+      },
+    });
+  });
 };

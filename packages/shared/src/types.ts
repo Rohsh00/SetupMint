@@ -1207,6 +1207,7 @@ export interface IDashboardStats {
     symbol?: string;
     netPnL: number;
     cumulativeEquity: number;
+    cumulativePnL?: number;
     drawdown: number;
     drawdownPercent: number;
   }>;

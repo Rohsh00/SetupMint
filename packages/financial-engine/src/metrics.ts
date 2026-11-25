@@ -34,6 +34,8 @@ export interface DashboardMetricsOptions {
   timezone?: string;
   /** Optional confirmed external cash flows within the active window for cash-flow-safe drawdown */
   cashFlows?: DashboardCashFlowEvent[];
+  /** Optional currency (e.g. 'USD', 'INR') or profile hint for adaptive bucket scaling */
+  currency?: string;
 }
 
 function getWeekdayNameInTz(dateStr: string, timeZone: string): string {
@@ -127,12 +129,14 @@ export function calculateDashboardMetrics(
     .filter((cf) => Number.isFinite(cf.ts) && Number.isFinite(cf.signedAmount) && cf.signedAmount !== 0)
     .sort((a, b) => a.ts - b.ts);
   let cashFlowIdx = 0;
+  let runningCumulativePnL = new Decimal(0);
 
   const equityCurve: IDashboardStats['equityCurve'] = [
     {
       date: closedTrades.length > 0 ? getTradingDateInTz(closedTrades[0].tradeDate, timezone) : new Date().toISOString().split('T')[0],
       netPnL: 0,
       cumulativeEquity: runningEquity.toNumber(),
+      cumulativePnL: 0,
       drawdown: 0,
       drawdownPercent: 0,
     },
@@ -224,6 +228,7 @@ export function calculateDashboardMetrics(
     }
 
     const dayKey = getTradingDateInTz(trade.tradeDate, timezone);
+    runningCumulativePnL = runningCumulativePnL.plus(pnl);
 
     equityCurve.push({
       date: dayKey,
@@ -231,6 +236,7 @@ export function calculateDashboardMetrics(
       symbol: trade.symbol,
       netPnL: Number(pnl.toFixed(2)),
       cumulativeEquity: Number(runningEquity.toFixed(2)),
+      cumulativePnL: Number(runningCumulativePnL.toFixed(2)),
       drawdown: Number(currentDrawdown.toFixed(2)),
       drawdownPercent: Number(currentDrawdownPct.toFixed(2)),
     });
@@ -348,6 +354,7 @@ export function calculateDashboardMetrics(
       date: new Date(sortedCashFlows[cashFlowIdx].ts).toISOString().split('T')[0],
       netPnL: 0,
       cumulativeEquity: Number(runningEquity.toFixed(2)),
+      cumulativePnL: Number(runningCumulativePnL.toFixed(2)),
       drawdown: Number(currentDrawdown.toFixed(2)),
       drawdownPercent: Number(currentDrawdownPct.toFixed(2)),
     });
@@ -476,15 +483,55 @@ export function calculateDashboardMetrics(
     }))
     .sort((a, b) => b.netPnL - a.netPnL);
 
-  // Distribution buckets (e.g. <-5000, -5000..-1000, -1000..0, 0..1000, 1000..5000, >5000)
-  const buckets = [
-    { range: '< -5000', min: -Infinity, max: -5000, isProfit: false, count: 0 },
-    { range: '-5000 to -1000', min: -5000, max: -1000, isProfit: false, count: 0 },
-    { range: '-1000 to 0', min: -1000, max: 0, isProfit: false, count: 0 },
-    { range: '0 to 1000', min: 0, max: 1000, isProfit: true, count: 0 },
-    { range: '1000 to 5000', min: 1000, max: 5000, isProfit: true, count: 0 },
-    { range: '> 5000', min: 5000, max: Infinity, isProfit: true, count: 0 },
-  ];
+  // Adaptive distribution buckets:
+  // Tailor thresholds to the active currency and trade scale (e.g. micro-lots in USD for Elefin vs large INR F&O contracts)
+  const maxAbsPnl = closedTrades.reduce((max, t) => Math.max(max, Math.abs(t.calculated.netPnL ?? 0)), 0);
+  const isMicroScale = maxAbsPnl <= 30;
+  const isSmallScale = maxAbsPnl <= 200;
+  const isMidScale = maxAbsPnl <= 1500;
+  const isUsd = (options.currency || '').toUpperCase() === 'USD';
+
+  let buckets: Array<{ range: string; min: number; max: number; isProfit: boolean; count: number }>;
+
+  if (isMicroScale && (isUsd || maxAbsPnl > 0)) {
+    // Calibrated specifically for micro-lot scalping (e.g. 0.01 - 0.05 XAUUSD / Elefin)
+    buckets = [
+      { range: '< -10', min: -Infinity, max: -10, isProfit: false, count: 0 },
+      { range: '-10 to -5', min: -10, max: -5, isProfit: false, count: 0 },
+      { range: '-5 to 0', min: -5, max: 0, isProfit: false, count: 0 },
+      { range: '0 to 5', min: 0, max: 5, isProfit: true, count: 0 },
+      { range: '5 to 10', min: 5, max: 10, isProfit: true, count: 0 },
+      { range: '> 10', min: 10, max: Infinity, isProfit: true, count: 0 },
+    ];
+  } else if (isSmallScale && (isUsd || maxAbsPnl > 0)) {
+    buckets = [
+      { range: '< -50', min: -Infinity, max: -50, isProfit: false, count: 0 },
+      { range: '-50 to -20', min: -50, max: -20, isProfit: false, count: 0 },
+      { range: '-20 to 0', min: -20, max: 0, isProfit: false, count: 0 },
+      { range: '0 to 20', min: 0, max: 20, isProfit: true, count: 0 },
+      { range: '20 to 50', min: 20, max: 50, isProfit: true, count: 0 },
+      { range: '> 50', min: 50, max: Infinity, isProfit: true, count: 0 },
+    ];
+  } else if (isMidScale && isUsd) {
+    buckets = [
+      { range: '< -500', min: -Infinity, max: -500, isProfit: false, count: 0 },
+      { range: '-500 to -100', min: -500, max: -100, isProfit: false, count: 0 },
+      { range: '-100 to 0', min: -100, max: 0, isProfit: false, count: 0 },
+      { range: '0 to 100', min: 0, max: 100, isProfit: true, count: 0 },
+      { range: '100 to 500', min: 100, max: 500, isProfit: true, count: 0 },
+      { range: '> 500', min: 500, max: Infinity, isProfit: true, count: 0 },
+    ];
+  } else {
+    // Standard default scale (e.g. Indian F&O: 5000 / 1000)
+    buckets = [
+      { range: '< -5000', min: -Infinity, max: -5000, isProfit: false, count: 0 },
+      { range: '-5000 to -1000', min: -5000, max: -1000, isProfit: false, count: 0 },
+      { range: '-1000 to 0', min: -1000, max: 0, isProfit: false, count: 0 },
+      { range: '0 to 1000', min: 0, max: 1000, isProfit: true, count: 0 },
+      { range: '1000 to 5000', min: 1000, max: 5000, isProfit: true, count: 0 },
+      { range: '> 5000', min: 5000, max: Infinity, isProfit: true, count: 0 },
+    ];
+  }
 
   for (const trade of closedTrades) {
     const val = trade.calculated.netPnL ?? 0;

@@ -179,10 +179,12 @@ export function calculatePositionSizingDiagnostics(
   const uniqueQuantities = Array.from(new Set(quantities)).sort((a, b) => a - b);
   let tierDefinitions: Array<{ key: string; label: string; min: number; max: number }>;
 
+  const formatLotLabel = (val: number) => Number(val.toFixed(4)).toString();
+
   if (uniqueQuantities.length <= 6) {
     tierDefinitions = uniqueQuantities.map((q) => ({
       key: String(q),
-      label: `${q} Lot${q !== 1 ? 's' : ''}`,
+      label: `${formatLotLabel(q)} Lot${q !== 1 ? 's' : ''}`,
       min: q,
       max: q,
     }));
@@ -197,8 +199,8 @@ export function calculatePositionSizingDiagnostics(
       const maxVal = slice[slice.length - 1];
       const label =
         minVal === maxVal
-          ? `${minVal} Lots`
-          : `${minVal} - ${maxVal} Lots`;
+          ? `${formatLotLabel(minVal)} Lots`
+          : `${formatLotLabel(minVal)} - ${formatLotLabel(maxVal)} Lots`;
       tierDefinitions.push({
         key: `${minVal}_${maxVal}`,
         label,

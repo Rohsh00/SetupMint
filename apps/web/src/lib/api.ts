@@ -759,6 +759,13 @@ export const api = {
       }
       return request<any>(`/analytics/killzones?${query.toString()}`);
     },
+    newsImpact: (params: Record<string, any> = {}) => {
+      const query = new URLSearchParams();
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== null && val !== '') query.set(key, String(val));
+      }
+      return request<any>(`/analytics/news-impact?${query.toString()}`);
+    },
   },
 
   // Risk Calculator

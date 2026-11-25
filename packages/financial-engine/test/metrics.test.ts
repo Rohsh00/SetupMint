@@ -178,4 +178,41 @@ describe('Financial Engine - Performance Metrics & Analytics', () => {
     // Cash withdrawal should not create artificial drawdown
     expect(stats.maxDrawdownAmount).toBe(0);
   });
+
+  it('generates adaptive micro-lot P&L distribution buckets for Elefin USD trades', () => {
+    // 5 micro-lot XAUUSD trades like in Elefin:
+    // -2.28, -0.40, +6.10, +2.07, -5.44
+    const elefinTrades: PerformanceInputTrade[] = [
+      { id: 'e1', tradeDate: '2026-11-09T19:01:00Z', symbol: 'XAUUSD', status: 'CLOSED', calculated: { netPnL: -2.28, grossPnL: -2.28, totalCosts: 0, outcome: 'LOSS' } },
+      { id: 'e2', tradeDate: '2026-11-09T19:10:00Z', symbol: 'XAUUSD', status: 'CLOSED', calculated: { netPnL: -0.40, grossPnL: -0.40, totalCosts: 0, outcome: 'LOSS' } },
+      { id: 'e3', tradeDate: '2026-11-09T20:14:00Z', symbol: 'XAUUSD', status: 'CLOSED', calculated: { netPnL: 6.10, grossPnL: 6.10, totalCosts: 0, outcome: 'WIN' } },
+      { id: 'e4', tradeDate: '2026-11-10T08:30:00Z', symbol: 'XAUUSD', status: 'CLOSED', calculated: { netPnL: 2.07, grossPnL: 2.07, totalCosts: 0, outcome: 'WIN' } },
+      { id: 'e5', tradeDate: '2026-11-10T07:27:00Z', symbol: 'XAUUSD', status: 'CLOSED', calculated: { netPnL: -5.44, grossPnL: -5.44, totalCosts: 0, outcome: 'LOSS' } },
+    ];
+
+    const stats = calculateDashboardMetrics(elefinTrades, 27, { currency: 'USD', timezone: 'UTC' });
+
+    // Assert that distribution ranges are micro-scale (-10 to -5, -5 to 0, 0 to 5, 5 to 10) instead of collapsed INR -1000..0
+    expect(stats.pnlDistribution.map((b) => b.range)).toEqual([
+      '< -10',
+      '-10 to -5',
+      '-5 to 0',
+      '0 to 5',
+      '5 to 10',
+      '> 10',
+    ]);
+
+    // Check counts:
+    // -5.44 -> in '-10 to -5'
+    // -2.28, -0.40 -> in '-5 to 0' (2 trades)
+    // +2.07 -> in '0 to 5' (1 trade)
+    // +6.10 -> in '5 to 10' (1 trade)
+    const countMap = Object.fromEntries(stats.pnlDistribution.map((b) => [b.range, b.count]));
+    expect(countMap['-10 to -5']).toBe(1);
+    expect(countMap['-5 to 0']).toBe(2);
+    expect(countMap['0 to 5']).toBe(1);
+    expect(countMap['5 to 10']).toBe(1);
+    expect(countMap['< -10']).toBe(0);
+    expect(countMap['> 10']).toBe(0);
+  });
 });

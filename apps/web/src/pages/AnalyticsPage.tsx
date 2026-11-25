@@ -37,6 +37,8 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded';
+import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
+import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 
 import {
   Area,
@@ -88,6 +90,7 @@ export function AnalyticsPage() {
     }
   }, [hasMarketData, activeTab]);
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
+  const [curveMode, setCurveMode] = useState<'DRAWDOWN_PCT' | 'CUMULATIVE_PNL' | 'DRAWDOWN_AMOUNT'>('DRAWDOWN_PCT');
   const [whatIfPrefill, setWhatIfPrefill] = useState<{ stopR?: number; targetR?: number } | null>(null);
   const [funnelMode, setFunnelMode] = useState<'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD'>('AUTO');
   const [customMfeStepsInput, setCustomMfeStepsInput] = useState<string>('0.5, 1.0, 1.5, 2.0, 3.0');
@@ -182,6 +185,18 @@ export function AnalyticsPage() {
       }),
     enabled: activeTab === 'TIME',
   });
+
+  const { data: newsImpactRaw, isLoading: isNewsImpactLoading, refetch: refetchNewsImpact } = useQuery({
+    queryKey: ['analytics-news-impact', queryParams, startDate, endDate],
+    queryFn: () =>
+      api.analytics.newsImpact({
+        ...queryParams,
+        startDate,
+        endDate,
+      }),
+    enabled: activeTab === 'TIME',
+  });
+  const newsImpact = newsImpactRaw?.data ?? newsImpactRaw;
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -408,30 +423,78 @@ export function AnalyticsPage() {
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Equity & Peak-to-Trough Drawdown Curve */}
           <Card sx={{ p: 2.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 3 }}>
               <Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                    Peak-to-Trough Drawdown Curve
+                    {curveMode === 'CUMULATIVE_PNL'
+                      ? 'Cumulative Closed Trade P&L Curve'
+                      : curveMode === 'DRAWDOWN_AMOUNT'
+                      ? `Peak-to-Trough Drawdown (${currSym})`
+                      : 'Peak-to-Trough Drawdown Curve (%)'}
                   </Typography>
                   <HelpHint hintKey="metric.drawdown" />
                 </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  Percentage drawdown from historical high equity mark
+                  {curveMode === 'CUMULATIVE_PNL'
+                    ? 'Cashflow-isolated closed trade performance (independent of external deposits & withdrawals)'
+                    : 'Drawdown depth from historical high-water mark'}
                 </Typography>
               </Box>
-              <Chip
-                label={`Max DD: -${formatPercent(stats?.maxDrawdownPercent)} (${formatCurrency(stats?.maxDrawdownAmount)})`}
-                size="small"
-                sx={{
-                  fontFamily: `'JetBrains Mono', monospace`,
-                  fontWeight: 700,
-                  fontSize: '0.75rem',
-                  backgroundColor: muiTheme.palette.loss.bg,
-                  color: muiTheme.palette.loss.main,
-                  border: `1px solid ${isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'}`,
-                }}
-              />
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <ButtonGroup size="small" variant="outlined" sx={{ borderRadius: 1.5 }}>
+                  <Button
+                    variant={curveMode === 'DRAWDOWN_PCT' ? 'contained' : 'outlined'}
+                    onClick={() => setCurveMode('DRAWDOWN_PCT')}
+                    sx={{ textTransform: 'none', fontSize: '0.7rem', fontWeight: 700, px: 1.2, py: 0.3 }}
+                  >
+                    Drawdown %
+                  </Button>
+                  <Button
+                    variant={curveMode === 'CUMULATIVE_PNL' ? 'contained' : 'outlined'}
+                    onClick={() => setCurveMode('CUMULATIVE_PNL')}
+                    sx={{ textTransform: 'none', fontSize: '0.7rem', fontWeight: 700, px: 1.2, py: 0.3 }}
+                  >
+                    Net P&L Curve
+                  </Button>
+                  <Button
+                    variant={curveMode === 'DRAWDOWN_AMOUNT' ? 'contained' : 'outlined'}
+                    onClick={() => setCurveMode('DRAWDOWN_AMOUNT')}
+                    sx={{ textTransform: 'none', fontSize: '0.7rem', fontWeight: 700, px: 1.2, py: 0.3 }}
+                  >
+                    Drawdown {currSym}
+                  </Button>
+                </ButtonGroup>
+
+                {curveMode === 'CUMULATIVE_PNL' ? (
+                  <Chip
+                    label={`Total Net P&L: ${formatCurrency(stats?.netPnL, analyticsCurrency)}`}
+                    size="small"
+                    sx={{
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      backgroundColor: (stats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.bg : muiTheme.palette.loss.bg,
+                      color: (stats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                      border: `1px solid ${(stats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)'}`,
+                    }}
+                  />
+                ) : (
+                  <Chip
+                    label={`Max DD: -${formatPercent(stats?.maxDrawdownPercent)} (${formatCurrency(stats?.maxDrawdownAmount, analyticsCurrency)})`}
+                    size="small"
+                    sx={{
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      backgroundColor: muiTheme.palette.loss.bg,
+                      color: muiTheme.palette.loss.main,
+                      border: `1px solid ${isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(220, 38, 38, 0.25)'}`,
+                    }}
+                  />
+                )}
+              </Box>
             </Box>
 
             <Box sx={{ height: 280, width: '100%' }}>
@@ -457,6 +520,10 @@ export function AnalyticsPage() {
                         <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.4} />
                         <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
                       </linearGradient>
+                      <linearGradient id="setupmintPnlGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                      </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                     <XAxis dataKey="date" stroke={chartAxisColor} fontSize={11} tickLine={false} />
@@ -464,22 +531,52 @@ export function AnalyticsPage() {
                       stroke={chartAxisColor}
                       fontSize={11}
                       tickLine={false}
-                      tickFormatter={(v) => `-${v}%`}
+                      tickFormatter={(v) =>
+                        curveMode === 'DRAWDOWN_PCT'
+                          ? `-${v}%`
+                          : formatCurrency(v, analyticsCurrency)
+                      }
                     />
                     <RechartsTooltip
                       contentStyle={chartTooltipStyle}
                       itemStyle={{ color: muiTheme.palette.text.primary }}
                       labelStyle={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}
-                      formatter={(val: any) => [`-${formatPercent(val)}`, 'Drawdown']}
+                      formatter={(val: any) =>
+                        curveMode === 'DRAWDOWN_PCT'
+                          ? [`-${formatPercent(val)}`, 'Drawdown']
+                          : curveMode === 'CUMULATIVE_PNL'
+                          ? [formatCurrency(val, analyticsCurrency), 'Cumulative P&L']
+                          : [`-${formatCurrency(val, analyticsCurrency)}`, 'Drawdown']
+                      }
                     />
-                    <Area
-                      type="monotone"
-                      dataKey="drawdownPercent"
-                      stroke="#F43F5E"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#setupmintDrawdownGradient)"
-                    />
+                    {curveMode === 'CUMULATIVE_PNL' ? (
+                      <Area
+                        type="monotone"
+                        dataKey="cumulativePnL"
+                        stroke="#10B981"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#setupmintPnlGradient)"
+                      />
+                    ) : curveMode === 'DRAWDOWN_AMOUNT' ? (
+                      <Area
+                        type="monotone"
+                        dataKey="drawdown"
+                        stroke="#F43F5E"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#setupmintDrawdownGradient)"
+                      />
+                    ) : (
+                      <Area
+                        type="monotone"
+                        dataKey="drawdownPercent"
+                        stroke="#F43F5E"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#setupmintDrawdownGradient)"
+                      />
+                    )}
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
@@ -872,6 +969,205 @@ export function AnalyticsPage() {
             onDrillDown={(filter, label) => openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), ...filter }, label })}
           />
 
+          {/* High-Impact US Macro News Catalysts & Transaction Friction Card */}
+          {newsImpact && (newsImpact.newsStats?.tradeCount > 0 || newsImpact.friction?.totalFrictionCost > 0 || caps.broker.adapter === 'ELEFIN_MT5' || analyticsCurrency === 'USD') && (
+            <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 2.5 }}>
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <FlashOnRoundedIcon sx={{ color: '#F59E0B', fontSize: 20 }} />
+                    <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                      Macro News Catalysts & Transaction Friction (Gold / Forex)
+                    </Typography>
+                    <HelpHint hintKey="analytics.time.killzones" />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    Evaluates trade performance during high-impact US macro releases (CPI, NFP, FOMC, PPI) vs calm technical flow, plus MT5 spread and swap drag
+                  </Typography>
+                </Box>
+                {newsImpact.friction?.totalFrictionCost > 0 && (
+                  <Chip
+                    icon={<ReceiptLongRoundedIcon style={{ fontSize: 13 }} />}
+                    label={`Total Friction: ${formatCurrency(newsImpact.friction.totalFrictionCost, analyticsCurrency)} (${newsImpact.friction.frictionSharePercent}% of Gross)`}
+                    size="small"
+                    sx={{
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      bgcolor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                      color: '#F59E0B',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                    }}
+                  />
+                )}
+              </Box>
+
+              <Grid container spacing={2}>
+                {/* News Releases Cohort */}
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      borderColor: (newsImpact.newsStats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
+                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(15, 23, 42, 0.015)',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip
+                          label="HIGH-IMPACT NEWS RELEASES"
+                          size="small"
+                          sx={{
+                            fontWeight: 800,
+                            fontSize: '0.65rem',
+                            bgcolor: 'rgba(239, 68, 68, 0.15)',
+                            color: '#F87171',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                          }}
+                        />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                          ±30m US Macro Events
+                        </Typography>
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          fontWeight: 800,
+                          color: (newsImpact.newsStats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(newsImpact.newsStats?.netPnL, analyticsCurrency)}
+                      </Typography>
+                    </Box>
+
+                    <Grid container spacing={1.5} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                          TRADES / WIN %
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {newsImpact.newsStats?.tradeCount || 0} trades • {newsImpact.newsStats?.winRate || 0}%
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                          PROFIT FACTOR
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {newsImpact.newsStats?.profitFactor || 0}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                          AVG R-MULTIPLE
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 800,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: (newsImpact.newsStats?.avgR || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {(newsImpact.newsStats?.avgR || 0) > 0 ? `+${newsImpact.newsStats?.avgR}R` : `${newsImpact.newsStats?.avgR || 0}R`}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                </Grid>
+
+                {/* Calm / Technical Flow Cohort */}
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      borderColor: (newsImpact.calmStats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
+                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(15, 23, 42, 0.015)',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip
+                          label="CALM TECHNICAL FLOW"
+                          size="small"
+                          sx={{
+                            fontWeight: 800,
+                            fontSize: '0.65rem',
+                            bgcolor: 'rgba(59, 130, 246, 0.15)',
+                            color: '#60A5FA',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                          }}
+                        />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                          Normal Session Flow
+                        </Typography>
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          fontWeight: 800,
+                          color: (newsImpact.calmStats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(newsImpact.calmStats?.netPnL, analyticsCurrency)}
+                      </Typography>
+                    </Box>
+
+                    <Grid container spacing={1.5} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                          TRADES / WIN %
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {newsImpact.calmStats?.tradeCount || 0} trades • {newsImpact.calmStats?.winRate || 0}%
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                          PROFIT FACTOR
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                          {newsImpact.calmStats?.profitFactor || 0}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 4 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                          AVG R-MULTIPLE
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 800,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: (newsImpact.calmStats?.avgR || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {(newsImpact.calmStats?.avgR || 0) > 0 ? `+${newsImpact.calmStats?.avgR}R` : `${newsImpact.calmStats?.avgR || 0}R`}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                </Grid>
+              </Grid>
+
+              {/* Friction Breakdown Footer */}
+              <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                  <strong>MT5 Friction Breakdown:</strong> Recorded Overnight Swaps: <code>{formatCurrency(newsImpact.friction?.totalSwap || 0, analyticsCurrency)}</code> • Estimated Spread Drag: <code>{formatCurrency(newsImpact.friction?.totalSpreadCost || 0, analyticsCurrency)}</code>
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
+                  CFD transaction costs are absorbed dynamically via spread & financing swaps.
+                </Typography>
+              </Box>
+            </Card>
+          )}
+
           <Grid container spacing={3}>
           {/* Weekday Breakdown */}
           <Grid size={{ xs: 12, md: 6 }}>
@@ -968,7 +1264,9 @@ export function AnalyticsPage() {
                   <HelpHint hintKey="trade.form.sessionCodes" />
                 </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  NSE Regular equity market vs MCX Commodity evening session (click row to drill down)
+                  {caps.broker.adapter === 'ELEFIN_MT5' || analyticsCurrency === 'USD'
+                    ? 'Forex 24/5 sessions: Asia, London, New York & London Close (click row to drill down)'
+                    : 'NSE Regular equity market vs MCX Commodity evening session (click row to drill down)'}
                 </Typography>
               </Box>
 
@@ -1067,20 +1365,35 @@ export function AnalyticsPage() {
                 Measures execution efficiency, profit giveback, and optimal stop placement across evaluated trades.
               </Typography>
             </Box>
-            <Tooltip title="Fetch 1-minute historical candle snapshots from FYERS or Angel One and compute peak excursion metrics for all closed trades">
-              <span>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={excursionBackfillMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
-                  onClick={() => excursionBackfillMutation.mutate({ limit: 50 })}
-                  disabled={excursionBackfillMutation.isPending}
-                  sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
-                >
-                  {excursionBackfillMutation.isPending ? 'Backfilling Excursion...' : 'Run Excursion Backfill'}
-                </Button>
-              </span>
-            </Tooltip>
+            {caps.broker.adapter === 'ELEFIN_MT5' ? (
+              <Tooltip title="Elefin MT5 excursion is synchronized directly via real MT5 tickets and spot CFD candles. Domestic broker backfill is disabled for Elefin.">
+                <span>
+                  <Chip
+                    icon={<CheckCircleRoundedIcon style={{ fontSize: 14 }} />}
+                    label="MT5 Bridge Synchronized"
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                    sx={{ fontWeight: 700, fontSize: '0.75rem', px: 0.5 }}
+                  />
+                </span>
+              </Tooltip>
+            ) : (
+              <Tooltip title="Fetch 1-minute historical candle snapshots from FYERS or Angel One and compute peak excursion metrics for all closed trades">
+                <span>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={excursionBackfillMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <SyncRoundedIcon fontSize="small" />}
+                    onClick={() => excursionBackfillMutation.mutate({ limit: 50 })}
+                    disabled={excursionBackfillMutation.isPending}
+                    sx={{ textTransform: 'none', fontWeight: 700, fontSize: '0.75rem', borderRadius: 2 }}
+                  >
+                    {excursionBackfillMutation.isPending ? 'Backfilling Excursion...' : 'Run Excursion Backfill'}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
           </Box>
 
           {isExcursionLoading ? (

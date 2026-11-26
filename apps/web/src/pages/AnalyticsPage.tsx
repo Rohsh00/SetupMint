@@ -270,7 +270,7 @@ export function AnalyticsPage() {
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
-      {/* Top Header & Tab Controls */}
+      {/* Page Header */}
       <Box
         sx={{
           display: 'flex',
@@ -278,8 +278,6 @@ export function AnalyticsPage() {
           alignItems: { xs: 'flex-start', sm: 'center' },
           justifyContent: 'space-between',
           gap: 2,
-          pb: 2,
-          borderBottom: `1px solid ${muiTheme.palette.divider}`,
         }}
       >
         <Box>
@@ -291,42 +289,38 @@ export function AnalyticsPage() {
           </Typography>
         </Box>
 
-        {/* Controls: Date Filter & Tab Switcher */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
-          <DateRangeFilter />
+        {/* Date Filter */}
+        <DateRangeFilter />
+      </Box>
 
-          {/* Tab Switcher */}
-          <ButtonGroup
-            variant="outlined"
-            size="small"
-            sx={{
-              backgroundColor: muiTheme.palette.background.paper,
-              borderRadius: 2,
-              p: 0.5,
-              border: `1px solid ${muiTheme.palette.divider}`,
-            '& .MuiButtonGroup-grouped': {
-              border: 'none !important',
-              borderRadius: '6px !important',
-              px: 1.5,
-              py: 0.6,
-              fontSize: '0.75rem',
-              fontWeight: 600,
-            },
-          }}
-        >
-          {[
-            { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
-            { id: 'SIZING', label: 'Position Sizing', icon: <StraightenRoundedIcon fontSize="small" /> },
-            { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
-            { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
-            { id: 'PYRAMIDING', label: 'Pyramiding Edge', icon: <AccountTreeRoundedIcon fontSize="small" /> },
-            ...(hasMarketData
-              ? [
-                  { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
-                  { id: 'WHAT_IF', label: 'Stops & Targets', icon: <TuneRoundedIcon fontSize="small" /> },
-                ]
-              : []),
-          ].map((tab) => (
+      {/* Dedicated Tab Navigation Sub-Bar */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          overflowX: 'auto',
+          pb: 1.25,
+          borderBottom: `1px solid ${muiTheme.palette.divider}`,
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
+        }}
+      >
+        {[
+          { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
+          { id: 'SIZING', label: 'Position Sizing', icon: <StraightenRoundedIcon fontSize="small" /> },
+          { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
+          { id: 'TIME', label: 'Time & Session', icon: <AccessTimeIcon fontSize="small" /> },
+          { id: 'PYRAMIDING', label: 'Pyramiding Edge', icon: <AccountTreeRoundedIcon fontSize="small" /> },
+          ...(hasMarketData
+            ? [
+                { id: 'EXECUTION', label: 'Execution Quality (MAE/MFE)', icon: <TimelineRoundedIcon fontSize="small" /> },
+                { id: 'WHAT_IF', label: 'Stops & Targets', icon: <TuneRoundedIcon fontSize="small" /> },
+              ]
+            : []),
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
             <Button
               key={tab.id}
               onClick={() => {
@@ -337,26 +331,54 @@ export function AnalyticsPage() {
                   return next;
                 });
               }}
-              startIcon={tab.icon}
+              startIcon={React.cloneElement(tab.icon, {
+                sx: {
+                  fontSize: '18px !important',
+                  color: isActive
+                    ? (isDark ? '#34D399' : '#059669')
+                    : (isDark ? '#94A3B8' : '#64748B'),
+                  transition: 'color 0.15s ease',
+                },
+              })}
               sx={{
-                backgroundColor:
-                  activeTab === tab.id
-                    ? `${muiTheme.palette.primary.main} !important`
-                    : 'transparent',
-                color:
-                  activeTab === tab.id
-                    ? '#FFFFFF !important'
-                    : `${muiTheme.palette.text.secondary} !important`,
+                px: 1.75,
+                py: 0.7,
+                borderRadius: 2,
+                fontSize: '0.8125rem',
+                fontWeight: isActive ? 700 : 500,
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+                letterSpacing: '-0.01em',
+                transition: 'all 0.18s cubic-bezier(0.4, 0, 0.2, 1)',
+                backgroundColor: isActive
+                  ? (isDark ? 'rgba(16, 185, 129, 0.14)' : 'rgba(16, 185, 129, 0.10)')
+                  : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)'),
+                color: isActive
+                  ? (isDark ? '#34D399' : '#059669')
+                  : muiTheme.palette.text.secondary,
+                border: isActive
+                  ? `1px solid ${isDark ? 'rgba(52, 211, 153, 0.35)' : 'rgba(5, 150, 105, 0.3)'}`
+                  : `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)'}`,
+                boxShadow: isActive
+                  ? (isDark ? '0 0 14px rgba(16, 185, 129, 0.12)' : '0 1px 3px rgba(5, 150, 105, 0.08)')
+                  : 'none',
                 '&:hover': {
-                  color: `${muiTheme.palette.text.primary} !important`,
+                  backgroundColor: isActive
+                    ? (isDark ? 'rgba(16, 185, 129, 0.20)' : 'rgba(16, 185, 129, 0.14)')
+                    : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)'),
+                  color: isActive
+                    ? (isDark ? '#34D399' : '#059669')
+                    : muiTheme.palette.text.primary,
+                  borderColor: isActive
+                    ? (isDark ? 'rgba(52, 211, 153, 0.45)' : 'rgba(5, 150, 105, 0.4)')
+                    : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.12)'),
                 },
               }}
             >
               {tab.label}
             </Button>
-          ))}
-        </ButtonGroup>
-        </Box>
+          );
+        })}
       </Box>
 
       {/* PROP MODE ANALYTICS SUMMARY BANNER */}

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { DrillDescriptor } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { useAccountScope } from './AccountScopeContext.js';
+import { useDateRange } from './DateRangeContext.js';
 
 interface TradeDrillContextValue {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { queryParams } = useAccountScope();
+  const { startDate, endDate } = useDateRange();
 
   const [isOpen, setIsOpen] = useState(false);
   const [descriptor, setDescriptor] = useState<DrillDescriptor | null>(null);
@@ -39,17 +41,26 @@ export function TradeDrillProvider({ children }: { children: React.ReactNode }) 
       const hasExplicitScope =
         cleanFilter.scope !== undefined ||
         cleanFilter.mode !== undefined ||
-        cleanFilter.accountId !== undefined;
-      if (hasExplicitScope) return { ...desc, filter: cleanFilter };
+        (cleanFilter.accountId !== undefined && cleanFilter.accountId !== null && cleanFilter.accountId !== 'ALL');
+      const scopedFilter = hasExplicitScope ? cleanFilter : { ...queryParams, ...cleanFilter };
+
+      // Automatically inherit active date boundaries if descriptor does not specify its own dates
+      if (
+        !scopedFilter.date &&
+        !scopedFilter.dateRange &&
+        !scopedFilter.startDate &&
+        !scopedFilter.endDate
+      ) {
+        if (startDate) scopedFilter.startDate = startDate;
+        if (endDate) scopedFilter.endDate = endDate;
+      }
+
       return {
         ...desc,
-        filter: {
-          ...queryParams,
-          ...cleanFilter,
-        },
+        filter: scopedFilter,
       };
     },
-    [queryParams]
+    [queryParams, startDate, endDate]
   );
 
   // Sync state with URL '?drill=...'

@@ -63,6 +63,7 @@ export function buildTradeMongooseFilter(
     holdingTimeMax,
     excursionFlag,
     excursionFlags,
+    killZone,
     weekday,
   } = filterInput as any;
 
@@ -75,8 +76,17 @@ export function buildTradeMongooseFilter(
   } else if (accountId && mongoose.Types.ObjectId.isValid(accountId)) {
     filter.accountId = new mongoose.Types.ObjectId(accountId);
   }
+  const andClauses: any[] = [];
+
   if (symbol) {
-    filter.symbol = new RegExp(symbol.trim(), 'i');
+    const escaped = symbol.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    andClauses.push({
+      $or: [
+        { symbol: new RegExp(`^${escaped}$`, 'i') },
+        { underlying: new RegExp(`^${escaped}$`, 'i') },
+        { symbol: new RegExp(`^${escaped}(?:\\d|[-_\\s]|$)`, 'i') },
+      ],
+    });
   }
   if (assetClass) {
     filter.assetClass = assetClass;
@@ -90,12 +100,11 @@ export function buildTradeMongooseFilter(
   if (outcome) {
     filter['calculated.outcome'] = outcome;
   }
-  const andClauses: any[] = [];
 
   if (strategyId) {
     if (mongoose.Types.ObjectId.isValid(strategyId)) {
       filter.strategyId = new mongoose.Types.ObjectId(strategyId);
-    } else if (strategyId === 'unclassified') {
+    } else if (strategyId.toLowerCase() === 'unclassified' || strategyId.toLowerCase() === 'none') {
       andClauses.push({
         $or: [{ strategyId: { $exists: false } }, { strategyId: null }],
       });
@@ -108,7 +117,17 @@ export function buildTradeMongooseFilter(
     filter.session = session;
   }
   if (variantKey) {
-    filter['setup.variantKey'] = variantKey;
+    if (variantKey.toUpperCase() === 'UNASSIGNED') {
+      andClauses.push({
+        $or: [
+          { 'setup.variantKey': { $exists: false } },
+          { 'setup.variantKey': null },
+          { 'setup.variantKey': '' },
+        ],
+      });
+    } else {
+      filter['setup.variantKey'] = variantKey;
+    }
   }
   if (variantStatus) {
     filter['setup.variantStatus'] = variantStatus;
@@ -165,18 +184,51 @@ export function buildTradeMongooseFilter(
 
   // Psychology filters
   if (emotion) {
-    andClauses.push({
-      $or: [
-        { 'psychology.emotionBefore': emotion },
-        { 'psychology.emotionDuring': emotion },
-        { 'psychology.emotionAfter': emotion },
-        { 'psychology.emotionalState': emotion },
-        { 'psychology.emotion': emotion },
-      ],
-    });
+    const upperEmo = emotion.toUpperCase().trim();
+    if (upperEmo === 'NEUTRAL') {
+      andClauses.push({
+        $or: [
+          { 'psychology.emotionBefore': { $in: ['NEUTRAL', 'neutral', null] } },
+          { 'psychology.emotionBefore': { $exists: false } },
+          { 'psychology.emotionDuring': 'NEUTRAL' },
+          { 'psychology.emotionAfter': 'NEUTRAL' },
+          { 'psychology.emotionalState': 'NEUTRAL' },
+          { 'psychology.emotion': 'NEUTRAL' },
+        ],
+      });
+    } else {
+      andClauses.push({
+        $or: [
+          { 'psychology.emotionBefore': new RegExp(`^${upperEmo}$`, 'i') },
+          { 'psychology.emotionDuring': new RegExp(`^${upperEmo}$`, 'i') },
+          { 'psychology.emotionAfter': new RegExp(`^${upperEmo}$`, 'i') },
+          { 'psychology.emotionalState': new RegExp(`^${upperEmo}$`, 'i') },
+          { 'psychology.emotion': new RegExp(`^${upperEmo}$`, 'i') },
+        ],
+      });
+    }
   }
   if (mistakeTag) {
-    filter['psychology.mistakes'] = mistakeTag;
+    const upperMistake = mistakeTag.toUpperCase().trim();
+    const booleanFieldMap: Record<string, string> = {
+      REVENGE_TRADING: 'psychology.revengeTrading',
+      OVERTRADING: 'psychology.overtrading',
+      PREMATURE_EXIT: 'psychology.prematureExit',
+      STOP_MOVED: 'psychology.stopLossMoved',
+      SIZE_VIOLATION: 'psychology.positionSizeViolation',
+    };
+    const booleanField = booleanFieldMap[upperMistake];
+    if (booleanField) {
+      andClauses.push({
+        $or: [
+          { 'psychology.mistakes': mistakeTag },
+          { 'psychology.mistakes': upperMistake },
+          { [booleanField]: true },
+        ],
+      });
+    } else {
+      filter['psychology.mistakes'] = mistakeTag;
+    }
   }
   if (disciplineScore !== undefined && !isNaN(disciplineScore)) {
     andClauses.push({
@@ -189,42 +241,54 @@ export function buildTradeMongooseFilter(
 
   // Numerical Range Filters
   if (netPnLMin !== undefined || netPnLMax !== undefined) {
-    filter['calculated.netPnL'] = {};
+    const range: Record<string, number> = {};
     if (netPnLMin !== undefined && !isNaN(netPnLMin)) {
-      filter['calculated.netPnL'].$gte = netPnLMin;
+      range.$gte = netPnLMin;
     }
     if (netPnLMax !== undefined && !isNaN(netPnLMax)) {
-      filter['calculated.netPnL'].$lte = netPnLMax;
+      range.$lte = netPnLMax;
+    }
+    if (Object.keys(range).length > 0) {
+      filter['calculated.netPnL'] = range;
     }
   }
 
   if (mfeRMin !== undefined || mfeRMax !== undefined) {
-    filter['calculated.excursion.mfeR'] = {};
+    const range: Record<string, number> = {};
     if (mfeRMin !== undefined && !isNaN(mfeRMin)) {
-      filter['calculated.excursion.mfeR'].$gte = mfeRMin;
+      range.$gte = mfeRMin;
     }
     if (mfeRMax !== undefined && !isNaN(mfeRMax)) {
-      filter['calculated.excursion.mfeR'].$lte = mfeRMax;
+      range.$lte = mfeRMax;
+    }
+    if (Object.keys(range).length > 0) {
+      filter['calculated.excursion.mfeR'] = range;
     }
   }
 
   if (maeRMin !== undefined || maeRMax !== undefined) {
-    filter['calculated.excursion.maeR'] = {};
+    const range: Record<string, number> = {};
     if (maeRMin !== undefined && !isNaN(maeRMin)) {
-      filter['calculated.excursion.maeR'].$gte = maeRMin;
+      range.$gte = maeRMin;
     }
     if (maeRMax !== undefined && !isNaN(maeRMax)) {
-      filter['calculated.excursion.maeR'].$lte = maeRMax;
+      range.$lte = maeRMax;
+    }
+    if (Object.keys(range).length > 0) {
+      filter['calculated.excursion.maeR'] = range;
     }
   }
 
   if (holdingTimeMin !== undefined || holdingTimeMax !== undefined) {
-    filter['calculated.holdingTimeMinutes'] = {};
+    const range: Record<string, number> = {};
     if (holdingTimeMin !== undefined && !isNaN(holdingTimeMin)) {
-      filter['calculated.holdingTimeMinutes'].$gte = holdingTimeMin;
+      range.$gte = holdingTimeMin;
     }
     if (holdingTimeMax !== undefined && !isNaN(holdingTimeMax)) {
-      filter['calculated.holdingTimeMinutes'].$lte = holdingTimeMax;
+      range.$lte = holdingTimeMax;
+    }
+    if (Object.keys(range).length > 0) {
+      filter['calculated.holdingTimeMinutes'] = range;
     }
   }
 
@@ -237,11 +301,73 @@ export function buildTradeMongooseFilter(
     }
   }
 
+  // Kill-Zone filter based on entryTime / tradeDate
+  if (killZone) {
+    const kzUpper = String(killZone).toUpperCase().trim();
+    const timeField = { $ifNull: ['$entryTime', '$tradeDate'] };
+    const utcMinutes = {
+      $add: [
+        { $multiply: [{ $hour: { date: timeField, timezone: 'UTC' } }, 60] },
+        { $minute: { date: timeField, timezone: 'UTC' } },
+      ],
+    };
+    const istMinutes = {
+      $add: [
+        { $multiply: [{ $hour: { date: timeField, timezone: 'Asia/Kolkata' } }, 60] },
+        { $minute: { date: timeField, timezone: 'Asia/Kolkata' } },
+      ],
+    };
+
+    if (kzUpper === 'LONDON_OPEN') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [utcMinutes, 420] }, { $lt: [utcMinutes, 600] }] },
+      });
+    } else if (kzUpper === 'NY_OPEN') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [utcMinutes, 720] }, { $lt: [utcMinutes, 900] }] },
+      });
+    } else if (kzUpper === 'LONDON_CLOSE') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [utcMinutes, 900] }, { $lt: [utcMinutes, 1020] }] },
+      });
+    } else if (kzUpper === 'LONDON_MIDDAY') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [utcMinutes, 600] }, { $lt: [utcMinutes, 720] }] },
+      });
+    } else if (kzUpper === 'NY_AFTERNOON') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [utcMinutes, 1020] }, { $lt: [utcMinutes, 1260] }] },
+      });
+    } else if (kzUpper === 'ASIA_SESSION') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [utcMinutes, 0] }, { $lt: [utcMinutes, 420] }] },
+      });
+    } else if (kzUpper === 'NSE_OPENING') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [istMinutes, 555] }, { $lt: [istMinutes, 615] }] },
+      });
+    } else if (kzUpper === 'NSE_MIDDAY') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [istMinutes, 615] }, { $lt: [istMinutes, 810] }] },
+      });
+    } else if (kzUpper === 'NSE_POWER_HOUR') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [istMinutes, 810] }, { $lte: [istMinutes, 930] }] },
+      });
+    } else if (kzUpper === 'MCX_EVENING') {
+      andClauses.push({
+        $expr: { $and: [{ $gte: [istMinutes, 1020] }, { $lte: [istMinutes, 1435] }] },
+      });
+    }
+  }
+
   // Weekday filter in IST (matching calculateDashboardMetrics / Weekly Review day boundaries)
   if (weekday) {
     const mongoDay = WEEKDAY_TO_MONGO_DAY[weekday.toLowerCase().trim()];
     if (mongoDay) {
-      filter.$expr = { $eq: [{ $dayOfWeek: { date: '$tradeDate', timezone: 'Asia/Kolkata' } }, mongoDay] };
+      andClauses.push({
+        $expr: { $eq: [{ $dayOfWeek: { date: '$tradeDate', timezone: 'Asia/Kolkata' } }, mongoDay] },
+      });
     }
   }
 

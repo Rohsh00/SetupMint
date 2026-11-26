@@ -650,7 +650,7 @@ export function AnalyticsPage() {
                               const { netPnLMin, netPnLMax } = parsePnLRange(rangeStr);
                               openDrill({
                                 kind: 'FILTER',
-                                filter: { ...(queryParams as any), netPnLMin, netPnLMax },
+                                filter: { ...(queryParams as any), startDate, endDate, netPnLMin, netPnLMax },
                                 label: `Trades in P&L Range: ${rangeStr}`,
                               });
                             }
@@ -793,7 +793,7 @@ export function AnalyticsPage() {
                         onClick={() =>
                           openDrill({
                             kind: 'FILTER',
-                            filter: { ...(queryParams as any), disciplineScore: d.score },
+                            filter: { ...(queryParams as any), startDate, endDate, disciplineScore: d.score },
                             label: `Discipline Rating ${d.score}/5`,
                           })
                         }
@@ -863,7 +863,7 @@ export function AnalyticsPage() {
                         onClick={() =>
                           openDrill({
                             kind: 'FILTER',
-                            filter: { ...(queryParams as any), emotion: e.emotion },
+                            filter: { ...(queryParams as any), startDate, endDate, emotion: e.emotion },
                             label: `Emotion: ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`,
                           })
                         }
@@ -933,7 +933,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), mistakeTag: m.mistake },
+                          filter: { ...(queryParams as any), startDate, endDate, mistakeTag: m.mistake },
                           label: `Mistake: ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}`,
                         })
                       }
@@ -988,7 +988,14 @@ export function AnalyticsPage() {
             selectedSymbol={selectedKillZoneSymbol}
             onSelectSymbol={(sym) => setSelectedKillZoneSymbol(sym)}
             onRefresh={() => refetchKillZone()}
-            onDrillDown={(filter, label) => openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), ...filter }, label })}
+            onDrillDown={(filterOrDesc, label) => {
+              if (filterOrDesc?.kind === 'TRADES' || filterOrDesc?.kind === 'TRADE') {
+                openDrill(filterOrDesc);
+              } else {
+                const f = filterOrDesc?.filter || filterOrDesc || {};
+                openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), startDate, endDate, ...f }, label });
+              }
+            }}
           />
 
           {/* High-Impact US Macro News Catalysts & Transaction Friction Card */}
@@ -1213,7 +1220,7 @@ export function AnalyticsPage() {
                     onClick={() =>
                       openDrill({
                         kind: 'FILTER',
-                        filter: { ...(queryParams as any), weekday: day.day.toLowerCase() },
+                        filter: { ...(queryParams as any), startDate, endDate, weekday: day.day.toLowerCase() },
                         label: `${day.day} Trades`,
                       })
                     }
@@ -1300,7 +1307,7 @@ export function AnalyticsPage() {
                       onClick={() =>
                         openDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), session: sess.session },
+                          filter: { ...(queryParams as any), startDate, endDate, session: sess.session },
                           label: `${sess.session} Session Trades`,
                         })
                       }
@@ -1379,6 +1386,8 @@ export function AnalyticsPage() {
           currencySymbol={currSym}
           caps={caps}
           queryParams={queryParams}
+          startDate={startDate}
+          endDate={endDate}
           funnelMode={funnelMode}
           setFunnelMode={setFunnelMode}
           customMfeStepsInput={customMfeStepsInput}

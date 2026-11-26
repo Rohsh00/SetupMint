@@ -59,6 +59,8 @@ export interface IExecutionQualityTabProps {
   currencySymbol: string;
   caps: any;
   queryParams: any;
+  startDate?: string;
+  endDate?: string;
   funnelMode: 'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD';
   setFunnelMode: (mode: 'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD') => void;
   customMfeStepsInput: string;
@@ -76,6 +78,8 @@ export function ExecutionQualityTab({
   currencySymbol,
   caps,
   queryParams,
+  startDate,
+  endDate,
   funnelMode,
   setFunnelMode,
   customMfeStepsInput,
@@ -87,6 +91,11 @@ export function ExecutionQualityTab({
 }: IExecutionQualityTabProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+
+  const baseDrillFilter = useMemo(
+    () => ({ ...(queryParams as any), startDate, endDate }),
+    [queryParams, startDate, endDate]
+  );
 
   // Local interactive controls
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
@@ -380,7 +389,7 @@ export function ExecutionQualityTab({
             onClick={() =>
               onOpenDrill({
                 kind: 'FILTER',
-                filter: { ...(queryParams as any), mfeRMin: 0.01 },
+                filter: { ...baseDrillFilter, mfeRMin: 0.01 },
                 label: 'Trades with Favorable Excursion',
               })
             }
@@ -440,7 +449,7 @@ export function ExecutionQualityTab({
             onClick={() =>
               onOpenDrill({
                 kind: 'FILTER',
-                filter: { ...(queryParams as any), maeRMin: 0.01 },
+                filter: { ...baseDrillFilter, maeRMin: 0.01 },
                 label: 'Trades with Adverse Excursion',
               })
             }
@@ -498,7 +507,7 @@ export function ExecutionQualityTab({
             onClick={() =>
               onOpenDrill({
                 kind: 'FILTER',
-                filter: { ...(queryParams as any), mfeRMin: 0.01 },
+                filter: { ...baseDrillFilter, mfeRMin: 0.01 },
                 label: 'Trades with Exit Efficiency Measured',
               })
             }
@@ -564,7 +573,7 @@ export function ExecutionQualityTab({
             onClick={() =>
               onOpenDrill({
                 kind: 'FILTER',
-                filter: { ...(queryParams as any), excursionFlag: 'RUNNER_LEFT_ON_TABLE', excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
+                filter: { ...baseDrillFilter, excursionFlag: 'RUNNER_LEFT_ON_TABLE', excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
                 label: 'Trades with Runners Left on Table',
               })
             }
@@ -664,7 +673,7 @@ export function ExecutionQualityTab({
                   onClick={() =>
                     onOpenDrill({
                       kind: 'FILTER',
-                      filter: { ...(queryParams as any), excursionFlag: 'RUNNER_LEFT_ON_TABLE', excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
+                      filter: { ...baseDrillFilter, excursionFlag: 'RUNNER_LEFT_ON_TABLE', excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
                       label: 'Trades: Runner Left on Table',
                     })
                   }
@@ -682,7 +691,7 @@ export function ExecutionQualityTab({
                   onClick={() =>
                     onOpenDrill({
                       kind: 'FILTER',
-                      filter: { ...(queryParams as any), excursionFlag: 'PREMATURE_EXIT', excursionFlags: 'PREMATURE_EXIT' },
+                      filter: { ...baseDrillFilter, excursionFlag: 'PREMATURE_EXIT', excursionFlags: 'PREMATURE_EXIT' },
                       label: 'Trades: Premature Exits',
                     })
                   }
@@ -1011,7 +1020,7 @@ export function ExecutionQualityTab({
               onClick={() =>
                 onOpenDrill({
                   kind: 'FILTER',
-                  filter: { ...(queryParams as any), maeRMax: 0.5, mfeRMin: 1.5 },
+                  filter: { ...baseDrillFilter, maeRMax: 0.5, mfeRMin: 1.5 },
                   label: 'Sweet Spot Trades (MAE < 0.5R, MFE > 1.5R)',
                 })
               }
@@ -1042,7 +1051,7 @@ export function ExecutionQualityTab({
               onClick={() =>
                 onOpenDrill({
                   kind: 'FILTER',
-                  filter: { ...(queryParams as any), maeRMin: 0.8, mfeRMin: 1.5 },
+                  filter: { ...baseDrillFilter, maeRMin: 0.8, mfeRMin: 1.5 },
                   label: 'Painful Winners (MAE > 0.8R, MFE > 1.5R)',
                 })
               }
@@ -1073,7 +1082,7 @@ export function ExecutionQualityTab({
               onClick={() =>
                 onOpenDrill({
                   kind: 'FILTER',
-                  filter: { ...(queryParams as any), maeRMax: 0.5, mfeRMax: 1.0 },
+                  filter: { ...baseDrillFilter, maeRMax: 0.5, mfeRMax: 1.0 },
                   label: 'Low Excursion Scratches (MAE < 0.5R, MFE < 1.0R)',
                 })
               }
@@ -1104,7 +1113,7 @@ export function ExecutionQualityTab({
               onClick={() =>
                 onOpenDrill({
                   kind: 'FILTER',
-                  filter: { ...(queryParams as any), maeRMin: 0.8, mfeRMax: 1.0, outcome: 'LOSS' },
+                  filter: { ...baseDrillFilter, maeRMin: 0.8, mfeRMax: 1.0, outcome: 'LOSS' },
                   label: 'Full Losses (MAE > 0.8R, MFE < 1.0R)',
                 })
               }
@@ -1326,7 +1335,7 @@ export function ExecutionQualityTab({
                       } else {
                         onOpenDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), mfeRMin: step.thresholdR },
+                          filter: { ...baseDrillFilter, mfeRMin: step.thresholdR },
                           label: `Trades ${step.label}`,
                         });
                       }
@@ -1380,7 +1389,7 @@ export function ExecutionQualityTab({
                     } else {
                       onOpenDrill({
                         kind: 'FILTER',
-                        filter: { ...(queryParams as any), mfeRMin: 1.0, outcome: 'LOSS' },
+                        filter: { ...baseDrillFilter, mfeRMin: 1.0, outcome: 'LOSS' },
                         label: 'Round-Trip Giveback Trades (≥+1.0R into Loss)',
                       });
                     }

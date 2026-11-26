@@ -494,7 +494,7 @@ export function InstrumentsPage() {
                           if (tradeCount > 0) {
                             openDrill({
                               kind: 'FILTER',
-                              filter: { ...(queryParams as any), symbol: inst.symbol },
+                              filter: { ...(queryParams as any), startDate, endDate, symbol: inst.symbol },
                               label: `${inst.symbol} Executions`,
                             });
                           }
@@ -516,7 +516,7 @@ export function InstrumentsPage() {
                           if (tradeCount > 0) {
                             openDrill({
                               kind: 'FILTER',
-                              filter: { ...(queryParams as any), symbol: inst.symbol },
+                              filter: { ...(queryParams as any), startDate, endDate, symbol: inst.symbol },
                               label: `${inst.symbol} Executions`,
                             });
                           }

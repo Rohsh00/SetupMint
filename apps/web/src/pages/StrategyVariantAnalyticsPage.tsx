@@ -16,7 +16,6 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
-import Drawer from '@mui/material/Drawer';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
@@ -26,15 +25,11 @@ import Select from '@mui/material/Select';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import TableSortLabel from '@mui/material/TableSortLabel';
-import Dialog from '@mui/material/Dialog';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 
 // Icons
 import ArrowBackIcon from '@mui/icons-material/ArrowBackRounded';
 import FilterAltOffIcon from '@mui/icons-material/FilterAltOffRounded';
-import CollectionsIcon from '@mui/icons-material/CollectionsRounded';
-import CloseIcon from '@mui/icons-material/CloseRounded';
-import OpenInNewIcon from '@mui/icons-material/OpenInNewRounded';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import WarningAmberIcon from '@mui/icons-material/WarningAmberRounded';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineRounded';
@@ -88,17 +83,13 @@ export function StrategyVariantAnalyticsPage() {
 
   // Filter states
   const [symbolFilter, setSymbolFilter] = useState<string>('');
-  const [directionFilter, setDirectionFilter] = useState<string>('');
-  const [entryModelFilter, setEntryModelFilter] = useState<string>('');
+  const [directionFilter, setDirectionFilter] = useState<'LONG' | 'SHORT' | ''>('');
+  const [entryModelFilter, setEntryModelFilter] = useState<'CONFIRMATION_CANDLE' | 'RETEST' | 'OTHER' | ''>('');
   const [momentumFilter, setMomentumFilter] = useState<string>('');
 
   // Table sort
   const [orderBy, setOrderBy] = useState<SortColumn>('closedTrades');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Drawer drill-down
-  const [selectedBucketKey, setSelectedBucketKey] = useState<string | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Reset filters
   const resetFilters = () => {
@@ -169,38 +160,6 @@ export function StrategyVariantAnalyticsPage() {
     setOrderBy(property);
   };
 
-  // Drawer trades query for selected bucket
-  const selectedBucket = useMemo(() => {
-    if (!selectedBucketKey || !analytics?.buckets) return null;
-    return analytics.buckets.find((b: any) => b.key === selectedBucketKey) || null;
-  }, [selectedBucketKey, analytics?.buckets]);
-
-  const drawerTradesQueryParams = useMemo(() => {
-    if (!selectedBucketKey) return null;
-    const params: Record<string, any> = { ...scopeQueryParams, strategyId: id, limit: 100 };
-    if (startDate) params.startDate = startDate;
-    if (endDate) params.endDate = endDate;
-    if (symbolFilter.trim()) params.symbol = symbolFilter.trim();
-    if (directionFilter) params.direction = directionFilter;
-
-    if (selectedBucketKey === 'UNCLASSIFIED') {
-      params.variantStatus = 'UNCLASSIFIED';
-    } else if (selectedBucketKey === 'NOT_APPLICABLE') {
-      params.variantStatus = 'NOT_APPLICABLE';
-    } else {
-      params.variantKey = selectedBucketKey;
-    }
-    return params;
-  }, [selectedBucketKey, id, scopeQueryParams, startDate, endDate, symbolFilter, directionFilter]);
-
-  const { data: drawerTradesData, isLoading: isDrawerLoading } = useQuery({
-    queryKey: ['variant-trades-drilldown', drawerTradesQueryParams],
-    queryFn: () => (drawerTradesQueryParams ? api.trades.list(drawerTradesQueryParams) : Promise.resolve({ data: [] as any[], pagination: {} as any })),
-    enabled: !!drawerTradesQueryParams,
-  });
-
-  const drawerTrades = drawerTradesData?.data || [];
-
   if (isStrategyLoading || isAnalyticsLoading) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: 2 }}>
@@ -269,7 +228,7 @@ export function StrategyVariantAnalyticsPage() {
           <Select
             label="Direction"
             value={directionFilter}
-            onChange={(e) => setDirectionFilter(e.target.value)}
+            onChange={(e) => setDirectionFilter(e.target.value as any)}
           >
             <MenuItem value="">All Directions</MenuItem>
             <MenuItem value="LONG">LONG</MenuItem>
@@ -281,7 +240,7 @@ export function StrategyVariantAnalyticsPage() {
           <Select
             label="Entry Model"
             value={entryModelFilter}
-            onChange={(e) => setEntryModelFilter(e.target.value)}
+            onChange={(e) => setEntryModelFilter(e.target.value as any)}
           >
             <MenuItem value="">All Models</MenuItem>
             <MenuItem value="CONFIRMATION_CANDLE">Confirmation Candle</MenuItem>
@@ -321,7 +280,15 @@ export function StrategyVariantAnalyticsPage() {
             onClick={() =>
               openDrill({
                 kind: 'FILTER',
-                filter: { strategyId: id },
+                filter: {
+                  strategyId: id,
+                  ...scopeQueryParams,
+                  startDate,
+                  endDate,
+                  symbol: symbolFilter.trim() || undefined,
+                  direction: directionFilter || undefined,
+                  entryModel: entryModelFilter || undefined,
+                },
                 label: `${strategy?.name || 'Strategy'} Closed Trades`,
               })
             }
@@ -605,7 +572,13 @@ export function StrategyVariantAnalyticsPage() {
                             kind: 'FILTER',
                             filter: {
                               strategyId: id,
-                              variantKey: bucket.key === 'UNASSIGNED' ? undefined : bucket.key,
+                              variantKey: bucket.key,
+                              ...scopeQueryParams,
+                              startDate,
+                              endDate,
+                              symbol: symbolFilter.trim() || undefined,
+                              direction: directionFilter || undefined,
+                              entryModel: entryModelFilter || undefined,
                             },
                             label: `Variant: ${bucket.name || bucket.key}`,
                           });
@@ -797,7 +770,13 @@ export function StrategyVariantAnalyticsPage() {
                             kind: 'FILTER',
                             filter: {
                               strategyId: id,
-                              variantKey: bucket.key === 'UNASSIGNED' ? undefined : bucket.key,
+                              variantKey: bucket.key,
+                              ...scopeQueryParams,
+                              startDate,
+                              endDate,
+                              symbol: symbolFilter.trim() || undefined,
+                              direction: directionFilter || undefined,
+                              entryModel: entryModelFilter || undefined,
                             },
                             label: `Variant: ${bucket.name || bucket.key}`,
                           })
@@ -816,197 +795,8 @@ export function StrategyVariantAnalyticsPage() {
         </TableContainer>
       </Card>
 
-      {/* Trades Drill-Down Slide-Over Drawer */}
-      <Drawer
-        anchor="right"
-        open={Boolean(selectedBucketKey)}
-        onClose={() => setSelectedBucketKey(null)}
-        slotProps={{
-          paper: {
-            sx: {
-              width: { xs: '100%', sm: 600, md: 720 },
-              p: 3,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2.5,
-            },
-          },
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 800 }}>
-              Variant Drill-Down: {selectedBucket?.name || selectedBucketKey}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Key: {selectedBucketKey} | {selectedBucket?.closedTrades || 0} Trades | Net P&L:{' '}
-              {formatCurrency(selectedBucket?.netPnL || 0)}
-            </Typography>
-          </Box>
-          <IconButton onClick={() => setSelectedBucketKey(null)}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        <Divider />
-
-        {isDrawerLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress size={30} />
-          </Box>
-        ) : drawerTrades.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', p: 4 }}>
-            No trades found in this variant bucket with active filters.
-          </Typography>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
-            {drawerTrades.map((t: any) => {
-              const tradeId = t.id || t._id;
-              const netPnL = t.calculated?.netPnL ?? 0;
-              const rMult = t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple;
-              const screenshots = t.screenshotIds || [];
-
-              return (
-                <Card key={tradeId} sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                        {t.symbol}
-                      </Typography>
-                      <Chip
-                        label={t.direction}
-                        size="small"
-                        color={t.direction === 'LONG' ? 'success' : 'error'}
-                        sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }}
-                      />
-                      <Chip
-                        label={t.status}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 18, fontSize: '0.625rem' }}
-                      />
-                    </Box>
-
-                    <Button
-                      size="small"
-                      endIcon={<OpenInNewIcon fontSize="small" />}
-                      component={RouterLink}
-                      to={`/trades/${tradeId}`}
-                      sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                    >
-                      Open Journal
-                    </Button>
-                  </Box>
-
-                  <Grid container spacing={1}>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Trade Date
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
-                        {new Date(t.tradeDate).toISOString().split('T')[0]}
-                      </Typography>
-                    </Grid>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Net P&L
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 700,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: netPnL >= 0 ? 'success.main' : 'error.main',
-                        }}
-                      >
-                        {formatCurrency(netPnL)}
-                      </Typography>
-                    </Grid>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        R-Multiple
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 700,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: (rMult || 0) >= 0 ? 'success.main' : 'error.main',
-                        }}
-                      >
-                        {rMult !== undefined && rMult !== null ? formatR(rMult) : '—'}
-                      </Typography>
-                    </Grid>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Discipline
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>
-                        {t.psychology?.rulesFollowed ? 'Followed' : 'Violated'}
-                      </Typography>
-                    </Grid>
-                  </Grid>
-
-                  {/* Screenshots gallery thumbnail strip */}
-                  {screenshots.length > 0 && (
-                    <Box sx={{ mt: 1 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                        <CollectionsIcon sx={{ fontSize: 14 }} /> Attachments ({screenshots.length})
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', py: 0.5 }}>
-                        {screenshots.map((s: any, idx: number) => {
-                          const url = s.url || s.thumbnailUrl || (typeof s === 'string' ? s : '');
-                          if (!url) return null;
-                          return (
-                            <Box
-                              key={idx}
-                              component="img"
-                              src={url}
-                              alt="Chart setup"
-                              onClick={() => setPreviewImage(url)}
-                              sx={{
-                                width: 70,
-                                height: 50,
-                                objectFit: 'cover',
-                                borderRadius: 1,
-                                cursor: 'pointer',
-                                border: `1px solid ${muiTheme.palette.divider}`,
-                                '&:hover': { borderColor: muiTheme.palette.primary.main },
-                              }}
-                            />
-                          );
-                        })}
-                      </Box>
-                    </Box>
-                  )}
-                </Card>
-              );
-            })}
-          </Box>
-        )}
-      </Drawer>
-
-      {/* Lightbox Dialog for Screenshot Preview */}
-      <Dialog open={Boolean(previewImage)} onClose={() => setPreviewImage(null)} maxWidth="lg">
-        <Box sx={{ p: 1, position: 'relative' }}>
-          <IconButton
-            size="small"
-            onClick={() => setPreviewImage(null)}
-            sx={{ position: 'absolute', right: 8, top: 8, backgroundColor: 'rgba(0,0,0,0.5)', color: '#fff' }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-          {previewImage && (
-            <Box
-              component="img"
-              src={previewImage}
-              alt="Preview"
-              sx={{ maxWidth: '100%', maxHeight: '85vh', display: 'block', borderRadius: 1 }}
-            />
-          )}
-        </Box>
-      </Dialog>
     </Box>
   );
 }
+
 export default StrategyVariantAnalyticsPage;

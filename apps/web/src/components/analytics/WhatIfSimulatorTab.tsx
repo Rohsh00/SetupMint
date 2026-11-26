@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -81,6 +81,17 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
   const { queryParams } = useAccountScope();
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+
+  const effectiveAccountId = accountId && accountId !== 'ALL' ? accountId : queryParams.accountId;
+  const baseDrillFilter = useMemo(
+    () => ({
+      ...(queryParams as any),
+      accountId: effectiveAccountId,
+      startDate,
+      endDate,
+    }),
+    [queryParams, effectiveAccountId, startDate, endDate]
+  );
 
   // State
   const [viewPolicy, setViewPolicy] = useState<'PESSIMISTIC' | 'OPTIMISTIC' | 'RANGE'>('PESSIMISTIC');
@@ -455,7 +466,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
               onClick={() =>
                 openDrill({
                   kind: 'FILTER',
-                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  filter: { ...baseDrillFilter },
                   label: 'What-If Evaluated Trades',
                 })
               }
@@ -499,7 +510,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
               onClick={() =>
                 openDrill({
                   kind: 'FILTER',
-                  filter: { accountId: accountId && accountId !== 'ALL' ? accountId : undefined },
+                  filter: { ...baseDrillFilter },
                   label: 'What-If Baseline Net P&L',
                 })
               }
@@ -850,7 +861,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
                         const lbl = entry?.rangeLabel || entry?.payload?.rangeLabel || '';
                         openDrill({
                           kind: 'FILTER',
-                          filter: { outcome: 'WIN' },
+                          filter: { ...baseDrillFilter, outcome: 'WIN' },
                           label: `Winners MAE: ${lbl}`,
                         });
                       }}
@@ -902,7 +913,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
                         const lbl = entry?.rangeLabel || entry?.payload?.rangeLabel || '';
                         openDrill({
                           kind: 'FILTER',
-                          filter: { mfeRMin: 0.01 },
+                          filter: { ...baseDrillFilter, mfeRMin: 0.01 },
                           label: `Trades MFE: ${lbl}`,
                         });
                       }}
@@ -1131,7 +1142,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
               onClick={() => {
                 openDrill({
                   kind: 'FILTER',
-                  filter: { ...(queryParams as any), accountId: accountId && accountId !== 'ALL' ? accountId : queryParams.accountId },
+                  filter: { ...baseDrillFilter },
                   label: `What-If Simulation Trades (Stop ${selectedCell.stopR ?? 'None'}R, Target ${selectedCell.targetR ?? 'None'}R)`,
                 });
               }}
@@ -1373,7 +1384,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
               setShowExclusionsDrawer(false);
               openDrill({
                 kind: 'FILTER',
-                filter: { ...(queryParams as any), accountId: accountId && accountId !== 'ALL' ? accountId : queryParams.accountId },
+                filter: { ...baseDrillFilter },
                 label: 'All Closed Trades in What-If Window',
               });
             }}

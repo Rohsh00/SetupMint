@@ -456,5 +456,65 @@ describe('Drilldown and Multi-Panel Equity Curves API Integration Tests', () => 
       expect(json.data.trades[0].id).toBe(tradeA1Id);
       expect(json.data.aggregate.netPnL).toBe(5000);
     });
+
+    it('10. Kind FILTER: Anchored symbol search distinguishes NIFTY from BANKNIFTY', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/trades/drilldown',
+        headers: { cookie: userACookie },
+        payload: {
+          descriptor: {
+            kind: 'FILTER',
+            filter: { symbol: 'NIFTY' },
+            label: 'NIFTY Trades',
+          },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const json = res.json();
+      expect(json.success).toBe(true);
+      expect(json.data.trades).toHaveLength(1);
+      expect(json.data.trades[0].id).toBe(tradeA1Id);
+    });
+
+    it('11. Kind FILTER: UNASSIGNED variantKey matches trades with unassigned setup variant', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/trades/drilldown',
+        headers: { cookie: userACookie },
+        payload: {
+          descriptor: {
+            kind: 'FILTER',
+            filter: { variantKey: 'UNASSIGNED' },
+            label: 'Unassigned Variant Trades',
+          },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const json = res.json();
+      expect(json.success).toBe(true);
+      // Both tradeA1 and tradeA2 have no setup.variantKey
+      expect(json.data.trades.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('12. Kind FILTER: killZone matches trades executed in London Open or Asian session window', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/trades/drilldown',
+        headers: { cookie: userACookie },
+        payload: {
+          descriptor: {
+            kind: 'FILTER',
+            filter: { killZone: 'LONDON_OPEN' },
+            label: 'London Open Trades',
+          },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const json = res.json();
+      expect(json.success).toBe(true);
+      // Trades at 04:00 UTC are outside LONDON_OPEN (07:00-10:00 UTC)
+      expect(json.data.trades).toHaveLength(0);
+    });
   });
 });

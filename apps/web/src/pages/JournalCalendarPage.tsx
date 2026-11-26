@@ -574,8 +574,12 @@ export function JournalCalendarPage() {
               <Grid
                 size={{ xs: 6, sm: 3 }}
                 onClick={() => {
+                  const [yearStr, monthStr] = ymString.split('-');
+                  const year = parseInt(yearStr, 10);
+                  const month = parseInt(monthStr, 10);
+                  const lastDay = new Date(year, month, 0).getDate();
                   const start = `${ymString}-01`;
-                  const end = `${ymString}-31`;
+                  const end = `${ymString}-${String(lastDay).padStart(2, '0')}`;
                   openDrill({
                     kind: 'FILTER',
                     filter: {
@@ -1137,7 +1141,10 @@ export function JournalCalendarPage() {
                     onClick={() => {
                       openDrill({
                         kind: 'FILTER',
-                        filter: { date: selectedDate! },
+                        filter: {
+                          ...(effectiveScopeParams as any),
+                          date: selectedDate!,
+                        },
                         label: `Trades on ${selectedDate}`,
                       });
                     }}

@@ -276,6 +276,7 @@ export interface IKillZonePerformanceItem {
   isMajorKillZone: boolean;
   marketType: 'FOREX_GLOBAL' | 'INDIAN_EQUITY' | 'COMMODITY' | 'OFF_HOURS';
   totalTrades: number;
+  tradeIds?: string[];
   winningTrades: number;
   losingTrades: number;
   breakEvenTrades: number;
@@ -516,6 +517,7 @@ export function calculateKillZoneAnalytics(trades: KillZoneTradeInput[]): IKillZ
       isMajorKillZone: meta.isMajorKillZone,
       marketType: meta.marketType,
       totalTrades: count,
+      tradeIds: acc ? acc.trades.map((t) => t.id).filter((id): id is string => Boolean(id)) : [],
       winningTrades: wins,
       losingTrades: losses,
       breakEvenTrades: be,

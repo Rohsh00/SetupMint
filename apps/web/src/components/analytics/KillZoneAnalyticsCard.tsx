@@ -390,10 +390,17 @@ export const KillZoneAnalyticsCard: React.FC<IKillZoneAnalyticsCardProps> = ({
                     hover
                     onClick={() => {
                       if (onDrillDown) {
-                        onDrillDown(
-                          { killZone: kz.key, symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined },
-                          `${kz.name} Executions`
-                        );
+                        if (kz.tradeIds && kz.tradeIds.length > 0) {
+                          onDrillDown(
+                            { kind: 'TRADES', tradeIds: kz.tradeIds },
+                            `${kz.name} Executions (${kz.tradeIds.length} trades)`
+                          );
+                        } else {
+                          onDrillDown(
+                            { killZone: kz.key, symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined },
+                            `${kz.name} Executions`
+                          );
+                        }
                       }
                     }}
                     sx={{

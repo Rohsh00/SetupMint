@@ -158,6 +158,7 @@ describe('Kill-Zone Performance Analytics', () => {
     const nyZone = result.killZones.find((z) => z.key === 'NY_OPEN');
     expect(nyZone).toBeDefined();
     expect(nyZone?.totalTrades).toBe(2);
+    expect(nyZone?.tradeIds).toEqual(['t4', 't5']);
     expect(nyZone?.netPnL).toBe(1200);
     expect(nyZone?.winRate).toBe(100);
     expect(nyZone?.profitFactor).toBe(999.99);
@@ -166,6 +167,7 @@ describe('Kill-Zone Performance Analytics', () => {
     const londonZone = result.killZones.find((z) => z.key === 'LONDON_OPEN');
     expect(londonZone).toBeDefined();
     expect(londonZone?.totalTrades).toBe(3);
+    expect(londonZone?.tradeIds).toEqual(['t1', 't2', 't3']);
     expect(londonZone?.netPnL).toBe(600);
     expect(londonZone?.winRate).toBe(66.7);
     expect(londonZone?.profitFactor).toBe(4.0);

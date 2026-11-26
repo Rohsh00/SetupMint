@@ -761,7 +761,7 @@ export function StrategyPlaybookPage() {
                           onClick={() =>
                             openDrill({
                               kind: 'FILTER',
-                              filter: { ...(queryParams as any), strategyId: strat.id || strat._id },
+                              filter: { ...(queryParams as any), startDate, endDate, strategyId: strat.id || strat._id },
                               label: `${strat.name} Executions`,
                             })
                           }
@@ -855,7 +855,7 @@ export function StrategyPlaybookPage() {
                                 e.stopPropagation();
                                 openDrill({
                                   kind: 'FILTER',
-                                  filter: { ...(queryParams as any), strategyId: strat.id || strat._id },
+                                  filter: { ...(queryParams as any), startDate, endDate, strategyId: strat.id || strat._id },
                                   label: `${strat.name} Trades (${strat.edge?.verdict || 'Edge Validation'})`,
                                 });
                               }}
@@ -1023,7 +1023,7 @@ export function StrategyPlaybookPage() {
                               onClick={() =>
                                 openDrill({
                                   kind: 'FILTER',
-                                  filter: { ...(queryParams as any), strategyId: strat.id || strat._id },
+                                  filter: { ...(queryParams as any), startDate, endDate, strategyId: strat.id || strat._id },
                                   label: `${strat.name} Trades`,
                                 })
                               }

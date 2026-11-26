@@ -41,6 +41,7 @@ import MicRoundedIcon from '@mui/icons-material/MicRounded';
 
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
+import { useDateRange } from '../../context/DateRangeContext.js';
 import { api } from '../../lib/api.js';
 import { formatCurrency, formatR, formatPercent, formatDate, formatDateTime } from '../../lib/utils.js';
 import { TradeInstrumentBadge } from '../trades/TradeInstrumentBadge.js';
@@ -57,6 +58,7 @@ export function TradeDrillDrawer() {
 
   const { isOpen, descriptor, activeTradeId, closeDrill, setActiveTradeId } = useTradeDrilldown();
   const { queryParams, activeAccount, currency: scopeCurrency } = useAccountScope();
+  const { startDate, endDate } = useDateRange();
 
   const [editModalTradeId, setEditModalTradeId] = useState<string | null>(null);
   const [quickCloseTrade, setQuickCloseTrade] = useState<any | null>(null);
@@ -71,16 +73,27 @@ export function TradeDrillDrawer() {
       cleanF.date = cleanF.date.split('T')[0];
     }
     const hasExplicitScope =
-      cleanF.scope !== undefined || cleanF.mode !== undefined || cleanF.accountId !== undefined;
-    if (hasExplicitScope) return { ...descriptor, filter: cleanF };
+      cleanF.scope !== undefined ||
+      cleanF.mode !== undefined ||
+      (cleanF.accountId !== undefined && cleanF.accountId !== null && cleanF.accountId !== 'ALL');
+    const scopedFilter = hasExplicitScope ? cleanF : { ...queryParams, ...cleanF };
+
+    // Also inherit active date boundaries if descriptor does not specify its own dates
+    if (
+      !scopedFilter.date &&
+      !scopedFilter.dateRange &&
+      !scopedFilter.startDate &&
+      !scopedFilter.endDate
+    ) {
+      if (startDate) scopedFilter.startDate = startDate;
+      if (endDate) scopedFilter.endDate = endDate;
+    }
+
     return {
       ...descriptor,
-      filter: {
-        ...queryParams,
-        ...cleanF,
-      },
+      filter: scopedFilter,
     };
-  }, [descriptor, queryParams]);
+  }, [descriptor, queryParams, startDate, endDate]);
 
   // Fetch drilldown trades & aggregate
   const {
@@ -170,24 +183,39 @@ export function TradeDrillDrawer() {
 
   // Build readable explanation chips from descriptor
   const explanationChips = useMemo(() => {
-    if (!descriptor) return [];
+    const targetDesc = effectiveDescriptor || descriptor;
+    if (!targetDesc) return [];
     const list: Array<{ label: string; color?: 'default' | 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success' }> = [];
 
-    if (descriptor.kind === 'TRADE') {
-      list.push({ label: `Trade ID: ${descriptor.tradeId.slice(-6)}`, color: 'primary' });
-    } else if (descriptor.kind === 'TRADES') {
-      list.push({ label: `${descriptor.tradeIds.length} Targeted Trades`, color: 'primary' });
-    } else if (descriptor.kind === 'FILTER') {
-      const f = descriptor.filter;
+    if (targetDesc.kind === 'TRADE') {
+      list.push({ label: `Trade ID: ${targetDesc.tradeId.slice(-6)}`, color: 'primary' });
+    } else if (targetDesc.kind === 'TRADES') {
+      list.push({ label: `${targetDesc.tradeIds.length} Targeted Trades`, color: 'primary' });
+    } else if (targetDesc.kind === 'FILTER') {
+      const f = targetDesc.filter || {};
       if (f.symbol) list.push({ label: `Symbol: ${f.symbol}`, color: 'info' });
       if (f.outcome) list.push({ label: `Outcome: ${f.outcome}`, color: f.outcome === 'WIN' ? 'success' : f.outcome === 'LOSS' ? 'error' : 'default' });
+      if (f.status) list.push({ label: `Status: ${f.status}`, color: 'default' });
       if (f.date) {
         const displayDate = typeof f.date === 'string' && f.date.includes('T') ? f.date.split('T')[0] : f.date;
         list.push({ label: `Date: ${displayDate}`, color: 'secondary' });
+      } else if (f.startDate && f.endDate) {
+        list.push({ label: `${f.startDate} → ${f.endDate}`, color: 'secondary' });
+      } else if (f.startDate) {
+        list.push({ label: `From ${f.startDate}`, color: 'secondary' });
+      } else if (f.endDate) {
+        list.push({ label: `Until ${f.endDate}`, color: 'secondary' });
       }
       if (f.dateRange) list.push({ label: `Range: ${f.dateRange}`, color: 'secondary' });
       if (f.weekday) list.push({ label: `Day: ${f.weekday}`, color: 'info' });
       if (f.session) list.push({ label: `Session: ${f.session}`, color: 'info' });
+      if ((f as any).killZone) {
+        const kzLabel = String((f as any).killZone).replace(/_/g, ' ');
+        list.push({ label: `Session: ${kzLabel}`, color: 'info' });
+      }
+      if (f.strategyId) {
+        list.push({ label: `Strategy: ${f.strategyId === 'unclassified' ? 'No Strategy' : f.strategyId}`, color: 'primary' });
+      }
       if (f.emotion) list.push({ label: `Emotion: ${f.emotion}`, color: 'warning' });
       if (f.mistakeTag) list.push({ label: `Mistake: ${f.mistakeTag.replace(/_/g, ' ')}`, color: 'error' });
       if (f.disciplineScore !== undefined) list.push({ label: `Discipline: ${f.disciplineScore}/5`, color: 'primary' });
@@ -195,10 +223,22 @@ export function TradeDrillDrawer() {
       if (f.assetClass) list.push({ label: `Asset: ${f.assetClass}`, color: 'default' });
       if (f.variantKey) list.push({ label: `Variant: ${f.variantKey}`, color: 'primary' });
       if (f.search) list.push({ label: `Search: "${f.search}"`, color: 'default' });
+      if (f.netPnLMin !== undefined && f.netPnLMax !== undefined) {
+        list.push({ label: `P&L: ${formatCurrency(f.netPnLMin, activeTradeCurrency)} to ${formatCurrency(f.netPnLMax, activeTradeCurrency)}`, color: 'primary' });
+      } else if (f.netPnLMin !== undefined) {
+        list.push({ label: `P&L ≥ ${formatCurrency(f.netPnLMin, activeTradeCurrency)}`, color: 'success' });
+      } else if (f.netPnLMax !== undefined) {
+        list.push({ label: `P&L ≤ ${formatCurrency(f.netPnLMax, activeTradeCurrency)}`, color: 'error' });
+      }
       if (f.mfeRMin !== undefined) list.push({ label: `MFE ≥ +${f.mfeRMin}R`, color: 'success' });
       if (f.mfeRMax !== undefined) list.push({ label: `MFE ≤ +${f.mfeRMax}R`, color: 'info' });
       if (f.maeRMin !== undefined) list.push({ label: `MAE ≥ -${f.maeRMin}R`, color: 'error' });
       if (f.maeRMax !== undefined) list.push({ label: `MAE ≤ -${f.maeRMax}R`, color: 'info' });
+      if (f.holdingTimeMin !== undefined || f.holdingTimeMax !== undefined) {
+        const minH = f.holdingTimeMin !== undefined ? `${f.holdingTimeMin}m` : '0m';
+        const maxH = f.holdingTimeMax !== undefined ? `${f.holdingTimeMax}m` : '∞';
+        list.push({ label: `Holding: ${minH} - ${maxH}`, color: 'default' });
+      }
       const excFlag = (f as any).excursionFlag || (f as any).excursionFlags;
       if (excFlag) {
         const flagStr = Array.isArray(excFlag) ? excFlag.join(', ') : excFlag;
@@ -216,7 +256,7 @@ export function TradeDrillDrawer() {
       }
     }
     return list;
-  }, [descriptor]);
+  }, [effectiveDescriptor, descriptor, activeTradeCurrency]);
 
   const pnlColor = aggregate && aggregate.netPnL > 0 ? 'success.main' : aggregate && aggregate.netPnL < 0 ? 'error.main' : 'text.primary';
 

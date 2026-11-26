@@ -660,6 +660,7 @@ export const extendedTradeFilterBaseSchema = tradeFilterQueryBaseSchema.extend({
   holdingTimeMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
   excursionFlag: z.preprocess(emptyStringToUndefined, z.string().optional()),
   excursionFlags: z.preprocess(emptyStringToUndefined, z.union([z.string(), z.array(z.string())]).optional()),
+  killZone: z.preprocess(emptyStringToUndefined, z.string().optional()),
 });
 
 export const extendedTradeFilterSchema = extendedTradeFilterBaseSchema.refine(
@@ -690,7 +691,7 @@ export const drillDescriptorSchema = z.discriminatedUnion('kind', [
       message: 'startDate must be on or before endDate',
       path: ['startDate'],
     }),
-    label: z.string().min(1, 'label is required'),
+    label: z.string().optional().default('Filtered Trades'),
     metadata: z.record(z.any()).optional(),
     targetTradeId: z.string().nullable().optional(),
   }),

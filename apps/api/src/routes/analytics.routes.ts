@@ -22,6 +22,29 @@ import {
 } from '@tradevault/financial-engine';
 import { AccountScopeService } from '../services/account-scope.service.js';
 
+function applyCommonAnalyticsFilters(filter: any, query: any) {
+  const { symbol, direction, session, strategyId } = query || {};
+  if (symbol && symbol !== 'ALL') {
+    filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
+  }
+  if (direction && direction !== 'ALL') {
+    const dirUpper = String(direction).toUpperCase().trim();
+    if (dirUpper === 'LONG' || dirUpper === 'BUY') {
+      filter.direction = { $in: ['LONG', 'BUY'] };
+    } else if (dirUpper === 'SHORT' || dirUpper === 'SELL') {
+      filter.direction = { $in: ['SHORT', 'SELL'] };
+    } else {
+      filter.direction = direction;
+    }
+  }
+  if (session && session !== 'ALL') {
+    filter.session = session;
+  }
+  if (strategyId && strategyId !== 'ALL') {
+    filter.strategyId = strategyId;
+  }
+}
+
 export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
 
@@ -44,10 +67,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
     const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
-
-    if (symbol && symbol !== 'ALL') {
-      filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
-    }
+    applyCommonAnalyticsFilters(filter, req.query);
+    applyCommonAnalyticsFilters(filter, req.query);
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -191,9 +212,19 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (symbol && symbol !== 'ALL') {
       baseFilter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
     }
-    if (strategyId) baseFilter.strategyId = strategyId;
+    if (strategyId && strategyId !== 'ALL') baseFilter.strategyId = strategyId;
     if (variantKey) baseFilter['setup.variantKey'] = variantKey;
-    if (session) baseFilter.session = session;
+    if (session && (session as string) !== 'ALL') baseFilter.session = session;
+    if (req.query.direction && req.query.direction !== 'ALL') {
+      const dirUpper = String(req.query.direction).toUpperCase().trim();
+      if (dirUpper === 'LONG' || dirUpper === 'BUY') {
+        baseFilter.direction = { $in: ['LONG', 'BUY'] };
+      } else if (dirUpper === 'SHORT' || dirUpper === 'SELL') {
+        baseFilter.direction = { $in: ['SHORT', 'SELL'] };
+      } else {
+        baseFilter.direction = req.query.direction;
+      }
+    }
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
       baseFilter.tradeDate = dateClause.tradeDate;
@@ -353,10 +384,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
     const filter: any = { userId: req.user!.id, accountId: { $in: accountIds } };
-
-    if (symbol && symbol !== 'ALL') {
-      filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
-    }
+    applyCommonAnalyticsFilters(filter, req.query);
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -589,6 +617,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
     const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+    applyCommonAnalyticsFilters(filter, req.query);
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -661,6 +690,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
     const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+    applyCommonAnalyticsFilters(filter, req.query);
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -707,7 +737,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
   // Dedicated Gold & Macro News Catalyst Impact Analytics
   app.get('/news-impact', async (req: any, reply) => {
-    const { startDate, endDate, symbol } = req.query;
+    const { startDate, endDate, symbol, newsWindowMinutes, catalystTier } = req.query;
 
     const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
     if (!dateRangeResult.success) {
@@ -725,6 +755,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
 
     const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+    applyCommonAnalyticsFilters(filter, req.query);
 
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
@@ -742,16 +773,27 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       ? trades.filter((t: any) => (t.symbol || '').toUpperCase().trim() === String(symbol).toUpperCase().trim())
       : trades;
 
+    // Adaptive catalyst window (15m, 30m, 60m, 120m) & event tiers
+    const windowMins = Math.max(5, Math.min(240, Number(newsWindowMinutes) || 30));
+    const tier = catalystTier === 'TIER_1' ? 'TIER_1' : 'ALL';
+
     // Identify trades taken around high-impact news catalysts vs calm conditions
-    const newsRegex = /NEWS|CPI|NFP|FOMC|FED|PPI|RATE|POWELL|CATALYST|PAYROLL|GDP|UNEMPLOYMENT/i;
+    const newsRegex = tier === 'TIER_1'
+      ? /CPI|NFP|FOMC|POWELL|FED|RATE|PAYROLL/i
+      : /NEWS|CPI|NFP|FOMC|FED|PPI|RATE|POWELL|CATALYST|PAYROLL|GDP|UNEMPLOYMENT|RETAIL|PMI|ISM/i;
     
-    // Macro release UTC minutes: 12:30 UTC (750m), 13:30 UTC (810m), 14:00 UTC (840m), 18:00 UTC (1080m), 19:00 UTC (1140m)
+    // Macro release UTC minutes:
+    // Tier 1 releases: 12:30 UTC (750m), 13:30 UTC (810m), 18:00 UTC (1080m), 18:30 UTC (1110m)
+    // All releases: + 14:00 UTC (840m), 19:00 UTC (1140m), 12:00 UTC (720m)
+    const targets = tier === 'TIER_1'
+      ? [750, 810, 1080, 1110]
+      : [720, 750, 810, 840, 1080, 1110, 1140, 1200];
+
     const isMacroReleaseTime = (dateObj: Date) => {
       const day = dateObj.getUTCDay();
       if (day === 0 || day === 6) return false;
       const mins = dateObj.getUTCHours() * 60 + dateObj.getUTCMinutes();
-      const targets = [750, 810, 840, 1080, 1140, 1200];
-      return targets.some((t) => Math.abs(mins - t) <= 30);
+      return targets.some((t) => Math.abs(mins - t) <= windowMins);
     };
 
     const newsTrades: any[] = [];
@@ -859,6 +901,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         calmStats,
         overallStats,
         friction,
+        activeWindowMinutes: windowMins,
+        activeTier: tier,
       },
     });
   });

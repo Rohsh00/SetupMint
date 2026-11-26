@@ -4,6 +4,9 @@ import { ITrade, IDashboardStats, TradingSession } from '@tradevault/shared';
 export interface PerformanceInputTrade {
   id: string;
   tradeDate: string;
+  entryTime?: string | Date;
+  exitTime?: string | Date;
+  direction?: string;
   symbol: string;
   underlying?: string;
   strategyId?: string;
@@ -61,6 +64,34 @@ function getTradingDateInTz(dateStr: string, timeZone: string): string {
   }).format(d);
 }
 
+function getHourInTz(dateStr: string | Date, timeZone: string): { localHour: number; utcHour: number } {
+  const d = dateStr instanceof Date ? dateStr : new Date(dateStr);
+  if (isNaN(d.getTime())) return { localHour: 0, utcHour: 0 };
+  const utcHour = d.getUTCHours();
+  try {
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      hour12: false,
+    }).format(d);
+    const parsed = parseInt(formatted, 10);
+    const localHour = isNaN(parsed) ? utcHour : parsed % 24;
+    return { localHour, utcHour };
+  } catch {
+    return { localHour: utcHour, utcHour };
+  }
+}
+
+function getSessionHintForUtcHour(utcHour: number): string {
+  if (utcHour >= 0 && utcHour < 7) return 'Asian (Tokyo/Sydney)';
+  if (utcHour >= 7 && utcHour < 10) return 'London Open';
+  if (utcHour >= 10 && utcHour < 12) return 'London Mid-Day';
+  if (utcHour >= 12 && utcHour < 15) return 'NY Open / Overlap';
+  if (utcHour >= 15 && utcHour < 17) return 'London Close';
+  if (utcHour >= 17 && utcHour < 21) return 'NY Afternoon';
+  return 'Off-Hours / Rollover';
+}
+
 export function calculateDashboardMetrics(
   trades: PerformanceInputTrade[],
   initialBalance = 0,
@@ -110,10 +141,39 @@ export function calculateDashboardMetrics(
   const symbolMap = new Map<string, { netPnL: Decimal; count: number; wins: number; sumWin: Decimal; sumLoss: Decimal }>();
   // Track strategy performance
   const strategyMap = new Map<string, { name: string; netPnL: Decimal; count: number; wins: number; sumWin: Decimal; sumLoss: Decimal }>();
+  interface SubgroupStats {
+    netPnL: Decimal;
+    count: number;
+    wins: number;
+    sumWin: Decimal;
+    sumLoss: Decimal;
+    sumR: Decimal;
+    rCount: number;
+    longCount: number;
+    shortCount: number;
+  }
+
+  const createEmptySubgroup = (): SubgroupStats => ({
+    netPnL: new Decimal(0),
+    count: 0,
+    wins: 0,
+    sumWin: new Decimal(0),
+    sumLoss: new Decimal(0),
+    sumR: new Decimal(0),
+    rCount: 0,
+    longCount: 0,
+    shortCount: 0,
+  });
+
   // Track weekday
-  const weekdayMap = new Map<string, { netPnL: Decimal; count: number; wins: number }>();
+  const weekdayMap = new Map<string, SubgroupStats>();
   // Track session
-  const sessionMap = new Map<TradingSession, { netPnL: Decimal; count: number; wins: number }>();
+  const sessionMap = new Map<TradingSession, SubgroupStats>();
+  // Track hour of day (0..23)
+  const hourMap = new Map<number, SubgroupStats & { utcHourRef: number }>();
+  for (let h = 0; h < 24; h++) {
+    hourMap.set(h, { ...createEmptySubgroup(), utcHourRef: h });
+  }
 
   // Equity curve tracking
   let runningEquity = new Decimal(initialBalance);
@@ -306,30 +366,70 @@ export function calculateDashboardMetrics(
     }
     strategyMap.set(stratId, stratRecord);
 
+    const isLong = (trade.direction || '').toUpperCase() === 'LONG' || (trade.direction || '').toUpperCase() === 'BUY';
+    const isShort = (trade.direction || '').toUpperCase() === 'SHORT' || (trade.direction || '').toUpperCase() === 'SELL';
+    const rVal = trade.calculated?.realizedRMultiple;
+    const hasR = rVal !== undefined && Number.isFinite(rVal);
+
     // Weekday breakdown in configured timezone (IST default)
     const weekdayName = getWeekdayNameInTz(trade.tradeDate, timezone);
-    const wRecord = weekdayMap.get(weekdayName) ?? {
-      netPnL: new Decimal(0),
-      count: 0,
-      wins: 0,
-    };
+    const wRecord = weekdayMap.get(weekdayName) ?? createEmptySubgroup();
     wRecord.netPnL = wRecord.netPnL.plus(pnl);
     wRecord.count++;
-    if (pnl.greaterThan(0)) wRecord.wins++;
+    if (pnl.greaterThan(0)) {
+      wRecord.wins++;
+      wRecord.sumWin = wRecord.sumWin.plus(pnl);
+    } else if (pnl.lessThan(0)) {
+      wRecord.sumLoss = wRecord.sumLoss.plus(pnl.abs());
+    }
+    if (hasR) {
+      wRecord.sumR = wRecord.sumR.plus(new Decimal(rVal));
+      wRecord.rCount++;
+    }
+    if (isLong) wRecord.longCount++;
+    if (isShort) wRecord.shortCount++;
     weekdayMap.set(weekdayName, wRecord);
 
     // Session breakdown
     if (trade.session) {
-      const sessRecord = sessionMap.get(trade.session) ?? {
-        netPnL: new Decimal(0),
-        count: 0,
-        wins: 0,
-      };
+      const sessRecord = sessionMap.get(trade.session) ?? createEmptySubgroup();
       sessRecord.netPnL = sessRecord.netPnL.plus(pnl);
       sessRecord.count++;
-      if (pnl.greaterThan(0)) sessRecord.wins++;
+      if (pnl.greaterThan(0)) {
+        sessRecord.wins++;
+        sessRecord.sumWin = sessRecord.sumWin.plus(pnl);
+      } else if (pnl.lessThan(0)) {
+        sessRecord.sumLoss = sessRecord.sumLoss.plus(pnl.abs());
+      }
+      if (hasR) {
+        sessRecord.sumR = sessRecord.sumR.plus(new Decimal(rVal));
+        sessRecord.rCount++;
+      }
+      if (isLong) sessRecord.longCount++;
+      if (isShort) sessRecord.shortCount++;
       sessionMap.set(trade.session, sessRecord);
     }
+
+    // Hourly breakdown (0..23) in requested timezone
+    const tradeTimeStr = trade.entryTime || trade.tradeDate;
+    const { localHour, utcHour } = getHourInTz(tradeTimeStr, timezone);
+    const hRecord = hourMap.get(localHour) ?? { ...createEmptySubgroup(), utcHourRef: utcHour };
+    hRecord.netPnL = hRecord.netPnL.plus(pnl);
+    hRecord.count++;
+    hRecord.utcHourRef = utcHour;
+    if (pnl.greaterThan(0)) {
+      hRecord.wins++;
+      hRecord.sumWin = hRecord.sumWin.plus(pnl);
+    } else if (pnl.lessThan(0)) {
+      hRecord.sumLoss = hRecord.sumLoss.plus(pnl.abs());
+    }
+    if (hasR) {
+      hRecord.sumR = hRecord.sumR.plus(new Decimal(rVal));
+      hRecord.rCount++;
+    }
+    if (isLong) hRecord.longCount++;
+    if (isShort) hRecord.shortCount++;
+    hourMap.set(localHour, hRecord);
   }
 
   // Apply any remaining cash flows occurring after the last closed trade
@@ -465,23 +565,68 @@ export function calculateDashboardMetrics(
 
   const performanceByWeekday: IDashboardStats['performanceByWeekday'] = targetDays
     .map((day) => {
-      const val = weekdayMap.get(day) ?? { netPnL: new Decimal(0), count: 0, wins: 0 };
+      const val = weekdayMap.get(day) ?? createEmptySubgroup();
+      let pf = 0;
+      if (val.sumLoss.isZero()) {
+        pf = val.sumWin.greaterThan(0) ? 999.99 : 0;
+      } else {
+        pf = Number(val.sumWin.dividedBy(val.sumLoss).toFixed(2));
+      }
       return {
         day,
         tradesCount: val.count,
         netPnL: Number(val.netPnL.toFixed(2)),
         winRate: val.count > 0 ? Number(((val.wins / val.count) * 100).toFixed(1)) : 0,
+        profitFactor: pf,
+        avgR: val.rCount > 0 ? Number(val.sumR.dividedBy(val.rCount).toFixed(2)) : undefined,
+        longCount: val.longCount,
+        shortCount: val.shortCount,
       };
     });
 
   const performanceBySession: IDashboardStats['performanceBySession'] = Array.from(sessionMap.entries())
-    .map(([session, val]) => ({
-      session,
-      tradesCount: val.count,
-      netPnL: Number(val.netPnL.toFixed(2)),
-      winRate: val.count > 0 ? Number(((val.wins / val.count) * 100).toFixed(1)) : 0,
-    }))
+    .map(([session, val]) => {
+      let pf = 0;
+      if (val.sumLoss.isZero()) {
+        pf = val.sumWin.greaterThan(0) ? 999.99 : 0;
+      } else {
+        pf = Number(val.sumWin.dividedBy(val.sumLoss).toFixed(2));
+      }
+      return {
+        session,
+        tradesCount: val.count,
+        netPnL: Number(val.netPnL.toFixed(2)),
+        winRate: val.count > 0 ? Number(((val.wins / val.count) * 100).toFixed(1)) : 0,
+        profitFactor: pf,
+        avgR: val.rCount > 0 ? Number(val.sumR.dividedBy(val.rCount).toFixed(2)) : undefined,
+        longCount: val.longCount,
+        shortCount: val.shortCount,
+      };
+    })
     .sort((a, b) => b.netPnL - a.netPnL);
+
+  const performanceByHour: IDashboardStats['performanceByHour'] = Array.from(hourMap.entries())
+    .map(([hour, val]) => {
+      let pf = 0;
+      if (val.sumLoss.isZero()) {
+        pf = val.sumWin.greaterThan(0) ? 999.99 : 0;
+      } else {
+        pf = Number(val.sumWin.dividedBy(val.sumLoss).toFixed(2));
+      }
+      return {
+        hour,
+        hourLabel: `${String(hour).padStart(2, '0')}:00`,
+        tradesCount: val.count,
+        netPnL: Number(val.netPnL.toFixed(2)),
+        winRate: val.count > 0 ? Number(((val.wins / val.count) * 100).toFixed(1)) : 0,
+        profitFactor: pf,
+        avgR: val.rCount > 0 ? Number(val.sumR.dividedBy(val.rCount).toFixed(2)) : undefined,
+        longCount: val.longCount,
+        shortCount: val.shortCount,
+        sessionHint: getSessionHintForUtcHour(val.utcHourRef),
+      };
+    })
+    .sort((a, b) => a.hour - b.hour);
 
   // Adaptive distribution buckets:
   // Tailor thresholds to the active currency and trade scale (e.g. micro-lots in USD for Elefin vs large INR F&O contracts)
@@ -584,6 +729,7 @@ export function calculateDashboardMetrics(
     performanceByStrategy,
     performanceByWeekday,
     performanceBySession,
+    performanceByHour,
     pnlDistribution,
   };
 }

@@ -15,6 +15,11 @@ import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
 import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 import { toast } from '../context/ToastContext.js';
 
@@ -32,6 +37,7 @@ import ScienceRoundedIcon from '@mui/icons-material/ScienceRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
 import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
@@ -40,6 +46,10 @@ import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import CurrencyExchangeRoundedIcon from '@mui/icons-material/CurrencyExchangeRounded';
+import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
+import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
+import PublicRoundedIcon from '@mui/icons-material/PublicRounded';
+import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 
 import {
   Area,
@@ -99,10 +109,68 @@ export function AnalyticsPage() {
   const urlSymbol = searchParams.get('symbol')?.toUpperCase();
   const [selectedSymbol, setSelectedSymbol] = useState<string>(urlSymbol || 'ALL');
 
+  const urlDirection = searchParams.get('direction')?.toUpperCase();
+  const [selectedDirection, setSelectedDirection] = useState<'ALL' | 'LONG' | 'SHORT'>(
+    urlDirection === 'LONG' || urlDirection === 'SHORT' ? urlDirection : 'ALL'
+  );
+
+  const urlSession = searchParams.get('session')?.toUpperCase();
+  const [selectedSession, setSelectedSession] = useState<string>(urlSession || 'ALL');
+
+  const urlStrategy = searchParams.get('strategyId') || searchParams.get('strategy');
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>(urlStrategy || 'ALL');
+
+  const urlTz = searchParams.get('tz')?.toUpperCase();
+  const [selectedTimezone, setSelectedTimezone] = useState<'UTC' | 'LOCAL' | 'EST' | 'IST'>(
+    urlTz === 'LOCAL' || urlTz === 'EST' || urlTz === 'IST' ? urlTz : 'UTC'
+  );
+
+  const [newsWindowMinutes, setNewsWindowMinutes] = useState<number>(30);
+  const [catalystTier, setCatalystTier] = useState<'ALL' | 'TIER_1'>('ALL');
+
+  const [timeMetricMode, setTimeMetricMode] = useState<'PNL' | 'WIN_RATE' | 'PROFIT_FACTOR' | 'AVG_R'>('PNL');
+  const [daySortMode, setDaySortMode] = useState<'CHRONO' | 'PNL' | 'WIN_RATE' | 'TRADES'>('CHRONO');
+  const [sessionSortMode, setSessionSortMode] = useState<'PNL' | 'WIN_RATE' | 'TRADES'>('PNL');
+  const [hourlyMetricMode, setHourlyMetricMode] = useState<'PNL' | 'WIN_RATE' | 'AVG_R' | 'TRADES'>('PNL');
+
+  const localBrowserTz = React.useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    } catch {
+      return 'Asia/Kolkata';
+    }
+  }, []);
+
+  const effectiveTimezone = React.useMemo(() => {
+    switch (selectedTimezone) {
+      case 'UTC': return 'UTC';
+      case 'EST': return 'America/New_York';
+      case 'IST': return 'Asia/Kolkata';
+      case 'LOCAL': return localBrowserTz;
+      default: return 'UTC';
+    }
+  }, [selectedTimezone, localBrowserTz]);
+
   React.useEffect(() => {
     const symFromUrl = searchParams.get('symbol')?.toUpperCase();
     if (symFromUrl && symFromUrl !== selectedSymbol) {
       setSelectedSymbol(symFromUrl);
+    }
+    const dirFromUrl = searchParams.get('direction')?.toUpperCase();
+    if (dirFromUrl && (dirFromUrl === 'LONG' || dirFromUrl === 'SHORT') && dirFromUrl !== selectedDirection) {
+      setSelectedDirection(dirFromUrl);
+    }
+    const sessFromUrl = searchParams.get('session')?.toUpperCase();
+    if (sessFromUrl && sessFromUrl !== selectedSession) {
+      setSelectedSession(sessFromUrl);
+    }
+    const stratFromUrl = searchParams.get('strategyId') || searchParams.get('strategy');
+    if (stratFromUrl && stratFromUrl !== selectedStrategyId) {
+      setSelectedStrategyId(stratFromUrl);
+    }
+    const tzFromUrl = searchParams.get('tz')?.toUpperCase();
+    if (tzFromUrl && (tzFromUrl === 'LOCAL' || tzFromUrl === 'EST' || tzFromUrl === 'IST' || tzFromUrl === 'UTC') && tzFromUrl !== selectedTimezone) {
+      setSelectedTimezone(tzFromUrl as any);
     }
   }, [searchParams]);
 
@@ -116,6 +184,66 @@ export function AnalyticsPage() {
       } else {
         next.delete('symbol');
       }
+      return next;
+    });
+  };
+
+  const handleSelectDirection = (dir: 'ALL' | 'LONG' | 'SHORT') => {
+    setSelectedDirection(dir);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (dir !== 'ALL') next.set('direction', dir);
+      else next.delete('direction');
+      return next;
+    });
+  };
+
+  const handleSelectSession = (sess: string) => {
+    const nextSess = (sess || 'ALL').toUpperCase().trim();
+    setSelectedSession(nextSess);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (nextSess !== 'ALL') next.set('session', nextSess);
+      else next.delete('session');
+      return next;
+    });
+  };
+
+  const handleSelectStrategy = (stratId: string) => {
+    setSelectedStrategyId(stratId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (stratId !== 'ALL') next.set('strategyId', stratId);
+      else {
+        next.delete('strategyId');
+        next.delete('strategy');
+      }
+      return next;
+    });
+  };
+
+  const handleSelectTimezone = (tz: 'UTC' | 'LOCAL' | 'EST' | 'IST') => {
+    setSelectedTimezone(tz);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tz !== 'UTC') next.set('tz', tz);
+      else next.delete('tz');
+      return next;
+    });
+  };
+
+  const handleResetFilters = () => {
+    setSelectedSymbol('ALL');
+    setSelectedDirection('ALL');
+    setSelectedSession('ALL');
+    setSelectedStrategyId('ALL');
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('symbol');
+      next.delete('direction');
+      next.delete('session');
+      next.delete('strategyId');
+      next.delete('strategy');
       return next;
     });
   };
@@ -147,13 +275,27 @@ export function AnalyticsPage() {
   };
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['dashboard-stats', queryParams, startDate, endDate, selectedSymbol],
+    queryKey: [
+      'dashboard-stats',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+      effectiveTimezone,
+    ],
     queryFn: () =>
       api.dashboard.stats({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
+        timezone: effectiveTimezone,
       }),
   });
 
@@ -167,24 +309,50 @@ export function AnalyticsPage() {
     : propOverviewRaw?.data || [];
 
   const { data: psychologyData, isLoading: isPsychLoading } = useQuery({
-    queryKey: ['analytics-psychology', queryParams, startDate, endDate, selectedSymbol],
+    queryKey: [
+      'analytics-psychology',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+    ],
     queryFn: () =>
       api.analytics.psychology({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
       }),
   });
 
   const { data: excursionData, isLoading: isExcursionLoading } = useQuery({
-    queryKey: ['analytics-excursion', queryParams, startDate, endDate, selectedSymbol, funnelMode, funnelMode === 'CUSTOM' ? customMfeStepsInput : ''],
+    queryKey: [
+      'analytics-excursion',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+      funnelMode,
+      funnelMode === 'CUSTOM' ? customMfeStepsInput : '',
+    ],
     queryFn: () =>
       api.analytics.excursion({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
         funnelMode,
         customMfeSteps: funnelMode === 'CUSTOM' ? customMfeStepsInput : undefined,
       }),
@@ -192,49 +360,101 @@ export function AnalyticsPage() {
   });
 
   const { data: pyramidingData, isLoading: isPyramidLoading, refetch: refetchPyramiding } = useQuery({
-    queryKey: ['analytics-pyramiding', queryParams, startDate, endDate, selectedSymbol],
+    queryKey: [
+      'analytics-pyramiding',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+    ],
     queryFn: () =>
       api.analytics.pyramiding({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
       }),
     enabled: activeTab === 'PYRAMIDING',
   });
 
   const { data: sizingData, isLoading: isSizingLoading, refetch: refetchSizing } = useQuery({
-    queryKey: ['analytics-sizing', queryParams, startDate, endDate, selectedSymbol],
+    queryKey: [
+      'analytics-sizing',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+    ],
     queryFn: () =>
       api.analytics.sizing({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
       }),
     enabled: activeTab === 'SIZING',
   });
 
   const { data: killZoneData, isLoading: isKillZoneLoading, refetch: refetchKillZone } = useQuery({
-    queryKey: ['analytics-killzones', queryParams, startDate, endDate, selectedSymbol],
+    queryKey: [
+      'analytics-killzones',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+    ],
     queryFn: () =>
       api.analytics.killZones({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
       }),
     enabled: activeTab === 'TIME',
   });
 
   const { data: newsImpactRaw, isLoading: isNewsImpactLoading, refetch: refetchNewsImpact } = useQuery({
-    queryKey: ['analytics-news-impact', queryParams, startDate, endDate, selectedSymbol],
+    queryKey: [
+      'analytics-news-impact',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+      newsWindowMinutes,
+      catalystTier,
+    ],
     queryFn: () =>
       api.analytics.newsImpact({
         ...queryParams,
         startDate,
         endDate,
         symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
+        newsWindowMinutes,
+        catalystTier,
       }),
     enabled: activeTab === 'TIME',
   });
@@ -264,7 +484,53 @@ export function AnalyticsPage() {
     return Array.from(symSet).sort();
   }, [stats, sizingData, killZoneData, pyramidingData, psychologyData, excursionData, newsImpact]);
 
-  // Universal drilldown helper preserving selected Forex pair / asset symbol
+  const allAvailableStrategies = React.useMemo(() => {
+    const list: Array<{ id: string; name: string }> = [];
+    if (stats?.performanceByStrategy && Array.isArray(stats.performanceByStrategy)) {
+      for (const st of stats.performanceByStrategy) {
+        if (st.strategyId && st.strategyId !== 'unclassified' && st.strategyName) {
+          list.push({ id: st.strategyId, name: st.strategyName });
+        }
+      }
+    }
+    return list;
+  }, [stats]);
+
+  const activeFilterCount =
+    (selectedSymbol !== 'ALL' ? 1 : 0) +
+    (selectedDirection !== 'ALL' ? 1 : 0) +
+    (selectedSession !== 'ALL' ? 1 : 0) +
+    (selectedStrategyId !== 'ALL' ? 1 : 0);
+
+  const sortedWeekdays = React.useMemo(() => {
+    const list = [...(stats?.performanceByWeekday || [])];
+    if (daySortMode === 'PNL') {
+      return list.sort((a: any, b: any) => (b.netPnL || 0) - (a.netPnL || 0));
+    }
+    if (daySortMode === 'WIN_RATE') {
+      return list.sort((a: any, b: any) => (b.winRate || 0) - (a.winRate || 0));
+    }
+    if (daySortMode === 'TRADES') {
+      return list.sort((a: any, b: any) => (b.tradesCount || 0) - (a.tradesCount || 0));
+    }
+    return list;
+  }, [stats?.performanceByWeekday, daySortMode]);
+
+  const sortedSessions = React.useMemo(() => {
+    const list = [...(stats?.performanceBySession || [])];
+    if (sessionSortMode === 'PNL') {
+      return list.sort((a: any, b: any) => (b.netPnL || 0) - (a.netPnL || 0));
+    }
+    if (sessionSortMode === 'WIN_RATE') {
+      return list.sort((a: any, b: any) => (b.winRate || 0) - (a.winRate || 0));
+    }
+    if (sessionSortMode === 'TRADES') {
+      return list.sort((a: any, b: any) => (b.tradesCount || 0) - (a.tradesCount || 0));
+    }
+    return list;
+  }, [stats?.performanceBySession, sessionSortMode]);
+
+  // Universal drilldown helper preserving selected Forex pair / asset symbol and active filters
   const handleOpenDrill = (drillOrFilter: any, customLabel?: string) => {
     if (drillOrFilter?.kind === 'TRADES' || drillOrFilter?.kind === 'TRADE') {
       openDrill(drillOrFilter);
@@ -272,9 +538,21 @@ export function AnalyticsPage() {
     }
     const f = drillOrFilter?.filter || drillOrFilter || {};
     const symbolFilter = selectedSymbol !== 'ALL' ? { symbol: selectedSymbol } : {};
+    const directionFilter = selectedDirection !== 'ALL' ? { direction: selectedDirection } : {};
+    const sessionFilter = selectedSession !== 'ALL' ? { session: selectedSession } : {};
+    const strategyFilter = selectedStrategyId !== 'ALL' ? { strategyId: selectedStrategyId } : {};
     openDrill({
       kind: 'FILTER',
-      filter: { ...(queryParams as any), startDate, endDate, ...symbolFilter, ...f },
+      filter: {
+        ...(queryParams as any),
+        startDate,
+        endDate,
+        ...symbolFilter,
+        ...directionFilter,
+        ...sessionFilter,
+        ...strategyFilter,
+        ...f,
+      },
       label: customLabel || drillOrFilter?.label,
     });
   };
@@ -447,121 +725,285 @@ export function AnalyticsPage() {
         })}
       </Box>
 
-      {/* Universal Forex Pair & Symbol Filter Bar */}
+      {/* Exact Analysis & Multi-Option Control Console */}
       <Card
         sx={{
-          p: 1.5,
+          p: 2,
           borderRadius: 2.5,
-          border: `1px solid ${selectedSymbol !== 'ALL' ? (isDark ? 'rgba(52, 211, 153, 0.4)' : 'rgba(5, 150, 105, 0.35)') : muiTheme.palette.divider}`,
-          backgroundColor: selectedSymbol !== 'ALL'
-            ? (isDark ? 'rgba(16, 185, 129, 0.06)' : 'rgba(16, 185, 129, 0.03)')
+          border: `1px solid ${activeFilterCount > 0 ? (isDark ? 'rgba(52, 211, 153, 0.4)' : 'rgba(5, 150, 105, 0.35)') : muiTheme.palette.divider}`,
+          backgroundColor: activeFilterCount > 0
+            ? (isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.025)')
             : (isDark ? 'rgba(15, 23, 42, 0.6)' : '#FFFFFF'),
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          alignItems: { xs: 'flex-start', md: 'center' },
-          justifyContent: 'space-between',
-          gap: 1.5,
-          boxShadow: selectedSymbol !== 'ALL'
-            ? (isDark ? '0 0 16px rgba(16, 185, 129, 0.1)' : '0 2px 8px rgba(5, 150, 105, 0.08)')
+          boxShadow: activeFilterCount > 0
+            ? (isDark ? '0 0 16px rgba(16, 185, 129, 0.08)' : '0 2px 8px rgba(5, 150, 105, 0.06)')
             : 'none',
           transition: 'all 0.2s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-            <CurrencyExchangeRoundedIcon
-              fontSize="small"
-              sx={{ color: selectedSymbol !== 'ALL' ? (isDark ? '#34D399' : '#059669') : 'text.secondary' }}
-            />
-            <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8125rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
-              Forex & Asset Filter:
-            </Typography>
+        {/* Row 1: Symbol Quick-Selector */}
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'flex-start', md: 'center' }, justifyContent: 'space-between', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <CurrencyExchangeRoundedIcon
+                fontSize="small"
+                sx={{ color: selectedSymbol !== 'ALL' ? (isDark ? '#34D399' : '#059669') : 'text.secondary' }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8125rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                Forex & Asset:
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                flexWrap: 'wrap',
+                maxHeight: { xs: 80, md: 'none' },
+                overflowY: 'auto',
+              }}
+            >
+              <Chip
+                label="All Symbols (Combined)"
+                size="small"
+                onClick={() => handleSelectSymbol('ALL')}
+                variant={selectedSymbol === 'ALL' ? 'filled' : 'outlined'}
+                sx={{
+                  fontWeight: selectedSymbol === 'ALL' ? 700 : 500,
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  bgcolor: selectedSymbol === 'ALL'
+                    ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.08)')
+                    : 'transparent',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.15)',
+                  '&:hover': {
+                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(15, 23, 42, 0.06)',
+                  },
+                }}
+              />
+
+              {allAvailableSymbols.map((sym) => {
+                const isSelected = selectedSymbol === sym;
+                return (
+                  <Chip
+                    key={sym}
+                    label={sym}
+                    size="small"
+                    onClick={() => handleSelectSymbol(sym)}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    sx={{
+                      fontWeight: isSelected ? 800 : 600,
+                      fontSize: '0.75rem',
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      cursor: 'pointer',
+                      letterSpacing: '0.02em',
+                      bgcolor: isSelected
+                        ? (isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.14)')
+                        : 'transparent',
+                      color: isSelected
+                        ? (isDark ? '#34D399' : '#059669')
+                        : 'text.primary',
+                      borderColor: isSelected
+                        ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(5, 150, 105, 0.5)')
+                        : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.1)'),
+                      '&:hover': {
+                        bgcolor: isSelected
+                          ? (isDark ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.2)')
+                          : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.04)'),
+                      },
+                    }}
+                  />
+                );
+              })}
+            </Box>
           </Box>
 
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.75,
-              flexWrap: 'wrap',
-              maxHeight: { xs: 80, md: 'none' },
-              overflowY: 'auto',
-            }}
-          >
-            <Chip
-              label="All Symbols (Combined)"
-              size="small"
-              onClick={() => handleSelectSymbol('ALL')}
-              variant={selectedSymbol === 'ALL' ? 'filled' : 'outlined'}
-              sx={{
-                fontWeight: selectedSymbol === 'ALL' ? 700 : 500,
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                bgcolor: selectedSymbol === 'ALL'
-                  ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.08)')
-                  : 'transparent',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.15)',
-                '&:hover': {
-                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(15, 23, 42, 0.06)',
-                },
-              }}
-            />
-
-            {allAvailableSymbols.map((sym) => {
-              const isSelected = selectedSymbol === sym;
-              return (
+          {/* Active status indicator & Clear All button */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, alignSelf: { xs: 'flex-end', md: 'center' } }}>
+            {activeFilterCount > 0 ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Chip
-                  key={sym}
-                  label={sym}
+                  label={`${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}`}
                   size="small"
-                  onClick={() => handleSelectSymbol(sym)}
-                  variant={isSelected ? 'filled' : 'outlined'}
-                  sx={{
-                    fontWeight: isSelected ? 800 : 600,
-                    fontSize: '0.75rem',
-                    fontFamily: `'JetBrains Mono', monospace`,
-                    cursor: 'pointer',
-                    letterSpacing: '0.02em',
-                    bgcolor: isSelected
-                      ? (isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.14)')
-                      : 'transparent',
-                    color: isSelected
-                      ? (isDark ? '#34D399' : '#059669')
-                      : 'text.primary',
-                    borderColor: isSelected
-                      ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(5, 150, 105, 0.5)')
-                      : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.1)'),
-                    '&:hover': {
-                      bgcolor: isSelected
-                        ? (isDark ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.2)')
-                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.04)'),
-                    },
-                  }}
+                  color="primary"
+                  sx={{ fontWeight: 800, fontSize: '0.6875rem', height: 22 }}
                 />
-              );
-            })}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleResetFilters}
+                  startIcon={<RestartAltRoundedIcon fontSize="small" />}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    py: 0.25,
+                    px: 1,
+                    borderRadius: 1.5,
+                  }}
+                >
+                  Reset Filters
+                </Button>
+              </Box>
+            ) : (
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                {allAvailableSymbols.length} traded asset{allAvailableSymbols.length === 1 ? '' : 's'} in scope
+              </Typography>
+            )}
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, alignSelf: { xs: 'flex-end', md: 'center' } }}>
-          {selectedSymbol !== 'ALL' ? (
-            <Chip
-              label={`Active: ${selectedSymbol}`}
-              onDelete={() => handleSelectSymbol('ALL')}
-              size="small"
-              sx={{
-                fontWeight: 700,
-                fontSize: '0.72rem',
-                bgcolor: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)',
-                color: isDark ? '#34D399' : '#059669',
-                border: `1px solid ${isDark ? 'rgba(52, 211, 153, 0.4)' : 'rgba(5, 150, 105, 0.35)'}`,
-              }}
-            />
-          ) : (
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
-              {allAvailableSymbols.length} traded asset{allAvailableSymbols.length === 1 ? '' : 's'} in scope
+        <Divider sx={{ borderStyle: 'dashed' }} />
+
+        {/* Row 2: Adaptive Granular Controls (Direction, Session, Strategy, Timezone) */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 1.5,
+          }}
+        >
+          {/* Left Controls: Direction + Session + Strategy */}
+          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
+            {/* Direction Toggle */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.75rem', mr: 0.25 }}>
+                Side:
+              </Typography>
+              <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.25, px: 1, fontSize: '0.72rem', textTransform: 'none', fontWeight: 700 } }}>
+                <Button
+                  onClick={() => handleSelectDirection('ALL')}
+                  variant={selectedDirection === 'ALL' ? 'contained' : 'outlined'}
+                  color={selectedDirection === 'ALL' ? 'primary' : 'inherit'}
+                >
+                  All Sides
+                </Button>
+                <Button
+                  onClick={() => handleSelectDirection('LONG')}
+                  variant={selectedDirection === 'LONG' ? 'contained' : 'outlined'}
+                  color="success"
+                  startIcon={<TrendingUpRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                >
+                  Longs
+                </Button>
+                <Button
+                  onClick={() => handleSelectDirection('SHORT')}
+                  variant={selectedDirection === 'SHORT' ? 'contained' : 'outlined'}
+                  color="error"
+                  startIcon={<TrendingDownRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                >
+                  Shorts
+                </Button>
+              </ButtonGroup>
+            </Box>
+
+            {/* Session Selector */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.75rem', mr: 0.25 }}>
+                Session:
+              </Typography>
+              <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.25, px: 0.9, fontSize: '0.72rem', textTransform: 'none', fontWeight: 600 } }}>
+                {[
+                  { id: 'ALL', label: 'All' },
+                  { id: 'ASIA', label: 'Asia' },
+                  { id: 'LONDON', label: 'London' },
+                  { id: 'NEW_YORK', label: 'New York' },
+                  { id: 'LONDON_CLOSE', label: 'London Close' },
+                  { id: 'OFF_HOURS', label: 'Off-Hours' },
+                ].map((s) => (
+                  <Button
+                    key={s.id}
+                    onClick={() => handleSelectSession(s.id)}
+                    variant={selectedSession === s.id ? 'contained' : 'outlined'}
+                    sx={selectedSession === s.id ? { fontWeight: 800 } : {}}
+                  >
+                    {s.label}
+                  </Button>
+                ))}
+              </ButtonGroup>
+            </Box>
+
+            {/* Strategy Dropdown */}
+            {allAvailableStrategies.length > 0 && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.75rem', mr: 0.25 }}>
+                  Strategy:
+                </Typography>
+                <Select
+                  size="small"
+                  value={selectedStrategyId}
+                  onChange={(e) => handleSelectStrategy(e.target.value)}
+                  sx={{
+                    height: 28,
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    bgcolor: selectedStrategyId !== 'ALL' ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)') : 'transparent',
+                    '& .MuiSelect-select': { py: 0.3, px: 1.25 },
+                  }}
+                >
+                  <MenuItem value="ALL" sx={{ fontSize: '0.75rem', fontWeight: 600 }}>
+                    All Playbooks / Strategies
+                  </MenuItem>
+                  {allAvailableStrategies.map((st) => (
+                    <MenuItem key={st.id} value={st.id} sx={{ fontSize: '0.75rem' }}>
+                      {st.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+            )}
+          </Box>
+
+          {/* Right Controls: Timezone Alignment */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <PublicRoundedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.75rem' }}>
+              Timezone:
             </Typography>
-          )}
+            <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.25, px: 0.8, fontSize: '0.7rem', textTransform: 'none', fontWeight: 600 } }}>
+              <Tooltip title="Coordinated Universal Time (Institutional ICT standard)" arrow>
+                <Button
+                  onClick={() => handleSelectTimezone('UTC')}
+                  variant={selectedTimezone === 'UTC' ? 'contained' : 'outlined'}
+                  sx={selectedTimezone === 'UTC' ? { fontWeight: 800 } : {}}
+                >
+                  UTC
+                </Button>
+              </Tooltip>
+              <Tooltip title={`Your browser local time (${localBrowserTz})`} arrow>
+                <Button
+                  onClick={() => handleSelectTimezone('LOCAL')}
+                  variant={selectedTimezone === 'LOCAL' ? 'contained' : 'outlined'}
+                  sx={selectedTimezone === 'LOCAL' ? { fontWeight: 800 } : {}}
+                >
+                  Local
+                </Button>
+              </Tooltip>
+              <Tooltip title="US Eastern Time (New York Stock Exchange & US Macro data timing)" arrow>
+                <Button
+                  onClick={() => handleSelectTimezone('EST')}
+                  variant={selectedTimezone === 'EST' ? 'contained' : 'outlined'}
+                  sx={selectedTimezone === 'EST' ? { fontWeight: 800 } : {}}
+                >
+                  EST (NY)
+                </Button>
+              </Tooltip>
+              <Tooltip title="Indian Standard Time (IST - UTC+5:30)" arrow>
+                <Button
+                  onClick={() => handleSelectTimezone('IST')}
+                  variant={selectedTimezone === 'IST' ? 'contained' : 'outlined'}
+                  sx={selectedTimezone === 'IST' ? { fontWeight: 800 } : {}}
+                >
+                  IST
+                </Button>
+              </Tooltip>
+            </ButtonGroup>
+          </Box>
         </Box>
       </Card>
 
@@ -1214,27 +1656,69 @@ export function AnalyticsPage() {
                     Evaluates trade performance during high-impact US macro releases (CPI, NFP, FOMC, PPI) vs calm technical flow, plus MT5 spread and swap drag
                   </Typography>
                 </Box>
-                {newsImpact.friction?.totalFrictionCost > 0 && (
-                  <Chip
-                    icon={<ReceiptLongRoundedIcon style={{ fontSize: 13 }} />}
-                    label={`Total Friction: ${formatCurrency(newsImpact.friction.totalFrictionCost, analyticsCurrency)} (${newsImpact.friction.frictionSharePercent}% of Gross)`}
-                    size="small"
-                    sx={{
-                      fontFamily: `'JetBrains Mono', monospace`,
-                      fontWeight: 700,
-                      fontSize: '0.75rem',
-                      bgcolor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
-                      color: '#F59E0B',
-                      border: '1px solid rgba(245, 158, 11, 0.3)',
-                    }}
-                  />
-                )}
+
+                {/* Adaptive Catalyst Controls & Friction Chip */}
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.25 }}>
+                  {/* Catalyst Tier Toggle */}
+                  <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.25, px: 0.85, fontSize: '0.7rem', textTransform: 'none', fontWeight: 600 } }}>
+                    <Button
+                      onClick={() => setCatalystTier('ALL')}
+                      variant={catalystTier === 'ALL' ? 'contained' : 'outlined'}
+                      sx={catalystTier === 'ALL' ? { fontWeight: 800 } : {}}
+                    >
+                      All Macro Events
+                    </Button>
+                    <Button
+                      onClick={() => setCatalystTier('TIER_1')}
+                      variant={catalystTier === 'TIER_1' ? 'contained' : 'outlined'}
+                      color="error"
+                      sx={catalystTier === 'TIER_1' ? { fontWeight: 800 } : {}}
+                    >
+                      Tier-1 (CPI/NFP/FOMC)
+                    </Button>
+                  </ButtonGroup>
+
+                  {/* Adaptive Window Selector */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 700, color: 'text.secondary' }}>
+                      Window:
+                    </Typography>
+                    <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.25, px: 0.8, fontSize: '0.7rem', textTransform: 'none', fontWeight: 600 } }}>
+                      {[15, 30, 60, 120].map((mins) => (
+                        <Button
+                          key={mins}
+                          onClick={() => setNewsWindowMinutes(mins)}
+                          variant={newsWindowMinutes === mins ? 'contained' : 'outlined'}
+                          sx={newsWindowMinutes === mins ? { fontWeight: 800 } : {}}
+                        >
+                          ±{mins}m
+                        </Button>
+                      ))}
+                    </ButtonGroup>
+                  </Box>
+
+                  {newsImpact.friction?.totalFrictionCost > 0 && (
+                    <Chip
+                      icon={<ReceiptLongRoundedIcon style={{ fontSize: 13 }} />}
+                      label={`Total Friction: ${formatCurrency(newsImpact.friction.totalFrictionCost, analyticsCurrency)} (${newsImpact.friction.frictionSharePercent}% of Gross)`}
+                      size="small"
+                      sx={{
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        bgcolor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                        color: '#F59E0B',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                      }}
+                    />
+                  )}
+                </Box>
               </Box>
 
               <Grid container spacing={2}>
                 {/* News Releases Cohort */}
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <Tooltip title="Trades executed within ±30m of high-impact US macro data (CPI, NFP, FOMC) or tagged as news. Click to inspect trades." arrow>
+                  <Tooltip title={`Trades executed within ±${newsWindowMinutes}m of macro releases (${catalystTier === 'TIER_1' ? 'Tier-1: CPI, NFP, FOMC' : 'All: CPI, NFP, FOMC, PPI, GDP, etc.'}) or tagged as news. Click to inspect trades.`} arrow>
                     <Paper
                       variant="outlined"
                       onClick={() => {
@@ -1281,7 +1765,7 @@ export function AnalyticsPage() {
                             }}
                           />
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                            ±30m US Macro Events
+                            ±{newsWindowMinutes}m US Macro Events
                           </Typography>
                         </Box>
                         <Box sx={{ textAlign: 'right' }}>
@@ -1455,119 +1939,268 @@ export function AnalyticsPage() {
             </Card>
           )}
 
-          <Grid container spacing={3}>
-          {/* Weekday Breakdown */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card sx={{ p: 2.5, height: '100%' }}>
-              <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {/* 24-Hour Intraday Hourly Distribution (Exact Time-of-Day Analysis) */}
+          <Card sx={{ p: 2.5, borderRadius: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                  <AccessTimeIcon sx={{ color: '#3B82F6', fontSize: 20 }} />
                   <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                    Performance by Day of Week
+                    24-Hour Intraday Hourly Performance & Volume Distribution
                   </Typography>
-                  <HelpHint hintKey="analytics.time.weekday" />
+                  <HelpHint hintKey="analytics.time.hourly" />
                 </Box>
                 <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  Identify which trading weekdays provide maximum discretionary edge (click row to drill down)
+                  Detailed trade entry volume, win rate expectancy, and net P&L across each hour of the day aligned to {selectedTimezone} ({effectiveTimezone})
                 </Typography>
               </Box>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {stats?.performanceByWeekday?.map((day: any) => (
-                  <Tooltip key={day.day} title={`Click to inspect all ${day.tradesCount} trades taken on ${day.day}`} arrow>
-                    <Box
-                      onClick={() =>
-                        handleOpenDrill({
-                          kind: 'FILTER',
-                          filter: { weekday: day.day.toLowerCase() },
-                          label: `${day.day} Trades`,
-                        })
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 700, color: 'text.secondary' }}>
+                  Metric:
+                </Typography>
+                <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.25, px: 1, fontSize: '0.72rem', textTransform: 'none', fontWeight: 600 } }}>
+                  <Button
+                    onClick={() => setHourlyMetricMode('PNL')}
+                    variant={hourlyMetricMode === 'PNL' ? 'contained' : 'outlined'}
+                    sx={hourlyMetricMode === 'PNL' ? { fontWeight: 800 } : {}}
+                  >
+                    Net P&L
+                  </Button>
+                  <Button
+                    onClick={() => setHourlyMetricMode('WIN_RATE')}
+                    variant={hourlyMetricMode === 'WIN_RATE' ? 'contained' : 'outlined'}
+                    sx={hourlyMetricMode === 'WIN_RATE' ? { fontWeight: 800 } : {}}
+                  >
+                    Win Rate %
+                  </Button>
+                  <Button
+                    onClick={() => setHourlyMetricMode('AVG_R')}
+                    variant={hourlyMetricMode === 'AVG_R' ? 'contained' : 'outlined'}
+                    sx={hourlyMetricMode === 'AVG_R' ? { fontWeight: 800 } : {}}
+                  >
+                    Avg R
+                  </Button>
+                  <Button
+                    onClick={() => setHourlyMetricMode('TRADES')}
+                    variant={hourlyMetricMode === 'TRADES' ? 'contained' : 'outlined'}
+                    sx={hourlyMetricMode === 'TRADES' ? { fontWeight: 800 } : {}}
+                  >
+                    Trades Count
+                  </Button>
+                </ButtonGroup>
+              </Box>
+            </Box>
+
+            {/* Hourly Bar Chart */}
+            <Box sx={{ height: 260, width: '100%', mt: 1 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats?.performanceByHour || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} vertical={false} />
+                  <XAxis
+                    dataKey="hourLabel"
+                    stroke={chartAxisColor}
+                    tick={{ fontSize: 10, fill: chartAxisColor }}
+                    interval={0}
+                  />
+                  <YAxis
+                    stroke={chartAxisColor}
+                    tick={{ fontSize: 10, fill: chartAxisColor }}
+                    tickFormatter={(val: number) => {
+                      if (hourlyMetricMode === 'PNL') return formatCurrency(val, analyticsCurrency);
+                      if (hourlyMetricMode === 'WIN_RATE') return `${val}%`;
+                      if (hourlyMetricMode === 'AVG_R') return `${val > 0 ? '+' : ''}${val}R`;
+                      return `${val}`;
+                    }}
+                    domain={hourlyMetricMode === 'WIN_RATE' ? [0, 100] : ['auto', 'auto']}
+                  />
+                  <ReferenceLine
+                    y={hourlyMetricMode === 'WIN_RATE' ? 50 : 0}
+                    stroke={isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'}
+                    strokeDasharray="3 3"
+                  />
+                  <RechartsTooltip
+                    content={({ active, payload }: any) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const d = payload[0].payload;
+                      const nextH = String((d.hour + 1) % 24).padStart(2, '0') + ':00';
+                      return (
+                        <Box sx={chartTooltipStyle}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'text.primary', fontSize: '0.8rem' }}>
+                              {d.hourLabel} – {nextH} ({selectedTimezone})
+                            </Typography>
+                            {d.sessionHint && (
+                              <Chip
+                                label={d.sessionHint}
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.625rem',
+                                  fontWeight: 700,
+                                  bgcolor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)',
+                                  color: '#3B82F6',
+                                }}
+                              />
+                            )}
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1, fontSize: '0.75rem' }}>
+                            <Box>
+                              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem' }}>Volume</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
+                                {d.tradesCount} trades <span style={{ opacity: 0.7, fontSize: '0.7rem' }}>({d.longCount}L • {d.shortCount}S)</span>
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem' }}>Net P&L</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.8rem', color: d.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
+                                {formatCurrency(d.netPnL, analyticsCurrency)}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem' }}>Win Rate</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: d.tradesCount === 0 ? 'text.secondary' : d.winRate >= 50 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main }}>
+                                {d.tradesCount > 0 ? `${d.winRate}%` : '—'}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.6875rem' }}>Avg R / PF</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem' }}>
+                                {d.avgR > 0 ? `+${d.avgR}R` : `${d.avgR || 0}R`} • PF {d.profitFactor > 0 ? d.profitFactor : '—'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Box>
+                      );
+                    }}
+                  />
+                  <Bar
+                    dataKey={hourlyMetricMode === 'PNL' ? 'netPnL' : hourlyMetricMode === 'WIN_RATE' ? 'winRate' : hourlyMetricMode === 'AVG_R' ? 'avgR' : 'tradesCount'}
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={30}
+                  >
+                    {(stats?.performanceByHour || []).map((entry: any, index: number) => {
+                      let cellColor = '#3B82F6';
+                      if (entry.tradesCount === 0) {
+                        cellColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
+                      } else if (hourlyMetricMode === 'PNL') {
+                        cellColor = entry.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main;
+                      } else if (hourlyMetricMode === 'WIN_RATE') {
+                        cellColor = entry.winRate >= 50 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main;
+                      } else if (hourlyMetricMode === 'AVG_R') {
+                        cellColor = entry.avgR >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main;
+                      } else {
+                        cellColor = '#3B82F6';
                       }
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        py: 1.25,
-                        px: 1.5,
-                        borderRadius: 1.5,
-                        border: `1px solid ${muiTheme.palette.divider}`,
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          borderColor: muiTheme.palette.primary.main,
-                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
-                        },
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                          {day.day}
-                        </Typography>
-                        {day.tradesCount < 30 && (
-                          <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
-                            <Chip
-                              label="N < 30"
-                              size="small"
-                              variant="outlined"
-                              color="warning"
-                              sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
-                            />
-                          </Tooltip>
-                        )}
-                      </Box>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                        {day.tradesCount} trades
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
-                        {day.winRate}% Win
-                      </Typography>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 700,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: day.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                        }}
-                      >
-                        {formatCurrency(day.netPnL)}
-                      </Typography>
-                    </Box>
-                  </Tooltip>
-                ))}
-              </Box>
-              <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
-                Note: Subgroups with fewer than 30 trades exhibit high statistical variance. Click any day to inspect underlying executions.
-              </Typography>
-            </Card>
-          </Grid>
+                      return <Cell key={`cell-${index}`} fill={cellColor} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
 
-          {/* Session Breakdown */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card sx={{ p: 2.5, height: '100%' }}>
-              <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
-                    Performance by Trading Session
+            {/* Quick Insights Footer Badges */}
+            {(() => {
+              const hData = stats?.performanceByHour || [];
+              const active = hData.filter((h: any) => h.tradesCount > 0);
+              if (active.length === 0) return null;
+              const bestH = active.reduce((p: any, c: any) => (c.netPnL > p.netPnL ? c : p), active[0]);
+              const worstH = active.reduce((p: any, c: any) => (c.netPnL < p.netPnL ? c : p), active[0]);
+              const peakVol = active.reduce((p: any, c: any) => (c.tradesCount > p.tradesCount ? c : p), active[0]);
+              return (
+                <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${muiTheme.palette.divider}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                    {bestH && bestH.netPnL > 0 && (
+                      <Chip
+                        size="small"
+                        icon={<TrendingUpRoundedIcon style={{ fontSize: 14, color: '#10B981' }} />}
+                        label={`Golden Hour: ${bestH.hourLabel} (${formatCurrency(bestH.netPnL, analyticsCurrency)}, ${bestH.winRate}% Win)`}
+                        sx={{ fontSize: '0.7rem', fontWeight: 700, bgcolor: 'rgba(16, 185, 129, 0.1)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.25)' }}
+                      />
+                    )}
+                    {worstH && worstH.netPnL < 0 && (
+                      <Chip
+                        size="small"
+                        icon={<TrendingDownRoundedIcon style={{ fontSize: 14, color: '#EF4444' }} />}
+                        label={`Hazard Window: ${worstH.hourLabel} (${formatCurrency(worstH.netPnL, analyticsCurrency)}, ${worstH.winRate}% Win)`}
+                        sx={{ fontSize: '0.7rem', fontWeight: 700, bgcolor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.25)' }}
+                      />
+                    )}
+                    {peakVol && (
+                      <Chip
+                        size="small"
+                        label={`Peak Activity: ${peakVol.hourLabel} (${peakVol.tradesCount} trades)`}
+                        sx={{ fontSize: '0.7rem', fontWeight: 700, bgcolor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)', color: '#60A5FA' }}
+                      />
+                    )}
+                  </Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
+                    Hours reflect entry timestamps normalized to {effectiveTimezone}.
                   </Typography>
-                  <HelpHint hintKey="trade.form.sessionCodes" />
                 </Box>
-                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                  {caps.broker.adapter === 'ELEFIN_MT5' || analyticsCurrency === 'USD'
-                    ? 'Forex 24/5 sessions: Asia, London, New York & London Close (click row to drill down)'
-                    : 'NSE Regular equity market vs MCX Commodity evening session (click row to drill down)'}
-                </Typography>
-              </Box>
+              );
+            })()}
+          </Card>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {stats?.performanceBySession && stats.performanceBySession.length > 0 ? (
-                  stats.performanceBySession.map((sess: any) => (
-                    <Tooltip key={sess.session} title={`Click to inspect all ${sess.tradesCount} trades taken during ${sess.session} session`} arrow>
+          <Grid container spacing={3}>
+            {/* Weekday Breakdown */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card sx={{ p: 2.5, height: '100%', borderRadius: 2.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                        Performance by Day of Week
+                      </Typography>
+                      <HelpHint hintKey="analytics.time.weekday" />
+                    </Box>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                      Identify which trading weekdays provide maximum discretionary edge (click row to drill down)
+                    </Typography>
+                  </Box>
+
+                  {/* Day Sort Control */}
+                  <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.2, px: 0.8, fontSize: '0.6875rem', textTransform: 'none', fontWeight: 600 } }}>
+                    <Button
+                      onClick={() => setDaySortMode('CHRONO')}
+                      variant={daySortMode === 'CHRONO' ? 'contained' : 'outlined'}
+                      sx={daySortMode === 'CHRONO' ? { fontWeight: 800 } : {}}
+                    >
+                      Calendar
+                    </Button>
+                    <Button
+                      onClick={() => setDaySortMode('PNL')}
+                      variant={daySortMode === 'PNL' ? 'contained' : 'outlined'}
+                      sx={daySortMode === 'PNL' ? { fontWeight: 800 } : {}}
+                    >
+                      P&L
+                    </Button>
+                    <Button
+                      onClick={() => setDaySortMode('WIN_RATE')}
+                      variant={daySortMode === 'WIN_RATE' ? 'contained' : 'outlined'}
+                      sx={daySortMode === 'WIN_RATE' ? { fontWeight: 800 } : {}}
+                    >
+                      Win %
+                    </Button>
+                    <Button
+                      onClick={() => setDaySortMode('TRADES')}
+                      variant={daySortMode === 'TRADES' ? 'contained' : 'outlined'}
+                      sx={daySortMode === 'TRADES' ? { fontWeight: 800 } : {}}
+                    >
+                      Trades
+                    </Button>
+                  </ButtonGroup>
+                </Box>
+
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {sortedWeekdays.map((day: any) => (
+                    <Tooltip key={day.day} title={`Click to inspect all ${day.tradesCount} trades taken on ${day.day}`} arrow>
                       <Box
                         onClick={() =>
                           handleOpenDrill({
                             kind: 'FILTER',
-                            filter: { session: sess.session },
-                            label: `${sess.session} Session Trades`,
+                            filter: { weekday: day.day.toLowerCase() },
+                            label: `${day.day} Trades`,
                           })
                         }
                         sx={{
@@ -1584,14 +2217,15 @@ export function AnalyticsPage() {
                           '&:hover': {
                             borderColor: muiTheme.palette.primary.main,
                             backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                            transform: 'translateY(-1px)',
                           },
                         }}
                       >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 100 }}>
                           <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                            {sess.session}
+                            {day.day}
                           </Typography>
-                          {sess.tradesCount < 30 && (
+                          {day.tradesCount < 30 && (
                             <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
                               <Chip
                                 label="N < 30"
@@ -1603,37 +2237,201 @@ export function AnalyticsPage() {
                             </Tooltip>
                           )}
                         </Box>
-                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                          {sess.tradesCount} trades
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
-                          {sess.winRate}% Win
-                        </Typography>
+
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                          <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}>
+                            {day.tradesCount} trades
+                            {(day.longCount > 0 || day.shortCount > 0) && (
+                              <span style={{ opacity: 0.75, marginLeft: 4 }}>
+                                ({day.longCount || 0}L • {day.shortCount || 0}S)
+                              </span>
+                            )}
+                          </Typography>
+
+                          {day.profitFactor !== undefined && (
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, display: { xs: 'none', sm: 'inline' } }}>
+                              PF: <strong style={{ color: day.profitFactor >= 1.5 ? '#10B981' : undefined }}>{day.profitFactor > 0 ? day.profitFactor : '—'}</strong>
+                            </Typography>
+                          )}
+
+                          {day.avgR !== undefined && (
+                            <Typography variant="caption" sx={{ color: day.avgR >= 0 ? '#10B981' : '#EF4444', fontWeight: 700, display: { xs: 'none', sm: 'inline' } }}>
+                              {day.avgR > 0 ? `+${day.avgR}R` : `${day.avgR}R`}
+                            </Typography>
+                          )}
+
+                          <Typography variant="caption" sx={{ color: day.winRate >= 50 ? '#3B82F6' : '#EF4444', fontWeight: 700 }}>
+                            {day.winRate}% Win
+                          </Typography>
+                        </Box>
+
                         <Typography
                           variant="body2"
                           sx={{
-                            fontWeight: 700,
+                            fontWeight: 800,
                             fontFamily: `'JetBrains Mono', monospace`,
-                            color: sess.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            color: day.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            minWidth: 80,
+                            textAlign: 'right',
                           }}
                         >
-                          {formatCurrency(sess.netPnL)}
+                          {formatCurrency(day.netPnL, analyticsCurrency)}
                         </Typography>
                       </Box>
                     </Tooltip>
-                  ))
-                ) : (
-                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                    No session records logged.
-                  </Typography>
-                )}
-              </Box>
-              <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
-                Note: Low trade counts increase uncertainty in session-level expectancy. Click any session to inspect trades.
-              </Typography>
-            </Card>
+                  ))}
+                </Box>
+                <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
+                  Note: Subgroups with fewer than 30 trades exhibit high statistical variance. Click any day to inspect underlying executions.
+                </Typography>
+              </Card>
+            </Grid>
+
+            {/* Session Breakdown */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card sx={{ p: 2.5, height: '100%', borderRadius: 2.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                        Performance by Trading Session
+                      </Typography>
+                      <HelpHint hintKey="trade.form.sessionCodes" />
+                    </Box>
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                      {caps.broker.adapter === 'ELEFIN_MT5' || analyticsCurrency === 'USD'
+                        ? 'Forex 24/5 sessions: Asia, London, New York & London Close (click row to drill down)'
+                        : 'NSE Regular equity market vs MCX Commodity evening session (click row to drill down)'}
+                    </Typography>
+                  </Box>
+
+                  {/* Session Sort Control */}
+                  <ButtonGroup size="small" variant="outlined" sx={{ '& .MuiButton-root': { py: 0.2, px: 0.8, fontSize: '0.6875rem', textTransform: 'none', fontWeight: 600 } }}>
+                    <Button
+                      onClick={() => setSessionSortMode('PNL')}
+                      variant={sessionSortMode === 'PNL' ? 'contained' : 'outlined'}
+                      sx={sessionSortMode === 'PNL' ? { fontWeight: 800 } : {}}
+                    >
+                      P&L
+                    </Button>
+                    <Button
+                      onClick={() => setSessionSortMode('WIN_RATE')}
+                      variant={sessionSortMode === 'WIN_RATE' ? 'contained' : 'outlined'}
+                      sx={sessionSortMode === 'WIN_RATE' ? { fontWeight: 800 } : {}}
+                    >
+                      Win %
+                    </Button>
+                    <Button
+                      onClick={() => setSessionSortMode('TRADES')}
+                      variant={sessionSortMode === 'TRADES' ? 'contained' : 'outlined'}
+                      sx={sessionSortMode === 'TRADES' ? { fontWeight: 800 } : {}}
+                    >
+                      Trades
+                    </Button>
+                  </ButtonGroup>
+                </Box>
+
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {sortedSessions && sortedSessions.length > 0 ? (
+                    sortedSessions.map((sess: any) => (
+                      <Tooltip key={sess.session} title={`Click to inspect all ${sess.tradesCount} trades taken during ${sess.session} session`} arrow>
+                        <Box
+                          onClick={() =>
+                            handleOpenDrill({
+                              kind: 'FILTER',
+                              filter: { session: sess.session },
+                              label: `${sess.session} Session Trades`,
+                            })
+                          }
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            py: 1.25,
+                            px: 1.5,
+                            borderRadius: 1.5,
+                            border: `1px solid ${muiTheme.palette.divider}`,
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            '&:hover': {
+                              borderColor: muiTheme.palette.primary.main,
+                              backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                              transform: 'translateY(-1px)',
+                            },
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 100 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                              {sess.session}
+                            </Typography>
+                            {sess.tradesCount < 30 && (
+                              <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
+                                <Chip
+                                  label="N < 30"
+                                  size="small"
+                                  variant="outlined"
+                                  color="warning"
+                                  sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
+                                />
+                              </Tooltip>
+                            )}
+                          </Box>
+
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 600 }}>
+                              {sess.tradesCount} trades
+                              {(sess.longCount > 0 || sess.shortCount > 0) && (
+                                <span style={{ opacity: 0.75, marginLeft: 4 }}>
+                                  ({sess.longCount || 0}L • {sess.shortCount || 0}S)
+                                </span>
+                              )}
+                            </Typography>
+
+                            {sess.profitFactor !== undefined && (
+                              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, display: { xs: 'none', sm: 'inline' } }}>
+                                PF: <strong style={{ color: sess.profitFactor >= 1.5 ? '#10B981' : undefined }}>{sess.profitFactor > 0 ? sess.profitFactor : '—'}</strong>
+                              </Typography>
+                            )}
+
+                            {sess.avgR !== undefined && (
+                              <Typography variant="caption" sx={{ color: sess.avgR >= 0 ? '#10B981' : '#EF4444', fontWeight: 700, display: { xs: 'none', sm: 'inline' } }}>
+                                {sess.avgR > 0 ? `+${sess.avgR}R` : `${sess.avgR}R`}
+                              </Typography>
+                            )}
+
+                            <Typography variant="caption" sx={{ color: sess.winRate >= 50 ? '#3B82F6' : '#EF4444', fontWeight: 700 }}>
+                              {sess.winRate}% Win
+                            </Typography>
+                          </Box>
+
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: sess.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                              minWidth: 80,
+                              textAlign: 'right',
+                            }}
+                          >
+                            {formatCurrency(sess.netPnL, analyticsCurrency)}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                    ))
+                  ) : (
+                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                      No session records logged.
+                    </Typography>
+                  )}
+                </Box>
+                <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
+                  Note: Low trade counts increase uncertainty in session-level expectancy. Click any session to inspect trades.
+                </Typography>
+              </Card>
+            </Grid>
           </Grid>
-        </Grid>
         </Box>
       )}
 

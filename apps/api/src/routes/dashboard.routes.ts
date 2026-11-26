@@ -177,10 +177,18 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const filter: any = { userId: req.user!.id };
     filter.accountId = { $in: accountIds };
 
-    if (assetClass) filter.assetClass = assetClass;
-    if (strategyId) filter.strategyId = strategyId;
-    if (direction) filter.direction = direction;
-    if (session) filter.session = session;
+    if (assetClass && assetClass !== 'ALL') filter.assetClass = assetClass;
+    if (strategyId && strategyId !== 'ALL') filter.strategyId = strategyId;
+    if (direction && direction !== 'ALL') {
+      if (direction === 'LONG' || direction === 'BUY') {
+        filter.direction = { $in: ['LONG', 'BUY'] };
+      } else if (direction === 'SHORT' || direction === 'SELL') {
+        filter.direction = { $in: ['SHORT', 'SELL'] };
+      } else {
+        filter.direction = direction;
+      }
+    }
+    if (session && session !== 'ALL') filter.session = session;
     if (symbol && symbol !== 'ALL') {
       filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
     }
@@ -219,7 +227,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         currency: (tx.currency || 'USD').toUpperCase(),
       }));
 
-    const metricsTimezone = accountCtx.primaryTimezone || 'Asia/Kolkata';
+    const metricsTimezone = req.query.timezone || accountCtx.primaryTimezone || 'Asia/Kolkata';
 
     const trades = await Trade.find(filter)
       .sort({ tradeDate: 1 })
@@ -228,6 +236,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     const formattedTrades = trades.map((t) => ({
       id: t._id.toString(),
       tradeDate: t.tradeDate.toISOString(),
+      entryTime: t.entryTime ? new Date(t.entryTime).toISOString() : t.tradeDate.toISOString(),
+      exitTime: t.exitTime ? new Date(t.exitTime).toISOString() : undefined,
+      direction: t.direction,
       symbol: t.symbol,
       underlying: t.underlying || t.symbol,
       currency: (t.currency || 'USD').toUpperCase(),
@@ -239,7 +250,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         netPnL: t.calculated?.netPnL || 0,
         grossPnL: t.calculated?.grossPnL || 0,
         totalCosts: t.calculated?.totalCosts || 0,
-        realizedRMultiple: t.calculated?.realizedRMultiple,
+        realizedRMultiple: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
         holdingTimeMinutes: t.calculated?.holdingTimeMinutes,
         outcome: t.calculated?.outcome || 'BREAKEVEN',
       },

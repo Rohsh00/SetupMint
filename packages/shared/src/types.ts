@@ -1262,6 +1262,10 @@ export interface IDashboardStats {
     tradesCount: number;
     netPnL: number;
     winRate: number;
+    profitFactor?: number;
+    avgR?: number;
+    longCount?: number;
+    shortCount?: number;
   }>;
 
   performanceBySession: Array<{
@@ -1269,6 +1273,23 @@ export interface IDashboardStats {
     tradesCount: number;
     netPnL: number;
     winRate: number;
+    profitFactor?: number;
+    avgR?: number;
+    longCount?: number;
+    shortCount?: number;
+  }>;
+
+  performanceByHour?: Array<{
+    hour: number; // 0..23
+    hourLabel: string; // e.g. "00:00", "01:00", ...
+    tradesCount: number;
+    netPnL: number;
+    winRate: number;
+    profitFactor: number;
+    avgR?: number;
+    longCount: number;
+    shortCount: number;
+    sessionHint?: string;
   }>;
 
   pnlDistribution: Array<{

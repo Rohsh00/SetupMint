@@ -49,6 +49,7 @@ export type HelpKey =
   | 'analytics.psychology.mistakes'
   | 'analytics.time.weekday'
   | 'analytics.time.killzones'
+  | 'analytics.time.hourly'
   | 'analytics.execution.rLeftOnTable'
   | 'analytics.execution.followThrough'
   | 'analytics.execution.winnersMae'
@@ -674,6 +675,16 @@ export const HELP_CONTENT: Record<HelpKey, IHelpEntry> = {
     caveats: 'Always monitor spread expansion during session opens and major news announcements (CPI, NFP).',
     seeAlso: ['trade.form.sessionCodes', 'analytics.time.weekday', 'metric.profitFactor'],
     docsAnchor: 'docs/TRADING_CALCULATIONS.md#kill-zones',
+  },
+
+  'analytics.time.hourly': {
+    title: '24-Hour Intraday Hourly Distribution',
+    summary: 'Hourly entry distribution, win rate expectancy, and directional volume across market hours.',
+    details: 'Breaks down all trade entries into 24 one-hour bins normalized to your selected timezone (UTC, NY EST, India IST, or Local). Helps you isolate golden high-expectancy hours and avoid hazard periods with erratic execution or wide spreads.',
+    example: 'A trader discovers that 13:00-15:00 UTC accounts for +$420 net P&L with a 65% win rate, whereas 19:00-21:00 UTC accounts for -$180 due to low liquidity and chop.',
+    caveats: 'Always ensure your timezone aligns with broker execution records or local clock when analyzing time-of-day edge.',
+    seeAlso: ['analytics.time.killzones', 'analytics.time.weekday', 'trade.form.sessionCodes'],
+    docsAnchor: 'docs/TRADING_CALCULATIONS.md#time-analytics',
   },
 
   'analytics.execution.rLeftOnTable': {

@@ -2296,6 +2296,7 @@ export interface IPostTradeReviewData {
 
 export type InstitutionalExecutionAlgorithm = 'PEGGED_CHASE' | 'TWAP_SLICING' | 'INSTANT_MARKET';
 export type TrancheDistributionMode = 'DEFENSIVE_50_30_20' | 'CONVEX_20_30_50' | 'EQUAL_SPLIT' | 'CUSTOM';
+export type ExecutionAssetProfile = 'INDEX_FUTURES' | 'FOREX_COMMODITIES' | 'CRYPTO_EQUITIES' | 'CUSTOM';
 
 export interface ICustomLadderRuleStep {
   name?: string;
@@ -2335,6 +2336,15 @@ export interface ICustomLadderRules {
   targetMode?: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE';
   distributionMode?: TrancheDistributionMode;
   executionAlgorithm?: InstitutionalExecutionAlgorithm;
+  assetProfile?: ExecutionAssetProfile;
+  openingBellFreezeEnabled?: boolean;
+  openingBellFreezeMinutes?: number;
+  macroNewsLockoutEnabled?: boolean;
+  scaleInEnabled?: boolean;
+  scaleInTriggerR?: number;
+  scaleInSizePercent?: number;
+  scaleInCondition?: 'AFTER_TRUE_BE' | 'AFTER_T1' | 'ALWAYS';
+  telegramNotifyOnAutoExecution?: boolean;
   maxSlippagePercent?: number;
   maxSlippagePoints?: number;
   spreadSurgeProtectionEnabled?: boolean;
@@ -2420,6 +2430,15 @@ export interface ILiveWatcherSettings {
   orderRateLimitPer5Sec?: number; // Default: 3
   targetDistributionMode?: TrancheDistributionMode; // Default: 'DEFENSIVE_50_30_20'
   beCushionTicks?: number; // Default: 2
+  assetProfile?: ExecutionAssetProfile; // Default: 'INDEX_FUTURES'
+  openingBellFreezeEnabled?: boolean; // Holds automated orders during session opening cross
+  openingBellFreezeMinutes?: number; // Minutes to freeze after open (e.g. 5m)
+  macroNewsLockoutEnabled?: boolean; // Pauses automated execution during high impact CPI/NFP releases
+  scaleInEnabled?: boolean; // Auto scale-in (pyramiding) on positive edge expansion
+  scaleInTriggerR?: number; // Minimum R milestone to scale-in (e.g. +1.5R)
+  scaleInSizePercent?: number; // Quantity addition as % of initial volume (e.g. 25%)
+  scaleInCondition?: 'AFTER_TRUE_BE' | 'AFTER_T1' | 'ALWAYS';
+  telegramNotifyOnAutoExecution?: boolean; // Real-time Telegram push alerts on auto fills
   telegramAlertsEnabled: boolean;
   telegramBotToken?: string;
   telegramChatId?: string;
@@ -2586,6 +2605,15 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   orderRateLimitPer5Sec: 3,
   targetDistributionMode: 'DEFENSIVE_50_30_20',
   beCushionTicks: 2,
+  assetProfile: 'INDEX_FUTURES',
+  openingBellFreezeEnabled: false,
+  openingBellFreezeMinutes: 5,
+  macroNewsLockoutEnabled: true,
+  scaleInEnabled: false,
+  scaleInTriggerR: 1.5,
+  scaleInSizePercent: 25,
+  scaleInCondition: 'AFTER_TRUE_BE',
+  telegramNotifyOnAutoExecution: true,
   telegramAlertsEnabled: false,
   telegramAttachLiveChart: true,
   telegramChartTimeframe: '5',
@@ -2642,6 +2670,15 @@ export function createLadderRulesFromSettings(
     targetMode: s.defaultTargetMode,
     distributionMode: s.targetDistributionMode,
     executionAlgorithm: s.executionAlgorithm,
+    assetProfile: s.assetProfile,
+    openingBellFreezeEnabled: s.openingBellFreezeEnabled,
+    openingBellFreezeMinutes: s.openingBellFreezeMinutes,
+    macroNewsLockoutEnabled: s.macroNewsLockoutEnabled,
+    scaleInEnabled: s.scaleInEnabled,
+    scaleInTriggerR: s.scaleInTriggerR,
+    scaleInSizePercent: s.scaleInSizePercent,
+    scaleInCondition: s.scaleInCondition,
+    telegramNotifyOnAutoExecution: s.telegramNotifyOnAutoExecution,
     maxSlippagePercent: s.maxSlippagePercent,
     maxSlippagePoints: s.maxSlippagePoints,
     spreadSurgeProtectionEnabled: s.spreadSurgeProtectionEnabled,
@@ -2945,6 +2982,16 @@ export interface ILiveTargetLadderStep {
   cushionTicks?: number;
 }
 
+export interface IScaleInTriggerState {
+  enabled: boolean;
+  triggerR: number;
+  triggerPrice: number;
+  plannedAddLots: number;
+  plannedAddQty: number;
+  isTriggered: boolean;
+  condition: 'AFTER_TRUE_BE' | 'AFTER_T1' | 'ALWAYS';
+}
+
 export interface ILiveTargetLadder {
   initialRiskPoints: number;
   initialRiskAmount: number;
@@ -2955,10 +3002,13 @@ export interface ILiveTargetLadder {
   feeBufferPoints?: number;
   distributionMode?: TrancheDistributionMode;
   executionAlgorithm?: InstitutionalExecutionAlgorithm;
+  assetProfile?: ExecutionAssetProfile;
+  openingBellFreezeEnabled?: boolean;
   maxSlippagePercent?: number;
   spreadSurgeProtectionEnabled?: boolean;
   steps: ILiveTargetLadderStep[];
   activeStepIndex: number; // 1, 2, 3
+  scaleInState?: IScaleInTriggerState;
 }
 
 export type MoneynessState = 'DEEP_ITM' | 'ITM' | 'ATM' | 'OTM' | 'DEEP_OTM';

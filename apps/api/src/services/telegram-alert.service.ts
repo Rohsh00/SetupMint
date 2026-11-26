@@ -10524,4 +10524,60 @@ export class TelegramAlertService {
       return false;
     }
   }
+
+  /**
+   * Dispatches real-time institutional auto-execution fill alerts to the trader's Telegram.
+   */
+  static async sendAutoExecutionAlert(
+    user: any,
+    details: {
+      symbol: string;
+      direction: string;
+      action: string;
+      fillPrice?: number;
+      quantity?: number;
+      stopPrice?: number;
+      reason?: string;
+      cushionTicks?: number;
+      accountName?: string;
+    }
+  ): Promise<boolean> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) {
+      return false;
+    }
+    if (settings.telegramNotifyOnAutoExecution === false) {
+      return false;
+    }
+
+    const rawToken = settings.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    const chatId = settings.telegramChatId;
+    if (!botToken || !chatId) return false;
+
+    const actionTitle = details.action === 'MODIFY_STOP_LOSS'
+      ? '🛡️ STOP LOSS MODIFIED (TRUE BE)'
+      : details.action === 'EXIT_POSITION'
+      ? '🎯 PARTIAL TARGET EXIT'
+      : '⚡ AUTO ORDER EXECUTED';
+
+    const text =
+      `⚡ <b>${actionTitle}</b>\n\n` +
+      `<b>Instrument:</b> <code>${details.symbol}</code> (${details.direction})\n` +
+      `<b>Action:</b> ${details.action.replace(/_/g, ' ')}\n` +
+      (details.quantity ? `<b>Executed Lots/Qty:</b> ${details.quantity}\n` : '') +
+      (details.fillPrice ? `<b>Fill Price:</b> ${details.fillPrice}\n` : '') +
+      (details.stopPrice ? `<b>New Stop Level:</b> ${details.stopPrice} (Fee Buffer + ${details.cushionTicks ?? 2}T Cushion)\n` : '') +
+      (details.reason ? `<b>Trigger Rationale:</b> <i>${details.reason}</i>\n` : '') +
+      (details.accountName ? `<b>Account:</b> ${details.accountName}\n` : '') +
+      `\n<i>Institutional Microstructure Guard Armed (Anti-Loop & Slippage Capped)</i>`;
+
+    try {
+      await this.sendMessage(botToken, chatId, text, undefined, false);
+      return true;
+    } catch (err: any) {
+      console.warn(`[TelegramAlertService] sendAutoExecutionAlert failed:`, err.message);
+      return false;
+    }
+  }
 }

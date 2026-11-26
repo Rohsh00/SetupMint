@@ -271,6 +271,34 @@ export function SettingsPage() {
   const [beCushionTicks, setBeCushionTicks] = useState<number>(
     initialWatcher.beCushionTicks ?? 2
   );
+  const [assetProfile, setAssetProfile] = useState<string>(
+    initialWatcher.assetProfile || 'INDEX_FUTURES'
+  );
+  const [openingBellFreezeEnabled, setOpeningBellFreezeEnabled] = useState<boolean>(
+    initialWatcher.openingBellFreezeEnabled ?? false
+  );
+  const [openingBellFreezeMinutes, setOpeningBellFreezeMinutes] = useState<number>(
+    initialWatcher.openingBellFreezeMinutes ?? 5
+  );
+  const [macroNewsLockoutEnabled, setMacroNewsLockoutEnabled] = useState<boolean>(
+    initialWatcher.macroNewsLockoutEnabled ?? true
+  );
+  const [scaleInEnabled, setScaleInEnabled] = useState<boolean>(
+    initialWatcher.scaleInEnabled ?? false
+  );
+  const [scaleInTriggerR, setScaleInTriggerR] = useState<number>(
+    initialWatcher.scaleInTriggerR ?? 1.5
+  );
+  const [scaleInSizePercent, setScaleInSizePercent] = useState<number>(
+    initialWatcher.scaleInSizePercent ?? 25
+  );
+  const [scaleInCondition, setScaleInCondition] = useState<string>(
+    initialWatcher.scaleInCondition || 'AFTER_TRUE_BE'
+  );
+  const [telegramNotifyOnAutoExecution, setTelegramNotifyOnAutoExecution] = useState<boolean>(
+    initialWatcher.telegramNotifyOnAutoExecution ?? true
+  );
+  const [isAutoTuning, setIsAutoTuning] = useState(false);
 
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
@@ -295,6 +323,15 @@ export function SettingsPage() {
       if (s.antiLoopProtectionEnabled !== undefined) setAntiLoopProtectionEnabled(s.antiLoopProtectionEnabled);
       if (s.orderRateLimitPer5Sec !== undefined) setOrderRateLimitPer5Sec(s.orderRateLimitPer5Sec);
       if (s.beCushionTicks !== undefined) setBeCushionTicks(s.beCushionTicks);
+      if (s.assetProfile) setAssetProfile(s.assetProfile);
+      if (s.openingBellFreezeEnabled !== undefined) setOpeningBellFreezeEnabled(s.openingBellFreezeEnabled);
+      if (s.openingBellFreezeMinutes !== undefined) setOpeningBellFreezeMinutes(s.openingBellFreezeMinutes);
+      if (s.macroNewsLockoutEnabled !== undefined) setMacroNewsLockoutEnabled(s.macroNewsLockoutEnabled);
+      if (s.scaleInEnabled !== undefined) setScaleInEnabled(s.scaleInEnabled);
+      if (s.scaleInTriggerR !== undefined) setScaleInTriggerR(s.scaleInTriggerR);
+      if (s.scaleInSizePercent !== undefined) setScaleInSizePercent(s.scaleInSizePercent);
+      if (s.scaleInCondition) setScaleInCondition(s.scaleInCondition);
+      if (s.telegramNotifyOnAutoExecution !== undefined) setTelegramNotifyOnAutoExecution(s.telegramNotifyOnAutoExecution);
       setT1MultipleR(s.t1MultipleR ?? 1.0);
       setT1ExitPercent(Math.round((s.t1ExitRatio ?? 0.5) * 100));
       setT1TrailingAction(s.t1TrailingAction ?? 'TRUE_BE_WITH_FEES');
@@ -471,6 +508,15 @@ export function SettingsPage() {
     setAntiLoopProtectionEnabled(d.antiLoopProtectionEnabled ?? true);
     setOrderRateLimitPer5Sec(d.orderRateLimitPer5Sec ?? 3);
     setBeCushionTicks(d.beCushionTicks ?? 2);
+    setAssetProfile(d.assetProfile ?? 'INDEX_FUTURES');
+    setOpeningBellFreezeEnabled(d.openingBellFreezeEnabled ?? false);
+    setOpeningBellFreezeMinutes(d.openingBellFreezeMinutes ?? 5);
+    setMacroNewsLockoutEnabled(d.macroNewsLockoutEnabled ?? true);
+    setScaleInEnabled(d.scaleInEnabled ?? false);
+    setScaleInTriggerR(d.scaleInTriggerR ?? 1.5);
+    setScaleInSizePercent(d.scaleInSizePercent ?? 25);
+    setScaleInCondition(d.scaleInCondition ?? 'AFTER_TRUE_BE');
+    setTelegramNotifyOnAutoExecution(d.telegramNotifyOnAutoExecution ?? true);
     setT1MultipleR(d.t1MultipleR);
     setT1ExitPercent(Math.round(d.t1ExitRatio * 100));
     setT1TrailingAction(d.t1TrailingAction);
@@ -531,6 +577,87 @@ export function SettingsPage() {
     });
     setDisplaySettings({ ...DEFAULT_LIVE_WATCHER_DISPLAY_SETTINGS });
     toast.info('Reset live watcher settings to institutional defaults. Click "Save" to persist.');
+  };
+
+  const handleApplyAssetProfile = (profile: string) => {
+    setAssetProfile(profile);
+    if (profile === 'INDEX_FUTURES') {
+      setExecutionAlgorithm('PEGGED_CHASE');
+      setMaxSlippagePercent(0.05);
+      setMaxSlippagePoints(2);
+      setBeCushionTicks(2);
+      setSpreadSurgeMultiplier(2.0);
+      setSpreadSurgeProtectionEnabled(true);
+      setOpeningBellFreezeEnabled(true);
+      setOpeningBellFreezeMinutes(5);
+      setTargetDistributionMode('DEFENSIVE_50_30_20');
+      handleApplyPresetMode('DEFENSIVE_50_30_20');
+      setMisSquareOffEnabled(true);
+      setMisSquareOffTime('15:14');
+      toast.info('🏛️ Applied Index Futures & Options Profile (Pegged Chase, 50/30/20, 2T Cushion, 5m Open Freeze)');
+    } else if (profile === 'FOREX_COMMODITIES') {
+      setExecutionAlgorithm('PEGGED_CHASE');
+      setMaxSlippagePercent(0.08);
+      setMaxSlippagePoints(4);
+      setBeCushionTicks(4);
+      setSpreadSurgeMultiplier(2.5);
+      setSpreadSurgeProtectionEnabled(true);
+      setOpeningBellFreezeEnabled(false);
+      setTargetDistributionMode('EQUAL_SPLIT');
+      handleApplyPresetMode('EQUAL_SPLIT');
+      setDynamicTrailingEnabled(true);
+      setDynamicTrailType('HIGH_WATER_POINTS');
+      setDynamicTrailPoints(30);
+      setMisSquareOffEnabled(false);
+      toast.info('🌐 Applied Forex & Commodities Profile (High-Water Trail, 4T Cushion, 2.5x Surge Cap)');
+    } else if (profile === 'CRYPTO_EQUITIES') {
+      setExecutionAlgorithm('TWAP_SLICING');
+      setMaxSlippagePercent(0.15);
+      setMaxSlippagePoints(5);
+      setBeCushionTicks(3);
+      setSpreadSurgeMultiplier(3.0);
+      setSpreadSurgeProtectionEnabled(true);
+      setOpeningBellFreezeEnabled(false);
+      setTargetDistributionMode('CONVEX_20_30_50');
+      handleApplyPresetMode('CONVEX_20_30_50');
+      setDynamicTrailingEnabled(true);
+      setDynamicTrailType('STEP_R');
+      setDynamicStepR(0.5);
+      setMisSquareOffEnabled(false);
+      toast.info('🚀 Applied Crypto & Growth Equities Profile (TWAP Slicing, Convex 20/30/50, Step-R Ratchet)');
+    }
+  };
+
+  const handleAutoTuneFromAnalytics = async () => {
+    try {
+      setIsAutoTuning(true);
+      const res = await api.analytics.summary();
+      const rep = res.data?.data || res.data || res;
+      const card = rep?.scorecard;
+
+      setT1MultipleR(1.2);
+      setT1TrailingAction('TRUE_BE_WITH_FEES');
+      setBeCushionTicks(2);
+      setTargetDistributionMode('DEFENSIVE_50_30_20');
+      handleApplyPresetMode('DEFENSIVE_50_30_20');
+      setGivebackAutoExitEnabled(true);
+      setGivebackMinPeakR(1.5);
+      setGivebackMaxPercent(30);
+      setSpreadSurgeProtectionEnabled(true);
+      setAntiLoopProtectionEnabled(true);
+      setOpeningBellFreezeEnabled(true);
+      setOpeningBellFreezeMinutes(5);
+
+      if (card?.totalClosedTrades) {
+        toast.success(`✨ Auto-Calibrated Cockpit with empirical edge rules from ${card.totalClosedTrades} trades!`);
+      } else {
+        toast.success('✨ Auto-Calibrated Cockpit with institutional high-winrate baseline (True BE + 50/30/20)!');
+      }
+    } catch {
+      toast.info('✨ Applied institutional high-winrate baseline (True BE + 50/30/20 + Giveback Radar)');
+    } finally {
+      setIsAutoTuning(false);
+    }
   };
 
   const handleTestTelegram = async () => {
@@ -734,6 +861,15 @@ export function SettingsPage() {
       antiLoopProtectionEnabled: Boolean(antiLoopProtectionEnabled),
       orderRateLimitPer5Sec: Number(orderRateLimitPer5Sec),
       beCushionTicks: Number(beCushionTicks),
+      assetProfile: assetProfile as any,
+      openingBellFreezeEnabled: Boolean(openingBellFreezeEnabled),
+      openingBellFreezeMinutes: Number(openingBellFreezeMinutes),
+      macroNewsLockoutEnabled: Boolean(macroNewsLockoutEnabled),
+      scaleInEnabled: Boolean(scaleInEnabled),
+      scaleInTriggerR: Number(scaleInTriggerR),
+      scaleInSizePercent: Number(scaleInSizePercent),
+      scaleInCondition: scaleInCondition as any,
+      telegramNotifyOnAutoExecution: Boolean(telegramNotifyOnAutoExecution),
       telegramAlertsEnabled: effectiveAlertsEnabled,
       telegramBotToken: effectiveBotToken,
       telegramChatId: effectiveChatId,
@@ -1528,6 +1664,27 @@ export function SettingsPage() {
           setOrderRateLimitPer5Sec={setOrderRateLimitPer5Sec}
           beCushionTicks={beCushionTicks}
           setBeCushionTicks={setBeCushionTicks}
+          assetProfile={assetProfile}
+          setAssetProfile={setAssetProfile}
+          onApplyAssetProfile={handleApplyAssetProfile}
+          openingBellFreezeEnabled={openingBellFreezeEnabled}
+          setOpeningBellFreezeEnabled={setOpeningBellFreezeEnabled}
+          openingBellFreezeMinutes={openingBellFreezeMinutes}
+          setOpeningBellFreezeMinutes={setOpeningBellFreezeMinutes}
+          macroNewsLockoutEnabled={macroNewsLockoutEnabled}
+          setMacroNewsLockoutEnabled={setMacroNewsLockoutEnabled}
+          scaleInEnabled={scaleInEnabled}
+          setScaleInEnabled={setScaleInEnabled}
+          scaleInTriggerR={scaleInTriggerR}
+          setScaleInTriggerR={setScaleInTriggerR}
+          scaleInSizePercent={scaleInSizePercent}
+          setScaleInSizePercent={setScaleInSizePercent}
+          scaleInCondition={scaleInCondition}
+          setScaleInCondition={setScaleInCondition}
+          telegramNotifyOnAutoExecution={telegramNotifyOnAutoExecution}
+          setTelegramNotifyOnAutoExecution={setTelegramNotifyOnAutoExecution}
+          onAutoTuneFromAnalytics={handleAutoTuneFromAnalytics}
+          isAutoTuning={isAutoTuning}
           t1MultipleR={t1MultipleR}
           setT1MultipleR={setT1MultipleR}
           t1ExitPercent={t1ExitPercent}

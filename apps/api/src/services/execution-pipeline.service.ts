@@ -4,13 +4,16 @@ import {
   evaluatePropPreTradeGuard,
   evaluateSlippageRisk,
   evaluateSpreadSurge,
+  evaluateOpeningBellGuard,
 } from '@tradevault/financial-engine';
 import { TradingAccount } from '../db/models/TradingAccount.js';
 import { Trade } from '../db/models/Trade.js';
+import { User } from '../db/models/User.js';
 import { AdapterFactory } from './adapters/adapter-factory.js';
 import { IdempotencyService } from './idempotency.service.js';
 import { AccountService } from './account.service.js';
 import { AccountScopeService } from './account-scope.service.js';
+import { TelegramAlertService } from './telegram-alert.service.js';
 
 export interface ExecutionPipelineRequest {
   userId: string | mongoose.Types.ObjectId;
@@ -34,6 +37,8 @@ export interface ExecutionPipelineRequest {
     spreadSurgeProtectionEnabled?: boolean;
     spreadSurgeMultiplier?: number;
     antiLoopProtectionEnabled?: boolean;
+    openingBellFreezeEnabled?: boolean;
+    openingBellFreezeMinutes?: number;
     currentLtp?: number;
     targetPrice?: number;
     currentSpread?: number;
@@ -47,6 +52,7 @@ export interface ExecutionPipelineRequest {
     direction?: 'LONG' | 'SHORT';
     takeProfit?: number;
     exitReason?: string;
+    reason?: string;
     priceDistanceToSL?: number;
     plannedRiskAmount?: number;
     contractMultiplier?: number;
@@ -142,6 +148,16 @@ export class ExecutionPipelineService {
         }
         recent.push(now);
         ExecutionPipelineService.recentExecutions.set(userKey, recent);
+      }
+
+      // Opening Bell Volatility Freeze Guard
+      if (inst.openingBellFreezeEnabled) {
+        const bell = evaluateOpeningBellGuard({
+          freezeMinutes: inst.openingBellFreezeMinutes ?? 5,
+        });
+        if (!bell.isSafe) {
+          throw new Error(`Automated execution held: ${bell.reason}`);
+        }
       }
 
       // Spread Surge Protection Guard
@@ -297,6 +313,26 @@ export class ExecutionPipelineService {
         if (!Array.isArray(trade.auditLog)) trade.auditLog = [];
         trade.auditLog.push(auditEntry);
         await trade.save();
+      }
+
+      // 7.5 Real-time Telegram Auto-Execution Alert Dispatch
+      if (req.isAutomated) {
+        User.findById(userOid)
+          .then((u) => {
+            if (u) {
+              return TelegramAlertService.sendAutoExecutionAlert(u, {
+                symbol: trade?.symbol || 'POSITION',
+                direction: trade?.direction || 'LONG',
+                action: req.action,
+                fillPrice: brokerResult.executedPrice ?? req.payload.exitPrice ?? req.payload.stopPrice,
+                quantity: req.payload.quantity ?? trade?.calculated?.openQuantity,
+                stopPrice: req.payload.stopPrice,
+                reason: req.payload.exitReason || req.payload.reason,
+                accountName: account?.name,
+              });
+            }
+          })
+          .catch((err) => console.warn('[ExecutionPipeline] Failed to send auto alert to Telegram:', err.message));
       }
 
       // 8. Reconcile Account Balances

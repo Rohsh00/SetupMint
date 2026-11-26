@@ -111,6 +111,10 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'restrictTelegramTradeExecution',
         'enforceTelegramOrderGuardrails',
         'enforceAdaptiveDayRiskGuardrails',
+        'openingBellFreezeEnabled',
+        'macroNewsLockoutEnabled',
+        'scaleInEnabled',
+        'telegramNotifyOnAutoExecution',
       ] as const;
 
       for (const k of booleanKeys) {
@@ -144,6 +148,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'hardDisciplineLockoutDurationMins',
         'staleDataThresholdSeconds',
         'goldNewsReminderMinutes',
+        'openingBellFreezeMinutes',
+        'scaleInTriggerR',
+        'scaleInSizePercent',
       ] as const;
 
       for (const k of numberKeys) {
@@ -157,6 +164,8 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         'defaultTargetMode',
         'executionAlgorithm',
         'targetDistributionMode',
+        'assetProfile',
+        'scaleInCondition',
         't1TrailingAction',
         't2TrailingAction',
         'dynamicTrailType',

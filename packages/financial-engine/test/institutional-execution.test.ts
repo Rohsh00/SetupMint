@@ -3,6 +3,8 @@ import {
   calculateTargetLadder,
   evaluateSlippageRisk,
   evaluateSpreadSurge,
+  evaluateOpeningBellGuard,
+  simulateExecutionBacktest,
 } from '../src/index.js';
 
 describe('Institutional Auto-Execution & Scaling Engine', () => {
@@ -175,6 +177,96 @@ describe('Institutional Auto-Execution & Scaling Engine', () => {
       expect(ladder?.distributionMode).toBe('CONVEX_20_30_50');
       const step1 = ladder!.steps[0];
       expect(step1.plannedExitRatio).toBe(0.20);
+    });
+
+    it('calculates scaleInState when scale-in pyramiding is enabled', () => {
+      const ladder = calculateTargetLadder({
+        entryPrice: 100,
+        currentLtp: 108,
+        direction: 'LONG',
+        quantity: 100,
+        initialStopLoss: 95, // 1R = 5 points
+        customRules: {
+          scaleInEnabled: true,
+          scaleInTriggerR: 1.5, // 100 + 7.5 = 107.5
+          scaleInSizePercent: 25,
+          t1: { targetR: 1.0, exitRatio: 0.5, trailAction: 'TRUE_BE_WITH_FEES' },
+        },
+      });
+
+      expect(ladder?.scaleInState).toBeDefined();
+      expect(ladder?.scaleInState?.enabled).toBe(true);
+      expect(ladder?.scaleInState?.triggerR).toBe(1.5);
+      expect(ladder?.scaleInState?.triggerPrice).toBe(107.5);
+      expect(ladder?.scaleInState?.plannedAddQty).toBe(25);
+      expect(ladder?.scaleInState?.isTriggered).toBe(true); // LTP 108 >= 107.5
+    });
+  });
+
+  describe('evaluateOpeningBellGuard', () => {
+    it('holds auto execution within the 5-minute opening bell window', () => {
+      // 03:47 UTC = 09:17 IST (2 mins after 09:15 open)
+      const dateDuringOpen = new Date('2026-11-26T03:47:00Z');
+      const res = evaluateOpeningBellGuard({
+        timestamp: dateDuringOpen,
+        freezeMinutes: 5,
+        market: 'NSE',
+      });
+
+      expect(res.isSafe).toBe(false);
+      expect(res.minutesFromOpen).toBe(2);
+      expect(res.reason).toContain('Opening bell freeze active');
+    });
+
+    it('permits execution after opening bell window has elapsed', () => {
+      // 03:55 UTC = 09:25 IST (10 mins after 09:15 open)
+      const dateAfterOpen = new Date('2026-11-26T03:55:00Z');
+      const res = evaluateOpeningBellGuard({
+        timestamp: dateAfterOpen,
+        freezeMinutes: 5,
+        market: 'NSE',
+      });
+
+      expect(res.isSafe).toBe(true);
+      expect(res.minutesFromOpen).toBe(10);
+    });
+  });
+
+  describe('simulateExecutionBacktest', () => {
+    it('calculates True BE savings and giveback preservation accurately', () => {
+      const mockTrades = [
+        // Trade 1: Hit T1 (+1.5R peak), reversed to lose -1R in reality.
+        { realizedPnl: -1000, realizedR: -1.0, mfeR: 1.2, result: 'LOSS' },
+        // Trade 2: Hit T1 (+3.0R peak), gave back to +1.0R.
+        { realizedPnl: 1000, realizedR: 1.0, mfeR: 3.0, result: 'WIN' },
+        // Trade 3: Pure loss without reaching T1.
+        { realizedPnl: -1000, realizedR: -1.0, mfeR: 0.3, result: 'LOSS' },
+      ];
+
+      const sim = simulateExecutionBacktest({
+        trades: mockTrades,
+        t1MultipleR: 1.0,
+        t1ExitRatio: 0.5,
+        t1TrailingAction: 'TRUE_BE_WITH_FEES',
+        givebackAutoExitEnabled: true,
+        givebackMinPeakR: 1.5,
+        givebackMaxPercent: 35,
+        executionAlgorithm: 'PEGGED_CHASE',
+      });
+
+      expect(sim.totalTradesAnalyzed).toBe(3);
+      expect(sim.tradesWithTargetHit).toBe(2);
+      expect(sim.tradesSavedByTrueBE).toBe(1); // Trade 1 was saved by True BE!
+      expect(sim.tradesProtectedByGiveback).toBe(1); // Trade 2 giveback protected
+      expect(sim.netRSavedOrGained).toBeGreaterThan(0);
+      expect(sim.simulatedWinRate).toBeGreaterThan(sim.actualWinRate);
+      expect(sim.estimatedSlippageSavedPercent).toBe(0.04);
+    });
+
+    it('handles empty trades gracefully', () => {
+      const sim = simulateExecutionBacktest({ trades: [] });
+      expect(sim.totalTradesAnalyzed).toBe(0);
+      expect(sim.netRSavedOrGained).toBe(0);
     });
   });
 });

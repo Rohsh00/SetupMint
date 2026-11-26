@@ -504,6 +504,8 @@ export class LiveExecutionWorker {
             spreadSurgeProtectionEnabled: rules.spreadSurgeProtectionEnabled,
             spreadSurgeMultiplier: rules.spreadSurgeMultiplier,
             antiLoopProtectionEnabled: rules.antiLoopProtectionEnabled,
+            openingBellFreezeEnabled: rules.openingBellFreezeEnabled,
+            openingBellFreezeMinutes: rules.openingBellFreezeMinutes,
             currentLtp: metric.currentLtp,
             targetPrice: step.targetPrice,
           },

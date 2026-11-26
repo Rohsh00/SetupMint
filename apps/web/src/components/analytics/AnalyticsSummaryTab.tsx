@@ -255,7 +255,23 @@ export function AnalyticsSummaryTab({
           </Box>
 
           {/* Action Buttons */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, alignSelf: { xs: 'stretch', md: 'auto' } }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, alignSelf: { xs: 'stretch', md: 'auto' }, flexWrap: 'wrap' }}>
+            <Button
+              variant="outlined"
+              color="primary"
+              size="medium"
+              startIcon={<FlashOnRoundedIcon />}
+              onClick={() => navigate('/settings?tab=execution&autotune=true')}
+              sx={{
+                borderRadius: 2,
+                fontWeight: 700,
+                textTransform: 'none',
+                px: 2,
+                borderColor: alpha(muiTheme.palette.primary.main, 0.4),
+              }}
+            >
+              ⚡ Sync to Auto-Execution
+            </Button>
             <Button
               variant="contained"
               color="primary"

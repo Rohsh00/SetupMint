@@ -195,6 +195,25 @@ export function TradeDrillDrawer() {
       if (f.assetClass) list.push({ label: `Asset: ${f.assetClass}`, color: 'default' });
       if (f.variantKey) list.push({ label: `Variant: ${f.variantKey}`, color: 'primary' });
       if (f.search) list.push({ label: `Search: "${f.search}"`, color: 'default' });
+      if (f.mfeRMin !== undefined) list.push({ label: `MFE ≥ +${f.mfeRMin}R`, color: 'success' });
+      if (f.mfeRMax !== undefined) list.push({ label: `MFE ≤ +${f.mfeRMax}R`, color: 'info' });
+      if (f.maeRMin !== undefined) list.push({ label: `MAE ≥ -${f.maeRMin}R`, color: 'error' });
+      if (f.maeRMax !== undefined) list.push({ label: `MAE ≤ -${f.maeRMax}R`, color: 'info' });
+      const excFlag = (f as any).excursionFlag || (f as any).excursionFlags;
+      if (excFlag) {
+        const flagStr = Array.isArray(excFlag) ? excFlag.join(', ') : excFlag;
+        const readable =
+          flagStr === 'RUNNER_LEFT_ON_TABLE'
+            ? 'Runner Left on Table'
+            : flagStr === 'PREMATURE_EXIT'
+            ? 'Premature Exit'
+            : flagStr === 'GAVE_BACK_PROFIT'
+            ? 'Gave Back Profit'
+            : flagStr === 'STOP_TOO_TIGHT_EVIDENCE'
+            ? 'Stop Too Tight'
+            : flagStr.replace(/_/g, ' ');
+        list.push({ label: `Flag: ${readable}`, color: 'warning' });
+      }
     }
     return list;
   }, [descriptor]);
@@ -603,10 +622,10 @@ export function TradeDrillDrawer() {
               {/* Excursions & Quality */}
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <InsightsRoundedIcon fontSize="small" color="primary" /> Excursion & Quality
+                  <InsightsRoundedIcon fontSize="small" color="primary" /> Excursion & Execution Quality
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid size={{ xs: 6, sm: 4 }}>
+                  <Grid size={{ xs: 6, sm: 3 }}>
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       Max Favorable (MFE)
                     </Typography>
@@ -614,7 +633,7 @@ export function TradeDrillDrawer() {
                       {formatR(activeTrade.calculated?.excursion?.mfeR)} ({formatCurrency(activeTrade.calculated?.excursion?.mfeAmount, activeTradeCurrency)})
                     </Typography>
                   </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
+                  <Grid size={{ xs: 6, sm: 3 }}>
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       Max Adverse (MAE)
                     </Typography>
@@ -622,7 +641,7 @@ export function TradeDrillDrawer() {
                       {formatR(activeTrade.calculated?.excursion?.maeR)} ({formatCurrency(activeTrade.calculated?.excursion?.maeAmount, activeTradeCurrency)})
                     </Typography>
                   </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
+                  <Grid size={{ xs: 6, sm: 3 }}>
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       Exit Efficiency
                     </Typography>
@@ -630,7 +649,73 @@ export function TradeDrillDrawer() {
                       {formatPercent(activeTrade.calculated?.excursion?.exitEfficiency)}
                     </Typography>
                   </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Entry Quality Score
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600 }}>
+                      {activeTrade.calculated?.excursion?.entryQualityScore !== undefined ? `${activeTrade.calculated.excursion.entryQualityScore}/100` : '—'}
+                    </Typography>
+                  </Grid>
+
+                  {/* Post-Exit Continuation Details */}
+                  {(activeTrade.calculated?.excursion?.postExitMfeR !== undefined || activeTrade.calculated?.excursion?.postExitRunBeyondExitR !== undefined) && (
+                    <>
+                      <Grid size={{ xs: 6, sm: 3 }}>
+                        <Typography variant="caption" sx={{ color: '#0ea5e9', fontWeight: 600 }}>
+                          Post-Exit Peak MFE
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: '#0ea5e9' }}>
+                          +{formatR(activeTrade.calculated?.excursion?.postExitMfeR)}
+                        </Typography>
+                      </Grid>
+                      <Grid size={{ xs: 6, sm: 3 }}>
+                        <Typography variant="caption" sx={{ color: '#0ea5e9', fontWeight: 600 }}>
+                          Ran Past Exit (60m)
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, color: '#0ea5e9' }}>
+                          +{formatR(activeTrade.calculated?.excursion?.postExitRunBeyondExitR)}
+                        </Typography>
+                      </Grid>
+                    </>
+                  )}
                 </Grid>
+
+                {/* Excursion Flags */}
+                {Array.isArray(activeTrade.calculated?.excursion?.excursionFlags) && activeTrade.calculated.excursion.excursionFlags.length > 0 && (
+                  <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1.5, pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
+                    {activeTrade.calculated.excursion.excursionFlags.map((flag: string) => {
+                      const label =
+                        flag === 'RUNNER_LEFT_ON_TABLE'
+                          ? 'Runner Left on Table'
+                          : flag === 'PREMATURE_EXIT'
+                          ? 'Premature Exit'
+                          : flag === 'GAVE_BACK_PROFIT'
+                          ? 'Gave Back Profit'
+                          : flag === 'STOP_TOO_TIGHT_EVIDENCE'
+                          ? 'Stop Too Tight'
+                          : flag.replace(/_/g, ' ');
+                      const color =
+                        flag === 'RUNNER_LEFT_ON_TABLE'
+                          ? 'warning'
+                          : flag === 'PREMATURE_EXIT'
+                          ? 'info'
+                          : flag === 'GAVE_BACK_PROFIT'
+                          ? 'error'
+                          : 'default';
+                      return (
+                        <Chip
+                          key={flag}
+                          label={label}
+                          size="small"
+                          color={color as any}
+                          variant="outlined"
+                          sx={{ fontSize: '0.68rem', height: 20, fontWeight: 700 }}
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
               </Paper>
 
               {/* Psychology & Rules */}

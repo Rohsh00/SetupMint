@@ -494,7 +494,27 @@ export function ExecutionQualityTab({
 
         {/* Card 3: Exit Efficiency */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card sx={{ p: 2.25, height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+          <Card
+            onClick={() =>
+              onOpenDrill({
+                kind: 'FILTER',
+                filter: { ...(queryParams as any), mfeRMin: 0.01 },
+                label: 'Trades with Exit Efficiency Measured',
+              })
+            }
+            sx={{
+              p: 2.25,
+              height: '100%',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              border: `1px solid ${muiTheme.palette.divider}`,
+              '&:hover': {
+                borderColor: muiTheme.palette.primary.main,
+                transform: 'translateY(-2px)',
+                boxShadow: '0 6px 16px rgba(59, 130, 246, 0.15)',
+              },
+            }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
               <Tooltip title="Exit Efficiency: Percentage of the maximum favorable price move (MFE) captured at actual exit. 70%+ is elite execution; below 40% indicates giving back too much profit." arrow>
                 <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'help' }}>
@@ -544,7 +564,7 @@ export function ExecutionQualityTab({
             onClick={() =>
               onOpenDrill({
                 kind: 'FILTER',
-                filter: { ...(queryParams as any), excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
+                filter: { ...(queryParams as any), excursionFlag: 'RUNNER_LEFT_ON_TABLE', excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
                 label: 'Trades with Runners Left on Table',
               })
             }
@@ -644,7 +664,7 @@ export function ExecutionQualityTab({
                   onClick={() =>
                     onOpenDrill({
                       kind: 'FILTER',
-                      filter: { ...(queryParams as any), excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
+                      filter: { ...(queryParams as any), excursionFlag: 'RUNNER_LEFT_ON_TABLE', excursionFlags: 'RUNNER_LEFT_ON_TABLE' },
                       label: 'Trades: Runner Left on Table',
                     })
                   }
@@ -662,7 +682,7 @@ export function ExecutionQualityTab({
                   onClick={() =>
                     onOpenDrill({
                       kind: 'FILTER',
-                      filter: { ...(queryParams as any), excursionFlags: 'PREMATURE_EXIT' },
+                      filter: { ...(queryParams as any), excursionFlag: 'PREMATURE_EXIT', excursionFlags: 'PREMATURE_EXIT' },
                       label: 'Trades: Premature Exits',
                     })
                   }
@@ -856,7 +876,19 @@ export function ExecutionQualityTab({
         {/* Scatter Chart Canvas */}
         <Box sx={{ width: '100%', height: 420 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+            <ScatterChart
+              margin={{ top: 20, right: 30, bottom: 20, left: 10 }}
+              onClick={(state: any) => {
+                const p = state?.activePayload?.[0]?.payload;
+                if (p?.tradeId) {
+                  onOpenDrill({
+                    kind: 'TRADE',
+                    tradeId: p.tradeId,
+                    label: `Trade ${p.symbol || ''}`,
+                  });
+                }
+              }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
               <XAxis
                 type="number"
@@ -942,7 +974,7 @@ export function ExecutionQualityTab({
                 fill={muiTheme.palette.profit.main}
                 cursor="pointer"
                 onClick={(entry: any) => {
-                  const tradeId = entry?.tradeId || entry?.payload?.tradeId;
+                  const tradeId = entry?.tradeId || entry?.payload?.tradeId || entry?.activePayload?.[0]?.payload?.tradeId;
                   if (tradeId) {
                     onOpenDrill({
                       kind: 'TRADE',
@@ -958,7 +990,7 @@ export function ExecutionQualityTab({
                 fill={muiTheme.palette.loss.main}
                 cursor="pointer"
                 onClick={(entry: any) => {
-                  const tradeId = entry?.tradeId || entry?.payload?.tradeId;
+                  const tradeId = entry?.tradeId || entry?.payload?.tradeId || entry?.activePayload?.[0]?.payload?.tradeId;
                   if (tradeId) {
                     onOpenDrill({
                       kind: 'TRADE',
@@ -972,45 +1004,129 @@ export function ExecutionQualityTab({
           </ResponsiveContainer>
         </Box>
 
-        {/* Four Quadrant Educational Guide */}
+        {/* Four Quadrant Educational Guide (Clickable to Drill Down) */}
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${alpha(muiTheme.palette.profit.main, 0.3)}`, backgroundColor: alpha(muiTheme.palette.profit.main, 0.04) }}>
+            <Box
+              onClick={() =>
+                onOpenDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), maeRMax: 0.5, mfeRMin: 1.5 },
+                  label: 'Sweet Spot Trades (MAE < 0.5R, MFE > 1.5R)',
+                })
+              }
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                border: `1px solid ${alpha(muiTheme.palette.profit.main, 0.3)}`,
+                backgroundColor: alpha(muiTheme.palette.profit.main, 0.04),
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: muiTheme.palette.profit.main,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                },
+              }}
+            >
               <Typography variant="caption" sx={{ fontWeight: 800, color: muiTheme.palette.profit.main, display: 'block' }}>
                 🟢 Top-Left (Sweet Spot)
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                Low MAE (&lt;0.5R) & High MFE (&gt;1.5R). Perfect entry timing with minimal heat and large runs.
+                Low MAE (&lt;0.5R) & High MFE (&gt;1.5R). Perfect entry timing with minimal heat and large runs. Click to inspect trades.
               </Typography>
             </Box>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${alpha('#F59E0B', 0.3)}`, backgroundColor: alpha('#F59E0B', 0.04) }}>
+            <Box
+              onClick={() =>
+                onOpenDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), maeRMin: 0.8, mfeRMin: 1.5 },
+                  label: 'Painful Winners (MAE > 0.8R, MFE > 1.5R)',
+                })
+              }
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                border: `1px solid ${alpha('#F59E0B', 0.3)}`,
+                backgroundColor: alpha('#F59E0B', 0.04),
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: '#F59E0B',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
+                },
+              }}
+            >
               <Typography variant="caption" sx={{ fontWeight: 800, color: '#F59E0B', display: 'block' }}>
                 🟡 Top-Right (Painful Winners)
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                High MAE (&gt;0.8R) & High MFE. Trades that worked eventually, but took terrifying heat first.
+                High MAE (&gt;0.8R) & High MFE. Trades that worked eventually, but took terrifying heat first. Click to inspect trades.
               </Typography>
             </Box>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }}>
+            <Box
+              onClick={() =>
+                onOpenDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), maeRMax: 0.5, mfeRMax: 1.0 },
+                  label: 'Low Excursion Scratches (MAE < 0.5R, MFE < 1.0R)',
+                })
+              }
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: muiTheme.palette.primary.main,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                },
+              }}
+            >
               <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', display: 'block' }}>
                 ⚪ Bottom-Left (Scratches & Low Run)
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                Low MAE & Low MFE. Trades exited at breakeven or small loss before market developed momentum.
+                Low MAE & Low MFE. Trades exited at breakeven or small loss before momentum. Click to inspect trades.
               </Typography>
             </Box>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2, border: `1px solid ${alpha(muiTheme.palette.loss.main, 0.3)}`, backgroundColor: alpha(muiTheme.palette.loss.main, 0.04) }}>
+            <Box
+              onClick={() =>
+                onOpenDrill({
+                  kind: 'FILTER',
+                  filter: { ...(queryParams as any), maeRMin: 0.8, mfeRMax: 1.0, outcome: 'LOSS' },
+                  label: 'Full Losses (MAE > 0.8R, MFE < 1.0R)',
+                })
+              }
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                border: `1px solid ${alpha(muiTheme.palette.loss.main, 0.3)}`,
+                backgroundColor: alpha(muiTheme.palette.loss.main, 0.04),
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: muiTheme.palette.loss.main,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(244, 63, 94, 0.15)',
+                },
+              }}
+            >
               <Typography variant="caption" sx={{ fontWeight: 800, color: muiTheme.palette.loss.main, display: 'block' }}>
                 🔴 Bottom-Right (Full Losses)
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                High MAE & Low MFE. Setups that went immediately against you and reached your stop loss.
+                High MAE & Low MFE. Setups that went immediately against you to stop loss. Click to inspect trades.
               </Typography>
             </Box>
           </Grid>
@@ -1021,69 +1137,119 @@ export function ExecutionQualityTab({
       <Grid container spacing={2.5}>
         {/* Left: Stop Loss Optimizer (Winner-Only MAE Distribution) */}
         <Grid size={{ xs: 12, md: 6 }}>
-          {winnersMaeDistribution && winnersMaeDistribution.distribution && (
-            <Card sx={{ p: 2.5, borderRadius: 2.5, height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <Box sx={{ mb: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                  <SecurityIcon sx={{ color: muiTheme.palette.profit.main, fontSize: 20 }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                    Stop Loss Optimization (Winner-Only MAE)
+          {Boolean(winnersMaeDistribution && ((winnersMaeDistribution as any).buckets?.length || (winnersMaeDistribution as any).distribution?.length)) && (() => {
+            const winnerBuckets = (winnersMaeDistribution as any).buckets || (winnersMaeDistribution as any).distribution || [];
+            return (
+              <Card sx={{ p: 2.5, borderRadius: 2.5, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <SecurityIcon sx={{ color: muiTheme.palette.profit.main, fontSize: 20 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                      Stop Loss Optimization (Winner-Only MAE)
+                    </Typography>
+                    <HelpHint hintKey="analytics.execution.winnersMae" />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    Do your winning trades actually need your full stop room? If 90% of winners never suffer &gt;0.4R heat, a 1.0R stop absorbs unnecessary risk.
                   </Typography>
-                  <HelpHint hintKey="analytics.execution.winnersMae" />
                 </Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                  Do your winning trades actually need your full stop room? If 90% of winners never suffer &gt;0.4R heat, a 1.0R stop absorbs unnecessary risk.
-                </Typography>
-              </Box>
 
-              <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-                {winnersMaeDistribution.p50 !== undefined && (
-                  <Chip size="small" variant="outlined" label={`Median: ${winnersMaeDistribution.p50}R`} sx={{ fontWeight: 700, fontSize: '0.72rem' }} />
-                )}
-                {winnersMaeDistribution.p75 !== undefined && (
-                  <Chip size="small" variant="outlined" label={`P75: ${winnersMaeDistribution.p75}R`} sx={{ fontWeight: 700, fontSize: '0.72rem' }} />
-                )}
-                {winnersMaeDistribution.p90 !== undefined && (
-                  <Chip size="small" color="primary" label={`P90: ${winnersMaeDistribution.p90}R`} sx={{ fontWeight: 800, fontSize: '0.72rem' }} />
-                )}
-              </Box>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                  {winnersMaeDistribution.p50 !== undefined && (
+                    <Chip size="small" variant="outlined" label={`Median: ${winnersMaeDistribution.p50}R`} sx={{ fontWeight: 700, fontSize: '0.72rem' }} />
+                  )}
+                  {winnersMaeDistribution.p75 !== undefined && (
+                    <Chip size="small" variant="outlined" label={`P75: ${winnersMaeDistribution.p75}R`} sx={{ fontWeight: 700, fontSize: '0.72rem' }} />
+                  )}
+                  {winnersMaeDistribution.p90 !== undefined && (
+                    <Chip size="small" color="primary" label={`P90: ${winnersMaeDistribution.p90}R`} sx={{ fontWeight: 800, fontSize: '0.72rem' }} />
+                  )}
+                </Box>
 
-              <Box sx={{ width: '100%', height: 220 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={winnersMaeDistribution.distribution} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                    <XAxis dataKey="range" stroke={chartAxisColor} fontSize={10} />
-                    <YAxis stroke={chartAxisColor} fontSize={10} />
-                    <RechartsTooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const b = payload[0].payload;
-                          return (
-                            <Paper sx={{ ...chartTooltipStyle, p: 1.5 }}>
-                              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
-                                Adverse Heat: {b.range}R
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                                {b.count} winning trades ({b.pct}%)
-                              </Typography>
-                            </Paper>
-                          );
+                <Box sx={{ width: '100%', height: 220 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={winnerBuckets}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      onClick={(data: any) => {
+                        const b = data?.activePayload?.[0]?.payload || data?.payload;
+                        if (b && b.tradeIds && b.tradeIds.length > 0) {
+                          onOpenDrill({
+                            kind: 'TRADES',
+                            tradeIds: b.tradeIds,
+                            label: `Winners with ${b.range} MAE Heat (${b.count} trades)`,
+                          });
                         }
-                        return null;
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                      <XAxis dataKey="range" stroke={chartAxisColor} fontSize={10} />
+                      <YAxis stroke={chartAxisColor} fontSize={10} />
+                      <RechartsTooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const b = payload[0].payload;
+                            return (
+                              <Paper sx={{ ...chartTooltipStyle, p: 1.5 }}>
+                                <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                                  Adverse Heat: {b.range}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                                  {b.count} winning trades ({b.pct}%)
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'primary.main', display: 'block', mt: 0.5, fontStyle: 'italic' }}>
+                                  Click bar to inspect trades
+                                </Typography>
+                              </Paper>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar dataKey="count" fill={muiTheme.palette.profit.main} radius={[4, 4, 0, 0]} cursor="pointer" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+
+                {/* Clickable Quick Bucket Selection Chips */}
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 1.5 }}>
+                  {winnerBuckets.map((b: any) => (
+                    <Chip
+                      key={b.range}
+                      size="small"
+                      variant="outlined"
+                      label={`${b.range}: ${b.count} (${b.pct}%)`}
+                      onClick={() => {
+                        if (b.tradeIds && b.tradeIds.length > 0) {
+                          onOpenDrill({
+                            kind: 'TRADES',
+                            tradeIds: b.tradeIds,
+                            label: `Winners with ${b.range} Heat (${b.count} trades)`,
+                          });
+                        }
+                      }}
+                      sx={{
+                        cursor: b.count > 0 ? 'pointer' : 'default',
+                        fontWeight: 600,
+                        fontSize: '0.68rem',
+                        borderColor: b.count > 0 ? alpha(muiTheme.palette.profit.main, 0.4) : muiTheme.palette.divider,
+                        '&:hover': b.count > 0 ? {
+                          borderColor: muiTheme.palette.profit.main,
+                          bgcolor: alpha(muiTheme.palette.profit.main, 0.08),
+                        } : {},
                       }}
                     />
-                    <Bar dataKey="count" fill={muiTheme.palette.profit.main} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Box>
+                  ))}
+                </Box>
 
-              {winnersMaeDistribution.insight && (
-                <Alert severity="info" sx={{ mt: 'auto', fontSize: '0.8rem' }}>
-                  <strong>Stop Sizing Coach:</strong> {winnersMaeDistribution.insight}
-                </Alert>
-              )}
-            </Card>
-          )}
+                {winnersMaeDistribution.insight && (
+                  <Alert severity="info" sx={{ mt: 'auto', pt: 1, fontSize: '0.8rem' }}>
+                    <strong>Stop Sizing Coach:</strong> {winnersMaeDistribution.insight}
+                  </Alert>
+                )}
+              </Card>
+            );
+          })()}
         </Grid>
 
         {/* Right: Profit Realization & Giveback (MFE Reach Funnel) */}
@@ -1110,7 +1276,7 @@ export function ExecutionQualityTab({
                   )}
                 </Box>
                 <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                  Tracks trade progression through milestone R levels and pinpoints where winning trades surrendered profit.
+                  Tracks trade progression through milestone R levels and pinpoints where winning trades surrendered profit. Click any milestone to drill down.
                 </Typography>
 
                 {/* Milestone Mode Switcher */}
@@ -1147,14 +1313,44 @@ export function ExecutionQualityTab({
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, my: 'auto' }}>
-                {mfeReachFunnel.steps.slice(0, 4).map((step: any) => (
-                  <Box key={step.label} sx={{ p: 1.25, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                {mfeReachFunnel.steps.map((step: any) => (
+                  <Box
+                    key={step.label}
+                    onClick={() => {
+                      if (step.tradeIds && step.tradeIds.length > 0) {
+                        onOpenDrill({
+                          kind: 'TRADES',
+                          tradeIds: step.tradeIds,
+                          label: `Trades ${step.label} (${step.reachedCount} trades)`,
+                        });
+                      } else {
+                        onOpenDrill({
+                          kind: 'FILTER',
+                          filter: { ...(queryParams as any), mfeRMin: step.thresholdR },
+                          label: `Trades ${step.label}`,
+                        });
+                      }
+                    }}
+                    sx={{
+                      p: 1.25,
+                      borderRadius: 2,
+                      border: `1px solid ${muiTheme.palette.divider}`,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                        transform: 'translateX(3px)',
+                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.1)',
+                      },
+                    }}
+                  >
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                       <Typography variant="caption" sx={{ fontWeight: 800 }}>
                         {step.label}
                       </Typography>
                       <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                        {step.reachedCount} trades ({step.reachPct}%)
+                        {step.reachedCount} trades ({step.reachPct}%) &rarr;
                       </Typography>
                     </Box>
                     <LinearProgress
@@ -1172,8 +1368,37 @@ export function ExecutionQualityTab({
               </Box>
 
               {mfeReachFunnel.roundTripLossCount > 0 && (
-                <Alert severity="warning" sx={{ mt: 1.5, fontSize: '0.8rem' }}>
-                  <strong>Giveback Alert:</strong> {mfeReachFunnel.roundTripLossCount} trades reached +1.0R but reversed into losses, surrendering {formatCurrency(mfeReachFunnel.totalSurrenderedAmount, analyticsCurrency)}. Moving Stop Loss to Breakeven would save ~{formatCurrency(mfeReachFunnel.totalSurrenderedAmount * 0.5, analyticsCurrency)}!
+                <Alert
+                  severity="warning"
+                  onClick={() => {
+                    if (mfeReachFunnel.roundTripTradeIds && mfeReachFunnel.roundTripTradeIds.length > 0) {
+                      onOpenDrill({
+                        kind: 'TRADES',
+                        tradeIds: mfeReachFunnel.roundTripTradeIds,
+                        label: `Round-Trip Giveback Trades (${mfeReachFunnel.roundTripLossCount} trades)`,
+                      });
+                    } else {
+                      onOpenDrill({
+                        kind: 'FILTER',
+                        filter: { ...(queryParams as any), mfeRMin: 1.0, outcome: 'LOSS' },
+                        label: 'Round-Trip Giveback Trades (≥+1.0R into Loss)',
+                      });
+                    }
+                  }}
+                  sx={{
+                    mt: 1.5,
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    '&:hover': {
+                      borderColor: '#F59E0B',
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                      transform: 'translateY(-1px)',
+                    },
+                  }}
+                >
+                  <strong>Giveback Alert:</strong> {mfeReachFunnel.roundTripLossCount} trades reached +1.0R but reversed into losses, surrendering {formatCurrency(mfeReachFunnel.totalSurrenderedAmount, analyticsCurrency)}. Moving Stop Loss to Breakeven would save ~{formatCurrency(mfeReachFunnel.totalSurrenderedAmount * 0.5, analyticsCurrency)}! <strong style={{ textDecoration: 'underline' }}>Click to inspect trades &rarr;</strong>
                 </Alert>
               )}
             </Card>

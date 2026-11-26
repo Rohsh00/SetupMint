@@ -62,8 +62,9 @@ export function buildTradeMongooseFilter(
     holdingTimeMin,
     holdingTimeMax,
     excursionFlag,
+    excursionFlags,
     weekday,
-  } = filterInput;
+  } = filterInput as any;
 
   if (Array.isArray(accountIds)) {
     filter.accountId = {
@@ -227,8 +228,13 @@ export function buildTradeMongooseFilter(
     }
   }
 
-  if (excursionFlag) {
-    filter['calculated.excursion.excursionFlags'] = excursionFlag;
+  const resolvedExcursionFlag = excursionFlag || excursionFlags;
+  if (resolvedExcursionFlag) {
+    if (Array.isArray(resolvedExcursionFlag)) {
+      filter['calculated.excursion.excursionFlags'] = { $in: resolvedExcursionFlag };
+    } else {
+      filter['calculated.excursion.excursionFlags'] = resolvedExcursionFlag;
+    }
   }
 
   // Weekday filter in IST (matching calculateDashboardMetrics / Weekly Review day boundaries)

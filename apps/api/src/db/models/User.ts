@@ -2,6 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 import {
   IPatternDetectionSettings,
   DEFAULT_PATTERN_DETECTION_SETTINGS,
+  DEFAULT_EXCURSION_SETTINGS,
   ILiveWatcherSettings,
   DEFAULT_LIVE_WATCHER_SETTINGS,
 } from '@tradevault/shared';
@@ -84,6 +85,20 @@ const UserSchema = new Schema<IUserDoc>(
           },
         ],
         default: DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides,
+      },
+      excursionSettings: {
+        gaveBackMinMfeR: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.gaveBackMinMfeR },
+        gaveBackEfficiencyThreshold: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.gaveBackEfficiencyThreshold },
+        earlyExitEfficiencyThreshold: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.earlyExitEfficiencyThreshold },
+        stopTooTightReversalR: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.stopTooTightReversalR },
+        stopTooTightCandleLookahead: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.stopTooTightCandleLookahead },
+        stopTooTightMaxBreachBufferR: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.stopTooTightMaxBreachBufferR },
+        entryQualityCandleCount: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.entryQualityCandleCount },
+        postExitLookaheadMinutes: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.postExitLookaheadMinutes },
+        adaptiveLookahead: { type: Boolean, default: DEFAULT_EXCURSION_SETTINGS.adaptiveLookahead },
+        clampToSessionClose: { type: Boolean, default: DEFAULT_EXCURSION_SETTINGS.clampToSessionClose },
+        optimalExitMinAdverseR: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.optimalExitMinAdverseR },
+        optimalExitMaxRunBeyondR: { type: Number, default: DEFAULT_EXCURSION_SETTINGS.optimalExitMaxRunBeyondR },
       },
     },
     liveWatcherSettings: {

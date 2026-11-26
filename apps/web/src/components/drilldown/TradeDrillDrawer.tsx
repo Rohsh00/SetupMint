@@ -734,6 +734,10 @@ export function TradeDrillDrawer() {
                           ? 'Gave Back Profit'
                           : flag === 'STOP_TOO_TIGHT_EVIDENCE'
                           ? 'Stop Too Tight'
+                          : flag === 'OPTIMAL_EXIT'
+                          ? 'Optimal Exit'
+                          : flag === 'SHAKEOUT_STOP'
+                          ? 'Shakeout Stop'
                           : flag.replace(/_/g, ' ');
                       const color =
                         flag === 'RUNNER_LEFT_ON_TABLE'
@@ -742,6 +746,10 @@ export function TradeDrillDrawer() {
                           ? 'info'
                           : flag === 'GAVE_BACK_PROFIT'
                           ? 'error'
+                          : flag === 'OPTIMAL_EXIT'
+                          ? 'success'
+                          : flag === 'SHAKEOUT_STOP'
+                          ? 'secondary'
                           : 'default';
                       return (
                         <Chip

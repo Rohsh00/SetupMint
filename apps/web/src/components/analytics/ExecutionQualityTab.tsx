@@ -246,8 +246,11 @@ export function ExecutionQualityTab({
 
   const postExitRunAvg = summary.avgPostExitRunBeyondExitR ?? (summary.postExitRunBeyondExitR?.mean !== undefined ? Number(summary.postExitRunBeyondExitR.mean.toFixed(2)) : undefined);
   const postExitMfeAvg = summary.avgPostExitMfeR ?? (summary.postExitMfeR?.mean !== undefined ? Number(summary.postExitMfeR.mean.toFixed(2)) : undefined);
+  const postExitAdverseAvg = summary.postExitAdverseBeyondExitR?.mean !== undefined ? Number(summary.postExitAdverseBeyondExitR.mean.toFixed(2)) : undefined;
   const runnerCount = summary.runnerLeftOnTableCount ?? 0;
   const prematureCount = summary.prematureExitCount ?? 0;
+  const optimalExitCount = summary.optimalExitCount ?? 0;
+  const shakeoutStopCount = summary.shakeoutStopCount ?? 0;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -641,7 +644,7 @@ export function ExecutionQualityTab({
       </Grid>
 
       {/* 4. POST-EXIT MOMENTUM & RUNNER SUMMARY CALLOUT */}
-      {(runnerCount > 0 || prematureCount > 0 || (postExitRunAvg ?? 0) > 0) && (
+      {(runnerCount > 0 || prematureCount > 0 || optimalExitCount > 0 || shakeoutStopCount > 0 || (postExitRunAvg ?? 0) > 0) && (
         <Card
           sx={{
             p: 2.25,
@@ -659,17 +662,56 @@ export function ExecutionQualityTab({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TimelineRoundedIcon sx={{ color: '#0ea5e9', fontSize: 22 }} />
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                Post-Exit Continuation Radar (60m window):
+                Post-Exit Continuation Radar:
               </Typography>
             </Box>
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               Across your closed trades, market price continued pushing an additional{' '}
-              <strong style={{ color: '#0ea5e9' }}>+{postExitRunAvg ?? 0}R</strong> beyond your exit price (reaching an extended peak average of{' '}
-              <strong style={{ color: muiTheme.palette.profit.main }}>+{postExitMfeAvg ?? 0}R</strong> from entry).
+              <strong style={{ color: '#0ea5e9' }}>+{postExitRunAvg ?? 0}R</strong> beyond exit (peak avg:{' '}
+              <strong style={{ color: muiTheme.palette.profit.main }}>+{postExitMfeAvg ?? 0}R</strong>)
+              {postExitAdverseAvg !== undefined && postExitAdverseAvg > 0 ? (
+                <span>, with an average post-exit adverse drop of <strong style={{ color: muiTheme.palette.loss.main }}>-{postExitAdverseAvg}R</strong></span>
+              ) : null}.
             </Typography>
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            {optimalExitCount > 0 && (
+              <Tooltip title="Trades where you exited at/near the top before a sharp post-exit reversal" arrow>
+                <Chip
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  label={`${optimalExitCount} Optimal Exits`}
+                  onClick={() =>
+                    onOpenDrill({
+                      kind: 'FILTER',
+                      filter: { ...baseDrillFilter, excursionFlag: 'OPTIMAL_EXIT', excursionFlags: 'OPTIMAL_EXIT' },
+                      label: 'Trades: Optimal Top-Tick Exits',
+                    })
+                  }
+                  sx={{ fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                />
+              </Tooltip>
+            )}
+            {shakeoutStopCount > 0 && (
+              <Tooltip title="Trades stopped out where market subsequently reversed into your planned target direction" arrow>
+                <Chip
+                  size="small"
+                  color="secondary"
+                  variant="outlined"
+                  label={`${shakeoutStopCount} Shakeout Stops`}
+                  onClick={() =>
+                    onOpenDrill({
+                      kind: 'FILTER',
+                      filter: { ...baseDrillFilter, excursionFlag: 'SHAKEOUT_STOP', excursionFlags: 'SHAKEOUT_STOP' },
+                      label: 'Trades: Shakeout Stops',
+                    })
+                  }
+                  sx={{ fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}
+                />
+              </Tooltip>
+            )}
             {runnerCount > 0 && (
               <Tooltip title="Trades where market ran an additional >0.5R beyond your exit" arrow>
                 <Chip

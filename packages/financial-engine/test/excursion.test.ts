@@ -974,5 +974,128 @@ describe('calculateExcursion', () => {
     expect(res.excursionFlags).toContain('PREMATURE_EXIT');
     expect(res.rLeftOnTable).toBe(3.0); // 4.0R - 1.0R = 3.0R
   });
+
+  it('34. calculates post-exit adverse excursion (PAE) and flags OPTIMAL_EXIT on top-tick exit', () => {
+    // LONG trade: Entry at 100, Exit at 120 (gain of 20 pts, SL at 90 -> 10 pts risk = +2.0R win).
+    // In-trade high: 120 (sold at the peak).
+    // Post-exit candles: price immediately crashes to 105 (adverse drop of 15 pts = 1.5R adverse beyond exit).
+    // Post-exit peak price only reaches 121 (1 pt run beyond exit = 0.1R).
+    const candles = makeCandles(baseTime, 6, [
+      [100, 105, 98, 104],  // 09:30
+      [104, 115, 102, 114], // 09:31
+      [114, 120, 112, 118], // 09:32
+      [118, 120, 116, 120], // 09:33 (exit at 120)
+      [120, 121, 110, 111], // 09:34 (post-exit candle 1: drops)
+      [111, 112, 105, 106], // 09:35 (post-exit candle 2: crashes to 105)
+    ]);
+
+    const res = calculateExcursion({
+      direction: 'LONG',
+      entryPrice: 100,
+      exitPrice: 120,
+      stopLoss: 90,
+      quantity: 10,
+      contractMultiplier: 1,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: baseTime.clone().add(3, 'minutes').toISOString(),
+      plannedRiskAmount: 100,
+      resolution: '1',
+      postExitLookaheadMinutes: 30,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    expect(res.exitEfficiency).toBe(1); // Exited at peak
+    expect(res.postExitRunBeyondExitPoints).toBe(1); // 121 - 120
+    expect(res.postExitRunBeyondExitR).toBe(0.1);
+    expect(res.postExitAdverseBeyondExitPoints).toBe(15); // 120 - 105
+    expect(res.postExitAdverseBeyondExitR).toBe(1.5); // 15 / 10 = 1.5R drop
+    expect(res.postExitTroughPrice).toBe(105);
+    expect(res.excursionFlags).toContain('OPTIMAL_EXIT');
+  });
+
+  it('35. calculates post-stop shakeout recovery and flags SHAKEOUT_STOP', () => {
+    // LONG trade: Entry at 100, SL at 90 (10 pts risk).
+    // In-trade: price dips to 89 (stop hit), then trader exits at 89.
+    // Post-stop/post-exit candles: market reverses aggressively and shoots up to 125 (+2.5R favorable).
+    const candles = makeCandles(baseTime, 6, [
+      [100, 102, 95, 96],   // 09:30
+      [96, 97, 89, 90],     // 09:31 (stop hit at 89)
+      [89, 90, 88, 89],     // 09:32 (exit at 89)
+      [89, 105, 89, 104],   // 09:33 (post-exit reversal)
+      [104, 115, 103, 114], // 09:34
+      [114, 125, 112, 124], // 09:35 (reaches 125 -> +2.5R from entry)
+    ]);
+
+    const res = calculateExcursion({
+      direction: 'LONG',
+      entryPrice: 100,
+      exitPrice: 89,
+      stopLoss: 90,
+      quantity: 10,
+      contractMultiplier: 1,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: baseTime.clone().add(2, 'minutes').toISOString(),
+      plannedRiskAmount: 100,
+      resolution: '1',
+      postExitLookaheadMinutes: 30,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    expect(res.stopHit).toBe(true);
+    expect(res.postStopMfePoints).toBe(25); // 125 - 100
+    expect(res.postStopMfeR).toBe(2.5); // 25 / 10 = 2.5R
+    expect(res.excursionFlags).toContain('SHAKEOUT_STOP');
+  });
+
+  it('36. supports adaptive post-exit lookahead scaling dynamically to hold duration', () => {
+    // Trade held for 40 minutes (09:30 to 10:10).
+    // Adaptive rule: 40 * 1.5 = 60 minutes lookahead.
+    const candles = makeCandles(baseTime, 70, Array(70).fill([100, 105, 95, 100]));
+
+    const res = calculateExcursion({
+      direction: 'LONG',
+      entryPrice: 100,
+      exitPrice: 105,
+      stopLoss: 90,
+      quantity: 10,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: baseTime.clone().add(40, 'minutes').toISOString(),
+      plannedRiskAmount: 100,
+      adaptiveLookahead: true,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    expect(res.postExitCandleCount).toBeGreaterThan(0);
+    // Trade held 40 mins -> adaptive lookahead is 60 mins
+    expect(res.postExitLookaheadMinutes).toBe(60);
+  });
+
+  it('37. clamps post-exit lookahead to session close boundary', () => {
+    // Trade exits at 15:15. Standard lookahead is 60m (would reach 16:15).
+    // Session close is 15:30 (15 minutes after exit).
+    const exitTime = baseTime.clone().add(15, 'minutes');
+    const sessionCloseTime = baseTime.clone().add(30, 'minutes'); // 15 mins after exit
+    const candles = makeCandles(baseTime, 35, Array(35).fill([100, 105, 95, 100]));
+
+    const res = calculateExcursion({
+      direction: 'LONG',
+      entryPrice: 100,
+      exitPrice: 105,
+      stopLoss: 90,
+      quantity: 10,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: exitTime.toISOString(),
+      sessionCloseTime: sessionCloseTime.toISOString(),
+      postExitLookaheadMinutes: 60,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    // Clamped to 15 minutes (session close)
+    expect(res.postExitLookaheadMinutes).toBe(15);
+  });
 });
 

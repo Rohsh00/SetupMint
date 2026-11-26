@@ -24,6 +24,8 @@ import SendRounded from '@mui/icons-material/SendRounded';
 import {
   IInstrumentDetectionSetting,
   DEFAULT_PATTERN_DETECTION_SETTINGS,
+  IExcursionSettings,
+  DEFAULT_EXCURSION_SETTINGS,
   ILiveWatcherSettings,
   DEFAULT_LIVE_WATCHER_SETTINGS,
   ILiveWatcherDisplaySettings,
@@ -764,6 +766,9 @@ export function SettingsPage() {
   const [instrumentOverrides, setInstrumentOverrides] = useState<IInstrumentDetectionSetting[]>(
     user?.patternDetectionSettings?.instrumentOverrides || DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides
   );
+  const [excursionSettings, setExcursionSettings] = useState<IExcursionSettings>(
+    user?.patternDetectionSettings?.excursionSettings || DEFAULT_EXCURSION_SETTINGS
+  );
   const [patternSuccess, setPatternSuccess] = useState(false);
   const [patternError, setPatternError] = useState<string | null>(null);
 
@@ -782,6 +787,7 @@ export function SettingsPage() {
       if (user.patternDetectionSettings.autoDetectOnImport !== undefined) setAutoDetectOnImport(user.patternDetectionSettings.autoDetectOnImport);
       if (user.patternDetectionSettings.autoDetectMistakes !== undefined) setAutoDetectMistakes(user.patternDetectionSettings.autoDetectMistakes);
       if (user.patternDetectionSettings.instrumentOverrides) setInstrumentOverrides(user.patternDetectionSettings.instrumentOverrides);
+      if (user.patternDetectionSettings.excursionSettings) setExcursionSettings(user.patternDetectionSettings.excursionSettings);
     }
   }, [user?.patternDetectionSettings]);
 
@@ -809,6 +815,7 @@ export function SettingsPage() {
       autoDetectOnImport,
       autoDetectMistakes,
       instrumentOverrides,
+      excursionSettings,
     });
   };
 
@@ -818,6 +825,7 @@ export function SettingsPage() {
     setAutoDetectOnImport(true);
     setAutoDetectMistakes(true);
     setInstrumentOverrides(DEFAULT_PATTERN_DETECTION_SETTINGS.instrumentOverrides);
+    setExcursionSettings(DEFAULT_EXCURSION_SETTINGS);
     toast.info('Reset detection settings to institutional defaults.');
   };
 
@@ -1596,6 +1604,8 @@ export function SettingsPage() {
           autoDetectMistakes={autoDetectMistakes}
           setAutoDetectMistakes={setAutoDetectMistakes}
           instrumentOverrides={instrumentOverrides}
+          excursionSettings={excursionSettings}
+          setExcursionSettings={setExcursionSettings}
           onOpenAddOverride={handleOpenAddOverride}
           onEditOverride={handleEditOverride}
           onDeleteOverride={handleDeleteOverride}

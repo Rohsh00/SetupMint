@@ -205,6 +205,10 @@ export interface IExcursionSettings {
   stopTooTightMaxBreachBufferR?: number;
   entryQualityCandleCount?: number;
   postExitLookaheadMinutes?: number;
+  adaptiveLookahead?: boolean;
+  clampToSessionClose?: boolean;
+  optimalExitMinAdverseR?: number;
+  optimalExitMaxRunBeyondR?: number;
 }
 
 export const DEFAULT_EXCURSION_SETTINGS: IExcursionSettings = {
@@ -216,6 +220,10 @@ export const DEFAULT_EXCURSION_SETTINGS: IExcursionSettings = {
   stopTooTightMaxBreachBufferR: 0.75,
   entryQualityCandleCount: 3,
   postExitLookaheadMinutes: 60,
+  adaptiveLookahead: false,
+  clampToSessionClose: true,
+  optimalExitMinAdverseR: 0.75,
+  optimalExitMaxRunBeyondR: 0.35,
 };
 
 export interface IPatternDetectionSettings {
@@ -820,7 +828,9 @@ export type ExcursionFlag =
   | 'EXIT_OUTSIDE_CANDLE'
   | 'LOW_RESOLUTION'
   | 'RUNNER_LEFT_ON_TABLE'
-  | 'PREMATURE_EXIT';
+  | 'PREMATURE_EXIT'
+  | 'OPTIMAL_EXIT'
+  | 'SHAKEOUT_STOP';
 
 export interface ITradeExcursion {
   status: ExcursionStatus;
@@ -869,6 +879,17 @@ export interface ITradeExcursion {
   postExitCandleCount?: number;
   postExitRunBeyondExitPoints?: number;
   postExitRunBeyondExitR?: number;
+  postExitMaePoints?: number;
+  postExitMaeAmount?: number;
+  postExitMaeR?: number;
+  postExitTroughPrice?: number;
+  postExitTroughTime?: string | Date;
+  postExitAdverseBeyondExitPoints?: number;
+  postExitAdverseBeyondExitR?: number;
+  postExitTimeToPeakMinutes?: number;
+  postExitVelocityRPerMin?: number;
+  postStopMfePoints?: number;
+  postStopMfeR?: number;
 }
 
 export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'GLOBAL_CFD';

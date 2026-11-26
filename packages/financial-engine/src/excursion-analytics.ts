@@ -160,6 +160,17 @@ export interface ITradeForExcursionAnalytics {
       postExitCandleCount?: number;
       postExitRunBeyondExitPoints?: number;
       postExitRunBeyondExitR?: number;
+      postExitMaePoints?: number;
+      postExitMaeAmount?: number;
+      postExitMaeR?: number;
+      postExitTroughPrice?: number;
+      postExitTroughTime?: Date | string;
+      postExitAdverseBeyondExitPoints?: number;
+      postExitAdverseBeyondExitR?: number;
+      postExitTimeToPeakMinutes?: number;
+      postExitVelocityRPerMin?: number;
+      postStopMfePoints?: number;
+      postStopMfeR?: number;
     };
   };
 }
@@ -187,8 +198,11 @@ export interface IExcursionAnalyticsResult {
     };
     postExitRunBeyondExitR?: IExcursionSummaryStatistics;
     postExitMfeR?: IExcursionSummaryStatistics;
+    postExitAdverseBeyondExitR?: IExcursionSummaryStatistics;
     runnerLeftOnTableCount?: number;
     prematureExitCount?: number;
+    optimalExitCount?: number;
+    shakeoutStopCount?: number;
     feeAdjusted: {
       avgMaeR?: number;
       avgMfeR?: number;
@@ -256,6 +270,9 @@ export interface IExcursionAnalyticsResult {
     postExitRunBeyondExitR?: number;
     postExitRunBeyondExitPoints?: number;
     postExitPeakPrice?: number;
+    postExitAdverseBeyondExitR?: number;
+    postExitAdverseBeyondExitPoints?: number;
+    postStopMfeR?: number;
   }>;
 }
 
@@ -471,8 +488,11 @@ export function calculateExcursionAggregates(params: {
   const feeAdjustedMfeRList: number[] = [];
   const postExitRunBeyondExitRList: number[] = [];
   const postExitMfeRList: number[] = [];
+  const postExitAdverseBeyondExitRList: number[] = [];
   let runnerLeftOnTableCount = 0;
   let prematureExitCount = 0;
+  let optimalExitCount = 0;
+  let shakeoutStopCount = 0;
 
   let countWithStop = 0;
   let gaveBackProfitCount = 0;
@@ -520,11 +540,20 @@ export function calculateExcursionAggregates(params: {
     if (exc.postExitMfeR !== undefined && exc.postExitMfeR !== null) {
       postExitMfeRList.push(exc.postExitMfeR);
     }
+    if (exc.postExitAdverseBeyondExitR !== undefined && exc.postExitAdverseBeyondExitR !== null) {
+      postExitAdverseBeyondExitRList.push(exc.postExitAdverseBeyondExitR);
+    }
     if (exc.excursionFlags?.includes('RUNNER_LEFT_ON_TABLE')) {
       runnerLeftOnTableCount++;
     }
     if (exc.excursionFlags?.includes('PREMATURE_EXIT')) {
       prematureExitCount++;
+    }
+    if (exc.excursionFlags?.includes('OPTIMAL_EXIT')) {
+      optimalExitCount++;
+    }
+    if (exc.excursionFlags?.includes('SHAKEOUT_STOP')) {
+      shakeoutStopCount++;
     }
 
     if (exc.timeOrdering === 'HEAT_FIRST') heatFirstCount++;
@@ -575,6 +604,9 @@ export function calculateExcursionAggregates(params: {
       postExitRunBeyondExitR: exc.postExitRunBeyondExitR,
       postExitRunBeyondExitPoints: exc.postExitRunBeyondExitPoints,
       postExitPeakPrice: exc.postExitPeakPrice,
+      postExitAdverseBeyondExitR: exc.postExitAdverseBeyondExitR,
+      postExitAdverseBeyondExitPoints: exc.postExitAdverseBeyondExitPoints,
+      postStopMfeR: exc.postStopMfeR,
     });
   }
 
@@ -589,8 +621,11 @@ export function calculateExcursionAggregates(params: {
     stopEfficiency: buildSeriesStats(stopEffList, 105),
     postExitRunBeyondExitR: buildSeriesStats(postExitRunBeyondExitRList, 106),
     postExitMfeR: buildSeriesStats(postExitMfeRList, 107),
+    postExitAdverseBeyondExitR: buildSeriesStats(postExitAdverseBeyondExitRList, 108),
     runnerLeftOnTableCount,
     prematureExitCount,
+    optimalExitCount,
+    shakeoutStopCount,
     entryQualityScore: {
       mean:
         entryQualityList.length > 0

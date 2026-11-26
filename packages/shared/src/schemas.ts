@@ -804,6 +804,10 @@ export const excursionSettingsSchema = z.object({
   stopTooTightMaxBreachBufferR: z.coerce.number().nonnegative().optional(),
   entryQualityCandleCount: z.coerce.number().int().positive().optional(),
   postExitLookaheadMinutes: z.coerce.number().int().nonnegative().optional(),
+  adaptiveLookahead: z.boolean().optional(),
+  clampToSessionClose: z.boolean().optional(),
+  optimalExitMinAdverseR: z.coerce.number().positive().optional(),
+  optimalExitMaxRunBeyondR: z.coerce.number().nonnegative().optional(),
 });
 
 export const patternDetectionSettingsSchema = z.object({

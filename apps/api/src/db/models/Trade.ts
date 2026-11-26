@@ -195,6 +195,17 @@ export interface ITradeDoc extends Document {
       postExitCandleCount?: number;
       postExitRunBeyondExitPoints?: number;
       postExitRunBeyondExitR?: number;
+      postExitMaePoints?: number;
+      postExitMaeAmount?: number;
+      postExitMaeR?: number;
+      postExitTroughPrice?: number;
+      postExitTroughTime?: Date | string;
+      postExitAdverseBeyondExitPoints?: number;
+      postExitAdverseBeyondExitR?: number;
+      postExitTimeToPeakMinutes?: number;
+      postExitVelocityRPerMin?: number;
+      postStopMfePoints?: number;
+      postStopMfeR?: number;
     };
     stopMoveSummary?: {
       totalMoves: number;
@@ -501,6 +512,17 @@ const TradeSchema = new Schema<ITradeDoc>(
         postExitCandleCount: { type: Number },
         postExitRunBeyondExitPoints: { type: Number },
         postExitRunBeyondExitR: { type: Number },
+        postExitMaePoints: { type: Number },
+        postExitMaeAmount: { type: Number },
+        postExitMaeR: { type: Number },
+        postExitTroughPrice: { type: Number },
+        postExitTroughTime: { type: Date },
+        postExitAdverseBeyondExitPoints: { type: Number },
+        postExitAdverseBeyondExitR: { type: Number },
+        postExitTimeToPeakMinutes: { type: Number },
+        postExitVelocityRPerMin: { type: Number },
+        postStopMfePoints: { type: Number },
+        postStopMfeR: { type: Number },
       },
       stopMoveSummary: {
         totalMoves: { type: Number, default: 0 },

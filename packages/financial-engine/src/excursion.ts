@@ -39,6 +39,9 @@ export interface ICalculateExcursionParams {
   hasTrailedStop?: boolean;
   realizedR?: number | null;
   postExitLookaheadMinutes?: number;
+  adaptiveLookahead?: boolean;
+  sessionCloseTime?: Date | string | number;
+  clampToSessionClose?: boolean;
 }
 
 export interface IExcursionCalculationResult {
@@ -84,6 +87,17 @@ export interface IExcursionCalculationResult {
   postExitCandleCount?: number;
   postExitRunBeyondExitPoints?: number;
   postExitRunBeyondExitR?: number;
+  postExitMaePoints?: number;
+  postExitMaeAmount?: number;
+  postExitMaeR?: number;
+  postExitTroughPrice?: number;
+  postExitTroughTime?: Date | string;
+  postExitAdverseBeyondExitPoints?: number;
+  postExitAdverseBeyondExitR?: number;
+  postExitTimeToPeakMinutes?: number;
+  postExitVelocityRPerMin?: number;
+  postStopMfePoints?: number;
+  postStopMfeR?: number;
 }
 
 /**
@@ -185,8 +199,22 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     return candleEndMs > entryMs && c.tMs <= exitMs;
   });
 
-  const postExitLookaheadMinutes = params.postExitLookaheadMinutes ?? settings.postExitLookaheadMinutes ?? 60;
-  const postExitEndMs = exitMs + postExitLookaheadMinutes * 60_000;
+  const tradeDurationMinutes = Math.max(1, Math.round((exitMs - entryMs) / 60_000));
+  const isAdaptive = params.adaptiveLookahead ?? settings.adaptiveLookahead ?? false;
+  let postExitLookaheadMinutes = isAdaptive
+    ? Math.min(180, Math.max(15, Math.round(tradeDurationMinutes * 1.5)))
+    : (params.postExitLookaheadMinutes ?? settings.postExitLookaheadMinutes ?? 60);
+
+  let postExitEndMs = exitMs + postExitLookaheadMinutes * 60_000;
+
+  // Session boundary clamping: prevent post-exit lookahead from bleeding past session close or end of day
+  if (params.sessionCloseTime) {
+    const sessionCloseMs = toEpochMs(params.sessionCloseTime);
+    if (sessionCloseMs > exitMs && postExitEndMs > sessionCloseMs) {
+      postExitEndMs = sessionCloseMs;
+      postExitLookaheadMinutes = Math.max(1, Math.round((sessionCloseMs - exitMs) / 60_000));
+    }
+  }
 
   // Post-exit candles: strictly after exitMs up to postExitEndMs
   const postExitCandles = allParsedCandles.filter((c) => c.tMs > exitMs && c.tMs <= postExitEndMs);
@@ -324,7 +352,7 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     }
   }
 
-  // 6b. Post-Exit Extended Excursion (Runners & Premature Exit Evaluation)
+  // 6b. Post-Exit Extended Excursion (Runners, Premature Exit & Adverse Drop Evaluation)
   let postExitMfePoints: number | undefined;
   let postExitMfeAmount: number | undefined;
   let postExitMfeR: number | undefined;
@@ -333,6 +361,15 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
   const postExitCandleCount = postExitCandles.length;
   let postExitRunBeyondExitPoints: number | undefined;
   let postExitRunBeyondExitR: number | undefined;
+  let postExitMaePoints: number | undefined;
+  let postExitMaeAmount: number | undefined;
+  let postExitMaeR: number | undefined;
+  let postExitTroughPrice: number | undefined;
+  let postExitTroughTime: Date | string | undefined;
+  let postExitAdverseBeyondExitPoints: number | undefined;
+  let postExitAdverseBeyondExitR: number | undefined;
+  let postExitTimeToPeakMinutes: number | undefined;
+  let postExitVelocityRPerMin: number | undefined;
 
   if (postExitCandles.length > 0) {
     let postHighestPrice = postExitCandles[0].h;
@@ -353,36 +390,63 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
 
     let pMfePointsDec: Decimal;
     let pRunBeyondExitDec: Decimal;
+    let pMaePointsDec: Decimal;
+    let pAdverseBeyondExitDec: Decimal;
 
     if (direction === 'LONG') {
       pMfePointsDec = Decimal.max(0, postHighestPrice.minus(dEntry));
       pRunBeyondExitDec = Decimal.max(0, postHighestPrice.minus(dExit));
       postExitPeakPrice = Number(postHighestPrice.toFixed(4));
       postExitPeakTime = new Date(postHighestTimeMs);
+      postExitTimeToPeakMinutes = Math.max(0, Math.round((postHighestTimeMs - exitMs) / 60_000));
+
+      pMaePointsDec = Decimal.max(0, dEntry.minus(postLowestPrice));
+      pAdverseBeyondExitDec = Decimal.max(0, dExit.minus(postLowestPrice));
+      postExitTroughPrice = Number(postLowestPrice.toFixed(4));
+      postExitTroughTime = new Date(postLowestTimeMs);
     } else {
       // SHORT
       pMfePointsDec = Decimal.max(0, dEntry.minus(postLowestPrice));
       pRunBeyondExitDec = Decimal.max(0, dExit.minus(postLowestPrice));
       postExitPeakPrice = Number(postLowestPrice.toFixed(4));
       postExitPeakTime = new Date(postLowestTimeMs);
+      postExitTimeToPeakMinutes = Math.max(0, Math.round((postLowestTimeMs - exitMs) / 60_000));
+
+      pMaePointsDec = Decimal.max(0, postHighestPrice.minus(dEntry));
+      pAdverseBeyondExitDec = Decimal.max(0, postHighestPrice.minus(dExit));
+      postExitTroughPrice = Number(postHighestPrice.toFixed(4));
+      postExitTroughTime = new Date(postHighestTimeMs);
     }
 
     postExitMfePoints = Number(pMfePointsDec.toFixed(4));
     postExitRunBeyondExitPoints = Number(pRunBeyondExitDec.toFixed(4));
+    postExitMaePoints = Number(pMaePointsDec.toFixed(4));
+    postExitAdverseBeyondExitPoints = Number(pAdverseBeyondExitDec.toFixed(4));
 
     const pMfeAmtDec = pMfePointsDec.times(dQty).times(dMultiplier);
     postExitMfeAmount = Number(pMfeAmtDec.toFixed(2));
+    const pMaeAmtDec = pMaePointsDec.times(dQty).times(dMultiplier);
+    postExitMaeAmount = Number(pMaeAmtDec.toFixed(2));
 
     if (dPlannedRisk && dPlannedRisk.greaterThan(0)) {
       postExitMfeR = Number(pMfeAmtDec.dividedBy(dPlannedRisk).toFixed(4));
       const runBeyondAmt = pRunBeyondExitDec.times(dQty).times(dMultiplier);
       postExitRunBeyondExitR = Number(runBeyondAmt.dividedBy(dPlannedRisk).toFixed(4));
+      postExitMaeR = Number(pMaeAmtDec.dividedBy(dPlannedRisk).toFixed(4));
+      const adverseBeyondAmt = pAdverseBeyondExitDec.times(dQty).times(dMultiplier);
+      postExitAdverseBeyondExitR = Number(adverseBeyondAmt.dividedBy(dPlannedRisk).toFixed(4));
     } else if (dStop) {
       const stopDist = dEntry.minus(dStop).abs();
       if (stopDist.greaterThan(0)) {
         postExitMfeR = Number(pMfePointsDec.dividedBy(stopDist).toFixed(4));
         postExitRunBeyondExitR = Number(pRunBeyondExitDec.dividedBy(stopDist).toFixed(4));
+        postExitMaeR = Number(pMaePointsDec.dividedBy(stopDist).toFixed(4));
+        postExitAdverseBeyondExitR = Number(pAdverseBeyondExitDec.dividedBy(stopDist).toFixed(4));
       }
+    }
+
+    if (postExitTimeToPeakMinutes !== undefined && postExitTimeToPeakMinutes > 0 && postExitRunBeyondExitR !== undefined) {
+      postExitVelocityRPerMin = Number((postExitRunBeyondExitR / postExitTimeToPeakMinutes).toFixed(4));
     }
 
     if (postExitRunBeyondExitR !== undefined && postExitRunBeyondExitR >= (settings.gaveBackMinMfeR ?? 1.0)) {
@@ -391,6 +455,24 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
       }
       if (!excursionFlags.includes('PREMATURE_EXIT')) {
         excursionFlags.push('PREMATURE_EXIT');
+      }
+    }
+
+    // Optimal Exit Detection:
+    // If the trade was a winner and post-exit price suffered major adverse drop (>= optimalExitMinAdverseR, default 0.75R)
+    // while running very little beyond exit (<= optimalExitMaxRunBeyondR, default 0.35R),
+    // this identifies top-tick/bottom-tick exit precision right before a steep reversal.
+    const optMinAdverseR = settings.optimalExitMinAdverseR ?? 0.75;
+    const optMaxRunBeyondR = settings.optimalExitMaxRunBeyondR ?? 0.35;
+    const isWinner = direction === 'LONG' ? dExit.greaterThan(dEntry) : dExit.lessThan(dEntry);
+    if (
+      isWinner &&
+      postExitAdverseBeyondExitR !== undefined &&
+      postExitAdverseBeyondExitR >= optMinAdverseR &&
+      (postExitRunBeyondExitR === undefined || postExitRunBeyondExitR <= optMaxRunBeyondR)
+    ) {
+      if (!excursionFlags.includes('OPTIMAL_EXIT')) {
+        excursionFlags.push('OPTIMAL_EXIT');
       }
     }
   }
@@ -555,6 +637,51 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     }
   }
 
+  // 11b. Post-Stop Shakeout & Recovery Excursion
+  let postStopMfePoints: number | undefined;
+  let postStopMfeR: number | undefined;
+
+  if (stopHit && stopHitCandleIndex >= 0 && dStop) {
+    const stopDistance = dEntry.minus(dStop).abs();
+    const postStopCandles = [
+      ...overlappingCandles.slice(stopHitCandleIndex + 1),
+      ...postExitCandles,
+    ];
+
+    if (postStopCandles.length > 0 && stopDistance.greaterThan(0)) {
+      let postStopPeakDec: Decimal = new Decimal(0);
+      if (direction === 'LONG') {
+        let maxH = postStopCandles[0].h;
+        for (const bar of postStopCandles) {
+          if (bar.h.greaterThan(maxH)) maxH = bar.h;
+        }
+        postStopPeakDec = Decimal.max(0, maxH.minus(dEntry));
+      } else {
+        // SHORT
+        let minL = postStopCandles[0].l;
+        for (const bar of postStopCandles) {
+          if (bar.l.lessThan(minL)) minL = bar.l;
+        }
+        postStopPeakDec = Decimal.max(0, dEntry.minus(minL));
+      }
+
+      postStopMfePoints = Number(postStopPeakDec.toFixed(4));
+      if (dPlannedRisk && dPlannedRisk.greaterThan(0)) {
+        const amt = postStopPeakDec.times(dQty).times(dMultiplier);
+        postStopMfeR = Number(amt.dividedBy(dPlannedRisk).toFixed(4));
+      } else {
+        postStopMfeR = Number(postStopPeakDec.dividedBy(stopDistance).toFixed(4));
+      }
+
+      const reversalRThreshold = settings.stopTooTightReversalR ?? 1.0;
+      if (postStopMfeR >= reversalRThreshold || reversedAfterStopHit) {
+        if (!excursionFlags.includes('SHAKEOUT_STOP')) {
+          excursionFlags.push('SHAKEOUT_STOP');
+        }
+      }
+    }
+  }
+
   // 12. Time to MFE / MAE in minutes
   const timeToMfeMinutes = Math.max(0, Math.round(moment(mfeTimeMs).diff(moment(entryMs), 'minutes', true)));
   const timeToMaeMinutes = Math.max(0, Math.round(moment(maeTimeMs).diff(moment(entryMs), 'minutes', true)));
@@ -649,5 +776,16 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     postExitCandleCount,
     postExitRunBeyondExitPoints,
     postExitRunBeyondExitR,
+    postExitMaePoints,
+    postExitMaeAmount,
+    postExitMaeR,
+    postExitTroughPrice,
+    postExitTroughTime,
+    postExitAdverseBeyondExitPoints,
+    postExitAdverseBeyondExitR,
+    postExitTimeToPeakMinutes,
+    postExitVelocityRPerMin,
+    postStopMfePoints,
+    postStopMfeR,
   };
 }

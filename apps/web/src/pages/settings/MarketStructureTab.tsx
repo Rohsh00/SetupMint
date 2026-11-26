@@ -23,7 +23,8 @@ import AddRounded from '@mui/icons-material/AddRounded';
 import EditRounded from '@mui/icons-material/EditRounded';
 import DeleteRounded from '@mui/icons-material/DeleteRounded';
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
-import { IInstrumentDetectionSetting } from '@tradevault/shared';
+import HourglassEmptyRounded from '@mui/icons-material/HourglassEmptyRounded';
+import { IInstrumentDetectionSetting, IExcursionSettings, DEFAULT_EXCURSION_SETTINGS } from '@tradevault/shared';
 
 export interface MarketStructureTabProps {
   defaultHtf: string;
@@ -35,6 +36,8 @@ export interface MarketStructureTabProps {
   autoDetectMistakes: boolean;
   setAutoDetectMistakes: (val: boolean) => void;
   instrumentOverrides: IInstrumentDetectionSetting[];
+  excursionSettings?: IExcursionSettings;
+  setExcursionSettings?: React.Dispatch<React.SetStateAction<IExcursionSettings>>;
   onOpenAddOverride: () => void;
   onEditOverride: (idx: number) => void;
   onDeleteOverride: (idx: number) => void;
@@ -70,6 +73,8 @@ export function MarketStructureTab({
   autoDetectMistakes,
   setAutoDetectMistakes,
   instrumentOverrides,
+  excursionSettings = DEFAULT_EXCURSION_SETTINGS,
+  setExcursionSettings,
   onOpenAddOverride,
   onEditOverride,
   onDeleteOverride,
@@ -82,6 +87,12 @@ export function MarketStructureTab({
 }: MarketStructureTabProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
+
+  const updateExc = (patch: Partial<IExcursionSettings>) => {
+    if (setExcursionSettings) {
+      setExcursionSettings((prev) => ({ ...prev, ...patch }));
+    }
+  };
 
   return (
     <form onSubmit={onSave} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -359,6 +370,124 @@ export function MarketStructureTab({
               ))}
             </Box>
           )}
+        </CardContent>
+      </Card>
+
+      {/* SECTION 3: POST-TRADE EXCURSION & EXECUTION QUALITY ENGINE */}
+      <Card variant="outlined">
+        <CardContent sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <HourglassEmptyRounded sx={{ color: 'primary.main', fontSize: 22 }} />
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                Post-Trade Excursion (PTE) & Lookahead Timing
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Configure candle lookahead duration, adaptive scaling, and session boundary clamping for MFE/MAE quality analytics.
+              </Typography>
+            </Box>
+          </Box>
+
+          <Grid container spacing={2}>
+            {/* Lookahead Duration */}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Base Post-Exit Lookahead Window"
+                value={String(excursionSettings.postExitLookaheadMinutes ?? 60)}
+                onChange={(e) => updateExc({ postExitLookaheadMinutes: parseInt(e.target.value, 10) })}
+                helperText="Window size for tracking runner continuation beyond exit"
+              >
+                <MenuItem value="15">15 Minutes (Micro-Scalps)</MenuItem>
+                <MenuItem value="30">30 Minutes (Index Options Scalping)</MenuItem>
+                <MenuItem value="60">60 Minutes (Standard Intraday Benchmark)</MenuItem>
+                <MenuItem value="120">120 Minutes (Forex / Gold Sessions)</MenuItem>
+                <MenuItem value="180">180 Minutes (Multi-Hour Runners)</MenuItem>
+              </TextField>
+            </Grid>
+
+            {/* Optimal Exit Adverse Drop Threshold */}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Optimal Exit Precision Threshold"
+                value={String(excursionSettings.optimalExitMinAdverseR ?? 0.75)}
+                onChange={(e) => updateExc({ optimalExitMinAdverseR: parseFloat(e.target.value) })}
+                helperText="Adverse reversal R required post-exit to award Optimal Exit badge"
+              >
+                <MenuItem value="0.5">≥ 0.50R Adverse Drop</MenuItem>
+                <MenuItem value="0.75">≥ 0.75R Adverse Drop (Recommended)</MenuItem>
+                <MenuItem value="1.0">≥ 1.00R Adverse Drop (Strict Top-Tick)</MenuItem>
+                <MenuItem value="1.5">≥ 1.50R Adverse Drop (Major Exhaustion)</MenuItem>
+              </TextField>
+            </Grid>
+
+            {/* Adaptive Lookahead Switch */}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                  height: '100%',
+                }}
+              >
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Adaptive Hold-Time Multiplier
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Dynamically scale window to 1.5× trade hold time (min 15m, max 180m)
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={Boolean(excursionSettings.adaptiveLookahead)}
+                  onChange={(e) => updateExc({ adaptiveLookahead: e.target.checked })}
+                  color="primary"
+                />
+              </Box>
+            </Grid>
+
+            {/* Clamp to Session Close */}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  p: 1.5,
+                  borderRadius: 1.5,
+                  bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  border: 1,
+                  borderColor: 'divider',
+                  height: '100%',
+                }}
+              >
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Clamp to Session Close (3:30 PM IST)
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Prevent lookahead from crossing into overnight gap noise
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={excursionSettings.clampToSessionClose !== false}
+                  onChange={(e) => updateExc({ clampToSessionClose: e.target.checked })}
+                  color="primary"
+                />
+              </Box>
+            </Grid>
+          </Grid>
         </CardContent>
       </Card>
     </form>

@@ -1733,8 +1733,15 @@ export function TradeDetailPage() {
                 {/* Post-Exit Momentum & Runner Left on Table Alert */}
                 {exc.postExitRunBeyondExitPoints !== undefined && exc.postExitRunBeyondExitPoints > 0 && (
                   <Alert severity="info" sx={{ fontSize: '0.8125rem' }}>
-                    <strong>Post-Exit Momentum Tracking:</strong> Within {exc.postExitLookaheadMinutes || 60} minutes after your exit, market price ran an additional <strong>+{exc.postExitRunBeyondExitPoints} pts</strong> {exc.postExitRunBeyondExitR !== undefined ? `(+${exc.postExitRunBeyondExitR}R)` : ''} in your trade direction to peak at <strong>{exc.postExitPeakPrice}</strong>.
+                    <strong>Post-Exit Momentum Tracking:</strong> Within {exc.postExitLookaheadMinutes || 60} minutes after your exit, market price ran an additional <strong>+{exc.postExitRunBeyondExitPoints} pts</strong> {exc.postExitRunBeyondExitR !== undefined ? `(+${exc.postExitRunBeyondExitR}R)` : ''} in your trade direction to peak at <strong>{exc.postExitPeakPrice}</strong>{exc.postExitTimeToPeakMinutes !== undefined ? ` in ${exc.postExitTimeToPeakMinutes}m` : ''}.
                     {exc.rLeftOnTable !== undefined && exc.rLeftOnTable > 0 && ` Total potential runner left on table: +${exc.rLeftOnTable}R.`}
+                  </Alert>
+                )}
+
+                {/* Optimal Exit & Post-Exit Adverse Reversal */}
+                {exc.excursionFlags?.includes('OPTIMAL_EXIT') && (
+                  <Alert severity="success" sx={{ fontSize: '0.8125rem' }}>
+                    <strong>Mastery Exit Timing:</strong> Within {exc.postExitLookaheadMinutes || 60} minutes after your exit, market price suffered an adverse drop of <strong>-{exc.postExitAdverseBeyondExitPoints} pts</strong> {exc.postExitAdverseBeyondExitR !== undefined ? `(-${exc.postExitAdverseBeyondExitR}R)` : ''} to trough at <strong>{exc.postExitTroughPrice}</strong>. Your exit locked in profits right before the reversal.
                   </Alert>
                 )}
 
@@ -1742,6 +1749,13 @@ export function TradeDetailPage() {
                 {exc.reversedAfterStopHit && (
                   <Alert severity="warning" sx={{ fontSize: '0.8125rem' }}>
                     <strong>Stop-and-Reverse Evidence Detected:</strong> After your initial stop was hit, market price subsequently reversed and pushed back past your entry price into favorable territory. Consider reviewing if your initial stop was placed inside liquidity or set too tight.
+                  </Alert>
+                )}
+
+                {/* Shakeout Stop Alert */}
+                {exc.excursionFlags?.includes('SHAKEOUT_STOP') && !exc.reversedAfterStopHit && (
+                  <Alert severity="warning" sx={{ fontSize: '0.8125rem' }}>
+                    <strong>Post-Stop Shakeout Detected:</strong> After your stop was hit, market reversed and ran {exc.postStopMfeR !== undefined ? `+${exc.postStopMfeR}R` : `+${exc.postStopMfePoints} pts`} in your original planned direction. Review if your stop was placed inside a retail liquidity sweep.
                   </Alert>
                 )}
 
@@ -1755,7 +1769,7 @@ export function TradeDetailPage() {
                     </Box>
                     {exc.excursionFlags.map((flag: string) => {
                       let label = flag;
-                      let color: 'default' | 'warning' | 'info' | 'error' | 'secondary' = 'default';
+                      let color: 'default' | 'warning' | 'info' | 'error' | 'secondary' | 'success' = 'default';
                       if (flag === 'GAVE_BACK_PROFIT') {
                         label = 'Gave Back Profit (>50% MFE surrendered)';
                         color = 'warning';
@@ -1774,6 +1788,12 @@ export function TradeDetailPage() {
                       } else if (flag === 'PREMATURE_EXIT') {
                         label = 'Premature Exit (Ran ≥1.0R post-exit)';
                         color = 'info';
+                      } else if (flag === 'OPTIMAL_EXIT') {
+                        label = 'Optimal Exit (Top-tick precision)';
+                        color = 'success';
+                      } else if (flag === 'SHAKEOUT_STOP') {
+                        label = 'Shakeout Stop (Hit stop then ran to target)';
+                        color = 'secondary';
                       }
                       return (
                         <Chip

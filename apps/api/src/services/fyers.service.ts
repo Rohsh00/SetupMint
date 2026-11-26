@@ -2039,13 +2039,37 @@ export class FyersService {
     // Retrieve user settings & instrument specs for precision
     const user = await User.findById(uId).select('patternDetectionSettings').lean();
     const excursionSettings = (user as any)?.patternDetectionSettings?.excursionSettings;
-    const postExitLookaheadMinutes = excursionSettings?.postExitLookaheadMinutes ?? 60;
+    const isAdaptive = excursionSettings?.adaptiveLookahead ?? false;
+    let postExitLookaheadMinutes = excursionSettings?.postExitLookaheadMinutes ?? 60;
+
+    if (isAdaptive && trade.entryTime && trade.exitTime) {
+      const durationMins = Math.max(1, Math.round(moment(trade.exitTime).diff(moment(trade.entryTime), 'minutes', true)));
+      postExitLookaheadMinutes = Math.min(180, Math.max(15, Math.round(durationMins * 1.5)));
+    }
+
+    // Session boundary clamping: prevent post-exit lookahead from bleeding past session close (e.g. 15:30 IST for NSE)
+    let sessionCloseDate: Date | undefined;
+    if (excursionSettings?.clampToSessionClose !== false && trade.exitTime) {
+      const exitIst = moment(trade.exitTime).utcOffset('+05:30');
+      const sessionCloseIst = exitIst.clone().hour(15).minute(30).second(0).millisecond(0);
+      if (exitIst.isBefore(sessionCloseIst)) {
+        sessionCloseDate = sessionCloseIst.toDate();
+        const minsToClose = Math.max(1, sessionCloseIst.diff(exitIst, 'minutes'));
+        if (postExitLookaheadMinutes > minsToClose) {
+          postExitLookaheadMinutes = minsToClose;
+        }
+      }
+    }
 
     // 1m resolution prioritized; fallback to 5m / D if 1m is outside lookback window
     let resolution = '1';
     let barMinutes = 1;
     let from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
-    let to = moment(trade.exitTime).add(Math.max(5 * barMinutes, postExitLookaheadMinutes), 'minutes').toDate();
+    let toMoment = moment(trade.exitTime).add(Math.max(5 * barMinutes, postExitLookaheadMinutes), 'minutes');
+    if (sessionCloseDate && toMoment.isAfter(sessionCloseDate)) {
+      toMoment = moment(sessionCloseDate);
+    }
+    let to = toMoment.toDate();
 
     let candleResult = await MarketDataService.getCandlesWithFallback({
       trade,
@@ -2175,6 +2199,9 @@ export class FyersService {
       tradeManagementPlan: (trade as any).tradeManagementPlan,
       hasTrailedStop: (trade.calculated?.stopMoveSummary?.trailedCount || 0) > 0,
       realizedR: trade.calculated?.realizedRMultiple,
+      postExitLookaheadMinutes,
+      adaptiveLookahead: excursionSettings?.adaptiveLookahead,
+      sessionCloseTime: sessionCloseDate,
     });
 
     const source =
@@ -2232,6 +2259,17 @@ export class FyersService {
       postExitCandleCount: result.postExitCandleCount,
       postExitRunBeyondExitPoints: result.postExitRunBeyondExitPoints,
       postExitRunBeyondExitR: result.postExitRunBeyondExitR,
+      postExitMaePoints: result.postExitMaePoints,
+      postExitMaeAmount: result.postExitMaeAmount,
+      postExitMaeR: result.postExitMaeR,
+      postExitTroughPrice: result.postExitTroughPrice,
+      postExitTroughTime: result.postExitTroughTime,
+      postExitAdverseBeyondExitPoints: result.postExitAdverseBeyondExitPoints,
+      postExitAdverseBeyondExitR: result.postExitAdverseBeyondExitR,
+      postExitTimeToPeakMinutes: result.postExitTimeToPeakMinutes,
+      postExitVelocityRPerMin: result.postExitVelocityRPerMin,
+      postStopMfePoints: result.postStopMfePoints,
+      postStopMfeR: result.postStopMfeR,
     };
 
     await trade.save();

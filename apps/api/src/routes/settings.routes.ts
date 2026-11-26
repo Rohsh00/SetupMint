@@ -696,7 +696,7 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     try {
       await execFileAsync(process.execPath, [scriptPath], {
         cwd: path.dirname(path.dirname(scriptPath)),
-        timeout: 120_000,
+        timeout: 300_000,
       });
       BackupStatusService.resetCache();
       const backup = await BackupStatusService.getStatus();

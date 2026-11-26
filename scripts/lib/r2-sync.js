@@ -118,6 +118,7 @@ export async function syncScreenshotsIncremental(options) {
   let newCopiedCount = 0;
   let totalBytes = 0;
   let skippedCount = 0;
+  let processedCount = 0;
 
   const currentLiveKeySet = new Set(requiredKeys);
 
@@ -128,15 +129,50 @@ export async function syncScreenshotsIncremental(options) {
     }
   }
 
+  // Proactively discover existing keys in the live S3 bucket via ListObjectsV2
+  // to instantly filter out missing/deleted files without triggering 404s and retries.
+  let liveExistingKeySet = null;
+  if (liveS3Client && liveBucket && !dryRun) {
+    try {
+      liveExistingKeySet = new Set();
+      let continuationToken = undefined;
+      do {
+        const res = await liveS3Client.send(
+          new ListObjectsV2Command({
+            Bucket: liveBucket,
+            Prefix: livePrefix || undefined,
+            ContinuationToken: continuationToken,
+            MaxKeys: 1000,
+          })
+        );
+        for (const item of res.Contents || []) {
+          if (item.Key) {
+            const relKey =
+              livePrefix && item.Key.startsWith(`${livePrefix}/`)
+                ? item.Key.slice(livePrefix.length + 1)
+                : item.Key;
+            liveExistingKeySet.add(relKey);
+          }
+        }
+        continuationToken = res.NextContinuationToken;
+      } while (continuationToken);
+    } catch {
+      // In test suites or restricted IAM environments where ListObjects is not mocked/allowed,
+      // fallback smoothly to per-key checking.
+      liveExistingKeySet = null;
+    }
+  }
+
   for (const key of requiredKeys) {
     if (!key) continue;
+    processedCount++;
 
     const liveS3Key = livePrefix ? `${livePrefix}/${key}` : key;
     const backupS3Key = `${backupPrefix}/screenshots/${key}`;
     const localCachedPath = cacheDir ? path.join(cacheDir, key) : null;
 
+    let alreadyInLocalCache = localCachedPath && fs.existsSync(localCachedPath);
     const alreadyInBackup = Boolean(state.copiedKeys[key]);
-    const alreadyInLocalCache = localCachedPath && fs.existsSync(localCachedPath);
     const isKnownMissing = Boolean(state.missingKeys?.[key]);
 
     if (alreadyInBackup && alreadyInLocalCache) {
@@ -147,6 +183,14 @@ export async function syncScreenshotsIncremental(options) {
     }
 
     if (isKnownMissing && !alreadyInLocalCache) {
+      skippedCount++;
+      continue;
+    }
+
+    // Proactively skip keys known to be absent from live bucket listing
+    if (liveExistingKeySet !== null && !liveExistingKeySet.has(key)) {
+      if (!state.missingKeys) state.missingKeys = {};
+      state.missingKeys[key] = { lastAttemptAt: new Date().toISOString() };
       skippedCount++;
       continue;
     }
@@ -197,6 +241,13 @@ export async function syncScreenshotsIncremental(options) {
               })
             );
             copySuccess = true;
+
+            // Cache immediately to disk so we don't re-download in step 2
+            if (localCachedPath && !alreadyInLocalCache) {
+              fs.writeFileSync(localCachedPath, buf);
+              totalBytes += buf.length;
+              alreadyInLocalCache = true;
+            }
           }
         } catch (err) {
           console.warn(`[Screenshot Sync Warning] Could not copy file "${key}" to backup bucket: ${err.message}`);
@@ -248,6 +299,11 @@ export async function syncScreenshotsIncremental(options) {
       }
     } else if (localCachedPath && alreadyInLocalCache) {
       totalBytes += fs.statSync(localCachedPath).size;
+    }
+
+    // Persist progress periodically to avoid lost work on network drop
+    if (processedCount % 25 === 0 && stateFilePath && !dryRun) {
+      saveScreenshotState(stateFilePath, state);
     }
   }
 

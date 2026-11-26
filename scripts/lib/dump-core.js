@@ -49,7 +49,24 @@ export async function executeDatabaseDump(options) {
 
   let shouldDisconnect = false;
   if (mongoose.connection.readyState !== 1) {
-    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
+    let connected = false;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
+        connected = true;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 3) {
+          console.warn(`[Backup Dump] MongoDB connection attempt ${attempt} failed (${err.message}). Retrying in 5s...`);
+          await new Promise((res) => setTimeout(res, 5000));
+        }
+      }
+    }
+    if (!connected) {
+      throw lastErr || new Error('Failed to connect to MongoDB');
+    }
     shouldDisconnect = true;
   }
 
@@ -107,6 +124,13 @@ export async function executeDatabaseDump(options) {
   manifest.screenshotCount = requiredKeys.length;
 
   console.log(`[Backup Dump] Checking ${requiredKeys.length} screenshot attachments...`);
+
+  // Disconnect from MongoDB immediately so that the connection is not held open
+  // during subsequent S3/R2 synchronization, archive packaging, or encryption.
+  if (shouldDisconnect) {
+    await mongoose.disconnect();
+    shouldDisconnect = false;
+  }
 
   if (liveS3Config && liveS3Config.bucket && liveS3Config.endpoint) {
     const liveClockOffsetMs = await resolveClockOffsetMs(liveS3Config.endpoint);

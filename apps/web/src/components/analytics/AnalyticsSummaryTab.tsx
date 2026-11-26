@@ -67,6 +67,7 @@ export function AnalyticsSummaryTab({
 
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
+  const [playbookView, setPlaybookView] = useState<'ALL' | 'DOS' | 'DONTS'>('ALL');
 
   const report = summaryData?.data || summaryData;
 
@@ -469,262 +470,384 @@ export function AnalyticsSummaryTab({
         </Box>
       )}
 
-      {/* 3. SPLIT MATRIX: THE DO's (Edge) vs THE DON'Ts (Bans) */}
-      <Grid container spacing={3}>
-        {/* LEFT COLUMN: THE "DO's" */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CheckCircleRoundedIcon sx={{ color: isDark ? '#34D399' : '#059669' }} />
-              <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>
-                The "DO's" — Pillars of Edge
-              </Typography>
-            </Box>
-            <Chip
-              label={`${dos.length} Verified Habits`}
-              size="small"
-              sx={{ fontWeight: 700, fontSize: '11px', bgcolor: alpha('#10B981', 0.15), color: isDark ? '#34D399' : '#059669' }}
-            />
+      {/* 3. EMPIRICAL PLAYBOOK RULES: BALANCED MATRIX (THE DO's & THE DON'Ts) */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Playbook Header & Segmented Filter Bar */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            justifyContent: 'space-between',
+            gap: 2,
+            pt: 0.5,
+          }}
+        >
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>
+              Execution Playbook Matrix
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Evidence-based trading guidelines and risk boundaries derived from historical execution data
+            </Typography>
           </Box>
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {dos.map((item: any) => (
-              <Card
-                key={item.id}
-                sx={{
-                  p: 2.25,
-                  borderRadius: 2.5,
-                  border: `1px solid ${alpha('#10B981', isDark ? 0.25 : 0.2)}`,
-                  bgcolor: isDark ? alpha('#064E3B', 0.12) : alpha('#ECFDF5', 0.6),
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    borderColor: '#10B981',
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.12)',
-                  },
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, mb: 1 }}>
-                  <Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
-                      <Chip
-                        label={item.actionTag || 'EDGE'}
-                        size="small"
-                        sx={{
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          height: 20,
-                          bgcolor: alpha('#10B981', 0.2),
-                          color: isDark ? '#34D399' : '#047857',
-                        }}
-                      />
-                      <Chip
-                        label={`${item.confidence} CONFIDENCE`}
-                        size="small"
-                        sx={{
-                          fontSize: '9.5px',
-                          fontWeight: 700,
-                          height: 18,
-                          bgcolor: alpha(muiTheme.palette.text.primary, 0.06),
-                        }}
-                      />
-                    </Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#34D399' : '#065F46', fontSize: '14.5px' }}>
-                      {item.title}
-                    </Typography>
-                  </Box>
+          <Box
+            sx={{
+              display: 'inline-flex',
+              p: 0.5,
+              borderRadius: 2,
+              bgcolor: isDark ? alpha('#000000', 0.3) : alpha('#000000', 0.04),
+              border: `1px solid ${muiTheme.palette.divider}`,
+              gap: 0.5,
+            }}
+          >
+            <Button
+              size="small"
+              onClick={() => setPlaybookView('ALL')}
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                fontSize: '0.75rem',
+                fontWeight: playbookView === 'ALL' ? 700 : 500,
+                textTransform: 'none',
+                borderRadius: 1.5,
+                bgcolor: playbookView === 'ALL'
+                  ? (isDark ? alpha('#FFFFFF', 0.1) : '#FFFFFF')
+                  : 'transparent',
+                color: playbookView === 'ALL' ? 'text.primary' : 'text.secondary',
+                boxShadow: playbookView === 'ALL' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              All Directives ({dos.length + donts.length})
+            </Button>
+            <Button
+              size="small"
+              onClick={() => setPlaybookView('DOS')}
+              startIcon={<CheckCircleRoundedIcon sx={{ fontSize: '14px !important', color: isDark ? '#34D399' : '#059669' }} />}
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                fontSize: '0.75rem',
+                fontWeight: playbookView === 'DOS' ? 700 : 500,
+                textTransform: 'none',
+                borderRadius: 1.5,
+                bgcolor: playbookView === 'DOS'
+                  ? (isDark ? alpha('#10B981', 0.2) : alpha('#10B981', 0.12))
+                  : 'transparent',
+                color: playbookView === 'DOS' ? (isDark ? '#34D399' : '#059669') : 'text.secondary',
+                boxShadow: playbookView === 'DOS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              Pillars of Edge ({dos.length})
+            </Button>
+            <Button
+              size="small"
+              onClick={() => setPlaybookView('DONTS')}
+              startIcon={<CancelRoundedIcon sx={{ fontSize: '14px !important', color: isDark ? '#F87171' : '#DC2626' }} />}
+              sx={{
+                px: 1.5,
+                py: 0.5,
+                fontSize: '0.75rem',
+                fontWeight: playbookView === 'DONTS' ? 700 : 500,
+                textTransform: 'none',
+                borderRadius: 1.5,
+                bgcolor: playbookView === 'DONTS'
+                  ? (isDark ? alpha('#EF4444', 0.2) : alpha('#EF4444', 0.12))
+                  : 'transparent',
+                color: playbookView === 'DONTS' ? (isDark ? '#F87171' : '#DC2626') : 'text.secondary',
+                boxShadow: playbookView === 'DONTS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              }}
+            >
+              Guardrails & Bans ({donts.length})
+            </Button>
+          </Box>
+        </Box>
 
-                  <Chip
-                    label={item.badge}
-                    size="small"
-                    sx={{
-                      fontWeight: 800,
-                      fontSize: '11px',
-                      bgcolor: isDark ? '#064E3B' : '#D1FAE5',
-                      color: isDark ? '#6EE7B7' : '#065F46',
-                      border: `1px solid ${alpha('#10B981', 0.3)}`,
-                    }}
-                  />
-                </Box>
-
-                <Typography variant="body2" sx={{ fontSize: '13px', lineHeight: 1.5, mb: 1.5, color: 'text.primary' }}>
-                  {item.instruction}
+        {/* SECTION 3A: THE "DO's" (PILLARS OF EDGE) */}
+        {(playbookView === 'ALL' || playbookView === 'DOS') && (
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CheckCircleRoundedIcon sx={{ color: isDark ? '#34D399' : '#059669', fontSize: 20 }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>
+                  The "DO's" — Pillars of Edge
                 </Typography>
-
-                {item.rationales && item.rationales.length > 0 && (
-                  <Box sx={{ pl: 1.5, borderLeft: `2px solid ${alpha('#10B981', 0.4)}`, mb: 1.5 }}>
-                    {item.rationales.map((r: string, rIdx: number) => (
-                      <Typography key={rIdx} variant="caption" sx={{ display: 'block', fontSize: '11.5px', color: 'text.secondary', lineHeight: 1.4 }}>
-                        • {r}
-                      </Typography>
-                    ))}
-                  </Box>
-                )}
-
-                {/* Metrics Footer */}
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, borderTop: `1px dashed ${alpha('#10B981', 0.2)}` }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    {item.metrics?.winRate !== undefined && (
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: isDark ? '#6EE7B7' : '#047857' }}>
-                        WR: {item.metrics.winRate}%
-                      </Typography>
-                    )}
-                    {item.metrics?.profitFactor !== undefined && (
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                        PF: {item.metrics.profitFactor >= 999 ? '∞' : item.metrics.profitFactor}
-                      </Typography>
-                    )}
-                    {item.metrics?.expectancyR !== undefined && (
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                        Exp: +{item.metrics.expectancyR}R
-                      </Typography>
-                    )}
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '10.5px' }}>
-                      (N={item.metrics?.sampleSize ?? 0})
-                    </Typography>
-                  </Box>
-
-                  {item.category === 'INSTRUMENT' && onSelectSymbol && (
-                    <Button
-                      size="small"
-                      onClick={() => onSelectSymbol(item.title.split(': Focus on ')[1] || 'ALL')}
-                      endIcon={<OpenInNewRoundedIcon sx={{ fontSize: '14px !important' }} />}
-                      sx={{ fontSize: '11px', textTransform: 'none', p: 0.5 }}
-                    >
-                      Filter Asset
-                    </Button>
-                  )}
-                </Box>
-              </Card>
-            ))}
-          </Box>
-        </Grid>
-
-        {/* RIGHT COLUMN: THE "DON'Ts" */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <CancelRoundedIcon sx={{ color: isDark ? '#F87171' : '#DC2626' }} />
-              <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>
-                The "DON'Ts" — Guardrails & Bans
-              </Typography>
+              </Box>
+              <Chip
+                label={`${dos.length} Verified Habit${dos.length === 1 ? '' : 's'}`}
+                size="small"
+                sx={{ fontWeight: 700, fontSize: '11px', bgcolor: alpha('#10B981', 0.15), color: isDark ? '#34D399' : '#059669' }}
+              />
             </Box>
-            <Chip
-              label={`${donts.length} Critical Stops`}
-              size="small"
-              sx={{ fontWeight: 700, fontSize: '11px', bgcolor: alpha('#EF4444', 0.15), color: isDark ? '#F87171' : '#DC2626' }}
-            />
-          </Box>
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {donts.map((item: any) => {
-              const isCrit = item.severity === 'CRITICAL';
-              return (
-                <Card
-                  key={item.id}
-                  sx={{
-                    p: 2.25,
-                    borderRadius: 2.5,
-                    border: `1px solid ${alpha('#EF4444', isDark ? 0.25 : 0.2)}`,
-                    bgcolor: isDark ? alpha('#7F1D1D', 0.12) : alpha('#FEF2F2', 0.6),
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      borderColor: '#EF4444',
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 4px 14px rgba(239, 68, 68, 0.12)',
-                    },
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, mb: 1 }}>
-                    <Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
-                        <Chip
-                          label={item.actionTag || 'HARD STOP'}
-                          size="small"
-                          sx={{
-                            fontSize: '10px',
-                            fontWeight: 800,
-                            height: 20,
-                            bgcolor: alpha('#EF4444', 0.2),
-                            color: isDark ? '#F87171' : '#B91C1C',
-                          }}
-                        />
-                        {isCrit && (
+            {dos.length > 0 ? (
+              <Grid container spacing={2}>
+                {dos.map((item: any) => (
+                  <Grid size={{ xs: 12, sm: 6, lg: dos.length === 1 ? 12 : dos.length === 2 ? 6 : 4 }} key={item.id}>
+                    <Card
+                      sx={{
+                        p: 2.25,
+                        borderRadius: 2.5,
+                        border: `1px solid ${alpha('#10B981', isDark ? 0.25 : 0.2)}`,
+                        bgcolor: isDark ? alpha('#064E3B', 0.12) : alpha('#ECFDF5', 0.6),
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          borderColor: '#10B981',
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 4px 14px rgba(16, 185, 129, 0.12)',
+                        },
+                      }}
+                    >
+                      <Box>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, mb: 1 }}>
+                          <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
+                              <Chip
+                                label={item.actionTag || 'EDGE'}
+                                size="small"
+                                sx={{
+                                  fontSize: '10px',
+                                  fontWeight: 800,
+                                  height: 20,
+                                  bgcolor: alpha('#10B981', 0.2),
+                                  color: isDark ? '#34D399' : '#047857',
+                                }}
+                              />
+                              <Chip
+                                label={`${item.confidence} CONFIDENCE`}
+                                size="small"
+                                sx={{
+                                  fontSize: '9.5px',
+                                  fontWeight: 700,
+                                  height: 18,
+                                  bgcolor: alpha(muiTheme.palette.text.primary, 0.06),
+                                }}
+                              />
+                            </Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#34D399' : '#065F46', fontSize: '14.5px' }}>
+                              {item.title}
+                            </Typography>
+                          </Box>
+
                           <Chip
-                            label="CRITICAL BLEED"
+                            label={item.badge}
                             size="small"
                             sx={{
-                              fontSize: '9.5px',
                               fontWeight: 800,
-                              height: 18,
-                              bgcolor: isDark ? '#7F1D1D' : '#FEE2E2',
-                              color: isDark ? '#FCA5A5' : '#991B1B',
+                              fontSize: '11px',
+                              bgcolor: isDark ? '#064E3B' : '#D1FAE5',
+                              color: isDark ? '#6EE7B7' : '#065F46',
+                              border: `1px solid ${alpha('#10B981', 0.3)}`,
                             }}
                           />
+                        </Box>
+
+                        <Typography variant="body2" sx={{ fontSize: '13px', lineHeight: 1.5, mb: 1.5, color: 'text.primary' }}>
+                          {item.instruction}
+                        </Typography>
+
+                        {item.rationales && item.rationales.length > 0 && (
+                          <Box sx={{ pl: 1.5, borderLeft: `2px solid ${alpha('#10B981', 0.4)}`, mb: 1.5 }}>
+                            {item.rationales.map((r: string, rIdx: number) => (
+                              <Typography key={rIdx} variant="caption" sx={{ display: 'block', fontSize: '11.5px', color: 'text.secondary', lineHeight: 1.4 }}>
+                                • {r}
+                              </Typography>
+                            ))}
+                          </Box>
                         )}
                       </Box>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#F87171' : '#991B1B', fontSize: '14.5px' }}>
-                        {item.title}
-                      </Typography>
-                    </Box>
 
-                    <Chip
-                      label={item.badge}
-                      size="small"
-                      sx={{
-                        fontWeight: 800,
-                        fontSize: '11px',
-                        bgcolor: isDark ? '#7F1D1D' : '#FEE2E2',
-                        color: isDark ? '#FCA5A5' : '#991B1B',
-                        border: `1px solid ${alpha('#EF4444', 0.3)}`,
-                      }}
-                    />
-                  </Box>
+                      {/* Metrics Footer */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, borderTop: `1px dashed ${alpha('#10B981', 0.2)}`, mt: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                          {item.metrics?.winRate !== undefined && (
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: isDark ? '#6EE7B7' : '#047857' }}>
+                              WR: {item.metrics.winRate}%
+                            </Typography>
+                          )}
+                          {item.metrics?.profitFactor !== undefined && (
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                              PF: {item.metrics.profitFactor >= 999 ? '∞' : item.metrics.profitFactor}
+                            </Typography>
+                          )}
+                          {item.metrics?.expectancyR !== undefined && (
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                              Exp: +{item.metrics.expectancyR}R
+                            </Typography>
+                          )}
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '10.5px' }}>
+                            (N={item.metrics?.sampleSize ?? 0})
+                          </Typography>
+                        </Box>
 
-                  <Typography variant="body2" sx={{ fontSize: '13px', lineHeight: 1.5, mb: 1.5, color: 'text.primary' }}>
-                    {item.instruction}
-                  </Typography>
-
-                  {item.rationales && item.rationales.length > 0 && (
-                    <Box sx={{ pl: 1.5, borderLeft: `2px solid ${alpha('#EF4444', 0.4)}`, mb: 1.5 }}>
-                      {item.rationales.map((r: string, rIdx: number) => (
-                        <Typography key={rIdx} variant="caption" sx={{ display: 'block', fontSize: '11.5px', color: 'text.secondary', lineHeight: 1.4 }}>
-                          • {r}
-                        </Typography>
-                      ))}
-                    </Box>
-                  )}
-
-                  {/* Metrics Footer */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, borderTop: `1px dashed ${alpha('#EF4444', 0.2)}` }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      {item.metrics?.lossRate !== undefined && (
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: isDark ? '#FCA5A5' : '#B91C1C' }}>
-                          Loss Rate: {item.metrics.lossRate}%
-                        </Typography>
-                      )}
-                      {item.metrics?.occurrences !== undefined && (
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-                          Violations: {item.metrics.occurrences}x
-                        </Typography>
-                      )}
-                    </Box>
-
-                    <Button
-                      size="small"
-                      onClick={() => navigate('/trades')}
-                      endIcon={<OpenInNewRoundedIcon sx={{ fontSize: '14px !important' }} />}
-                      sx={{ fontSize: '11px', textTransform: 'none', p: 0.5, color: 'text.secondary' }}
-                    >
-                      Audit Trades
-                    </Button>
-                  </Box>
-                </Card>
-              );
-            })}
+                        {item.category === 'INSTRUMENT' && onSelectSymbol && (
+                          <Button
+                            size="small"
+                            onClick={() => onSelectSymbol(item.title.split(': Focus on ')[1] || 'ALL')}
+                            endIcon={<OpenInNewRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                            sx={{ fontSize: '11px', textTransform: 'none', p: 0.5 }}
+                          >
+                            Filter Asset
+                          </Button>
+                        )}
+                      </Box>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            ) : (
+              <Alert severity="info" sx={{ borderRadius: 2 }}>
+                No positive edge habits identified yet in this dataset. Log more closed trades with confirmed edge.
+              </Alert>
+            )}
           </Box>
-        </Grid>
-      </Grid>
+        )}
+
+        {/* SECTION 3B: THE "DON'Ts" (GUARDRAILS & BANS) */}
+        {(playbookView === 'ALL' || playbookView === 'DONTS') && (
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CancelRoundedIcon sx={{ color: isDark ? '#F87171' : '#DC2626', fontSize: 20 }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: '-0.01em' }}>
+                  The "DON'Ts" — Guardrails, Toxic Windows & Bans
+                </Typography>
+              </Box>
+              <Chip
+                label={`${donts.length} Critical Stop${donts.length === 1 ? '' : 's'}`}
+                size="small"
+                sx={{ fontWeight: 700, fontSize: '11px', bgcolor: alpha('#EF4444', 0.15), color: isDark ? '#F87171' : '#DC2626' }}
+              />
+            </Box>
+
+            {donts.length > 0 ? (
+              <Grid container spacing={2}>
+                {donts.map((item: any) => {
+                  const isCrit = item.severity === 'CRITICAL';
+                  return (
+                    <Grid size={{ xs: 12, sm: 6, lg: 4 }} key={item.id}>
+                      <Card
+                        sx={{
+                          p: 2.25,
+                          borderRadius: 2.5,
+                          border: `1px solid ${alpha('#EF4444', isDark ? 0.25 : 0.2)}`,
+                          bgcolor: isDark ? alpha('#7F1D1D', 0.12) : alpha('#FEF2F2', 0.6),
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            borderColor: '#EF4444',
+                            transform: 'translateY(-2px)',
+                            boxShadow: '0 4px 14px rgba(239, 68, 68, 0.12)',
+                          },
+                        }}
+                      >
+                        <Box>
+                          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, mb: 1 }}>
+                            <Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
+                                <Chip
+                                  label={item.actionTag || 'HARD STOP'}
+                                  size="small"
+                                  sx={{
+                                    fontSize: '10px',
+                                    fontWeight: 800,
+                                    height: 20,
+                                    bgcolor: alpha('#EF4444', 0.2),
+                                    color: isDark ? '#F87171' : '#B91C1C',
+                                  }}
+                                />
+                                {isCrit && (
+                                  <Chip
+                                    label="CRITICAL BLEED"
+                                    size="small"
+                                    sx={{
+                                      fontSize: '9.5px',
+                                      fontWeight: 800,
+                                      height: 18,
+                                      bgcolor: isDark ? '#7F1D1D' : '#FEE2E2',
+                                      color: isDark ? '#FCA5A5' : '#991B1B',
+                                    }}
+                                  />
+                                )}
+                              </Box>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: isDark ? '#F87171' : '#991B1B', fontSize: '14.5px' }}>
+                                {item.title}
+                              </Typography>
+                            </Box>
+
+                            <Chip
+                              label={item.badge}
+                              size="small"
+                              sx={{
+                                fontWeight: 800,
+                                fontSize: '11px',
+                                bgcolor: isDark ? '#7F1D1D' : '#FEE2E2',
+                                color: isDark ? '#FCA5A5' : '#991B1B',
+                                border: `1px solid ${alpha('#EF4444', 0.3)}`,
+                              }}
+                            />
+                          </Box>
+
+                          <Typography variant="body2" sx={{ fontSize: '13px', lineHeight: 1.5, mb: 1.5, color: 'text.primary' }}>
+                            {item.instruction}
+                          </Typography>
+
+                          {item.rationales && item.rationales.length > 0 && (
+                            <Box sx={{ pl: 1.5, borderLeft: `2px solid ${alpha('#EF4444', 0.4)}`, mb: 1.5 }}>
+                              {item.rationales.map((r: string, rIdx: number) => (
+                                <Typography key={rIdx} variant="caption" sx={{ display: 'block', fontSize: '11.5px', color: 'text.secondary', lineHeight: 1.4 }}>
+                                  • {r}
+                                </Typography>
+                              ))}
+                            </Box>
+                          )}
+                        </Box>
+
+                        {/* Metrics Footer */}
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, borderTop: `1px dashed ${alpha('#EF4444', 0.2)}`, mt: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                            {item.metrics?.lossRate !== undefined && (
+                              <Typography variant="caption" sx={{ fontWeight: 700, color: isDark ? '#FCA5A5' : '#B91C1C' }}>
+                                Loss Rate: {item.metrics.lossRate}%
+                              </Typography>
+                            )}
+                            {item.metrics?.occurrences !== undefined && (
+                              <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                Violations: {item.metrics.occurrences}x
+                              </Typography>
+                            )}
+                          </Box>
+
+                          <Button
+                            size="small"
+                            onClick={() => navigate('/trades')}
+                            endIcon={<OpenInNewRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                            sx={{ fontSize: '11px', textTransform: 'none', p: 0.5, color: 'text.secondary' }}
+                          >
+                            Audit Trades
+                          </Button>
+                        </Box>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            ) : (
+              <Alert severity="success" sx={{ borderRadius: 2 }}>
+                Zero behavioral leaks, session bans, or toxic windows detected in this dataset.
+              </Alert>
+            )}
+          </Box>
+        )}
+      </Box>
 
       {/* 4. STATISTICAL CIRCUIT BREAKERS */}
       {circuitBreakers && (

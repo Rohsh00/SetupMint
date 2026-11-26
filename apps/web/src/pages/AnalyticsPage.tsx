@@ -671,12 +671,15 @@ export function AnalyticsPage() {
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 0.75,
+          gap: 1,
           overflowX: 'auto',
+          width: '100%',
           pb: 1.25,
+          pt: 0.25,
           borderBottom: `1px solid ${muiTheme.palette.divider}`,
           scrollbarWidth: 'none',
           '&::-webkit-scrollbar': { display: 'none' },
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {[
@@ -712,12 +715,15 @@ export function AnalyticsPage() {
                     ? (isDark ? '#34D399' : '#059669')
                     : (isDark ? '#94A3B8' : '#64748B'),
                   transition: 'color 0.15s ease',
+                  mr: -0.25,
                 },
               })}
               sx={{
-                px: 1.75,
-                py: 0.7,
-                borderRadius: 2,
+                flexShrink: 0,
+                minWidth: 'max-content',
+                px: 2,
+                py: 0.8,
+                borderRadius: '10px',
                 fontSize: '0.8125rem',
                 fontWeight: isActive ? 700 : 500,
                 textTransform: 'none',
@@ -725,27 +731,27 @@ export function AnalyticsPage() {
                 letterSpacing: '-0.01em',
                 transition: 'all 0.18s cubic-bezier(0.4, 0, 0.2, 1)',
                 backgroundColor: isActive
-                  ? (isDark ? 'rgba(16, 185, 129, 0.14)' : 'rgba(16, 185, 129, 0.10)')
-                  : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)'),
+                  ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.10)')
+                  : (isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)'),
                 color: isActive
                   ? (isDark ? '#34D399' : '#059669')
                   : muiTheme.palette.text.secondary,
                 border: isActive
-                  ? `1px solid ${isDark ? 'rgba(52, 211, 153, 0.35)' : 'rgba(5, 150, 105, 0.3)'}`
-                  : `1px solid ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.06)'}`,
+                  ? `1px solid ${isDark ? 'rgba(52, 211, 153, 0.45)' : 'rgba(5, 150, 105, 0.35)'}`
+                  : `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)'}`,
                 boxShadow: isActive
                   ? (isDark ? '0 0 14px rgba(16, 185, 129, 0.12)' : '0 1px 3px rgba(5, 150, 105, 0.08)')
                   : 'none',
                 '&:hover': {
                   backgroundColor: isActive
-                    ? (isDark ? 'rgba(16, 185, 129, 0.20)' : 'rgba(16, 185, 129, 0.14)')
-                    : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)'),
+                    ? (isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.15)')
+                    : (isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(15, 23, 42, 0.06)'),
                   color: isActive
                     ? (isDark ? '#34D399' : '#059669')
                     : muiTheme.palette.text.primary,
                   borderColor: isActive
-                    ? (isDark ? 'rgba(52, 211, 153, 0.45)' : 'rgba(5, 150, 105, 0.4)')
-                    : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.12)'),
+                    ? (isDark ? 'rgba(52, 211, 153, 0.55)' : 'rgba(5, 150, 105, 0.45)')
+                    : (isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(15, 23, 42, 0.15)'),
                 },
               }}
             >

@@ -423,7 +423,7 @@ export function LiveMarketChart({
               </Box>
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                {liveFloatingPnl !== null && (
+                {typeof liveFloatingPnl === 'number' && !isNaN(liveFloatingPnl) && (
                   <Typography
                     variant="caption"
                     sx={{
@@ -434,7 +434,7 @@ export function LiveMarketChart({
                     }}
                   >
                     {liveFloatingPnl >= 0 ? '+' : ''}{currSym}{liveFloatingPnl.toFixed(2)}
-                    {liveR !== null ? ` (${liveR >= 0 ? '+' : ''}${liveR.toFixed(1)}R)` : ''}
+                    {typeof liveR === 'number' && !isNaN(liveR) ? ` (${liveR >= 0 ? '+' : ''}${liveR.toFixed(1)}R)` : ''}
                   </Typography>
                 )}
                 <IconButton
@@ -472,7 +472,7 @@ export function LiveMarketChart({
                     }}
                   >
                     {stopLoss ? `${currSym}${formatPrice(stopLoss)}` : 'None'}
-                    {distToSl !== null ? ` (${distToSl.toFixed(2)} pts)` : ''}
+                    {typeof distToSl === 'number' && !isNaN(distToSl) ? ` (${distToSl.toFixed(2)} pts)` : ''}
                   </Typography>
                 </Box>
 

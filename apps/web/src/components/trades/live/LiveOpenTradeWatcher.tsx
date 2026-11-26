@@ -761,7 +761,7 @@ export function LiveOpenTradeWatcher({
       quantity: activeTerminalPosition.quantity,
       currentLtp: activeTerminalPosition.currentLtp,
       dailyBreachPrice:
-        isPropMode && propRemainingBuffer !== null && activeTerminalPosition.quantity
+        isPropMode && typeof propRemainingBuffer === 'number' && activeTerminalPosition.quantity
           ? activeTerminalPosition.direction === 'LONG'
             ? activeTerminalPosition.currentLtp - propRemainingBuffer / activeTerminalPosition.quantity
             : activeTerminalPosition.currentLtp + propRemainingBuffer / activeTerminalPosition.quantity
@@ -2567,7 +2567,7 @@ export function LiveOpenTradeWatcher({
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Chip
                           size="small"
-                          label={`Risk Guard: Armed (${propRemainingBuffer !== null ? `$${propRemainingBuffer.toFixed(2)} buffer` : 'Active'})`}
+                          label={`Risk Guard: Armed (${typeof propRemainingBuffer === 'number' ? `$${propRemainingBuffer.toFixed(2)} buffer` : 'Active'})`}
                           sx={{
                             height: 22,
                             fontSize: '0.68rem',
@@ -4015,7 +4015,7 @@ export function LiveOpenTradeWatcher({
                             </Box>
 
                             <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.74rem', color: threat.color }}>
-                              {pos.distanceToStopPoints !== null
+                              {typeof pos.distanceToStopPoints === 'number'
                                 ? `${pos.distanceToStopPoints.toFixed(1)} pts away (${pos.distanceToStopTicks ?? 0} ticks)`
                                 : 'No stop loss'}
                             </Typography>
@@ -4097,7 +4097,7 @@ export function LiveOpenTradeWatcher({
                                       {initialRiskAmount !== null ? formatCurrency(initialRiskAmount, (pos as any).currency || watcherCurrency) : '—'}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
-                                      {initialRiskPts !== null ? `${initialRiskPts.toFixed(1)} pts risk` : 'No stop set'}
+                                      {typeof initialRiskPts === 'number' ? `${initialRiskPts.toFixed(1)} pts risk` : 'No stop set'}
                                     </Typography>
                                   </Box>
                                 </Grid>
@@ -4989,7 +4989,7 @@ export function LiveOpenTradeWatcher({
 
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.75 }}>
                     <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums', fontSize: '0.72rem' }}>
-                      LTP {currSym}{pos.currentLtp.toFixed(2)} · {pos.unrealizedR !== null ? `${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR.toFixed(2)}R` : '—'}
+                      LTP {currSym}{typeof pos.currentLtp === 'number' ? pos.currentLtp.toFixed(2) : '—'} · {typeof pos.unrealizedR === 'number' ? `${pos.unrealizedR >= 0 ? '+' : ''}${pos.unrealizedR.toFixed(2)}R` : '—'}
                     </Typography>
                     <Typography
                       variant="caption"
@@ -5004,7 +5004,7 @@ export function LiveOpenTradeWatcher({
                             : 'rgba(255,255,255,0.7)',
                       }}
                     >
-                      SL: {pos.stopLoss !== null ? `${currSym}${pos.stopLoss.toFixed(2)}` : 'None'} ({pos.distanceToStopPoints !== null ? `${pos.distanceToStopPoints.toFixed(1)} pts` : '—'})
+                      SL: {typeof pos.stopLoss === 'number' ? `${currSym}${pos.stopLoss.toFixed(2)}` : 'None'} ({typeof pos.distanceToStopPoints === 'number' ? `${pos.distanceToStopPoints.toFixed(1)} pts` : '—'})
                     </Typography>
                   </Box>
 

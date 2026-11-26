@@ -7,10 +7,6 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -18,8 +14,7 @@ import ZoomOutMapRoundedIcon from '@mui/icons-material/ZoomOutMapRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
 import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import {
   createChart,
   CandlestickSeries,
@@ -99,7 +94,7 @@ export function LiveMarketChart({
   accountId,
   mode = 'AUTO',
   compact = false,
-  height = 420,
+  height = 380,
   lockedSymbol = false,
   positionOverlay = null,
   showIndicators: propShowIndicators,
@@ -139,15 +134,12 @@ export function LiveMarketChart({
     if (propShowTradeLevels !== undefined) setShowTradeLevels(propShowTradeLevels);
   }, [propShowTradeLevels]);
 
-  const [chartSettingsAnchor, setChartSettingsAnchor] = useState<null | HTMLElement>(null);
-
   const effectiveMode = mode === 'AUTO' ? (isPropMode ? 'PROP' : 'NORMAL') : mode;
   const activeSymbols = effectiveMode === 'NORMAL' ? NORMAL_SYMBOLS : PROP_SYMBOLS;
   const defaultSym = initialSymbol || (effectiveMode === 'NORMAL' ? 'NIFTY' : 'XAUUSD');
 
   const [symbol, setSymbol] = useState<string>(defaultSym.toUpperCase());
   const [resolution, setResolution] = useState<string>('5');
-  const [chartMode, setChartMode] = useState<'SETUPMINT' | 'TRADINGVIEW'>('SETUPMINT');
   const [expandedHeight, setExpandedHeight] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [streamData, setStreamData] = useState<any | null>(null);
@@ -165,6 +157,7 @@ export function LiveMarketChart({
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priceLinesRef = useRef<any[]>([]);
+  const prevOverlayKeyRef = useRef<string>('');
   const isFirstFitRef = useRef<boolean>(true);
   const prevCandlesRef = useRef<any[]>([]);
 
@@ -176,7 +169,7 @@ export function LiveMarketChart({
     }
   }, [initialSymbol, effectiveMode]);
 
-  const activeHeight = expandedHeight ? Math.max(height + 200, 620) : height;
+  const activeHeight = expandedHeight ? Math.max(height + 180, 560) : height;
 
   const fetchLiveCandles = async (silent = false) => {
     try {
@@ -186,7 +179,7 @@ export function LiveMarketChart({
       const res = await api.accounts.propCandles({
         symbol,
         resolution,
-        bars: 180,
+        bars: 240,
         accountId,
       });
       const payload = (res as any)?.data || res;
@@ -194,7 +187,7 @@ export function LiveMarketChart({
         setStreamData(payload);
       }
     } catch {
-      // Keep existing candles if transient network error occurs
+      // Keep existing candles on transient error
     } finally {
       if (!silent) {
         setLoading(false);
@@ -205,6 +198,7 @@ export function LiveMarketChart({
   // Fetch on symbol/resolution change + 2-second live polling for low-latency updates
   useEffect(() => {
     isFirstFitRef.current = true;
+    prevCandlesRef.current = [];
     fetchLiveCandles(false);
     const timer = setInterval(() => {
       fetchLiveCandles(true);
@@ -212,9 +206,8 @@ export function LiveMarketChart({
     return () => clearInterval(timer);
   }, [symbol, resolution, accountId]);
 
-  // Initialize lightweight-charts canvas when in SETUPMINT mode
+  // Initialize lightweight-charts canvas once per symbol/theme/height
   useEffect(() => {
-    if (chartMode !== 'SETUPMINT') return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -241,8 +234,8 @@ export function LiveMarketChart({
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.05)' },
-        horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.05)' },
+        vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' },
+        horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -262,14 +255,14 @@ export function LiveMarketChart({
       rightPriceScale: {
         borderColor: isDark ? '#1E293B' : '#E2E8F0',
         autoScale: true,
-        scaleMargins: { top: 0.12, bottom: 0.2 },
+        scaleMargins: { top: 0.1, bottom: 0.18 },
       },
       timeScale: {
         borderColor: isDark ? '#1E293B' : '#E2E8F0',
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 10,
-        barSpacing: 8,
+        rightOffset: 12,
+        barSpacing: 9,
       },
     });
 
@@ -336,6 +329,7 @@ export function LiveMarketChart({
     candleSeriesRef.current = candleSeries;
     volSeriesRef.current = volSeries;
     priceLinesRef.current = [];
+    prevOverlayKeyRef.current = '';
 
     return () => {
       ro.disconnect();
@@ -344,11 +338,10 @@ export function LiveMarketChart({
         chartRef.current = null;
       }
     };
-  }, [chartMode, symbol, isDark, activeHeight]);
+  }, [symbol, isDark, activeHeight]);
 
   // Apply candle data & horizontal risk price lines whenever streamData or positionOverlay updates
   useEffect(() => {
-    if (chartMode !== 'SETUPMINT') return;
     if (!candleSeriesRef.current || !volSeriesRef.current || !chartRef.current) return;
     if (!streamData || !Array.isArray(streamData.candles) || streamData.candles.length === 0) return;
 
@@ -378,17 +371,25 @@ export function LiveMarketChart({
     }));
 
     const prevCandles = prevCandlesRef.current;
-    const canIncrementalUpdate =
-      !isFirstFitRef.current &&
-      prevCandles.length > 0 &&
-      prevCandles.length === candles.length &&
-      prevCandles[0]?.time === candles[0]?.time;
 
-    if (canIncrementalUpdate) {
-      // Smooth real-time update of the forming candle tick
-      candleSeriesRef.current.update(candles[candles.length - 1]);
-      if (showVolume && volumes.length > 0) {
-        volSeriesRef.current.update(volumes[volumes.length - 1]);
+    // Smooth incremental update of forming bar without full canvas redraw
+    if (!isFirstFitRef.current && prevCandles.length > 0) {
+      const lastCandle = candles[candles.length - 1];
+      const prevLast = prevCandles[prevCandles.length - 1];
+      if (lastCandle && prevLast && lastCandle.time >= prevLast.time) {
+        candleSeriesRef.current.update(lastCandle);
+        if (showVolume && volumes.length > 0) {
+          volSeriesRef.current.update(volumes[volumes.length - 1]);
+        }
+        prevCandlesRef.current = candles;
+      } else {
+        candleSeriesRef.current.setData(candles);
+        if (showVolume) {
+          volSeriesRef.current.setData(volumes);
+        } else {
+          volSeriesRef.current.setData([]);
+        }
+        prevCandlesRef.current = candles;
       }
     } else {
       candleSeriesRef.current.setData(candles);
@@ -397,108 +398,113 @@ export function LiveMarketChart({
       } else {
         volSeriesRef.current.setData([]);
       }
+      prevCandlesRef.current = candles;
     }
-    prevCandlesRef.current = candles;
 
-    // Clear old price lines
-    for (const pl of priceLinesRef.current) {
-      try {
-        candleSeriesRef.current.removePriceLine(pl);
-      } catch {}
-    }
-    priceLinesRef.current = [];
+    // Stabilized price line rendering: only redraw price lines when values actually change
+    const activeOverlayKey = positionOverlay
+      ? `${positionOverlay.tradeId}_${positionOverlay.direction}_${positionOverlay.entryPrice}_${positionOverlay.stopLoss}_${positionOverlay.target}_${positionOverlay.dailyBreachPrice}`
+      : 'NONE';
 
-    if (showTradeLevels) {
-      // Combine explicit positionOverlay with any activeOverlays returned by the API for this symbol
-      const overlaysToDraw: PropPositionOverlay[] = positionOverlay
-        ? [positionOverlay]
-        : Array.isArray(streamData.activeOverlays)
-        ? streamData.activeOverlays
-        : [];
+    if (prevOverlayKeyRef.current !== activeOverlayKey || !showTradeLevels) {
+      for (const pl of priceLinesRef.current) {
+        try {
+          candleSeriesRef.current.removePriceLine(pl);
+        } catch {}
+      }
+      priceLinesRef.current = [];
 
-      for (const ov of overlaysToDraw) {
-        if (ov.entryPrice > 0) {
-          const entryLine = candleSeriesRef.current.createPriceLine({
-            price: ov.entryPrice,
-            color: '#3B82F6',
-            lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: `${ov.direction} ENTRY (${ov.quantity || ''} lots)`,
-          });
-          priceLinesRef.current.push(entryLine);
-        }
-        if (ov.stopLoss && ov.stopLoss > 0) {
-          const slLine = candleSeriesRef.current.createPriceLine({
-            price: ov.stopLoss,
-            color: '#EF4444',
-            lineWidth: 2,
-            lineStyle: LineStyle.Solid,
-            axisLabelVisible: true,
-            title: 'STOP LOSS (SL)',
-          });
-          priceLinesRef.current.push(slLine);
-        }
-        if (ov.target && ov.target > 0) {
-          const tpLine = candleSeriesRef.current.createPriceLine({
-            price: ov.target,
-            color: '#10B981',
-            lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: 'TARGET (1:2 RR)',
-          });
-          priceLinesRef.current.push(tpLine);
-        }
-        if (ov.dailyBreachPrice && ov.dailyBreachPrice > 0) {
-          const breachLine = candleSeriesRef.current.createPriceLine({
-            price: ov.dailyBreachPrice,
-            color: '#F97316',
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true,
-            title: '3% DAILY BREACH LEVEL',
-          });
-          priceLinesRef.current.push(breachLine);
+      if (showTradeLevels) {
+        const overlaysToDraw: PropPositionOverlay[] = positionOverlay
+          ? [positionOverlay]
+          : Array.isArray(streamData.activeOverlays)
+          ? streamData.activeOverlays
+          : [];
+
+        for (const ov of overlaysToDraw) {
+          if (ov.entryPrice > 0) {
+            const entryLine = candleSeriesRef.current.createPriceLine({
+              price: ov.entryPrice,
+              color: '#3B82F6',
+              lineWidth: 2,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `${ov.direction} ENTRY (${ov.quantity || ''} lots)`,
+            });
+            priceLinesRef.current.push(entryLine);
+          }
+          if (ov.stopLoss && ov.stopLoss > 0) {
+            const slLine = candleSeriesRef.current.createPriceLine({
+              price: ov.stopLoss,
+              color: '#EF4444',
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: 'STOP LOSS (SL)',
+            });
+            priceLinesRef.current.push(slLine);
+          }
+          if (ov.target && ov.target > 0) {
+            const tpLine = candleSeriesRef.current.createPriceLine({
+              price: ov.target,
+              color: '#10B981',
+              lineWidth: 2,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: 'TARGET (1:2 RR)',
+            });
+            priceLinesRef.current.push(tpLine);
+          }
+          if (ov.dailyBreachPrice && ov.dailyBreachPrice > 0) {
+            const breachLine = candleSeriesRef.current.createPriceLine({
+              price: ov.dailyBreachPrice,
+              color: '#F97316',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: 'DAILY LOSS BREACH',
+            });
+            priceLinesRef.current.push(breachLine);
+          }
         }
       }
+      prevOverlayKeyRef.current = activeOverlayKey;
     }
 
     if (isFirstFitRef.current) {
       chartRef.current.timeScale().fitContent();
       isFirstFitRef.current = false;
     }
-  }, [streamData, positionOverlay, chartMode, showVolume, showTradeLevels]);
+  }, [streamData, positionOverlay, showVolume, showTradeLevels]);
 
   const quote = streamData?.quote;
   const liveLtp = positionOverlay?.currentLtp || quote?.ltp || streamData?.candles?.[streamData?.candles?.length - 1]?.close || 0;
-  const tvWidgetSymbol = streamData?.tvTicker || `OANDA:${symbol}`;
-  const tvInterval = resolution === 'D' ? 'D' : resolution;
 
   return (
     <Box
       sx={{
-        borderRadius: 2,
+        borderRadius: 2.5,
         border: `1px solid ${muiTheme.palette.divider}`,
         bgcolor: isDark ? '#0B0F19' : '#FFFFFF',
         overflow: 'hidden',
+        boxShadow: isDark ? '0 10px 30px rgba(0, 0, 0, 0.4)' : '0 4px 20px rgba(0, 0, 0, 0.04)',
       }}
     >
-      {/* Top Control Bar */}
+      {/* Top Stream Control Ribbon */}
       <Box
         sx={{
           px: 1.5,
-          py: 1,
+          py: 0.9,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: 1,
           borderBottom: `1px solid ${muiTheme.palette.divider}`,
-          bgcolor: isDark ? 'rgba(30, 41, 59, 0.45)' : 'rgba(248, 250, 252, 0.9)',
+          bgcolor: isDark ? 'rgba(15, 23, 42, 0.65)' : 'rgba(248, 250, 252, 0.95)',
         }}
       >
-        {/* Left: Symbol Switcher + Live Spot Price */}
+        {/* Left: Active Instrument & Live Spot Ticks */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <CandlestickChartRoundedIcon sx={{ fontSize: 18, color: '#8B5CF6' }} />
           {!lockedSymbol ? (
@@ -529,8 +535,8 @@ export function LiveMarketChart({
               ))}
             </Box>
           ) : (
-            <Typography variant="subtitle2" sx={{ fontWeight: 900, letterSpacing: '-0.01em' }}>
-              {symbol} LIVE CHART
+            <Typography variant="subtitle2" sx={{ fontWeight: 900, letterSpacing: '-0.01em', fontFamily: `'JetBrains Mono', monospace` }}>
+              {symbol} LIVE TERMINAL
             </Typography>
           )}
 
@@ -544,8 +550,9 @@ export function LiveMarketChart({
               }`}
               sx={{
                 height: 22,
-                fontWeight: 800,
+                fontWeight: 900,
                 fontSize: '0.72rem',
+                fontFamily: `'JetBrains Mono', monospace`,
                 fontVariantNumeric: 'tabular-nums',
                 bgcolor:
                   (quote?.changePct ?? 0) >= 0
@@ -561,9 +568,24 @@ export function LiveMarketChart({
             />
           )}
 
+          {quote?.spread !== undefined && (
+            <Chip
+              size="small"
+              label={`Spread: $${quote.spread}`}
+              sx={{
+                height: 20,
+                fontSize: '0.625rem',
+                fontWeight: 800,
+                fontFamily: `'JetBrains Mono', monospace`,
+                bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+                color: isDark ? '#94A3B8' : '#64748B',
+              }}
+            />
+          )}
+
           <Chip
             size="small"
-            label="● LIVE SPOT (5s)"
+            label="● ELEFIN MT5 LIVE"
             sx={{
               height: 20,
               fontSize: '0.625rem',
@@ -574,8 +596,8 @@ export function LiveMarketChart({
           />
         </Box>
 
-        {/* Right: Timeframe Switcher + Chart Engine Mode Toggle */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+        {/* Right: Resolutions & Fast Canvas Controls */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
           <ButtonGroup size="small" variant="outlined">
             {RESOLUTIONS.map((r) => (
               <Button
@@ -585,9 +607,9 @@ export function LiveMarketChart({
                 sx={{
                   px: 1,
                   py: 0.2,
-                  minWidth: 34,
+                  minWidth: 32,
                   fontSize: '0.68rem',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   textTransform: 'none',
                   ...(resolution === r.key
                     ? { bgcolor: '#8B5CF6', '&:hover': { bgcolor: '#7C3AED' } }
@@ -599,142 +621,75 @@ export function LiveMarketChart({
             ))}
           </ButtonGroup>
 
-          <ButtonGroup size="small" variant="outlined">
-            <Tooltip title="SetupMint Risk Chart — Plots live Entry, Stop Loss, and 1:2 RR Target lines directly on spot-calibrated candles">
-              <Button
-                variant={chartMode === 'SETUPMINT' ? 'contained' : 'outlined'}
-                onClick={() => setChartMode('SETUPMINT')}
-                startIcon={<LayersRoundedIcon sx={{ fontSize: 13 }} />}
-                sx={{
-                  px: 1,
-                  py: 0.2,
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  textTransform: 'none',
-                  ...(chartMode === 'SETUPMINT'
-                    ? { bgcolor: '#10B981', '&:hover': { bgcolor: '#059669' } }
-                    : {}),
-                }}
-              >
-                Risk Overlay
-              </Button>
-            </Tooltip>
-            <Tooltip title="TradingView Advanced Chart — Full indicators, drawing tools, EMAs, and multi-timeframe analysis">
-              <Button
-                variant={chartMode === 'TRADINGVIEW' ? 'contained' : 'outlined'}
-                onClick={() => setChartMode('TRADINGVIEW')}
-                sx={{
-                  px: 1,
-                  py: 0.2,
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  textTransform: 'none',
-                  ...(chartMode === 'TRADINGVIEW'
-                    ? { bgcolor: '#3B82F6', '&:hover': { bgcolor: '#2563EB' } }
-                    : {}),
-                }}
-              >
-                TradingView Widget
-              </Button>
-            </Tooltip>
-          </ButtonGroup>
-
-          {chartMode === 'SETUPMINT' && (
-            <Tooltip title="Fit candles & SL/TP lines to view">
-              <IconButton
-                size="small"
-                onClick={() => chartRef.current?.timeScale().fitContent()}
-                sx={{ p: 0.5 }}
-              >
-                <ZoomOutMapRoundedIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-
-          <Tooltip title="Refresh live candles">
-            <IconButton size="small" onClick={() => fetchLiveCandles(false)} sx={{ p: 0.5 }}>
-              <RefreshRoundedIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title="Chart Display Elements">
+          <Tooltip title="Fit chart candles to screen">
             <IconButton
               size="small"
-              onClick={(e) => setChartSettingsAnchor(e.currentTarget)}
-              sx={{ p: 0.5 }}
+              onClick={() => chartRef.current?.timeScale().fitContent()}
+              sx={{ p: 0.5, border: `1px solid ${muiTheme.palette.divider}`, borderRadius: '6px' }}
             >
-              <TuneRoundedIcon sx={{ fontSize: 16 }} />
+              <ZoomOutMapRoundedIcon sx={{ fontSize: 15 }} />
             </IconButton>
           </Tooltip>
 
-          <Menu
-            anchorEl={chartSettingsAnchor}
-            open={Boolean(chartSettingsAnchor)}
-            onClose={() => setChartSettingsAnchor(null)}
-            slotProps={{
-              paper: {
-                sx: {
-                  borderRadius: 2,
-                  minWidth: 220,
-                  bgcolor: isDark ? '#1E293B' : '#FFFFFF',
-                  border: `1px solid ${muiTheme.palette.divider}`,
-                  boxShadow: isDark ? '0 10px 25px rgba(0,0,0,0.5)' : '0 10px 25px rgba(0,0,0,0.1)',
-                },
-              },
-            }}
-          >
-            <MenuItem
+          <Tooltip title={showVolume ? 'Hide Volume' : 'Show Volume'}>
+            <IconButton
+              size="small"
               onClick={() => {
                 const next = !showVolume;
                 setShowVolume(next);
                 onSettingsChange?.({ showVolume: next, showTradeLevels, showIndicators });
               }}
-              sx={{ py: 1 }}
+              sx={{
+                p: 0.5,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                borderRadius: '6px',
+                color: showVolume ? '#10B981' : 'text.disabled',
+              }}
             >
-              <ListItemIcon sx={{ minWidth: 28 }}>
-                {showVolume ? <CheckRoundedIcon fontSize="small" sx={{ color: '#10B981' }} /> : <Box sx={{ width: 18 }} />}
-              </ListItemIcon>
-              <ListItemText primary={<Typography sx={{ fontSize: '0.8rem', fontWeight: 600 }}>Volume Histogram</Typography>} />
-            </MenuItem>
-            <MenuItem
+              <LayersRoundedIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title={showTradeLevels ? 'Hide Trade Lines (SL/TP)' : 'Show Trade Lines'}>
+            <IconButton
+              size="small"
               onClick={() => {
                 const next = !showTradeLevels;
                 setShowTradeLevels(next);
                 onSettingsChange?.({ showVolume, showTradeLevels: next, showIndicators });
               }}
-              sx={{ py: 1 }}
-            >
-              <ListItemIcon sx={{ minWidth: 28 }}>
-                {showTradeLevels ? <CheckRoundedIcon fontSize="small" sx={{ color: '#10B981' }} /> : <Box sx={{ width: 18 }} />}
-              </ListItemIcon>
-              <ListItemText primary={<Typography sx={{ fontSize: '0.8rem', fontWeight: 600 }}>Trade Lines (SL/TP/Entry)</Typography>} />
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                const next = !showIndicators;
-                setShowIndicators(next);
-                onSettingsChange?.({ showVolume, showTradeLevels, showIndicators: next });
+              sx={{
+                p: 0.5,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                borderRadius: '6px',
+                color: showTradeLevels ? '#3B82F6' : 'text.disabled',
               }}
-              sx={{ py: 1 }}
             >
-              <ListItemIcon sx={{ minWidth: 28 }}>
-                {showIndicators ? <CheckRoundedIcon fontSize="small" sx={{ color: '#10B981' }} /> : <Box sx={{ width: 18 }} />}
-              </ListItemIcon>
-              <ListItemText primary={<Typography sx={{ fontSize: '0.8rem', fontWeight: 600 }}>OHLC &amp; Live Bar Stats</Typography>} />
-            </MenuItem>
-          </Menu>
+              <TrendingUpRoundedIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Refresh live stream">
+            <IconButton
+              size="small"
+              onClick={() => fetchLiveCandles(false)}
+              sx={{ p: 0.5, border: `1px solid ${muiTheme.palette.divider}`, borderRadius: '6px' }}
+            >
+              <RefreshRoundedIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
 
           {!compact && (
-            <Tooltip title={expandedHeight ? 'Standard height' : 'Expand chart height'}>
+            <Tooltip title={expandedHeight ? 'Standard Height (380px)' : 'Expanded Terminal Height (560px)'}>
               <IconButton
                 size="small"
                 onClick={() => setExpandedHeight((prev) => !prev)}
-                sx={{ p: 0.5 }}
+                sx={{ p: 0.5, border: `1px solid ${muiTheme.palette.divider}`, borderRadius: '6px' }}
               >
                 {expandedHeight ? (
-                  <CloseFullscreenRoundedIcon sx={{ fontSize: 16 }} />
+                  <CloseFullscreenRoundedIcon sx={{ fontSize: 15 }} />
                 ) : (
-                  <OpenInFullRoundedIcon sx={{ fontSize: 16 }} />
+                  <OpenInFullRoundedIcon sx={{ fontSize: 15 }} />
                 )}
               </IconButton>
             </Tooltip>
@@ -742,12 +697,12 @@ export function LiveMarketChart({
         </Box>
       </Box>
 
-      {/* Crosshair OHLC HUD Bar (SetupMint Mode) */}
-      {chartMode === 'SETUPMINT' && hoveredBar && showIndicators && (
+      {/* Crosshair OHLC HUD Bar */}
+      {hoveredBar && showIndicators && (
         <Box
           sx={{
             px: 1.5,
-            py: 0.4,
+            py: 0.35,
             display: 'flex',
             alignItems: 'center',
             gap: 1.5,
@@ -781,52 +736,31 @@ export function LiveMarketChart({
         </Box>
       )}
 
-      {/* Main Chart Body */}
+      {/* Main Chart Body: 100% Native Lightweight Charts Canvas */}
       <Box sx={{ position: 'relative', width: '100%', height: activeHeight }}>
-        {chartMode === 'SETUPMINT' ? (
-          <>
-            {loading && (!streamData || !streamData.candles?.length) && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  inset: 0,
-                  zIndex: 5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1.5,
-                  bgcolor: isDark ? 'rgba(11, 15, 25, 0.75)' : 'rgba(255, 255, 255, 0.75)',
-                }}
-              >
-                <CircularProgress size={22} />
-                <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                  Streaming spot-calibrated {symbol} candles...
-                </Typography>
-              </Box>
-            )}
-            <div ref={containerRef} style={{ width: '100%', height: activeHeight }} />
-          </>
-        ) : (
-          <iframe
-            key={`${tvWidgetSymbol}-${tvInterval}-${isDark ? 'dark' : 'light'}`}
-            title={`TradingView Live Chart ${symbol}`}
-            src={`https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(
-              tvWidgetSymbol
-            )}&interval=${encodeURIComponent(tvInterval)}&theme=${
-              isDark ? 'dark' : 'light'
-            }&style=1&timezone=Asia%2FKolkata&withdateranges=1&hide_side_toolbar=0&allow_symbol_change=1&saveimage=1&studies=%5B%5D`}
-            style={{
-              width: '100%',
-              height: activeHeight,
-              border: 'none',
-              display: 'block',
+        {loading && (!streamData || !streamData.candles?.length) && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+              bgcolor: isDark ? 'rgba(11, 15, 25, 0.75)' : 'rgba(255, 255, 255, 0.75)',
             }}
-          />
+          >
+            <CircularProgress size={22} />
+            <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
+              Streaming Elefin {symbol} candles...
+            </Typography>
+          </Box>
         )}
+        <div ref={containerRef} style={{ width: '100%', height: activeHeight }} />
       </Box>
     </Box>
   );
 }
 
 export const PropLiveMarketChart = LiveMarketChart;
-

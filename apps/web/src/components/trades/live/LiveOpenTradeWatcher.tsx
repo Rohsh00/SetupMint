@@ -77,7 +77,7 @@ import PictureInPictureRoundedIcon from '@mui/icons-material/PictureInPictureRou
 import BookmarkBorderRoundedIcon from '@mui/icons-material/BookmarkBorderRounded';
 import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
 
-import { LiveMarketChart } from '../../dashboard/PropLiveMarketChart.js';
+import { LiveMarketChart, type PropPositionOverlay } from '../../dashboard/PropLiveMarketChart.js';
 import { LiveGivebackMeter } from './LiveGivebackMeter.js';
 import { LiveScalingLadder } from './LiveScalingLadder.js';
 import { LiveUnifiedPriceLadder } from './LiveUnifiedPriceLadder.js';
@@ -183,7 +183,7 @@ export function LiveOpenTradeWatcher({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user, refreshUser } = useAuth();
-  const { scope, isPropMode, queryParams, selectedAccountId, accounts } = useAccountScope();
+  const { scope, isPropMode, queryParams, selectedAccountId, accounts, activeAccount } = useAccountScope();
   const caps = useAccountCapabilities();
 
   const [displaySettingsModalOpen, setDisplaySettingsModalOpen] = useState<boolean>(false);
@@ -729,8 +729,47 @@ export function LiveOpenTradeWatcher({
     });
   }, [summary?.positions, sortMode]);
 
+  // Active Terminal Chart selection & position overlay tracking
+  const [selectedTerminalSymbol, setSelectedTerminalSymbol] = useState<string | null>(null);
+
+  const primaryPosition = sortedPositions.length > 0 ? sortedPositions[0] : null;
+
+  const activeTerminalSymbol = useMemo(() => {
+    if (selectedTerminalSymbol) return selectedTerminalSymbol;
+    if (primaryPosition?.symbol) return primaryPosition.symbol;
+    if (isPropMode) return 'XAUUSD';
+    return (activeAccount?.profile as any)?.defaultSymbol || 'XAUUSD';
+  }, [selectedTerminalSymbol, primaryPosition?.symbol, isPropMode, activeAccount?.profile]);
+
+  const activeTerminalPosition = useMemo(() => {
+    if (!sortedPositions.length) return null;
+    return (
+      sortedPositions.find(
+        (p) => p.symbol.toUpperCase() === activeTerminalSymbol.toUpperCase()
+      ) || primaryPosition
+    );
+  }, [sortedPositions, activeTerminalSymbol, primaryPosition]);
+
+  const activeTerminalOverlay = useMemo<PropPositionOverlay | null>(() => {
+    if (!activeTerminalPosition) return null;
+    return {
+      tradeId: activeTerminalPosition.tradeId,
+      direction: activeTerminalPosition.direction,
+      entryPrice: activeTerminalPosition.entryPrice,
+      stopLoss: activeTerminalPosition.stopLoss,
+      target: activeTerminalPosition.target,
+      quantity: activeTerminalPosition.quantity,
+      currentLtp: activeTerminalPosition.currentLtp,
+      dailyBreachPrice:
+        isPropMode && propRemainingBuffer !== null && activeTerminalPosition.quantity
+          ? activeTerminalPosition.direction === 'LONG'
+            ? activeTerminalPosition.currentLtp - propRemainingBuffer / activeTerminalPosition.quantity
+            : activeTerminalPosition.currentLtp + propRemainingBuffer / activeTerminalPosition.quantity
+          : null,
+    };
+  }, [activeTerminalPosition, isPropMode, propRemainingBuffer]);
+
   // Card manual collapse toggle with 60s immunity tracking
-  const [expandedChartTrades, setExpandedChartTrades] = useState<Record<string, boolean>>({});
   const handleToggleCardCollapse = (tradeId: string) => {
     setCollapsedCards((prev) => {
       const willCollapse = !prev[tradeId];
@@ -2475,95 +2514,87 @@ export function LiveOpenTradeWatcher({
                   </Grid>
                 ))}
               </Grid>
-            ) : openTradesCount === 0 ? (
-              <Box sx={{ py: 2, px: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    🌐 Live Market Telemetry (Auto-refresh 3s)
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.disabled', fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.6875rem' }}>
-                    Real-time Cut-to-Cut
-                  </Typography>
-                </Box>
-                <Grid container spacing={1.5}>
-                  {[
-                    { symbol: 'XAUUSD', name: 'Gold (XAUUSD)', icon: '🟡' },
-                    { symbol: 'ETHUSD', name: 'Ethereum (ETHUSD)', icon: '🔷' },
-                  ].map((item) => {
-                    const q = liveQuotesData?.[item.symbol];
-                    const ltp = q?.ltp || 0;
-                    const change = q?.changePct || 0;
-                    const isPositive = change >= 0;
-                    return (
-                      <Grid size={{ xs: 12, sm: 6 }} key={item.symbol}>
-                        <Card
-                          variant="outlined"
-                          sx={{
-                            p: 1.5,
-                            borderRadius: '10px',
-                            bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
-                            border: '1px solid',
-                            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                            <Typography variant="caption" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
-                              {item.icon} {item.symbol}
-                            </Typography>
-                            {change !== 0 && (
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  fontSize: '0.6875rem',
-                                  fontFamily: `'JetBrains Mono', monospace`,
-                                  fontWeight: 700,
-                                  color: isPositive ? '#10B981' : '#F43F5E',
-                                }}
-                              >
-                                {isPositive ? '+' : ''}{change.toFixed(2)}%
-                              </Typography>
-                            )}
-                          </Box>
-                          <Typography
-                            variant="h6"
-                            sx={{
-                              fontFamily: `'JetBrains Mono', monospace`,
-                              fontWeight: 800,
-                              fontSize: '1.05rem',
-                              color: isDark ? '#F1F5F9' : '#0F172A',
-                            }}
-                          >
-                            {ltp > 0 ? `$${ltp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                          </Typography>
-                          {q?.spread !== undefined && (
-                            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
-                              Spread: ${q.spread}
-                            </Typography>
-                          )}
-                        </Card>
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-                <Typography variant="caption" sx={{ display: 'block', mt: 1.5, textAlign: 'center', color: 'text.secondary', fontSize: '0.75rem' }}>
-                  No open positions currently active. Open trades will automatically appear here with real-time MTM and risk gauges.
-                </Typography>
-              </Box>
             ) : (
               <>
-                {!caps.prop.isProp && summary?.portfolioRisk && summary.positions.length > 0 && displaySettings.showPortfolioRiskBanner !== false && (
-                  <Box sx={{ pt: 2 }}>
-                    <LivePortfolioRiskBanner
-                      risk={summary.portfolioRisk}
-                      isDark={isDark}
-                      riskSettings={user?.riskSettings}
-                      summary={summary}
-                      isPropMode={isPropMode}
-                      propRuleDailyLossLimit={propDailyLossLimit}
-                      propRuleRemainingBuffer={propRemainingBuffer}
-                    />
+                {/* 1. Live Candlestick Terminal Chart (Always active 24/5 irrespective of trade status, continuous ticks & candles like Elefin / MT5 Desktop) */}
+                <Box sx={{ pt: 2, pb: 1.5 }}>
+                  <LiveMarketChart
+                    mode={isPropMode ? 'PROP' : 'NORMAL'}
+                    initialSymbol={activeTerminalSymbol}
+                    lockedSymbol={false}
+                    compact={false}
+                    height={400}
+                    showIndicators={displaySettings.showChartIndicators}
+                    showVolume={displaySettings.showChartVolume}
+                    showTradeLevels={displaySettings.showChartTradeLevels}
+                    positionOverlay={activeTerminalOverlay}
+                  />
+                </Box>
+
+                {openTradesCount === 0 ? (
+                  <Box sx={{ py: 1.5, px: 0.5 }}>
+                    <Box
+                      sx={{
+                        p: 1.75,
+                        borderRadius: '10px',
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 1.5,
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: '#10B981',
+                            boxShadow: '0 0 8px #10B981',
+                          }}
+                        />
+                        <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8rem', color: isDark ? '#E2E8F0' : '#1E293B' }}>
+                          Flat · 0 Open Positions
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                          Live terminal chart streaming {activeTerminalSymbol} 24/5. Real-time executions will automatically link position overlay and risk telemetry.
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip
+                          size="small"
+                          label={`Risk Guard: Armed (${propRemainingBuffer !== null ? `$${propRemainingBuffer.toFixed(2)} buffer` : 'Active'})`}
+                          sx={{
+                            height: 22,
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            bgcolor: 'rgba(16, 185, 129, 0.12)',
+                            color: '#10B981',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                          }}
+                        />
+                      </Box>
+                    </Box>
                   </Box>
-                )}
+                ) : (
+                  <>
+                    {!caps.prop.isProp && summary?.portfolioRisk && summary.positions.length > 0 && displaySettings.showPortfolioRiskBanner !== false && (
+                      <Box sx={{ pt: 1.5 }}>
+                        <LivePortfolioRiskBanner
+                          risk={summary.portfolioRisk}
+                          isDark={isDark}
+                          riskSettings={user?.riskSettings}
+                          summary={summary}
+                          isPropMode={isPropMode}
+                          propRuleDailyLossLimit={propDailyLossLimit}
+                          propRuleRemainingBuffer={propRemainingBuffer}
+                        />
+                      </Box>
+                    )}
                 {viewMode === 'table' ? (
               /* DENSE TABLE VIEW: Ultra-compact, 1-row per trade, zero scrolling */
               <TableContainer sx={{ pt: 1.5, overflowX: 'auto' }}>
@@ -3879,14 +3910,12 @@ export function LiveOpenTradeWatcher({
 
                             <Button
                               size="small"
-                              variant={expandedChartTrades[pos.tradeId] ? 'contained' : 'outlined'}
+                              variant={activeTerminalSymbol.toUpperCase() === pos.symbol.toUpperCase() ? 'contained' : 'outlined'}
                               startIcon={<CandlestickChartRoundedIcon sx={{ fontSize: 13 }} />}
-                              onClick={() =>
-                                setExpandedChartTrades((prev) => ({
-                                  ...prev,
-                                  [pos.tradeId]: !prev[pos.tradeId],
-                                }))
-                              }
+                              onClick={() => {
+                                setSelectedTerminalSymbol(pos.symbol);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
                               sx={{
                                 height: 26,
                                 px: 1,
@@ -3894,22 +3923,22 @@ export function LiveOpenTradeWatcher({
                                 fontWeight: 700,
                                 textTransform: 'none',
                                 whiteSpace: 'nowrap',
-                                bgcolor: expandedChartTrades[pos.tradeId] ? '#8B5CF6' : 'transparent',
-                                color: expandedChartTrades[pos.tradeId] ? '#FFFFFF' : 'text.secondary',
-                                borderColor: expandedChartTrades[pos.tradeId]
+                                bgcolor: activeTerminalSymbol.toUpperCase() === pos.symbol.toUpperCase() ? '#8B5CF6' : 'transparent',
+                                color: activeTerminalSymbol.toUpperCase() === pos.symbol.toUpperCase() ? '#FFFFFF' : 'text.secondary',
+                                borderColor: activeTerminalSymbol.toUpperCase() === pos.symbol.toUpperCase()
                                   ? '#8B5CF6'
                                   : isDark
                                   ? 'rgba(255, 255, 255, 0.15)'
                                   : 'rgba(0, 0, 0, 0.15)',
                                 borderRadius: '5px',
                                 '&:hover': {
-                                  bgcolor: expandedChartTrades[pos.tradeId]
+                                  bgcolor: activeTerminalSymbol.toUpperCase() === pos.symbol.toUpperCase()
                                     ? '#7C3AED'
                                     : alpha('#8B5CF6', 0.12),
                                 },
                               }}
                             >
-                              {expandedChartTrades[pos.tradeId] ? 'Hide Chart' : 'Live Chart'}
+                              {activeTerminalSymbol.toUpperCase() === pos.symbol.toUpperCase() ? 'Chart Active' : 'Focus Chart'}
                             </Button>
                           </Box>
 
@@ -3949,31 +3978,6 @@ export function LiveOpenTradeWatcher({
                             />
                           </Box>
                         </Box>
-
-                        {/* 2B. Expandable Live Candlestick Chart Drawer Inside Open Position Card */}
-                        {expandedChartTrades[pos.tradeId] && (
-                          <Box sx={{ mb: 1.5 }}>
-                            <LiveMarketChart
-                              mode={isPropMode ? 'PROP' : 'NORMAL'}
-                              initialSymbol={pos.symbol}
-                              lockedSymbol={true}
-                              compact={true}
-                              height={320}
-                              showIndicators={displaySettings.showChartIndicators}
-                              showVolume={displaySettings.showChartVolume}
-                              showTradeLevels={displaySettings.showChartTradeLevels}
-                              positionOverlay={{
-                                tradeId: pos.tradeId,
-                                direction: pos.direction,
-                                entryPrice: pos.entryPrice,
-                                stopLoss: pos.stopLoss,
-                                target: pos.target,
-                                quantity: pos.quantity,
-                                currentLtp: pos.currentLtp,
-                              }}
-                            />
-                          </Box>
-                        )}
 
                         {/* 3. Density-Aware Presentation: Glance Strip vs 2-Column Detailed Inspector */}
                         {isGlance ? (
@@ -4429,6 +4433,8 @@ export function LiveOpenTradeWatcher({
             )}
           </>
         )}
+      </>
+    )}
           </Box>
         </Collapse>
       </Card>

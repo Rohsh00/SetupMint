@@ -68,3 +68,4 @@ export async function backfillAllExcursions() {
 if (process.argv[1] && process.argv[1].includes('backfill-all-excursions')) {
   backfillAllExcursions().catch(console.error);
 }
+

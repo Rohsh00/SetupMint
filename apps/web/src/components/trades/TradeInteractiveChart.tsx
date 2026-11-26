@@ -519,6 +519,22 @@ export function TradeInteractiveChart({
             });
           }
         }
+
+        if (exc.postExitPeakTime && typeof exc.postExitRunBeyondExitPoints === 'number' && exc.postExitRunBeyondExitPoints > 0) {
+          const postExitMs = new Date(exc.postExitPeakTime).getTime();
+          const snappedPostExit = findClosestCandleTime(Math.floor(postExitMs / 1000), candles);
+          if (snappedPostExit) {
+            const postRText = exc.postExitRunBeyondExitR !== undefined ? `+${exc.postExitRunBeyondExitR.toFixed(1)}R` : `+${exc.postExitRunBeyondExitPoints}pts`;
+            markers.push({
+              time: snappedPostExit as UTCTimestamp,
+              position: isLong ? 'aboveBar' : 'belowBar',
+              color: '#3b82f6',
+              shape: 'square',
+              text: `Post-Exit Peak (${postRText})`,
+              size: 2,
+            });
+          }
+        }
       }
 
       // Attach or replace series markers

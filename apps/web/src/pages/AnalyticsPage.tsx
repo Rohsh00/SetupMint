@@ -103,6 +103,7 @@ export function AnalyticsPage() {
     }
   }, [hasMarketData, activeTab]);
   const [scatterMode, setScatterMode] = useState<'R' | 'POINTS' | 'AMOUNT'>('R');
+  const [includePostExitInScatter, setIncludePostExitInScatter] = useState(false);
   const [curveMode, setCurveMode] = useState<'DRAWDOWN_PCT' | 'CUMULATIVE_PNL' | 'DRAWDOWN_AMOUNT'>('DRAWDOWN_PCT');
   const [whatIfPrefill, setWhatIfPrefill] = useState<{ stopR?: number; targetR?: number } | null>(null);
   const [funnelMode, setFunnelMode] = useState<'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD'>('AUTO');
@@ -1492,9 +1493,22 @@ export function AnalyticsPage() {
             const isModeAmount = currentMode === 'AMOUNT';
 
             const getX = (p: any) => (isModeR ? p.maeR : isModePoints ? p.maePoints : p.maeAmount);
-            const getY = (p: any) => (isModeR ? p.mfeR : isModePoints ? p.mfePoints : p.mfeAmount);
+            const getY = (p: any) => {
+              if (includePostExitInScatter) {
+                if (isModeR) return p.postExitMfeR ?? p.mfeR;
+                if (isModePoints) return p.postExitMfePoints ?? p.mfePoints;
+                return p.postExitMfeAmount ?? p.mfeAmount;
+              }
+              return isModeR ? p.mfeR : isModePoints ? p.mfePoints : p.mfeAmount;
+            };
 
-            const validPoints = points.filter((p: any) => getX(p) !== undefined && getY(p) !== undefined);
+            const validPoints = points
+              .map((p: any) => ({
+                ...p,
+                scatterX: getX(p),
+                scatterY: getY(p),
+              }))
+              .filter((p: any) => p.scatterX !== undefined && p.scatterY !== undefined);
             const winPoints = validPoints.filter((p: any) => p.outcome === 'WIN');
             const lossPoints = validPoints.filter((p: any) => p.outcome !== 'WIN');
 
@@ -1712,6 +1726,11 @@ export function AnalyticsPage() {
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Median: <strong>+{summary.medianMfeR !== undefined ? `${Number(summary.medianMfeR).toFixed(2)}R` : (summary.mfeR?.median !== undefined ? `${Number(summary.mfeR.median).toFixed(2)}R` : '—')}</strong> (IQR {summary.p25MfeR ?? summary.mfeR?.p25 ?? '—'}R - {summary.p75MfeR ?? summary.mfeR?.p75 ?? '—'}R)
                       </Typography>
+                      {(summary.avgPostExitMfeR !== undefined || summary.postExitMfeR?.mean !== undefined) && (
+                        <Typography variant="caption" sx={{ color: 'primary.main', display: 'block', fontWeight: 600, fontSize: '0.68rem', mt: 0.25 }}>
+                          Post-Exit Peak Avg: <strong>+{summary.avgPostExitMfeR ?? Number(summary.postExitMfeR?.mean).toFixed(2)}R</strong>
+                        </Typography>
+                      )}
                       {confidenceIntervals?.avgMfeR && (
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
                           90% CI: [{confidenceIntervals.avgMfeR.lower}R, {confidenceIntervals.avgMfeR.upper}R]
@@ -1810,6 +1829,11 @@ export function AnalyticsPage() {
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
                         Median: <strong>+{summary.medianRLeftOnTable !== undefined ? `${Number(summary.medianRLeftOnTable).toFixed(2)}R` : (summary.rLeftOnTable?.median !== undefined ? `${Number(summary.rLeftOnTable.median).toFixed(2)}R` : '—')}</strong> surrendered
                       </Typography>
+                      {(summary.avgPostExitRunBeyondExitR !== undefined || summary.postExitRunBeyondExitR?.mean !== undefined) && (
+                        <Typography variant="caption" sx={{ color: 'info.main', display: 'block', fontWeight: 600, fontSize: '0.68rem', mt: 0.25 }}>
+                          Post-Exit Run Avg: <strong>+{summary.avgPostExitRunBeyondExitR ?? Number(summary.postExitRunBeyondExitR?.mean).toFixed(2)}R beyond exit</strong>
+                        </Typography>
+                      )}
                       <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontSize: '0.68rem', mt: 0.25 }}>
                         Formula: max(0, MFE_R - Realized_R)
                       </Typography>
@@ -1840,6 +1864,64 @@ export function AnalyticsPage() {
                     </Card>
                   </Grid>
                 </Grid>
+
+                {/* POST-EXIT MOMENTUM & RUNNER SUMMARY BANNER */}
+                {((summary.runnerLeftOnTableCount ?? 0) > 0 || (summary.prematureExitCount ?? 0) > 0 || (summary.avgPostExitRunBeyondExitR ?? 0) > 0) && (
+                  <Card
+                    sx={{
+                      p: 2,
+                      borderRadius: 2.5,
+                      border: '1px solid rgba(14, 165, 233, 0.3)',
+                      backgroundColor: isDark ? 'rgba(14, 165, 233, 0.05)' : '#F0F9FF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 2,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <TimelineRoundedIcon sx={{ color: '#0ea5e9', fontSize: 22 }} />
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                          Post-Exit Momentum & Runner Analytics (60m window):
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        After trade exit, market ran an average of{' '}
+                        <strong style={{ color: '#0ea5e9' }}>
+                          +{summary.avgPostExitRunBeyondExitR ?? Number(summary.postExitRunBeyondExitR?.mean ?? 0).toFixed(2)}R
+                        </strong>{' '}
+                        further in trade direction (reaching an extended peak average of{' '}
+                        <strong style={{ color: '#10b981' }}>
+                          +{summary.avgPostExitMfeR ?? Number(summary.postExitMfeR?.mean ?? 0).toFixed(2)}R
+                        </strong>{' '}
+                        from entry).
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      {(summary.runnerLeftOnTableCount ?? 0) > 0 && (
+                        <Chip
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          label={`${summary.runnerLeftOnTableCount} Runners Left on Table`}
+                          sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                        />
+                      )}
+                      {(summary.prematureExitCount ?? 0) > 0 && (
+                        <Chip
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                          label={`${summary.prematureExitCount} Premature Exits (Ran ≥1.0R post-exit)`}
+                          sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                        />
+                      )}
+                    </Box>
+                  </Card>
+                )}
 
                 {/* 4. WINNER-ONLY MAE DISTRIBUTION (STOP LOSS OPTIMIZATION) */}
                 {winnersMaeDistribution && winnersMaeDistribution.distribution && (
@@ -2263,6 +2345,29 @@ export function AnalyticsPage() {
                         </Tooltip>
                       </ButtonGroup>
 
+                      <Tooltip title="Toggle between in-trade MFE (exit efficiency) and extended post-exit peak (continuation within 60 minutes after exit)">
+                        <span>
+                          <Button
+                            variant={includePostExitInScatter ? 'contained' : 'outlined'}
+                            color={includePostExitInScatter ? 'info' : 'inherit'}
+                            onClick={() => setIncludePostExitInScatter(!includePostExitInScatter)}
+                            size="small"
+                            sx={{
+                              textTransform: 'none',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              borderRadius: 2,
+                              px: 1.5,
+                              py: 0.25,
+                              borderColor: includePostExitInScatter ? undefined : 'rgba(14, 165, 233, 0.4)',
+                              color: includePostExitInScatter ? undefined : '#0ea5e9',
+                            }}
+                          >
+                            {includePostExitInScatter ? 'Showing: Post-Exit Peak' : 'Include Post-Exit Peak'}
+                          </Button>
+                        </span>
+                      </Tooltip>
+
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Tooltip title={`Winning trades with Net P&L >= ${currSym}0`}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'default' }}>
@@ -2286,7 +2391,7 @@ export function AnalyticsPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                         <XAxis
                           type="number"
-                          dataKey={isModeR ? 'maeR' : isModePoints ? 'maePoints' : 'maeAmount'}
+                          dataKey="scatterX"
                           name={isModeR ? 'MAE (R)' : isModePoints ? 'MAE (Points)' : `MAE (${currSym})`}
                           unit={isModeR ? 'R' : isModePoints ? ' pts' : ` ${currSym}`}
                           stroke={chartAxisColor}
@@ -2295,7 +2400,7 @@ export function AnalyticsPage() {
                         />
                         <YAxis
                           type="number"
-                          dataKey={isModeR ? 'mfeR' : isModePoints ? 'mfePoints' : 'mfeAmount'}
+                          dataKey="scatterY"
                           name={isModeR ? 'MFE (R)' : isModePoints ? 'MFE (Points)' : `MFE (${currSym})`}
                           unit={isModeR ? 'R' : isModePoints ? ' pts' : ` ${currSym}`}
                           stroke={chartAxisColor}
@@ -2330,11 +2435,21 @@ export function AnalyticsPage() {
                                       {d.maeAmount !== undefined ? ` • ${formatCurrency(Math.abs(d.maeAmount), analyticsCurrency)}` : ''}
                                     </div>
                                     <div>
-                                      <strong>MFE:</strong>{' '}
+                                      <strong>In-Trade MFE:</strong>{' '}
                                       {d.mfeR !== undefined ? `${d.mfeR} R` : '—'}
                                       {d.mfePoints !== undefined ? ` (${d.mfePoints} pts)` : ''}
                                       {d.mfeAmount !== undefined ? ` • ${formatCurrency(Math.abs(d.mfeAmount), analyticsCurrency)}` : ''}
                                     </div>
+                                    {d.postExitMfePoints !== undefined && (
+                                      <div style={{ color: '#0ea5e9', fontWeight: 600 }}>
+                                        <strong>Post-Exit Peak:</strong> +{d.postExitMfePoints} pts {d.postExitMfeR !== undefined ? `(+${d.postExitMfeR}R)` : ''}
+                                      </div>
+                                    )}
+                                    {d.postExitRunBeyondExitPoints !== undefined && d.postExitRunBeyondExitPoints > 0 && (
+                                      <div style={{ color: '#0ea5e9' }}>
+                                        <strong>Ran Past Exit:</strong> +{d.postExitRunBeyondExitPoints} pts {d.postExitRunBeyondExitR !== undefined ? `(+${d.postExitRunBeyondExitR}R)` : ''}
+                                      </div>
+                                    )}
                                     <div>
                                       <strong>Exit Efficiency:</strong>{' '}
                                       {d.exitEfficiency !== undefined ? `${(d.exitEfficiency * 100).toFixed(1)}%` : '—'}

@@ -151,6 +151,15 @@ export interface ITradeForExcursionAnalytics {
       candleCount?: number;
       excursionFlags?: string[];
       warnings?: string[];
+      postExitMfePoints?: number;
+      postExitMfeAmount?: number;
+      postExitMfeR?: number;
+      postExitPeakPrice?: number;
+      postExitPeakTime?: Date | string;
+      postExitLookaheadMinutes?: number;
+      postExitCandleCount?: number;
+      postExitRunBeyondExitPoints?: number;
+      postExitRunBeyondExitR?: number;
     };
   };
 }
@@ -176,6 +185,10 @@ export interface IExcursionAnalyticsResult {
       mean?: number;
       median?: number;
     };
+    postExitRunBeyondExitR?: IExcursionSummaryStatistics;
+    postExitMfeR?: IExcursionSummaryStatistics;
+    runnerLeftOnTableCount?: number;
+    prematureExitCount?: number;
     feeAdjusted: {
       avgMaeR?: number;
       avgMfeR?: number;
@@ -238,6 +251,11 @@ export interface IExcursionAnalyticsResult {
     isLowResolution?: boolean;
     excursionFlags?: string[];
     warnings?: string[];
+    postExitMfeR?: number;
+    postExitMfePoints?: number;
+    postExitRunBeyondExitR?: number;
+    postExitRunBeyondExitPoints?: number;
+    postExitPeakPrice?: number;
   }>;
 }
 
@@ -451,6 +469,10 @@ export function calculateExcursionAggregates(params: {
   const entryQualityList: number[] = [];
   const feeAdjustedMaeRList: number[] = [];
   const feeAdjustedMfeRList: number[] = [];
+  const postExitRunBeyondExitRList: number[] = [];
+  const postExitMfeRList: number[] = [];
+  let runnerLeftOnTableCount = 0;
+  let prematureExitCount = 0;
 
   let countWithStop = 0;
   let gaveBackProfitCount = 0;
@@ -491,6 +513,18 @@ export function calculateExcursionAggregates(params: {
     }
     if (exc.feeAdjustedMfeR !== undefined && exc.feeAdjustedMfeR !== null) {
       feeAdjustedMfeRList.push(exc.feeAdjustedMfeR);
+    }
+    if (exc.postExitRunBeyondExitR !== undefined && exc.postExitRunBeyondExitR !== null) {
+      postExitRunBeyondExitRList.push(exc.postExitRunBeyondExitR);
+    }
+    if (exc.postExitMfeR !== undefined && exc.postExitMfeR !== null) {
+      postExitMfeRList.push(exc.postExitMfeR);
+    }
+    if (exc.excursionFlags?.includes('RUNNER_LEFT_ON_TABLE')) {
+      runnerLeftOnTableCount++;
+    }
+    if (exc.excursionFlags?.includes('PREMATURE_EXIT')) {
+      prematureExitCount++;
     }
 
     if (exc.timeOrdering === 'HEAT_FIRST') heatFirstCount++;
@@ -536,6 +570,11 @@ export function calculateExcursionAggregates(params: {
       isLowResolution: exc.isLowResolution,
       excursionFlags: exc.excursionFlags,
       warnings: exc.warnings,
+      postExitMfeR: exc.postExitMfeR,
+      postExitMfePoints: exc.postExitMfePoints,
+      postExitRunBeyondExitR: exc.postExitRunBeyondExitR,
+      postExitRunBeyondExitPoints: exc.postExitRunBeyondExitPoints,
+      postExitPeakPrice: exc.postExitPeakPrice,
     });
   }
 
@@ -548,6 +587,10 @@ export function calculateExcursionAggregates(params: {
     exitEfficiency: buildSeriesStats(exitEffList, 103),
     rLeftOnTable: buildSeriesStats(rLeftList, 104),
     stopEfficiency: buildSeriesStats(stopEffList, 105),
+    postExitRunBeyondExitR: buildSeriesStats(postExitRunBeyondExitRList, 106),
+    postExitMfeR: buildSeriesStats(postExitMfeRList, 107),
+    runnerLeftOnTableCount,
+    prematureExitCount,
     entryQualityScore: {
       mean:
         entryQualityList.length > 0

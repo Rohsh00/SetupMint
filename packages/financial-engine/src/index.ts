@@ -44,4 +44,5 @@ export * from './capabilities.js';
 export * from './slippage.js';
 export * from './sizing-analytics.js';
 export * from './kill-zone-analytics.js';
+export * from './actionable-summary.js';
 

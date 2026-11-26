@@ -243,6 +243,35 @@ export function SettingsPage() {
     initialWatcher.enforceAdaptiveDayRiskGuardrails ?? true
   );
 
+  // Institutional Execution & Microstructure Settings
+  const [executionAlgorithm, setExecutionAlgorithm] = useState<string>(
+    initialWatcher.executionAlgorithm || 'PEGGED_CHASE'
+  );
+  const [targetDistributionMode, setTargetDistributionMode] = useState<string>(
+    initialWatcher.targetDistributionMode || 'DEFENSIVE_50_30_20'
+  );
+  const [maxSlippagePercent, setMaxSlippagePercent] = useState<number>(
+    initialWatcher.maxSlippagePercent ?? 0.05
+  );
+  const [maxSlippagePoints, setMaxSlippagePoints] = useState<number>(
+    initialWatcher.maxSlippagePoints ?? 2
+  );
+  const [spreadSurgeProtectionEnabled, setSpreadSurgeProtectionEnabled] = useState<boolean>(
+    initialWatcher.spreadSurgeProtectionEnabled ?? true
+  );
+  const [spreadSurgeMultiplier, setSpreadSurgeMultiplier] = useState<number>(
+    initialWatcher.spreadSurgeMultiplier ?? 2.0
+  );
+  const [antiLoopProtectionEnabled, setAntiLoopProtectionEnabled] = useState<boolean>(
+    initialWatcher.antiLoopProtectionEnabled ?? true
+  );
+  const [orderRateLimitPer5Sec, setOrderRateLimitPer5Sec] = useState<number>(
+    initialWatcher.orderRateLimitPer5Sec ?? 3
+  );
+  const [beCushionTicks, setBeCushionTicks] = useState<number>(
+    initialWatcher.beCushionTicks ?? 2
+  );
+
   const [watcherSuccess, setWatcherSuccess] = useState(false);
   const [watcherError, setWatcherError] = useState<string | null>(null);
 
@@ -257,6 +286,15 @@ export function SettingsPage() {
       }
       setDefaultAutoExecute(s.defaultAutoExecute ?? false);
       setDefaultTargetMode(s.defaultTargetMode ?? 'TWO_TARGETS_RUNNER');
+      if (s.executionAlgorithm) setExecutionAlgorithm(s.executionAlgorithm);
+      if (s.targetDistributionMode) setTargetDistributionMode(s.targetDistributionMode);
+      if (s.maxSlippagePercent !== undefined) setMaxSlippagePercent(s.maxSlippagePercent);
+      if (s.maxSlippagePoints !== undefined) setMaxSlippagePoints(s.maxSlippagePoints);
+      if (s.spreadSurgeProtectionEnabled !== undefined) setSpreadSurgeProtectionEnabled(s.spreadSurgeProtectionEnabled);
+      if (s.spreadSurgeMultiplier !== undefined) setSpreadSurgeMultiplier(s.spreadSurgeMultiplier);
+      if (s.antiLoopProtectionEnabled !== undefined) setAntiLoopProtectionEnabled(s.antiLoopProtectionEnabled);
+      if (s.orderRateLimitPer5Sec !== undefined) setOrderRateLimitPer5Sec(s.orderRateLimitPer5Sec);
+      if (s.beCushionTicks !== undefined) setBeCushionTicks(s.beCushionTicks);
       setT1MultipleR(s.t1MultipleR ?? 1.0);
       setT1ExitPercent(Math.round((s.t1ExitRatio ?? 0.5) * 100));
       setT1TrailingAction(s.t1TrailingAction ?? 'TRUE_BE_WITH_FEES');
@@ -363,31 +401,36 @@ export function SettingsPage() {
     },
   });
 
-  const handleApplyPresetMode = (mode: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE') => {
-    setDefaultTargetMode(mode);
-    if (mode === 'TWO_TARGETS_RUNNER') {
+  const handleApplyPresetMode = (mode: string) => {
+    setDefaultTargetMode(mode as any);
+    setTargetDistributionMode(mode);
+    if (mode === 'DEFENSIVE_50_30_20' || mode === 'TWO_TARGETS_RUNNER') {
+      setDefaultTargetMode('TWO_TARGETS_RUNNER');
+      setTargetDistributionMode('DEFENSIVE_50_30_20');
       setT1MultipleR(1.0);
       setT1ExitPercent(50);
       setT1TrailingAction('TRUE_BE_WITH_FEES');
       setT2Enabled(true);
       setT2MultipleR(2.0);
-      setT2ExitPercent(25);
+      setT2ExitPercent(30);
       setT2TrailingAction('TRAIL_T1');
       setIsFreeRunner(true);
       setT3MultipleR(3.0);
-    } else if (mode === 'T1_FREE_RUNNER') {
+    } else if (mode === 'CONVEX_20_30_50') {
+      setDefaultTargetMode('TWO_TARGETS_RUNNER');
+      setTargetDistributionMode('CONVEX_20_30_50');
       setT1MultipleR(1.0);
-      setT1ExitPercent(50);
+      setT1ExitPercent(20);
       setT1TrailingAction('TRUE_BE_WITH_FEES');
-      setT2Enabled(false);
+      setT2Enabled(true);
+      setT2MultipleR(2.5);
+      setT2ExitPercent(30);
+      setT2TrailingAction('TRAIL_T1');
       setIsFreeRunner(true);
-    } else if (mode === 'T1_ONLY') {
-      setT1MultipleR(1.5);
-      setT1ExitPercent(100);
-      setT1TrailingAction('NONE');
-      setT2Enabled(false);
-      setIsFreeRunner(false);
-    } else if (mode === 'CLASSIC_THREE') {
+      setT3MultipleR(3.5);
+    } else if (mode === 'EQUAL_SPLIT' || mode === 'CLASSIC_THREE') {
+      setDefaultTargetMode('CLASSIC_THREE');
+      setTargetDistributionMode('EQUAL_SPLIT');
       setT1MultipleR(1.0);
       setT1ExitPercent(33);
       setT1TrailingAction('TRUE_BE_WITH_FEES');
@@ -397,6 +440,20 @@ export function SettingsPage() {
       setT2TrailingAction('TRAIL_T1');
       setIsFreeRunner(false);
       setT3MultipleR(3.0);
+    } else if (mode === 'T1_FREE_RUNNER') {
+      setT1MultipleR(1.0);
+      setT1ExitPercent(50);
+      setT1TrailingAction('TRUE_BE_WITH_FEES');
+      setT2Enabled(false);
+      setIsFreeRunner(true);
+      setTargetDistributionMode('CUSTOM');
+    } else if (mode === 'T1_ONLY') {
+      setT1MultipleR(1.5);
+      setT1ExitPercent(100);
+      setT1TrailingAction('NOMINAL_BE');
+      setT2Enabled(false);
+      setIsFreeRunner(false);
+      setTargetDistributionMode('T1_ONLY');
     }
     toast.info(`Configured preset: ${mode.replace(/_/g, ' ')}`);
   };
@@ -405,6 +462,15 @@ export function SettingsPage() {
     const d = DEFAULT_LIVE_WATCHER_SETTINGS;
     setDefaultAutoExecute(d.defaultAutoExecute);
     setDefaultTargetMode(d.defaultTargetMode);
+    setExecutionAlgorithm(d.executionAlgorithm ?? 'PEGGED_CHASE');
+    setTargetDistributionMode(d.targetDistributionMode ?? 'DEFENSIVE_50_30_20');
+    setMaxSlippagePercent(d.maxSlippagePercent ?? 0.05);
+    setMaxSlippagePoints(d.maxSlippagePoints ?? 2);
+    setSpreadSurgeProtectionEnabled(d.spreadSurgeProtectionEnabled ?? true);
+    setSpreadSurgeMultiplier(d.spreadSurgeMultiplier ?? 2.0);
+    setAntiLoopProtectionEnabled(d.antiLoopProtectionEnabled ?? true);
+    setOrderRateLimitPer5Sec(d.orderRateLimitPer5Sec ?? 3);
+    setBeCushionTicks(d.beCushionTicks ?? 2);
     setT1MultipleR(d.t1MultipleR);
     setT1ExitPercent(Math.round(d.t1ExitRatio * 100));
     setT1TrailingAction(d.t1TrailingAction);
@@ -659,6 +725,15 @@ export function SettingsPage() {
       defaultRefreshIntervalSec: Number(defaultRefreshIntervalSec),
       paperExecutionMode,
       serverSideExecutionEnabled,
+      executionAlgorithm: executionAlgorithm as any,
+      targetDistributionMode: targetDistributionMode as any,
+      maxSlippagePercent: Number(maxSlippagePercent),
+      maxSlippagePoints: Number(maxSlippagePoints),
+      spreadSurgeProtectionEnabled: Boolean(spreadSurgeProtectionEnabled),
+      spreadSurgeMultiplier: Number(spreadSurgeMultiplier),
+      antiLoopProtectionEnabled: Boolean(antiLoopProtectionEnabled),
+      orderRateLimitPer5Sec: Number(orderRateLimitPer5Sec),
+      beCushionTicks: Number(beCushionTicks),
       telegramAlertsEnabled: effectiveAlertsEnabled,
       telegramBotToken: effectiveBotToken,
       telegramChatId: effectiveChatId,
@@ -1435,6 +1510,24 @@ export function SettingsPage() {
           setDefaultAutoExecute={setDefaultAutoExecute}
           defaultTargetMode={defaultTargetMode}
           onApplyPresetMode={handleApplyPresetMode}
+          targetDistributionMode={targetDistributionMode}
+          setTargetDistributionMode={setTargetDistributionMode}
+          executionAlgorithm={executionAlgorithm}
+          setExecutionAlgorithm={setExecutionAlgorithm}
+          maxSlippagePercent={maxSlippagePercent}
+          setMaxSlippagePercent={setMaxSlippagePercent}
+          maxSlippagePoints={maxSlippagePoints}
+          setMaxSlippagePoints={setMaxSlippagePoints}
+          spreadSurgeProtectionEnabled={spreadSurgeProtectionEnabled}
+          setSpreadSurgeProtectionEnabled={setSpreadSurgeProtectionEnabled}
+          spreadSurgeMultiplier={spreadSurgeMultiplier}
+          setSpreadSurgeMultiplier={setSpreadSurgeMultiplier}
+          antiLoopProtectionEnabled={antiLoopProtectionEnabled}
+          setAntiLoopProtectionEnabled={setAntiLoopProtectionEnabled}
+          orderRateLimitPer5Sec={orderRateLimitPer5Sec}
+          setOrderRateLimitPer5Sec={setOrderRateLimitPer5Sec}
+          beCushionTicks={beCushionTicks}
+          setBeCushionTicks={setBeCushionTicks}
           t1MultipleR={t1MultipleR}
           setT1MultipleR={setT1MultipleR}
           t1ExitPercent={t1ExitPercent}

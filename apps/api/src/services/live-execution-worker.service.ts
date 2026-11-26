@@ -452,7 +452,9 @@ export class LiveExecutionWorker {
       const triggerKey = `ladder:${tradeId}:step${step.targetIndex}`;
       if (this.executedMilestones.has(triggerKey)) continue;
 
-      if (!effectiveAutoExecute) {
+      const isStepAutoEnabled = step.autoExecuteEnabled !== undefined ? step.autoExecuteEnabled : effectiveAutoExecute;
+
+      if (!isStepAutoEnabled) {
         // Just dispatch Telegram alert if enabled
         this.executedMilestones.add(triggerKey);
         if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
@@ -486,7 +488,7 @@ export class LiveExecutionWorker {
       const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
       const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
 
-      // 1. Partial or Full Exit via universal execution pipeline
+      // 1. Partial or Full Exit via universal execution pipeline with institutional microstructure protections
       if (step.plannedExitQty > 0) {
         await ExecutionPipelineService.execute({
           userId: user._id.toString(),
@@ -495,8 +497,19 @@ export class LiveExecutionWorker {
           action: 'EXIT_POSITION',
           executeBroker: true,
           isAutomated: true,
+          institutionalRules: {
+            executionAlgorithm: rules.executionAlgorithm,
+            maxSlippagePercent: rules.maxSlippagePercent,
+            maxSlippagePoints: rules.maxSlippagePoints,
+            spreadSurgeProtectionEnabled: rules.spreadSurgeProtectionEnabled,
+            spreadSurgeMultiplier: rules.spreadSurgeMultiplier,
+            antiLoopProtectionEnabled: rules.antiLoopProtectionEnabled,
+            currentLtp: metric.currentLtp,
+            targetPrice: step.targetPrice,
+          },
           payload: {
             quantity: step.plannedExitQty,
+            direction: metric.direction,
             exitReason: `Auto-Executed ${step.name}`,
           },
         });

@@ -19,8 +19,10 @@ import {
   SizingAnalyticsTradeInput,
   calculateKillZoneAnalytics,
   KillZoneTradeInput,
+  calculateActionableSummary,
+  IActionableSummaryTradeInput,
 } from '@tradevault/financial-engine';
-import { AccountScopeService } from '../services/account-scope.service.js';
+import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
 
 function applyCommonAnalyticsFilters(filter: any, query: any) {
   const { symbol, direction, session, strategyId } = query || {};
@@ -903,6 +905,132 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         friction,
         activeWindowMinutes: windowMins,
         activeTier: tier,
+      },
+    });
+  });
+
+  // Dedicated Actionable Analytics Summary & Playbook ("Do's & Don'ts" Engine)
+  app.get('/summary', async (req: any, reply) => {
+    const { startDate, endDate, symbol, timezone } = req.query;
+
+    const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
+    if (!dateRangeResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: dateRangeResult.error.issues.map((i) => i.message).join(', ') || 'Invalid date range',
+          details: dateRangeResult.error.format(),
+        },
+      });
+    }
+
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
+
+    const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
+    applyCommonAnalyticsFilters(filter, req.query);
+
+    const dateClause = buildDateRangeClause({ startDate, endDate });
+    if (dateClause.tradeDate) {
+      filter.tradeDate = dateClause.tradeDate;
+    }
+
+    const trades = await Trade.find(filter)
+      .sort({ tradeDate: 1, entryTime: 1 })
+      .populate('strategyId', 'name')
+      .lean();
+
+    // Unique symbols in this account scope
+    const availableSymbols = Array.from(
+      new Set(
+        (
+          await Trade.find({ userId: req.user!.id, accountId: { $in: accountIds } })
+            .distinct('symbol')
+        )
+          .map((s: any) => String(s || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    ).sort();
+
+    const activeTrades = symbol && symbol !== 'ALL'
+      ? trades.filter((t: any) => (t.symbol || '').toUpperCase().trim() === String(symbol).toUpperCase().trim())
+      : trades;
+
+    const tradeInputs: IActionableSummaryTradeInput[] = activeTrades.map((t: any) => {
+      let qty = t.simpleExecution?.quantity ?? t.calculated?.closedQuantity ?? t.calculated?.openQuantity ?? 0;
+      if (!qty && Array.isArray(t.fills) && t.fills.length > 0) {
+        qty = t.fills
+          .filter((f: any) => f.fillType === 'ENTRY')
+          .reduce((acc: number, f: any) => acc + (f.quantity || 0), 0);
+      }
+      return {
+        id: t._id.toString(),
+        tradeDate: t.tradeDate,
+        entryTime: t.entryTime || t.tradeDate,
+        exitTime: t.exitTime,
+        symbol: t.symbol,
+        direction: t.direction,
+        currency: (t.currency || 'USD').toUpperCase(),
+        strategyId: t.strategyId?._id ? t.strategyId._id.toString() : (t.strategyId ? t.strategyId.toString() : undefined),
+        strategyName: t.strategyId?.name || t.strategyName || 'Discretionary',
+        status: t.status,
+        session: t.session,
+        assetClass: t.assetClass,
+        quantity: qty,
+        calculated: {
+          netPnL: t.calculated?.netPnL ?? 0,
+          grossPnL: t.calculated?.grossPnL,
+          totalCosts: t.calculated?.totalCosts,
+          realizedRMultiple: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
+          holdingTimeMinutes: t.calculated?.holdingTimeMinutes,
+          outcome: t.calculated?.outcome,
+          excursion: t.calculated?.excursion ? {
+            maeR: t.calculated.excursion.maeR,
+            mfeR: t.calculated.excursion.mfeR,
+            exitEfficiency: t.calculated.excursion.exitEfficiency,
+            reversedAfterStopHit: t.calculated.excursion.reversedAfterStopHit,
+            stopHit: t.calculated.excursion.stopHit,
+          } : undefined,
+        },
+        risk: t.risk ? {
+          plannedRiskAmount: t.risk.plannedRiskAmount,
+          riskPercent: t.risk.riskPercent,
+          initialStopLoss: t.risk.initialStopLoss,
+          currentStopLoss: t.risk.currentStopLoss,
+          plannedTarget: t.risk.plannedTarget,
+        } : undefined,
+        psychology: t.psychology ? {
+          disciplineScore: t.psychology.disciplineScore,
+          emotionBefore: t.psychology.emotionBefore,
+          rulesFollowed: t.psychology.rulesFollowed,
+          mistakes: t.psychology.mistakes,
+          stopLossMoved: t.psychology.stopLossMoved,
+          revengeTrading: t.psychology.revengeTrading,
+          overtrading: t.psychology.overtrading,
+          prematureExit: t.psychology.prematureExit,
+          positionSizeViolation: t.psychology.positionSizeViolation,
+        } : undefined,
+      };
+    });
+
+    const primaryCurrency = (accountCtx.primaryCurrency && accountCtx.primaryCurrency !== 'MULTI' ? accountCtx.primaryCurrency : null) || tradeInputs[0]?.currency || 'USD';
+    const effectiveTz = timezone || accountCtx.primaryTimezone || 'Asia/Kolkata';
+
+    const report = calculateActionableSummary(tradeInputs, {
+      currency: primaryCurrency,
+      timezone: effectiveTz,
+    });
+
+    return reply.send({
+      success: true,
+      data: {
+        ...report,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
+        currency: primaryCurrency,
+        isMultiCurrency: accountCtx.isMultiCurrency,
       },
     });
   });

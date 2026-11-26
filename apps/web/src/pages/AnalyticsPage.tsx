@@ -77,6 +77,7 @@ import { WhatIfSimulatorTab } from '../components/analytics/WhatIfSimulatorTab.j
 import { ExecutionQualityTab } from '../components/analytics/ExecutionQualityTab.js';
 import { PyramidingAnalyticsTab } from '../components/analytics/PyramidingAnalyticsTab.js';
 import { PositionSizingDiagnosticsTab } from '../components/analytics/PositionSizingDiagnosticsTab.js';
+import { AnalyticsSummaryTab } from '../components/analytics/AnalyticsSummaryTab.js';
 import { KillZoneAnalyticsCard } from '../components/analytics/KillZoneAnalyticsCard.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
@@ -95,10 +96,10 @@ export function AnalyticsPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab')?.toUpperCase();
-  const validTabs = ['OVERVIEW', 'SIZING', 'PSYCHOLOGY', 'TIME', 'EXECUTION', 'WHAT_IF', 'PYRAMIDING'];
-  const initialTab = (urlTab && validTabs.includes(urlTab)) ? (urlTab as any) : 'OVERVIEW';
+  const validTabs = ['SUMMARY', 'OVERVIEW', 'SIZING', 'PSYCHOLOGY', 'TIME', 'EXECUTION', 'WHAT_IF', 'PYRAMIDING'];
+  const initialTab = (urlTab && validTabs.includes(urlTab)) ? (urlTab as any) : 'SUMMARY';
 
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'SUMMARY' | 'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>(initialTab);
 
   React.useEffect(() => {
     const tabFromUrl = searchParams.get('tab')?.toUpperCase();
@@ -460,11 +461,39 @@ export function AnalyticsPage() {
   });
   const newsImpact = newsImpactRaw?.data ?? newsImpactRaw;
 
+  const { data: summaryData, isLoading: isSummaryLoading, refetch: refetchSummary } = useQuery({
+    queryKey: [
+      'analytics-summary',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+      effectiveTimezone,
+    ],
+    queryFn: () =>
+      api.analytics.summary({
+        ...queryParams,
+        startDate,
+        endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
+        timezone: effectiveTimezone,
+      }),
+    enabled: activeTab === 'SUMMARY',
+  });
+
   // Aggregate available symbols across all analytic engines for universal selector
   const allAvailableSymbols = React.useMemo(() => {
     const symSet = new Set<string>();
     const sources = [
       stats?.availableSymbols,
+      summaryData?.availableSymbols,
+      summaryData?.data?.availableSymbols,
       sizingData?.availableSymbols,
       killZoneData?.availableSymbols,
       pyramidingData?.availableSymbols,
@@ -482,7 +511,7 @@ export function AnalyticsPage() {
       }
     }
     return Array.from(symSet).sort();
-  }, [stats, sizingData, killZoneData, pyramidingData, psychologyData, excursionData, newsImpact]);
+  }, [stats, summaryData, sizingData, killZoneData, pyramidingData, psychologyData, excursionData, newsImpact]);
 
   const allAvailableStrategies = React.useMemo(() => {
     const list: Array<{ id: string; name: string }> = [];
@@ -651,6 +680,7 @@ export function AnalyticsPage() {
         }}
       >
         {[
+          { id: 'SUMMARY', label: 'Summary & Playbook', icon: <AutoAwesomeRoundedIcon fontSize="small" /> },
           { id: 'OVERVIEW', label: 'Curve & Distribution', icon: <ShowChartIcon fontSize="small" /> },
           { id: 'SIZING', label: 'Position Sizing', icon: <StraightenRoundedIcon fontSize="small" /> },
           { id: 'PSYCHOLOGY', label: 'Psychology & Discipline', icon: <PsychologyIcon fontSize="small" /> },
@@ -1087,6 +1117,18 @@ export function AnalyticsPage() {
         </Card>
       )}
       {isPropMode && <PropChallengePanel />}
+
+      {/* TAB 0: ACTIONABLE PLAYBOOK & SUMMARY */}
+      {activeTab === 'SUMMARY' && (
+        <AnalyticsSummaryTab
+          summaryData={summaryData}
+          isLoading={isSummaryLoading}
+          onRefresh={refetchSummary}
+          analyticsCurrency={analyticsCurrency}
+          currencySymbol={currSym}
+          onSelectSymbol={handleSelectSymbol}
+        />
+      )}
 
       {/* TAB 1: OVERVIEW & DISTRIBUTION */}
       {activeTab === 'OVERVIEW' && (

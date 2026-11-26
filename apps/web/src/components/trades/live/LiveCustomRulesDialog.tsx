@@ -378,12 +378,18 @@ export function LiveCustomRulesDialog({
       lotSize,
       autoExecuteEnabled: autoExecute,
       targetMode,
+      executionAlgorithm: defaultSettings?.executionAlgorithm ?? 'PEGGED_CHASE',
+      maxSlippagePercent: defaultSettings?.maxSlippagePercent ?? 0.05,
+      spreadSurgeProtectionEnabled: defaultSettings?.spreadSurgeProtectionEnabled ?? true,
+      spreadSurgeMultiplier: defaultSettings?.spreadSurgeMultiplier ?? 2.0,
       t1: {
         targetR: t1R,
         exitRatio: t1Ratio,
         customLots: isLotBased ? t1ExitLots : undefined,
         trailAction: t1TrailAction,
         trailPoints: t1TrailAction === 'CUSTOM_POINTS' ? t1TrailPoints : undefined,
+        cushionTicks: defaultSettings?.beCushionTicks ?? 2,
+        autoExecuteEnabled: autoExecute,
       },
       t2: {
         enabled: effectiveT2Enabled,
@@ -392,6 +398,7 @@ export function LiveCustomRulesDialog({
         customLots: isLotBased && effectiveT2Enabled ? t2ExitLots : undefined,
         trailAction: t2TrailAction,
         trailPoints: t2TrailAction === 'CUSTOM_POINTS' ? t2TrailPoints : undefined,
+        autoExecuteEnabled: autoExecute,
       },
       t3: {
         enabled: effectiveRunnerEnabled && runnerLots > 0,
@@ -400,6 +407,7 @@ export function LiveCustomRulesDialog({
         customLots: isLotBased && effectiveRunnerEnabled ? runnerLots : undefined,
         trailAction: 'NONE',
         isFreeRunner,
+        autoExecuteEnabled: autoExecute,
       },
       dynamicTrailing: {
         enabled: dynamicTrailingEnabled,

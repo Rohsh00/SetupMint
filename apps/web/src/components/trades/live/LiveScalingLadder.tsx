@@ -57,6 +57,28 @@ export function LiveScalingLadder({
           <Typography variant="caption" sx={{ fontWeight: 800, fontSize: '0.72rem', letterSpacing: 0.1 }}>
             MULTI-TARGET SCALING LADDER
           </Typography>
+          {ladder.distributionMode && (
+            <Chip
+              size="small"
+              label={
+                ladder.distributionMode === 'DEFENSIVE_50_30_20'
+                  ? '🛡️ 50/30/20'
+                  : ladder.distributionMode === 'CONVEX_20_30_50'
+                  ? '📈 20/30/50'
+                  : ladder.distributionMode === 'EQUAL_SPLIT'
+                  ? '⚖️ 33/33/34'
+                  : ladder.distributionMode
+              }
+              sx={{ height: 18, fontSize: '0.58rem', fontWeight: 800, borderRadius: '4px' }}
+            />
+          )}
+          {ladder.executionAlgorithm === 'PEGGED_CHASE' && (
+            <Chip
+              size="small"
+              label="⚡ PEGGED"
+              sx={{ height: 18, fontSize: '0.58rem', fontWeight: 800, bgcolor: alpha('#3B82F6', 0.12), color: '#3B82F6', borderRadius: '4px' }}
+            />
+          )}
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -141,6 +163,21 @@ export function LiveScalingLadder({
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {step.autoExecuteEnabled && (
+                    <Chip
+                      label="⚡ AUTO"
+                      size="small"
+                      sx={{
+                        height: 18,
+                        fontSize: '0.55rem',
+                        fontWeight: 800,
+                        bgcolor: alpha('#10B981', 0.15),
+                        color: '#10B981',
+                        border: `1px solid ${alpha('#10B981', 0.3)}`,
+                        borderRadius: '4px',
+                      }}
+                    />
+                  )}
                   <Chip
                     icon={isMet ? <CheckCircleRoundedIcon sx={{ fontSize: '11px !important' }} /> : isFree ? <TrackChangesRoundedIcon sx={{ fontSize: '11px !important' }} /> : undefined}
                     label={

@@ -2294,7 +2294,11 @@ export interface IPostTradeReviewData {
   lastPulseEmotion?: string;
 }
 
+export type InstitutionalExecutionAlgorithm = 'PEGGED_CHASE' | 'TWAP_SLICING' | 'INSTANT_MARKET';
+export type TrancheDistributionMode = 'DEFENSIVE_50_30_20' | 'CONVEX_20_30_50' | 'EQUAL_SPLIT' | 'CUSTOM';
+
 export interface ICustomLadderRuleStep {
+  name?: string;
   enabled?: boolean;
   isFreeRunner?: boolean;
   targetR?: number; // e.g. 1.0, 2.0, 3.0
@@ -2302,6 +2306,8 @@ export interface ICustomLadderRuleStep {
   customLots?: number;
   trailAction: 'TRUE_BE_WITH_FEES' | 'NOMINAL_BE' | 'TRAIL_T1' | 'CUSTOM_POINTS' | 'NONE';
   trailPoints?: number;
+  cushionTicks?: number; // Safety tick cushion beyond true BE (e.g. 2 ticks)
+  autoExecuteEnabled?: boolean; // Per-step auto-execution arm toggle
 }
 
 export interface IDynamicTrailingRule {
@@ -2327,10 +2333,19 @@ export interface ICustomLadderRules {
   tradeId?: string;
   lotSize?: number;
   targetMode?: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE';
+  distributionMode?: TrancheDistributionMode;
+  executionAlgorithm?: InstitutionalExecutionAlgorithm;
+  maxSlippagePercent?: number;
+  maxSlippagePoints?: number;
+  spreadSurgeProtectionEnabled?: boolean;
+  spreadSurgeMultiplier?: number;
+  antiLoopProtectionEnabled?: boolean;
   autoExecuteEnabled?: boolean;
   t1: ICustomLadderRuleStep;
   t2?: ICustomLadderRuleStep;
   t3?: ICustomLadderRuleStep;
+  t4?: ICustomLadderRuleStep;
+  t5?: ICustomLadderRuleStep;
   dynamicTrailing?: IDynamicTrailingRule;
   givebackAutoExit?: IGivebackAutoExitRule;
   misSquareOff?: IMisSquareOffRule;
@@ -2396,6 +2411,15 @@ export interface ILiveWatcherSettings {
   defaultRefreshIntervalSec: number; // e.g. 5
   paperExecutionMode: boolean; // Paper / simulated broker execution mode
   serverSideExecutionEnabled: boolean; // Server worker executes ladder even when laptop/tab is closed
+  executionAlgorithm?: InstitutionalExecutionAlgorithm; // Default: 'PEGGED_CHASE'
+  maxSlippagePercent?: number; // e.g. 0.05%
+  maxSlippagePoints?: number; // e.g. 2 index points
+  spreadSurgeProtectionEnabled?: boolean; // Default: true
+  spreadSurgeMultiplier?: number; // Default: 2.0x normal spread
+  antiLoopProtectionEnabled?: boolean; // Default: true
+  orderRateLimitPer5Sec?: number; // Default: 3
+  targetDistributionMode?: TrancheDistributionMode; // Default: 'DEFENSIVE_50_30_20'
+  beCushionTicks?: number; // Default: 2
   telegramAlertsEnabled: boolean;
   telegramBotToken?: string;
   telegramChatId?: string;
@@ -2553,6 +2577,15 @@ export const DEFAULT_LIVE_WATCHER_SETTINGS: ILiveWatcherSettings = {
   defaultRefreshIntervalSec: 5,
   paperExecutionMode: false,
   serverSideExecutionEnabled: true,
+  executionAlgorithm: 'PEGGED_CHASE',
+  maxSlippagePercent: 0.05,
+  maxSlippagePoints: 2,
+  spreadSurgeProtectionEnabled: true,
+  spreadSurgeMultiplier: 2.0,
+  antiLoopProtectionEnabled: true,
+  orderRateLimitPer5Sec: 3,
+  targetDistributionMode: 'DEFENSIVE_50_30_20',
+  beCushionTicks: 2,
   telegramAlertsEnabled: false,
   telegramAttachLiveChart: true,
   telegramChartTimeframe: '5',
@@ -2607,11 +2640,20 @@ export function createLadderRulesFromSettings(
     lotSize,
     autoExecuteEnabled: s.defaultAutoExecute,
     targetMode: s.defaultTargetMode,
+    distributionMode: s.targetDistributionMode,
+    executionAlgorithm: s.executionAlgorithm,
+    maxSlippagePercent: s.maxSlippagePercent,
+    maxSlippagePoints: s.maxSlippagePoints,
+    spreadSurgeProtectionEnabled: s.spreadSurgeProtectionEnabled,
+    spreadSurgeMultiplier: s.spreadSurgeMultiplier,
+    antiLoopProtectionEnabled: s.antiLoopProtectionEnabled,
     t1: {
       targetR: s.t1MultipleR,
       exitRatio: s.t1ExitRatio,
       trailAction: s.t1TrailingAction,
       trailPoints: s.t1TrailPoints,
+      cushionTicks: s.beCushionTicks,
+      autoExecuteEnabled: s.defaultAutoExecute,
     },
     t2: {
       enabled: s.t2Enabled,
@@ -2619,6 +2661,7 @@ export function createLadderRulesFromSettings(
       exitRatio: s.t2ExitRatio,
       trailAction: s.t2TrailingAction,
       trailPoints: s.t2TrailPoints,
+      autoExecuteEnabled: s.defaultAutoExecute,
     },
     t3: {
       enabled: s.isFreeRunner || s.t3MultipleR > 0,
@@ -2626,6 +2669,7 @@ export function createLadderRulesFromSettings(
       exitRatio: 1.0,
       trailAction: 'NONE',
       isFreeRunner: s.isFreeRunner,
+      autoExecuteEnabled: s.defaultAutoExecute,
     },
     dynamicTrailing: {
       enabled: s.dynamicTrailingEnabled,
@@ -2656,6 +2700,100 @@ export interface ILadderStrategyPreset {
 }
 
 export const DEFAULT_LADDER_STRATEGY_PRESETS: ILadderStrategyPreset[] = [
+  {
+    id: 'INSTITUTIONAL_DEFENSIVE',
+    name: '🛡️ Institutional Defensive (50/30/20)',
+    description: 'Front-loaded bankroll protection: 50% @ +1.0R (True BE + Fees + 2 Ticks), 30% @ +2.0R, 20% Trailing Runner with Smart Routing',
+    badge: '50/30/20 Bankroll Protect',
+    rules: {
+      targetMode: 'TWO_TARGETS_RUNNER',
+      distributionMode: 'DEFENSIVE_50_30_20',
+      executionAlgorithm: 'PEGGED_CHASE',
+      maxSlippagePercent: 0.05,
+      spreadSurgeProtectionEnabled: true,
+      autoExecuteEnabled: false,
+      t1: {
+        targetR: 1.0,
+        exitRatio: 0.50,
+        trailAction: 'TRUE_BE_WITH_FEES',
+        cushionTicks: 2,
+        autoExecuteEnabled: false,
+      },
+      t2: {
+        enabled: true,
+        targetR: 2.0,
+        exitRatio: 0.30,
+        trailAction: 'TRAIL_T1',
+        autoExecuteEnabled: false,
+      },
+      t3: {
+        enabled: true,
+        isFreeRunner: true,
+        targetR: 0,
+        exitRatio: 1.0,
+        trailAction: 'NONE',
+        autoExecuteEnabled: false,
+      },
+      dynamicTrailing: {
+        enabled: true,
+        triggerR: 1.5,
+        trailType: 'STEP_R',
+        trailStepR: 0.5,
+      },
+      givebackAutoExit: {
+        enabled: true,
+        minPeakR: 1.5,
+        maxGivebackPercent: 35,
+      },
+    },
+  },
+  {
+    id: 'INSTITUTIONAL_CONVEX',
+    name: '📈 Institutional Convex Runner (20/30/50)',
+    description: 'Trend-following expectancy maximizer: 20% @ +1.0R, 30% @ +2.5R, 50% Trailing Runner riding market structure',
+    badge: '20/30/50 High Expectancy',
+    rules: {
+      targetMode: 'TWO_TARGETS_RUNNER',
+      distributionMode: 'CONVEX_20_30_50',
+      executionAlgorithm: 'PEGGED_CHASE',
+      maxSlippagePercent: 0.05,
+      spreadSurgeProtectionEnabled: true,
+      autoExecuteEnabled: false,
+      t1: {
+        targetR: 1.0,
+        exitRatio: 0.20,
+        trailAction: 'TRUE_BE_WITH_FEES',
+        cushionTicks: 2,
+        autoExecuteEnabled: false,
+      },
+      t2: {
+        enabled: true,
+        targetR: 2.5,
+        exitRatio: 0.30,
+        trailAction: 'TRAIL_T1',
+        autoExecuteEnabled: false,
+      },
+      t3: {
+        enabled: true,
+        isFreeRunner: true,
+        targetR: 0,
+        exitRatio: 1.0,
+        trailAction: 'NONE',
+        autoExecuteEnabled: false,
+      },
+      dynamicTrailing: {
+        enabled: true,
+        triggerR: 2.0,
+        trailType: 'STEP_R',
+        trailStepR: 0.5,
+      },
+      givebackAutoExit: {
+        enabled: true,
+        minPeakR: 2.0,
+        maxGivebackPercent: 30,
+      },
+    },
+  },
   {
     id: 'SCALP_1R',
     name: '⚡ Quick Scalp (1R)',
@@ -2787,7 +2925,7 @@ export const DEFAULT_LADDER_STRATEGY_PRESETS: ILadderStrategyPreset[] = [
 ];
 
 export interface ILiveTargetLadderStep {
-  targetIndex: number; // 1, 2, 3
+  targetIndex: number; // 1, 2, 3, 4, 5
   name: string; // 'T1 (+1.0R)', 'T2 (+2.0R)', 'Runner (+3.0R)'
   targetR: number; // 1.0, 2.0, 3.0
   targetPrice: number;
@@ -2803,6 +2941,8 @@ export interface ILiveTargetLadderStep {
   status: TargetLadderStepStatus;
   isActionable: boolean; // true if reached or currently met
   isFreeRunner?: boolean;
+  autoExecuteEnabled?: boolean;
+  cushionTicks?: number;
 }
 
 export interface ILiveTargetLadder {
@@ -2813,6 +2953,10 @@ export interface ILiveTargetLadder {
   trueBreakevenPrice?: number;
   nominalBreakevenPrice?: number;
   feeBufferPoints?: number;
+  distributionMode?: TrancheDistributionMode;
+  executionAlgorithm?: InstitutionalExecutionAlgorithm;
+  maxSlippagePercent?: number;
+  spreadSurgeProtectionEnabled?: boolean;
   steps: ILiveTargetLadderStep[];
   activeStepIndex: number; // 1, 2, 3
 }

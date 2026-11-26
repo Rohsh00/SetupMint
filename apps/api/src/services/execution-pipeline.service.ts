@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import {
   BrokerAdapterRegistry,
   evaluatePropPreTradeGuard,
+  evaluateSlippageRisk,
+  evaluateSpreadSurge,
 } from '@tradevault/financial-engine';
 import { TradingAccount } from '../db/models/TradingAccount.js';
 import { Trade } from '../db/models/Trade.js';
@@ -24,6 +26,18 @@ export interface ExecutionPipelineRequest {
     isStale?: boolean;
     quoteAgeMs?: number;
     provider?: string;
+  };
+  institutionalRules?: {
+    executionAlgorithm?: 'PEGGED_CHASE' | 'TWAP_SLICING' | 'INSTANT_MARKET';
+    maxSlippagePercent?: number;
+    maxSlippagePoints?: number;
+    spreadSurgeProtectionEnabled?: boolean;
+    spreadSurgeMultiplier?: number;
+    antiLoopProtectionEnabled?: boolean;
+    currentLtp?: number;
+    targetPrice?: number;
+    currentSpread?: number;
+    baselineSpread?: number;
   };
   payload: {
     stopPrice?: number;
@@ -54,6 +68,8 @@ export interface ExecutionPipelineResponse {
 }
 
 export class ExecutionPipelineService {
+  private static recentExecutions = new Map<string, number[]>();
+
   /**
    * Universal Single Execution Pipeline for UI, Telegram, Trailing, Ladder, Panic, and Auto-Worker.
    */
@@ -109,6 +125,50 @@ export class ExecutionPipelineService {
       }
       if (req.dataHealth.isStale || (req.dataHealth.quoteAgeMs && req.dataHealth.quoteAgeMs > 60000)) {
         throw new Error('Live broker execution rejected: Market quote is stale or expired (>60s).');
+      }
+    }
+
+    // 3.5 Institutional Microstructure & Anti-Loop Safeguards
+    if (req.isAutomated && req.institutionalRules) {
+      const inst = req.institutionalRules;
+      const userKey = userOid.toString();
+
+      // Anti-Loop Rate Limiting Guard (protects against broker API ban and rapid firing loops)
+      if (inst.antiLoopProtectionEnabled !== false) {
+        const now = Date.now();
+        const recent = (ExecutionPipelineService.recentExecutions.get(userKey) || []).filter((t) => now - t < 5000);
+        if (recent.length >= 3) {
+          throw new Error('Automated execution held by anti-loop protection: order rate limit exceeded (>3 orders / 5s).');
+        }
+        recent.push(now);
+        ExecutionPipelineService.recentExecutions.set(userKey, recent);
+      }
+
+      // Spread Surge Protection Guard
+      if (inst.spreadSurgeProtectionEnabled !== false && inst.currentSpread && inst.baselineSpread) {
+        const surge = evaluateSpreadSurge({
+          currentSpread: inst.currentSpread,
+          baselineSpread: inst.baselineSpread,
+          surgeMultiplier: inst.spreadSurgeMultiplier ?? 2.0,
+        });
+        if (!surge.isSafe) {
+          throw new Error(`Automated execution held: ${surge.reason}`);
+        }
+      }
+
+      // Adverse Slippage Cap Guard on Exits
+      if (req.action === 'EXIT_POSITION' && inst.targetPrice && inst.currentLtp) {
+        const tradeDir = req.payload.direction || trade?.direction || 'LONG';
+        const slip = evaluateSlippageRisk({
+          triggerPrice: inst.targetPrice,
+          currentLtp: inst.currentLtp,
+          direction: tradeDir,
+          maxSlippagePercent: inst.maxSlippagePercent ?? 0.05,
+          maxSlippagePoints: inst.maxSlippagePoints ?? 2,
+        });
+        if (!slip.isAcceptable) {
+          throw new Error(`Automated execution held: ${slip.reason}`);
+        }
       }
     }
 

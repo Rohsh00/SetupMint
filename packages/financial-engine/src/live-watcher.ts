@@ -358,6 +358,14 @@ export function calculateTargetLadder(params: {
   let t1ExitQty = totalQty;
   let t1ExitRatio = totalSteps > 2 ? 0.33 : 0.5;
 
+  if (rules?.distributionMode === 'DEFENSIVE_50_30_20') {
+    t1ExitRatio = 0.50;
+  } else if (rules?.distributionMode === 'CONVEX_20_30_50') {
+    t1ExitRatio = 0.20;
+  } else if (rules?.distributionMode === 'EQUAL_SPLIT') {
+    t1ExitRatio = 0.33;
+  }
+
   if (isFractionalLot) {
     if (totalSteps > 1) {
       let exitSteps: number;
@@ -367,9 +375,15 @@ export function calculateTargetLadder(params: {
       } else {
         t1ExitRatio =
           rules?.t1?.exitRatio ??
-          (totalSteps >= 3
-            ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
-            : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP);
+          (rules?.distributionMode === 'DEFENSIVE_50_30_20'
+            ? 0.50
+            : rules?.distributionMode === 'CONVEX_20_30_50'
+            ? 0.20
+            : rules?.distributionMode === 'EQUAL_SPLIT'
+            ? 0.33
+            : (totalSteps >= 3
+              ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
+              : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP));
         exitSteps = Math.max(
           1,
           Math.min(totalSteps - 1, new Decimal(totalSteps).times(t1ExitRatio).floor().toNumber())
@@ -390,9 +404,15 @@ export function calculateTargetLadder(params: {
       } else {
         t1ExitRatio =
           rules?.t1?.exitRatio ??
-          (totalLots >= 3
-            ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
-            : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP);
+          (rules?.distributionMode === 'DEFENSIVE_50_30_20'
+            ? 0.50
+            : rules?.distributionMode === 'CONVEX_20_30_50'
+            ? 0.20
+            : rules?.distributionMode === 'EQUAL_SPLIT'
+            ? 0.33
+            : (totalLots >= 3
+              ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
+              : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP));
         t1ExitLots = Math.max(
           1,
           Math.min(totalLots - 1, new Decimal(totalLots).times(t1ExitRatio).floor().toNumber())
@@ -414,8 +434,16 @@ export function calculateTargetLadder(params: {
   let t1StopLoss = Number(dEntry.toFixed(2));
   let t1StopLabel = `Lock BE (${sym}${t1StopLoss})`;
   if (rules?.t1?.trailAction === 'TRUE_BE_WITH_FEES' && trueBePrice) {
-    t1StopLoss = trueBePrice;
-    t1StopLabel = `Lock True BE + Fees (${sym}${trueBePrice})`;
+    const cushion = rules.t1.cushionTicks !== undefined ? rules.t1.cushionTicks : 2;
+    if (cushion > 0) {
+      const cushionPts = dTick.times(cushion);
+      const paddedBe = isLong ? new Decimal(trueBePrice).plus(cushionPts) : new Decimal(trueBePrice).minus(cushionPts);
+      t1StopLoss = Number(paddedBe.toFixed(2));
+      t1StopLabel = `Lock True BE + Fees + ${cushion}T (${sym}${t1StopLoss})`;
+    } else {
+      t1StopLoss = trueBePrice;
+      t1StopLabel = `Lock True BE + Fees (${sym}${trueBePrice})`;
+    }
   } else if (rules?.t1?.trailAction === 'CUSTOM_POINTS' && rules.t1.trailPoints) {
     const pts = new Decimal(rules.t1.trailPoints);
     const sl = isLong ? dEntry.plus(pts) : dEntry.minus(pts);
@@ -548,6 +576,8 @@ export function calculateTargetLadder(params: {
     progressPercent: t1Progress,
     status: isT1Met ? 'MET' : t1Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
     isActionable: isT1Met,
+    autoExecuteEnabled: rules?.t1?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
+    cushionTicks: rules?.t1?.cushionTicks ?? 2,
   });
 
   // Step 2: Target 2 (R2) if enabled
@@ -568,6 +598,7 @@ export function calculateTargetLadder(params: {
       progressPercent: t2Progress,
       status: isT2Met ? 'MET' : t2Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
       isActionable: isT2Met,
+      autoExecuteEnabled: rules?.t2?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
     });
   }
 
@@ -591,6 +622,7 @@ export function calculateTargetLadder(params: {
         status: isT1Met ? 'IN_PROGRESS' : 'PENDING',
         isActionable: isT1Met,
         isFreeRunner: true,
+        autoExecuteEnabled: rules?.t3?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
       });
     } else {
       steps.push({
@@ -609,6 +641,7 @@ export function calculateTargetLadder(params: {
         progressPercent: t3Progress,
         status: isT3Met ? 'MET' : t3Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
         isActionable: isT3Met,
+        autoExecuteEnabled: rules?.t3?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
       });
     }
   }
@@ -628,6 +661,10 @@ export function calculateTargetLadder(params: {
     trueBreakevenPrice: trueBePrice,
     nominalBreakevenPrice: Number(dEntry.toFixed(2)),
     feeBufferPoints: feeBufferPts,
+    distributionMode: rules?.distributionMode,
+    executionAlgorithm: rules?.executionAlgorithm,
+    maxSlippagePercent: rules?.maxSlippagePercent,
+    spreadSurgeProtectionEnabled: rules?.spreadSurgeProtectionEnabled,
     steps,
     activeStepIndex,
   };
@@ -1707,6 +1744,95 @@ export function generatePostTradeReviewSummary(params: {
     suggestedMistakes,
     pulseCheckIns,
     lastPulseEmotion,
+  };
+}
+
+export interface ISlippageEvaluation {
+  isAcceptable: boolean;
+  slippagePoints: number;
+  slippagePercent: number;
+  reason?: string;
+}
+
+/**
+ * Institutional Adverse Slippage Guard.
+ * Evaluates whether actual execution market price deviated beyond the acceptable slippage tolerance.
+ */
+export function evaluateSlippageRisk(params: {
+  triggerPrice: number | string | Decimal;
+  currentLtp: number | string | Decimal;
+  direction: Direction;
+  maxSlippagePercent?: number;
+  maxSlippagePoints?: number;
+}): ISlippageEvaluation {
+  const dTrigger = new Decimal(params.triggerPrice || 0);
+  const dLtp = new Decimal(params.currentLtp || 0);
+  const isLong = params.direction === 'LONG';
+
+  // For LONG exit: selling position. Adverse price movement is currentLtp < triggerPrice.
+  // For SHORT exit: buying back. Adverse price movement is currentLtp > triggerPrice.
+  const adverseDelta = isLong ? dTrigger.minus(dLtp) : dLtp.minus(dTrigger);
+  const slippagePoints = Math.max(0, adverseDelta.toNumber());
+  const slippagePercent = dTrigger.isZero() ? 0 : Math.max(0, adverseDelta.dividedBy(dTrigger).times(100).toNumber());
+
+  const maxPct = params.maxSlippagePercent ?? 0.05;
+  const maxPts = params.maxSlippagePoints ?? 2;
+
+  if (slippagePercent > maxPct && slippagePoints > maxPts) {
+    return {
+      isAcceptable: false,
+      slippagePoints: Number(slippagePoints.toFixed(2)),
+      slippagePercent: Number(slippagePercent.toFixed(3)),
+      reason: `Adverse slippage ${slippagePercent.toFixed(2)}% (${slippagePoints.toFixed(2)} pts) exceeds cap ${maxPct}% (${maxPts} pts)`,
+    };
+  }
+
+  return {
+    isAcceptable: true,
+    slippagePoints: Number(slippagePoints.toFixed(2)),
+    slippagePercent: Number(slippagePercent.toFixed(3)),
+  };
+}
+
+export interface ISpreadSurgeEvaluation {
+  isSafe: boolean;
+  currentSpread: number;
+  baselineSpread: number;
+  multiplierRatio: number;
+  reason?: string;
+}
+
+/**
+ * Institutional Spread Surge & News Liquidity Guard.
+ * Detects abnormal spread expansion that occurs during market openings, flash volatility, or major news.
+ */
+export function evaluateSpreadSurge(params: {
+  currentSpread: number | string | Decimal;
+  baselineSpread?: number | string | Decimal;
+  surgeMultiplier?: number;
+}): ISpreadSurgeEvaluation {
+  const curSpread = Number(new Decimal(params.currentSpread || 0).toFixed(4));
+  const baseSpread = Number(new Decimal(params.baselineSpread || (curSpread > 0 ? curSpread : 1)).toFixed(4));
+  const mult = params.surgeMultiplier ?? 2.0;
+
+  if (baseSpread <= 0) return { isSafe: true, currentSpread: curSpread, baselineSpread: baseSpread, multiplierRatio: 1 };
+
+  const ratio = Number((curSpread / baseSpread).toFixed(2));
+  if (ratio > mult) {
+    return {
+      isSafe: false,
+      currentSpread: curSpread,
+      baselineSpread: baseSpread,
+      multiplierRatio: ratio,
+      reason: `Spread surge detected: current spread ${curSpread} is ${ratio}x baseline (limit: ${mult}x)`,
+    };
+  }
+
+  return {
+    isSafe: true,
+    currentSpread: curSpread,
+    baselineSpread: baseSpread,
+    multiplierRatio: ratio,
   };
 }
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -17,6 +17,7 @@ import {
   useTheme as useMuiTheme,
   alpha,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import TrackChangesRounded from '@mui/icons-material/TrackChangesRounded';
 import FlashOnRounded from '@mui/icons-material/FlashOnRounded';
@@ -25,7 +26,14 @@ import ScienceRounded from '@mui/icons-material/ScienceRounded';
 import CloudSyncRounded from '@mui/icons-material/CloudSyncRounded';
 import VolumeUpRounded from '@mui/icons-material/VolumeUpRounded';
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
-import { ILiveWatcherSettings } from '@tradevault/shared';
+import ShieldRounded from '@mui/icons-material/ShieldRounded';
+import SecurityRounded from '@mui/icons-material/SecurityRounded';
+import TuneRounded from '@mui/icons-material/TuneRounded';
+import LayersRounded from '@mui/icons-material/LayersRounded';
+import HubRounded from '@mui/icons-material/HubRounded';
+import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
+import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
+import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { formatCurrency } from '../../lib/utils.js';
 import { soundEngine } from '../../lib/sound-engine.js';
 
@@ -34,7 +42,25 @@ export interface ExecutionSettingsTabProps {
   defaultAutoExecute: boolean;
   setDefaultAutoExecute: (val: boolean) => void;
   defaultTargetMode: string;
-  onApplyPresetMode: (mode: 'T1_ONLY' | 'T1_FREE_RUNNER' | 'TWO_TARGETS_RUNNER' | 'CLASSIC_THREE') => void;
+  onApplyPresetMode: (mode: any) => void;
+  targetDistributionMode: string;
+  setTargetDistributionMode: (val: any) => void;
+  executionAlgorithm: string;
+  setExecutionAlgorithm: (val: any) => void;
+  maxSlippagePercent: number;
+  setMaxSlippagePercent: (val: number) => void;
+  maxSlippagePoints: number;
+  setMaxSlippagePoints: (val: number) => void;
+  spreadSurgeProtectionEnabled: boolean;
+  setSpreadSurgeProtectionEnabled: (val: boolean) => void;
+  spreadSurgeMultiplier: number;
+  setSpreadSurgeMultiplier: (val: number) => void;
+  antiLoopProtectionEnabled: boolean;
+  setAntiLoopProtectionEnabled: (val: boolean) => void;
+  orderRateLimitPer5Sec: number;
+  setOrderRateLimitPer5Sec: (val: number) => void;
+  beCushionTicks: number;
+  setBeCushionTicks: (val: number) => void;
   t1MultipleR: number;
   setT1MultipleR: (val: number) => void;
   t1ExitPercent: number;
@@ -100,6 +126,24 @@ export function ExecutionSettingsTab({
   setDefaultAutoExecute,
   defaultTargetMode,
   onApplyPresetMode,
+  targetDistributionMode,
+  setTargetDistributionMode,
+  executionAlgorithm,
+  setExecutionAlgorithm,
+  maxSlippagePercent,
+  setMaxSlippagePercent,
+  maxSlippagePoints,
+  setMaxSlippagePoints,
+  spreadSurgeProtectionEnabled,
+  setSpreadSurgeProtectionEnabled,
+  spreadSurgeMultiplier,
+  setSpreadSurgeMultiplier,
+  antiLoopProtectionEnabled,
+  setAntiLoopProtectionEnabled,
+  orderRateLimitPer5Sec,
+  setOrderRateLimitPer5Sec,
+  beCushionTicks,
+  setBeCushionTicks,
   t1MultipleR,
   setT1MultipleR,
   t1ExitPercent,
@@ -161,26 +205,63 @@ export function ExecutionSettingsTab({
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
+  const runnerPercent = Math.max(0, 100 - t1ExitPercent - (t2Enabled ? t2ExitPercent : 0));
+
   return (
-    <form onSubmit={onSave} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Top Banner & Quick Save Bar */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, p: 2, borderRadius: 2, bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'grey.50', border: 1, borderColor: 'divider' }}>
+    <form onSubmit={onSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* ── TOP COCKPIT HEADER ── */}
+      <Box
+        sx={{
+          p: 2.5,
+          borderRadius: 2.5,
+          bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'grey.50',
+          border: 1,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <FlashOnRounded sx={{ color: 'primary.main', fontSize: 22 }} />
-            Automated Scaling Ladder & Execution Engine
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 0.5 }}>
+            <Box
+              sx={{
+                width: 34,
+                height: 34,
+                borderRadius: '8px',
+                bgcolor: alpha(muiTheme.palette.primary.main, 0.12),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'primary.main',
+              }}
+            >
+              <FlashOnRounded sx={{ fontSize: 22 }} />
+            </Box>
+            <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: -0.2 }}>
+              Institutional Auto-Execution & Scaling Cockpit
+            </Typography>
+            <Chip
+              size="small"
+              label={defaultAutoExecute ? '⚡ AUTOMATION ARMED' : '✋ MANUAL CONFIRMATION'}
+              color={defaultAutoExecute ? 'success' : 'default'}
+              sx={{ fontWeight: 800, fontSize: '0.68rem', height: 22 }}
+            />
+          </Box>
           <Typography variant="body2" color="text.secondary">
-            Configure automated scaling ratios, dynamic trailing stops, profit giveback radars, and execution simulation.
+            Configure algorithmic order routing, multi-tranche scaling distribution, adverse slippage caps, and server-side fail-safes.
           </Typography>
         </Box>
+
         <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
           <Button
             variant="outlined"
             color="inherit"
             size="small"
             onClick={onResetDefaults}
-            sx={{ fontWeight: 600, textTransform: 'none' }}
+            sx={{ fontWeight: 600, textTransform: 'none', borderRadius: 1.5 }}
           >
             Reset Defaults
           </Button>
@@ -189,158 +270,226 @@ export function ExecutionSettingsTab({
             variant="contained"
             color="primary"
             disabled={isSaving}
-            sx={{ fontWeight: 700, px: 2.5 }}
+            sx={{ fontWeight: 800, px: 3, borderRadius: 1.5, boxShadow: 'none' }}
           >
-            {isSaving ? 'Saving...' : 'Save Execution Settings'}
+            {isSaving ? 'Saving Cockpit...' : 'Save Execution Settings'}
           </Button>
         </Box>
       </Box>
 
       {saveSuccess && (
         <Alert severity="success" icon={<CheckCircleRounded />}>
-          Live Trade Watcher & Execution defaults saved successfully.
+          Institutional Execution Cockpit settings saved successfully. Server daemon & live watchers updated.
         </Alert>
       )}
 
-      {saveError && (
-        <Alert severity="error">
-          {saveError}
-        </Alert>
-      )}
+      {saveError && <Alert severity="error">{saveError}</Alert>}
 
-      {/* Card 1: Interactive Scaling Ladder & Target Multiples */}
-      <Card variant="outlined" sx={{ p: 1 }}>
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1 }}>
+      {/* ── COCKPIT PANE 1: SCALING TRANCHE MATRIX & VISUAL DISTRIBUTION ── */}
+      <Card
+        variant="outlined"
+        sx={{
+          borderRadius: 2.5,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider',
+          bgcolor: isDark ? 'rgba(255,255,255,0.015)' : '#fff',
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: 'wrap', gap: 1.5 }}>
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <TrackChangesRounded sx={{ color: 'primary.main' }} />
-                Default Scaling Ladder & Trailing Stop Rules
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LayersRounded sx={{ color: 'primary.main', fontSize: 20 }} />
+                Scaling Tranche Matrix & Position Distribution
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                These rules apply automatically to open orders. Customize ratios, target R-multiples, and trailing stop actions.
+                Control partial book points, target R-multiples, and true breakeven defense with tick padding.
               </Typography>
             </Box>
 
-            {/* Preset Selector */}
+            {/* Presets */}
             <ToggleButtonGroup
               size="small"
               exclusive
-              value={defaultTargetMode}
-              onChange={(_, val) => val && onApplyPresetMode(val)}
+              value={targetDistributionMode}
+              onChange={(_, val) => {
+                if (!val) return;
+                setTargetDistributionMode(val);
+                onApplyPresetMode(val);
+              }}
               sx={{
                 '& .MuiToggleButton-root': {
-                  fontSize: '0.75rem',
+                  fontSize: '0.72rem',
                   fontWeight: 700,
-                  px: 1.5,
+                  px: 1.25,
+                  py: 0.5,
                   textTransform: 'none',
                 },
               }}
             >
-              <ToggleButton value="TWO_TARGETS_RUNNER">2 Targets + Runner</ToggleButton>
-              <ToggleButton value="T1_FREE_RUNNER">T1 + Free Runner</ToggleButton>
-              <ToggleButton value="CLASSIC_THREE">Classic 3 Targets</ToggleButton>
-              <ToggleButton value="T1_ONLY">T1 Only (100%)</ToggleButton>
+              <ToggleButton value="DEFENSIVE_50_30_20">🛡️ Defensive (50/30/20)</ToggleButton>
+              <ToggleButton value="CONVEX_20_30_50">📈 Convex Runner (20/30/50)</ToggleButton>
+              <ToggleButton value="EQUAL_SPLIT">⚖️ Equal Split (33/33/34)</ToggleButton>
+              <ToggleButton value="T1_ONLY">⚡ T1 Only (100%)</ToggleButton>
             </ToggleButtonGroup>
           </Box>
 
-          {/* Visual Timeline Preview */}
+          {/* Interactive Tranche Allocation Bar Visualizer */}
           <Box
             sx={{
               p: 2,
               borderRadius: 2,
-              bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+              bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'grey.50',
               border: 1,
               borderColor: 'divider',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1.5,
             }}
           >
-            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Live Execution Workflow Preview for Every Open Trade:
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Position Volume Allocation Curve:
+              </Typography>
+              <Typography variant="caption" sx={{ fontWeight: 700, color: runnerPercent > 0 ? '#8B5CF6' : 'text.secondary' }}>
+                {runnerPercent > 0 ? `🚀 ${runnerPercent}% Position Left to Ride Open Trend` : 'Full Position Closed at Targets'}
+              </Typography>
+            </Box>
 
-            <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Grid size={{ xs: 12, sm: 3 }}>
-                <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.08)', border: 1, borderColor: 'primary.main' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main', display: 'block' }}>
-                    STEP 1: ENTRY (0.0R)
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    Initial SL Armed
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Full position size active
-                  </Typography>
+            {/* Segmented Volume Allocation Bar */}
+            <Box
+              sx={{
+                display: 'flex',
+                height: 18,
+                borderRadius: 1.5,
+                overflow: 'hidden',
+                bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                mb: 1.5,
+              }}
+            >
+              <Box
+                sx={{
+                  width: `${Math.min(100, Math.max(0, t1ExitPercent))}%`,
+                  bgcolor: '#3B82F6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontSize: '0.65rem',
+                  fontWeight: 800,
+                  transition: 'width 0.3s ease',
+                }}
+              >
+                {t1ExitPercent >= 15 ? `T1: ${t1ExitPercent}%` : `${t1ExitPercent}%`}
+              </Box>
+              {t2Enabled && (
+                <Box
+                  sx={{
+                    width: `${Math.min(100, Math.max(0, t2ExitPercent))}%`,
+                    bgcolor: '#10B981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    transition: 'width 0.3s ease',
+                  }}
+                >
+                  {t2ExitPercent >= 15 ? `T2: ${t2ExitPercent}%` : `${t2ExitPercent}%`}
                 </Box>
-              </Grid>
+              )}
+              {runnerPercent > 0 && (
+                <Box
+                  sx={{
+                    width: `${runnerPercent}%`,
+                    bgcolor: '#8B5CF6',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    transition: 'width 0.3s ease',
+                  }}
+                >
+                  {runnerPercent >= 15 ? `Runner: ${runnerPercent}%` : `${runnerPercent}%`}
+                </Box>
+              )}
+            </Box>
 
-              <Grid size={{ xs: 12, sm: 3 }}>
-                <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.08)', border: 1, borderColor: '#10B981' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#10B981', display: 'block' }}>
-                    STEP 2: TARGET 1 (+{t1MultipleR}R)
+            {/* Timeline Milestones */}
+            <Grid container spacing={1.5}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Box sx={{ p: 1.5, borderRadius: 1.5, border: 1, borderColor: '#3B82F6', bgcolor: alpha('#3B82F6', 0.05) }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#3B82F6', display: 'block' }}>
+                    TRANCHE 1: +{t1MultipleR}R ({t1ExitPercent}% EXIT)
                   </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    Exit {t1ExitPercent}% Position
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25 }}>
                     {t1TrailingAction === 'TRUE_BE_WITH_FEES'
-                      ? 'Trail SL to True BE + Fees'
+                      ? `True BE + Fees + ${beCushionTicks}T Cushion`
                       : t1TrailingAction === 'NOMINAL_BE'
-                      ? 'Trail SL to Entry Price'
+                      ? 'Nominal Entry BE'
                       : t1TrailingAction === 'CUSTOM_POINTS'
                       ? `Trail SL +${t1TrailPoints} pts`
-                      : 'SL Unchanged'}
+                      : 'Stop Loss Unchanged'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Primary risk offload milestone
                   </Typography>
                 </Box>
               </Grid>
 
-              {t2Enabled && (
-                <Grid size={{ xs: 12, sm: 3 }}>
-                  <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(139, 92, 246, 0.1)' : 'rgba(139, 92, 246, 0.08)', border: 1, borderColor: '#8B5CF6' }}>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: '#8B5CF6', display: 'block' }}>
-                      STEP 3: TARGET 2 (+{t2MultipleR}R)
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Exit {t2ExitPercent}% Position
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t2TrailingAction === 'TRAIL_T1' ? `Trail SL to T1 (+${t1MultipleR}R)` : 'Trail by custom rule'}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              <Grid size={{ xs: 12, sm: t2Enabled ? 3 : 6 }}>
-                <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.08)', border: 1, borderColor: '#F59E0B' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#F59E0B', display: 'block' }}>
-                    STEP 4: RUNNER ({Math.max(0, 100 - t1ExitPercent - (t2Enabled ? t2ExitPercent : 0))}%)
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 1.5,
+                    border: 1,
+                    borderColor: t2Enabled ? '#10B981' : 'divider',
+                    bgcolor: t2Enabled ? alpha('#10B981', 0.05) : 'transparent',
+                    opacity: t2Enabled ? 1 : 0.6,
+                  }}
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: t2Enabled ? '#10B981' : 'text.secondary', display: 'block' }}>
+                    TRANCHE 2: {t2Enabled ? `+${t2MultipleR}R (${t2ExitPercent}% EXIT)` : 'DISABLED'}
                   </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {isFreeRunner ? 'Free Runner Ride' : `Target 3 (+${t3MultipleR}R)`}
+                  <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25 }}>
+                    {t2Enabled
+                      ? t2TrailingAction === 'TRAIL_T1'
+                        ? `Lock T1 Profit (+${t1MultipleR}R)`
+                        : 'Custom Trail'
+                      : 'Skipped to Runner'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {givebackAutoExitEnabled ? `Max ${givebackMaxPercent}% giveback radar` : 'Manual exit'}
+                    Secondary scaling milestone
+                  </Typography>
+                </Box>
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Box sx={{ p: 1.5, borderRadius: 1.5, border: 1, borderColor: '#8B5CF6', bgcolor: alpha('#8B5CF6', 0.05) }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#8B5CF6', display: 'block' }}>
+                    RUNNER: {runnerPercent}% VOLUME
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, mt: 0.25 }}>
+                    {isFreeRunner ? 'Free Runner Ride (Giveback Protected)' : `Target 3 (+${t3MultipleR}R Fixed)`}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {givebackAutoExitEnabled ? `Anti-Greed Radar: Max ${givebackMaxPercent}% giveback` : 'Manual runner exit'}
                   </Typography>
                 </Box>
               </Grid>
             </Grid>
           </Box>
 
-          {/* Ladder Step Controls */}
+          {/* Tranche Configuration Inputs */}
           <Grid container spacing={2.5}>
             {/* Target 1 Controls */}
             <Grid size={{ xs: 12, md: 6 }}>
               <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Chip size="small" label="T1" color="primary" sx={{ fontWeight: 800, height: 20 }} />
-                    Target 1 (Primary Scaling Level)
-                  </Typography>
-                </Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip size="small" label="T1" color="primary" sx={{ fontWeight: 800, height: 20 }} />
+                  Target 1 (Primary Scaling Level)
+                </Typography>
 
-                <Grid container spacing={2}>
+                <Grid container spacing={1.5}>
                   <Grid size={{ xs: 6 }}>
                     <TextField
                       label="Target 1 (R-Multiple)"
@@ -374,22 +523,29 @@ export function ExecutionSettingsTab({
                       fullWidth
                       value={t1TrailingAction}
                       onChange={(e) => setT1TrailingAction(e.target.value)}
-                      helperText="Automated order adjustment sent to broker"
                     >
                       <MenuItem value="TRUE_BE_WITH_FEES">
-                        <strong>Lock True BE + Fees (Guaranteed Net Non-Negative)</strong>
+                        <strong>Lock True BE + Fees + Cushion (Guaranteed Net Non-Negative)</strong>
                       </MenuItem>
-                      <MenuItem value="NOMINAL_BE">
-                        Nominal Breakeven (Exact Entry Price)
-                      </MenuItem>
-                      <MenuItem value="CUSTOM_POINTS">
-                        Trail Stop Loss by Custom Points (+X pts)
-                      </MenuItem>
-                      <MenuItem value="NONE">
-                        Do Not Move Stop Loss (Leave Initial Risk)
-                      </MenuItem>
+                      <MenuItem value="NOMINAL_BE">Nominal Breakeven (Exact Entry Price)</MenuItem>
+                      <MenuItem value="CUSTOM_POINTS">Trail Stop Loss by Custom Points (+X pts)</MenuItem>
+                      <MenuItem value="NONE">Do Not Move Stop Loss (Leave Initial Risk)</MenuItem>
                     </TextField>
                   </Grid>
+
+                  {t1TrailingAction === 'TRUE_BE_WITH_FEES' && (
+                    <Grid size={{ xs: 12 }}>
+                      <TextField
+                        label="Safety Tick Cushion Beyond True BE"
+                        size="small"
+                        type="number"
+                        fullWidth
+                        value={beCushionTicks}
+                        onChange={(e) => setBeCushionTicks(Number(e.target.value))}
+                        helperText="Adds 1-4 ticks of padding above true breakeven to ensure zero slippage friction"
+                      />
+                    </Grid>
+                  )}
 
                   {t1TrailingAction === 'CUSTOM_POINTS' && (
                     <Grid size={{ xs: 12 }}>
@@ -411,19 +567,15 @@ export function ExecutionSettingsTab({
             <Grid size={{ xs: 12, md: 6 }}>
               <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Chip size="small" label="T2" color="secondary" sx={{ fontWeight: 800, height: 20 }} />
                     Target 2 (Secondary Milestone)
                   </Typography>
-                  <Switch
-                    checked={t2Enabled}
-                    onChange={(e) => setT2Enabled(e.target.checked)}
-                    size="small"
-                  />
+                  <Switch checked={t2Enabled} onChange={(e) => setT2Enabled(e.target.checked)} size="small" />
                 </Box>
 
                 {t2Enabled ? (
-                  <Grid container spacing={2}>
+                  <Grid container spacing={1.5}>
                     <Grid size={{ xs: 6 }}>
                       <TextField
                         label="Target 2 (R-Multiple)"
@@ -485,23 +637,19 @@ export function ExecutionSettingsTab({
               </Box>
             </Grid>
 
-            {/* Runner / Target 3 Controls */}
+            {/* Final Target & Runner Controls */}
             <Grid size={{ xs: 12 }}>
               <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Chip size="small" label="T3" color="warning" sx={{ fontWeight: 800, height: 20 }} />
-                    Final Target & Runner Management
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Chip size="small" label="RUNNER" color="warning" sx={{ fontWeight: 800, height: 20 }} />
+                    Final Target & Runner Ride Management
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                      {isFreeRunner ? 'Free Runner Ride (Exit on Signal / Radar)' : 'Fixed Target 3 Multiple'}
+                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                      {isFreeRunner ? 'Free Runner Ride (Uncapped)' : 'Fixed Target 3 Multiple'}
                     </Typography>
-                    <Switch
-                      checked={!isFreeRunner}
-                      onChange={(e) => setIsFreeRunner(!e.target.checked)}
-                      size="small"
-                    />
+                    <Switch checked={!isFreeRunner} onChange={(e) => setIsFreeRunner(!e.target.checked)} size="small" />
                   </Box>
                 </Box>
 
@@ -527,16 +675,169 @@ export function ExecutionSettingsTab({
         </CardContent>
       </Card>
 
-      {/* Card 2: Dynamic Trailing Ratchet & Profit Giveback Protection Radar */}
+      {/* ── COCKPIT PANE 2: ALGORITHMIC ROUTING & MICROSTRUCTURE PROTECTIONS ── */}
+      <Card
+        variant="outlined"
+        sx={{
+          borderRadius: 2.5,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider',
+          bgcolor: isDark ? 'rgba(255,255,255,0.015)' : '#fff',
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <SecurityRounded sx={{ color: 'primary.main', fontSize: 20 }} />
+              Algorithmic Order Routing & Microstructure Protections
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Tier-1 institutional execution algorithms that eliminate adverse slippage and guard against news spread blowouts.
+            </Typography>
+          </Box>
+
+          <Grid container spacing={2.5}>
+            {/* Routing Algorithm Selector */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <HubRounded sx={{ color: 'primary.main', fontSize: 18 }} />
+                  Execution Algorithm Type
+                </Typography>
+
+                <TextField
+                  select
+                  size="small"
+                  label="Order Routing Algorithm"
+                  value={executionAlgorithm}
+                  onChange={(e) => setExecutionAlgorithm(e.target.value)}
+                  fullWidth
+                >
+                  <MenuItem value="PEGGED_CHASE">
+                    <strong>Smart Pegged Limit with Chase (Recommended)</strong>
+                  </MenuItem>
+                  <MenuItem value="TWAP_SLICING">TWAP Slicing (Time-Weighted Volume Clips)</MenuItem>
+                  <MenuItem value="INSTANT_MARKET">Instant Market Fill (Aggressive Sweep)</MenuItem>
+                </TextField>
+
+                <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: alpha(muiTheme.palette.primary.main, 0.05), border: `1px solid ${alpha(muiTheme.palette.primary.main, 0.15)}` }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', color: 'primary.main', mb: 0.25 }}>
+                    {executionAlgorithm === 'PEGGED_CHASE' && '⚡ SMART PEGGED LIMIT WITH CHASE:'}
+                    {executionAlgorithm === 'TWAP_SLICING' && '⏱️ TWAP ORDER SLICING:'}
+                    {executionAlgorithm === 'INSTANT_MARKET' && '🚀 INSTANT MARKET FILL:'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {executionAlgorithm === 'PEGGED_CHASE' &&
+                      'Places a passive limit pegged to the best Bid/Ask to capture the spread. If not fully filled within 3 seconds, it chases into the book to guarantee execution with zero delay.'}
+                    {executionAlgorithm === 'TWAP_SLICING' &&
+                      'Splits large lot orders into 3-4 smaller micro-clips over 12 seconds to prevent adverse market impact and reduce liquidity depletion on exchange books.'}
+                    {executionAlgorithm === 'INSTANT_MARKET' &&
+                      'Transmits an immediate market order directly to the broker matching engine, strictly bounded by the adverse slippage cap below.'}
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
+
+            {/* Microstructure Safeguards */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <ShieldRounded sx={{ color: '#10B981', fontSize: 18 }} />
+                  Microstructure & Slippage Safeguards
+                </Typography>
+
+                <Grid container spacing={1.5}>
+                  <Grid size={{ xs: 6 }}>
+                    <TextField
+                      label="Max Slippage Cap (%)"
+                      size="small"
+                      type="number"
+                      fullWidth
+                      value={maxSlippagePercent}
+                      onChange={(e) => setMaxSlippagePercent(Number(e.target.value))}
+                      slotProps={{ htmlInput: { step: '0.01', min: '0.01', max: '2' } }}
+                      helperText="Default: 0.05% tolerance"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6 }}>
+                    <TextField
+                      label="Max Slippage (Points)"
+                      size="small"
+                      type="number"
+                      fullWidth
+                      value={maxSlippagePoints}
+                      onChange={(e) => setMaxSlippagePoints(Number(e.target.value))}
+                      slotProps={{ htmlInput: { step: '0.5', min: '0.5' } }}
+                      helperText="e.g. 2 index points"
+                    />
+                  </Grid>
+                </Grid>
+
+                <Divider sx={{ my: 0.5 }} />
+
+                {/* Spread Surge Shield */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Spread Surge Shield
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Pauses auto-orders if spread widens beyond {spreadSurgeMultiplier}x normal baseline (e.g. CPI/NFP news)
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={spreadSurgeProtectionEnabled}
+                    onChange={(e) => setSpreadSurgeProtectionEnabled(e.target.checked)}
+                    size="small"
+                  />
+                </Box>
+
+                {spreadSurgeProtectionEnabled && (
+                  <TextField
+                    label="Spread Surge Multiplier Threshold"
+                    size="small"
+                    type="number"
+                    fullWidth
+                    value={spreadSurgeMultiplier}
+                    onChange={(e) => setSpreadSurgeMultiplier(Number(e.target.value))}
+                    slotProps={{ htmlInput: { step: '0.5', min: '1.5', max: '5.0' } }}
+                    helperText="e.g. 2.0x normal spread halts market exits until liquidity normalizes"
+                  />
+                )}
+
+                <Divider sx={{ my: 0.5 }} />
+
+                {/* Anti-Loop Throttler */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      Order Storm & Anti-Loop Limiter
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Caps automated orders to max {orderRateLimitPer5Sec} per 5s to prevent broker API rate bans
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={antiLoopProtectionEnabled}
+                    onChange={(e) => setAntiLoopProtectionEnabled(e.target.checked)}
+                    size="small"
+                  />
+                </Box>
+              </Box>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {/* ── COCKPIT PANE 3: DYNAMIC TRAILING & GIVEBACK RADAR ── */}
       <Grid container spacing={2.5}>
         {/* Dynamic Trailing Ratchet */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
+          <Card variant="outlined" sx={{ height: '100%', p: 1, borderRadius: 2.5 }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <SpeedRounded sx={{ color: 'primary.main' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                     Dynamic Step-Trailing Ratchet
                   </Typography>
                 </Box>
@@ -572,11 +873,10 @@ export function ExecutionSettingsTab({
                   onChange={(e) => setDynamicTrailType(e.target.value)}
                 >
                   <MenuItem value="STEP_R">Step-R Ratchet (Trail by +X R every step)</MenuItem>
-                  <MenuItem value="HIGH_WATER_MARK">High-Water Mark (Trail peak price by fixed pts)</MenuItem>
-                  <MenuItem value="POINTS">Fixed Points Trailing</MenuItem>
+                  <MenuItem value="HIGH_WATER_POINTS">High-Water Mark (Trail peak price by fixed pts)</MenuItem>
                 </TextField>
 
-                {dynamicTrailType === 'STEP_R' && (
+                {dynamicTrailType === 'STEP_R' ? (
                   <TextField
                     label="Step Size (R)"
                     size="small"
@@ -587,9 +887,7 @@ export function ExecutionSettingsTab({
                     slotProps={{ htmlInput: { step: '0.1', min: '0.2' } }}
                     helperText="e.g. 0.5R ratchet interval"
                   />
-                )}
-
-                {dynamicTrailType !== 'STEP_R' && (
+                ) : (
                   <TextField
                     label="Trail Distance (Points)"
                     size="small"
@@ -597,6 +895,7 @@ export function ExecutionSettingsTab({
                     type="number"
                     value={dynamicTrailPoints}
                     onChange={(e) => setDynamicTrailPoints(Number(e.target.value))}
+                    helperText="Fixed points behind peak high water mark"
                   />
                 )}
               </Box>
@@ -606,12 +905,12 @@ export function ExecutionSettingsTab({
 
         {/* Giveback Protection Radar */}
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
+          <Card variant="outlined" sx={{ height: '100%', p: 1, borderRadius: 2.5 }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <SpeedRounded sx={{ color: '#F59E0B' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  <TrendingUpRounded sx={{ color: '#F59E0B' }} />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                     Anti-Greed Profit Giveback Radar
                   </Typography>
                 </Box>
@@ -623,7 +922,7 @@ export function ExecutionSettingsTab({
               </Box>
 
               <Typography variant="body2" color="text.secondary">
-                Prevents winning trades from turning into red days. Tracks peak unrealized profit (MFE) in real time and alerts or auto-squares off if profit retreats beyond tolerance.
+                Prevents winning trades from turning into red days. Tracks peak unrealized profit (MFE) in real time and auto-squares off runner if profit retreats beyond tolerance.
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
@@ -660,7 +959,7 @@ export function ExecutionSettingsTab({
                     ]}
                   />
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                    If a trade peaks at {formatCurrency(10000, settingsCurrency)} profit and retreats to {formatCurrency(10000 * (1 - givebackMaxPercent / 100), settingsCurrency)}, the radar triggers exit prompt.
+                    If a trade peaks at {formatCurrency(10000, settingsCurrency)} profit and retreats to {formatCurrency(10000 * (1 - givebackMaxPercent / 100), settingsCurrency)}, the radar triggers auto-exit.
                   </Typography>
                 </Box>
               </Box>
@@ -669,23 +968,27 @@ export function ExecutionSettingsTab({
         </Grid>
       </Grid>
 
-      {/* Card 3: Fast Ergonomics, Hotkeys & MIS Square-Off Safety */}
-      <Grid container spacing={2.5}>
-        {/* Auto-Execution Master & Hotkeys */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <FlashOnRounded sx={{ color: defaultAutoExecute ? 'success.main' : 'text.secondary' }} />
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  Master Broker Auto-Execution Arm
-                </Typography>
-              </Box>
+      {/* ── COCKPIT PANE 4: GOVERNANCE, AUTOMATION & SAFETY ── */}
+      <Card
+        variant="outlined"
+        sx={{
+          borderRadius: 2.5,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider',
+          bgcolor: isDark ? 'rgba(255,255,255,0.015)' : '#fff',
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+            Institutional Governance, Automation & Safety
+          </Typography>
 
+          <Grid container spacing={2.5}>
+            {/* Master Broker Auto-Execution Arm */}
+            <Grid size={{ xs: 12, md: 6 }}>
               <Box
                 sx={{
                   p: 2,
-                  borderRadius: 1.5,
+                  borderRadius: 2,
                   bgcolor: defaultAutoExecute
                     ? isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)'
                     : isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
@@ -698,12 +1001,12 @@ export function ExecutionSettingsTab({
                 }}
               >
                 <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 800 }}>
                     {defaultAutoExecute ? '⚡ Auto-Execution Armed Globally' : '✋ Manual Confirmation Mode'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {defaultAutoExecute
-                      ? 'When a target or stop price is reached, SetupMint immediately fires partial exits and SL modifications to broker book.'
+                      ? 'When a target or stop price is reached, SetupMint immediately transmits partial exits and SL modifications directly to broker exchange.'
                       : 'Shows high-priority alert prompts and scalper chimes for 1-click execution without auto-firing to broker.'}
                   </Typography>
                 </Box>
@@ -713,122 +1016,96 @@ export function ExecutionSettingsTab({
                   color="success"
                 />
               </Box>
+            </Grid>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Scalper Keyboard Hotkeys
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      [B] Lock True BE • [Space] 50% Quick Exit • [K] Panic Kill Switch
-                    </Typography>
-                  </Box>
-                  <Switch
-                    checked={scalperHotkeysEnabled}
-                    onChange={(e) => setScalperHotkeysEnabled(e.target.checked)}
-                    size="small"
-                  />
-                </Box>
-
-                <Divider />
-
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Audio Sound Alerts
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Crisp institutional chimes for price alerts, targets, stop threats, and executions
+            {/* Server-Side Daemon */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: 1,
+                  borderColor: serverSideExecutionEnabled ? 'primary.main' : 'divider',
+                  bgcolor: serverSideExecutionEnabled ? alpha('#3B82F6', 0.08) : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 2,
+                }}
+              >
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <CloudSyncRounded sx={{ color: serverSideExecutionEnabled ? 'primary.main' : 'text.secondary', fontSize: 18 }} />
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                      Server-Side Headless Execution Daemon
                     </Typography>
                   </Box>
-                  <Switch
-                    checked={soundAlertsEnabled}
-                    onChange={(e) => setSoundAlertsEnabled(e.target.checked)}
-                    size="small"
-                  />
-                </Box>
-
-                {/* Audio Soundboard */}
-                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: alpha(muiTheme.palette.primary.main, 0.04), border: `1px solid ${alpha(muiTheme.palette.primary.main, 0.12)}` }}>
-                  <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                    <VolumeUpRounded sx={{ fontSize: 16 }} /> Distinct Audio Profile Soundboard (Tap to Test)
+                  <Typography variant="caption" color="text.secondary">
+                    Monitors positions directly on cloud backend. Ladder exits, trailing stops, and giveback safety triggers execute even if your browser tab closes.
                   </Typography>
-                  <Grid container spacing={1}>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        fullWidth
-                        onClick={() => soundEngine.playPriceAlert()}
-                        startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                        sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                      >
-                        🔔 Alert
-                      </Button>
-                    </Grid>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        fullWidth
-                        color="success"
-                        onClick={() => soundEngine.playTargetHit()}
-                        startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                        sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                      >
-                        🎯 Target
-                      </Button>
-                    </Grid>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        fullWidth
-                        color="info"
-                        onClick={() => soundEngine.playOrderExecuted()}
-                        startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                        sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                      >
-                        ⚡ Fill
-                      </Button>
-                    </Grid>
-                    <Grid size={{ xs: 6, sm: 3 }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        fullWidth
-                        color="error"
-                        onClick={() => soundEngine.playKillSwitch()}
-                        startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
-                        sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
-                      >
-                        🛑 Kill
-                      </Button>
-                    </Grid>
-                  </Grid>
                 </Box>
+                <Switch
+                  checked={serverSideExecutionEnabled}
+                  onChange={(e) => setServerSideExecutionEnabled(e.target.checked)}
+                  color="primary"
+                />
               </Box>
-            </CardContent>
-          </Card>
-        </Grid>
+            </Grid>
 
-        {/* Polling Cadence & MIS Auto-Square-off */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ height: '100%', p: 1 }}>
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                Intraday Safety & Refresh Cadence
-              </Typography>
+            {/* Paper Execution Mode */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: 1,
+                  borderColor: paperExecutionMode ? 'warning.main' : 'divider',
+                  bgcolor: paperExecutionMode ? alpha('#F59E0B', 0.08) : 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 2,
+                }}
+              >
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <ScienceRounded sx={{ color: paperExecutionMode ? 'warning.main' : 'text.secondary', fontSize: 18 }} />
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                      Paper Execution Mode (Simulation)
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Simulates all ladder steps and trailing stops in journal without sending real financial orders to exchange. Great for strategy dry-runs.
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={paperExecutionMode}
+                  onChange={(e) => setPaperExecutionMode(e.target.checked)}
+                  color="warning"
+                />
+              </Box>
+            </Grid>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* MIS Intraday Auto-Squareoff */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: 1,
+                  borderColor: misSquareOffEnabled ? 'info.main' : 'divider',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.5,
+                }}
+              >
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      MIS Auto-Square-Off Safety
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                      MIS Auto-Square-Off Safety Guard
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Auto-exits intraday MIS trades before broker penalty fees kick in
+                      Auto-exits intraday MIS trades before broker penalty square-off charges kick in
                     </Typography>
                   </Box>
                   <Switch
@@ -837,7 +1114,6 @@ export function ExecutionSettingsTab({
                     size="small"
                   />
                 </Box>
-
                 {misSquareOffEnabled && (
                   <TextField
                     size="small"
@@ -848,92 +1124,99 @@ export function ExecutionSettingsTab({
                     fullWidth
                   />
                 )}
-
-                <Divider />
-
-                <TextField
-                  select
-                  label="Live Watcher Refresh Interval"
-                  size="small"
-                  fullWidth
-                  value={defaultRefreshIntervalSec}
-                  onChange={(e) => setDefaultRefreshIntervalSec(Number(e.target.value))}
-                  helperText="Frequency of live price polls from broker feeds"
-                >
-                  <MenuItem value={1}>1 Second (Ultra-Fast Scalping)</MenuItem>
-                  <MenuItem value={2}>2 Seconds (Recommended Low Latency)</MenuItem>
-                  <MenuItem value={5}>5 Seconds (Balanced API Quota)</MenuItem>
-                  <MenuItem value={10}>10 Seconds (Conservative Intraday)</MenuItem>
-                </TextField>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Card 4: Simulation & Institutional Automation */}
-      <Card variant="outlined" sx={{ p: 1 }}>
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-            Simulation & Server-Side Automation
-          </Typography>
-
-          <Grid container spacing={2.5}>
-            {/* Paper Execution Mode Toggle */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: paperExecutionMode ? 'warning.main' : 'divider', bgcolor: paperExecutionMode ? alpha('#F59E0B', 0.08) : 'transparent' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ScienceRounded sx={{ color: paperExecutionMode ? 'warning.main' : 'text.secondary', fontSize: 20 }} />
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      Paper Execution Mode (Simulation)
-                    </Typography>
-                  </Box>
-                  <Switch
-                    checked={paperExecutionMode}
-                    onChange={(e) => setPaperExecutionMode(e.target.checked)}
-                    color="warning"
-                  />
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  When enabled, ladder steps and auto-exits will simulate in journal without transmitting live financial orders to broker exchange. Great for dry-runs.
-                </Typography>
-              </Box>
-            </Grid>
-
-            {/* Server-Side Execution Daemon Toggle */}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Box sx={{ p: 2, borderRadius: 2, border: 1, borderColor: serverSideExecutionEnabled ? 'primary.main' : 'divider', bgcolor: serverSideExecutionEnabled ? alpha('#3B82F6', 0.08) : 'transparent' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CloudSyncRounded sx={{ color: serverSideExecutionEnabled ? 'primary.main' : 'text.secondary', fontSize: 20 }} />
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      Server-Side Execution Daemon
-                    </Typography>
-                  </Box>
-                  <Switch
-                    checked={serverSideExecutionEnabled}
-                    onChange={(e) => setServerSideExecutionEnabled(e.target.checked)}
-                    color="primary"
-                  />
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  Monitors positions directly on the backend server every 2 seconds. Ladder exits, trailing stops, and giveback safety triggers execute even if your browser tab closes.
-                </Typography>
               </Box>
             </Grid>
           </Grid>
+
+          {/* Scalper Hotkeys & Audio Soundboard */}
+          <Box sx={{ p: 2, borderRadius: 2, bgcolor: alpha(muiTheme.palette.primary.main, 0.03), border: `1px solid ${alpha(muiTheme.palette.primary.main, 0.1)}` }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <VolumeUpRounded sx={{ color: 'primary.main', fontSize: 18 }} />
+                  Tactical Ergonomics, Hotkeys & Audio Profiles
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  [B] Lock True BE • [Space] 50% Quick Exit • [K] Panic Kill Switch
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700 }}>Hotkeys</Typography>
+                  <Switch checked={scalperHotkeysEnabled} onChange={(e) => setScalperHotkeysEnabled(e.target.checked)} size="small" />
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700 }}>Audio</Typography>
+                  <Switch checked={soundAlertsEnabled} onChange={(e) => setSoundAlertsEnabled(e.target.checked)} size="small" />
+                </Box>
+              </Box>
+            </Box>
+
+            <Grid container spacing={1}>
+              <Grid size={{ xs: 6, sm: 3 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  onClick={() => soundEngine.playPriceAlert()}
+                  startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                  sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                >
+                  🔔 Alert Chime
+                </Button>
+              </Grid>
+              <Grid size={{ xs: 6, sm: 3 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  color="success"
+                  onClick={() => soundEngine.playTargetHit()}
+                  startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                  sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                >
+                  🎯 Target Hit
+                </Button>
+              </Grid>
+              <Grid size={{ xs: 6, sm: 3 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  color="info"
+                  onClick={() => soundEngine.playOrderExecuted()}
+                  startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                  sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                >
+                  ⚡ Order Filled
+                </Button>
+              </Grid>
+              <Grid size={{ xs: 6, sm: 3 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  fullWidth
+                  color="error"
+                  onClick={() => soundEngine.playKillSwitch()}
+                  startIcon={<VolumeUpRounded sx={{ fontSize: 14 }} />}
+                  sx={{ fontSize: '0.72rem', py: 0.5, textTransform: 'none', justifyContent: 'flex-start' }}
+                >
+                  🛑 Kill Switch
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* Bottom Save Button */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, pt: 1 }}>
+      {/* Bottom Save Action Bar */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, pb: 2 }}>
         <Button
           type="submit"
           variant="contained"
           color="primary"
           disabled={isSaving}
-          sx={{ fontWeight: 700, px: 3 }}
+          sx={{ fontWeight: 800, px: 4, py: 1, borderRadius: 1.5 }}
         >
           {isSaving ? 'Saving Execution Settings...' : 'Save Execution Settings'}
         </Button>
@@ -941,4 +1224,3 @@ export function ExecutionSettingsTab({
     </form>
   );
 }
-

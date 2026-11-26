@@ -190,8 +190,8 @@ export class ChartGeneratorService {
       const formattedPrice = tickPrice.toFixed(tickPrice < 10 ? 3 : tickPrice < 1000 ? 2 : 1);
 
       priceGridSvg += `
-    <line x1="${plotX0}" y1="${y}" x2="${plotX1}" y2="${y}" stroke="#1e293b" stroke-width="1" stroke-dasharray="3,3" />
-    <text x="${plotX1 + 10}" y="${y + 4}" font-family="${FONT_MONO}" font-size="10" fill="#64748b">${formattedPrice}</text>`;
+    <line x1="${plotX0}" y1="${y}" x2="${plotX1}" y2="${y}" stroke="#1e222d" stroke-width="1" stroke-dasharray="3,3" />
+    <text x="${plotX1 + 10}" y="${y + 4}" font-family="${FONT_MONO}" font-size="10" fill="#787b86">${formattedPrice}</text>`;
     }
 
     // Candle step & dynamic bar width
@@ -209,8 +209,8 @@ export class ChartGeneratorService {
       const timeLabel = resolution === 'D' ? moment(tMs).format('DD MMM') : moment(tMs).format('HH:mm');
 
       timeGridSvg += `
-    <line x1="${cx}" y1="${plotY0}" x2="${cx}" y2="${plotY1}" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4" />
-    <text x="${cx}" y="${plotY1 + 20}" font-family="${FONT_MONO}" font-size="10" fill="#64748b" text-anchor="middle">${timeLabel}</text>`;
+    <line x1="${cx}" y1="${plotY0}" x2="${cx}" y2="${plotY1}" stroke="#1e222d" stroke-width="1" stroke-dasharray="2,4" />
+    <text x="${cx}" y="${plotY1 + 20}" font-family="${FONT_MONO}" font-size="10" fill="#787b86" text-anchor="middle">${timeLabel}</text>`;
     }
 
     // Execution Overlays
@@ -314,7 +314,7 @@ export class ChartGeneratorService {
       const c = sortedCandles[i];
       const cx = plotX0 + (i + 0.5) * stepX;
       const isBullish = c.c >= c.o;
-      const color = isBullish ? '#10b981' : '#f43f5e';
+      const color = isBullish ? '#089981' : '#f23645';
 
       const yHigh = priceToY(c.h);
       const yLow = priceToY(c.l);
@@ -446,8 +446,8 @@ export class ChartGeneratorService {
     return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="chartBg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#0b0f19" />
-      <stop offset="100%" stop-color="#030712" />
+      <stop offset="0%" stop-color="#131722" />
+      <stop offset="100%" stop-color="#131722" />
     </linearGradient>
     <style>
       text { font-family: ${FONT_MONO}; }
@@ -459,7 +459,7 @@ export class ChartGeneratorService {
   <rect width="${width}" height="${height}" fill="url(#chartBg)" rx="8" />
 
   <!-- Chart Border Frame -->
-  <rect x="${plotX0}" y="${plotY0}" width="${plotWidth}" height="${plotHeight}" fill="none" stroke="#1e293b" stroke-width="1" />
+  <rect x="${plotX0}" y="${plotY0}" width="${plotWidth}" height="${plotHeight}" fill="none" stroke="#1e222d" stroke-width="1" />
 
   <!-- Header Section -->
   <text x="${plotX0}" y="34" font-family="${FONT_SANS}" font-size="18" font-weight="800" fill="#f8fafc" letter-spacing="-0.02em">

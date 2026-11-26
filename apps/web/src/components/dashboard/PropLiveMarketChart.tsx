@@ -1,32 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import ButtonGroup from '@mui/material/ButtonGroup';
 import Chip from '@mui/material/Chip';
-import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
+import Collapse from '@mui/material/Collapse';
+import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 import CandlestickChartRoundedIcon from '@mui/icons-material/CandlestickChartRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import ZoomOutMapRoundedIcon from '@mui/icons-material/ZoomOutMapRounded';
-import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
 import CloseFullscreenRoundedIcon from '@mui/icons-material/CloseFullscreenRounded';
-import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
-import {
-  createChart,
-  CandlestickSeries,
-  HistogramSeries,
-  LineStyle,
-  CrosshairMode,
-  ColorType,
-  IChartApi,
-  ISeriesApi,
-  UTCTimestamp,
-} from 'lightweight-charts';
-import { api } from '../../lib/api.js';
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
+import FlagRoundedIcon from '@mui/icons-material/FlagRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import { formatPrice, getCurrencySymbol } from '../../lib/utils.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
 import { useAuth } from '../../context/AuthContext.js';
@@ -89,50 +79,45 @@ const RESOLUTIONS = [
   { key: 'D', label: '1D' },
 ];
 
+export function getTradingViewWidgetSymbol(symbol: string, isProp: boolean): string {
+  const s = String(symbol || 'XAUUSD').trim().toUpperCase();
+  if (s === 'XAUUSD') return 'OANDA:XAUUSD';
+  if (s === 'EURUSD') return 'OANDA:EURUSD';
+  if (s === 'GBPUSD') return 'OANDA:GBPUSD';
+  if (s === 'USDJPY') return 'OANDA:USDJPY';
+  if (s === 'NAS100' || s === 'USTEC' || s === 'NDX') return 'OANDA:NAS100USD';
+  if (s === 'US30' || s === 'DJ30') return 'OANDA:US30USD';
+  if (s === 'SPX500' || s === 'US500') return 'OANDA:SPX500USD';
+  if (s === 'BTCUSD' || s === 'BTCUSDT') return 'BINANCE:BTCUSDT';
+  if (s === 'ETHUSD' || s === 'ETHUSDT') return 'BINANCE:ETHUSDT';
+
+  if (s.includes('BANKNIFTY')) return 'NSE:BANKNIFTY';
+  if (s.includes('FINNIFTY')) return 'NSE:FINNIFTY';
+  if (s.includes('MIDCPNIFTY')) return 'NSE:MIDCPNIFTY';
+  if (s.includes('NIFTY')) return 'NSE:NIFTY';
+  if (s.includes('SENSEX')) return 'BSE:SENSEX';
+  if (s.includes('CRUDEOIL')) return 'MCX:CRUDEOIL1!';
+  if (s.includes('NATURALGAS')) return 'MCX:NATURALGAS1!';
+  if (s.includes('GOLD')) return 'MCX:GOLD1!';
+  if (s.includes('SILVER')) return 'MCX:SILVER1!';
+
+  return isProp ? `OANDA:${s}` : `NSE:${s}`;
+}
+
 export function LiveMarketChart({
   initialSymbol,
   accountId,
   mode = 'AUTO',
   compact = false,
-  height = 380,
+  height = 420,
   lockedSymbol = false,
   positionOverlay = null,
-  showIndicators: propShowIndicators,
-  showVolume: propShowVolume,
-  showTradeLevels: propShowTradeLevels,
-  onSettingsChange,
+  showTradeLevels = true,
 }: LiveMarketChartProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const { isPropMode, currency: activeCurrency, activeAccount } = useAccountScope();
   const { user } = useAuth();
-  const displayDefaults = user?.liveWatcherSettings?.displaySettings;
-
-  const [showIndicators, setShowIndicators] = useState<boolean>(() =>
-    propShowIndicators !== undefined
-      ? propShowIndicators
-      : displayDefaults?.showChartIndicators ?? true
-  );
-  const [showVolume, setShowVolume] = useState<boolean>(() =>
-    propShowVolume !== undefined
-      ? propShowVolume
-      : displayDefaults?.showChartVolume ?? true
-  );
-  const [showTradeLevels, setShowTradeLevels] = useState<boolean>(() =>
-    propShowTradeLevels !== undefined
-      ? propShowTradeLevels
-      : displayDefaults?.showChartTradeLevels ?? true
-  );
-
-  useEffect(() => {
-    if (propShowIndicators !== undefined) setShowIndicators(propShowIndicators);
-  }, [propShowIndicators]);
-  useEffect(() => {
-    if (propShowVolume !== undefined) setShowVolume(propShowVolume);
-  }, [propShowVolume]);
-  useEffect(() => {
-    if (propShowTradeLevels !== undefined) setShowTradeLevels(propShowTradeLevels);
-  }, [propShowTradeLevels]);
 
   const effectiveMode = mode === 'AUTO' ? (isPropMode ? 'PROP' : 'NORMAL') : mode;
   const activeSymbols = effectiveMode === 'NORMAL' ? NORMAL_SYMBOLS : PROP_SYMBOLS;
@@ -141,25 +126,7 @@ export function LiveMarketChart({
   const [symbol, setSymbol] = useState<string>(defaultSym.toUpperCase());
   const [resolution, setResolution] = useState<string>('5');
   const [expandedHeight, setExpandedHeight] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [streamData, setStreamData] = useState<any | null>(null);
-  const [hoveredBar, setHoveredBar] = useState<{
-    timeStr: string;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    pct: number;
-  } | null>(null);
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const volSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const priceLinesRef = useRef<any[]>([]);
-  const prevOverlayKeyRef = useRef<string>('');
-  const isFirstFitRef = useRef<boolean>(true);
-  const prevCandlesRef = useRef<any[]>([]);
+  const [hudMinimized, setHudMinimized] = useState<boolean>(false);
 
   useEffect(() => {
     if (initialSymbol) {
@@ -169,451 +136,166 @@ export function LiveMarketChart({
     }
   }, [initialSymbol, effectiveMode]);
 
-  const activeHeight = expandedHeight ? Math.max(height + 180, 560) : height;
+  const activeHeight = expandedHeight ? Math.max(height + 220, 640) : height;
+  const tvWidgetSymbol = useMemo(
+    () => getTradingViewWidgetSymbol(symbol, effectiveMode === 'PROP'),
+    [symbol, effectiveMode]
+  );
+  const tvInterval = resolution === '60' ? '60' : resolution === 'D' ? 'D' : resolution;
 
-  const fetchLiveCandles = async (silent = false) => {
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-      const res = await api.accounts.propCandles({
-        symbol,
-        resolution,
-        bars: 240,
-        accountId,
-      });
-      const payload = (res as any)?.data || res;
-      if (payload) {
-        setStreamData(payload);
-      }
-    } catch {
-      // Keep existing candles on transient error
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
-  };
+  const currSym = getCurrencySymbol(
+    activeAccount?.profile?.baseCurrency || activeAccount?.baseCurrency || (activeCurrency !== 'MULTI' ? activeCurrency : 'USD')
+  );
 
-  // Fetch on symbol/resolution change + 2-second live polling for low-latency updates
-  useEffect(() => {
-    isFirstFitRef.current = true;
-    prevCandlesRef.current = [];
-    fetchLiveCandles(false);
-    const timer = setInterval(() => {
-      fetchLiveCandles(true);
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [symbol, resolution, accountId]);
+  // Position calculations for Floating HUD
+  const isOverlayActive = Boolean(
+    positionOverlay && positionOverlay.entryPrice > 0 && showTradeLevels
+  );
+  const isLong = positionOverlay?.direction === 'LONG';
+  const ltp = positionOverlay?.currentLtp || positionOverlay?.entryPrice || 0;
+  const entryPrice = positionOverlay?.entryPrice || 0;
+  const stopLoss = positionOverlay?.stopLoss;
+  const target = positionOverlay?.target;
 
-  // Initialize lightweight-charts canvas once per symbol/theme/height
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  const distToSl = useMemo(() => {
+    if (!entryPrice || !stopLoss) return null;
+    return isLong ? entryPrice - stopLoss : stopLoss - entryPrice;
+  }, [entryPrice, stopLoss, isLong]);
 
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-    }
+  const liveFloatingPnl = useMemo(() => {
+    if (!isOverlayActive || !ltp || !entryPrice || !positionOverlay?.quantity) return null;
+    const diff = isLong ? ltp - entryPrice : entryPrice - ltp;
+    return diff * positionOverlay.quantity;
+  }, [isOverlayActive, ltp, entryPrice, isLong, positionOverlay?.quantity]);
 
-    const decimals =
-      symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('AUD') || symbol.includes('NZD')
-        ? 5
-        : symbol.includes('JPY')
-        ? 3
-        : 2;
-    const minMove = decimals === 5 ? 0.00001 : decimals === 3 ? 0.001 : 0.01;
-
-    const chart = createChart(container, {
-      width: container.clientWidth || 800,
-      height: activeHeight,
-      layout: {
-        background: { type: ColorType.Solid, color: isDark ? '#0B0F19' : '#FFFFFF' },
-        textColor: isDark ? '#94A3B8' : '#475569',
-        fontFamily: `'JetBrains Mono', monospace`,
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' },
-        horzLines: { color: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          color: isDark ? '#64748B' : '#94A3B8',
-          width: 1,
-          style: LineStyle.Dashed,
-          labelBackgroundColor: isDark ? '#1E293B' : '#F1F5F9',
-        },
-        horzLine: {
-          color: isDark ? '#64748B' : '#94A3B8',
-          width: 1,
-          style: LineStyle.Dashed,
-          labelBackgroundColor: isDark ? '#1E293B' : '#F1F5F9',
-        },
-      },
-      rightPriceScale: {
-        borderColor: isDark ? '#1E293B' : '#E2E8F0',
-        autoScale: true,
-        scaleMargins: { top: 0.1, bottom: 0.18 },
-      },
-      timeScale: {
-        borderColor: isDark ? '#1E293B' : '#E2E8F0',
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 12,
-        barSpacing: 9,
-      },
-    });
-
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10B981',
-      downColor: '#F43F5E',
-      borderUpColor: '#10B981',
-      borderDownColor: '#F43F5E',
-      wickUpColor: '#10B981',
-      wickDownColor: '#F43F5E',
-      priceFormat: {
-        type: 'price',
-        precision: decimals,
-        minMove,
-      },
-    });
-
-    const volSeries = chart.addSeries(HistogramSeries, {
-      color: 'rgba(16, 185, 129, 0.28)',
-      priceFormat: { type: 'volume' },
-      priceScaleId: '',
-    });
-    volSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.84, bottom: 0 },
-    });
-
-    chart.subscribeCrosshairMove((param) => {
-      if (!param || !param.time || !param.seriesData) {
-        setHoveredBar(null);
-        return;
-      }
-      const bar: any = param.seriesData.get(candleSeries);
-      if (bar) {
-        const pct = bar.open ? ((bar.close - bar.open) / bar.open) * 100 : 0;
-        const timeStr = new Date((param.time as number) * 1000).toLocaleString('en-IN', {
-          timeZone: 'Asia/Kolkata',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        });
-        setHoveredBar({
-          timeStr: `${timeStr} IST`,
-          open: bar.open,
-          high: bar.high,
-          low: bar.low,
-          close: bar.close,
-          pct,
-        });
-      }
-    });
-
-    const ro = new ResizeObserver((entries) => {
-      if (!entries || entries.length === 0) return;
-      const { width: newWidth } = entries[0].contentRect;
-      if (newWidth > 0 && chartRef.current) {
-        chartRef.current.applyOptions({ width: newWidth, height: activeHeight });
-      }
-    });
-    ro.observe(container);
-
-    chartRef.current = chart;
-    candleSeriesRef.current = candleSeries;
-    volSeriesRef.current = volSeries;
-    priceLinesRef.current = [];
-    prevOverlayKeyRef.current = '';
-
-    return () => {
-      ro.disconnect();
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-      }
-    };
-  }, [symbol, isDark, activeHeight]);
-
-  // Apply candle data & horizontal risk price lines whenever streamData or positionOverlay updates
-  useEffect(() => {
-    if (!candleSeriesRef.current || !volSeriesRef.current || !chartRef.current) return;
-    if (!streamData || !Array.isArray(streamData.candles) || streamData.candles.length === 0) return;
-
-    const candles = streamData.candles.map((c: any) => ({
-      time: c.time as UTCTimestamp,
-      open: Number(c.open),
-      high: Number(c.high),
-      low: Number(c.low),
-      close: Number(c.close),
-    }));
-
-    // If positionOverlay has a live currentLtp, keep the tip candle synced with it
-    if (positionOverlay?.currentLtp && candles.length > 0) {
-      const tip = candles[candles.length - 1];
-      const relDiff = Math.abs(positionOverlay.currentLtp - tip.close) / positionOverlay.currentLtp;
-      if (relDiff < 0.01) {
-        tip.close = positionOverlay.currentLtp;
-        if (tip.close > tip.high) tip.high = tip.close;
-        if (tip.close < tip.low) tip.low = tip.close;
-      }
-    }
-
-    const volumes = streamData.candles.map((c: any) => ({
-      time: c.time as UTCTimestamp,
-      value: Number(c.volume || 0),
-      color: Number(c.close) >= Number(c.open) ? 'rgba(16, 185, 129, 0.32)' : 'rgba(244, 63, 94, 0.32)',
-    }));
-
-    const prevCandles = prevCandlesRef.current;
-
-    // Smooth incremental update of forming bar without full canvas redraw
-    if (!isFirstFitRef.current && prevCandles.length > 0) {
-      const lastCandle = candles[candles.length - 1];
-      const prevLast = prevCandles[prevCandles.length - 1];
-      if (lastCandle && prevLast && lastCandle.time >= prevLast.time) {
-        candleSeriesRef.current.update(lastCandle);
-        if (showVolume && volumes.length > 0) {
-          volSeriesRef.current.update(volumes[volumes.length - 1]);
-        }
-        prevCandlesRef.current = candles;
-      } else {
-        candleSeriesRef.current.setData(candles);
-        if (showVolume) {
-          volSeriesRef.current.setData(volumes);
-        } else {
-          volSeriesRef.current.setData([]);
-        }
-        prevCandlesRef.current = candles;
-      }
-    } else {
-      candleSeriesRef.current.setData(candles);
-      if (showVolume) {
-        volSeriesRef.current.setData(volumes);
-      } else {
-        volSeriesRef.current.setData([]);
-      }
-      prevCandlesRef.current = candles;
-    }
-
-    // Stabilized price line rendering: only redraw price lines when values actually change
-    const activeOverlayKey = positionOverlay
-      ? `${positionOverlay.tradeId}_${positionOverlay.direction}_${positionOverlay.entryPrice}_${positionOverlay.stopLoss}_${positionOverlay.target}_${positionOverlay.dailyBreachPrice}`
-      : 'NONE';
-
-    if (prevOverlayKeyRef.current !== activeOverlayKey || !showTradeLevels) {
-      for (const pl of priceLinesRef.current) {
-        try {
-          candleSeriesRef.current.removePriceLine(pl);
-        } catch {}
-      }
-      priceLinesRef.current = [];
-
-      if (showTradeLevels) {
-        const overlaysToDraw: PropPositionOverlay[] = positionOverlay
-          ? [positionOverlay]
-          : Array.isArray(streamData.activeOverlays)
-          ? streamData.activeOverlays
-          : [];
-
-        for (const ov of overlaysToDraw) {
-          if (ov.entryPrice > 0) {
-            const entryLine = candleSeriesRef.current.createPriceLine({
-              price: ov.entryPrice,
-              color: '#3B82F6',
-              lineWidth: 2,
-              lineStyle: LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: `${ov.direction} ENTRY (${ov.quantity || ''} lots)`,
-            });
-            priceLinesRef.current.push(entryLine);
-          }
-          if (ov.stopLoss && ov.stopLoss > 0) {
-            const slLine = candleSeriesRef.current.createPriceLine({
-              price: ov.stopLoss,
-              color: '#EF4444',
-              lineWidth: 2,
-              lineStyle: LineStyle.Solid,
-              axisLabelVisible: true,
-              title: 'STOP LOSS (SL)',
-            });
-            priceLinesRef.current.push(slLine);
-          }
-          if (ov.target && ov.target > 0) {
-            const tpLine = candleSeriesRef.current.createPriceLine({
-              price: ov.target,
-              color: '#10B981',
-              lineWidth: 2,
-              lineStyle: LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: 'TARGET (1:2 RR)',
-            });
-            priceLinesRef.current.push(tpLine);
-          }
-          if (ov.dailyBreachPrice && ov.dailyBreachPrice > 0) {
-            const breachLine = candleSeriesRef.current.createPriceLine({
-              price: ov.dailyBreachPrice,
-              color: '#F97316',
-              lineWidth: 1,
-              lineStyle: LineStyle.Dotted,
-              axisLabelVisible: true,
-              title: 'DAILY LOSS BREACH',
-            });
-            priceLinesRef.current.push(breachLine);
-          }
-        }
-      }
-      prevOverlayKeyRef.current = activeOverlayKey;
-    }
-
-    if (isFirstFitRef.current) {
-      chartRef.current.timeScale().fitContent();
-      isFirstFitRef.current = false;
-    }
-  }, [streamData, positionOverlay, showVolume, showTradeLevels]);
-
-  const quote = streamData?.quote;
-  const liveLtp = positionOverlay?.currentLtp || quote?.ltp || streamData?.candles?.[streamData?.candles?.length - 1]?.close || 0;
+  const liveR = useMemo(() => {
+    if (!distToSl || distToSl <= 0 || !ltp || !entryPrice) return null;
+    const currentRun = isLong ? ltp - entryPrice : entryPrice - ltp;
+    return currentRun / distToSl;
+  }, [distToSl, ltp, entryPrice, isLong]);
 
   return (
     <Box
       sx={{
-        borderRadius: 2.5,
-        border: `1px solid ${muiTheme.palette.divider}`,
-        bgcolor: isDark ? '#0B0F19' : '#FFFFFF',
+        width: '100%',
+        borderRadius: '12px',
         overflow: 'hidden',
-        boxShadow: isDark ? '0 10px 30px rgba(0, 0, 0, 0.4)' : '0 4px 20px rgba(0, 0, 0, 0.04)',
+        border: '1px solid',
+        borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+        bgcolor: isDark ? '#0b0f19' : '#ffffff',
+        boxShadow: isDark
+          ? '0 4px 20px rgba(0, 0, 0, 0.35)'
+          : '0 4px 20px rgba(0, 0, 0, 0.05)',
       }}
     >
-      {/* Top Stream Control Ribbon */}
+      {/* Top Header Bar: Instrument Selector & Resolution Controls */}
       <Box
         sx={{
           px: 1.5,
-          py: 0.9,
+          py: 0.8,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: 1,
-          borderBottom: `1px solid ${muiTheme.palette.divider}`,
-          bgcolor: isDark ? 'rgba(15, 23, 42, 0.65)' : 'rgba(248, 250, 252, 0.95)',
+          borderBottom: '1px solid',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+          bgcolor: isDark ? '#111827' : '#f8fafc',
         }}
       >
-        {/* Left: Active Instrument & Live Spot Ticks */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          <CandlestickChartRoundedIcon sx={{ fontSize: 18, color: '#8B5CF6' }} />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <CandlestickChartRoundedIcon sx={{ fontSize: 18, color: '#3B82F6' }} />
+            <Typography
+              variant="subtitle2"
+              sx={{
+                fontWeight: 900,
+                fontSize: '0.8125rem',
+                letterSpacing: '-0.01em',
+                fontFamily: `'JetBrains Mono', monospace`,
+              }}
+            >
+              TRADINGVIEW TERMINAL
+            </Typography>
+          </Box>
+
           {!lockedSymbol ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
               {activeSymbols.map((s) => (
                 <Chip
                   key={s.key}
-                  size="small"
                   label={s.key}
+                  size="small"
                   onClick={() => setSymbol(s.key)}
                   sx={{
-                    height: 22,
+                    height: 24,
                     fontSize: '0.68rem',
                     fontWeight: 800,
                     cursor: 'pointer',
                     bgcolor:
                       symbol === s.key
-                        ? '#8B5CF6'
+                        ? '#3B82F6'
                         : isDark
-                        ? 'rgba(255,255,255,0.05)'
+                        ? 'rgba(255,255,255,0.06)'
                         : 'rgba(0,0,0,0.05)',
                     color: symbol === s.key ? '#FFFFFF' : 'text.primary',
                     '&:hover': {
-                      bgcolor: symbol === s.key ? '#7C3AED' : 'rgba(139, 92, 246, 0.15)',
+                      bgcolor: symbol === s.key ? '#2563EB' : 'rgba(59, 130, 246, 0.15)',
                     },
                   }}
                 />
               ))}
             </Box>
           ) : (
-            <Typography variant="subtitle2" sx={{ fontWeight: 900, letterSpacing: '-0.01em', fontFamily: `'JetBrains Mono', monospace` }}>
-              {symbol} LIVE TERMINAL
-            </Typography>
+            <Chip
+              label={symbol}
+              size="small"
+              sx={{
+                height: 24,
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                bgcolor: '#3B82F6',
+                color: '#FFFFFF',
+              }}
+            />
           )}
 
-          {liveLtp > 0 && (
+          {isOverlayActive && (
             <Chip
               size="small"
-              label={`${getCurrencySymbol(activeAccount?.profile?.baseCurrency || activeAccount?.baseCurrency || (activeCurrency !== 'MULTI' ? activeCurrency : 'USD'))}${formatPrice(liveLtp)} ${
-                quote?.changePct !== undefined
-                  ? `(${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%)`
-                  : ''
-              }`}
+              icon={<ShieldRoundedIcon sx={{ fontSize: '13px !important', color: '#10B981 !important' }} />}
+              label={`Live ${positionOverlay?.direction} (${positionOverlay?.quantity || 1} lots)`}
               sx={{
                 height: 22,
-                fontWeight: 900,
-                fontSize: '0.72rem',
-                fontFamily: `'JetBrains Mono', monospace`,
-                fontVariantNumeric: 'tabular-nums',
-                bgcolor:
-                  (quote?.changePct ?? 0) >= 0
-                    ? 'rgba(16, 185, 129, 0.15)'
-                    : 'rgba(239, 68, 68, 0.15)',
-                color: (quote?.changePct ?? 0) >= 0 ? '#10B981' : '#EF4444',
-                border: `1px solid ${
-                  (quote?.changePct ?? 0) >= 0
-                    ? 'rgba(16, 185, 129, 0.35)'
-                    : 'rgba(239, 68, 68, 0.35)'
-                }`,
-              }}
-            />
-          )}
-
-          {quote?.spread !== undefined && (
-            <Chip
-              size="small"
-              label={`Spread: $${quote.spread}`}
-              sx={{
-                height: 20,
-                fontSize: '0.625rem',
+                fontSize: '0.68rem',
                 fontWeight: 800,
-                fontFamily: `'JetBrains Mono', monospace`,
-                bgcolor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
-                color: isDark ? '#94A3B8' : '#64748B',
+                bgcolor: 'rgba(16, 185, 129, 0.12)',
+                color: '#10B981',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
               }}
             />
           )}
-
-          <Chip
-            size="small"
-            label="● ELEFIN MT5 LIVE"
-            sx={{
-              height: 20,
-              fontSize: '0.625rem',
-              fontWeight: 800,
-              bgcolor: 'rgba(16, 185, 129, 0.12)',
-              color: '#10B981',
-            }}
-          />
         </Box>
 
-        {/* Right: Resolutions & Fast Canvas Controls */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-          <ButtonGroup size="small" variant="outlined">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          {/* Timeframe Buttons */}
+          <ButtonGroup size="small" variant="outlined" sx={{ height: 26 }}>
             {RESOLUTIONS.map((r) => (
               <Button
                 key={r.key}
                 onClick={() => setResolution(r.key)}
-                variant={resolution === r.key ? 'contained' : 'outlined'}
                 sx={{
-                  px: 1,
+                  px: 0.9,
                   py: 0.2,
-                  minWidth: 32,
                   fontSize: '0.68rem',
                   fontWeight: 800,
-                  textTransform: 'none',
-                  ...(resolution === r.key
-                    ? { bgcolor: '#8B5CF6', '&:hover': { bgcolor: '#7C3AED' } }
-                    : {}),
+                  minWidth: 32,
+                  bgcolor: resolution === r.key ? '#3B82F6' : 'transparent',
+                  color: resolution === r.key ? '#FFFFFF' : 'text.secondary',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+                  '&:hover': {
+                    bgcolor: resolution === r.key ? '#2563EB' : alpha('#3B82F6', 0.12),
+                  },
                 }}
               >
                 {r.label}
@@ -621,143 +303,228 @@ export function LiveMarketChart({
             ))}
           </ButtonGroup>
 
-          <Tooltip title="Fit chart candles to screen">
+          {/* Launch in TradingView Web */}
+          <Tooltip title="Open full chart on TradingView.com" arrow>
             <IconButton
               size="small"
-              onClick={() => chartRef.current?.timeScale().fitContent()}
-              sx={{ p: 0.5, border: `1px solid ${muiTheme.palette.divider}`, borderRadius: '6px' }}
-            >
-              <ZoomOutMapRoundedIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={showVolume ? 'Hide Volume' : 'Show Volume'}>
-            <IconButton
-              size="small"
-              onClick={() => {
-                const next = !showVolume;
-                setShowVolume(next);
-                onSettingsChange?.({ showVolume: next, showTradeLevels, showIndicators });
-              }}
+              component="a"
+              href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvWidgetSymbol)}`}
+              target="_blank"
+              rel="noopener noreferrer"
               sx={{
                 p: 0.5,
-                border: `1px solid ${muiTheme.palette.divider}`,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
                 borderRadius: '6px',
-                color: showVolume ? '#10B981' : 'text.disabled',
+                '&:hover': { color: '#3B82F6' },
               }}
             >
-              <LayersRoundedIcon sx={{ fontSize: 15 }} />
+              <OpenInNewRoundedIcon sx={{ fontSize: 15 }} />
             </IconButton>
           </Tooltip>
 
-          <Tooltip title={showTradeLevels ? 'Hide Trade Lines (SL/TP)' : 'Show Trade Lines'}>
+          {/* Expand / Minimize Height */}
+          <Tooltip title={expandedHeight ? 'Collapse chart height' : 'Expand chart height'} arrow>
             <IconButton
               size="small"
-              onClick={() => {
-                const next = !showTradeLevels;
-                setShowTradeLevels(next);
-                onSettingsChange?.({ showVolume, showTradeLevels: next, showIndicators });
-              }}
+              onClick={() => setExpandedHeight(!expandedHeight)}
               sx={{
                 p: 0.5,
-                border: `1px solid ${muiTheme.palette.divider}`,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
                 borderRadius: '6px',
-                color: showTradeLevels ? '#3B82F6' : 'text.disabled',
               }}
             >
-              <TrendingUpRoundedIcon sx={{ fontSize: 15 }} />
+              {expandedHeight ? (
+                <CloseFullscreenRoundedIcon sx={{ fontSize: 15 }} />
+              ) : (
+                <OpenInFullRoundedIcon sx={{ fontSize: 15 }} />
+              )}
             </IconButton>
           </Tooltip>
-
-          <Tooltip title="Refresh live stream">
-            <IconButton
-              size="small"
-              onClick={() => fetchLiveCandles(false)}
-              sx={{ p: 0.5, border: `1px solid ${muiTheme.palette.divider}`, borderRadius: '6px' }}
-            >
-              <RefreshRoundedIcon sx={{ fontSize: 15 }} />
-            </IconButton>
-          </Tooltip>
-
-          {!compact && (
-            <Tooltip title={expandedHeight ? 'Standard Height (380px)' : 'Expanded Terminal Height (560px)'}>
-              <IconButton
-                size="small"
-                onClick={() => setExpandedHeight((prev) => !prev)}
-                sx={{ p: 0.5, border: `1px solid ${muiTheme.palette.divider}`, borderRadius: '6px' }}
-              >
-                {expandedHeight ? (
-                  <CloseFullscreenRoundedIcon sx={{ fontSize: 15 }} />
-                ) : (
-                  <OpenInFullRoundedIcon sx={{ fontSize: 15 }} />
-                )}
-              </IconButton>
-            </Tooltip>
-          )}
         </Box>
       </Box>
 
-      {/* Crosshair OHLC HUD Bar */}
-      {hoveredBar && showIndicators && (
-        <Box
-          sx={{
-            px: 1.5,
-            py: 0.35,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            flexWrap: 'wrap',
-            fontSize: '0.7rem',
-            fontFamily: `'JetBrains Mono', monospace`,
-            borderBottom: `1px solid ${muiTheme.palette.divider}`,
-            bgcolor: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(241, 245, 249, 0.85)',
+      {/* Main Canvas Area: TradingView Advanced Widget + Floating Trade HUD */}
+      <Box sx={{ position: 'relative', width: '100%', height: activeHeight, bgcolor: '#131722' }}>
+        {/* TradingView Advanced Real-Time Chart Iframe */}
+        <iframe
+          key={`${tvWidgetSymbol}-${tvInterval}-${isDark ? 'dark' : 'light'}`}
+          title={`TradingView Chart ${symbol}`}
+          src={`https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(
+            tvWidgetSymbol
+          )}&interval=${encodeURIComponent(tvInterval)}&theme=${
+            isDark ? 'dark' : 'light'
+          }&style=1&timezone=Asia%2FKolkata&withdateranges=1&hide_side_toolbar=0&allow_symbol_change=1&saveimage=1&studies=%5B%5D`}
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            display: 'block',
           }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.68rem' }}>
-            {hoveredBar.timeStr}
-          </Typography>
-          <Typography variant="caption" sx={{ fontSize: '0.68rem' }}>
-            O: <strong>{formatPrice(hoveredBar.open)}</strong>
-          </Typography>
-          <Typography variant="caption" sx={{ fontSize: '0.68rem' }}>
-            H: <strong>{formatPrice(hoveredBar.high)}</strong>
-          </Typography>
-          <Typography variant="caption" sx={{ fontSize: '0.68rem' }}>
-            L: <strong>{formatPrice(hoveredBar.low)}</strong>
-          </Typography>
-          <Typography variant="caption" sx={{ fontSize: '0.68rem' }}>
-            C: <strong>{formatPrice(hoveredBar.close)}</strong> (
-            <span style={{ color: hoveredBar.pct >= 0 ? '#10B981' : '#EF4444' }}>
-              {hoveredBar.pct >= 0 ? '+' : ''}
-              {hoveredBar.pct.toFixed(2)}%
-            </span>
-            )
-          </Typography>
-        </Box>
-      )}
+        />
 
-      {/* Main Chart Body: 100% Native Lightweight Charts Canvas */}
-      <Box sx={{ position: 'relative', width: '100%', height: activeHeight }}>
-        {loading && (!streamData || !streamData.candles?.length) && (
+        {/* Floating "Glass Cockpit" Trade HUD: Position Levels Overlaid in Top-Right */}
+        {isOverlayActive && (
           <Box
             sx={{
               position: 'absolute',
-              inset: 0,
-              zIndex: 5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 1.5,
-              bgcolor: isDark ? 'rgba(11, 15, 25, 0.75)' : 'rgba(255, 255, 255, 0.75)',
+              top: 10,
+              right: 12,
+              zIndex: 10,
+              maxWidth: { xs: 260, sm: 320 },
+              backdropFilter: 'blur(12px)',
+              bgcolor: isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)',
+              borderRadius: '10px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+              overflow: 'hidden',
+              transition: 'all 0.2s ease',
             }}
           >
-            <CircularProgress size={22} />
-            <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: `'JetBrains Mono', monospace` }}>
-              Streaming Elefin {symbol} candles...
-            </Typography>
+            {/* HUD Header Strip */}
+            <Box
+              sx={{
+                px: 1.25,
+                py: 0.6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                bgcolor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                borderBottom: hudMinimized ? 'none' : '1px solid',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Chip
+                  label={positionOverlay?.direction}
+                  size="small"
+                  sx={{
+                    height: 18,
+                    fontSize: '0.625rem',
+                    fontWeight: 900,
+                    bgcolor: isLong ? '#10B981' : '#EF4444',
+                    color: '#FFFFFF',
+                    borderRadius: '4px',
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 800,
+                    fontFamily: `'JetBrains Mono', monospace`,
+                    fontSize: '0.72rem',
+                    color: isDark ? '#F1F5F9' : '#0F172A',
+                  }}
+                >
+                  {positionOverlay?.quantity || 1} lots @ {currSym}{formatPrice(entryPrice)}
+                </Typography>
+              </Box>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {liveFloatingPnl !== null && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 900,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      fontSize: '0.72rem',
+                      color: liveFloatingPnl >= 0 ? '#10B981' : '#EF4444',
+                    }}
+                  >
+                    {liveFloatingPnl >= 0 ? '+' : ''}{currSym}{liveFloatingPnl.toFixed(2)}
+                    {liveR !== null ? ` (${liveR >= 0 ? '+' : ''}${liveR.toFixed(1)}R)` : ''}
+                  </Typography>
+                )}
+                <IconButton
+                  size="small"
+                  onClick={() => setHudMinimized(!hudMinimized)}
+                  sx={{ p: 0.25, color: 'text.secondary' }}
+                >
+                  {hudMinimized ? (
+                    <KeyboardArrowDownRoundedIcon sx={{ fontSize: 16 }} />
+                  ) : (
+                    <KeyboardArrowUpRoundedIcon sx={{ fontSize: 16 }} />
+                  )}
+                </IconButton>
+              </Box>
+            </Box>
+
+            {/* Collapsible HUD Detail Metrics */}
+            <Collapse in={!hudMinimized}>
+              <Box sx={{ p: 1.25, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                {/* Stop Loss Level */}
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <ShieldRoundedIcon sx={{ fontSize: 13, color: '#EF4444' }} />
+                    <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, color: 'text.secondary' }}>
+                      STOP LOSS:
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: '#EF4444',
+                    }}
+                  >
+                    {stopLoss ? `${currSym}${formatPrice(stopLoss)}` : 'None'}
+                    {distToSl !== null ? ` (${distToSl.toFixed(2)} pts)` : ''}
+                  </Typography>
+                </Box>
+
+                {/* Target Level */}
+                {target && target > 0 && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <FlagRoundedIcon sx={{ fontSize: 13, color: '#10B981' }} />
+                      <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, color: 'text.secondary' }}>
+                        TARGET (1:2 RR):
+                      </Typography>
+                    </Box>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: '#10B981',
+                      }}
+                    >
+                      {currSym}{formatPrice(target)}
+                    </Typography>
+                  </Box>
+                )}
+
+                {/* Prop Firm Daily Breach Price */}
+                {positionOverlay?.dailyBreachPrice && positionOverlay.dailyBreachPrice > 0 && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <WarningAmberRoundedIcon sx={{ fontSize: 13, color: '#F97316' }} />
+                      <Typography variant="caption" sx={{ fontSize: '0.68rem', fontWeight: 700, color: '#F97316' }}>
+                        DAILY LOSS LIMIT:
+                      </Typography>
+                    </Box>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        color: '#F97316',
+                      }}
+                    >
+                      {currSym}{formatPrice(positionOverlay.dailyBreachPrice)}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Collapse>
           </Box>
         )}
-        <div ref={containerRef} style={{ width: '100%', height: activeHeight }} />
       </Box>
     </Box>
   );

@@ -155,7 +155,7 @@ export function TradeInteractiveChart({
   const [overlays, setOverlays] = useState<OverlayToggles>(getSavedOverlays);
   const [showOverlayToolbar, setShowOverlayToolbar] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [chartViewMode, setChartViewMode] = useState<'SETUPMINT' | 'TRADINGVIEW'>('SETUPMINT');
+  const [chartViewMode, setChartViewMode] = useState<'SETUPMINT' | 'TRADINGVIEW'>('TRADINGVIEW');
 
   // Data streaming state
   const [loading, setLoading] = useState(true);

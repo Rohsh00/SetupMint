@@ -1275,6 +1275,24 @@ export class TelegramAlertService {
       { text: '⏱️ 1h', callback_data: `x:${tradeId}:CHART_60:${cardVersion}:${roundLtp}` },
     ];
 
+    const symUpper = String(trade.symbol || 'XAUUSD').toUpperCase().trim();
+    const tvTicker =
+      symUpper === 'XAUUSD' ? 'OANDA:XAUUSD' :
+      symUpper === 'EURUSD' ? 'OANDA:EURUSD' :
+      symUpper === 'GBPUSD' ? 'OANDA:GBPUSD' :
+      symUpper === 'USDJPY' ? 'OANDA:USDJPY' :
+      symUpper === 'NAS100' ? 'OANDA:NAS100USD' :
+      symUpper === 'US30' ? 'OANDA:US30USD' :
+      symUpper === 'BTCUSD' ? 'BINANCE:BTCUSDT' :
+      symUpper === 'ETHUSD' ? 'BINANCE:ETHUSDT' :
+      symUpper.includes('BANKNIFTY') ? 'NSE:BANKNIFTY' :
+      symUpper.includes('NIFTY') ? 'NSE:NIFTY' :
+      `OANDA:${symUpper}`;
+
+    const tvRow: ITelegramInlineButton[] = [
+      { text: '📊 Open in TradingView', url: `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvTicker)}` },
+    ];
+
     const isLong = trade.direction === 'LONG';
     const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? trade.entryPrice ?? 0);
     let trueBePrice = trade.calculated?.trueBreakevenPrice;
@@ -1333,7 +1351,7 @@ export class TelegramAlertService {
         row1,
         ...(isProfitableSideOfBe ? [partialScaleRow] : []),
         ...(trailButtons.length > 0 ? [trailButtons] : []),
-        ...(includeTimeframes ? [tfRow] : []),
+        ...(includeTimeframes ? [tfRow, tvRow] : []),
         [
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
           { text: '🔄 Refresh Price & PnL', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
@@ -1350,7 +1368,7 @@ export class TelegramAlertService {
         partialScaleRow,
         ...(trailButtons.length > 0 ? [trailButtons] : []),
         row2,
-        ...(includeTimeframes ? [tfRow] : []),
+        ...(includeTimeframes ? [tfRow, tvRow] : []),
         [
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
           { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
@@ -1366,7 +1384,7 @@ export class TelegramAlertService {
         ],
         partialScaleRow,
         ...(trailButtons.length > 0 ? [trailButtons] : []),
-        ...(includeTimeframes ? [tfRow] : []),
+        ...(includeTimeframes ? [tfRow, tvRow] : []),
         [
           { text: `🚨 Market Exit`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
           { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
@@ -1380,7 +1398,7 @@ export class TelegramAlertService {
           { text: `🚨 Exit Position`, callback_data: `x:${tradeId}:E:${cardVersion}:${roundLtp}` },
           { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
         ],
-        ...(includeTimeframes ? [tfRow] : []),
+        ...(includeTimeframes ? [tfRow, tvRow] : []),
       ];
     }
 
@@ -1394,7 +1412,7 @@ export class TelegramAlertService {
       ],
       partialScaleRow,
       ...(trailButtons.length > 0 ? [trailButtons] : []),
-      ...(includeTimeframes ? [tfRow] : []),
+      ...(includeTimeframes ? [tfRow, tvRow] : []),
       [
         { text: '💤 Snooze 10m', callback_data: `x:${tradeId}:SZ:${cardVersion}:${roundLtp}` },
         { text: '🔄 Refresh', callback_data: `x:${tradeId}:REF:${cardVersion}:${roundLtp}` },
@@ -4030,18 +4048,49 @@ export class TelegramAlertService {
           symbol: new RegExp(reqSymbol, 'i'),
         }).sort({ createdAt: -1 });
 
-        if (recentTrade) {
-          const photoBuf = await this.generatePositionChart(user, recentTrade, tf);
-          if (photoBuf) {
-            const sym = TelegramAlertService.getTradeCurrencySymbol(recentTrade);
-            const netPnl = Number(recentTrade.calculated?.netPnL ?? (recentTrade as any).netPnl ?? 0);
-            const pnlSign = netPnl >= 0 ? '+' : '';
-            const caption =
-              `📈 <b>${recentTrade.symbol}</b> (${recentTrade.direction}) — <b>${tfLabel} Review</b>\n` +
-              `Status: ${recentTrade.status} • Net PnL: ${pnlSign}${sym}${netPnl.toFixed(2)}`;
-            await this.sendPhoto(botToken, chatId, photoBuf, caption);
-            return;
-          }
+        const tradeToRender = recentTrade || {
+          _id: new mongoose.Types.ObjectId(),
+          symbol: reqSymbol.toUpperCase(),
+          direction: 'LONG',
+          status: 'FLAT',
+          exchange: reqSymbol.toUpperCase().includes('XAU') || reqSymbol.toUpperCase().includes('USD') ? 'FOREX' : 'NSE',
+          entryPrice: 0,
+        };
+
+        const photoBuf = await this.generatePositionChart(user, tradeToRender, tf);
+        if (photoBuf) {
+          const symUpper = reqSymbol.toUpperCase();
+          const tvTicker =
+            symUpper === 'XAUUSD' ? 'OANDA:XAUUSD' :
+            symUpper === 'EURUSD' ? 'OANDA:EURUSD' :
+            symUpper === 'GBPUSD' ? 'OANDA:GBPUSD' :
+            symUpper === 'USDJPY' ? 'OANDA:USDJPY' :
+            symUpper === 'NAS100' ? 'OANDA:NAS100USD' :
+            symUpper === 'US30' ? 'OANDA:US30USD' :
+            symUpper === 'BTCUSD' ? 'BINANCE:BTCUSDT' :
+            symUpper === 'ETHUSD' ? 'BINANCE:ETHUSDT' :
+            symUpper.includes('BANKNIFTY') ? 'NSE:BANKNIFTY' :
+            symUpper.includes('NIFTY') ? 'NSE:NIFTY' :
+            `OANDA:${symUpper}`;
+
+          const buttons: ITelegramInlineButton[][] = [
+            [
+              { text: '⏱️ 1m', callback_data: `chart_${symUpper.toLowerCase()}` },
+              { text: '⏱️ 5m', callback_data: `chart_${symUpper.toLowerCase()}` },
+              { text: '⏱️ 15m', callback_data: `chart_${symUpper.toLowerCase()}` },
+            ],
+            [
+              { text: '📊 Open in TradingView', url: `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvTicker)}` },
+            ],
+          ];
+
+          const sym = TelegramAlertService.getTradeCurrencySymbol(tradeToRender);
+          const caption = recentTrade
+            ? `📈 <b>${recentTrade.symbol}</b> (${recentTrade.direction}) — <b>${tfLabel} Review</b>\nStatus: ${recentTrade.status}`
+            : `📊 <b>${symUpper}</b> — <b>${tfLabel} Live Snapshot</b>\nTradingView feed · 24/5 Live Stream`;
+
+          await this.sendPhoto(botToken, chatId, photoBuf, caption, buttons);
+          return;
         }
       }
 

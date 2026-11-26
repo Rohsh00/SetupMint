@@ -65,6 +65,8 @@ export function buildTradeMongooseFilter(
     excursionFlags,
     killZone,
     weekday,
+    quantityMin,
+    quantityMax,
   } = filterInput as any;
 
   if (Array.isArray(accountIds)) {
@@ -289,6 +291,19 @@ export function buildTradeMongooseFilter(
     }
     if (Object.keys(range).length > 0) {
       filter['calculated.holdingTimeMinutes'] = range;
+    }
+  }
+
+  if (quantityMin !== undefined || quantityMax !== undefined) {
+    const range: Record<string, number> = {};
+    if (quantityMin !== undefined && !isNaN(quantityMin)) {
+      range.$gte = quantityMin;
+    }
+    if (quantityMax !== undefined && !isNaN(quantityMax)) {
+      range.$lte = quantityMax;
+    }
+    if (Object.keys(range).length > 0) {
+      filter.quantity = range;
     }
   }
 

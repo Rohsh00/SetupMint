@@ -661,6 +661,8 @@ export const extendedTradeFilterBaseSchema = tradeFilterQueryBaseSchema.extend({
   excursionFlag: z.preprocess(emptyStringToUndefined, z.string().optional()),
   excursionFlags: z.preprocess(emptyStringToUndefined, z.union([z.string(), z.array(z.string())]).optional()),
   killZone: z.preprocess(emptyStringToUndefined, z.string().optional()),
+  quantityMin: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
+  quantityMax: z.preprocess(emptyStringToUndefined, z.coerce.number().optional()),
 });
 
 export const extendedTradeFilterSchema = extendedTradeFilterBaseSchema.refine(

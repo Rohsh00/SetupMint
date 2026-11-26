@@ -32,6 +32,9 @@ import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded';
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 
 import {
   CartesianGrid,
@@ -57,6 +60,7 @@ interface IPositionSizingDiagnosticsTabProps {
   selectedSymbol?: string;
   onSelectSymbol?: (symbol: string) => void;
   onRefresh?: () => void;
+  onDrillDown?: (filterOrDesc: any, label: string) => void;
 }
 
 export function PositionSizingDiagnosticsTab({
@@ -66,6 +70,7 @@ export function PositionSizingDiagnosticsTab({
   selectedSymbol,
   onSelectSymbol,
   onRefresh,
+  onDrillDown,
 }: IPositionSizingDiagnosticsTabProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -294,15 +299,82 @@ export function PositionSizingDiagnosticsTab({
         </Alert>
       )}
 
+      {/* Educational Concept Card: Position Sizing Alpha & Health */}
+      <Card
+        sx={{
+          p: 2.5,
+          borderRadius: 2.5,
+          border: `1px solid ${muiTheme.palette.divider}`,
+          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.04)' : 'rgba(59, 130, 246, 0.02)',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <SchoolRoundedIcon sx={{ color: '#3B82F6', fontSize: 20 }} />
+          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#3B82F6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Understanding Position Sizing & Sizing Alpha
+          </Typography>
+        </Box>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                1. Sizing Alpha
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                Measures the dollar gain/loss generated purely from varying lot sizes vs trading constant volume. Positive Alpha (+Good) confirms you sized up on winning setups.
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                2. Sizing Health Grade
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                A 0–100 score scoring sizing discipline across 3 pillars: profitability of larger lot tiers, drawdown containment at base size, and absence of post-loss revenge spikes.
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                3. Revenge Escalation
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                Sizing up immediately after a losing trade (Martingale tilt pattern). In prop firm challenges, this is the leading trigger of catastrophic maximum daily drawdown breaches.
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                4. Lot Size Tiers
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                Clusters of volumes traded (e.g. 0.01 Base, 0.02 2x, 0.04 4x). Inspecting metrics per tier reveals whether your edge scales with larger capital or decays due to psychological pressure.
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+      </Card>
+
       {/* Top Hero KPI Cards */}
       <Grid container spacing={2}>
         {/* Card 1: Sizing Alpha */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Tooltip
-            title="Sizing Alpha measures whether varying your position size added or subtracted value compared to trading the exact same average lot size every time. Positive (+) means your sizing adjustments created excess profit. Negative (-) means sizing up on losing trades destroyed profits."
+            title="Sizing Alpha measures whether varying your position size added or subtracted value compared to trading the exact same average lot size every time. Click to inspect all evaluated sizing trades."
             arrow
           >
             <Card
+              onClick={() => {
+                if (onDrillDown && progression.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: progression.map((p) => p.tradeId) },
+                    'All Evaluated Sizing Trades'
+                  );
+                }
+              }}
               sx={{
                 p: 2.5,
                 borderRadius: 2,
@@ -313,7 +385,15 @@ export function PositionSizingDiagnosticsTab({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 1,
-                cursor: 'help',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: isAlphaPositive ? '#10B981' : '#EF4444',
+                  transform: 'translateY(-2px)',
+                  boxShadow: isAlphaPositive
+                    ? '0 4px 12px rgba(16, 185, 129, 0.2)'
+                    : '0 4px 12px rgba(239, 68, 68, 0.2)',
+                },
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -332,27 +412,21 @@ export function PositionSizingDiagnosticsTab({
               >
                 {isAlphaPositive ? '+' : ''}{formatCurrency(summary.sizingAlpha, currencySymbol)}
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Tooltip
-                  title={
-                    summary.sizingAlphaVerdict === 'POSITIVE_ALPHA'
-                      ? 'Your sizing decisions amplified your returns: you sized up effectively on your winning setups!'
-                      : 'Your sizing decisions cost you money: you tended to trade larger lots on losing trades and smaller lots on winning trades.'
-                  }
-                  arrow
-                >
-                  <Chip
-                    label={summary.sizingAlphaVerdict === 'POSITIVE_ALPHA' ? 'POSITIVE ALPHA (+GOOD)' : 'VALUE DESTRUCTIVE (-BAD)'}
-                    size="small"
-                    sx={{
-                      height: 20,
-                      fontSize: '0.625rem',
-                      fontWeight: 800,
-                      backgroundColor: isAlphaPositive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: isAlphaPositive ? '#10B981' : '#EF4444',
-                    }}
-                  />
-                </Tooltip>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                <Chip
+                  label={summary.sizingAlphaVerdict === 'POSITIVE_ALPHA' ? 'POSITIVE ALPHA (+GOOD)' : 'VALUE DESTRUCTIVE (-BAD)'}
+                  size="small"
+                  sx={{
+                    height: 20,
+                    fontSize: '0.625rem',
+                    fontWeight: 800,
+                    backgroundColor: isAlphaPositive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: isAlphaPositive ? '#10B981' : '#EF4444',
+                  }}
+                />
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  Inspect →
+                </Typography>
               </Box>
             </Card>
           </Tooltip>
@@ -361,10 +435,18 @@ export function PositionSizingDiagnosticsTab({
         {/* Card 2: Sizing Health Score & Grade */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Tooltip
-            title="A comprehensive 0–100 score and letter grade (A/B/C/D) evaluating your sizing discipline. Factors include: 1) Profitability of higher lot tiers, 2) Containment of drawdowns at base size, and 3) Absence of post-loss revenge sizing spikes."
+            title="A comprehensive 0–100 score and letter grade (A/B/C/D) evaluating your sizing discipline. Click to inspect trades."
             arrow
           >
             <Card
+              onClick={() => {
+                if (onDrillDown && progression.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: progression.map((p) => p.tradeId) },
+                    'Sizing Health Evaluated Trades'
+                  );
+                }
+              }}
               sx={{
                 p: 2.5,
                 borderRadius: 2,
@@ -372,7 +454,13 @@ export function PositionSizingDiagnosticsTab({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 1,
-                cursor: 'help',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: gradeColor,
+                  transform: 'translateY(-2px)',
+                  boxShadow: `0 4px 12px ${alpha(gradeColor, 0.2)}`,
+                },
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -389,11 +477,16 @@ export function PositionSizingDiagnosticsTab({
                   {summary.sizingHealthScore}/100
                 </Typography>
               </Box>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
-                {summary.sizingHealthGrade === 'A' || summary.sizingHealthGrade === 'B'
-                  ? 'Healthy scaling discipline with positive edge amplification'
-                  : 'Size escalation friction detected; review larger tiers'}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                  {summary.sizingHealthGrade === 'A' || summary.sizingHealthGrade === 'B'
+                    ? 'Healthy scaling discipline'
+                    : 'Size escalation friction detected'}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  Inspect →
+                </Typography>
+              </Box>
             </Card>
           </Tooltip>
         </Grid>
@@ -401,10 +494,15 @@ export function PositionSizingDiagnosticsTab({
         {/* Card 3: Lot Tiers Detected */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Tooltip
-            title="Groups your trades into volume clusters (e.g. Base 0.01, 2x 0.02, 4x 0.04). Base is the smallest standard volume you trade, while Average is the volume-weighted mean across all trades."
+            title="Groups your trades into volume clusters (e.g. Base 0.01, 2x 0.02, 4x 0.04). Click to highlight tiers."
             arrow
           >
             <Card
+              onClick={() => {
+                if (tiers.length > 0) {
+                  setSelectedTierKey(tiers[0]?.tierKey || null);
+                }
+              }}
               sx={{
                 p: 2.5,
                 borderRadius: 2,
@@ -412,7 +510,13 @@ export function PositionSizingDiagnosticsTab({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 1,
-                cursor: 'help',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: '#8B5CF6',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(139, 92, 246, 0.2)',
+                },
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -424,9 +528,14 @@ export function PositionSizingDiagnosticsTab({
               <Typography variant="h4" sx={{ fontWeight: 800 }}>
                 {tiers.length} Tiers
               </Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: `'JetBrains Mono', monospace` }}>
-                Base: {summary.baseLotQuantity} Lots • Avg: {summary.averageLotQuantity} Lots
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: `'JetBrains Mono', monospace` }}>
+                  Base: {summary.baseLotQuantity}L • Avg: {summary.averageLotQuantity}L
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#8B5CF6', fontSize: '0.6875rem', fontWeight: 700 }}>
+                  View Tiers ↓
+                </Typography>
+              </Box>
             </Card>
           </Tooltip>
         </Grid>
@@ -434,10 +543,19 @@ export function PositionSizingDiagnosticsTab({
         {/* Card 4: Revenge Escalation Rate */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <Tooltip
-            title="The percentage of lot size increases that occurred directly after a loss (Martingale tilt pattern). In prop firm and professional trading, sizing up after a loss is the leading cause of account breaches. Disciplined traders keep this below 15%."
+            title="The percentage of lot size increases that occurred directly after a loss (Martingale tilt pattern). Click to inspect revenge escalation trades."
             arrow
           >
             <Card
+              onClick={() => {
+                const revTradeIds = progression.filter((p) => p.isRevengeEscalation).map((p) => p.tradeId);
+                if (onDrillDown && revTradeIds.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: revTradeIds },
+                    `Revenge Escalation Trades (${revTradeIds.length} trades)`
+                  );
+                }
+              }}
               sx={{
                 p: 2.5,
                 borderRadius: 2,
@@ -445,7 +563,15 @@ export function PositionSizingDiagnosticsTab({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 1,
-                cursor: 'help',
+                cursor: (triggerAnalysis?.revengeEscalations ?? 0) > 0 ? 'pointer' : 'help',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: (triggerAnalysis?.revengeEscalationRate ?? 0) > 25 ? '#EF4444' : '#10B981',
+                  transform: 'translateY(-2px)',
+                  boxShadow: (triggerAnalysis?.revengeEscalationRate ?? 0) > 25
+                    ? '0 4px 12px rgba(239, 68, 68, 0.2)'
+                    : '0 4px 12px rgba(16, 185, 129, 0.2)',
+                },
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -469,9 +595,16 @@ export function PositionSizingDiagnosticsTab({
               >
                 {triggerAnalysis?.revengeEscalationRate ?? 0}%
               </Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
-                {triggerAnalysis?.revengeEscalations ?? 0} of {triggerAnalysis?.totalEscalations ?? 0} escalations after losses
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                  {triggerAnalysis?.revengeEscalations ?? 0} of {triggerAnalysis?.totalEscalations ?? 0} escalations
+                </Typography>
+                {(triggerAnalysis?.revengeEscalations ?? 0) > 0 && (
+                  <Typography variant="caption" sx={{ color: '#EF4444', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                    Inspect →
+                  </Typography>
+                )}
+              </Box>
             </Card>
           </Tooltip>
         </Grid>
@@ -672,12 +805,25 @@ export function PositionSizingDiagnosticsTab({
                             sx={{ height: 18, fontSize: '0.625rem', fontWeight: 800, mt: 0.75 }}
                           />
                         )}
+                        <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 700, display: 'block', mt: 0.75 }}>
+                          Click point to inspect trade →
+                        </Typography>
                       </Box>
                     );
                   }}
                 />
                 <Scatter
                   data={progression}
+                  cursor="pointer"
+                  onClick={(node: any) => {
+                    const pt = node?.payload;
+                    if (pt?.tradeId && onDrillDown) {
+                      onDrillDown(
+                        { kind: 'TRADE', tradeId: pt.tradeId },
+                        `Trade #${pt.tradeIndex} (${pt.symbol} • ${pt.quantity} Lots)`
+                      );
+                    }
+                  }}
                   shape={(props: any) => {
                     const { cx, cy, payload } = props;
                     const isWin = payload.isWin;
@@ -855,6 +1001,37 @@ export function PositionSizingDiagnosticsTab({
                         </Box>
                       </Tooltip>
                     </Box>
+
+                    {/* Tier Drilldown Action Button */}
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const tierTradeIds = progression
+                          .filter((p) => p.quantity >= t.minQuantity && p.quantity <= t.maxQuantity)
+                          .map((p) => p.tradeId);
+                        if (onDrillDown && tierTradeIds.length > 0) {
+                          onDrillDown(
+                            { kind: 'TRADES', tradeIds: tierTradeIds },
+                            `Lot Tier: ${t.label} (${t.tradeCount} trades)`
+                          );
+                        }
+                      }}
+                      endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 13 }} />}
+                      sx={{
+                        mt: 1.5,
+                        width: '100%',
+                        textTransform: 'none',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        py: 0.35,
+                        borderColor: alpha(muiTheme.palette.primary.main, 0.4),
+                      }}
+                    >
+                      Inspect {t.tradeCount} Trades
+                    </Button>
                   </Card>
                 </Tooltip>
               </Grid>
@@ -944,105 +1121,137 @@ export function PositionSizingDiagnosticsTab({
                     </Box>
                   </Tooltip>
                 </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.75rem' }}>
+                  <Tooltip title="Inspect trades in this lot size tier" arrow>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                      Action <InfoOutlinedIcon sx={{ fontSize: 13, opacity: 0.6 }} />
+                    </Box>
+                  </Tooltip>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {tiers.map((t) => (
-                <TableRow
-                  key={t.tierKey}
-                  hover
-                  selected={selectedTierKey === t.tierKey}
-                  onClick={() => setSelectedTierKey(selectedTierKey === t.tierKey ? null : t.tierKey)}
-                  sx={{ cursor: 'pointer' }}
-                >
-                  <TableCell sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
-                    {t.label}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
-                    {t.tradeCount} <Typography component="span" variant="caption" sx={{ color: 'text.secondary' }}>({t.tradePercent}%)</Typography>
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, fontSize: '0.8125rem' }}>
-                    {t.winRate}%
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      fontFamily: `'JetBrains Mono', monospace`,
-                      fontWeight: 800,
-                      fontSize: '0.8125rem',
-                      color: t.profitFactor >= 1.5 ? '#10B981' : t.profitFactor >= 1.0 ? '#F59E0B' : '#EF4444',
-                    }}
+              {tiers.map((t) => {
+                const tierTradeIds = progression
+                  .filter((p) => p.quantity >= t.minQuantity && p.quantity <= t.maxQuantity)
+                  .map((p) => p.tradeId);
+                return (
+                  <TableRow
+                    key={t.tierKey}
+                    hover
+                    selected={selectedTierKey === t.tierKey}
+                    onClick={() => setSelectedTierKey(selectedTierKey === t.tierKey ? null : t.tierKey)}
+                    sx={{ cursor: 'pointer' }}
                   >
-                    {t.profitFactor}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      fontFamily: `'JetBrains Mono', monospace`,
-                      fontWeight: 800,
-                      fontSize: '0.8125rem',
-                      color: t.netPnL >= 0 ? '#10B981' : '#EF4444',
-                    }}
-                  >
-                    {t.netPnL >= 0 ? '+' : ''}{formatCurrency(t.netPnL, currencySymbol)}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#10B981', fontSize: '0.8125rem' }}>
-                    +{formatCurrency(t.avgWin, currencySymbol)}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#EF4444', fontSize: '0.8125rem' }}>
-                    -{formatCurrency(t.avgLoss, currencySymbol)}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
-                    1 : {t.payoffRatio}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
-                    {t.avgRMultiple > 0 ? `+${t.avgRMultiple}R` : `${t.avgRMultiple}R`}
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#EF4444', fontSize: '0.8125rem' }}>
-                    -{formatCurrency(t.maxDrawdownInTier, currencySymbol)}
-                  </TableCell>
-                  <TableCell align="right">
-                    <Tooltip
-                      title={
-                        t.verdict === 'OPTIMAL'
-                          ? 'Optimal Tier: Highest edge and positive expectancy'
-                          : t.verdict === 'HEALTHY'
-                          ? 'Healthy Tier: Consistently profitable'
-                          : t.verdict === 'MARGINAL'
-                          ? 'Marginal Tier: Near breakeven'
-                          : 'Value Destructive Tier: Net losing at this size'
-                      }
-                      arrow
+                    <TableCell sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
+                      {t.label}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
+                      {t.tradeCount} <Typography component="span" variant="caption" sx={{ color: 'text.secondary' }}>({t.tradePercent}%)</Typography>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontWeight: 700, fontSize: '0.8125rem' }}>
+                      {t.winRate}%
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        fontWeight: 800,
+                        fontSize: '0.8125rem',
+                        color: t.profitFactor >= 1.5 ? '#10B981' : t.profitFactor >= 1.0 ? '#F59E0B' : '#EF4444',
+                      }}
                     >
-                      <Chip
-                        label={t.verdict}
+                      {t.profitFactor}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        fontFamily: `'JetBrains Mono', monospace`,
+                        fontWeight: 800,
+                        fontSize: '0.8125rem',
+                        color: t.netPnL >= 0 ? '#10B981' : '#EF4444',
+                      }}
+                    >
+                      {t.netPnL >= 0 ? '+' : ''}{formatCurrency(t.netPnL, currencySymbol)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#10B981', fontSize: '0.8125rem' }}>
+                      +{formatCurrency(t.avgWin, currencySymbol)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#EF4444', fontSize: '0.8125rem' }}>
+                      -{formatCurrency(t.avgLoss, currencySymbol)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
+                      1 : {t.payoffRatio}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.8125rem' }}>
+                      {t.avgRMultiple > 0 ? `+${t.avgRMultiple}R` : `${t.avgRMultiple}R`}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace`, color: '#EF4444', fontSize: '0.8125rem' }}>
+                      -{formatCurrency(t.maxDrawdownInTier, currencySymbol)}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Tooltip
+                        title={
+                          t.verdict === 'OPTIMAL'
+                            ? 'Optimal Tier: Highest edge and positive expectancy'
+                            : t.verdict === 'HEALTHY'
+                            ? 'Healthy Tier: Consistently profitable'
+                            : t.verdict === 'MARGINAL'
+                            ? 'Marginal Tier: Near breakeven'
+                            : 'Value Destructive Tier: Net losing at this size'
+                        }
+                        arrow
+                      >
+                        <Chip
+                          label={t.verdict}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.625rem',
+                            fontWeight: 800,
+                            backgroundColor:
+                              t.verdict === 'OPTIMAL'
+                                ? 'rgba(16, 185, 129, 0.15)'
+                                : t.verdict === 'HEALTHY'
+                                ? 'rgba(59, 130, 246, 0.15)'
+                                : t.verdict === 'MARGINAL'
+                                ? 'rgba(245, 158, 11, 0.15)'
+                                : 'rgba(239, 68, 68, 0.15)',
+                            color:
+                              t.verdict === 'OPTIMAL'
+                                ? '#10B981'
+                                : t.verdict === 'HEALTHY'
+                                ? '#3B82F6'
+                                : t.verdict === 'MARGINAL'
+                                ? '#F59E0B'
+                                : '#EF4444',
+                          }}
+                        />
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Button
                         size="small"
-                        sx={{
-                          height: 20,
-                          fontSize: '0.625rem',
-                          fontWeight: 800,
-                          backgroundColor:
-                            t.verdict === 'OPTIMAL'
-                              ? 'rgba(16, 185, 129, 0.15)'
-                              : t.verdict === 'HEALTHY'
-                              ? 'rgba(59, 130, 246, 0.15)'
-                              : t.verdict === 'MARGINAL'
-                              ? 'rgba(245, 158, 11, 0.15)'
-                              : 'rgba(239, 68, 68, 0.15)',
-                          color:
-                            t.verdict === 'OPTIMAL'
-                              ? '#10B981'
-                              : t.verdict === 'HEALTHY'
-                              ? '#3B82F6'
-                              : t.verdict === 'MARGINAL'
-                              ? '#F59E0B'
-                              : '#EF4444',
+                        variant="text"
+                        color="primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onDrillDown && tierTradeIds.length > 0) {
+                            onDrillDown(
+                              { kind: 'TRADES', tradeIds: tierTradeIds },
+                              `Lot Tier: ${t.label} (${t.tradeCount} trades)`
+                            );
+                          }
                         }}
-                      />
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 12 }} />}
+                        sx={{ textTransform: 'none', fontSize: '0.7rem', fontWeight: 800, py: 0, px: 1, minWidth: 'auto' }}
+                      >
+                        Inspect
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </Card>
@@ -1064,17 +1273,26 @@ export function PositionSizingDiagnosticsTab({
             </Tooltip>
           </Box>
           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2 }}>
-            Analyzes whether sizing up after a WIN (compounding) vs sizing up after a LOSS (revenge Martingale) was more successful.
+            Analyzes whether sizing up after a WIN (compounding) vs sizing up after a LOSS (revenge Martingale) was more successful. Click either box to inspect trades.
           </Typography>
 
           <Grid container spacing={2}>
             {/* Rational Compounding */}
             <Grid size={{ xs: 12, sm: 6 }}>
               <Tooltip
-                title="Increasing lot size after a WIN is healthy capital expansion. Sizing up while in profit cushion compounds returns without emotional distress."
+                title="Increasing lot size after a WIN is healthy capital expansion. Click to inspect compounding trades."
                 arrow
               >
                 <Box
+                  onClick={() => {
+                    const compTradeIds = progression.filter((p) => p.isEscalation && !p.isRevengeEscalation).map((p) => p.tradeId);
+                    if (onDrillDown && compTradeIds.length > 0) {
+                      onDrillDown(
+                        { kind: 'TRADES', tradeIds: compTradeIds },
+                        `Compounding Sizing Trades (${compTradeIds.length} trades)`
+                      );
+                    }
+                  }}
                   sx={{
                     p: 2,
                     borderRadius: 2,
@@ -1083,7 +1301,13 @@ export function PositionSizingDiagnosticsTab({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 1,
-                    cursor: 'help',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    '&:hover': {
+                      borderColor: '#10B981',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+                    },
                   }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1115,6 +1339,11 @@ export function PositionSizingDiagnosticsTab({
                       Avg: {triggerAnalysis.compoundingAvgPnL >= 0 ? '+' : ''}{formatCurrency(triggerAnalysis.compoundingAvgPnL, currencySymbol)}
                     </Typography>
                   </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: '#10B981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      Inspect {triggerAnalysis.compoundingEscalations} Trades <ArrowForwardRoundedIcon sx={{ fontSize: 12 }} />
+                    </Typography>
+                  </Box>
                 </Box>
               </Tooltip>
             </Grid>
@@ -1122,10 +1351,19 @@ export function PositionSizingDiagnosticsTab({
             {/* Revenge Martingale Escalation */}
             <Grid size={{ xs: 12, sm: 6 }}>
               <Tooltip
-                title="Increasing lot size after a LOSS is an emotional Martingale trap. Trying to 'make back' a loss in one trade is the leading cause of account breaches."
+                title="Increasing lot size after a LOSS is an emotional Martingale trap. Click to inspect revenge trades."
                 arrow
               >
                 <Box
+                  onClick={() => {
+                    const revTradeIds = progression.filter((p) => p.isRevengeEscalation).map((p) => p.tradeId);
+                    if (onDrillDown && revTradeIds.length > 0) {
+                      onDrillDown(
+                        { kind: 'TRADES', tradeIds: revTradeIds },
+                        `Revenge Escalation Trades (${revTradeIds.length} trades)`
+                      );
+                    }
+                  }}
                   sx={{
                     p: 2,
                     borderRadius: 2,
@@ -1134,7 +1372,13 @@ export function PositionSizingDiagnosticsTab({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 1,
-                    cursor: 'help',
+                    cursor: (triggerAnalysis?.revengeEscalations ?? 0) > 0 ? 'pointer' : 'help',
+                    transition: 'all 0.15s ease',
+                    '&:hover': {
+                      borderColor: '#EF4444',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+                    },
                   }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1164,6 +1408,11 @@ export function PositionSizingDiagnosticsTab({
                       }}
                     >
                       Avg: {triggerAnalysis.revengeAvgPnL >= 0 ? '+' : ''}{formatCurrency(triggerAnalysis.revengeAvgPnL, currencySymbol)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ color: '#EF4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      Inspect {triggerAnalysis.revengeEscalations} Trades <ArrowForwardRoundedIcon sx={{ fontSize: 12 }} />
                     </Typography>
                   </Box>
                 </Box>

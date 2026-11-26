@@ -17,7 +17,7 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
+import { useTheme as useMuiTheme, alpha } from '@mui/material/styles';
 
 // Icons
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
@@ -30,6 +30,8 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 
 interface IPyramidLayer {
   id: string;
@@ -83,6 +85,7 @@ interface IPyramidingAnalyticsProps {
   isLoading?: boolean;
   currencySymbol?: string;
   onRefresh?: () => void;
+  onDrillDown?: (filterOrDesc: any, label: string) => void;
 }
 
 export function PyramidingAnalyticsTab({
@@ -90,6 +93,7 @@ export function PyramidingAnalyticsTab({
   isLoading,
   currencySymbol = '$',
   onRefresh,
+  onDrillDown,
 }: IPyramidingAnalyticsProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -125,142 +129,293 @@ export function PyramidingAnalyticsTab({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Educational Concept Card: What is Pyramiding Edge & Alpha? */}
+      <Card
+        sx={{
+          p: 2.5,
+          borderRadius: 2.5,
+          border: `1px solid ${muiTheme.palette.divider}`,
+          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.04)' : 'rgba(59, 130, 246, 0.02)',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <SchoolRoundedIcon sx={{ color: '#3B82F6', fontSize: 20 }} />
+          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#3B82F6', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Understanding Pyramiding Edge & Pyramid Alpha
+          </Typography>
+        </Box>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                1. What is Pyramiding?
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                Scaling into winners: adding new execution layers (Layer 1, 2, 3...) to an open trade as price moves in your intended direction.
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                2. Pyramid Alpha
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                The counterfactual test: Did adding layers make you more money (+Alpha) than simply holding your initial base trade without adding any volume?
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                3. BE Shielding
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                Professional rule: Moving Stop Loss to Breakeven (+ spread cover) on existing layers before adding new ones, guaranteeing zero capital risk.
+              </Typography>
+            </Box>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)', height: '100%', border: `1px solid ${muiTheme.palette.divider}` }}>
+              <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', mb: 0.5 }}>
+                4. Campaign Blending
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                SetupMint clusters individual tickets into a single campaign to report your true blended entry price, total volume, and blended campaign P&L.
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+      </Card>
+
       {/* 4 Hero KPI Cards */}
       <Grid container spacing={2}>
         {/* Card 1: Total Campaigns & Win Rate */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${muiTheme.palette.divider}`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Pyramid Campaigns
+          <Tooltip title="Total multi-layer pyramided trading campaigns executed. Click to inspect all campaign trades." arrow>
+            <Card
+              onClick={() => {
+                const allTradeIds = campaigns.flatMap((c) => c.layers.map((l) => l.id));
+                if (onDrillDown && allTradeIds.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: allTradeIds },
+                    `All Pyramiding Campaigns (${allTradeIds.length} trades)`
+                  );
+                }
+              }}
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: '#3B82F6',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Pyramid Campaigns
+                </Typography>
+                <AccountTreeRoundedIcon sx={{ fontSize: 20, color: '#3B82F6' }} />
+              </Box>
+              <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                {summary?.totalCampaigns ?? 0}
               </Typography>
-              <AccountTreeRoundedIcon sx={{ fontSize: 20, color: '#3B82F6' }} />
-            </Box>
-            <Typography variant="h4" sx={{ fontWeight: 800 }}>
-              {summary?.totalCampaigns ?? 0}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                label={`${summary?.campaignWinRate ?? 0}% Win Rate`}
-                size="small"
-                sx={{
-                  height: 20,
-                  fontSize: '0.6875rem',
-                  fontWeight: 700,
-                  backgroundColor: (summary?.campaignWinRate ?? 0) >= 50 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                  color: (summary?.campaignWinRate ?? 0) >= 50 ? '#10B981' : '#EF4444',
-                }}
-              />
-              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                {summary?.winningCampaignsCount ?? 0} won
-              </Typography>
-            </Box>
-          </Card>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip
+                    label={`${summary?.campaignWinRate ?? 0}% Win Rate`}
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                      backgroundColor: (summary?.campaignWinRate ?? 0) >= 50 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: (summary?.campaignWinRate ?? 0) >= 50 ? '#10B981' : '#EF4444',
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                    {summary?.winningCampaignsCount ?? 0} won
+                  </Typography>
+                </Box>
+                {campaigns.length > 0 && (
+                  <Typography variant="caption" sx={{ color: '#3B82F6', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                    Inspect →
+                  </Typography>
+                )}
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 2: Net Pyramid Alpha */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${isAlphaPositive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-              backgroundColor: isAlphaPositive ? (isDark ? 'rgba(16, 185, 129, 0.04)' : 'rgba(16, 185, 129, 0.02)') : (isDark ? 'rgba(239, 68, 68, 0.04)' : 'rgba(239, 68, 68, 0.02)'),
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Tooltip title="Pyramid Alpha = Total Campaign PnL minus what the base trade would have earned without adding." arrow>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+          <Tooltip title="Pyramid Alpha = Total Campaign PnL minus what the base trade would have earned without adding. Click to inspect alpha-positive campaigns." arrow>
+            <Card
+              onClick={() => {
+                const alphaTradeIds = campaigns.filter((c) => c.pyramidAlpha > 0).flatMap((c) => c.layers.map((l) => l.id));
+                if (onDrillDown && alphaTradeIds.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: alphaTradeIds },
+                    `Alpha-Positive Campaign Trades (${alphaTradeIds.length} trades)`
+                  );
+                }
+              }}
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${isAlphaPositive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                backgroundColor: isAlphaPositive ? (isDark ? 'rgba(16, 185, 129, 0.04)' : 'rgba(16, 185, 129, 0.02)') : (isDark ? 'rgba(239, 68, 68, 0.04)' : 'rgba(239, 68, 68, 0.02)'),
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: isAlphaPositive ? '#10B981' : '#EF4444',
+                  transform: 'translateY(-2px)',
+                  boxShadow: isAlphaPositive
+                    ? '0 4px 12px rgba(16, 185, 129, 0.2)'
+                    : '0 4px 12px rgba(239, 68, 68, 0.2)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Net Pyramid Alpha
                   </Typography>
                   <InfoOutlinedIcon sx={{ fontSize: 14, color: muiTheme.palette.text.secondary }} />
                 </Box>
-              </Tooltip>
-              {isAlphaPositive ? (
-                <TrendingUpRoundedIcon sx={{ fontSize: 20, color: '#10B981' }} />
-              ) : (
-                <TrendingDownRoundedIcon sx={{ fontSize: 20, color: '#EF4444' }} />
-              )}
-            </Box>
-            <Typography variant="h4" sx={{ fontWeight: 800, color: isAlphaPositive ? '#10B981' : '#EF4444' }}>
-              {isAlphaPositive ? '+' : '-'}{currencySymbol}{Math.abs(totalAlpha).toFixed(2)}
-            </Typography>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              {isAlphaPositive ? 'Extra profit gained by scaling in' : 'Drawdown impact vs base-only hold'}
-            </Typography>
-          </Card>
+                {isAlphaPositive ? (
+                  <TrendingUpRoundedIcon sx={{ fontSize: 20, color: '#10B981' }} />
+                ) : (
+                  <TrendingDownRoundedIcon sx={{ fontSize: 20, color: '#EF4444' }} />
+                )}
+              </Box>
+              <Typography variant="h4" sx={{ fontWeight: 800, color: isAlphaPositive ? '#10B981' : '#EF4444' }}>
+                {isAlphaPositive ? '+' : '-'}{currencySymbol}{Math.abs(totalAlpha).toFixed(2)}
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                  {isAlphaPositive ? 'Extra profit gained by scaling in' : 'Drawdown impact vs base-only hold'}
+                </Typography>
+                <Typography variant="caption" sx={{ color: isAlphaPositive ? '#10B981' : '#EF4444', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  Inspect →
+                </Typography>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 3: Breakeven Discipline */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${muiTheme.palette.divider}`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Tooltip title="Percentage of scale-in entries executed with base Stop Loss locked to Breakeven (+ Spread Cover)." arrow>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+          <Tooltip title="Percentage of scale-in entries executed with base Stop Loss locked to Breakeven (+ Spread Cover). Click to inspect shielded trades." arrow>
+            <Card
+              onClick={() => {
+                const protTradeIds = campaigns.filter((c) => c.wasProtected).flatMap((c) => c.layers.map((l) => l.id));
+                if (onDrillDown && protTradeIds.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: protTradeIds },
+                    `BE Shielded Campaign Trades (${protTradeIds.length} trades)`
+                  );
+                }
+              }}
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: (summary?.beProtectionRate ?? 0) >= 80 ? '#10B981' : '#F59E0B',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     BE Protection Rate
                   </Typography>
                   <InfoOutlinedIcon sx={{ fontSize: 14, color: muiTheme.palette.text.secondary }} />
                 </Box>
-              </Tooltip>
-              <SecurityRoundedIcon sx={{ fontSize: 20, color: (summary?.beProtectionRate ?? 0) >= 80 ? '#10B981' : '#F59E0B' }} />
-            </Box>
-            <Typography variant="h4" sx={{ fontWeight: 800 }}>
-              {summary?.beProtectionRate ?? 0}%
-            </Typography>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Scale-ins with 0-risk base protection
-            </Typography>
-          </Card>
+                <SecurityRoundedIcon sx={{ fontSize: 20, color: (summary?.beProtectionRate ?? 0) >= 80 ? '#10B981' : '#F59E0B' }} />
+              </Box>
+              <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                {summary?.beProtectionRate ?? 0}%
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                  Scale-ins with 0-risk base protection
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#10B981', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  Inspect →
+                </Typography>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
 
         {/* Card 4: Scale Intensity */}
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            sx={{
-              p: 2.5,
-              borderRadius: 2,
-              border: `1px solid ${muiTheme.palette.divider}`,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 1,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Average Layers
+          <Tooltip title="Average number of execution tickets per pyramiding campaign. Click to view campaigns." arrow>
+            <Card
+              onClick={() => {
+                const multiTradeIds = campaigns.filter((c) => c.layerCount >= 2).flatMap((c) => c.layers.map((l) => l.id));
+                if (onDrillDown && multiTradeIds.length > 0) {
+                  onDrillDown(
+                    { kind: 'TRADES', tradeIds: multiTradeIds },
+                    `Multi-Layer Campaign Trades (${multiTradeIds.length} trades)`
+                  );
+                }
+              }}
+              sx={{
+                p: 2.5,
+                borderRadius: 2,
+                border: `1px solid ${muiTheme.palette.divider}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: '#8B5CF6',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 4px 12px rgba(139, 92, 246, 0.2)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Average Layers
+                </Typography>
+                <LayersRoundedIcon sx={{ fontSize: 20, color: '#8B5CF6' }} />
+              </Box>
+              <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                {summary?.avgLayersPerCampaign ?? 0}
               </Typography>
-              <LayersRoundedIcon sx={{ fontSize: 20, color: '#8B5CF6' }} />
-            </Box>
-            <Typography variant="h4" sx={{ fontWeight: 800 }}>
-              {summary?.avgLayersPerCampaign ?? 0}
-            </Typography>
-            <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-              Tickets per pyramiding campaign
-            </Typography>
-          </Card>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                  Tickets per pyramiding campaign
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#8B5CF6', fontSize: '0.6875rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                  Inspect →
+                </Typography>
+              </Box>
+            </Card>
+          </Tooltip>
         </Grid>
       </Grid>
 
@@ -440,7 +595,7 @@ export function PyramidingAnalyticsTab({
                       </Box>
                     </Box>
 
-                    {/* Right: Net PnL & Pyramid Alpha */}
+                    {/* Right: Net PnL, Pyramid Alpha & Inspect Campaign */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                       <Box sx={{ textAlign: 'right' }}>
                         <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block' }}>
@@ -465,6 +620,31 @@ export function PyramidingAnalyticsTab({
                           }}
                         />
                       </Tooltip>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onDrillDown && camp.layers.length > 0) {
+                            onDrillDown(
+                              { kind: 'TRADES', tradeIds: camp.layers.map((l) => l.id) },
+                              `Campaign: ${camp.symbol} ${camp.direction} (${camp.layerCount} layers)`
+                            );
+                          }
+                        }}
+                        endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 13 }} />}
+                        sx={{
+                          textTransform: 'none',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          py: 0.25,
+                          px: 1,
+                          borderColor: alpha(muiTheme.palette.primary.main, 0.4),
+                        }}
+                      >
+                        Inspect Campaign
+                      </Button>
                     </Box>
                   </AccordionSummary>
 
@@ -476,15 +656,76 @@ export function PyramidingAnalyticsTab({
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Layer</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Ticket</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Entry Time</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Entry Price</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Exit Price</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>Volume</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="right">Net PnL</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="right">Realized R</TableCell>
-                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="center">BE Shield</TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>
+                            <Tooltip title="Layer 0 is the parent trade. Layers 1+ are subsequent scale-in additions." arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                                Layer <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>
+                            <Tooltip title="Broker MT5 order ticket identification number" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                                Ticket <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>
+                            <Tooltip title="Time when this specific layer entry was executed" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                                Entry Time <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>
+                            <Tooltip title="Executed price fill for this layer" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                                Entry Price <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>
+                            <Tooltip title="Executed exit price fill when closed" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                                Exit Price <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }}>
+                            <Tooltip title="Contract lot volume traded on this specific layer" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help' }}>
+                                Volume <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="right">
+                            <Tooltip title="Net profit or loss realized exclusively by this execution layer" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                                Net PnL <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="right">
+                            <Tooltip title="Realized return multiple of initial planned risk (R)" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'flex-end' }}>
+                                Realized R <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="center">
+                            <Tooltip title="Protected = Base stop was trailed to breakeven before this layer entered. Open Risk = Base stop had not been moved." arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'center' }}>
+                                BE Shield <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.6875rem', fontWeight: 700 }} align="center">
+                            <Tooltip title="Inspect this individual trade record" arrow>
+                              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, cursor: 'help', justifyContent: 'center' }}>
+                                Action <InfoOutlinedIcon sx={{ fontSize: 12, opacity: 0.6 }} />
+                              </Box>
+                            </Tooltip>
+                          </TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -519,6 +760,26 @@ export function PyramidingAnalyticsTab({
                                 ) : (
                                   <Chip label="Open Risk" size="small" color="warning" sx={{ height: 16, fontSize: '0.5625rem' }} />
                                 )}
+                              </TableCell>
+                              <TableCell align="center">
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  color="primary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (onDrillDown) {
+                                      onDrillDown(
+                                        { kind: 'TRADE', tradeId: l.id },
+                                        `Layer ${l.layerIndex} (#${l.ticket} • ${l.quantity}L)`
+                                      );
+                                    }
+                                  }}
+                                  endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 12 }} />}
+                                  sx={{ textTransform: 'none', fontSize: '0.7rem', fontWeight: 800, py: 0, px: 1, minWidth: 'auto' }}
+                                >
+                                  Inspect
+                                </Button>
                               </TableCell>
                             </TableRow>
                           );

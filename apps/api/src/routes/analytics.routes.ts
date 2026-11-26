@@ -769,6 +769,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
       return {
         tradeCount: total,
+        tradeIds: tList.map((t: any) => t._id.toString()),
         winCount: wins,
         lossCount: losses,
         winRate,

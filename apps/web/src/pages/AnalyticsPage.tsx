@@ -785,6 +785,14 @@ export function AnalyticsPage() {
           selectedSymbol={selectedSizingSymbol}
           onSelectSymbol={setSelectedSizingSymbol}
           onRefresh={refetchSizing}
+          onDrillDown={(filterOrDesc, label) => {
+            if (filterOrDesc?.kind === 'TRADES' || filterOrDesc?.kind === 'TRADE') {
+              openDrill(filterOrDesc);
+            } else {
+              const f = filterOrDesc?.filter || filterOrDesc || {};
+              openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), startDate, endDate, ...f }, label });
+            }
+          }}
         />
       )}
 
@@ -1056,154 +1064,212 @@ export function AnalyticsPage() {
               <Grid container spacing={2}>
                 {/* News Releases Cohort */}
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      borderColor: (newsImpact.newsStats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
-                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(15, 23, 42, 0.015)',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                          label="HIGH-IMPACT NEWS RELEASES"
-                          size="small"
-                          sx={{
-                            fontWeight: 800,
-                            fontSize: '0.65rem',
-                            bgcolor: 'rgba(239, 68, 68, 0.15)',
-                            color: '#F87171',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                          }}
-                        />
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                          ±30m US Macro Events
-                        </Typography>
+                  <Tooltip title="Trades executed within ±30m of high-impact US macro data (CPI, NFP, FOMC) or tagged as news. Click to inspect trades." arrow>
+                    <Paper
+                      variant="outlined"
+                      onClick={() => {
+                        if (newsImpact.newsStats?.tradeIds?.length > 0) {
+                          openDrill({
+                            kind: 'TRADES',
+                            tradeIds: newsImpact.newsStats.tradeIds,
+                          });
+                        } else {
+                          openDrill({
+                            kind: 'FILTER',
+                            filter: { ...(queryParams as any), startDate, endDate },
+                            label: 'High-Impact News Trades',
+                          });
+                        }
+                      }}
+                      sx={{
+                        p: 2,
+                        borderRadius: 2,
+                        borderColor: (newsImpact.newsStats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(15, 23, 42, 0.015)',
+                        cursor: (newsImpact.newsStats?.tradeCount || 0) > 0 ? 'pointer' : 'default',
+                        transition: 'all 0.15s ease',
+                        '&:hover': (newsImpact.newsStats?.tradeCount || 0) > 0 ? {
+                          borderColor: (newsImpact.newsStats?.netPnL || 0) >= 0 ? '#10B981' : '#EF4444',
+                          transform: 'translateY(-2px)',
+                          boxShadow: (newsImpact.newsStats?.netPnL || 0) >= 0
+                            ? '0 4px 12px rgba(16, 185, 129, 0.2)'
+                            : '0 4px 12px rgba(239, 68, 68, 0.2)',
+                        } : {},
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            label="HIGH-IMPACT NEWS RELEASES"
+                            size="small"
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: '0.65rem',
+                              bgcolor: 'rgba(239, 68, 68, 0.15)',
+                              color: '#F87171',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                            }}
+                          />
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                            ±30m US Macro Events
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              fontWeight: 800,
+                              color: (newsImpact.newsStats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {formatCurrency(newsImpact.newsStats?.netPnL, analyticsCurrency)}
+                          </Typography>
+                          {(newsImpact.newsStats?.tradeCount || 0) > 0 && (
+                            <Typography variant="caption" sx={{ color: '#F87171', fontSize: '0.625rem', fontWeight: 700, display: 'block' }}>
+                              Inspect Trades →
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          fontWeight: 800,
-                          color: (newsImpact.newsStats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                        }}
-                      >
-                        {formatCurrency(newsImpact.newsStats?.netPnL, analyticsCurrency)}
-                      </Typography>
-                    </Box>
 
-                    <Grid container spacing={1.5} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      <Grid size={{ xs: 4 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
-                          TRADES / WIN %
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
-                          {newsImpact.newsStats?.tradeCount || 0} trades • {newsImpact.newsStats?.winRate || 0}%
-                        </Typography>
+                      <Grid container spacing={1.5} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                        <Grid size={{ xs: 4 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                            TRADES / WIN %
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                            {newsImpact.newsStats?.tradeCount || 0} trades • {newsImpact.newsStats?.winRate || 0}%
+                          </Typography>
+                        </Grid>
+                        <Grid size={{ xs: 4 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                            PROFIT FACTOR
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                            {newsImpact.newsStats?.profitFactor || 0}
+                          </Typography>
+                        </Grid>
+                        <Grid size={{ xs: 4 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                            AVG R-MULTIPLE
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: (newsImpact.newsStats?.avgR || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {(newsImpact.newsStats?.avgR || 0) > 0 ? `+${newsImpact.newsStats?.avgR}R` : `${newsImpact.newsStats?.avgR || 0}R`}
+                          </Typography>
+                        </Grid>
                       </Grid>
-                      <Grid size={{ xs: 4 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
-                          PROFIT FACTOR
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
-                          {newsImpact.newsStats?.profitFactor || 0}
-                        </Typography>
-                      </Grid>
-                      <Grid size={{ xs: 4 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
-                          AVG R-MULTIPLE
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 800,
-                            fontFamily: `'JetBrains Mono', monospace`,
-                            color: (newsImpact.newsStats?.avgR || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                          }}
-                        >
-                          {(newsImpact.newsStats?.avgR || 0) > 0 ? `+${newsImpact.newsStats?.avgR}R` : `${newsImpact.newsStats?.avgR || 0}R`}
-                        </Typography>
-                      </Grid>
-                    </Grid>
-                  </Paper>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
 
                 {/* Calm / Technical Flow Cohort */}
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      borderColor: (newsImpact.calmStats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
-                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(15, 23, 42, 0.015)',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                          label="CALM TECHNICAL FLOW"
-                          size="small"
-                          sx={{
-                            fontWeight: 800,
-                            fontSize: '0.65rem',
-                            bgcolor: 'rgba(59, 130, 246, 0.15)',
-                            color: '#60A5FA',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                          }}
-                        />
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                          Normal Session Flow
-                        </Typography>
+                  <Tooltip title="Trades executed during regular market hours outside high-volatility macro news windows. Click to inspect trades." arrow>
+                    <Paper
+                      variant="outlined"
+                      onClick={() => {
+                        if (newsImpact.calmStats?.tradeIds?.length > 0) {
+                          openDrill({
+                            kind: 'TRADES',
+                            tradeIds: newsImpact.calmStats.tradeIds,
+                          });
+                        }
+                      }}
+                      sx={{
+                        p: 2,
+                        borderRadius: 2,
+                        borderColor: (newsImpact.calmStats?.netPnL || 0) >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(244, 63, 94, 0.3)',
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(15, 23, 42, 0.015)',
+                        cursor: (newsImpact.calmStats?.tradeCount || 0) > 0 ? 'pointer' : 'default',
+                        transition: 'all 0.15s ease',
+                        '&:hover': (newsImpact.calmStats?.tradeCount || 0) > 0 ? {
+                          borderColor: (newsImpact.calmStats?.netPnL || 0) >= 0 ? '#10B981' : '#EF4444',
+                          transform: 'translateY(-2px)',
+                          boxShadow: (newsImpact.calmStats?.netPnL || 0) >= 0
+                            ? '0 4px 12px rgba(16, 185, 129, 0.2)'
+                            : '0 4px 12px rgba(239, 68, 68, 0.2)',
+                        } : {},
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            label="CALM TECHNICAL FLOW"
+                            size="small"
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: '0.65rem',
+                              bgcolor: 'rgba(59, 130, 246, 0.15)',
+                              color: '#60A5FA',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                            }}
+                          />
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                            Normal Session Flow
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              fontWeight: 800,
+                              color: (newsImpact.calmStats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {formatCurrency(newsImpact.calmStats?.netPnL, analyticsCurrency)}
+                          </Typography>
+                          {(newsImpact.calmStats?.tradeCount || 0) > 0 && (
+                            <Typography variant="caption" sx={{ color: '#60A5FA', fontSize: '0.625rem', fontWeight: 700, display: 'block' }}>
+                              Inspect Trades →
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          fontWeight: 800,
-                          color: (newsImpact.calmStats?.netPnL || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                        }}
-                      >
-                        {formatCurrency(newsImpact.calmStats?.netPnL, analyticsCurrency)}
-                      </Typography>
-                    </Box>
 
-                    <Grid container spacing={1.5} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      <Grid size={{ xs: 4 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
-                          TRADES / WIN %
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
-                          {newsImpact.calmStats?.tradeCount || 0} trades • {newsImpact.calmStats?.winRate || 0}%
-                        </Typography>
+                      <Grid container spacing={1.5} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                        <Grid size={{ xs: 4 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                            TRADES / WIN %
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                            {newsImpact.calmStats?.tradeCount || 0} trades • {newsImpact.calmStats?.winRate || 0}%
+                          </Typography>
+                        </Grid>
+                        <Grid size={{ xs: 4 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                            PROFIT FACTOR
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                            {newsImpact.calmStats?.profitFactor || 0}
+                          </Typography>
+                        </Grid>
+                        <Grid size={{ xs: 4 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
+                            AVG R-MULTIPLE
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: (newsImpact.calmStats?.avgR || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                            }}
+                          >
+                            {(newsImpact.calmStats?.avgR || 0) > 0 ? `+${newsImpact.calmStats?.avgR}R` : `${newsImpact.calmStats?.avgR || 0}R`}
+                          </Typography>
+                        </Grid>
                       </Grid>
-                      <Grid size={{ xs: 4 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
-                          PROFIT FACTOR
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
-                          {newsImpact.calmStats?.profitFactor || 0}
-                        </Typography>
-                      </Grid>
-                      <Grid size={{ xs: 4 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.6875rem' }}>
-                          AVG R-MULTIPLE
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 800,
-                            fontFamily: `'JetBrains Mono', monospace`,
-                            color: (newsImpact.calmStats?.avgR || 0) >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
-                          }}
-                        >
-                          {(newsImpact.calmStats?.avgR || 0) > 0 ? `+${newsImpact.calmStats?.avgR}R` : `${newsImpact.calmStats?.avgR || 0}R`}
-                        </Typography>
-                      </Grid>
-                    </Grid>
-                  </Paper>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
               </Grid>
 
@@ -1237,65 +1303,66 @@ export function AnalyticsPage() {
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {stats?.performanceByWeekday?.map((day: any) => (
-                  <Box
-                    key={day.day}
-                    onClick={() =>
-                      openDrill({
-                        kind: 'FILTER',
-                        filter: { ...(queryParams as any), startDate, endDate, weekday: day.day.toLowerCase() },
-                        label: `${day.day} Trades`,
-                      })
-                    }
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      py: 1.25,
-                      px: 1.5,
-                      borderRadius: 1.5,
-                      border: `1px solid ${muiTheme.palette.divider}`,
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        borderColor: muiTheme.palette.primary.main,
-                        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
-                      },
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {day.day}
-                      </Typography>
-                      {day.tradesCount < 30 && (
-                        <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
-                          <Chip
-                            label="N < 30"
-                            size="small"
-                            variant="outlined"
-                            color="warning"
-                            sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
-                          />
-                        </Tooltip>
-                      )}
-                    </Box>
-                    <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                      {day.tradesCount} trades
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
-                      {day.winRate}% Win
-                    </Typography>
-                    <Typography
-                      variant="body2"
+                  <Tooltip key={day.day} title={`Click to inspect all ${day.tradesCount} trades taken on ${day.day}`} arrow>
+                    <Box
+                      onClick={() =>
+                        openDrill({
+                          kind: 'FILTER',
+                          filter: { ...(queryParams as any), startDate, endDate, weekday: day.day.toLowerCase() },
+                          label: `${day.day} Trades`,
+                        })
+                      }
                       sx={{
-                        fontWeight: 700,
-                        fontFamily: `'JetBrains Mono', monospace`,
-                        color: day.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        py: 1.25,
+                        px: 1.5,
+                        borderRadius: 1.5,
+                        border: `1px solid ${muiTheme.palette.divider}`,
+                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          borderColor: muiTheme.palette.primary.main,
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                        },
                       }}
                     >
-                      {formatCurrency(day.netPnL)}
-                    </Typography>
-                  </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {day.day}
+                        </Typography>
+                        {day.tradesCount < 30 && (
+                          <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
+                            <Chip
+                              label="N < 30"
+                              size="small"
+                              variant="outlined"
+                              color="warning"
+                              sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
+                            />
+                          </Tooltip>
+                        )}
+                      </Box>
+                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                        {day.tradesCount} trades
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                        {day.winRate}% Win
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          fontFamily: `'JetBrains Mono', monospace`,
+                          color: day.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                        }}
+                      >
+                        {formatCurrency(day.netPnL)}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
                 ))}
               </Box>
               <Typography variant="caption" sx={{ display: 'block', mt: 2, color: 'text.secondary', fontSize: '0.6875rem', fontStyle: 'italic' }}>
@@ -1324,65 +1391,66 @@ export function AnalyticsPage() {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {stats?.performanceBySession && stats.performanceBySession.length > 0 ? (
                   stats.performanceBySession.map((sess: any) => (
-                    <Box
-                      key={sess.session}
-                      onClick={() =>
-                        openDrill({
-                          kind: 'FILTER',
-                          filter: { ...(queryParams as any), startDate, endDate, session: sess.session },
-                          label: `${sess.session} Session Trades`,
-                        })
-                      }
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        py: 1.25,
-                        px: 1.5,
-                        borderRadius: 1.5,
-                        border: `1px solid ${muiTheme.palette.divider}`,
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        '&:hover': {
-                          borderColor: muiTheme.palette.primary.main,
-                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
-                        },
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                          {sess.session}
-                        </Typography>
-                        {sess.tradesCount < 30 && (
-                          <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
-                            <Chip
-                              label="N < 30"
-                              size="small"
-                              variant="outlined"
-                              color="warning"
-                              sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
-                            />
-                          </Tooltip>
-                        )}
-                      </Box>
-                      <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
-                        {sess.tradesCount} trades
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
-                        {sess.winRate}% Win
-                      </Typography>
-                      <Typography
-                        variant="body2"
+                    <Tooltip key={sess.session} title={`Click to inspect all ${sess.tradesCount} trades taken during ${sess.session} session`} arrow>
+                      <Box
+                        onClick={() =>
+                          openDrill({
+                            kind: 'FILTER',
+                            filter: { ...(queryParams as any), startDate, endDate, session: sess.session },
+                            label: `${sess.session} Session Trades`,
+                          })
+                        }
                         sx={{
-                          fontWeight: 700,
-                          fontFamily: `'JetBrains Mono', monospace`,
-                          color: sess.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          py: 1.25,
+                          px: 1.5,
+                          borderRadius: 1.5,
+                          border: `1px solid ${muiTheme.palette.divider}`,
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(15, 23, 42, 0.02)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            borderColor: muiTheme.palette.primary.main,
+                            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.04)',
+                          },
                         }}
                       >
-                        {formatCurrency(sess.netPnL)}
-                      </Typography>
-                    </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {sess.session}
+                          </Typography>
+                          {sess.tradesCount < 30 && (
+                            <Tooltip title="Subgroup sample N < 30 has wide sampling uncertainty." arrow>
+                              <Chip
+                                label="N < 30"
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                                sx={{ height: 18, fontSize: '0.5625rem', fontWeight: 600 }}
+                              />
+                            </Tooltip>
+                          )}
+                        </Box>
+                        <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
+                          {sess.tradesCount} trades
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 600 }}>
+                          {sess.winRate}% Win
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 700,
+                            fontFamily: `'JetBrains Mono', monospace`,
+                            color: sess.netPnL >= 0 ? muiTheme.palette.profit.main : muiTheme.palette.loss.main,
+                          }}
+                        >
+                          {formatCurrency(sess.netPnL)}
+                        </Typography>
+                      </Box>
+                    </Tooltip>
                   ))
                 ) : (
                   <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary }}>
@@ -1442,6 +1510,14 @@ export function AnalyticsPage() {
           isLoading={isPyramidLoading}
           currencySymbol={currSym}
           onRefresh={refetchPyramiding}
+          onDrillDown={(filterOrDesc, label) => {
+            if (filterOrDesc?.kind === 'TRADES' || filterOrDesc?.kind === 'TRADE') {
+              openDrill(filterOrDesc);
+            } else {
+              const f = filterOrDesc?.filter || filterOrDesc || {};
+              openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), startDate, endDate, ...f }, label });
+            }
+          }}
         />
       )}
     </Box>

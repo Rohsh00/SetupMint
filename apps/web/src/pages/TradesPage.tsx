@@ -1075,34 +1075,76 @@ export function TradesPage() {
                           >
                             {t.strategyName || t.tradeTitle || '—'}
                           </Typography>
-                          {t.setup?.variantKey ? (
-                            <Chip
-                              label={t.setup.variantKey}
-                              size="small"
-                              sx={{
-                                height: 18,
-                                fontSize: '0.5625rem',
-                                fontWeight: 700,
-                                alignSelf: 'flex-start',
-                                bgcolor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
-                                color: 'primary.main',
-                                border: '1px solid',
-                                borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)',
-                              }}
-                            />
-                          ) : t.setup?.variantStatus === 'UNCLASSIFIED' ? (
-                            <Chip
-                              label="Unclassified"
-                              size="small"
-                              variant="outlined"
-                              sx={{
-                                height: 16,
-                                fontSize: '0.5625rem',
-                                alignSelf: 'flex-start',
-                                color: 'text.secondary',
-                              }}
-                            />
-                          ) : null}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                            {t.setup?.variantKey ? (
+                              <Chip
+                                label={t.setup.variantKey}
+                                size="small"
+                                sx={{
+                                  height: 18,
+                                  fontSize: '0.5625rem',
+                                  fontWeight: 700,
+                                  bgcolor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+                                  color: 'primary.main',
+                                  border: '1px solid',
+                                  borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)',
+                                }}
+                              />
+                            ) : t.setup?.variantStatus === 'UNCLASSIFIED' ? (
+                              <Chip
+                                label="Unclassified"
+                                size="small"
+                                variant="outlined"
+                                sx={{
+                                  height: 16,
+                                  fontSize: '0.5625rem',
+                                  color: 'text.secondary',
+                                }}
+                              />
+                            ) : null}
+
+                            {t.campaignId && (
+                              <Tooltip
+                                title={
+                                  t.tags?.includes('PYRAMID_CAMPAIGN') || t.isCampaignParent
+                                    ? 'Base position of a pyramiding campaign. Click to view unified campaign metrics.'
+                                    : 'Scale-in layer of a pyramiding campaign. Click to view unified campaign metrics.'
+                                }
+                                arrow
+                              >
+                                <Chip
+                                  icon={<AccountTreeRoundedIcon sx={{ fontSize: '11px !important' }} />}
+                                  label={
+                                    t.tags?.includes('PYRAMID_CAMPAIGN') || t.isCampaignParent
+                                      ? 'Pyramid Base'
+                                      : `Pyramid ${t.tags?.find((tag: string) => tag.startsWith('LAYER_'))?.replace('LAYER_', 'L') || 'Layer'}`
+                                  }
+                                  size="small"
+                                  component={RouterLink}
+                                  to="/analytics?tab=PYRAMIDING"
+                                  clickable
+                                  sx={{
+                                    height: 18,
+                                    fontSize: '0.5625rem',
+                                    fontWeight: 700,
+                                    bgcolor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)',
+                                    color: '#10B981',
+                                    border: '1px solid',
+                                    borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)',
+                                    cursor: 'pointer',
+                                    '& .MuiChip-icon': {
+                                      color: '#10B981',
+                                      ml: '4px',
+                                      mr: '-2px',
+                                    },
+                                    '&:hover': {
+                                      bgcolor: isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.2)',
+                                    },
+                                  }}
+                                />
+                              </Tooltip>
+                            )}
+                          </Box>
                         </Box>
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: `'JetBrains Mono', monospace` }}>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
@@ -80,7 +80,20 @@ export function AnalyticsPage() {
   const { startDate, endDate } = useDateRange();
   const analyticsCurrency = (caps.currency.code && caps.currency.code !== 'MULTI' ? caps.currency.code : null) || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
   const currSym = caps.currency.symbol || getCurrencySymbol(analyticsCurrency);
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>('OVERVIEW');
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab')?.toUpperCase();
+  const validTabs = ['OVERVIEW', 'SIZING', 'PSYCHOLOGY', 'TIME', 'EXECUTION', 'WHAT_IF', 'PYRAMIDING'];
+  const initialTab = (urlTab && validTabs.includes(urlTab)) ? (urlTab as any) : 'OVERVIEW';
+
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'SIZING' | 'PSYCHOLOGY' | 'TIME' | 'EXECUTION' | 'WHAT_IF' | 'PYRAMIDING'>(initialTab);
+
+  React.useEffect(() => {
+    const tabFromUrl = searchParams.get('tab')?.toUpperCase();
+    if (tabFromUrl && validTabs.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl as any);
+    }
+  }, [searchParams]);
   const [selectedSizingSymbol, setSelectedSizingSymbol] = useState<string>('ALL');
   const [selectedKillZoneSymbol, setSelectedKillZoneSymbol] = useState<string>('ALL');
 
@@ -314,7 +327,14 @@ export function AnalyticsPage() {
           ].map((tab) => (
             <Button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  next.set('tab', tab.id);
+                  return next;
+                });
+              }}
               startIcon={tab.icon}
               sx={{
                 backgroundColor:
@@ -2661,7 +2681,7 @@ export function AnalyticsPage() {
       {/* TAB 6: PYRAMIDING & CAMPAIGN EDGE */}
       {activeTab === 'PYRAMIDING' && (
         <PyramidingAnalyticsTab
-          data={pyramidingData?.data}
+          data={(pyramidingData as any)?.data ?? pyramidingData}
           isLoading={isPyramidLoading}
           currencySymbol={currSym}
           onRefresh={refetchPyramiding}

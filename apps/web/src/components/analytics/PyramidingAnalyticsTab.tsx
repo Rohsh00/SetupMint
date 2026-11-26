@@ -93,8 +93,9 @@ export function PyramidingAnalyticsTab({
 }: IPyramidingAnalyticsProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
-  const summary = data?.summary;
-  const campaigns = data?.campaigns || [];
+  const resolvedPayload = (data as any)?.data ?? data;
+  const summary = resolvedPayload?.summary;
+  const campaigns: IPyramidCampaign[] = resolvedPayload?.campaigns || [];
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | false>(false);
 
   const handleAccordionChange = (campaignId: string) => (

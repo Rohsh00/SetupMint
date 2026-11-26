@@ -176,7 +176,7 @@ export function calculateDashboardMetrics(
   }
 
   // Equity curve tracking
-  let runningEquity = new Decimal(initialBalance);
+  let runningEquity = new Decimal(initialBalance != null ? (initialBalance as any).toString() : 10000);
   let peakEquity = runningEquity;
   let maxDrawdownAmount = new Decimal(0);
   let maxDrawdownPercent = new Decimal(0);

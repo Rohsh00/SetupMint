@@ -348,7 +348,7 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
         if (!insideBar) {
           const mid = (closest.h + closest.l) / 2;
           const relDiff = Math.abs(rawEntryPrice - mid) / rawEntryPrice;
-          if (relDiff > 0.0003 && relDiff < 0.03) {
+          if (relDiff > 0.0003 && relDiff < 0.08) {
             basisOffset = rawEntryPrice - closest.c;
           }
         }
@@ -358,7 +358,7 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
     // 2. Otherwise, if using a futures proxy (GC=F, NQ=F, YM=F, ES=F) on a live/recent window, align with TradingView Spot LTP
     if (basisOffset === 0 && isFuturesProxy && isRecentWindow && liveQuote && liveQuote.ltp > 0) {
       const relDiff = Math.abs(liveQuote.ltp - lastCandle.c) / liveQuote.ltp;
-      if (relDiff > 0.0002 && relDiff < 0.03) {
+      if (relDiff > 0.0002 && relDiff < 0.08) {
         basisOffset = liveQuote.ltp - lastCandle.c;
       }
     }
@@ -504,6 +504,13 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
           }
 
           if (rawCandles.length > 0) {
+            // Guard: If Yahoo candles are delayed and do not reach the trade's exit time, fall through to real-time Binance
+            const exitTimeMs = params.trade?.exitTime ? new Date(params.trade.exitTime).getTime() : toMs;
+            const lastCandleMs = rawCandles[rawCandles.length - 1].t * 1000;
+            if (lastCandleMs < exitTimeMs && BINANCE_KLINE_MAP[clean]) {
+              throw new Error(`Yahoo candles end at ${new Date(lastCandleMs).toISOString()} before trade exit ${new Date(exitTimeMs).toISOString()}`);
+            }
+
             const isFuturesProxy = yahooSym.endsWith('=F');
             const candles = GlobalCfdCandleProvider.calibrateSpotCandles(
               rawCandles,

@@ -2036,11 +2036,16 @@ export class FyersService {
       return trade.calculated.excursion;
     }
 
+    // Retrieve user settings & instrument specs for precision
+    const user = await User.findById(uId).select('patternDetectionSettings').lean();
+    const excursionSettings = (user as any)?.patternDetectionSettings?.excursionSettings;
+    const postExitLookaheadMinutes = excursionSettings?.postExitLookaheadMinutes ?? 60;
+
     // 1m resolution prioritized; fallback to 5m / D if 1m is outside lookback window
     let resolution = '1';
     let barMinutes = 1;
     let from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
-    let to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
+    let to = moment(trade.exitTime).add(Math.max(5 * barMinutes, postExitLookaheadMinutes), 'minutes').toDate();
 
     let candleResult = await MarketDataService.getCandlesWithFallback({
       trade,
@@ -2057,7 +2062,7 @@ export class FyersService {
       const fallbackRes = '5';
       barMinutes = 5;
       from = moment(trade.entryTime).subtract(5 * barMinutes, 'minutes').toDate();
-      to = moment(trade.exitTime).add(5 * barMinutes, 'minutes').toDate();
+      to = moment(trade.exitTime).add(Math.max(5 * barMinutes, postExitLookaheadMinutes), 'minutes').toDate();
       const res5 = await MarketDataService.getCandlesWithFallback({
         trade,
         resolution: fallbackRes,
@@ -2136,10 +2141,6 @@ export class FyersService {
       await trade.save();
       return trade.calculated.excursion;
     }
-
-    // Retrieve user settings & instrument specs for precision
-    const user = await User.findById(uId).select('patternDetectionSettings').lean();
-    const excursionSettings = (user as any)?.patternDetectionSettings?.excursionSettings;
 
     const instrument = await Instrument.findOne({
       userId: uId,
@@ -2222,6 +2223,15 @@ export class FyersService {
       candleCount: result.candleCount,
       excursionFlags: result.excursionFlags,
       warnings: result.warnings,
+      postExitMfePoints: result.postExitMfePoints,
+      postExitMfeAmount: result.postExitMfeAmount,
+      postExitMfeR: result.postExitMfeR,
+      postExitPeakPrice: result.postExitPeakPrice,
+      postExitPeakTime: result.postExitPeakTime,
+      postExitLookaheadMinutes: result.postExitLookaheadMinutes,
+      postExitCandleCount: result.postExitCandleCount,
+      postExitRunBeyondExitPoints: result.postExitRunBeyondExitPoints,
+      postExitRunBeyondExitR: result.postExitRunBeyondExitR,
     };
 
     await trade.save();

@@ -38,6 +38,7 @@ export interface ICalculateExcursionParams {
   tradeManagementPlan?: 'RUNNER' | 'FIXED' | 'DISCRETIONARY' | string;
   hasTrailedStop?: boolean;
   realizedR?: number | null;
+  postExitLookaheadMinutes?: number;
 }
 
 export interface IExcursionCalculationResult {
@@ -74,6 +75,15 @@ export interface IExcursionCalculationResult {
   isLowResolution: boolean;
   excursionFlags: ExcursionFlag[];
   warnings: string[];
+  postExitMfePoints?: number;
+  postExitMfeAmount?: number;
+  postExitMfeR?: number;
+  postExitPeakPrice?: number;
+  postExitPeakTime?: Date | string;
+  postExitLookaheadMinutes?: number;
+  postExitCandleCount?: number;
+  postExitRunBeyondExitPoints?: number;
+  postExitRunBeyondExitR?: number;
 }
 
 /**
@@ -157,8 +167,8 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     barDurationMs = 86_400_000;
   }
 
-  // Filter candles overlapping [entryMs, exitMs]
-  const overlappingCandles = params.candles
+  // Map all candidate candles
+  const allParsedCandles = params.candles
     .map((c) => ({
       tMs: toEpochMs(c.t),
       o: new Decimal(c.o),
@@ -167,11 +177,19 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
       c: new Decimal(c.c),
       v: c.v,
     }))
-    .filter((c) => {
-      const candleEndMs = c.tMs + barDurationMs;
-      return candleEndMs > entryMs && c.tMs <= exitMs;
-    })
     .sort((a, b) => a.tMs - b.tMs);
+
+  // Filter candles overlapping in-trade window [entryMs, exitMs]
+  const overlappingCandles = allParsedCandles.filter((c) => {
+    const candleEndMs = c.tMs + barDurationMs;
+    return candleEndMs > entryMs && c.tMs <= exitMs;
+  });
+
+  const postExitLookaheadMinutes = params.postExitLookaheadMinutes ?? settings.postExitLookaheadMinutes ?? 60;
+  const postExitEndMs = exitMs + postExitLookaheadMinutes * 60_000;
+
+  // Post-exit candles: strictly after exitMs up to postExitEndMs
+  const postExitCandles = allParsedCandles.filter((c) => c.tMs > exitMs && c.tMs <= postExitEndMs);
 
   if (overlappingCandles.length === 0) {
     return makeEmptyResult('UNAVAILABLE', 'No candles overlap trade execution window');
@@ -306,6 +324,77 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     }
   }
 
+  // 6b. Post-Exit Extended Excursion (Runners & Premature Exit Evaluation)
+  let postExitMfePoints: number | undefined;
+  let postExitMfeAmount: number | undefined;
+  let postExitMfeR: number | undefined;
+  let postExitPeakPrice: number | undefined;
+  let postExitPeakTime: Date | string | undefined;
+  const postExitCandleCount = postExitCandles.length;
+  let postExitRunBeyondExitPoints: number | undefined;
+  let postExitRunBeyondExitR: number | undefined;
+
+  if (postExitCandles.length > 0) {
+    let postHighestPrice = postExitCandles[0].h;
+    let postLowestPrice = postExitCandles[0].l;
+    let postHighestTimeMs = postExitCandles[0].tMs;
+    let postLowestTimeMs = postExitCandles[0].tMs;
+
+    for (const pBar of postExitCandles) {
+      if (pBar.h.greaterThan(postHighestPrice)) {
+        postHighestPrice = pBar.h;
+        postHighestTimeMs = pBar.tMs;
+      }
+      if (pBar.l.lessThan(postLowestPrice)) {
+        postLowestPrice = pBar.l;
+        postLowestTimeMs = pBar.tMs;
+      }
+    }
+
+    let pMfePointsDec: Decimal;
+    let pRunBeyondExitDec: Decimal;
+
+    if (direction === 'LONG') {
+      pMfePointsDec = Decimal.max(0, postHighestPrice.minus(dEntry));
+      pRunBeyondExitDec = Decimal.max(0, postHighestPrice.minus(dExit));
+      postExitPeakPrice = Number(postHighestPrice.toFixed(4));
+      postExitPeakTime = new Date(postHighestTimeMs);
+    } else {
+      // SHORT
+      pMfePointsDec = Decimal.max(0, dEntry.minus(postLowestPrice));
+      pRunBeyondExitDec = Decimal.max(0, dExit.minus(postLowestPrice));
+      postExitPeakPrice = Number(postLowestPrice.toFixed(4));
+      postExitPeakTime = new Date(postLowestTimeMs);
+    }
+
+    postExitMfePoints = Number(pMfePointsDec.toFixed(4));
+    postExitRunBeyondExitPoints = Number(pRunBeyondExitDec.toFixed(4));
+
+    const pMfeAmtDec = pMfePointsDec.times(dQty).times(dMultiplier);
+    postExitMfeAmount = Number(pMfeAmtDec.toFixed(2));
+
+    if (dPlannedRisk && dPlannedRisk.greaterThan(0)) {
+      postExitMfeR = Number(pMfeAmtDec.dividedBy(dPlannedRisk).toFixed(4));
+      const runBeyondAmt = pRunBeyondExitDec.times(dQty).times(dMultiplier);
+      postExitRunBeyondExitR = Number(runBeyondAmt.dividedBy(dPlannedRisk).toFixed(4));
+    } else if (dStop) {
+      const stopDist = dEntry.minus(dStop).abs();
+      if (stopDist.greaterThan(0)) {
+        postExitMfeR = Number(pMfePointsDec.dividedBy(stopDist).toFixed(4));
+        postExitRunBeyondExitR = Number(pRunBeyondExitDec.dividedBy(stopDist).toFixed(4));
+      }
+    }
+
+    if (postExitRunBeyondExitR !== undefined && postExitRunBeyondExitR >= (settings.gaveBackMinMfeR ?? 1.0)) {
+      if (!excursionFlags.includes('RUNNER_LEFT_ON_TABLE')) {
+        excursionFlags.push('RUNNER_LEFT_ON_TABLE');
+      }
+      if (!excursionFlags.includes('PREMATURE_EXIT')) {
+        excursionFlags.push('PREMATURE_EXIT');
+      }
+    }
+  }
+
   // 7. Early follow-through & Entry Quality Score (over first N candles)
   const earlyCandleLimit = Math.min(
     Math.max(1, settings.entryQualityCandleCount || 3),
@@ -409,7 +498,8 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
       }
     }
     if (tradeRealizedR !== undefined && tradeRealizedR !== null) {
-      rLeftOnTable = Math.max(0, Number((mfeR - tradeRealizedR).toFixed(4)));
+      const peakOverallMfeR = Math.max(mfeR, postExitMfeR ?? 0);
+      rLeftOnTable = Math.max(0, Number((peakOverallMfeR - tradeRealizedR).toFixed(4)));
     }
   }
 
@@ -550,5 +640,14 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     isLowResolution,
     excursionFlags,
     warnings,
+    postExitMfePoints,
+    postExitMfeAmount,
+    postExitMfeR,
+    postExitPeakPrice,
+    postExitPeakTime,
+    postExitLookaheadMinutes: postExitCandleCount > 0 ? postExitLookaheadMinutes : undefined,
+    postExitCandleCount,
+    postExitRunBeyondExitPoints,
+    postExitRunBeyondExitR,
   };
 }

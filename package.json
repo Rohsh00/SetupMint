@@ -32,6 +32,7 @@
     "instruments:backfill": "npm run instruments:backfill -w apps/api --",
     "accounts:backfill": "npm run accounts:backfill -w apps/api --",
     "excursion:backfill": "npm run excursion:backfill -w apps/api --",
+    "excursion:backfill-all": "npx tsx apps/api/src/scripts/backfill-all-excursions.ts",
     "chart:backfill": "npm run chart:backfill -w apps/api --",
     "sl:backfill": "npm run sl:backfill -w apps/api --",
     "db:clean": "npm run clean -w apps/api",

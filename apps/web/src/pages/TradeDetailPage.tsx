@@ -1639,8 +1639,13 @@ export function TradeDetailPage() {
                         +{formatCurrency(exc.mfeAmount)} {exc.mfeR !== undefined ? `• +${exc.mfeR}R` : ''}
                       </Typography>
                       {exc.timeToMfeMinutes !== undefined && (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
-                          Reached in {exc.timeToMfeMinutes}m
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem', display: 'block' }}>
+                          Reached in {exc.timeToMfeMinutes}m (in trade)
+                        </Typography>
+                      )}
+                      {exc.postExitMfePoints !== undefined && (
+                        <Typography variant="caption" sx={{ color: 'primary.main', fontSize: '0.6875rem', fontWeight: 600, display: 'block', mt: 0.5 }}>
+                          Post-Exit Peak: +{exc.postExitMfePoints} pts {exc.postExitMfeR !== undefined ? `(+${exc.postExitMfeR}R)` : ''}
                         </Typography>
                       )}
                     </Box>
@@ -1725,6 +1730,14 @@ export function TradeDetailPage() {
                   </Grid>
                 </Grid>
 
+                {/* Post-Exit Momentum & Runner Left on Table Alert */}
+                {exc.postExitRunBeyondExitPoints !== undefined && exc.postExitRunBeyondExitPoints > 0 && (
+                  <Alert severity="info" sx={{ fontSize: '0.8125rem' }}>
+                    <strong>Post-Exit Momentum Tracking:</strong> Within {exc.postExitLookaheadMinutes || 60} minutes after your exit, market price ran an additional <strong>+{exc.postExitRunBeyondExitPoints} pts</strong> {exc.postExitRunBeyondExitR !== undefined ? `(+${exc.postExitRunBeyondExitR}R)` : ''} in your trade direction to peak at <strong>{exc.postExitPeakPrice}</strong>.
+                    {exc.rLeftOnTable !== undefined && exc.rLeftOnTable > 0 && ` Total potential runner left on table: +${exc.rLeftOnTable}R.`}
+                  </Alert>
+                )}
+
                 {/* Excursion Flags & Reversal Alerts */}
                 {exc.reversedAfterStopHit && (
                   <Alert severity="warning" sx={{ fontSize: '0.8125rem' }}>
@@ -1755,6 +1768,12 @@ export function TradeDetailPage() {
                       } else if (flag === 'HELD_INTO_REVERSAL') {
                         label = 'Held Into Reversal';
                         color = 'error';
+                      } else if (flag === 'RUNNER_LEFT_ON_TABLE') {
+                        label = 'Runner Left on Table';
+                        color = 'warning';
+                      } else if (flag === 'PREMATURE_EXIT') {
+                        label = 'Premature Exit (Ran ≥1.0R post-exit)';
+                        color = 'info';
                       }
                       return (
                         <Chip

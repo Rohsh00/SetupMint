@@ -204,6 +204,7 @@ export interface IExcursionSettings {
   stopTooTightCandleLookahead?: number;
   stopTooTightMaxBreachBufferR?: number;
   entryQualityCandleCount?: number;
+  postExitLookaheadMinutes?: number;
 }
 
 export const DEFAULT_EXCURSION_SETTINGS: IExcursionSettings = {
@@ -214,6 +215,7 @@ export const DEFAULT_EXCURSION_SETTINGS: IExcursionSettings = {
   stopTooTightCandleLookahead: 20,
   stopTooTightMaxBreachBufferR: 0.75,
   entryQualityCandleCount: 3,
+  postExitLookaheadMinutes: 60,
 };
 
 export interface IPatternDetectionSettings {
@@ -816,13 +818,15 @@ export type ExcursionFlag =
   | 'STOP_TOO_LOOSE_EVIDENCE'
   | 'ENTRY_OUTSIDE_CANDLE'
   | 'EXIT_OUTSIDE_CANDLE'
-  | 'LOW_RESOLUTION';
+  | 'LOW_RESOLUTION'
+  | 'RUNNER_LEFT_ON_TABLE'
+  | 'PREMATURE_EXIT';
 
 export interface ITradeExcursion {
   status: ExcursionStatus;
   computedAt?: string;
-  source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK' | 'MT5_LIVE' | 'MANUAL';
-  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'MT5_LIVE' | 'MANUAL';
+  source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK' | 'MT5_LIVE' | 'MANUAL' | 'GLOBAL_CFD_HISTORY';
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'MT5_LIVE' | 'MANUAL' | 'GLOBAL_CFD';
   isUnderlyingFallback?: boolean;
   resolution?: string;
   isLowResolution?: boolean;
@@ -856,9 +860,18 @@ export interface ITradeExcursion {
   candleCount?: number;
   excursionFlags?: ExcursionFlag[];
   warnings?: string[];
+  postExitMfePoints?: number;
+  postExitMfeAmount?: number;
+  postExitMfeR?: number;
+  postExitPeakPrice?: number;
+  postExitPeakTime?: string | Date;
+  postExitLookaheadMinutes?: number;
+  postExitCandleCount?: number;
+  postExitRunBeyondExitPoints?: number;
+  postExitRunBeyondExitR?: number;
 }
 
-export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
+export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'GLOBAL_CFD';
 export type CandleFallbackProvider = 'AUTO' | 'FYERS' | 'ANGEL_ONE';
 export type MarketDataProvider = 'ANGEL_ONE';
 export type MarketDataStatus = 'DISABLED' | 'IDLE' | 'ERROR';

@@ -884,5 +884,95 @@ describe('calculateExcursion', () => {
     expect(autoResult.mfeReachFunnel.steps.some((s) => s.thresholdR === 4.0 || s.thresholdR === 5.0)).toBe(true);
     expect(autoResult.mfeReachFunnel.dataRange?.maxMfeR).toBe(4.2);
   });
+
+  it('32. accurately calculates post-exit extended excursion & runner left on table for LONG trade', () => {
+    // Entry at 100, Exit at 110 at 09:33. In-trade high: 115.
+    // Candles after exit: 09:34 reaches 125, 09:35 reaches 135 (peak post-exit price).
+    // Planned risk: 10 pts ($500 with 50 qty) -> Stop at 90.
+    const candles = makeCandles(baseTime, 6, [
+      [100, 105, 98, 104],   // 09:30 (entry)
+      [104, 115, 103, 112],  // 09:31 (in-trade peak high 115)
+      [112, 114, 108, 110],  // 09:32
+      [110, 111, 109, 110],  // 09:33 (exit at 110)
+      [110, 125, 110, 124],  // 09:34 (post-exit candle 1)
+      [124, 135, 123, 132],  // 09:35 (post-exit candle 2, peak 135)
+    ]);
+
+    const res = calculateExcursion({
+      direction: 'LONG',
+      entryPrice: 100,
+      exitPrice: 110,
+      stopLoss: 90,
+      quantity: 50,
+      contractMultiplier: 1,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: baseTime.clone().add(3, 'minutes').toISOString(),
+      plannedRiskAmount: 500,
+      resolution: '1',
+      postExitLookaheadMinutes: 30,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    // In-trade metrics (pristine)
+    expect(res.mfePoints).toBe(15); // 115 - 100
+    expect(res.mfeR).toBe(1.5);
+    expect(res.exitEfficiency).toBeCloseTo(0.6667, 3); // (110 - 100) / 15
+
+    // Post-exit extended excursion
+    expect(res.postExitCandleCount).toBe(2);
+    expect(res.postExitMfePoints).toBe(35); // 135 - 100
+    expect(res.postExitMfeR).toBe(3.5); // 35 / 10 = 3.5R
+    expect(res.postExitRunBeyondExitPoints).toBe(25); // 135 - 110
+    expect(res.postExitRunBeyondExitR).toBe(2.5); // 25 / 10 = 2.5R
+    expect(res.postExitPeakPrice).toBe(135);
+    expect(res.excursionFlags).toContain('RUNNER_LEFT_ON_TABLE');
+    expect(res.excursionFlags).toContain('PREMATURE_EXIT');
+
+    // Total R left on table: peak overall MFE (3.5R) - realized R (1.0R) = 2.5R
+    expect(res.rLeftOnTable).toBe(2.5);
+  });
+
+  it('33. accurately calculates post-exit extended excursion for SHORT trade', () => {
+    // Entry at 200, Exit at 190 at 09:33. In-trade lowest low: 185.
+    // Post-exit candles drop further to 160. Stop at 210 (10 pts risk).
+    const candles = makeCandles(baseTime, 6, [
+      [200, 202, 195, 196], // 09:30
+      [196, 198, 185, 188], // 09:31 (in-trade low 185)
+      [188, 192, 186, 190], // 09:32
+      [190, 191, 189, 190], // 09:33 (exit at 190)
+      [190, 190, 175, 176], // 09:34 (post-exit candle 1)
+      [176, 178, 160, 162], // 09:35 (post-exit candle 2, trough 160)
+    ]);
+
+    const res = calculateExcursion({
+      direction: 'SHORT',
+      entryPrice: 200,
+      exitPrice: 190,
+      stopLoss: 210,
+      quantity: 10,
+      contractMultiplier: 1,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: baseTime.clone().add(3, 'minutes').toISOString(),
+      plannedRiskAmount: 100,
+      resolution: '1',
+      postExitLookaheadMinutes: 30,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    expect(res.mfePoints).toBe(15); // 200 - 185
+    expect(res.mfeR).toBe(1.5);
+
+    expect(res.postExitCandleCount).toBe(2);
+    expect(res.postExitMfePoints).toBe(40); // 200 - 160
+    expect(res.postExitMfeR).toBe(4.0); // 40 / 10 = 4.0R
+    expect(res.postExitRunBeyondExitPoints).toBe(30); // 190 - 160
+    expect(res.postExitRunBeyondExitR).toBe(3.0);
+    expect(res.postExitPeakPrice).toBe(160);
+    expect(res.excursionFlags).toContain('RUNNER_LEFT_ON_TABLE');
+    expect(res.excursionFlags).toContain('PREMATURE_EXIT');
+    expect(res.rLeftOnTable).toBe(3.0); // 4.0R - 1.0R = 3.0R
+  });
 });
 

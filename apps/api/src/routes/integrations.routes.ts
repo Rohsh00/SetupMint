@@ -932,6 +932,11 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
               excursion: mt5Excursion,
             },
           });
+          if (trade?._id) {
+            FyersService.computeExcursionForTrade(trade._id, account.userId).catch((err: any) => {
+              req.log.warn('Background candle excursion refinement for MT5 trade %s failed: %s', trade._id, err?.message);
+            });
+          }
         } else {
           // Existing trade closed
           // 1. Sanitize any existing fills in case the trade already has duplicates from earlier syncs
@@ -1180,6 +1185,9 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             netPnL: trade.calculated?.netPnL || 0,
             exitPrice: trade.calculated?.averageExitPrice || closePrice || entryPrice,
           }).catch(() => {});
+          FyersService.computeExcursionForTrade(trade._id, account.userId).catch((err: any) => {
+            req.log.warn('Background candle excursion refinement for MT5 trade %s failed: %s', trade._id, err?.message);
+          });
         }
 
         results.push({ ticket: ticketStr, status: isFullyClosed ? 'CLOSED' : 'PARTIALLY_CLOSED', id: trade?._id });

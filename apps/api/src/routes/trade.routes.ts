@@ -3045,13 +3045,19 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         });
       }
 
-      if (requestedProvider === 'AUTO' && !isFyersValid && !isAngelOneValid) {
+      const isGlobalCfd = GlobalCfdCandleProvider.isSupportedGlobalSymbol(
+        trade.symbol || trade.underlying || '',
+        trade.exchange,
+        trade.assetClass
+      );
+
+      if (requestedProvider === 'AUTO' && !isFyersValid && !isAngelOneValid && !isGlobalCfd) {
         return reply.status(409).send({
           success: false,
           error: {
             code: 'BROKER_NOT_CONNECTED',
             message:
-              'Active market data session (FYERS or Angel One) is required. Please connect in Settings.',
+              'Active market data session (FYERS or Angel One) is required for Indian instruments. Please connect in Settings.',
           },
         });
       }

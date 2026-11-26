@@ -19,6 +19,11 @@ It contains:
 > 2. **STRICT TEST ISOLATION:** All integration tests MUST isolate and delete ONLY their own ephemeral test users (e.g. matching `@test.local`, `@setupmint.internal`, or specific generated ObjectIds).
 > 3. **DEMO-ONLY RESETS:** Scripts like `npm run seed:reset` only target `trader@tradevault.local`. Real user data must NEVER be touched, overwritten, or cleared.
 
+> [!IMPORTANT]
+> **PERMANENT DIRECTIVE — ALWAYS PUSH TO AWS AFTER CHANGES:**
+> After completing and verifying any code changes, fixes, or features (clean typecheck, tests passing, production build verified), **ALWAYS** commit and push the code to `origin main` (`git push origin main`).
+> This triggers the automated CI/CD pipeline (`.github/workflows/deploy-aws.yml`) which packages the distribution bundle and auto-deploys to the AWS production instance with zero downtime.
+
 ### Quick Reference Commands:
 - `npm run dev` — Start Fastify backend (4000) and Vite frontend (5173).
 - `npm run test` — Run all unit and integration tests (425 financial engine + API test suites).

@@ -151,8 +151,8 @@ export interface ITradeDoc extends Document {
     excursion?: {
       status: 'PENDING' | 'COMPUTED' | 'UNAVAILABLE' | 'FAILED';
       computedAt?: Date;
-      source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK' | 'MT5_LIVE' | 'MANUAL';
-      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'MT5_LIVE' | 'MANUAL';
+      source?: 'FYERS_HISTORY' | 'ANGEL_ONE_HISTORY' | 'UNDERLYING_FALLBACK' | 'MT5_LIVE' | 'MANUAL' | 'GLOBAL_CFD_HISTORY';
+      provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'MT5_LIVE' | 'MANUAL' | 'GLOBAL_CFD';
       isUnderlyingFallback?: boolean;
       resolution?: string;
       isLowResolution?: boolean;
@@ -186,6 +186,15 @@ export interface ITradeDoc extends Document {
       candleCount?: number;
       excursionFlags?: string[];
       warnings?: string[];
+      postExitMfePoints?: number;
+      postExitMfeAmount?: number;
+      postExitMfeR?: number;
+      postExitPeakPrice?: number;
+      postExitPeakTime?: Date | string;
+      postExitLookaheadMinutes?: number;
+      postExitCandleCount?: number;
+      postExitRunBeyondExitPoints?: number;
+      postExitRunBeyondExitR?: number;
     };
     stopMoveSummary?: {
       totalMoves: number;
@@ -483,6 +492,15 @@ const TradeSchema = new Schema<ITradeDoc>(
         candleCount: { type: Number },
         excursionFlags: [{ type: String }],
         warnings: [{ type: String }],
+        postExitMfePoints: { type: Number },
+        postExitMfeAmount: { type: Number },
+        postExitMfeR: { type: Number },
+        postExitPeakPrice: { type: Number },
+        postExitPeakTime: { type: Date },
+        postExitLookaheadMinutes: { type: Number },
+        postExitCandleCount: { type: Number },
+        postExitRunBeyondExitPoints: { type: Number },
+        postExitRunBeyondExitR: { type: Number },
       },
       stopMoveSummary: {
         totalMoves: { type: Number, default: 0 },

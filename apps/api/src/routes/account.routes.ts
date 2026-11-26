@@ -2005,6 +2005,9 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
           },
         });
         insertedCount++;
+        if (isClosed && trade?._id) {
+          FyersService.computeExcursionForTrade(trade._id, req.user!.id).catch(() => {});
+        }
       } else {
         // Update existing trade
         trade.status = isClosed ? 'CLOSED' : 'OPEN';
@@ -2067,6 +2070,9 @@ export const accountRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         trade.markModified('simpleExecution');
         await trade.save();
         updatedCount++;
+        if (isClosed && trade?._id) {
+          FyersService.computeExcursionForTrade(trade._id, req.user!.id).catch(() => {});
+        }
       }
 
       processedTrades.push({

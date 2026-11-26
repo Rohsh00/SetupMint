@@ -1949,6 +1949,8 @@ export interface IWhatIfBaseline {
 }
 
 export interface IWhatIfResponse {
+  availableSymbols?: string[];
+  selectedSymbol?: string;
   meta: {
     filters: IWhatIfFilters;
     fillModel: WhatIfFillModel;

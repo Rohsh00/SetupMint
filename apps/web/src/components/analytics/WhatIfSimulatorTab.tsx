@@ -72,6 +72,7 @@ interface WhatIfSimulatorTabProps {
   accountId?: string;
   startDate?: string;
   endDate?: string;
+  symbol?: string;
   initialSuggestedStopR?: number;
   initialSuggestedTargetR?: number;
 }
@@ -80,6 +81,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
   accountId,
   startDate,
   endDate,
+  symbol,
   initialSuggestedStopR,
   initialSuggestedTargetR,
 }) => {
@@ -95,8 +97,9 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
       accountId: effectiveAccountId,
       startDate,
       endDate,
+      symbol: symbol && symbol !== 'ALL' ? symbol : undefined,
     }),
-    [queryParams, effectiveAccountId, startDate, endDate]
+    [queryParams, effectiveAccountId, startDate, endDate, symbol]
   );
 
   // State
@@ -126,6 +129,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
       'analytics-what-if',
       queryParams,
       accountId,
+      symbol,
       fillModel,
       slippageTicks,
       excludeManaged,
@@ -140,6 +144,7 @@ export const WhatIfSimulatorTab: React.FC<WhatIfSimulatorTabProps> = ({
           accountId: accountId && accountId !== 'ALL' ? accountId : queryParams.accountId,
           startDate,
           endDate,
+          symbol: symbol && symbol !== 'ALL' ? symbol : undefined,
         },
         stopRGrid: stopGrid,
         targetRGrid: targetGrid,

@@ -946,6 +946,7 @@ export const excursionAnalyticsQuerySchema = z
     accountType: z.string().optional(),
     type: z.string().optional(),
     includeArchived: z.union([z.boolean(), z.string()]).optional(),
+    symbol: z.preprocess(emptyStringToUndefined, z.string().optional()),
     strategyId: z.preprocess(emptyStringToUndefined, z.string().optional()),
     variantKey: z.preprocess(emptyStringToUndefined, z.string().optional()),
     startDate: z.preprocess(

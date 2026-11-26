@@ -153,7 +153,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
   app.addHook('preHandler', requireAuth);
 
   app.get('/stats', async (req: any, reply) => {
-    const { startDate, endDate, assetClass, strategyId, direction, session } = req.query;
+    const { startDate, endDate, assetClass, strategyId, direction, session, symbol } = req.query;
 
     const dateRangeResult = dateRangeSchema.safeParse({
       startDate: req.query.startDate,
@@ -181,6 +181,9 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (strategyId) filter.strategyId = strategyId;
     if (direction) filter.direction = direction;
     if (session) filter.session = session;
+    if (symbol && symbol !== 'ALL') {
+      filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
+    }
 
     const { startUtc, endUtc } = normalizeRange({ startDate, endDate }, accountCtx.primaryTimezone || 'Asia/Kolkata');
     const dateClause = buildDateRangeClause({ startDate, endDate }, accountCtx.primaryTimezone || 'Asia/Kolkata');
@@ -268,10 +271,24 @@ export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       }
     }
 
+    // Available symbols in this account scope
+    const availableSymbols = Array.from(
+      new Set(
+        (
+          await Trade.find({ userId: req.user!.id, accountId: { $in: accountIds } })
+            .distinct('symbol')
+        )
+          .map((s: any) => String(s || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    ).sort();
+
     return reply.send({
       success: true,
       data: {
         ...stats,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
         currency: accountCtx.isSingleCurrency ? accountCtx.primaryCurrency : undefined,
         isMultiCurrency: accountCtx.isMultiCurrency,
         isCrossCurrencyWarning: accountCtx.isMultiCurrency,

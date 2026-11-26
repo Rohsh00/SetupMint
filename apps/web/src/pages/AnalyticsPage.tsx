@@ -39,6 +39,7 @@ import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded';
 import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded';
 import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
+import CurrencyExchangeRoundedIcon from '@mui/icons-material/CurrencyExchangeRounded';
 
 import {
   Area,
@@ -95,8 +96,29 @@ export function AnalyticsPage() {
       setActiveTab(tabFromUrl as any);
     }
   }, [searchParams]);
-  const [selectedSizingSymbol, setSelectedSizingSymbol] = useState<string>('ALL');
-  const [selectedKillZoneSymbol, setSelectedKillZoneSymbol] = useState<string>('ALL');
+  const urlSymbol = searchParams.get('symbol')?.toUpperCase();
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(urlSymbol || 'ALL');
+
+  React.useEffect(() => {
+    const symFromUrl = searchParams.get('symbol')?.toUpperCase();
+    if (symFromUrl && symFromUrl !== selectedSymbol) {
+      setSelectedSymbol(symFromUrl);
+    }
+  }, [searchParams]);
+
+  const handleSelectSymbol = (sym: string) => {
+    const nextSym = (sym || 'ALL').toUpperCase().trim();
+    setSelectedSymbol(nextSym);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (nextSym !== 'ALL') {
+        next.set('symbol', nextSym);
+      } else {
+        next.delete('symbol');
+      }
+      return next;
+    });
+  };
 
   React.useEffect(() => {
     if (!hasMarketData && (activeTab === 'EXECUTION' || activeTab === 'WHAT_IF')) {
@@ -125,12 +147,13 @@ export function AnalyticsPage() {
   };
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['dashboard-stats', queryParams, startDate, endDate],
+    queryKey: ['dashboard-stats', queryParams, startDate, endDate, selectedSymbol],
     queryFn: () =>
       api.dashboard.stats({
         ...queryParams,
         startDate,
         endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
       }),
   });
 
@@ -144,22 +167,24 @@ export function AnalyticsPage() {
     : propOverviewRaw?.data || [];
 
   const { data: psychologyData, isLoading: isPsychLoading } = useQuery({
-    queryKey: ['analytics-psychology', queryParams, startDate, endDate],
+    queryKey: ['analytics-psychology', queryParams, startDate, endDate, selectedSymbol],
     queryFn: () =>
       api.analytics.psychology({
         ...queryParams,
         startDate,
         endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
       }),
   });
 
   const { data: excursionData, isLoading: isExcursionLoading } = useQuery({
-    queryKey: ['analytics-excursion', queryParams, startDate, endDate, funnelMode, funnelMode === 'CUSTOM' ? customMfeStepsInput : ''],
+    queryKey: ['analytics-excursion', queryParams, startDate, endDate, selectedSymbol, funnelMode, funnelMode === 'CUSTOM' ? customMfeStepsInput : ''],
     queryFn: () =>
       api.analytics.excursion({
         ...queryParams,
         startDate,
         endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
         funnelMode,
         customMfeSteps: funnelMode === 'CUSTOM' ? customMfeStepsInput : undefined,
       }),
@@ -167,51 +192,92 @@ export function AnalyticsPage() {
   });
 
   const { data: pyramidingData, isLoading: isPyramidLoading, refetch: refetchPyramiding } = useQuery({
-    queryKey: ['analytics-pyramiding', queryParams, startDate, endDate],
+    queryKey: ['analytics-pyramiding', queryParams, startDate, endDate, selectedSymbol],
     queryFn: () =>
       api.analytics.pyramiding({
         ...queryParams,
         startDate,
         endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
       }),
     enabled: activeTab === 'PYRAMIDING',
   });
 
   const { data: sizingData, isLoading: isSizingLoading, refetch: refetchSizing } = useQuery({
-    queryKey: ['analytics-sizing', queryParams, startDate, endDate, selectedSizingSymbol],
+    queryKey: ['analytics-sizing', queryParams, startDate, endDate, selectedSymbol],
     queryFn: () =>
       api.analytics.sizing({
         ...queryParams,
         startDate,
         endDate,
-        symbol: selectedSizingSymbol !== 'ALL' ? selectedSizingSymbol : undefined,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
       }),
     enabled: activeTab === 'SIZING',
   });
 
   const { data: killZoneData, isLoading: isKillZoneLoading, refetch: refetchKillZone } = useQuery({
-    queryKey: ['analytics-killzones', queryParams, startDate, endDate, selectedKillZoneSymbol],
+    queryKey: ['analytics-killzones', queryParams, startDate, endDate, selectedSymbol],
     queryFn: () =>
       api.analytics.killZones({
         ...queryParams,
         startDate,
         endDate,
-        symbol: selectedKillZoneSymbol !== 'ALL' ? selectedKillZoneSymbol : undefined,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
       }),
     enabled: activeTab === 'TIME',
   });
 
   const { data: newsImpactRaw, isLoading: isNewsImpactLoading, refetch: refetchNewsImpact } = useQuery({
-    queryKey: ['analytics-news-impact', queryParams, startDate, endDate],
+    queryKey: ['analytics-news-impact', queryParams, startDate, endDate, selectedSymbol],
     queryFn: () =>
       api.analytics.newsImpact({
         ...queryParams,
         startDate,
         endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
       }),
     enabled: activeTab === 'TIME',
   });
   const newsImpact = newsImpactRaw?.data ?? newsImpactRaw;
+
+  // Aggregate available symbols across all analytic engines for universal selector
+  const allAvailableSymbols = React.useMemo(() => {
+    const symSet = new Set<string>();
+    const sources = [
+      stats?.availableSymbols,
+      sizingData?.availableSymbols,
+      killZoneData?.availableSymbols,
+      pyramidingData?.availableSymbols,
+      psychologyData?.availableSymbols,
+      excursionData?.availableSymbols,
+      (newsImpact as any)?.availableSymbols,
+    ];
+    for (const s of sources) {
+      if (Array.isArray(s)) {
+        for (const item of s) {
+          if (item && typeof item === 'string') {
+            symSet.add(item.toUpperCase().trim());
+          }
+        }
+      }
+    }
+    return Array.from(symSet).sort();
+  }, [stats, sizingData, killZoneData, pyramidingData, psychologyData, excursionData, newsImpact]);
+
+  // Universal drilldown helper preserving selected Forex pair / asset symbol
+  const handleOpenDrill = (drillOrFilter: any, customLabel?: string) => {
+    if (drillOrFilter?.kind === 'TRADES' || drillOrFilter?.kind === 'TRADE') {
+      openDrill(drillOrFilter);
+      return;
+    }
+    const f = drillOrFilter?.filter || drillOrFilter || {};
+    const symbolFilter = selectedSymbol !== 'ALL' ? { symbol: selectedSymbol } : {};
+    openDrill({
+      kind: 'FILTER',
+      filter: { ...(queryParams as any), startDate, endDate, ...symbolFilter, ...f },
+      label: customLabel || drillOrFilter?.label,
+    });
+  };
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -380,6 +446,124 @@ export function AnalyticsPage() {
           );
         })}
       </Box>
+
+      {/* Universal Forex Pair & Symbol Filter Bar */}
+      <Card
+        sx={{
+          p: 1.5,
+          borderRadius: 2.5,
+          border: `1px solid ${selectedSymbol !== 'ALL' ? (isDark ? 'rgba(52, 211, 153, 0.4)' : 'rgba(5, 150, 105, 0.35)') : muiTheme.palette.divider}`,
+          backgroundColor: selectedSymbol !== 'ALL'
+            ? (isDark ? 'rgba(16, 185, 129, 0.06)' : 'rgba(16, 185, 129, 0.03)')
+            : (isDark ? 'rgba(15, 23, 42, 0.6)' : '#FFFFFF'),
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          alignItems: { xs: 'flex-start', md: 'center' },
+          justifyContent: 'space-between',
+          gap: 1.5,
+          boxShadow: selectedSymbol !== 'ALL'
+            ? (isDark ? '0 0 16px rgba(16, 185, 129, 0.1)' : '0 2px 8px rgba(5, 150, 105, 0.08)')
+            : 'none',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <CurrencyExchangeRoundedIcon
+              fontSize="small"
+              sx={{ color: selectedSymbol !== 'ALL' ? (isDark ? '#34D399' : '#059669') : 'text.secondary' }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8125rem', color: 'text.secondary', whiteSpace: 'nowrap' }}>
+              Forex & Asset Filter:
+            </Typography>
+          </Box>
+
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.75,
+              flexWrap: 'wrap',
+              maxHeight: { xs: 80, md: 'none' },
+              overflowY: 'auto',
+            }}
+          >
+            <Chip
+              label="All Symbols (Combined)"
+              size="small"
+              onClick={() => handleSelectSymbol('ALL')}
+              variant={selectedSymbol === 'ALL' ? 'filled' : 'outlined'}
+              sx={{
+                fontWeight: selectedSymbol === 'ALL' ? 700 : 500,
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                bgcolor: selectedSymbol === 'ALL'
+                  ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.08)')
+                  : 'transparent',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.15)',
+                '&:hover': {
+                  bgcolor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(15, 23, 42, 0.06)',
+                },
+              }}
+            />
+
+            {allAvailableSymbols.map((sym) => {
+              const isSelected = selectedSymbol === sym;
+              return (
+                <Chip
+                  key={sym}
+                  label={sym}
+                  size="small"
+                  onClick={() => handleSelectSymbol(sym)}
+                  variant={isSelected ? 'filled' : 'outlined'}
+                  sx={{
+                    fontWeight: isSelected ? 800 : 600,
+                    fontSize: '0.75rem',
+                    fontFamily: `'JetBrains Mono', monospace`,
+                    cursor: 'pointer',
+                    letterSpacing: '0.02em',
+                    bgcolor: isSelected
+                      ? (isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.14)')
+                      : 'transparent',
+                    color: isSelected
+                      ? (isDark ? '#34D399' : '#059669')
+                      : 'text.primary',
+                    borderColor: isSelected
+                      ? (isDark ? 'rgba(52, 211, 153, 0.5)' : 'rgba(5, 150, 105, 0.5)')
+                      : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.1)'),
+                    '&:hover': {
+                      bgcolor: isSelected
+                        ? (isDark ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.2)')
+                        : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.04)'),
+                    },
+                  }}
+                />
+              );
+            })}
+          </Box>
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, alignSelf: { xs: 'flex-end', md: 'center' } }}>
+          {selectedSymbol !== 'ALL' ? (
+            <Chip
+              label={`Active: ${selectedSymbol}`}
+              onDelete={() => handleSelectSymbol('ALL')}
+              size="small"
+              sx={{
+                fontWeight: 700,
+                fontSize: '0.72rem',
+                bgcolor: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.12)',
+                color: isDark ? '#34D399' : '#059669',
+                border: `1px solid ${isDark ? 'rgba(52, 211, 153, 0.4)' : 'rgba(5, 150, 105, 0.35)'}`,
+              }}
+            />
+          ) : (
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+              {allAvailableSymbols.length} traded asset{allAvailableSymbols.length === 1 ? '' : 's'} in scope
+            </Typography>
+          )}
+        </Box>
+      </Card>
 
       {/* PROP MODE ANALYTICS SUMMARY BANNER */}
       {isPropMode && (
@@ -551,9 +735,9 @@ export function AnalyticsPage() {
                       const rawDate = e?.activePayload?.[0]?.payload?.date;
                       if (rawDate) {
                         const dateStr = typeof rawDate === 'string' && rawDate.includes('T') ? rawDate.split('T')[0] : rawDate;
-                        openDrill({
+                        handleOpenDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), date: dateStr },
+                          filter: { date: dateStr },
                           label: `Trades on ${formatDate(dateStr)}`,
                         });
                       }
@@ -670,9 +854,9 @@ export function AnalyticsPage() {
                             const rangeStr = entry?.range || entry?.payload?.range;
                             if (rangeStr) {
                               const { netPnLMin, netPnLMax } = parsePnLRange(rangeStr);
-                              openDrill({
+                              handleOpenDrill({
                                 kind: 'FILTER',
-                                filter: { ...(queryParams as any), startDate, endDate, netPnLMin, netPnLMax },
+                                filter: { netPnLMin, netPnLMax },
                                 label: `Trades in P&L Range: ${rangeStr}`,
                               });
                             }
@@ -782,17 +966,10 @@ export function AnalyticsPage() {
           data={sizingData?.data ?? sizingData}
           isLoading={isSizingLoading}
           currencySymbol={currSym}
-          selectedSymbol={selectedSizingSymbol}
-          onSelectSymbol={setSelectedSizingSymbol}
+          selectedSymbol={selectedSymbol}
+          onSelectSymbol={handleSelectSymbol}
           onRefresh={refetchSizing}
-          onDrillDown={(filterOrDesc, label) => {
-            if (filterOrDesc?.kind === 'TRADES' || filterOrDesc?.kind === 'TRADE') {
-              openDrill(filterOrDesc);
-            } else {
-              const f = filterOrDesc?.filter || filterOrDesc || {};
-              openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), startDate, endDate, ...f }, label });
-            }
-          }}
+          onDrillDown={(filterOrDesc, label) => handleOpenDrill(filterOrDesc, label)}
         />
       )}
 
@@ -821,9 +998,9 @@ export function AnalyticsPage() {
                     <Tooltip key={d.score} title={`Click to inspect all trades executed with a discipline score of ${d.score}/5`} arrow>
                       <Box
                         onClick={() =>
-                          openDrill({
+                          handleOpenDrill({
                             kind: 'FILTER',
-                            filter: { ...(queryParams as any), startDate, endDate, disciplineScore: d.score },
+                            filter: { disciplineScore: d.score },
                             label: `Discipline Rating ${d.score}/5`,
                           })
                         }
@@ -891,9 +1068,9 @@ export function AnalyticsPage() {
                     <Tooltip key={e.emotion} title={`Click to inspect all trades taken while feeling ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`} arrow>
                       <Box
                         onClick={() =>
-                          openDrill({
+                          handleOpenDrill({
                             kind: 'FILTER',
-                            filter: { ...(queryParams as any), startDate, endDate, emotion: e.emotion },
+                            filter: { emotion: e.emotion },
                             label: `Emotion: ${EMOTION_LABEL_MAP[e.emotion] || e.emotion}`,
                           })
                         }
@@ -961,9 +1138,9 @@ export function AnalyticsPage() {
                   <Tooltip title={`Total loss caused by ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}. Click to view trades.`} arrow>
                     <Box
                       onClick={() =>
-                        openDrill({
+                        handleOpenDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), startDate, endDate, mistakeTag: m.mistake },
+                          filter: { mistakeTag: m.mistake },
                           label: `Mistake: ${m.label || MISTAKE_LABEL_MAP[m.mistake] || m.mistake}`,
                         })
                       }
@@ -1015,17 +1192,10 @@ export function AnalyticsPage() {
             data={(killZoneData as any)?.data ?? killZoneData}
             isLoading={isKillZoneLoading}
             currencySymbol={currSym}
-            selectedSymbol={selectedKillZoneSymbol}
-            onSelectSymbol={(sym) => setSelectedKillZoneSymbol(sym)}
+            selectedSymbol={selectedSymbol}
+            onSelectSymbol={(sym) => handleSelectSymbol(sym)}
             onRefresh={() => refetchKillZone()}
-            onDrillDown={(filterOrDesc, label) => {
-              if (filterOrDesc?.kind === 'TRADES' || filterOrDesc?.kind === 'TRADE') {
-                openDrill(filterOrDesc);
-              } else {
-                const f = filterOrDesc?.filter || filterOrDesc || {};
-                openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), startDate, endDate, ...f }, label });
-              }
-            }}
+            onDrillDown={(filterOrDesc, label) => handleOpenDrill(filterOrDesc, label)}
           />
 
           {/* High-Impact US Macro News Catalysts & Transaction Friction Card */}
@@ -1074,9 +1244,9 @@ export function AnalyticsPage() {
                             tradeIds: newsImpact.newsStats.tradeIds,
                           });
                         } else {
-                          openDrill({
+                          handleOpenDrill({
                             kind: 'FILTER',
-                            filter: { ...(queryParams as any), startDate, endDate },
+                            filter: {},
                             label: 'High-Impact News Trades',
                           });
                         }
@@ -1306,9 +1476,9 @@ export function AnalyticsPage() {
                   <Tooltip key={day.day} title={`Click to inspect all ${day.tradesCount} trades taken on ${day.day}`} arrow>
                     <Box
                       onClick={() =>
-                        openDrill({
+                        handleOpenDrill({
                           kind: 'FILTER',
-                          filter: { ...(queryParams as any), startDate, endDate, weekday: day.day.toLowerCase() },
+                          filter: { weekday: day.day.toLowerCase() },
                           label: `${day.day} Trades`,
                         })
                       }
@@ -1394,9 +1564,9 @@ export function AnalyticsPage() {
                     <Tooltip key={sess.session} title={`Click to inspect all ${sess.tradesCount} trades taken during ${sess.session} session`} arrow>
                       <Box
                         onClick={() =>
-                          openDrill({
+                          handleOpenDrill({
                             kind: 'FILTER',
-                            filter: { ...(queryParams as any), startDate, endDate, session: sess.session },
+                            filter: { session: sess.session },
                             label: `${sess.session} Session Trades`,
                           })
                         }
@@ -1478,6 +1648,7 @@ export function AnalyticsPage() {
           queryParams={queryParams}
           startDate={startDate}
           endDate={endDate}
+          symbol={selectedSymbol !== 'ALL' ? selectedSymbol : undefined}
           funnelMode={funnelMode}
           setFunnelMode={setFunnelMode}
           customMfeStepsInput={customMfeStepsInput}
@@ -1487,7 +1658,7 @@ export function AnalyticsPage() {
             setWhatIfPrefill(prefill);
             setActiveTab('WHAT_IF');
           }}
-          onOpenDrill={openDrill}
+          onOpenDrill={handleOpenDrill}
           onNavigateToSettings={() => navigate('/settings')}
         />
       )}
@@ -1498,6 +1669,7 @@ export function AnalyticsPage() {
           accountId={queryParams.accountId}
           startDate={startDate}
           endDate={endDate}
+          symbol={selectedSymbol !== 'ALL' ? selectedSymbol : undefined}
           initialSuggestedStopR={whatIfPrefill?.stopR}
           initialSuggestedTargetR={whatIfPrefill?.targetR}
         />
@@ -1510,14 +1682,7 @@ export function AnalyticsPage() {
           isLoading={isPyramidLoading}
           currencySymbol={currSym}
           onRefresh={refetchPyramiding}
-          onDrillDown={(filterOrDesc, label) => {
-            if (filterOrDesc?.kind === 'TRADES' || filterOrDesc?.kind === 'TRADE') {
-              openDrill(filterOrDesc);
-            } else {
-              const f = filterOrDesc?.filter || filterOrDesc || {};
-              openDrill({ kind: 'FILTER', filter: { ...(queryParams as any), startDate, endDate, ...f }, label });
-            }
-          }}
+          onDrillDown={(filterOrDesc, label) => handleOpenDrill(filterOrDesc, label)}
         />
       )}
     </Box>

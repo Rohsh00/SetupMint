@@ -87,6 +87,9 @@ export async function computeWhatIf(
   if (filters.marketSegment) {
     tradeFilter.marketSegment = filters.marketSegment;
   }
+  if (filters.symbol && filters.symbol !== 'ALL') {
+    tradeFilter.symbol = { $regex: new RegExp(`^${String(filters.symbol).trim()}$`, 'i') };
+  }
   const dateClause = buildDateRangeClause(filters);
   if (dateClause.tradeDate) {
     tradeFilter.tradeDate = dateClause.tradeDate;
@@ -251,6 +254,20 @@ export async function computeWhatIf(
 
   // Preserve request filters in response meta
   simulationResult.meta.filters = filters;
+
+  const availableSymbols = Array.from(
+    new Set(
+      (
+        await Trade.find({ userId: userObjectId, accountId: { $in: accountIds } })
+          .distinct('symbol')
+      )
+        .map((s: any) => String(s || '').toUpperCase().trim())
+        .filter(Boolean)
+    )
+  ).sort();
+
+  simulationResult.availableSymbols = availableSymbols;
+  simulationResult.selectedSymbol = filters.symbol || 'ALL';
 
   // 7. Store in LRU cache
   if (whatIfCache.size >= MAX_CACHE_ENTRIES) {

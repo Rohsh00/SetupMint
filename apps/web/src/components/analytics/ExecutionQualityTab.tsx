@@ -61,6 +61,7 @@ export interface IExecutionQualityTabProps {
   queryParams: any;
   startDate?: string;
   endDate?: string;
+  symbol?: string;
   funnelMode: 'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD';
   setFunnelMode: (mode: 'AUTO' | 'PLANNED_TARGETS' | 'CUSTOM' | 'STANDARD') => void;
   customMfeStepsInput: string;
@@ -80,6 +81,7 @@ export function ExecutionQualityTab({
   queryParams,
   startDate,
   endDate,
+  symbol,
   funnelMode,
   setFunnelMode,
   customMfeStepsInput,
@@ -93,8 +95,13 @@ export function ExecutionQualityTab({
   const isDark = muiTheme.palette.mode === 'dark';
 
   const baseDrillFilter = useMemo(
-    () => ({ ...(queryParams as any), startDate, endDate }),
-    [queryParams, startDate, endDate]
+    () => ({
+      ...(queryParams as any),
+      startDate,
+      endDate,
+      symbol: symbol && symbol !== 'ALL' ? symbol : undefined,
+    }),
+    [queryParams, startDate, endDate, symbol]
   );
 
   // Local interactive controls

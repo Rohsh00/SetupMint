@@ -26,7 +26,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
   app.addHook('preHandler', requireAuth);
 
   app.get('/psychology', async (req: any, reply) => {
-    const { startDate, endDate, accountId } = req.query;
+    const { startDate, endDate, accountId, symbol } = req.query;
 
     const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
     if (!dateRangeResult.success) {
@@ -45,10 +45,25 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const filter: any = { userId: req.user!.id, status: 'CLOSED', accountId: { $in: accountIds } };
 
+    if (symbol && symbol !== 'ALL') {
+      filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
+    }
+
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
       filter.tradeDate = dateClause.tradeDate;
     }
+
+    const availableSymbols = Array.from(
+      new Set(
+        (
+          await Trade.find({ userId: req.user!.id, accountId: { $in: accountIds } })
+            .distinct('symbol')
+        )
+          .map((s: any) => String(s || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    ).sort();
 
     const trades = await Trade.find(filter);
 
@@ -146,6 +161,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         performanceByDiscipline,
         performanceByEmotion,
         mistakeAnalysis,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
       },
     });
   });
@@ -160,7 +177,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       });
     }
 
-    const { accountId, strategyId, variantKey, startDate, endDate, session, customMfeSteps, funnelMode } = parsed.data;
+    const { accountId, strategyId, variantKey, startDate, endDate, session, customMfeSteps, funnelMode, symbol } = parsed.data;
 
     const scope = AccountScopeService.parseAccountScope(req.query);
     const accountIds = await AccountScopeService.resolveAccountScope(req.user!.id, scope);
@@ -171,6 +188,9 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       accountId: { $in: accountIds },
     };
 
+    if (symbol && symbol !== 'ALL') {
+      baseFilter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
+    }
     if (strategyId) baseFilter.strategyId = strategyId;
     if (variantKey) baseFilter['setup.variantKey'] = variantKey;
     if (session) baseFilter.session = session;
@@ -178,6 +198,17 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     if (dateClause.tradeDate) {
       baseFilter.tradeDate = dateClause.tradeDate;
     }
+
+    const availableSymbols = Array.from(
+      new Set(
+        (
+          await Trade.find({ userId: req.user!.id, accountId: { $in: accountIds }, status: 'CLOSED' })
+            .distinct('symbol')
+        )
+          .map((s: any) => String(s || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    ).sort();
 
     const allClosedTrades = await Trade.find(baseFilter).sort({ tradeDate: -1 });
 
@@ -251,6 +282,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         ...result,
         summary: legacySummary,
         slippage: slippageSummary,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
       },
     });
   });
@@ -302,7 +335,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
   // Dedicated Pyramiding & Scale-In Campaign Analytics
   app.get('/pyramiding', async (req: any, reply) => {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, symbol } = req.query;
 
     const dateRangeResult = dateRangeSchema.safeParse({ startDate, endDate });
     if (!dateRangeResult.success) {
@@ -321,10 +354,25 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
     const filter: any = { userId: req.user!.id, accountId: { $in: accountIds } };
 
+    if (symbol && symbol !== 'ALL') {
+      filter.symbol = { $regex: new RegExp(`^${String(symbol).trim()}$`, 'i') };
+    }
+
     const dateClause = buildDateRangeClause({ startDate, endDate });
     if (dateClause.tradeDate) {
       filter.tradeDate = dateClause.tradeDate;
     }
+
+    const availableSymbols = Array.from(
+      new Set(
+        (
+          await Trade.find({ userId: req.user!.id, accountId: { $in: accountIds } })
+            .distinct('symbol')
+        )
+          .map((s: any) => String(s || '').toUpperCase().trim())
+          .filter(Boolean)
+      )
+    ).sort();
 
     // Retrieve trades in scope, sorted chronologically
     const allTrades = await Trade.find(filter).sort({ entryTime: 1 }).lean();
@@ -515,6 +563,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
           avgLayersPerCampaign: totalCampaigns > 0 ? Number((campaigns.reduce((acc, c) => acc + c.layerCount, 0) / totalCampaigns).toFixed(1)) : 0,
         },
         campaigns,
+        availableSymbols,
+        selectedSymbol: symbol || 'ALL',
       },
     });
   });

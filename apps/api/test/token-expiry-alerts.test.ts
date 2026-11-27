@@ -40,7 +40,7 @@ describe('FYERS Session & Token Expiry Deduplication Guard Tests', () => {
     });
 
     testUser = await User.create({
-      email: `expiry_trader_${Date.now()}@token-expiry-test.local`,
+      email: `expiry_trader_${Date.now()}@test.local`,
       passwordHash: 'dummy_hash',
       name: 'Expiry Tester',
       baseCurrency: 'INR',

@@ -27,7 +27,7 @@ export type CandleProviderResult =
     };
 
 export interface ICandleProvider {
-  readonly name: 'FYERS' | 'ANGEL_ONE';
+  readonly name: 'FYERS' | 'ANGEL_ONE' | 'GLOBAL_CFD';
   supports(trade: any, userId: string | mongoose.Types.ObjectId): Promise<boolean>;
   getCandles(params: CandleFetchParams): Promise<CandleProviderResult>;
 }

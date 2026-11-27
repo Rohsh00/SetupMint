@@ -463,12 +463,12 @@ const TradeSchema = new Schema<ITradeDoc>(
         computedAt: { type: Date },
         source: {
           type: String,
-          enum: ['FYERS_HISTORY', 'ANGEL_ONE_HISTORY', 'UNDERLYING_FALLBACK', 'MT5_LIVE', 'MANUAL'],
+          enum: ['FYERS_HISTORY', 'ANGEL_ONE_HISTORY', 'UNDERLYING_FALLBACK', 'MT5_LIVE', 'MANUAL', 'GLOBAL_CFD_HISTORY'],
           default: 'FYERS_HISTORY',
         },
         provider: {
           type: String,
-          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC', 'MT5_LIVE', 'MANUAL'],
+          enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC', 'MT5_LIVE', 'MANUAL', 'GLOBAL_CFD'],
           default: 'FYERS',
         },
         isUnderlyingFallback: { type: Boolean, default: false },

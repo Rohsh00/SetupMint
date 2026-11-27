@@ -3,11 +3,35 @@ import { BrokerIntegration } from '../../db/models/BrokerIntegration.js';
 import { formatFyersSymbol } from '../fyers-symbol.js';
 import { FyersService } from '../fyers.service.js';
 import { ICandleProvider, CandleFetchParams, CandleProviderResult } from './types.js';
+import { GlobalCfdCandleProvider } from './global-cfd.provider.js';
 
 export class FyersCandleProvider implements ICandleProvider {
   readonly name = 'FYERS' as const;
 
-  async supports(_trade: any, userId: string | mongoose.Types.ObjectId): Promise<boolean> {
+  async supports(trade: any, userId: string | mongoose.Types.ObjectId): Promise<boolean> {
+    if (trade) {
+      const assetClass = String(trade.assetClass || '').toUpperCase();
+      const exchange = String(trade.exchange || '').toUpperCase();
+      const marketSegment = String(trade.marketSegment || '').toUpperCase();
+      const currency = String(trade.currency || '').toUpperCase();
+      const symbol = String(trade.symbol || '').toUpperCase();
+
+      // FYERS only supports Indian domestic markets (NSE, BSE, MCX) in INR.
+      // Remove and reject broken FYERS calculation for Forex, Crypto, and Global CFD trades.
+      if (
+        assetClass === 'FOREX' ||
+        assetClass === 'CRYPTO' ||
+        exchange === 'FOREX' ||
+        exchange === 'CRYPTO' ||
+        marketSegment === 'FOREX' ||
+        marketSegment === 'CRYPTO' ||
+        (currency && currency !== 'INR') ||
+        GlobalCfdCandleProvider.isSupportedGlobalSymbol(symbol, exchange, assetClass)
+      ) {
+        return false;
+      }
+    }
+
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
     const integration = await BrokerIntegration.findOne({ userId: uId, broker: 'FYERS' });
     if (!integration || !integration.appId || !integration.accessToken) {

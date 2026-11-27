@@ -116,7 +116,7 @@ function normalizeCleanSymbol(rawSymbol: string): string {
 }
 
 export class GlobalCfdCandleProvider implements ICandleProvider {
-  readonly name = 'FYERS' as const; // Conforms to ICandleProvider union for seamless persistence
+  readonly name = 'GLOBAL_CFD' as const;
 
   private static quoteCache = new Map<string, { quote: GlobalLiveQuote; expiresAt: number }>();
   private static readonly QUOTE_TTL_MS = 4000;
@@ -504,11 +504,13 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
           }
 
           if (rawCandles.length > 0) {
-            // Guard: If Yahoo candles are delayed and do not reach the trade's exit time, fall through to real-time Binance
+            // Guard: If Yahoo candles do not cover the trade window (either start too late or end too early), fall through to real-time Binance
+            const entryTimeMs = params.trade?.entryTime ? new Date(params.trade.entryTime).getTime() : fromMs;
             const exitTimeMs = params.trade?.exitTime ? new Date(params.trade.exitTime).getTime() : toMs;
+            const firstCandleMs = rawCandles[0].t * 1000;
             const lastCandleMs = rawCandles[rawCandles.length - 1].t * 1000;
-            if (lastCandleMs < exitTimeMs && BINANCE_KLINE_MAP[clean]) {
-              throw new Error(`Yahoo candles end at ${new Date(lastCandleMs).toISOString()} before trade exit ${new Date(exitTimeMs).toISOString()}`);
+            if ((firstCandleMs > entryTimeMs + 5 * 60 * 1000 || lastCandleMs < exitTimeMs) && BINANCE_KLINE_MAP[clean]) {
+              throw new Error(`Yahoo candles [${new Date(firstCandleMs).toISOString()} - ${new Date(lastCandleMs).toISOString()}] do not cover trade execution window [${new Date(entryTimeMs).toISOString()} - ${new Date(exitTimeMs).toISOString()}]`);
             }
 
             const isFuturesProxy = yahooSym.endsWith('=F');
@@ -546,7 +548,7 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
               ok: true,
               candles,
               resolution,
-              provider: 'FYERS',
+              provider: 'GLOBAL_CFD',
               isUnderlyingFallback: false,
               symbol: clean,
               droppedRowsCount: 0,
@@ -627,7 +629,7 @@ export class GlobalCfdCandleProvider implements ICandleProvider {
               ok: true,
               candles,
               resolution,
-              provider: 'FYERS',
+              provider: 'GLOBAL_CFD',
               isUnderlyingFallback: false,
               symbol: clean,
               droppedRowsCount: 0,

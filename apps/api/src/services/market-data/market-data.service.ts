@@ -441,6 +441,52 @@ export class MarketDataService {
     }
 
     // 3. Fallback Chain: AUTO mode
+    const isOptionTrade =
+      trade.assetClass === 'OPTIONS' ||
+      Boolean(trade.optionType) ||
+      Boolean(trade.strikePrice) ||
+      /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
+
+    const isGlobalTrade =
+      !isOptionTrade &&
+      (trade.assetClass === 'FOREX' ||
+        trade.assetClass === 'CRYPTO' ||
+        trade.exchange === 'FOREX' ||
+        trade.exchange === 'CRYPTO' ||
+        trade.marketSegment === 'FOREX' ||
+        trade.marketSegment === 'CRYPTO' ||
+        (trade.currency && trade.currency !== 'INR') ||
+        GlobalCfdCandleProvider.isSupportedGlobalSymbol(trade.symbol, trade.exchange, trade.assetClass));
+
+    // Priority for Global CFD/Forex/Crypto trades: route directly to Global CFD provider
+    // and completely bypass FYERS / Angel One Indian exchange lookups.
+    if (isGlobalTrade) {
+      try {
+        const globalSupports = await this.globalCfdProvider.supports(trade, uId);
+        if (globalSupports) {
+          const globalResult = await this.globalCfdProvider.getCandles({
+            trade,
+            resolution,
+            from,
+            to,
+            userId: uId,
+            isUnderlyingFallback: false,
+          });
+          if (globalResult.ok && globalResult.candles.length > 0 && isScaleValid(globalResult.candles)) {
+            await this.persistSnapshot(uId, trade._id, globalResult, from, to);
+            return globalResult;
+          }
+        }
+      } catch {
+        // Fall through to error
+      }
+      return {
+        ok: false,
+        reason: 'EMPTY_RESULT',
+        message: `No candles available for global CFD/Forex symbol ${trade.symbol}`,
+      };
+    }
+
     // Step 3a: Try FYERS primary
     let fyersResult: CandleProviderResult | null = null;
     try {
@@ -484,36 +530,6 @@ export class MarketDataService {
       }
     } catch {
       // Proceed to underlying fallback
-    }
-
-    // Step 3b-global: Try Global CFD/Forex/Crypto provider (TradingView / Yahoo / Binance for XAUUSD, ETHUSD, BTCUSD, EURUSD, NAS100)
-    // NEVER use Global CFD spot candles for Option contracts!
-    const isOptionTrade =
-      trade.assetClass === 'OPTIONS' ||
-      Boolean(trade.optionType) ||
-      Boolean(trade.strikePrice) ||
-      /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
-
-    if (!isOptionTrade && process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
-      try {
-        const globalSupports = await this.globalCfdProvider.supports(trade, uId);
-        if (globalSupports) {
-          const globalResult = await this.globalCfdProvider.getCandles({
-            trade,
-            resolution,
-            from,
-            to,
-            userId: uId,
-            isUnderlyingFallback: false,
-          });
-          if (globalResult.ok && globalResult.candles.length > 0 && isScaleValid(globalResult.candles)) {
-            await this.persistSnapshot(uId, trade._id, globalResult, from, to);
-            return globalResult;
-          }
-        }
-      } catch {
-        // Proceed to underlying fallback
-      }
     }
 
     // Step 3c: Underlying fallback (if trade is an option/derivative with an underlying)

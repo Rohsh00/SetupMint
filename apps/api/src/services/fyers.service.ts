@@ -2024,12 +2024,21 @@ export class FyersService {
       throw new Error('Trade not found or unauthorized');
     }
 
+    const isGlobal =
+      trade.assetClass === 'FOREX' ||
+      trade.assetClass === 'CRYPTO' ||
+      trade.exchange === 'FOREX' ||
+      trade.exchange === 'CRYPTO' ||
+      trade.marketSegment === 'FOREX' ||
+      trade.marketSegment === 'CRYPTO' ||
+      (trade.currency && trade.currency !== 'INR');
+
     if (trade.status !== 'CLOSED' || !trade.exitTime) {
       trade.calculated = trade.calculated || ({} as any);
       trade.calculated.excursion = {
         status: 'UNAVAILABLE',
         failureReason: 'Excursion can only be calculated for closed trades',
-        source: 'FYERS_HISTORY',
+        source: isGlobal ? 'GLOBAL_CFD_HISTORY' : 'FYERS_HISTORY',
         computedAt: new Date(),
       };
       await trade.save();
@@ -2122,7 +2131,7 @@ export class FyersService {
       trade.calculated.excursion = {
         status: 'UNAVAILABLE',
         failureReason: candleResult.message || `No candles available (${candleResult.reason})`,
-        source: options?.provider === 'ANGEL_ONE' ? 'ANGEL_ONE_HISTORY' : 'FYERS_HISTORY',
+        source: options?.provider === 'ANGEL_ONE' ? 'ANGEL_ONE_HISTORY' : isGlobal ? 'GLOBAL_CFD_HISTORY' : 'FYERS_HISTORY',
         resolution,
         isLowResolution: resolution !== '1',
         excursionVersion: 2,
@@ -2207,6 +2216,8 @@ export class FyersService {
     const source =
       providerUsed === 'ANGEL_ONE'
         ? 'ANGEL_ONE_HISTORY'
+        : providerUsed === 'GLOBAL_CFD'
+        ? 'GLOBAL_CFD_HISTORY'
         : isUnderlyingFallback
         ? 'UNDERLYING_FALLBACK'
         : 'FYERS_HISTORY';

@@ -7,7 +7,7 @@ export interface ITradeCandleSnapshotDoc extends Document {
   symbol: string;
   resolution: string;
   candles: ITradeCandle[];
-  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC';
+  provider?: 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'GLOBAL_CFD';
   isUnderlyingFallback?: boolean;
   droppedRowsCount?: number;
   coverageFrom?: Date;
@@ -55,7 +55,7 @@ const TradeCandleSnapshotSchema = new Schema<ITradeCandleSnapshotDoc>(
     ],
     provider: {
       type: String,
-      enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC'],
+      enum: ['FYERS', 'ANGEL_ONE', 'UNDERLYING', 'SYNTHETIC', 'GLOBAL_CFD'],
       default: 'FYERS',
     },
     isUnderlyingFallback: {

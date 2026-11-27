@@ -35,6 +35,12 @@ import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
+import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
+import CompareArrowsRoundedIcon from '@mui/icons-material/CompareArrowsRounded';
+import FlashOnRoundedIcon from '@mui/icons-material/FlashOnRounded';
+import WhatshotRoundedIcon from '@mui/icons-material/WhatshotRounded';
+import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 
 import {
   CartesianGrid,
@@ -77,6 +83,7 @@ export function PositionSizingDiagnosticsTab({
 
   const [activeChart, setActiveChart] = useState<'EQUITY_COMPARISON' | 'SIZE_PROGRESSION'>('EQUITY_COMPARISON');
   const [selectedTierKey, setSelectedTierKey] = useState<string | null>(null);
+  const [postLossSubTab, setPostLossSubTab] = useState<'OVERVIEW' | 'SIMULATION' | 'PAIRS'>('OVERVIEW');
 
   const availableSymbols = data?.availableSymbols || [];
   const currentSymbol = selectedSymbol || data?.selectedSymbol || 'ALL';
@@ -100,6 +107,7 @@ export function PositionSizingDiagnosticsTab({
   const tiers = data?.tiers || [];
   const progression = data?.progression || [];
   const triggerAnalysis = data?.triggerAnalysis;
+  const postLossReport = data?.postLossReport;
 
   if (!summary || summary.totalTrades === 0) {
     return (
@@ -1257,30 +1265,53 @@ export function PositionSizingDiagnosticsTab({
         </Card>
       </Box>
 
-      {/* Escalation Trigger Diagnostics: Compounding vs Revenge Martingale */}
-      {triggerAnalysis && triggerAnalysis.totalEscalations > 0 && (
-        <Card sx={{ p: 3, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-            <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AutoAwesomeRoundedIcon sx={{ color: muiTheme.palette.primary.main }} />
-              Escalation Trigger Diagnostics: Why Did You Size Up?
+      {/* Post-Loss Sizing Escalation & Revenge Martingale Report */}
+      <Card sx={{ p: 3, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <PsychologyRoundedIcon sx={{ color: '#EF4444', fontSize: 24 }} />
+            <Typography variant="h6" sx={{ fontWeight: 800, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+              Post-Loss Sizing Escalation &amp; Revenge Martingale Report
             </Typography>
             <Tooltip
-              title="Answers the psychological question: When you increased lot size, was it done systematically after a WIN (compounding) or emotionally after a LOSS (revenge)?"
+              title="Diagnoses whether you increase position size after losing trades (Martingale tilt pattern), calculates the exact monetary damage destroyed by sizing up, measures how fast you re-entered, and simulates your account equity if you had maintained disciplined flat sizing."
               arrow
             >
               <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary', cursor: 'help' }} />
             </Tooltip>
           </Box>
-          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2 }}>
-            Analyzes whether sizing up after a WIN (compounding) vs sizing up after a LOSS (revenge Martingale) was more successful. Click either box to inspect trades.
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {(postLossReport?.escalationCount ?? 0) === 0 ? (
+              <Chip
+                icon={<CheckCircleRoundedIcon sx={{ fontSize: 14 }} />}
+                label="Zero Post-Loss Sizing Tilt (100% Sizing Discipline)"
+                size="small"
+                color="success"
+                sx={{ fontWeight: 700, fontSize: '0.75rem' }}
+              />
+            ) : (
+              <Chip
+                icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+                label={`${postLossReport?.escalationCount} Post-Loss Upsized Trades Detected`}
+                size="small"
+                color="error"
+                sx={{ fontWeight: 800, fontSize: '0.75rem' }}
+              />
+            )}
+          </Box>
+        </Box>
 
-          <Grid container spacing={2}>
+        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2.5 }}>
+          Investigates your sizing behavior specifically following a loss. In trading psychology and prop challenges, sizing up after losses is the single leading trigger of catastrophic maximum daily drawdown breaches.
+        </Typography>
+
+        {/* Executive Split: Compounding (After Win) vs Revenge (After Loss) */}
+        {triggerAnalysis && triggerAnalysis.totalEscalations > 0 && (
+          <Grid container spacing={2} sx={{ mb: 3 }}>
             {/* Rational Compounding */}
             <Grid size={{ xs: 12, sm: 6 }}>
               <Tooltip
-                title="Increasing lot size after a WIN is healthy capital expansion. Click to inspect compounding trades."
+                title="Increasing lot size after a WIN is rational capital expansion. Click to inspect compounding trades."
                 arrow
               >
                 <Box
@@ -1322,7 +1353,7 @@ export function PositionSizingDiagnosticsTab({
                     />
                   </Box>
                   <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                    Rational expansion: Increasing size while in a profit cushion or after winning execution.
+                    Systematic expansion: Scaling up during positive edge execution or from an earned profit buffer.
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -1393,7 +1424,7 @@ export function PositionSizingDiagnosticsTab({
                     />
                   </Box>
                   <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                    Emotional trap: Doubling lot size to "make back" the previous loss in one trade.
+                    Emotional tilt trap: Escalating size to recoup the previous loss quickly in fewer market ticks.
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -1419,8 +1450,656 @@ export function PositionSizingDiagnosticsTab({
               </Tooltip>
             </Grid>
           </Grid>
-        </Card>
-      )}
+        )}
+
+        {/* Sub-Navigation Tabs */}
+        {postLossReport && (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 2.5, pb: 1.5, borderBottom: `1px solid ${muiTheme.palette.divider}` }}>
+            <ButtonGroup size="small" variant="outlined">
+              <Button
+                variant={postLossSubTab === 'OVERVIEW' ? 'contained' : 'outlined'}
+                onClick={() => setPostLossSubTab('OVERVIEW')}
+                startIcon={<TuneRoundedIcon sx={{ fontSize: 16 }} />}
+                sx={{ fontWeight: 700, fontSize: '0.75rem' }}
+              >
+                Multipliers &amp; Latency
+              </Button>
+              <Button
+                variant={postLossSubTab === 'SIMULATION' ? 'contained' : 'outlined'}
+                onClick={() => setPostLossSubTab('SIMULATION')}
+                startIcon={<TimelineRoundedIcon sx={{ fontSize: 16 }} />}
+                sx={{ fontWeight: 700, fontSize: '0.75rem' }}
+              >
+                What-If Equity Simulation
+              </Button>
+              <Button
+                variant={postLossSubTab === 'PAIRS' ? 'contained' : 'outlined'}
+                onClick={() => setPostLossSubTab('PAIRS')}
+                startIcon={<CompareArrowsRoundedIcon sx={{ fontSize: 16 }} />}
+                sx={{ fontWeight: 700, fontSize: '0.75rem' }}
+              >
+                Paired Trade Audit Ledger ({postLossReport.tradePairs.length})
+              </Button>
+            </ButtonGroup>
+
+            {/* Quick drift summary chips */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              {postLossReport.maxCascadeStreak >= 2 && (
+                <Tooltip title="Longest streak of consecutive losses where position size was repeatedly increased" arrow>
+                  <Chip
+                    icon={<WhatshotRoundedIcon sx={{ fontSize: 14 }} />}
+                    label={`Max Cascade Streak: ${postLossReport.maxCascadeStreak}`}
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                  />
+                </Tooltip>
+              )}
+              {postLossReport.assetHoppingCount > 0 && (
+                <Tooltip title="Number of times you switched to a different instrument right after a loss to chase volatility" arrow>
+                  <Chip
+                    label={`Asset Hopping: ${postLossReport.assetHoppingCount}`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                  />
+                </Tooltip>
+              )}
+              {postLossReport.directionFlippingCount > 0 && (
+                <Tooltip title="Number of times you immediately flipped trade direction (Long to Short or Short to Long) with increased size" arrow>
+                  <Chip
+                    label={`Direction Flips: ${postLossReport.directionFlippingCount}`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontWeight: 700, fontSize: '0.6875rem' }}
+                  />
+                </Tooltip>
+              )}
+            </Box>
+          </Box>
+        )}
+
+        {/* SUB-VIEW 1: OVERVIEW (Multipliers & Latency) */}
+        {postLossReport && postLossSubTab === 'OVERVIEW' && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {/* 4 Metric Cards */}
+            <Grid container spacing={2}>
+              {/* Card 1: Post-Loss Escalation Rate */}
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Post-Loss Escalation Rate
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      fontWeight: 800,
+                      my: 0.5,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: postLossReport.escalationRate > 20 ? '#EF4444' : postLossReport.escalationRate > 10 ? '#F59E0B' : '#10B981',
+                    }}
+                  >
+                    {postLossReport.escalationRate}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                    {postLossReport.escalationCount} of {postLossReport.totalLossTrades} losses were followed by a size increase
+                  </Typography>
+                </Card>
+              </Grid>
+
+              {/* Card 2: Sizing Alpha Deficit */}
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Cost of Upsizing vs Flat
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      fontWeight: 800,
+                      my: 0.5,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: postLossReport.counterfactualCapitalSaved > 0 ? '#EF4444' : '#10B981',
+                    }}
+                  >
+                    {postLossReport.counterfactualCapitalSaved > 0
+                      ? `-${formatCurrency(postLossReport.counterfactualCapitalSaved, currencySymbol)}`
+                      : '+$0.00'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                    {postLossReport.counterfactualCapitalSaved > 0
+                      ? 'Capital destroyed specifically by sizing up after losses'
+                      : 'Zero monetary damage detected from post-loss sizing'}
+                  </Typography>
+                </Card>
+              </Grid>
+
+              {/* Card 3: Revenge Win Rate vs Baseline */}
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Post-Loss Win Rate
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      fontWeight: 800,
+                      my: 0.5,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: postLossReport.escalationWinRate < postLossReport.baselineWinRate ? '#EF4444' : '#10B981',
+                    }}
+                  >
+                    {postLossReport.escalationWinRate}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                    Baseline Win Rate: {postLossReport.baselineWinRate}%{' '}
+                    {postLossReport.escalationWinRate < postLossReport.baselineWinRate && (
+                      <span style={{ color: '#EF4444', fontWeight: 700 }}>
+                        (-{(postLossReport.baselineWinRate - postLossReport.escalationWinRate).toFixed(1)}% drop)
+                      </span>
+                    )}
+                  </Typography>
+                </Card>
+              </Grid>
+
+              {/* Card 4: Average Escalation Multiplier */}
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Card sx={{ p: 2, borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}` }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Avg Sizing Multiplier
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      fontWeight: 800,
+                      my: 0.5,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      color: postLossReport.avgMultiplier >= 2.0 ? '#EF4444' : '#F59E0B',
+                    }}
+                  >
+                    {postLossReport.avgMultiplier}x
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                    Peak size jump: <strong>{postLossReport.maxMultiplier}x</strong> previous trade quantity
+                  </Typography>
+                </Card>
+              </Grid>
+            </Grid>
+
+            {/* Sizing Multiplier Tiers Table */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LayersRoundedIcon sx={{ fontSize: 18, color: muiTheme.palette.primary.main }} />
+                Sizing Escalation Multiplier Breakdown: How Much Did You Size Up?
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1.5 }}>
+                Categorizes trades by the multiplier applied to the losing trade's quantity (Quantity<sub>upsized</sub> / Quantity<sub>loss</sub>).
+              </Typography>
+
+              <Card sx={{ borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, overflowX: 'auto' }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Escalation Category</TableCell>
+                      <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Multiplier Range</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Trades</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Win Rate</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Net P&amp;L</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Avg P&amp;L</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Action</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {postLossReport.multiplierTiers.map((tier) => {
+                      const isNegative = tier.netPnL < 0;
+                      return (
+                        <TableRow key={tier.tierKey} hover>
+                          <TableCell sx={{ fontWeight: 700, fontSize: '0.8125rem' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Box
+                                sx={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: '50%',
+                                  backgroundColor:
+                                    tier.tierKey === 'EXTREME_BLOWOUT'
+                                      ? '#DC2626'
+                                      : tier.tierKey === 'MARTINGALE_2X'
+                                      ? '#EF4444'
+                                      : tier.tierKey === 'AGGRESSIVE'
+                                      ? '#F59E0B'
+                                      : '#3B82F6',
+                                }}
+                              />
+                              {tier.label}
+                            </Box>
+                          </TableCell>
+                          <TableCell sx={{ fontFamily: `'JetBrains Mono', monospace`, fontSize: '0.75rem', color: 'text.secondary' }}>
+                            {tier.multiplierRange}
+                          </TableCell>
+                          <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8125rem' }}>
+                            {tier.count}
+                          </TableCell>
+                          <TableCell align="center">
+                            <Chip
+                              label={`${tier.winRate}%`}
+                              size="small"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.6875rem',
+                                fontWeight: 800,
+                                backgroundColor: tier.winRate >= 50 ? alpha('#10B981', 0.15) : alpha('#EF4444', 0.15),
+                                color: tier.winRate >= 50 ? '#10B981' : '#EF4444',
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: isNegative ? '#EF4444' : '#10B981',
+                            }}
+                          >
+                            {tier.netPnL >= 0 ? '+' : ''}{formatCurrency(tier.netPnL, currencySymbol)}
+                          </TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{
+                              fontWeight: 700,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: tier.avgPnL >= 0 ? '#10B981' : '#EF4444',
+                              fontSize: '0.75rem',
+                            }}
+                          >
+                            {tier.avgPnL >= 0 ? '+' : ''}{formatCurrency(tier.avgPnL, currencySymbol)}
+                          </TableCell>
+                          <TableCell align="center">
+                            {tier.count > 0 ? (
+                              <Button
+                                size="small"
+                                variant="text"
+                                onClick={() => {
+                                  if (onDrillDown && tier.tradeIds.length > 0) {
+                                    onDrillDown(
+                                      { kind: 'TRADES', tradeIds: tier.tradeIds },
+                                      `${tier.label} Trades (${tier.count} trades)`
+                                    );
+                                  }
+                                }}
+                                sx={{ textTransform: 'none', fontSize: '0.6875rem', fontWeight: 700, p: 0.5 }}
+                              >
+                                Inspect →
+                              </Button>
+                            ) : (
+                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>—</Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </Card>
+            </Box>
+
+            {/* Time-to-Revenge Latency Breakdown */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <AccessTimeRoundedIcon sx={{ fontSize: 18, color: muiTheme.palette.primary.main }} />
+                Time-to-Revenge Cooldown Latency: How Fast Did You Re-Enter?
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1.5 }}>
+                Measures elapsed time between closing a loss and entering the next upsized trade. Trades executed within 15 minutes of a loss almost always suffer lower win rates due to emotional adrenaline.
+              </Typography>
+
+              <Grid container spacing={1.5}>
+                {postLossReport.latencyBuckets.map((bucket) => {
+                  const isFlash = bucket.bucketKey === 'FLASH_REVENGE';
+                  const isSimmering = bucket.bucketKey === 'SIMMERING_TILT';
+                  return (
+                    <Grid key={bucket.bucketKey} size={{ xs: 12, sm: 6, md: 3 }}>
+                      <Box
+                        onClick={() => {
+                          if (onDrillDown && bucket.tradeIds.length > 0) {
+                            onDrillDown(
+                              { kind: 'TRADES', tradeIds: bucket.tradeIds },
+                              `${bucket.label} Trades (${bucket.count} trades)`
+                            );
+                          }
+                        }}
+                        sx={{
+                          p: 2,
+                          borderRadius: 2,
+                          border: `1px solid ${
+                            isFlash ? 'rgba(239, 68, 68, 0.4)' : isSimmering ? 'rgba(245, 158, 11, 0.4)' : muiTheme.palette.divider
+                          }`,
+                          backgroundColor: isFlash
+                            ? isDark
+                              ? 'rgba(239, 68, 68, 0.06)'
+                              : 'rgba(239, 68, 68, 0.03)'
+                            : isSimmering
+                            ? isDark
+                              ? 'rgba(245, 158, 11, 0.06)'
+                              : 'rgba(245, 158, 11, 0.03)'
+                            : undefined,
+                          cursor: bucket.count > 0 ? 'pointer' : 'default',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1,
+                          transition: 'all 0.15s ease',
+                          '&:hover': bucket.count > 0 ? { transform: 'translateY(-2px)' } : undefined,
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" sx={{ fontWeight: 800 }}>
+                            {bucket.label}
+                          </Typography>
+                          <Chip
+                            label={`${bucket.count} trades`}
+                            size="small"
+                            sx={{ height: 18, fontSize: '0.625rem', fontWeight: 700 }}
+                          />
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            Win Rate: <strong>{bucket.winRate}%</strong>
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 800,
+                              fontFamily: `'JetBrains Mono', monospace`,
+                              color: bucket.netPnL >= 0 ? '#10B981' : '#EF4444',
+                              fontSize: '0.8125rem',
+                            }}
+                          >
+                            {bucket.netPnL >= 0 ? '+' : ''}{formatCurrency(bucket.netPnL, currencySymbol)}
+                          </Typography>
+                        </Box>
+                        {bucket.count > 0 && (
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.625rem', textAlign: 'right' }}>
+                            Inspect trades →
+                          </Typography>
+                        )}
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </Box>
+          </Box>
+        )}
+
+        {/* SUB-VIEW 2: COUNTERFACTUAL WHAT-IF EQUITY SIMULATION */}
+        {postLossReport && postLossSubTab === 'SIMULATION' && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Alert
+              severity={postLossReport.counterfactualCapitalSaved > 0 ? 'warning' : 'success'}
+              icon={postLossReport.counterfactualCapitalSaved > 0 ? <WarningAmberRoundedIcon /> : <CheckCircleRoundedIcon />}
+              sx={{ borderRadius: 2 }}
+            >
+              {postLossReport.counterfactualCapitalSaved > 0 ? (
+                <span>
+                  <strong>Counterfactual Finding:</strong> By maintaining disciplined flat sizing following every loss, your account equity would be{' '}
+                  <strong style={{ color: '#10B981' }}>+{formatCurrency(postLossReport.counterfactualCapitalSaved, currencySymbol)} higher</strong>{' '}
+                  today. Sizing up after losses added zero positive alpha.
+                </span>
+              ) : (
+                <span>
+                  <strong>Pristine Discipline:</strong> Your post-loss sizing behavior has not subtracted value compared to disciplined flat sizing.
+                </span>
+              )}
+            </Alert>
+
+            <Box sx={{ height: 320, width: '100%', mt: 1 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={postLossReport.counterfactualCurve} margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                  <XAxis
+                    dataKey="tradeIndex"
+                    tick={{ fontSize: 11, fill: muiTheme.palette.text.secondary }}
+                    label={{ value: 'Trade Number', position: 'insideBottom', offset: -10, fontSize: 11, fill: muiTheme.palette.text.secondary }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: muiTheme.palette.text.secondary }}
+                    tickFormatter={(v) => formatCurrency(v, currencySymbol)}
+                  />
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const d = payload[0].payload;
+                      const diff = Number((d.disciplinedCumulativePnL - d.actualCumulativePnL).toFixed(2));
+                      return (
+                        <Paper sx={{ p: 1.5, borderRadius: 1.5, border: `1px solid ${muiTheme.palette.divider}`, minWidth: 180 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', mb: 0.5 }}>
+                            Trade #{d.tradeIndex} ({d.date})
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#EF4444', fontWeight: 700, fontSize: '0.75rem' }}>
+                            Actual Realized: {formatCurrency(d.actualCumulativePnL, currencySymbol)}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#10B981', fontWeight: 700, fontSize: '0.75rem' }}>
+                            Disciplined (Flat): {formatCurrency(d.disciplinedCumulativePnL, currencySymbol)}
+                          </Typography>
+                          <Divider sx={{ my: 0.5 }} />
+                          <Typography variant="caption" sx={{ fontWeight: 800, color: diff >= 0 ? '#10B981' : '#EF4444' }}>
+                            Delta: {diff >= 0 ? '+' : ''}{formatCurrency(diff, currencySymbol)}
+                          </Typography>
+                        </Paper>
+                      );
+                    }}
+                  />
+                  <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12, paddingBottom: 10 }} />
+                  <ReferenceLine y={0} stroke={muiTheme.palette.text.secondary} strokeDasharray="3 3" opacity={0.3} />
+                  <Line
+                    type="monotone"
+                    dataKey="actualCumulativePnL"
+                    name="Actual Realized Equity"
+                    stroke="#EF4444"
+                    strokeWidth={2.5}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="disciplinedCumulativePnL"
+                    name="Disciplined Flat Sizing (What-If)"
+                    stroke="#10B981"
+                    strokeWidth={2.5}
+                    strokeDasharray="4 4"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </Box>
+          </Box>
+        )}
+
+        {/* SUB-VIEW 3: PAIRED TRADE AUDIT LEDGER */}
+        {postLossReport && postLossSubTab === 'PAIRS' && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CompareArrowsRoundedIcon sx={{ fontSize: 18, color: muiTheme.palette.primary.main }} />
+              Paired Trade Audit Ledger: Losing Trade → Subsequent Upsized Trade
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+              Every historical instance where a loss was directly followed by an increased lot size. Click any row's inspect button to open both trades.
+            </Typography>
+
+            {postLossReport.tradePairs.length === 0 ? (
+              <Alert severity="success" sx={{ borderRadius: 2 }}>
+                No post-loss upsized trade pairs detected in your selected filter scope. Excellent discipline!
+              </Alert>
+            ) : (
+              <Card sx={{ borderRadius: 2, border: `1px solid ${muiTheme.palette.divider}`, overflowX: 'auto' }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Losing Trade (Before)</TableCell>
+                      <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Transition Dynamics</TableCell>
+                      <TableCell sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Upsized Trade (After)</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 800, fontSize: '0.75rem' }}>Inspect Pair</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {postLossReport.tradePairs.map((pair, idx) => {
+                      const isUpsizedWin = pair.upsizedPnL > 0;
+                      return (
+                        <TableRow key={`${pair.lossTradeId}-${pair.upsizedTradeId}-${idx}`} hover>
+                          {/* Losing Trade Details */}
+                          <TableCell sx={{ fontSize: '0.8125rem' }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                                  {pair.lossSymbol}
+                                </Typography>
+                                <Chip
+                                  label={pair.lossDirection || 'N/A'}
+                                  size="small"
+                                  sx={{ height: 16, fontSize: '0.625rem', fontWeight: 800 }}
+                                />
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                  {pair.lossQuantity} Lots
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="caption" sx={{ color: '#EF4444', fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                                  {formatCurrency(pair.lossPnL, currencySymbol)}
+                                </Typography>
+                                {pair.lossRMultiple !== undefined && (
+                                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    ({pair.lossRMultiple > 0 ? '+' : ''}{pair.lossRMultiple}R)
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                                  • {pair.lossDate}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+
+                          {/* Transition Dynamics */}
+                          <TableCell>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                                <Chip
+                                  label={`${pair.sizingMultiplier}x Jump`}
+                                  size="small"
+                                  color={pair.sizingMultiplier >= 2.0 ? 'error' : 'warning'}
+                                  sx={{ height: 20, fontSize: '0.6875rem', fontWeight: 800 }}
+                                />
+                                {pair.cooldownMinutes !== undefined && (
+                                  <Chip
+                                    icon={<FlashOnRoundedIcon sx={{ fontSize: 12 }} />}
+                                    label={`${pair.cooldownMinutes}m cooldown`}
+                                    size="small"
+                                    variant="outlined"
+                                    color={pair.cooldownMinutes < 5 ? 'error' : 'default'}
+                                    sx={{ height: 20, fontSize: '0.6875rem', fontWeight: 700 }}
+                                  />
+                                )}
+                              </Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                {pair.isConsecutiveCascade && (
+                                  <Chip
+                                    label={`Cascade L${pair.cascadeDepth}`}
+                                    size="small"
+                                    color="error"
+                                    variant="outlined"
+                                    sx={{ height: 18, fontSize: '0.625rem', fontWeight: 800 }}
+                                  />
+                                )}
+                                {pair.directionFlip && (
+                                  <Chip
+                                    label="Direction Flip"
+                                    size="small"
+                                    sx={{ height: 18, fontSize: '0.625rem' }}
+                                  />
+                                )}
+                                {pair.assetHopped && (
+                                  <Chip
+                                    label="Asset Hop"
+                                    size="small"
+                                    sx={{ height: 18, fontSize: '0.625rem' }}
+                                  />
+                                )}
+                              </Box>
+                            </Box>
+                          </TableCell>
+
+                          {/* Upsized Trade Details */}
+                          <TableCell sx={{ fontSize: '0.8125rem' }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: `'JetBrains Mono', monospace` }}>
+                                  {pair.upsizedSymbol}
+                                </Typography>
+                                <Chip
+                                  label={pair.upsizedDirection || 'N/A'}
+                                  size="small"
+                                  sx={{ height: 16, fontSize: '0.625rem', fontWeight: 800 }}
+                                />
+                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                                  {pair.upsizedQuantity} Lots
+                                </Typography>
+                                <Chip
+                                  label={isUpsizedWin ? 'WIN' : 'LOSS'}
+                                  size="small"
+                                  color={isUpsizedWin ? 'success' : 'error'}
+                                  sx={{ height: 16, fontSize: '0.625rem', fontWeight: 800 }}
+                                />
+                              </Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontWeight: 800,
+                                    fontFamily: `'JetBrains Mono', monospace`,
+                                    color: isUpsizedWin ? '#10B981' : '#EF4444',
+                                  }}
+                                >
+                                  {isUpsizedWin ? '+' : ''}{formatCurrency(pair.upsizedPnL, currencySymbol)}
+                                </Typography>
+                                {pair.upsizedRMultiple !== undefined && (
+                                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    ({pair.upsizedRMultiple > 0 ? '+' : ''}{pair.upsizedRMultiple}R)
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6875rem' }}>
+                                  • {pair.upsizedDate}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+
+                          {/* Inspect Action */}
+                          <TableCell align="center">
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => {
+                                if (onDrillDown) {
+                                  onDrillDown(
+                                    { kind: 'TRADES', tradeIds: [pair.lossTradeId, pair.upsizedTradeId] },
+                                    `Post-Loss Sizing Pair (${pair.lossSymbol} → ${pair.upsizedSymbol})`
+                                  );
+                                }
+                              }}
+                              sx={{ textTransform: 'none', fontSize: '0.6875rem', fontWeight: 700, p: 0.5, px: 1 }}
+                            >
+                              Inspect Pair →
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </Card>
+            )}
+          </Box>
+        )}
+      </Card>
     </Box>
   );
 }

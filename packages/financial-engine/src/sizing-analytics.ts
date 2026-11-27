@@ -4,6 +4,7 @@ export interface SizingAnalyticsTradeInput {
   id?: string;
   tradeDate: string | Date;
   entryTime?: string | Date;
+  exitTime?: string | Date;
   symbol?: string;
   direction?: 'LONG' | 'SHORT';
   quantity: number;
@@ -12,11 +13,94 @@ export interface SizingAnalyticsTradeInput {
   realizedRMultiple?: number;
   disciplineScore?: number;
   status?: string;
+  strategyId?: string;
+  strategyName?: string;
 }
 
 export type SizingTierVerdict = 'OPTIMAL' | 'HEALTHY' | 'MARGINAL' | 'VALUE_DESTRUCTIVE';
 export type SizingAlphaVerdict = 'POSITIVE_ALPHA' | 'NEUTRAL' | 'VALUE_DESTRUCTIVE';
 export type SizingHealthGrade = 'A' | 'B' | 'C' | 'D' | 'F';
+
+export type PostLossMultiplierTierKey = 'MILD_DRIFT' | 'AGGRESSIVE' | 'MARTINGALE_2X' | 'EXTREME_BLOWOUT';
+export type PostLossLatencyBucketKey = 'FLASH_REVENGE' | 'SIMMERING_TILT' | 'COOLING_DOWN' | 'RESET_SESSION';
+
+export interface IPostLossEscalationTier {
+  tierKey: PostLossMultiplierTierKey;
+  label: string;
+  multiplierRange: string;
+  count: number;
+  winRate: number;
+  netPnL: number;
+  avgPnL: number;
+  tradeIds: string[];
+}
+
+export interface IPostLossLatencyBucket {
+  bucketKey: PostLossLatencyBucketKey;
+  label: string;
+  count: number;
+  winRate: number;
+  netPnL: number;
+  avgPnL: number;
+  tradeIds: string[];
+}
+
+export interface IPostLossTradePair {
+  lossTradeId: string;
+  lossDate: string;
+  lossSymbol: string;
+  lossDirection?: string;
+  lossQuantity: number;
+  lossPnL: number;
+  lossRMultiple?: number;
+
+  upsizedTradeId: string;
+  upsizedDate: string;
+  upsizedSymbol: string;
+  upsizedDirection?: string;
+  upsizedQuantity: number;
+  upsizedPnL: number;
+  upsizedRMultiple?: number;
+
+  sizingMultiplier: number;
+  cooldownMinutes?: number;
+  isConsecutiveCascade: boolean;
+  cascadeDepth: number;
+  directionFlip: boolean;
+  assetHopped: boolean;
+}
+
+export interface IPostLossCounterfactualPoint {
+  tradeIndex: number;
+  tradeId: string;
+  date: string;
+  actualPnL: number;
+  actualCumulativePnL: number;
+  disciplinedPnL: number;
+  disciplinedCumulativePnL: number;
+}
+
+export interface IPostLossSizingReport {
+  totalLossTrades: number;
+  escalationCount: number;
+  escalationRate: number;
+  totalEscalationNetPnL: number;
+  sizingAlphaDeficit: number;
+  escalationWinRate: number;
+  baselineWinRate: number;
+  avgMultiplier: number;
+  maxMultiplier: number;
+  maxCascadeStreak: number;
+  consecutiveCascadesCount: number;
+  assetHoppingCount: number;
+  directionFlippingCount: number;
+  worstEscalationTradePair?: IPostLossTradePair;
+  multiplierTiers: IPostLossEscalationTier[];
+  latencyBuckets: IPostLossLatencyBucket[];
+  tradePairs: IPostLossTradePair[];
+  counterfactualCurve: IPostLossCounterfactualPoint[];
+  counterfactualCapitalSaved: number;
+}
 
 export interface ISizingTierSummary {
   tierKey: string;
@@ -90,6 +174,7 @@ export interface ISizingAnalyticsResult {
   tiers: ISizingTierSummary[];
   progression: ISizingProgressionPoint[];
   triggerAnalysis: ISizingTriggerAnalysis;
+  postLossReport: IPostLossSizingReport;
   availableSymbols?: string[];
   selectedSymbol?: string;
 }
@@ -165,6 +250,26 @@ export function calculatePositionSizingDiagnostics(
         revengeAvgPnL: 0,
         revengeEscalationRate: 0,
       },
+      postLossReport: {
+        totalLossTrades: 0,
+        escalationCount: 0,
+        escalationRate: 0,
+        totalEscalationNetPnL: 0,
+        sizingAlphaDeficit: 0,
+        escalationWinRate: 0,
+        baselineWinRate: 0,
+        avgMultiplier: 1,
+        maxMultiplier: 1,
+        maxCascadeStreak: 0,
+        consecutiveCascadesCount: 0,
+        assetHoppingCount: 0,
+        directionFlippingCount: 0,
+        multiplierTiers: [],
+        latencyBuckets: [],
+        tradePairs: [],
+        counterfactualCurve: [],
+        counterfactualCapitalSaved: 0,
+      },
     };
   }
 
@@ -214,15 +319,25 @@ export function calculatePositionSizingDiagnostics(
   let actualCum = new Decimal(0);
   let flatBaseCum = new Decimal(0);
   let constantCum = new Decimal(0);
+  let disciplinedPostLossCum = new Decimal(0);
 
   const actualCumArray: number[] = [];
   const constantCumArray: number[] = [];
   const progression: ISizingProgressionPoint[] = [];
+  const counterfactualCurve: IPostLossCounterfactualPoint[] = [];
+  const postLossTradePairs: IPostLossTradePair[] = [];
+  let totalSizingAlphaDeficit = new Decimal(0);
 
   let compoundingEscalations = 0;
   let revengeEscalations = 0;
   const compoundingTrades: SizingAnalyticsTradeInput[] = [];
   const revengeTrades: SizingAnalyticsTradeInput[] = [];
+
+  let currentCascadeStreak = 0;
+  let maxCascadeStreak = 0;
+  let consecutiveCascadesCount = 0;
+  let assetHoppingCount = 0;
+  let directionFlippingCount = 0;
 
   for (let i = 0; i < validTrades.length; i++) {
     const trade = validTrades[i];
@@ -248,6 +363,7 @@ export function calculatePositionSizingDiagnostics(
     // Check escalation from previous trade
     let isEscalation = false;
     let isRevengeEscalation = false;
+    let dDisciplined = dActual;
 
     if (prevTrade && trade.quantity > prevTrade.quantity) {
       isEscalation = true;
@@ -255,11 +371,94 @@ export function calculatePositionSizingDiagnostics(
         isRevengeEscalation = true;
         revengeEscalations++;
         revengeTrades.push(trade);
+
+        // Calculate disciplined counterfactual PnL (as if trade kept previous trade's quantity)
+        dDisciplined = dActual.times(new Decimal(prevTrade.quantity)).dividedBy(dQty);
+        const diff = dActual.minus(dDisciplined);
+        totalSizingAlphaDeficit = totalSizingAlphaDeficit.plus(diff);
+
+        const multiplier = Number(dQty.dividedBy(new Decimal(prevTrade.quantity)).toFixed(2));
+
+        // Cooldown calculation in minutes
+        let cooldownMinutes: number | undefined;
+        const prevEnd = prevTrade.exitTime || prevTrade.entryTime || prevTrade.tradeDate;
+        const currStart = trade.entryTime || trade.tradeDate;
+        if (prevEnd && currStart) {
+          const diffMs = new Date(currStart).getTime() - new Date(prevEnd).getTime();
+          if (diffMs >= 0) {
+            cooldownMinutes = Math.round(diffMs / 60000);
+          }
+        }
+
+        // Cascade depth tracking
+        if (currentCascadeStreak > 0) {
+          currentCascadeStreak++;
+          consecutiveCascadesCount++;
+        } else {
+          currentCascadeStreak = 1;
+        }
+        maxCascadeStreak = Math.max(maxCascadeStreak, currentCascadeStreak);
+
+        const directionFlip = Boolean(
+          trade.direction && prevTrade.direction && trade.direction !== prevTrade.direction
+        );
+        if (directionFlip) directionFlippingCount++;
+
+        const assetHopped = Boolean(
+          trade.symbol &&
+            prevTrade.symbol &&
+            trade.symbol.toUpperCase().trim() !== prevTrade.symbol.toUpperCase().trim()
+        );
+        if (assetHopped) assetHoppingCount++;
+
+        postLossTradePairs.push({
+          lossTradeId: prevTrade.id || `trade-${i}`,
+          lossDate: new Date(prevTrade.tradeDate).toISOString().split('T')[0],
+          lossSymbol: prevTrade.symbol || 'N/A',
+          lossDirection: prevTrade.direction,
+          lossQuantity: prevTrade.quantity,
+          lossPnL: Number(new Decimal(prevTrade.netPnL).toFixed(2)),
+          lossRMultiple: prevTrade.realizedRMultiple,
+
+          upsizedTradeId: trade.id || `trade-${i + 1}`,
+          upsizedDate: new Date(trade.tradeDate).toISOString().split('T')[0],
+          upsizedSymbol: trade.symbol || 'N/A',
+          upsizedDirection: trade.direction,
+          upsizedQuantity: trade.quantity,
+          upsizedPnL: Number(dActual.toFixed(2)),
+          upsizedRMultiple: trade.realizedRMultiple,
+
+          sizingMultiplier: multiplier,
+          cooldownMinutes,
+          isConsecutiveCascade: currentCascadeStreak > 1,
+          cascadeDepth: currentCascadeStreak,
+          directionFlip,
+          assetHopped,
+        });
+
+        // If this upsized trade was a win, break the cascade streak
+        if (trade.netPnL >= 0) {
+          currentCascadeStreak = 0;
+        }
       } else {
         compoundingEscalations++;
         compoundingTrades.push(trade);
+        currentCascadeStreak = 0;
       }
+    } else {
+      currentCascadeStreak = 0;
     }
+
+    disciplinedPostLossCum = disciplinedPostLossCum.plus(dDisciplined);
+    counterfactualCurve.push({
+      tradeIndex: i + 1,
+      tradeId: trade.id || `trade-${i + 1}`,
+      date: new Date(trade.tradeDate).toISOString().split('T')[0],
+      actualPnL: Number(dActual.toFixed(2)),
+      actualCumulativePnL: Number(actualCum.toFixed(2)),
+      disciplinedPnL: Number(dDisciplined.toFixed(2)),
+      disciplinedCumulativePnL: Number(disciplinedPostLossCum.toFixed(2)),
+    });
 
     progression.push({
       tradeIndex: i + 1,
@@ -438,6 +637,124 @@ export function calculatePositionSizingDiagnostics(
         )
       : 0;
 
+  // 6b. Post-Loss Sizing Escalation Report Computations
+  const totalLossTrades = validTrades.filter((t) => t.netPnL < 0).length;
+  const tradesFollowingLoss = validTrades.filter((_, idx) => idx > 0 && validTrades[idx - 1].netPnL < 0);
+  const postLossEscalationRate =
+    tradesFollowingLoss.length > 0
+      ? Number(((revengeTrades.length / tradesFollowingLoss.length) * 100).toFixed(1))
+      : 0;
+
+  const baselineWins = validTrades.filter((t) => t.netPnL > 0).length;
+  const baselineWinRate =
+    validTrades.length > 0 ? Number(((baselineWins / validTrades.length) * 100).toFixed(1)) : 0;
+
+  const multipliers = postLossTradePairs.map((p) => p.sizingMultiplier);
+  const avgMultiplier =
+    multipliers.length > 0
+      ? Number((multipliers.reduce((acc, m) => acc + m, 0) / multipliers.length).toFixed(2))
+      : 1;
+  const maxMultiplier = multipliers.length > 0 ? Math.max(...multipliers) : 1;
+
+  const totalEscalationNetPnL = Number(
+    revengeTrades.reduce((acc, t) => acc.plus(new Decimal(t.netPnL)), new Decimal(0)).toFixed(2)
+  );
+  const sizingAlphaDeficit = Number(totalSizingAlphaDeficit.toFixed(2));
+  const counterfactualCapitalSaved = Number(totalSizingAlphaDeficit.negated().toFixed(2));
+
+  // Multiplier tiers:
+  const multiplierTierDefs: Array<{
+    key: PostLossMultiplierTierKey;
+    label: string;
+    range: string;
+    filter: (m: number) => boolean;
+  }> = [
+    { key: 'MILD_DRIFT', label: 'Mild Sizing Drift', range: '1.05x – 1.49x', filter: (m) => m < 1.5 },
+    { key: 'AGGRESSIVE', label: 'Aggressive Escalation', range: '1.50x – 1.99x', filter: (m) => m >= 1.5 && m < 2.0 },
+    { key: 'MARTINGALE_2X', label: 'Classic 2x Martingale', range: '2.00x – 2.99x', filter: (m) => m >= 2.0 && m < 3.0 },
+    { key: 'EXTREME_BLOWOUT', label: 'Extreme Sizing Blowout', range: '≥ 3.00x', filter: (m) => m >= 3.0 },
+  ];
+
+  const postLossMultiplierTiers: IPostLossEscalationTier[] = multiplierTierDefs.map((def) => {
+    const matchingPairs = postLossTradePairs.filter((p) => def.filter(p.sizingMultiplier));
+    const count = matchingPairs.length;
+    const wins = matchingPairs.filter((p) => p.upsizedPnL > 0).length;
+    const winRate = count > 0 ? Number(((wins / count) * 100).toFixed(1)) : 0;
+    const netPnL = Number(
+      matchingPairs.reduce((acc, p) => acc.plus(new Decimal(p.upsizedPnL)), new Decimal(0)).toFixed(2)
+    );
+    const avgPnL = count > 0 ? Number((netPnL / count).toFixed(2)) : 0;
+    return {
+      tierKey: def.key,
+      label: def.label,
+      multiplierRange: def.range,
+      count,
+      winRate,
+      netPnL,
+      avgPnL,
+      tradeIds: matchingPairs.map((p) => p.upsizedTradeId),
+    };
+  });
+
+  // Latency buckets:
+  const latencyDefs: Array<{
+    key: PostLossLatencyBucketKey;
+    label: string;
+    filter: (min?: number) => boolean;
+  }> = [
+    { key: 'FLASH_REVENGE', label: 'Flash Revenge (< 5 min)', filter: (min) => min !== undefined && min < 5 },
+    { key: 'SIMMERING_TILT', label: 'Simmering Tilt (5 – 15 min)', filter: (min) => min !== undefined && min >= 5 && min <= 15 },
+    { key: 'COOLING_DOWN', label: 'Cooling Down (15 – 60 min)', filter: (min) => min !== undefined && min > 15 && min <= 60 },
+    { key: 'RESET_SESSION', label: 'Next Session / Reset (> 60 min)', filter: (min) => min === undefined || min > 60 },
+  ];
+
+  const postLossLatencyBuckets: IPostLossLatencyBucket[] = latencyDefs.map((def) => {
+    const matchingPairs = postLossTradePairs.filter((p) => def.filter(p.cooldownMinutes));
+    const count = matchingPairs.length;
+    const wins = matchingPairs.filter((p) => p.upsizedPnL > 0).length;
+    const winRate = count > 0 ? Number(((wins / count) * 100).toFixed(1)) : 0;
+    const netPnL = Number(
+      matchingPairs.reduce((acc, p) => acc.plus(new Decimal(p.upsizedPnL)), new Decimal(0)).toFixed(2)
+    );
+    const avgPnL = count > 0 ? Number((netPnL / count).toFixed(2)) : 0;
+    return {
+      bucketKey: def.key,
+      label: def.label,
+      count,
+      winRate,
+      netPnL,
+      avgPnL,
+      tradeIds: matchingPairs.map((p) => p.upsizedTradeId),
+    };
+  });
+
+  const worstEscalationTradePair =
+    postLossTradePairs.length > 0
+      ? [...postLossTradePairs].sort((a, b) => a.upsizedPnL - b.upsizedPnL)[0]
+      : undefined;
+
+  const postLossReport: IPostLossSizingReport = {
+    totalLossTrades,
+    escalationCount: revengeTrades.length,
+    escalationRate: postLossEscalationRate,
+    totalEscalationNetPnL,
+    sizingAlphaDeficit,
+    escalationWinRate: revengeWinRate,
+    baselineWinRate,
+    avgMultiplier,
+    maxMultiplier,
+    maxCascadeStreak,
+    consecutiveCascadesCount,
+    assetHoppingCount,
+    directionFlippingCount,
+    worstEscalationTradePair,
+    multiplierTiers: postLossMultiplierTiers,
+    latencyBuckets: postLossLatencyBuckets,
+    tradePairs: postLossTradePairs,
+    counterfactualCurve,
+    counterfactualCapitalSaved,
+  };
+
   // 7. Sizing Alpha & Health Scoring
   let sizingAlphaVerdict: SizingAlphaVerdict = 'NEUTRAL';
   if (sizingAlpha > 0) {
@@ -501,6 +818,18 @@ export function calculatePositionSizingDiagnostics(
     );
   }
 
+  if (postLossReport.escalationCount > 0 && counterfactualCapitalSaved > 0) {
+    insights.push(
+      `Post-Loss Sizing Damage: Sizing up after losses destroyed ${counterfactualCapitalSaved.toLocaleString()} compared to if you had maintained disciplined flat sizing after every loss.`
+    );
+  }
+
+  if (maxCascadeStreak >= 2) {
+    insights.push(
+      `Martingale Cascade Warning: Detected a streak of ${maxCascadeStreak} consecutive losses where position size was aggressively escalated.`
+    );
+  }
+
   const sortedByPnL = [...tiers].sort((a, b) => b.netPnL - a.netPnL);
   const mostProfitableTier = sortedByPnL[0]?.label || 'None';
   const leastProfitableTier = sortedByPnL[sortedByPnL.length - 1]?.label || 'None';
@@ -534,6 +863,7 @@ export function calculatePositionSizingDiagnostics(
       revengeAvgPnL,
       revengeEscalationRate,
     },
+    postLossReport,
   };
 }
 

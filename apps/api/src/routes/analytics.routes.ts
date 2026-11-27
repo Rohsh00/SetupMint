@@ -649,6 +649,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         id: t._id.toString(),
         tradeDate: t.tradeDate,
         entryTime: t.entryTime || t.tradeDate,
+        exitTime: t.exitTime || (Array.isArray(t.fills) && t.fills.find((f: any) => f.fillType === 'EXIT')?.timestamp) || undefined,
         symbol: t.symbol,
         direction: t.direction,
         quantity: qty,
@@ -657,6 +658,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         realizedRMultiple: t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple,
         disciplineScore: t.psychology?.disciplineScore,
         status: t.status,
+        strategyId: t.strategyId?.toString(),
+        strategyName: t.strategyName || t.setup?.setupName,
       };
     });
 

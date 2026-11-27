@@ -146,6 +146,24 @@ describe('Gold (XAUUSD) Economic News & Telegram Custom Reminders Integration Te
   it('3. /news or /goldnews Telegram command displays upcoming Gold catalysts and countdowns', async () => {
     sentTelegramMessages.length = 0;
 
+    vi.spyOn(EconomicCalendarService, 'getUpcomingGoldNews').mockResolvedValueOnce([
+      {
+        id: 'TEST_RADAR_EVENT',
+        title: 'US Core CPI m/m (Consumer Price Index)',
+        country: 'USD',
+        impact: 'HIGH',
+        isGoldMover: true,
+        timestamp: new Date(Date.now() + 15 * 60000).toISOString(),
+        istTimeStr: 'Today 18:30 IST',
+        countdownStr: 'in 15m',
+        minutesUntil: 15,
+        forecast: '0.3%',
+        previous: '0.3%',
+        status: 'IMMINENT',
+        goldImpactNote: 'Strong inflation boosts USD and yields, pressuring Gold downward.',
+      },
+    ]);
+
     const updatePayload = {
       update_id: 77001,
       message: {

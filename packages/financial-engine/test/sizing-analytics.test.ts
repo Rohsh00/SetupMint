@@ -98,5 +98,117 @@ describe('calculatePositionSizingDiagnostics', () => {
     expect(res.summary.sizingAlphaVerdict).toBe('POSITIVE_ALPHA');
     expect(res.summary.sizingHealthGrade).toBe('A');
   });
+
+  it('computes rich Post-Loss Sizing Escalation Report metrics, multipliers, and counterfactual simulation', () => {
+    const trades: SizingAnalyticsTradeInput[] = [
+      // Trade 1: Loss at 1.0 lot on EURUSD, exits at 10:00
+      {
+        id: 'T1',
+        tradeDate: '2026-02-01',
+        entryTime: '2026-02-01T09:30:00Z',
+        exitTime: '2026-02-01T10:00:00Z',
+        symbol: 'EURUSD',
+        direction: 'LONG',
+        quantity: 1.0,
+        netPnL: -100,
+        realizedRMultiple: -1.0,
+      },
+      // Trade 2: Upsized to 2.0 lots (2x Martingale) 3 minutes later (Flash Revenge) on same symbol, flips SHORT, losses -$200
+      {
+        id: 'T2',
+        tradeDate: '2026-02-01',
+        entryTime: '2026-02-01T10:03:00Z',
+        exitTime: '2026-02-01T10:20:00Z',
+        symbol: 'EURUSD',
+        direction: 'SHORT',
+        quantity: 2.0,
+        netPnL: -200,
+        realizedRMultiple: -1.0,
+      },
+      // Trade 3: Further upsized to 4.0 lots (2x of previous, Level 2 cascade) 10 minutes later, hops to GBPUSD, wins +$400
+      {
+        id: 'T3',
+        tradeDate: '2026-02-01',
+        entryTime: '2026-02-01T10:30:00Z',
+        exitTime: '2026-02-01T11:00:00Z',
+        symbol: 'GBPUSD',
+        direction: 'LONG',
+        quantity: 4.0,
+        netPnL: 400,
+        realizedRMultiple: 1.0,
+      },
+      // Trade 4: Normal disciplined trade, 1.0 lot, 2 hours later, wins +$150
+      {
+        id: 'T4',
+        tradeDate: '2026-02-01',
+        entryTime: '2026-02-01T13:00:00Z',
+        symbol: 'EURUSD',
+        direction: 'LONG',
+        quantity: 1.0,
+        netPnL: 150,
+        realizedRMultiple: 1.5,
+      },
+    ];
+
+    const res = calculatePositionSizingDiagnostics(trades);
+    const report = res.postLossReport;
+
+    expect(report).toBeDefined();
+    expect(report.totalLossTrades).toBe(2); // T1 and T2
+    expect(report.escalationCount).toBe(2); // T2 (after T1) and T3 (after T2)
+    expect(report.tradePairs).toHaveLength(2);
+
+    // Pair 1 (T1 -> T2)
+    const pair1 = report.tradePairs[0];
+    expect(pair1.lossTradeId).toBe('T1');
+    expect(pair1.upsizedTradeId).toBe('T2');
+    expect(pair1.sizingMultiplier).toBe(2.0);
+    expect(pair1.cooldownMinutes).toBe(3); // 10:00 to 10:03
+    expect(pair1.directionFlip).toBe(true); // LONG to SHORT
+    expect(pair1.assetHopped).toBe(false); // both EURUSD
+    expect(pair1.cascadeDepth).toBe(1);
+
+    // Pair 2 (T2 -> T3)
+    const pair2 = report.tradePairs[1];
+    expect(pair2.lossTradeId).toBe('T2');
+    expect(pair2.upsizedTradeId).toBe('T3');
+    expect(pair2.sizingMultiplier).toBe(2.0); // 4.0 / 2.0 = 2.0
+    expect(pair2.cooldownMinutes).toBe(10); // 10:20 to 10:30
+    expect(pair2.directionFlip).toBe(true); // SHORT to LONG
+    expect(pair2.assetHopped).toBe(true); // EURUSD to GBPUSD
+    expect(pair2.cascadeDepth).toBe(2); // Level 2 cascade!
+    expect(pair2.isConsecutiveCascade).toBe(true);
+
+    expect(report.maxCascadeStreak).toBe(2);
+    expect(report.consecutiveCascadesCount).toBe(1);
+    expect(report.assetHoppingCount).toBe(1);
+    expect(report.directionFlippingCount).toBe(2);
+
+    // Multiplier tiers
+    const martingaleTier = report.multiplierTiers.find((t) => t.tierKey === 'MARTINGALE_2X');
+    expect(martingaleTier).toBeDefined();
+    expect(martingaleTier!.count).toBe(2); // both T2 and T3 were 2x
+
+    // Latency buckets
+    const flashBucket = report.latencyBuckets.find((b) => b.bucketKey === 'FLASH_REVENGE');
+    expect(flashBucket).toBeDefined();
+    expect(flashBucket!.count).toBe(1); // T2 was 3 minutes
+
+    const simmeringBucket = report.latencyBuckets.find((b) => b.bucketKey === 'SIMMERING_TILT');
+    expect(simmeringBucket).toBeDefined();
+    expect(simmeringBucket!.count).toBe(1); // T3 was 10 minutes
+
+    // Counterfactual simulation verification:
+    // T1: Actual -100, Disciplined -100
+    // T2: Actual -200 (at 2.0 lots). If disciplined at T1 size (1.0 lot): -100
+    // T3: Actual +400 (at 4.0 lots). If disciplined at T2 size (2.0 lots): +200
+    // T4: Actual +150, Disciplined +150
+    // Actual Net PnL = -100 - 200 + 400 + 150 = +250
+    // Disciplined Net PnL = -100 - 100 + 200 + 150 = +150
+    // Sizing alpha deficit = (-200 - (-100)) + (400 - 200) = -100 + 200 = +100
+    expect(report.counterfactualCurve).toHaveLength(4);
+    expect(report.counterfactualCurve[1].disciplinedPnL).toBe(-100);
+    expect(report.counterfactualCurve[2].disciplinedPnL).toBe(200);
+  });
 });
 

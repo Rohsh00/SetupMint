@@ -2740,7 +2740,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     trade.calculated = recalculated;
 
     if (!Array.isArray(trade.executedLadderSteps)) trade.executedLadderSteps = [];
-    trade.executedLadderSteps.push(`step${targetIndex}`, `T${targetIndex}`, label);
+    trade.executedLadderSteps.push(`step${targetIndex}`, `T${targetIndex}`, label, `rr:${targetIndex}`, `1:${targetIndex}`);
     trade.executedLadderSteps = Array.from(new Set(trade.executedLadderSteps));
 
     trade.auditLog.push({
@@ -2763,6 +2763,31 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+
+    // Dispatch real-time Telegram notification for executed ladder step & realized R
+    User.findById(req.user!.id).lean().then((u: any) => {
+      const s = u?.liveWatcherSettings;
+      if (s?.telegramAlertsEnabled && s?.telegramBotToken && s?.telegramChatId && s?.telegramAlertEvents?.ladderMilestoneReached !== false) {
+        const currSym = trade.currency === 'USD' ? '$' : '₹';
+        TelegramAlertService.sendAlert({
+          botToken: s.telegramBotToken,
+          chatId: s.telegramChatId,
+          title: `🎯 Ladder Step Realized: ${trade.symbol}`,
+          body: `<b>${label} Executed</b>\n\n` +
+            `<b>Instrument:</b> <code>${trade.symbol}</code> (${trade.direction})\n` +
+            (requestedExitQty > 0 ? `<b>Booked Lots/Qty:</b> ${requestedExitQty} @ ${currSym}${effectiveExitPrice}\n` : '') +
+            (newStopLoss ? `<b>Trailed Stop Loss:</b> ${currSym}${newStopLoss}\n` : '') +
+            `\n<i>Position scaled down to de-risk according to institutional playbook.</i>`,
+          severity: 'SUCCESS',
+          metrics: {
+            ExitPrice: `${currSym}${effectiveExitPrice}`,
+            ExitQty: `${requestedExitQty}`,
+            RemainingQty: `${trade.calculated?.openQuantity ?? 0}`,
+            NewSL: newStopLoss ? `${currSym}${newStopLoss}` : 'UNCHANGED',
+          },
+        }).catch(() => {});
+      }
+    }).catch(() => {});
 
     const responsePayload = {
       success: true,

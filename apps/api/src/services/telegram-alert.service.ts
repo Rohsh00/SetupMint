@@ -5028,6 +5028,114 @@ export class TelegramAlertService {
   }
 
   /**
+   * Dispatches real-time Risk-to-Reward (RR) milestone alerts (1:1, 1:2, 1:3, etc.)
+   * to the trader's Telegram whether auto-execution is armed or not.
+   */
+  static async notifyRRMilestone(
+    user: any,
+    trade: any,
+    milestone: {
+      multipleR: number;
+      rrLabel: string; // e.g. "1:1", "1:2", "1:3"
+      currentLtp: number;
+      floatingNetPnL: number;
+      currentR: number;
+      entryPrice: number;
+      stopLoss?: number;
+      initialStopLoss?: number;
+      autoExecuteArmed: boolean;
+      actionTaken?: string;
+      stepName?: string;
+      executedQty?: number;
+      newStopLoss?: number;
+    }
+  ): Promise<boolean> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) {
+      return false;
+    }
+    if (settings.telegramAlertEvents && settings.telegramAlertEvents.ladderMilestoneReached === false) {
+      return false;
+    }
+
+    const rawToken = settings.telegramBotToken;
+    const botToken = safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? null : rawToken);
+    const chatId = settings.telegramChatId;
+    if (!botToken || !chatId) return false;
+
+    // Check user-level quiet hours
+    if (this.isQuietHoursActive(settings.quietHours)) {
+      return false;
+    }
+
+    const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
+    const roundLtp = Number(milestone.currentLtp.toFixed(2));
+    const pnlSign = milestone.floatingNetPnL >= 0 ? '+' : '';
+    const tradeId = trade._id ? trade._id.toString() : String(trade.id || '');
+
+    const title = milestone.autoExecuteArmed && milestone.actionTaken
+      ? `⚡ ${milestone.rrLabel} RR Reached & Auto-Executed: ${trade.symbol}`
+      : `🎯 ${milestone.rrLabel} RR Milestone Reached: ${trade.symbol}`;
+
+    let body = `<b>${milestone.rrLabel} Risk-to-Reward Milestone Achieved (+${milestone.multipleR}.0R)</b>\n\n` +
+      `<b>Instrument:</b> <code>${trade.symbol}</code> (${trade.direction})\n` +
+      `<b>Execution Mode:</b> ${milestone.autoExecuteArmed ? '⚡ Auto-Execution Armed' : '✋ Manual Execution (Auto-Execution OFF)'}\n` +
+      `<b>Current Floating R:</b> <code>+${milestone.currentR.toFixed(2)}R</code>\n`;
+
+    if (milestone.autoExecuteArmed && milestone.actionTaken) {
+      body += `<b>Action Executed:</b> <i>${milestone.actionTaken}</i>\n`;
+      if (milestone.executedQty) body += `<b>Executed Lots/Qty:</b> ${milestone.executedQty}\n`;
+      if (milestone.newStopLoss) body += `<b>Trailed Stop Loss:</b> ${sym}${milestone.newStopLoss.toFixed(2)}\n`;
+    } else {
+      body += `<i>Action Required: Consider locking Breakeven or booking partial profit to protect gains.</i>\n`;
+    }
+
+    const metrics: Record<string, string> = {
+      LTP: `${sym}${roundLtp}`,
+      Entry: `${sym}${milestone.entryPrice.toFixed(2)}`,
+      FloatingPnL: `${pnlSign}${sym}${milestone.floatingNetPnL.toFixed(2)}`,
+      StopLoss: milestone.newStopLoss
+        ? `${sym}${milestone.newStopLoss.toFixed(2)} (Trailed)`
+        : milestone.stopLoss
+        ? `${sym}${milestone.stopLoss.toFixed(2)}`
+        : 'NONE',
+      MilestoneRR: `${milestone.rrLabel} (+${milestone.multipleR}.0R)`,
+    };
+
+    // Format: x:tradeId:actionCode:cardVersion:renderLtp
+    const buttons: ITelegramInlineButton[][] = [];
+    if (!milestone.autoExecuteArmed) {
+      buttons.push([
+        { text: '🛡️ Lock True BE', callback_data: `x:${tradeId}:BE:1:${roundLtp}` },
+        { text: '🎯 Book 50%', callback_data: `x:${tradeId}:B50:1:${roundLtp}` },
+      ]);
+      buttons.push([
+        { text: '🚨 Close Position', callback_data: `x:${tradeId}:E:1:${roundLtp}` },
+        { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+      ]);
+    } else {
+      buttons.push([
+        { text: '🎯 Book 50%', callback_data: `x:${tradeId}:B50:1:${roundLtp}` },
+        { text: '🚨 Close Position', callback_data: `x:${tradeId}:E:1:${roundLtp}` },
+      ]);
+      buttons.push([
+        { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+      ]);
+    }
+
+    return await this.sendAlert({
+      botToken,
+      chatId,
+      title,
+      body,
+      severity: 'SUCCESS',
+      metrics,
+      buttons,
+      disableNotification: false,
+    });
+  }
+
+  /**
    * Triggered when a new trade is opened or synced from MT5 / Brokers.
    * Generates the Institutional All-in-One Execution Card with risk ledger,
    * automated ladder blueprint, macro radar, and drilldown telemetry.
@@ -5305,11 +5413,13 @@ export class TelegramAlertService {
     const isWin = outcome.netPnL > 0;
     const sign = outcome.netPnL >= 0 ? '+' : '';
     const rSign = (outcome.realizedR || 0) >= 0 ? '+' : '';
+    const rMultiple = outcome.realizedR !== undefined ? outcome.realizedR : 0;
+    const rLabel = rMultiple !== 0 ? ` · 1:${Math.abs(rMultiple).toFixed(1)} RR (${rSign}${rMultiple.toFixed(2)}R)` : '';
 
     await this.sendAlert({
       botToken: settings.telegramBotToken,
       chatId: settings.telegramChatId,
-      title: `${isWin ? '🏁 Trade Closed in Profit' : '🛑 Trade Closed in Loss'}: ${trade.symbol}`,
+      title: `${isWin ? '🏁 Trade Closed in Profit' : '🛑 Trade Closed in Loss'}: ${trade.symbol}${rLabel}`,
       body: `<b>Post-Trade Efficiency Scorecard:</b>\n` +
         `Harvested <b>${harvestedPips >= 0 ? '+' : ''}${harvestedPips.toFixed(1)} pips</b> (${captureEfficiency.toFixed(1)}% efficiency).\n` +
         `Execution Rating: <b>${rating}</b>\n\n` +
@@ -10589,6 +10699,9 @@ export class TelegramAlertService {
       reason?: string;
       cushionTicks?: number;
       accountName?: string;
+      realizedR?: number;
+      realizedPnL?: number;
+      currencySymbol?: string;
     }
   ): Promise<boolean> {
     const settings = user.liveWatcherSettings;
@@ -10607,7 +10720,7 @@ export class TelegramAlertService {
     const actionTitle = details.action === 'MODIFY_STOP_LOSS'
       ? '🛡️ STOP LOSS MODIFIED (TRUE BE)'
       : details.action === 'EXIT_POSITION'
-      ? '🎯 PARTIAL TARGET EXIT'
+      ? (details.realizedR !== undefined ? `🎯 PARTIAL TARGET EXIT (1:${details.realizedR.toFixed(1)} RR)` : '🎯 PARTIAL TARGET EXIT')
       : '⚡ AUTO ORDER EXECUTED';
 
     const text =
@@ -10616,6 +10729,8 @@ export class TelegramAlertService {
       `<b>Action:</b> ${details.action.replace(/_/g, ' ')}\n` +
       (details.quantity ? `<b>Executed Lots/Qty:</b> ${details.quantity}\n` : '') +
       (details.fillPrice ? `<b>Fill Price:</b> ${details.fillPrice}\n` : '') +
+      (details.realizedR !== undefined ? `<b>Realized RR:</b> <code>+${details.realizedR.toFixed(2)}R</code> (1:${details.realizedR.toFixed(1)} RR)\n` : '') +
+      (details.realizedPnL !== undefined ? `<b>Banked P&L:</b> ${details.currencySymbol || '$'}${details.realizedPnL.toFixed(2)}\n` : '') +
       (details.stopPrice ? `<b>New Stop Level:</b> ${details.stopPrice} (Fee Buffer + ${details.cushionTicks ?? 2}T Cushion)\n` : '') +
       (details.reason ? `<b>Trigger Rationale:</b> <i>${details.reason}</i>\n` : '') +
       (details.accountName ? `<b>Account:</b> ${details.accountName}\n` : '') +

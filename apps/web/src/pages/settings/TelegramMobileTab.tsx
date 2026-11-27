@@ -658,9 +658,9 @@ export function TelegramMobileTab({
                       onChange={(e) => setTelegramAlertEvents({ ...telegramAlertEvents, ladderMilestoneReached: e.target.checked })}
                     />
                   }
-                  label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🎯 Ladder Target Milestone (T1, T2)</Typography>}
+                  label={<Typography variant="caption" sx={{ fontWeight: 600 }}>🎯 RR Milestones (1:1, 1:2...) & Targets</Typography>}
                 />
-                <Tooltip title="Audition Target Chime" arrow>
+                <Tooltip title="Audition Target Chime (Dispatched for every RR whether auto-exec is armed or manual)" arrow>
                   <IconButton size="small" onClick={() => soundEngine.playTargetHit()} sx={{ color: 'success.main', p: 0.5 }}>
                     <VolumeUpRounded sx={{ fontSize: 16 }} />
                   </IconButton>

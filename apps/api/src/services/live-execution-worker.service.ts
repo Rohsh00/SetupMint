@@ -464,8 +464,15 @@ export class LiveExecutionWorker {
       }
     }
 
-    // 4. Target Ladder Step Auto-Execution
+    // 4. Target Ladder Steps & Real-Time RR Milestones (1:1, 1:2, 1:3, etc.)
     const executedStepsList = metric.executedLadderSteps || LiveWatcherService.deriveExecutedSteps(trade);
+    const tradeExecutedSteps = new Set<string>(executedStepsList);
+
+    const currentR = metric.unrealizedR !== null && metric.unrealizedR !== undefined ? metric.unrealizedR : 0;
+    const peakR = metric.giveback?.peakUnrealizedR ?? currentR;
+    const effectiveR = Math.max(currentR, peakR);
+
+    // 4A. Calculate and evaluate configured Target Ladder steps (T1, T2, T3)
     const ladder = calculateTargetLadder({
       entryPrice: metric.entryPrice,
       currentLtp: metric.currentLtp,
@@ -483,168 +490,272 @@ export class LiveExecutionWorker {
       executedLadderSteps: executedStepsList,
     });
 
-    if (!ladder || !ladder.steps) return;
+    if (ladder && ladder.steps) {
+      for (const step of ladder.steps) {
+        if (step.isFreeRunner) continue; // Free runner has no fixed target price trigger - handled in 4B
+        if (step.status === 'EXECUTED' || (!step.isActionable && step.status !== 'MET')) continue;
 
-    const tradeExecutedSteps = new Set<string>(executedStepsList);
+        const stepKey = `step${step.targetIndex}`;
+        const canonicalName = step.name.split(' ')[0]; // 'T1', 'T2'
+        const triggerKey = `ladder:${tradeId}:${stepKey}`;
+        const stepTargetR = step.targetIndex === 1
+          ? (rules.t1?.targetR ?? 1.0)
+          : step.targetIndex === 2
+          ? (rules.t2?.targetR ?? 2.0)
+          : (rules.t3?.targetR ?? 3.0);
+        const rrKey = `rr:${Math.round(stepTargetR)}`;
 
-    for (const step of ladder.steps) {
-      if (step.isFreeRunner) continue; // Free runner has no fixed target price trigger - it runs uncapped!
-      if (step.status === 'EXECUTED' || (!step.isActionable && step.status !== 'MET')) continue;
+        // In-memory check
+        if (this.executedMilestones.has(triggerKey)) continue;
 
-      const stepKey = `step${step.targetIndex}`;
-      const canonicalName = step.name.split(' ')[0]; // 'T1', 'T2'
-      const triggerKey = `ladder:${tradeId}:${stepKey}`;
-
-      // In-memory check
-      if (this.executedMilestones.has(triggerKey)) continue;
-
-      // Persistent database-derived check
-      if (
-        tradeExecutedSteps.has(stepKey) ||
-        tradeExecutedSteps.has(canonicalName) ||
-        tradeExecutedSteps.has(step.name) ||
-        tradeExecutedSteps.has(triggerKey)
-      ) {
-        this.executedMilestones.add(triggerKey);
-        continue;
-      }
-
-      const isStepAutoEnabled = step.autoExecuteEnabled !== undefined ? step.autoExecuteEnabled : effectiveAutoExecute;
-
-      if (!isStepAutoEnabled) {
-        // Just dispatch Telegram alert if enabled
-        this.executedMilestones.add(triggerKey);
-        if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-          const sym = TelegramAlertService.getTradeCurrencySymbol(trade);
-          TelegramAlertService.sendAlert({
-            botToken: watcherSettings.telegramBotToken,
-            chatId: watcherSettings.telegramChatId,
-            title: `🎯 Target ${step.targetIndex} (${step.name}) Reached: ${metric.symbol}`,
-            body: `${step.name} reached at ${sym}${metric.currentLtp}. Auto-execute is OFF. Action required: ${step.suggestedStopLabel}.`,
-            severity: 'SUCCESS',
-            metrics: {
-              LTP: `${sym}${metric.currentLtp}`,
-              Target: `${sym}${step.targetPrice}`,
-              PlannedExit: `${(step.plannedExitRatio * 100).toFixed(0)}% (${step.plannedExitQty} units)`,
-            },
-            buttons: [
-              [
-                { text: `🎯 Book ${step.name} & Lock BE`, callback_data: `book_50:${tradeId}` },
-                { text: '🚨 Exit 100%', callback_data: `exit:${tradeId}` },
-              ],
-            ],
-          }).catch(() => {});
+        // Persistent database-derived check
+        if (
+          tradeExecutedSteps.has(stepKey) ||
+          tradeExecutedSteps.has(canonicalName) ||
+          tradeExecutedSteps.has(step.name) ||
+          tradeExecutedSteps.has(triggerKey) ||
+          (stepTargetR % 1 === 0 && tradeExecutedSteps.has(rrKey))
+        ) {
+          this.executedMilestones.add(triggerKey);
+          continue;
         }
-        continue;
-      }
 
-      // Execute on exchange server-side
-      // ATOMIC MONGODB CLAIM: guarantees exactly one execution across all cluster nodes/restarts
-      const claimKeys = [stepKey, canonicalName, step.name, triggerKey];
-      const claimedTrade = await Trade.findOneAndUpdate(
-        {
-          _id: trade._id,
-          status: 'OPEN',
-          executedLadderSteps: { $nin: claimKeys },
-        },
-        {
-          $addToSet: { executedLadderSteps: { $each: claimKeys } },
-        },
-        { new: true }
-      );
+        const isStepAutoEnabled = step.autoExecuteEnabled !== undefined ? step.autoExecuteEnabled : effectiveAutoExecute;
 
-      if (!claimedTrade) {
-        // Step was already executed or claimed by another worker cycle/tab!
+        if (!isStepAutoEnabled) {
+          // Auto-execute is OFF: Atomically claim in database so alert is persistent across restarts
+          const claimKeys = [stepKey, canonicalName, step.name, triggerKey];
+          if (stepTargetR % 1 === 0) {
+            claimKeys.push(rrKey, `1:${Math.round(stepTargetR)}`, `${Math.round(stepTargetR)}R`);
+          }
+          const claimedTrade = await Trade.findOneAndUpdate(
+            {
+              _id: trade._id,
+              status: 'OPEN',
+              executedLadderSteps: { $nin: claimKeys },
+            },
+            {
+              $addToSet: { executedLadderSteps: { $each: claimKeys } },
+            },
+            { new: true }
+          );
+
+          if (!claimedTrade) {
+            this.executedMilestones.add(triggerKey);
+            continue;
+          }
+
+          this.executedMilestones.add(triggerKey);
+          for (const k of claimKeys) tradeExecutedSteps.add(k);
+
+          // Dispatch RR Milestone notification to Telegram
+          if (
+            watcherSettings?.telegramAlertsEnabled &&
+            watcherSettings?.telegramBotToken &&
+            watcherSettings?.telegramChatId &&
+            watcherSettings?.telegramAlertEvents?.ladderMilestoneReached !== false
+          ) {
+            TelegramAlertService.notifyRRMilestone(user, trade, {
+              multipleR: stepTargetR,
+              rrLabel: `1:${stepTargetR}`,
+              currentLtp: metric.currentLtp,
+              floatingNetPnL: metric.floatingNetPnL,
+              currentR: metric.unrealizedR ?? stepTargetR,
+              entryPrice: metric.entryPrice,
+              stopLoss: metric.stopLoss ?? undefined,
+              initialStopLoss: metric.initialStopLoss ?? undefined,
+              autoExecuteArmed: false,
+              stepName: step.name,
+            }).catch((err: any) => console.warn(`[LiveExecutionWorker] Target notification failed for ${metric.symbol}:`, err.message));
+          }
+          continue;
+        }
+
+        // Execute on exchange server-side
+        // ATOMIC MONGODB CLAIM: guarantees exactly one execution across all cluster nodes/restarts
+        const claimKeys = [stepKey, canonicalName, step.name, triggerKey];
+        if (stepTargetR % 1 === 0) {
+          claimKeys.push(rrKey, `1:${Math.round(stepTargetR)}`, `${Math.round(stepTargetR)}R`);
+        }
+        const claimedTrade = await Trade.findOneAndUpdate(
+          {
+            _id: trade._id,
+            status: 'OPEN',
+            executedLadderSteps: { $nin: claimKeys },
+          },
+          {
+            $addToSet: { executedLadderSteps: { $each: claimKeys } },
+          },
+          { new: true }
+        );
+
+        if (!claimedTrade) {
+          // Step was already executed or claimed by another worker cycle/tab!
+          this.executedMilestones.add(triggerKey);
+          continue;
+        }
+
         this.executedMilestones.add(triggerKey);
-        continue;
-      }
+        for (const k of claimKeys) tradeExecutedSteps.add(k);
+        console.log(`[LiveExecutionWorker] Executing ${step.name} server-side for trade ${tradeId} (${metric.symbol})...`);
 
-      this.executedMilestones.add(triggerKey);
-      for (const k of claimKeys) tradeExecutedSteps.add(k);
-      console.log(`[LiveExecutionWorker] Executing ${step.name} server-side for trade ${tradeId} (${metric.symbol})...`);
+        const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
+        const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
 
-      const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
-      const ticket = isMt5 ? Mt5CommandService.extractTicket(trade) : null;
+        // 1. Partial or Full Exit via universal execution pipeline with institutional microstructure protections
+        if (step.plannedExitQty > 0) {
+          await ExecutionPipelineService.execute({
+            userId: user._id.toString(),
+            accountId: trade.accountId,
+            tradeId: tradeId,
+            action: 'EXIT_POSITION',
+            executeBroker: true,
+            isAutomated: true,
+            institutionalRules: {
+              executionAlgorithm: rules.executionAlgorithm,
+              maxSlippagePercent: rules.maxSlippagePercent,
+              maxSlippagePoints: rules.maxSlippagePoints,
+              spreadSurgeProtectionEnabled: rules.spreadSurgeProtectionEnabled,
+              spreadSurgeMultiplier: rules.spreadSurgeMultiplier,
+              antiLoopProtectionEnabled: rules.antiLoopProtectionEnabled,
+              openingBellFreezeEnabled: rules.openingBellFreezeEnabled,
+              openingBellFreezeMinutes: rules.openingBellFreezeMinutes,
+              currentLtp: metric.currentLtp,
+              targetPrice: step.targetPrice,
+            },
+            payload: {
+              quantity: step.plannedExitQty,
+              direction: metric.direction,
+              exitReason: `Auto-Executed ${step.name}`,
+            },
+          });
+        }
 
-      // 1. Partial or Full Exit via universal execution pipeline with institutional microstructure protections
-      if (step.plannedExitQty > 0) {
-        await ExecutionPipelineService.execute({
-          userId: user._id.toString(),
-          accountId: trade.accountId,
-          tradeId: tradeId,
-          action: 'EXIT_POSITION',
-          executeBroker: true,
-          isAutomated: true,
-          institutionalRules: {
-            executionAlgorithm: rules.executionAlgorithm,
-            maxSlippagePercent: rules.maxSlippagePercent,
-            maxSlippagePoints: rules.maxSlippagePoints,
-            spreadSurgeProtectionEnabled: rules.spreadSurgeProtectionEnabled,
-            spreadSurgeMultiplier: rules.spreadSurgeMultiplier,
-            antiLoopProtectionEnabled: rules.antiLoopProtectionEnabled,
-            openingBellFreezeEnabled: rules.openingBellFreezeEnabled,
-            openingBellFreezeMinutes: rules.openingBellFreezeMinutes,
+        // 2. Trailing SL modification via universal execution pipeline
+        // Enforce strict favorable-only trailing invariant: only trail if new SL tightens risk!
+        const currentSl = trade.risk?.currentStopLoss;
+        const suggestedSl = step.suggestedStopLoss;
+        const isLong = metric.direction === 'LONG';
+        const isSlFavorable =
+          suggestedSl &&
+          suggestedSl > 0 &&
+          (!currentSl || (isLong ? suggestedSl > currentSl : suggestedSl < currentSl));
+
+        if (isSlFavorable) {
+          await ExecutionPipelineService.execute({
+            userId: user._id.toString(),
+            accountId: trade.accountId,
+            tradeId: tradeId,
+            action: 'MODIFY_STOP_LOSS',
+            executeBroker: true,
+            isAutomated: true,
+            payload: {
+              stopPrice: suggestedSl,
+            },
+          }).catch((slErr: any) => console.warn(`[LiveExecutionWorker] SL trailing failed for ${metric.symbol}:`, slErr.message));
+        }
+
+        // 3. For MT5, if runner mode is active, clear Take Profit to 0 so runner runs uncapped
+        const isBecomingRunner =
+          rules.targetMode === 'T1_FREE_RUNNER' ||
+          (Boolean(rules.t3?.isFreeRunner) && (step.targetIndex >= 2 || !rules.t2?.enabled));
+
+        if (isMt5 && ticket && isBecomingRunner) {
+          await Mt5CommandService.queueModifyTp({
+            userId: user._id.toString(),
+            accountId: trade.accountId?.toString(),
+            tradeId: tradeId,
+            ticket,
+            takeProfit: 0,
+          }).catch((err: any) => console.warn(`[LiveExecutionWorker] Failed to clear MT5 TP:`, err.message));
+        }
+
+        // 4. Telegram alert for auto-execution with RR Realized
+        if (
+          watcherSettings?.telegramAlertsEnabled &&
+          watcherSettings?.telegramBotToken &&
+          watcherSettings?.telegramChatId &&
+          watcherSettings?.telegramAlertEvents?.ladderMilestoneReached !== false
+        ) {
+          TelegramAlertService.notifyRRMilestone(user, trade, {
+            multipleR: stepTargetR,
+            rrLabel: `1:${stepTargetR}`,
             currentLtp: metric.currentLtp,
-            targetPrice: step.targetPrice,
-          },
-          payload: {
-            quantity: step.plannedExitQty,
-            direction: metric.direction,
-            exitReason: `Auto-Executed ${step.name}`,
-          },
-        });
+            floatingNetPnL: metric.floatingNetPnL,
+            currentR: metric.unrealizedR ?? stepTargetR,
+            entryPrice: metric.entryPrice,
+            stopLoss: metric.stopLoss ?? undefined,
+            initialStopLoss: metric.initialStopLoss ?? undefined,
+            autoExecuteArmed: true,
+            actionTaken: `Auto-Exited ${step.plannedExitQty} units & Trailed SL`,
+            stepName: step.name,
+            executedQty: step.plannedExitQty,
+            newStopLoss: isSlFavorable ? suggestedSl : undefined,
+          }).catch((err: any) => console.warn(`[LiveExecutionWorker] Auto alert failed for ${metric.symbol}:`, err.message));
+        }
       }
+    }
 
-      // 2. Trailing SL modification via universal execution pipeline
-      // Enforce strict favorable-only trailing invariant: only trail if new SL tightens risk!
-      const currentSl = trade.risk?.currentStopLoss;
-      const suggestedSl = step.suggestedStopLoss;
-      const isLong = metric.direction === 'LONG';
-      const isSlFavorable =
-        suggestedSl &&
-        suggestedSl > 0 &&
-        (!currentSl || (isLong ? suggestedSl > currentSl : suggestedSl < currentSl));
+    // 4B. Real-time RR Milestone Alerts for every RR (1:1, 1:2, 1:3, 1:4...) whether auto-execution is armed or not
+    if (effectiveR >= 1.0) {
+      const maxRR = Math.min(20, Math.floor(effectiveR));
+      for (let r = 1; r <= maxRR; r++) {
+        const rrKey = `rr:${r}`;
+        const rrTriggerKey = `ladder:${tradeId}:${rrKey}`;
 
-      if (isSlFavorable) {
-        await ExecutionPipelineService.execute({
-          userId: user._id.toString(),
-          accountId: trade.accountId,
-          tradeId: tradeId,
-          action: 'MODIFY_STOP_LOSS',
-          executeBroker: true,
-          isAutomated: true,
-          payload: {
-            stopPrice: suggestedSl,
+        if (this.executedMilestones.has(rrTriggerKey)) continue;
+
+        if (
+          tradeExecutedSteps.has(rrKey) ||
+          tradeExecutedSteps.has(`1:${r}`) ||
+          tradeExecutedSteps.has(`${r}R`) ||
+          tradeExecutedSteps.has(rrTriggerKey)
+        ) {
+          this.executedMilestones.add(rrTriggerKey);
+          continue;
+        }
+
+        // Atomically claim in database to prevent duplicates across reloads/workers
+        const claimKeys = [rrKey, `1:${r}`, `${r}R`, rrTriggerKey];
+        const claimedTrade = await Trade.findOneAndUpdate(
+          {
+            _id: trade._id,
+            status: 'OPEN',
+            executedLadderSteps: { $nin: claimKeys },
           },
-        }).catch((slErr: any) => console.warn(`[LiveExecutionWorker] SL trailing failed for ${metric.symbol}:`, slErr.message));
-      }
+          {
+            $addToSet: { executedLadderSteps: { $each: claimKeys } },
+          },
+          { new: true }
+        );
 
-      // 3. For MT5, if runner mode is active, clear Take Profit to 0 so runner runs uncapped
-      const isBecomingRunner =
-        rules.targetMode === 'T1_FREE_RUNNER' ||
-        (Boolean(rules.t3?.isFreeRunner) && (step.targetIndex >= 2 || !rules.t2?.enabled));
+        if (!claimedTrade) {
+          this.executedMilestones.add(rrTriggerKey);
+          continue;
+        }
 
-      if (isMt5 && ticket && isBecomingRunner) {
-        await Mt5CommandService.queueModifyTp({
-          userId: user._id.toString(),
-          accountId: trade.accountId?.toString(),
-          tradeId: tradeId,
-          ticket,
-          takeProfit: 0,
-        }).catch((err: any) => console.warn(`[LiveExecutionWorker] Failed to clear MT5 TP:`, err.message));
-      }
+        this.executedMilestones.add(rrTriggerKey);
+        for (const k of claimKeys) tradeExecutedSteps.add(k);
 
-      // 4. Telegram success alert
-      if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-        const currSym = TelegramAlertService.getTradeCurrencySymbol(trade);
-        const brokerLabel = isMt5 ? 'MT5 (Elefin)' : 'Broker';
-        TelegramAlertService.sendAlert({
-          botToken: watcherSettings.telegramBotToken,
-          chatId: watcherSettings.telegramChatId,
-          title: `⚡ Auto-Executed ${step.name}: ${metric.symbol}`,
-          body: `SetupMint auto-executed ${step.plannedExitQty} units exit and trailed SL to ${currSym}${step.suggestedStopLoss} on ${brokerLabel}.`,
-          severity: 'SUCCESS',
-        }).catch(() => {});
+        // Dispatch RR Milestone notification to Telegram
+        if (
+          watcherSettings?.telegramAlertsEnabled &&
+          watcherSettings?.telegramBotToken &&
+          watcherSettings?.telegramChatId &&
+          watcherSettings?.telegramAlertEvents?.ladderMilestoneReached !== false
+        ) {
+          TelegramAlertService.notifyRRMilestone(user, trade, {
+            multipleR: r,
+            rrLabel: `1:${r}`,
+            currentLtp: metric.currentLtp,
+            floatingNetPnL: metric.floatingNetPnL,
+            currentR: metric.unrealizedR ?? r,
+            entryPrice: metric.entryPrice,
+            stopLoss: metric.stopLoss ?? undefined,
+            initialStopLoss: metric.initialStopLoss ?? undefined,
+            autoExecuteArmed: effectiveAutoExecute,
+          }).catch((err: any) => console.warn(`[LiveExecutionWorker] Failed to dispatch ${r}R milestone alert:`, err.message));
+        }
       }
     }
 

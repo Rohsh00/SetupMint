@@ -1476,7 +1476,7 @@ export function ExecutionSettingsTab({
                     </Typography>
                   </Box>
                   <Typography variant="caption" color="text.secondary">
-                    Receives instant Telegram pings whenever partial ladder exits, True BE modifications, or giveback square-offs execute.
+                    Receives instant Telegram pings whenever partial ladder exits, True BE modifications, or giveback square-offs execute. (RR milestone alerts 1:1, 1:2... are delivered regardless of auto-execution status).
                   </Typography>
                 </Box>
                 <Switch

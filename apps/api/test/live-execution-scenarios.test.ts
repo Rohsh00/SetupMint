@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import mongoose from 'mongoose';
 import { buildApp } from '../src/server.js';
@@ -7,6 +7,7 @@ import { TradingAccount, Trade, User, Mt5Command } from '../src/db/models/index.
 import { LiveExecutionWorker } from '../src/services/live-execution-worker.service.js';
 import { Mt5CommandService } from '../src/services/mt5-command.service.js';
 import { ExecutionPipelineService } from '../src/services/execution-pipeline.service.js';
+import { TelegramAlertService } from '../src/services/telegram-alert.service.js';
 import { calculateTargetLadder } from '@tradevault/financial-engine';
 
 describe('Live Auto-Execution Scenarios & Target Re-conquer Invariants', { timeout: 25000 }, () => {
@@ -633,5 +634,219 @@ describe('Live Auto-Execution Scenarios & Target Re-conquer Invariants', { timeo
       },
     });
     expect(slResB.statusCode).toBe(404);
+  });
+
+  it('Scenario 8: Real-Time RR Milestone Notifications (1:1, 1:2, 1:3) When Auto-Execution is OFF', async () => {
+    // Configure User A: Auto-execution is OFF, Telegram is ENABLED
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        'liveWatcherSettings.defaultAutoExecute': false,
+        'liveWatcherSettings.telegramAlertsEnabled': true,
+        'liveWatcherSettings.telegramBotToken': '123456789:ABCDefghIJKLmnOPQRstuvWXyz_012345',
+        'liveWatcherSettings.telegramChatId': '987654321',
+        'liveWatcherSettings.telegramAlertEvents.ladderMilestoneReached': true,
+      },
+    });
+
+    const ticket = 9917477908;
+    const trade = await Trade.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: new mongoose.Types.ObjectId(accountId),
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      executionMode: 'SIMPLE',
+      assetClass: 'FOREX',
+      exchange: 'FOREX',
+      marketSegment: 'FOREX',
+      currency: 'USD',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      lotSize: 1,
+      simpleExecution: {
+        entryPrice: 2700.00,
+        quantity: 0.02,
+      },
+      risk: {
+        plannedEntryPrice: 2700.00,
+        initialStopLoss: 2690.00,
+        currentStopLoss: 2690.00,
+      },
+      tags: [`MT5_TICKET_${ticket}`, 'ELEFIN'],
+      customLadderRules: {
+        autoExecuteEnabled: false,
+      },
+      executedLadderSteps: [],
+    });
+    createdTradeIds.push(trade._id);
+
+    const alertSpy = vi.spyOn(TelegramAlertService, 'notifyRRMilestone').mockResolvedValue(true);
+
+    try {
+      // Step 1: Price hits 2710.00 (1:1 RR Milestone reached, 10 pts risk = 1.0R)
+      Mt5CommandService.recordPositionQuote(ticket, {
+        curPrice: 2710.00,
+        accountId,
+        symbol: 'XAUUSD',
+      });
+
+      await LiveExecutionWorker.runCycle(userId);
+
+      // Verify notifyRRMilestone was called for 1:1 RR
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          multipleR: 1,
+          rrLabel: '1:1',
+          autoExecuteArmed: false,
+        })
+      );
+
+      // Zero broker orders executed because autoExecute is OFF
+      const commands1 = await Mt5Command.find({ userId: new mongoose.Types.ObjectId(userId), ticket });
+      expect(commands1).toHaveLength(0);
+
+      // Verify DB executedLadderSteps contains rr:1
+      const tradeAfter1R = await Trade.findById(trade._id);
+      expect(tradeAfter1R?.executedLadderSteps).toContain('rr:1');
+      expect(tradeAfter1R?.executedLadderSteps).toContain('1:1');
+
+      alertSpy.mockClear();
+
+      // Step 2: Price hits 2720.00 (1:2 RR Milestone reached, 20 pts gain = 2.0R)
+      Mt5CommandService.recordPositionQuote(ticket, {
+        curPrice: 2720.00,
+        accountId,
+        symbol: 'XAUUSD',
+      });
+
+      await LiveExecutionWorker.runCycle(userId);
+
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          multipleR: 2,
+          rrLabel: '1:2',
+          autoExecuteArmed: false,
+        })
+      );
+
+      const tradeAfter2R = await Trade.findById(trade._id);
+      expect(tradeAfter2R?.executedLadderSteps).toContain('rr:2');
+      expect(tradeAfter2R?.executedLadderSteps).toContain('1:2');
+
+      alertSpy.mockClear();
+
+      // Step 3: Price hits 2730.00 (1:3 RR Milestone reached, 30 pts gain = 3.0R)
+      Mt5CommandService.recordPositionQuote(ticket, {
+        curPrice: 2730.00,
+        accountId,
+        symbol: 'XAUUSD',
+      });
+
+      await LiveExecutionWorker.runCycle(userId);
+
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          multipleR: 3,
+          rrLabel: '1:3',
+          autoExecuteArmed: false,
+        })
+      );
+
+      const tradeAfter3R = await Trade.findById(trade._id);
+      expect(tradeAfter3R?.executedLadderSteps).toContain('rr:3');
+      expect(tradeAfter3R?.executedLadderSteps).toContain('1:3');
+
+      alertSpy.mockClear();
+
+      // Step 4: Idempotency check: Re-run cycle at same price - must NOT trigger duplicate alerts
+      await LiveExecutionWorker.runCycle(userId);
+      expect(alertSpy).not.toHaveBeenCalled();
+    } finally {
+      alertSpy.mockRestore();
+    }
+  });
+
+  it('Scenario 9: Free Runner RR Milestones (1:3, 1:4) Dispatched Even When Auto-Execution is Armed', async () => {
+    // Configure User A: Auto-execution is ARMED
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        'liveWatcherSettings.defaultAutoExecute': true,
+        'liveWatcherSettings.telegramAlertsEnabled': true,
+        'liveWatcherSettings.telegramBotToken': '123456789:ABCDefghIJKLmnOPQRstuvWXyz_012345',
+        'liveWatcherSettings.telegramChatId': '987654321',
+        'liveWatcherSettings.telegramAlertEvents.ladderMilestoneReached': true,
+      },
+    });
+
+    const ticket = 9917477909;
+    const trade = await Trade.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      accountId: new mongoose.Types.ObjectId(accountId),
+      symbol: 'XAUUSD',
+      direction: 'LONG',
+      status: 'OPEN',
+      executionMode: 'SIMPLE',
+      assetClass: 'FOREX',
+      exchange: 'FOREX',
+      marketSegment: 'FOREX',
+      currency: 'USD',
+      tradeDate: new Date(),
+      entryTime: new Date(),
+      lotSize: 1,
+      simpleExecution: {
+        entryPrice: 2700.00,
+        quantity: 0.04,
+      },
+      risk: {
+        plannedEntryPrice: 2700.00,
+        initialStopLoss: 2690.00,
+        currentStopLoss: 2690.00,
+      },
+      tags: [`MT5_TICKET_${ticket}`, 'ELEFIN'],
+      customLadderRules: {
+        autoExecuteEnabled: true,
+        targetMode: 'TWO_TARGETS_RUNNER',
+        t1: { enabled: true, rMultiple: 1.0, exitRatio: 0.25, autoExecuteEnabled: true },
+        t2: { enabled: true, rMultiple: 2.0, exitRatio: 0.25, autoExecuteEnabled: true },
+        t3: { enabled: true, isFreeRunner: true }, // Free runner
+      },
+      executedLadderSteps: ['step1', 'T1', 'step2', 'T2', 'rr:1', 'rr:2'], // T1 and T2 already completed
+    });
+    createdTradeIds.push(trade._id);
+
+    const alertSpy = vi.spyOn(TelegramAlertService, 'notifyRRMilestone').mockResolvedValue(true);
+
+    try {
+      // Runner reaches 2730.00 (+3.0R = 1:3 RR)
+      Mt5CommandService.recordPositionQuote(ticket, {
+        curPrice: 2730.00,
+        accountId,
+        symbol: 'XAUUSD',
+      });
+
+      await LiveExecutionWorker.runCycle(userId);
+
+      // Even though runner has no fixed bracket trigger, 1:3 RR milestone must be notified to Telegram!
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          multipleR: 3,
+          rrLabel: '1:3',
+          autoExecuteArmed: true,
+        })
+      );
+
+      const tradeInDb = await Trade.findById(trade._id);
+      expect(tradeInDb?.executedLadderSteps).toContain('rr:3');
+    } finally {
+      alertSpy.mockRestore();
+    }
   });
 });

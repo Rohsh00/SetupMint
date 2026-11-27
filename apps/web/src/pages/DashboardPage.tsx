@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useOutletContext, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { dateToIsoWeek, getAdjacentIsoWeek } from '@tradevault/shared';
@@ -53,6 +53,7 @@ import { formatCurrency, formatPercent, formatR, formatDate } from '../lib/utils
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { MultiPanelEquityCurve } from '../components/dashboard/MultiPanelEquityCurve.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
+import { useAuth } from '../context/AuthContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
@@ -67,7 +68,16 @@ export function DashboardPage() {
   const { startDate, endDate, preset } = useDateRange();
   const { scope, isPropMode, queryParams, selectedAccountId, accounts, propAccounts, currency: scopeCurrency, isMultiCurrency, currencies } = useAccountScope();
   const caps = useAccountCapabilities();
-  const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(false);
+  const { user } = useAuth();
+  const [showNormalMarketChart, setShowNormalMarketChart] = useState<boolean>(() =>
+    Boolean(user?.liveWatcherSettings?.displaySettings?.autoExpandCharts)
+  );
+
+  useEffect(() => {
+    if (user?.liveWatcherSettings?.displaySettings?.autoExpandCharts !== undefined) {
+      setShowNormalMarketChart(Boolean(user.liveWatcherSettings.displaySettings.autoExpandCharts));
+    }
+  }, [user?.liveWatcherSettings?.displaySettings?.autoExpandCharts]);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 

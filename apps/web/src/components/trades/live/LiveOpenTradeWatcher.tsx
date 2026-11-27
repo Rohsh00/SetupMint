@@ -745,6 +745,15 @@ export function LiveOpenTradeWatcher({
   // Active Terminal Chart selection & position overlay tracking
   const [selectedTerminalSymbol, setSelectedTerminalSymbol] = useState<string | null>(null);
 
+  // Candlestick Terminal Chart collapse/expand state (respects user's autoExpandCharts setting)
+  const [isChartExpanded, setIsChartExpanded] = useState<boolean>(() =>
+    Boolean(displaySettings.autoExpandCharts)
+  );
+
+  useEffect(() => {
+    setIsChartExpanded(Boolean(displaySettings.autoExpandCharts));
+  }, [displaySettings.autoExpandCharts]);
+
   const primaryPosition = sortedPositions.length > 0 ? sortedPositions[0] : null;
 
   const activeTerminalSymbol = useMemo(() => {
@@ -2546,19 +2555,100 @@ export function LiveOpenTradeWatcher({
               </Grid>
             ) : (
               <>
-                {/* 1. Live Candlestick Terminal Chart (Always active 24/5 irrespective of trade status, continuous ticks & candles like Elefin / MT5 Desktop) */}
-                <Box sx={{ pt: 2, pb: 1.5 }}>
-                  <LiveMarketChart
-                    mode={isPropMode ? 'PROP' : 'NORMAL'}
-                    initialSymbol={activeTerminalSymbol}
-                    lockedSymbol={false}
-                    compact={false}
-                    height={400}
-                    showIndicators={displaySettings.showChartIndicators}
-                    showVolume={displaySettings.showChartVolume}
-                    showTradeLevels={displaySettings.showChartTradeLevels}
-                    positionOverlay={activeTerminalOverlay}
-                  />
+                {/* 1. Live Candlestick Terminal Chart (Respects autoExpandCharts setting; collapsible to keep interface uncluttered) */}
+                <Box sx={{ pt: 2, pb: isChartExpanded ? 1.5 : 0.75 }}>
+                  <Box
+                    onClick={() => setIsChartExpanded((prev) => !prev)}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      p: 1.25,
+                      px: 1.75,
+                      mb: isChartExpanded ? 1.25 : 0,
+                      borderRadius: '10px',
+                      bgcolor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
+                      border: '1px solid',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
+                        borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.16)',
+                      },
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
+                      <CandlestickChartRoundedIcon sx={{ fontSize: 18, color: '#8B5CF6' }} />
+                      <Typography variant="body2" sx={{ fontWeight: 700, fontSize: '0.8125rem' }}>
+                        Live Candlestick Terminal Chart
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={activeTerminalSymbol}
+                        sx={{
+                          height: 20,
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          bgcolor: alpha('#8B5CF6', 0.15),
+                          color: '#8B5CF6',
+                          border: '1px solid',
+                          borderColor: alpha('#8B5CF6', 0.3),
+                        }}
+                      />
+                      {activeTerminalOverlay && (
+                        <Chip
+                          size="small"
+                          label={`${activeTerminalOverlay.direction} ${activeTerminalOverlay.quantity ? `${activeTerminalOverlay.quantity} lots` : ''}`}
+                          sx={{
+                            height: 20,
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            bgcolor:
+                              activeTerminalOverlay.direction === 'LONG'
+                                ? 'rgba(16, 185, 129, 0.12)'
+                                : 'rgba(239, 68, 68, 0.12)',
+                            color: activeTerminalOverlay.direction === 'LONG' ? '#10B981' : '#EF4444',
+                          }}
+                        />
+                      )}
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: 'text.secondary',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {isChartExpanded ? 'Collapse Chart' : 'Expand Chart'}
+                      </Typography>
+                      <IconButton size="small" sx={{ p: 0.25 }}>
+                        {isChartExpanded ? (
+                          <ExpandLessRoundedIcon sx={{ fontSize: 18 }} />
+                        ) : (
+                          <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />
+                        )}
+                      </IconButton>
+                    </Box>
+                  </Box>
+
+                  <Collapse in={isChartExpanded} unmountOnExit={false}>
+                    <LiveMarketChart
+                      mode={isPropMode ? 'PROP' : 'NORMAL'}
+                      initialSymbol={activeTerminalSymbol}
+                      lockedSymbol={false}
+                      compact={false}
+                      height={400}
+                      showIndicators={displaySettings.showChartIndicators}
+                      showVolume={displaySettings.showChartVolume}
+                      showTradeLevels={displaySettings.showChartTradeLevels}
+                      positionOverlay={activeTerminalOverlay}
+                    />
+                  </Collapse>
                 </Box>
 
                 {openTradesCount === 0 ? (
@@ -3946,6 +4036,7 @@ export function LiveOpenTradeWatcher({
                               startIcon={<CandlestickChartRoundedIcon sx={{ fontSize: 13 }} />}
                               onClick={() => {
                                 setSelectedTerminalSymbol(pos.symbol);
+                                setIsChartExpanded(true);
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                               }}
                               sx={{

@@ -41,6 +41,7 @@ import { api } from '../../lib/api.js';
 import { formatCurrency, formatPercent } from '../../lib/utils.js';
 import { useTradeDrilldown } from '../../context/TradeDrillContext.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
+import { useAuth } from '../../context/AuthContext.js';
 import { toast } from '../../context/ToastContext.js';
 import { PropLiveMarketChart } from './PropLiveMarketChart.js';
 
@@ -118,8 +119,17 @@ export function PropChallengePanel() {
   // Monte Carlo Scenario Mode ('actual' vs 'target1to2')
   const [mcScenarioMode, setMcScenarioMode] = useState<'actual' | 'target1to2'>('actual');
 
-  // Live Prop Market Chart Terminal toggle
-  const [showLiveChart, setShowLiveChart] = useState<boolean>(false);
+  // Live Prop Market Chart Terminal toggle (respects autoExpandCharts setting)
+  const { user } = useAuth();
+  const [showLiveChart, setShowLiveChart] = useState<boolean>(() =>
+    Boolean(user?.liveWatcherSettings?.displaySettings?.autoExpandCharts)
+  );
+
+  React.useEffect(() => {
+    if (user?.liveWatcherSettings?.displaySettings?.autoExpandCharts !== undefined) {
+      setShowLiveChart(Boolean(user.liveWatcherSettings.displaySettings.autoExpandCharts));
+    }
+  }, [user?.liveWatcherSettings?.displaySettings?.autoExpandCharts]);
 
   // Ledger & Phase Modal State
   const [ledgerModalAcc, setLedgerModalAcc] = useState<any | null>(null);

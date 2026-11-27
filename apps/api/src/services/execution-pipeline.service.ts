@@ -254,13 +254,42 @@ export class ExecutionPipelineService {
       if (req.executeBroker) {
         if (req.action === 'MODIFY_STOP_LOSS') {
           if (!req.payload.stopPrice) throw new Error('Stop price is required for stop loss modification');
-          brokerResult = await adapter.modifyStopLoss({
-            userId: userOid,
-            account,
-            trade,
-            newStopLoss: req.payload.stopPrice,
-            takeProfit: req.payload.takeProfit,
-          });
+
+          // Guard against redundant duplicate SL calls and moving trailing stop backwards (increasing risk)
+          const currentSl = trade?.risk?.currentStopLoss;
+          if (currentSl !== undefined && currentSl !== null) {
+            const isLong = (trade?.direction || req.payload.direction) === 'LONG';
+            const newSl = Number(req.payload.stopPrice);
+            if (newSl === currentSl) {
+              brokerResult = {
+                success: true,
+                message: `Stop Loss already configured at ${currentSl}`,
+                action: 'UNCHANGED',
+              };
+            } else if (req.isAutomated && ((isLong && newSl < currentSl) || (!isLong && newSl > currentSl))) {
+              brokerResult = {
+                success: true,
+                message: `Automated trailing held: candidate stop (${newSl}) cannot loosen risk relative to current stop (${currentSl})`,
+                action: 'HELD_RISK_PROTECTION',
+              };
+            } else {
+              brokerResult = await adapter.modifyStopLoss({
+                userId: userOid,
+                account,
+                trade,
+                newStopLoss: req.payload.stopPrice,
+                takeProfit: req.payload.takeProfit,
+              });
+            }
+          } else {
+            brokerResult = await adapter.modifyStopLoss({
+              userId: userOid,
+              account,
+              trade,
+              newStopLoss: req.payload.stopPrice,
+              takeProfit: req.payload.takeProfit,
+            });
+          }
         } else if (req.action === 'EXIT_POSITION') {
           brokerResult = await adapter.exitPosition({
             userId: userOid,
@@ -302,12 +331,27 @@ export class ExecutionPipelineService {
       };
 
       if (trade) {
-        if (req.action === 'MODIFY_STOP_LOSS' && req.payload.stopPrice) {
+        if (req.action === 'MODIFY_STOP_LOSS' && req.payload.stopPrice && brokerResult?.action !== 'HELD_RISK_PROTECTION') {
           if (!trade.risk) trade.risk = {};
           if (!trade.risk.initialStopLoss) {
             trade.risk.initialStopLoss = req.payload.stopPrice;
           }
           trade.risk.currentStopLoss = req.payload.stopPrice;
+        }
+
+        if (req.action === 'EXIT_POSITION') {
+          if (!Array.isArray(trade.executedLadderSteps)) trade.executedLadderSteps = [];
+          const reason = String(req.payload.exitReason || req.payload.reason || '');
+          if (/T1|step1|target\s*1/i.test(reason)) {
+            trade.executedLadderSteps.push('step1', 'T1');
+          }
+          if (/T2|step2|target\s*2/i.test(reason)) {
+            trade.executedLadderSteps.push('step2', 'T2');
+          }
+          if (/giveback/i.test(reason)) {
+            trade.executedLadderSteps.push(`giveback_auto:${trade._id}`);
+          }
+          trade.executedLadderSteps = Array.from(new Set(trade.executedLadderSteps));
         }
 
         if (!Array.isArray(trade.auditLog)) trade.auditLog = [];

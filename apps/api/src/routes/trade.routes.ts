@@ -2739,6 +2739,10 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
     trade.calculated = recalculated;
 
+    if (!Array.isArray(trade.executedLadderSteps)) trade.executedLadderSteps = [];
+    trade.executedLadderSteps.push(`step${targetIndex}`, `T${targetIndex}`, label);
+    trade.executedLadderSteps = Array.from(new Set(trade.executedLadderSteps));
+
     trade.auditLog.push({
       action: `LADDER_STEP_${targetIndex}`,
       timestamp: new Date(),

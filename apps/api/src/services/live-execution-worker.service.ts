@@ -54,26 +54,39 @@ export class LiveExecutionWorker {
   }
 
   /**
-   * Executes a single evaluation cycle across all active users with open trades.
+   * Resets the in-memory cache of executed milestones (simulates server restart).
    */
-  static async runCycle(): Promise<void> {
-    // 1. Find all users across connected brokers (FYERS), active MT5 accounts, or active OPEN trades
-    const connectedBrokers = await BrokerIntegration.find({
-      broker: 'FYERS',
-      status: 'CONNECTED',
-    }).lean();
+  static resetMilestones(): void {
+    this.executedMilestones.clear();
+  }
 
-    const mt5Accounts = await TradingAccount.find({
-      broker: 'ELEFIN_MT5',
-      status: 'ACTIVE',
-    }).select('userId').lean();
-
-    const openTradeUserIds = await Trade.distinct('userId', { status: 'OPEN' });
-
+  /**
+   * Executes a single evaluation cycle across all active users with open trades (or a specific target user).
+   */
+  static async runCycle(targetUserId?: string): Promise<void> {
     const userIdsSet = new Set<string>();
-    for (const b of connectedBrokers) if (b.userId) userIdsSet.add(b.userId.toString());
-    for (const a of mt5Accounts) if (a.userId) userIdsSet.add(a.userId.toString());
-    for (const u of openTradeUserIds) if (u) userIdsSet.add(u.toString());
+    let connectedBrokers: any[] = [];
+
+    if (targetUserId) {
+      userIdsSet.add(targetUserId);
+    } else {
+      // 1. Find all users across connected brokers (FYERS), active MT5 accounts, or active OPEN trades
+      connectedBrokers = await BrokerIntegration.find({
+        broker: 'FYERS',
+        status: 'CONNECTED',
+      }).lean();
+
+      const mt5Accounts = await TradingAccount.find({
+        broker: 'ELEFIN_MT5',
+        status: 'ACTIVE',
+      }).select('userId').lean();
+
+      const openTradeUserIds = await Trade.distinct('userId', { status: 'OPEN' });
+
+      for (const b of connectedBrokers) if (b.userId) userIdsSet.add(b.userId.toString());
+      for (const a of mt5Accounts) if (a.userId) userIdsSet.add(a.userId.toString());
+      for (const u of openTradeUserIds) if (u) userIdsSet.add(u.toString());
+    }
 
     if (userIdsSet.size === 0) return;
 
@@ -85,8 +98,14 @@ export class LiveExecutionWorker {
       if (process.env.NODE_ENV !== 'test' && user.email && (user.email.endsWith('@test.local') || user.email.endsWith('@setupmint.internal'))) {
         continue;
       }
+      // STRICT TEST ISOLATION: Test suite must NEVER evaluate real production users
+      if (process.env.NODE_ENV === 'test' && user.email && !user.email.endsWith('@test.local') && !user.email.endsWith('@setupmint.internal')) {
+        continue;
+      }
 
-      const broker = connectedBrokers.find((b) => b.userId?.toString() === userId);
+      const broker =
+        connectedBrokers.find((b) => b.userId?.toString() === userId) ||
+        (await BrokerIntegration.findOne({ userId: user._id, broker: 'FYERS', status: 'CONNECTED' }).lean());
 
       const watcherSettings = user.liveWatcherSettings;
       const isServerWorkerEnabled = watcherSettings?.serverSideExecutionEnabled !== false;
@@ -394,32 +413,51 @@ export class LiveExecutionWorker {
 
         if (gbEval.shouldExit) {
           const givebackKey = `giveback_auto:${tradeId}`;
-          if (!this.executedMilestones.has(givebackKey)) {
-            this.executedMilestones.add(givebackKey);
-            console.log(`[LiveExecutionWorker] Auto-exiting runner for ${metric.symbol}: ${gbEval.reason}`);
-
-            await ExecutionPipelineService.execute({
-              userId: user._id.toString(),
-              accountId: trade.accountId,
-              tradeId: tradeId,
-              action: 'EXIT_POSITION',
-              executeBroker: true,
-              isAutomated: true,
-              payload: {
-                quantity: metric.quantity,
-                exitReason: `Auto Giveback Exit: ${gbEval.reason}`,
+          const existingSteps = new Set<string>(
+            metric.executedLadderSteps || LiveWatcherService.deriveExecutedSteps(trade)
+          );
+          if (!this.executedMilestones.has(givebackKey) && !existingSteps.has(givebackKey)) {
+            const claimedGb = await Trade.findOneAndUpdate(
+              {
+                _id: trade._id,
+                status: 'OPEN',
+                executedLadderSteps: { $ne: givebackKey },
               },
-            });
+              {
+                $addToSet: { executedLadderSteps: givebackKey },
+              },
+              { new: true }
+            );
 
-            if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
-              const currSym = TelegramAlertService.getTradeCurrencySymbol(trade);
-              TelegramAlertService.sendAlert({
-                botToken: watcherSettings.telegramBotToken,
-                chatId: watcherSettings.telegramChatId,
-                title: `🛡️ Giveback Auto-Exit: ${metric.symbol}`,
-                body: `SetupMint auto-closed runner at ${currSym}${metric.currentLtp} to protect banked profits. (${gbEval.reason})`,
-                severity: 'WARNING',
-              }).catch(() => {});
+            if (claimedGb) {
+              this.executedMilestones.add(givebackKey);
+              console.log(`[LiveExecutionWorker] Auto-exiting runner for ${metric.symbol}: ${gbEval.reason}`);
+
+              await ExecutionPipelineService.execute({
+                userId: user._id.toString(),
+                accountId: trade.accountId,
+                tradeId: tradeId,
+                action: 'EXIT_POSITION',
+                executeBroker: true,
+                isAutomated: true,
+                payload: {
+                  quantity: metric.quantity,
+                  exitReason: `Auto Giveback Exit: ${gbEval.reason}`,
+                },
+              });
+
+              if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+                const currSym = TelegramAlertService.getTradeCurrencySymbol(trade);
+                TelegramAlertService.sendAlert({
+                  botToken: watcherSettings.telegramBotToken,
+                  chatId: watcherSettings.telegramChatId,
+                  title: `🛡️ Giveback Auto-Exit: ${metric.symbol}`,
+                  body: `SetupMint auto-closed runner at ${currSym}${metric.currentLtp} to protect banked profits. (${gbEval.reason})`,
+                  severity: 'WARNING',
+                }).catch(() => {});
+              }
+            } else {
+              this.executedMilestones.add(givebackKey);
             }
           }
         }
@@ -427,6 +465,7 @@ export class LiveExecutionWorker {
     }
 
     // 4. Target Ladder Step Auto-Execution
+    const executedStepsList = metric.executedLadderSteps || LiveWatcherService.deriveExecutedSteps(trade);
     const ladder = calculateTargetLadder({
       entryPrice: metric.entryPrice,
       currentLtp: metric.currentLtp,
@@ -441,16 +480,34 @@ export class LiveExecutionWorker {
       lotSize: metric.lotSize,
       customRules: rules,
       estimatedCharges: metric.estimatedCharges,
+      executedLadderSteps: executedStepsList,
     });
 
     if (!ladder || !ladder.steps) return;
 
+    const tradeExecutedSteps = new Set<string>(executedStepsList);
+
     for (const step of ladder.steps) {
       if (step.isFreeRunner) continue; // Free runner has no fixed target price trigger - it runs uncapped!
-      if (!step.isActionable && step.status !== 'MET') continue;
+      if (step.status === 'EXECUTED' || (!step.isActionable && step.status !== 'MET')) continue;
 
-      const triggerKey = `ladder:${tradeId}:step${step.targetIndex}`;
+      const stepKey = `step${step.targetIndex}`;
+      const canonicalName = step.name.split(' ')[0]; // 'T1', 'T2'
+      const triggerKey = `ladder:${tradeId}:${stepKey}`;
+
+      // In-memory check
       if (this.executedMilestones.has(triggerKey)) continue;
+
+      // Persistent database-derived check
+      if (
+        tradeExecutedSteps.has(stepKey) ||
+        tradeExecutedSteps.has(canonicalName) ||
+        tradeExecutedSteps.has(step.name) ||
+        tradeExecutedSteps.has(triggerKey)
+      ) {
+        this.executedMilestones.add(triggerKey);
+        continue;
+      }
 
       const isStepAutoEnabled = step.autoExecuteEnabled !== undefined ? step.autoExecuteEnabled : effectiveAutoExecute;
 
@@ -482,7 +539,28 @@ export class LiveExecutionWorker {
       }
 
       // Execute on exchange server-side
+      // ATOMIC MONGODB CLAIM: guarantees exactly one execution across all cluster nodes/restarts
+      const claimKeys = [stepKey, canonicalName, step.name, triggerKey];
+      const claimedTrade = await Trade.findOneAndUpdate(
+        {
+          _id: trade._id,
+          status: 'OPEN',
+          executedLadderSteps: { $nin: claimKeys },
+        },
+        {
+          $addToSet: { executedLadderSteps: { $each: claimKeys } },
+        },
+        { new: true }
+      );
+
+      if (!claimedTrade) {
+        // Step was already executed or claimed by another worker cycle/tab!
+        this.executedMilestones.add(triggerKey);
+        continue;
+      }
+
       this.executedMilestones.add(triggerKey);
+      for (const k of claimKeys) tradeExecutedSteps.add(k);
       console.log(`[LiveExecutionWorker] Executing ${step.name} server-side for trade ${tradeId} (${metric.symbol})...`);
 
       const isMt5 = Mt5CommandService.isMt5Trade(trade, trade.accountId);
@@ -518,7 +596,16 @@ export class LiveExecutionWorker {
       }
 
       // 2. Trailing SL modification via universal execution pipeline
-      if (step.suggestedStopLoss && step.suggestedStopLoss > 0) {
+      // Enforce strict favorable-only trailing invariant: only trail if new SL tightens risk!
+      const currentSl = trade.risk?.currentStopLoss;
+      const suggestedSl = step.suggestedStopLoss;
+      const isLong = metric.direction === 'LONG';
+      const isSlFavorable =
+        suggestedSl &&
+        suggestedSl > 0 &&
+        (!currentSl || (isLong ? suggestedSl > currentSl : suggestedSl < currentSl));
+
+      if (isSlFavorable) {
         await ExecutionPipelineService.execute({
           userId: user._id.toString(),
           accountId: trade.accountId,
@@ -527,9 +614,9 @@ export class LiveExecutionWorker {
           executeBroker: true,
           isAutomated: true,
           payload: {
-            stopPrice: step.suggestedStopLoss,
+            stopPrice: suggestedSl,
           },
-        });
+        }).catch((slErr: any) => console.warn(`[LiveExecutionWorker] SL trailing failed for ${metric.symbol}:`, slErr.message));
       }
 
       // 3. For MT5, if runner mode is active, clear Take Profit to 0 so runner runs uncapped

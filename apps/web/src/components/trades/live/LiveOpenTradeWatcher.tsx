@@ -704,6 +704,19 @@ export function LiveOpenTradeWatcher({
     }
   }, [summary?.positions]);
 
+  // Sync server-persisted executedLadderSteps into executedAutoTriggersRef
+  useEffect(() => {
+    if (!summary?.positions) return;
+    for (const pos of summary.positions) {
+      const steps = pos.executedLadderSteps || pos.targetLadder?.executedSteps;
+      if (Array.isArray(steps)) {
+        for (const s of steps) {
+          executedAutoTriggersRef.current.add(`${pos.tradeId}_${s}`);
+        }
+      }
+    }
+  }, [summary?.positions]);
+
   // Deterministic Urgency vs Entry-Time Sort
   const sortedPositions = useMemo(() => {
     if (!summary?.positions || summary.positions.length === 0) return [];
@@ -839,6 +852,7 @@ export function LiveOpenTradeWatcher({
               lotSize: effectiveLotSize,
               customRules,
               estimatedCharges: estCharges,
+              executedLadderSteps: pos.executedLadderSteps || pos.targetLadder?.executedSteps,
             })
           : pos.targetLadder;
 
@@ -1135,6 +1149,11 @@ export function LiveOpenTradeWatcher({
       const rules = getEffectiveRules(pos.tradeId, pos.lotSize);
       if (!rules || !rules.autoExecuteEnabled) continue;
 
+      // When server-side execution daemon is active, backend is authoritative;
+      // client-side execution loop acts only as fallback when server-side execution is explicitly disabled
+      const isServerWorkerActive = user?.liveWatcherSettings?.serverSideExecutionEnabled !== false;
+      if (isServerWorkerActive) continue;
+
       const lotSize =
         rules.lotSize ||
         pos.lotSize ||
@@ -1155,13 +1174,14 @@ export function LiveOpenTradeWatcher({
         lotSize,
         customRules: rules,
         estimatedCharges: estCharges,
+        executedLadderSteps: pos.executedLadderSteps || pos.targetLadder?.executedSteps,
       });
 
       if (!ladder || !ladder.steps) continue;
 
       for (let i = 0; i < ladder.steps.length; i++) {
         const step = ladder.steps[i];
-        if (step.isFreeRunner) continue; // Free runner has no fixed target price trigger
+        if (step.isFreeRunner || step.status === 'EXECUTED') continue; // Free runner or already executed targets
         const isLong = pos.direction === 'LONG';
         const isTargetMet =
           step.status === 'MET' ||
@@ -1170,7 +1190,17 @@ export function LiveOpenTradeWatcher({
         if (!isTargetMet) continue;
 
         const triggerKey = `${pos.tradeId}_${step.name}`;
-        if (executedAutoTriggersRef.current.has(triggerKey)) continue;
+        const stepKey = `step${step.targetIndex}`;
+        const canonicalName = step.name.split(' ')[0];
+        if (
+          executedAutoTriggersRef.current.has(triggerKey) ||
+          pos.executedLadderSteps?.includes(stepKey) ||
+          pos.executedLadderSteps?.includes(canonicalName) ||
+          pos.executedLadderSteps?.includes(step.name)
+        ) {
+          executedAutoTriggersRef.current.add(triggerKey);
+          continue;
+        }
 
         // Mark as fired immediately
         executedAutoTriggersRef.current.add(triggerKey);
@@ -2659,6 +2689,7 @@ export function LiveOpenTradeWatcher({
                               lotSize: effectiveLotSize,
                               customRules,
                               estimatedCharges: estCharges,
+                              executedLadderSteps: pos.executedLadderSteps || pos.targetLadder?.executedSteps,
                             })
                           : pos.targetLadder;
 
@@ -3248,6 +3279,7 @@ export function LiveOpenTradeWatcher({
                           lotSize: effectiveLotSize,
                           customRules,
                           estimatedCharges: estCharges,
+                          executedLadderSteps: pos.executedLadderSteps || pos.targetLadder?.executedSteps,
                         })
                       : pos.targetLadder;
 

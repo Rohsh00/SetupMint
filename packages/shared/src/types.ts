@@ -1161,6 +1161,7 @@ export interface ITrade {
   setup?: ITradeSetup;
   stopLossMoveEvents?: IStopLossMoveEvent[];
   customLadderRules?: ICustomLadderRules;
+  executedLadderSteps?: string[];
   auditLog: IAuditEntry[];
 
   // Pyramiding & Campaign Grouping
@@ -3008,6 +3009,7 @@ export interface ILiveTargetLadder {
   spreadSurgeProtectionEnabled?: boolean;
   steps: ILiveTargetLadderStep[];
   activeStepIndex: number; // 1, 2, 3
+  executedSteps?: string[];
   scaleInState?: IScaleInTriggerState;
 }
 
@@ -3139,6 +3141,7 @@ export interface ILiveOpenTradeMetric {
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
   customLadderRules?: ICustomLadderRules;
+  executedLadderSteps?: string[];
   optionsGreeks?: IPositionGreeksSummary;
   stagnation?: ITradeStagnationMetric;
   underlying?: string;

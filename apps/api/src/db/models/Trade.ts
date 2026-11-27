@@ -239,6 +239,7 @@ export interface ITradeDoc extends Document {
     reason?: string;
   }>;
   customLadderRules?: ICustomLadderRules;
+  executedLadderSteps?: string[];
   screenshotIds: mongoose.Types.ObjectId[];
   auditLog: Array<{
     action: string;
@@ -595,6 +596,7 @@ const TradeSchema = new Schema<ITradeDoc>(
 
     screenshotIds: [{ type: Schema.Types.ObjectId, ref: 'Attachment' }],
     customLadderRules: { type: Schema.Types.Mixed },
+    executedLadderSteps: [{ type: String }],
     auditLog: [
       {
         action: { type: String, required: true },

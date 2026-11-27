@@ -476,6 +476,88 @@ describe('Financial Engine — Live Open Trade Watcher', () => {
       expect(t1.plannedExitRatio).toBe(1.0);
     });
 
+    it('marks historically executed steps as EXECUTED and non-actionable even if price re-conquers 2R or 1R', () => {
+      // User entered 0.04 lots of XAUUSD SHORT @ 3571.73, SL 3574.40 (1R = 2.67 pts)
+      // T1 target is 3569.06 (1R). T2 target is 3566.39 (2R).
+      // T1 was already executed. Price dropped, retraced above 3569, and then re-conquered 3567.04 (past 1R).
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'xauusd-re-conquer-2r',
+        symbol: 'XAUUSD',
+        direction: 'SHORT',
+        entryPrice: 3571.73,
+        currentLtp: 3567.04, // Past T1 (1R) and heading to T2 (2R)
+        quantity: 0.02, // 0.02 remaining after T1 exited
+        contractMultiplier: 100,
+        stopLoss: 3571.73, // Already moved to breakeven
+        initialStopLoss: 3574.40, // Anchored initial risk = 2.67 pts
+        currency: 'USD',
+        executedLadderSteps: ['step1', 'T1', 'T1 (+1.0R)'],
+        customRules: {
+          t1: { targetR: 1.0, exitRatio: 0.25, autoExecuteEnabled: true },
+          t2: { enabled: true, targetR: 2.0, exitRatio: 0.5, autoExecuteEnabled: true },
+          t3: { enabled: true, isFreeRunner: true, autoExecuteEnabled: true },
+        },
+      });
+
+      expect(metric.targetLadder).toBeDefined();
+      const ladder = metric.targetLadder!;
+
+      // Step 1 MUST be marked EXECUTED, with zero planned exit and non-actionable
+      const t1 = ladder.steps[0];
+      expect(t1.status).toBe('EXECUTED');
+      expect(t1.isActionable).toBe(false);
+      expect(t1.autoExecuteEnabled).toBe(false);
+      expect(t1.plannedExitQty).toBe(0);
+      expect(t1.plannedExitLots).toBe(0);
+
+      // Step 2 is the active target (+2.0R @ 3566.39)
+      const t2 = ladder.steps[1];
+      expect(t2.name).toBe('T2 (+2.0R)');
+      expect(t2.targetPrice).toBe(3566.39);
+      expect(t2.status).toBe('IN_PROGRESS'); // 3567.04 has not yet crossed 3566.39
+      expect(t2.isActionable).toBe(false);
+      expect(t2.plannedExitQty).toBe(0.01);
+
+      // Step 3 (Runner): Remaining 0.01 lot is protected as free runner
+      const t3 = ladder.steps[2];
+      expect(t3.name).toBe('Runner (Free Move)');
+      expect(t3.isFreeRunner).toBe(true);
+      expect(t3.isActionable).toBe(false); // Free runner has no fixed TP
+      expect(t3.plannedExitQty).toBe(0.01);
+    });
+
+    it('preserves runner and avoids liquidating remaining 0.01 lot when T1 and T2 have executed', () => {
+      const metric = calculateLiveOpenTradeMetric({
+        tradeId: 'xauusd-runner-preserve',
+        symbol: 'XAUUSD',
+        direction: 'SHORT',
+        entryPrice: 3571.73,
+        currentLtp: 3564.00, // Deep in profit past 2R
+        quantity: 0.01, // Only 0.01 lot runner left
+        contractMultiplier: 100,
+        stopLoss: 3569.06,
+        initialStopLoss: 3574.40,
+        currency: 'USD',
+        executedLadderSteps: ['step1', 'T1', 'step2', 'T2'],
+        customRules: {
+          t1: { targetR: 1.0, autoExecuteEnabled: true },
+          t2: { enabled: true, targetR: 2.0, autoExecuteEnabled: true },
+          t3: { enabled: true, isFreeRunner: true, autoExecuteEnabled: true },
+        },
+      });
+
+      const ladder = metric.targetLadder!;
+      expect(ladder.steps[0].status).toBe('EXECUTED');
+      expect(ladder.steps[0].isActionable).toBe(false);
+      expect(ladder.steps[1].status).toBe('EXECUTED');
+      expect(ladder.steps[1].isActionable).toBe(false);
+
+      const runner = ladder.steps[2];
+      expect(runner.isFreeRunner).toBe(true);
+      expect(runner.isActionable).toBe(false);
+      expect(runner.plannedExitQty).toBe(0.01);
+    });
+
     it('supports custom R1, R2, R3 and True Breakeven fee-adjusted trailing', () => {
       const metric = calculateLiveOpenTradeMetric({
         tradeId: 'custom-rules-1',

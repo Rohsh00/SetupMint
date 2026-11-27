@@ -120,8 +120,10 @@ export function LiveScalingLadder({
           const isExecuted = step.status === 'EXECUTED';
           const isFree = Boolean(step.isFreeRunner);
 
-          const stepColor = isFree ? '#A855F7' : isMet ? '#10B981' : isInProgress ? '#3B82F6' : '#64748B';
-          const stepBg = isFree
+          const stepColor = isExecuted ? '#059669' : isFree ? '#A855F7' : isMet ? '#10B981' : isInProgress ? '#3B82F6' : '#64748B';
+          const stepBg = isExecuted
+            ? alpha('#059669', isDark ? 0.12 : 0.05)
+            : isFree
             ? alpha('#A855F7', isDark ? 0.12 : 0.05)
             : isMet
             ? alpha('#10B981', isDark ? 0.15 : 0.08)
@@ -139,7 +141,9 @@ export function LiveScalingLadder({
                 borderRadius: '8px',
                 bgcolor: stepBg,
                 border: '1px solid',
-                borderColor: isFree
+                borderColor: isExecuted
+                  ? alpha('#059669', 0.4)
+                  : isFree
                   ? alpha('#A855F7', 0.35)
                   : isMet
                   ? alpha('#10B981', 0.4)
@@ -179,9 +183,11 @@ export function LiveScalingLadder({
                     />
                   )}
                   <Chip
-                    icon={isMet ? <CheckCircleRoundedIcon sx={{ fontSize: '11px !important' }} /> : isFree ? <TrackChangesRoundedIcon sx={{ fontSize: '11px !important' }} /> : undefined}
+                    icon={isExecuted || isMet ? <CheckCircleRoundedIcon sx={{ fontSize: '11px !important' }} /> : isFree ? <TrackChangesRoundedIcon sx={{ fontSize: '11px !important' }} /> : undefined}
                     label={
-                      isFree
+                      isExecuted
+                        ? 'EXECUTED'
+                        : isFree
                         ? 'FREE RUNNER'
                         : isMet
                         ? 'TARGET MET'
@@ -272,6 +278,7 @@ export function LiveScalingLadder({
                 <Button
                   size="small"
                   variant={isMet ? 'contained' : 'outlined'}
+                  disabled={isExecuted}
                   startIcon={<FlashOnRoundedIcon sx={{ fontSize: '12px !important' }} />}
                   onClick={() => onExecuteStep(step)}
                   sx={{
@@ -280,19 +287,19 @@ export function LiveScalingLadder({
                     fontSize: '0.65rem',
                     fontWeight: 800,
                     textTransform: 'none',
-                    bgcolor: isMet ? '#10B981' : isFree ? alpha('#A855F7', 0.12) : 'transparent',
-                    color: isMet ? '#FFFFFF' : stepColor,
-                    borderColor: stepColor,
+                    bgcolor: isExecuted ? 'transparent' : isMet ? '#10B981' : isFree ? alpha('#A855F7', 0.12) : 'transparent',
+                    color: isExecuted ? 'text.disabled' : isMet ? '#FFFFFF' : stepColor,
+                    borderColor: isExecuted ? 'rgba(255, 255, 255, 0.12)' : stepColor,
                     borderRadius: '4px',
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      bgcolor: isMet ? '#059669' : alpha(stepColor, 0.2),
+                      bgcolor: isExecuted ? 'transparent' : isMet ? '#059669' : alpha(stepColor, 0.2),
                       borderColor: stepColor,
                     },
                   }}
                 >
-                  {isFree ? 'Close Runner' : `Execute ${step.targetIndex === 3 ? 'Runner' : `T${step.targetIndex}`}`}
+                  {isExecuted ? 'Executed' : isFree ? 'Close Runner' : `Execute ${step.targetIndex === 3 ? 'Runner' : `T${step.targetIndex}`}`}
                 </Button>
               </Box>
             </Box>

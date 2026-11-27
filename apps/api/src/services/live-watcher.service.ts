@@ -19,6 +19,45 @@ import {
 
 export class LiveWatcherService {
   /**
+   * Derives historically executed ladder steps for a trade from persistent executedLadderSteps,
+   * audit log history, or tags, ensuring past targets never re-execute after server reloads.
+   */
+  static deriveExecutedSteps(trade: any): string[] {
+    const executed = new Set<string>(trade?.executedLadderSteps || []);
+    if (Array.isArray(trade?.auditLog)) {
+      for (const a of trade.auditLog) {
+        const action = String(a.action || '');
+        const reason = String(a.details?.payload?.exitReason || a.details?.label || '');
+        if (action.includes('LADDER_STEP_1') || /t1|step1|target\s*1/i.test(reason)) {
+          executed.add('step1');
+          executed.add('T1');
+        }
+        if (action.includes('LADDER_STEP_2') || /t2|step2|target\s*2/i.test(reason)) {
+          executed.add('step2');
+          executed.add('T2');
+        }
+        if (action.includes('LADDER_STEP_3') || /t3|step3|target\s*3/i.test(reason)) {
+          executed.add('step3');
+          executed.add('T3');
+        }
+      }
+    }
+    if (Array.isArray(trade?.tags)) {
+      for (const t of trade.tags) {
+        if (/LADDER_EXECUTED_STEP_?1|LADDER_STEP_1/i.test(t)) {
+          executed.add('step1');
+          executed.add('T1');
+        }
+        if (/LADDER_EXECUTED_STEP_?2|LADDER_STEP_2/i.test(t)) {
+          executed.add('step2');
+          executed.add('T2');
+        }
+      }
+    }
+    return Array.from(executed);
+  }
+
+  /**
    * Determines whether an open trade is eligible for live FYERS quotes and broker execution.
    * Prop firm accounts, demo accounts, and non-Indian (Forex/Crypto) trades must never be
    * treated as live FYERS positions or present simulated prices as real broker feeds.
@@ -672,6 +711,7 @@ export class LiveWatcherService {
         previousPeakMfe: effectivePeakMfe,
         dataHealth: tradeDataHealth,
         customRules: trade.customLadderRules,
+        executedLadderSteps: this.deriveExecutedSteps(trade),
       });
 
       // Asynchronously persist new peak MFE to DB if new high reached AND price is plausible
@@ -1175,6 +1215,7 @@ export class LiveWatcherService {
       provider,
       previousPeakMfe: effectivePeakMfe,
       customRules: trade.customLadderRules,
+      executedLadderSteps: this.deriveExecutedSteps(trade),
     });
 
     const prevPeak = effectivePeakMfe?.peakFloatingNetPnL ?? -Infinity;

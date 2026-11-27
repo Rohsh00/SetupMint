@@ -74,6 +74,7 @@ export interface ILiveOpenTradeCalculationParams {
     peakFloatingNetPnL?: number;
     peakUnrealizedR?: number;
   };
+  executedLadderSteps?: string[];
   dataHealth?: ILiveDataHealth;
 }
 
@@ -118,6 +119,7 @@ export interface ILiveOpenTradeMetric {
   giveback?: ILiveGivebackMetric;
   targetLadder?: ILiveTargetLadder;
   customLadderRules?: ICustomLadderRules;
+  executedLadderSteps?: string[];
   optionsGreeks?: IPositionGreeksSummary;
   stagnation?: ITradeStagnationMetric;
   underlying?: string;
@@ -168,6 +170,7 @@ export function calculateLiveGiveback(params: {
     peakFloatingNetPnL?: number;
     peakUnrealizedR?: number;
   };
+  executedLadderSteps?: string[];
   dataHealth?: ILiveDataHealth;
 }): ILiveGivebackMetric {
   const isLong = params.direction === 'LONG';
@@ -245,6 +248,7 @@ export function calculateTargetLadder(params: {
   tickSize?: Decimal | number;
   customRules?: ICustomLadderRules;
   estimatedCharges?: Decimal | number;
+  executedLadderSteps?: string[];
   currency?: string;
   currencySymbol?: string;
   assetClass?: string;
@@ -347,6 +351,20 @@ export function calculateTargetLadder(params: {
   }
 
   const rules = params.customRules;
+  const executedSteps = params.executedLadderSteps || [];
+  const isT1AlreadyExecuted = executedSteps.some((s) => {
+    const norm = String(s).toLowerCase().trim();
+    return norm === 'step1' || norm === 't1' || norm.startsWith('t1 ') || norm.startsWith('t1(') || norm.includes('target 1');
+  });
+  const isT2AlreadyExecuted = executedSteps.some((s) => {
+    const norm = String(s).toLowerCase().trim();
+    return norm === 'step2' || norm === 't2' || norm.startsWith('t2 ') || norm.startsWith('t2(') || norm.includes('target 2');
+  });
+  const isT3AlreadyExecuted = executedSteps.some((s) => {
+    const norm = String(s).toLowerCase().trim();
+    return norm === 'step3' || norm === 't3' || norm.startsWith('t3 ') || norm.startsWith('t3(') || norm.includes('runner') || norm.includes('target 3');
+  });
+
   const t1TargetR = rules?.t1?.targetR ?? 1.0;
   const t2TargetR = rules?.t2?.targetR ?? 2.0;
   const t3TargetR = rules?.t3?.targetR ?? 3.0;
@@ -360,7 +378,11 @@ export function calculateTargetLadder(params: {
   let t1ExitQty = totalQty;
   let t1ExitRatio = totalSteps > 2 ? 0.33 : 0.5;
 
-  if (rules?.distributionMode === 'DEFENSIVE_50_30_20') {
+  if (isT1AlreadyExecuted) {
+    t1ExitLots = 0;
+    t1ExitQty = 0;
+    t1ExitRatio = 0;
+  } else if (rules?.distributionMode === 'DEFENSIVE_50_30_20') {
     t1ExitRatio = 0.50;
   } else if (rules?.distributionMode === 'CONVEX_20_30_50') {
     t1ExitRatio = 0.20;
@@ -368,64 +390,66 @@ export function calculateTargetLadder(params: {
     t1ExitRatio = 0.33;
   }
 
-  if (isFractionalLot) {
-    if (totalSteps > 1) {
-      let exitSteps: number;
-      if (rules?.t1?.customLots && rules.t1.customLots > 0) {
-        exitSteps = Math.min(totalSteps - 1, Math.max(1, new Decimal(rules.t1.customLots).dividedBy(lotStep).floor().toNumber()));
-        t1ExitRatio = Number(new Decimal(exitSteps).times(lotStep).dividedBy(totalQty).toFixed(2));
+  if (!isT1AlreadyExecuted) {
+    if (isFractionalLot) {
+      if (totalSteps > 1) {
+        let exitSteps: number;
+        if (rules?.t1?.customLots && rules.t1.customLots > 0) {
+          exitSteps = Math.min(totalSteps - 1, Math.max(1, new Decimal(rules.t1.customLots).dividedBy(lotStep).floor().toNumber()));
+          t1ExitRatio = Number(new Decimal(exitSteps).times(lotStep).dividedBy(totalQty).toFixed(2));
+        } else {
+          t1ExitRatio =
+            rules?.t1?.exitRatio ??
+            (rules?.distributionMode === 'DEFENSIVE_50_30_20'
+              ? 0.50
+              : rules?.distributionMode === 'CONVEX_20_30_50'
+              ? 0.20
+              : rules?.distributionMode === 'EQUAL_SPLIT'
+              ? 0.33
+              : (totalSteps >= 3
+                ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
+                : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP));
+          exitSteps = Math.max(
+            1,
+            Math.min(totalSteps - 1, new Decimal(totalSteps).times(t1ExitRatio).floor().toNumber())
+          );
+        }
+        t1ExitQty = Number(new Decimal(exitSteps).times(lotStep).toFixed(4));
+        t1ExitLots = t1ExitQty;
       } else {
-        t1ExitRatio =
-          rules?.t1?.exitRatio ??
-          (rules?.distributionMode === 'DEFENSIVE_50_30_20'
-            ? 0.50
-            : rules?.distributionMode === 'CONVEX_20_30_50'
-            ? 0.20
-            : rules?.distributionMode === 'EQUAL_SPLIT'
-            ? 0.33
-            : (totalSteps >= 3
-              ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
-              : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP));
-        exitSteps = Math.max(
-          1,
-          Math.min(totalSteps - 1, new Decimal(totalSteps).times(t1ExitRatio).floor().toNumber())
-        );
+        t1ExitQty = totalQty;
+        t1ExitLots = totalLots;
+        t1ExitRatio = 1.0;
       }
-      t1ExitQty = Number(new Decimal(exitSteps).times(lotStep).toFixed(4));
-      t1ExitLots = t1ExitQty;
     } else {
-      t1ExitQty = totalQty;
-      t1ExitLots = totalLots;
-      t1ExitRatio = 1.0;
-    }
-  } else {
-    if (totalLots > 1) {
-      if (rules?.t1?.customLots && rules.t1.customLots > 0) {
-        t1ExitLots = Math.min(totalLots - 1, rules.t1.customLots);
-        t1ExitRatio = Number((t1ExitLots / totalLots).toFixed(2));
+      if (totalLots > 1) {
+        if (rules?.t1?.customLots && rules.t1.customLots > 0) {
+          t1ExitLots = Math.min(totalLots - 1, rules.t1.customLots);
+          t1ExitRatio = Number((t1ExitLots / totalLots).toFixed(2));
+        } else {
+          t1ExitRatio =
+            rules?.t1?.exitRatio ??
+            (rules?.distributionMode === 'DEFENSIVE_50_30_20'
+              ? 0.50
+              : rules?.distributionMode === 'CONVEX_20_30_50'
+              ? 0.20
+              : rules?.distributionMode === 'EQUAL_SPLIT'
+              ? 0.33
+              : (totalLots >= 3
+                ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
+                : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP));
+          t1ExitLots = Math.max(
+            1,
+            Math.min(totalLots - 1, new Decimal(totalLots).times(t1ExitRatio).floor().toNumber())
+          );
+        }
+        t1ExitQty = t1ExitLots * lotSizeNum;
       } else {
-        t1ExitRatio =
-          rules?.t1?.exitRatio ??
-          (rules?.distributionMode === 'DEFENSIVE_50_30_20'
-            ? 0.50
-            : rules?.distributionMode === 'CONVEX_20_30_50'
-            ? 0.20
-            : rules?.distributionMode === 'EQUAL_SPLIT'
-            ? 0.33
-            : (totalLots >= 3
-              ? RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_3STEP
-              : RISK_AND_ALERT_THRESHOLDS.LADDER_T1_RATIO_2STEP));
-        t1ExitLots = Math.max(
-          1,
-          Math.min(totalLots - 1, new Decimal(totalLots).times(t1ExitRatio).floor().toNumber())
-        );
+        // Single lot cannot scale partially; T1 closes 100% of position
+        t1ExitQty = totalQty;
+        t1ExitLots = 1;
+        t1ExitRatio = 1.0;
       }
-      t1ExitQty = t1ExitLots * lotSizeNum;
-    } else {
-      // Single lot cannot scale partially; T1 closes 100% of position
-      t1ExitQty = totalQty;
-      t1ExitLots = 1;
-      t1ExitRatio = 1.0;
     }
   }
 
@@ -456,7 +480,7 @@ export function calculateTargetLadder(params: {
     t1StopLabel = `Lock BE (${sym}${t1StopLoss})`;
   }
 
-  const isT1AllOut = t1ExitRatio >= 1.0;
+  const isT1AllOut = !isT1AlreadyExecuted && t1ExitRatio >= 1.0;
   const t2Enabled = !isT1AllOut && (rules?.t2 ? rules.t2.enabled !== false : true);
   const isRunnerFree = rules?.t3?.isFreeRunner === true;
   const t3Enabled = !isT1AllOut && (rules?.t3 ? rules.t3.enabled !== false : true);
@@ -470,7 +494,11 @@ export function calculateTargetLadder(params: {
   let t2ExitQty = 0;
   let t2ExitRatio = 0.5;
 
-  if (isFractionalLot) {
+  if (isT2AlreadyExecuted) {
+    t2ExitLots = 0;
+    t2ExitQty = 0;
+    t2ExitRatio = 0;
+  } else if (isFractionalLot) {
     const remQtyAfterT1 = Math.max(0, new Decimal(totalQty).minus(t1ExitQty).toNumber());
     const remStepsAfterT1 = Math.round(remQtyAfterT1 / lotStep);
     if (remStepsAfterT1 > 1) {
@@ -567,18 +595,18 @@ export function calculateTargetLadder(params: {
     name: `T1 (+${t1TargetR.toFixed(1)}R)`,
     targetR: t1TargetR,
     targetPrice: Number(t1Price.toFixed(2)),
-    plannedExitRatio: t1ExitRatio,
-    plannedExitQty: t1ExitQty,
-    plannedExitLots: isFractionalLot ? t1ExitLots : (totalLots > 1 ? t1ExitLots : 1),
+    plannedExitRatio: isT1AlreadyExecuted ? 0 : t1ExitRatio,
+    plannedExitQty: isT1AlreadyExecuted ? 0 : t1ExitQty,
+    plannedExitLots: isT1AlreadyExecuted ? 0 : (isFractionalLot ? t1ExitLots : (totalLots > 1 ? t1ExitLots : 1)),
     lotSize: lotSizeNum,
     suggestedStopLoss: t1StopLoss,
-    suggestedStopLabel: t1StopLabel,
+    suggestedStopLabel: isT1AlreadyExecuted ? `Executed (BE Locked @ ${sym}${t1StopLoss})` : t1StopLabel,
     distancePoints: Number(t1Dist.toFixed(2)),
     distancePercent: Number(t1Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
-    progressPercent: t1Progress,
-    status: isT1Met ? 'MET' : t1Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
-    isActionable: isT1Met,
-    autoExecuteEnabled: rules?.t1?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
+    progressPercent: isT1AlreadyExecuted ? 100 : t1Progress,
+    status: isT1AlreadyExecuted ? 'EXECUTED' : isT1Met ? 'MET' : t1Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+    isActionable: isT1AlreadyExecuted ? false : isT1Met,
+    autoExecuteEnabled: isT1AlreadyExecuted ? false : (rules?.t1?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false),
     cushionTicks: rules?.t1?.cushionTicks ?? 2,
   });
 
@@ -589,18 +617,18 @@ export function calculateTargetLadder(params: {
       name: `T2 (+${t2TargetR.toFixed(1)}R)`,
       targetR: t2TargetR,
       targetPrice: Number(t2Price.toFixed(2)),
-      plannedExitRatio: t2ExitRatio,
-      plannedExitQty: t2ExitQty,
-      plannedExitLots: isFractionalLot ? t2ExitLots : (totalLots > 1 ? t2ExitLots : 1),
+      plannedExitRatio: isT2AlreadyExecuted ? 0 : t2ExitRatio,
+      plannedExitQty: isT2AlreadyExecuted ? 0 : t2ExitQty,
+      plannedExitLots: isT2AlreadyExecuted ? 0 : (isFractionalLot ? t2ExitLots : (totalLots > 1 ? t2ExitLots : 1)),
       lotSize: lotSizeNum,
       suggestedStopLoss: t2StopLoss,
-      suggestedStopLabel: t2StopLabel,
+      suggestedStopLabel: isT2AlreadyExecuted ? `Executed (Trailed @ ${sym}${t2StopLoss})` : t2StopLabel,
       distancePoints: Number(t2Dist.toFixed(2)),
       distancePercent: Number(t2Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
-      progressPercent: t2Progress,
-      status: isT2Met ? 'MET' : t2Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
-      isActionable: isT2Met,
-      autoExecuteEnabled: rules?.t2?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
+      progressPercent: isT2AlreadyExecuted ? 100 : t2Progress,
+      status: isT2AlreadyExecuted ? 'EXECUTED' : isT2Met ? 'MET' : t2Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+      isActionable: isT2AlreadyExecuted ? false : isT2Met,
+      autoExecuteEnabled: isT2AlreadyExecuted ? false : (rules?.t2?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false),
     });
   }
 
@@ -620,9 +648,9 @@ export function calculateTargetLadder(params: {
         suggestedStopLabel: `Open Trail (SL: ${sym}${t2Enabled ? Number(t2Price.toFixed(2)) : t1StopLoss})`,
         distancePoints: 0,
         distancePercent: 0,
-        progressPercent: isT1Met ? 100 : 0,
-        status: isT1Met ? 'IN_PROGRESS' : 'PENDING',
-        isActionable: isT1Met,
+        progressPercent: (isT1AlreadyExecuted || isT1Met) ? 100 : 0,
+        status: (isT1AlreadyExecuted || isT1Met) ? 'IN_PROGRESS' : 'PENDING',
+        isActionable: false, // Free runner has no fixed price target trigger! It runs uncapped!
         isFreeRunner: true,
         autoExecuteEnabled: rules?.t3?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
       });
@@ -632,26 +660,26 @@ export function calculateTargetLadder(params: {
         name: `Runner (+${t3TargetR.toFixed(1)}R)`,
         targetR: t3TargetR,
         targetPrice: Number(t3Price.toFixed(2)),
-        plannedExitRatio: 1.0,
-        plannedExitQty: runnerQty,
-        plannedExitLots: isFractionalLot ? runnerLots : (totalLots > 1 ? runnerLots : 1),
+        plannedExitRatio: isT3AlreadyExecuted ? 0 : 1.0,
+        plannedExitQty: isT3AlreadyExecuted ? 0 : runnerQty,
+        plannedExitLots: isT3AlreadyExecuted ? 0 : (isFractionalLot ? runnerLots : (totalLots > 1 ? runnerLots : 1)),
         lotSize: lotSizeNum,
         suggestedStopLoss: Number(t2Price.toFixed(2)),
-        suggestedStopLabel: `Trail Behind Swing (${sym}${Number(t2Price.toFixed(2))})`,
+        suggestedStopLabel: isT3AlreadyExecuted ? 'Executed (Closed)' : `Trail Behind Swing (${sym}${Number(t2Price.toFixed(2))})`,
         distancePoints: Number(t3Dist.toFixed(2)),
         distancePercent: Number(t3Dist.dividedBy(dLtp).abs().times(100).toFixed(2)),
-        progressPercent: t3Progress,
-        status: isT3Met ? 'MET' : t3Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
-        isActionable: isT3Met,
-        autoExecuteEnabled: rules?.t3?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false,
+        progressPercent: isT3AlreadyExecuted ? 100 : t3Progress,
+        status: isT3AlreadyExecuted ? 'EXECUTED' : isT3Met ? 'MET' : t3Progress > 0 ? 'IN_PROGRESS' : 'PENDING',
+        isActionable: isT3AlreadyExecuted ? false : isT3Met,
+        autoExecuteEnabled: isT3AlreadyExecuted ? false : (rules?.t3?.autoExecuteEnabled ?? rules?.autoExecuteEnabled ?? false),
       });
     }
   }
 
   let activeStepIndex = 1;
-  if (t2Enabled && isT2Met) {
+  if (isT2AlreadyExecuted || (t2Enabled && isT2Met)) {
     activeStepIndex = steps.length;
-  } else if (isT1Met) {
+  } else if (isT1AlreadyExecuted || isT1Met) {
     activeStepIndex = Math.min(2, steps.length);
   }
 
@@ -692,6 +720,7 @@ export function calculateTargetLadder(params: {
     spreadSurgeProtectionEnabled: rules?.spreadSurgeProtectionEnabled,
     steps,
     activeStepIndex,
+    executedSteps,
     scaleInState,
   };
 }
@@ -916,6 +945,7 @@ export function calculateLiveOpenTradeMetric(
       tickSize: dTick,
       customRules: params.customRules,
       estimatedCharges,
+      executedLadderSteps: params.executedLadderSteps,
       currency: params.currency,
       assetClass: params.assetClass,
       symbol: params.symbol,
@@ -967,6 +997,7 @@ export function calculateLiveOpenTradeMetric(
       }),
       targetLadder,
       customLadderRules: params.customRules,
+      executedLadderSteps: params.executedLadderSteps,
       dataHealth: params.dataHealth,
     };
 

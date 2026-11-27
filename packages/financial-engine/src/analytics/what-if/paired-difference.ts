@@ -25,7 +25,7 @@ export function computePairedDifferencesAndVerdict(
   stopR: number | null,
   targetR: number | null,
   scopeKey: string = 'default',
-  resamples: number = 10_000
+  resamples: number = 2_000
 ): IBootstrapIntervalResult {
   const evaluables = simulations.filter((s) => s.status === 'EVALUABLE');
   const nEval = evaluables.length;

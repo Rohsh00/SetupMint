@@ -7,6 +7,9 @@ import {
   IWhatIfCalibration,
   IWhatIfResponse,
   IWhatIfExclusionsCount,
+  WhatIfVerdict,
+  MIN_RELIABLE_SAMPLE,
+  MIN_HOLDOUT_SAMPLE,
 } from '@tradevault/shared';
 import {
   IWhatIfTradeInput,
@@ -213,28 +216,39 @@ export function runWhatIfSimulation(params: IRunWhatIfSimulationParams): IWhatIf
         stopR,
         targetR,
         `${scopeKey}_ALL`,
-        10_000
+        2_000
       );
 
-      const bootstrapInSample = computePairedDifferencesAndVerdict(
-        inSampleSims,
-        stopR,
-        targetR,
-        `${scopeKey}_IN`,
-        10_000
-      );
+      let bootstrapInSampleVerdict: WhatIfVerdict = 'INCONCLUSIVE';
+      let bootstrapHoldoutVerdict: WhatIfVerdict = 'INCONCLUSIVE';
 
-      const bootstrapHoldout = computePairedDifferencesAndVerdict(
-        holdoutSims,
-        stopR,
-        targetR,
-        `${scopeKey}_HOLD`,
-        10_000
-      );
+      if (
+        inSampleStats.nEval >= MIN_RELIABLE_SAMPLE &&
+        holdoutStats.nEval >= MIN_HOLDOUT_SAMPLE &&
+        bootstrapAll.verdict !== 'INCONCLUSIVE'
+      ) {
+        const bootstrapInSample = computePairedDifferencesAndVerdict(
+          inSampleSims,
+          stopR,
+          targetR,
+          `${scopeKey}_IN`,
+          2_000
+        );
+        bootstrapInSampleVerdict = bootstrapInSample.verdict;
+
+        const bootstrapHoldout = computePairedDifferencesAndVerdict(
+          holdoutSims,
+          stopR,
+          targetR,
+          `${scopeKey}_HOLD`,
+          2_000
+        );
+        bootstrapHoldoutVerdict = bootstrapHoldout.verdict;
+      }
 
       const holdsOutOfSample = checkHoldsOutOfSample(
-        bootstrapInSample.verdict,
-        bootstrapHoldout.verdict,
+        bootstrapInSampleVerdict,
+        bootstrapHoldoutVerdict,
         holdoutStats.nEval
       );
 

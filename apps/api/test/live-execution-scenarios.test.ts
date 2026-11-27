@@ -103,6 +103,7 @@ describe('Live Auto-Execution Scenarios & Target Re-conquer Invariants', { timeo
 
   beforeEach(async () => {
     LiveExecutionWorker.resetMilestones();
+    ExecutionPipelineService.recentExecutions.clear();
     if (userId) {
       await Mt5Command.deleteMany({ userId: new mongoose.Types.ObjectId(userId) });
       await Trade.deleteMany({ userId: new mongoose.Types.ObjectId(userId) });

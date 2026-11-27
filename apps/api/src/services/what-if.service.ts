@@ -141,20 +141,86 @@ export async function computeWhatIf(
     return emptyResult;
   }
 
-  // 5. Batch-load snapshots in 250-trade chunks
+  // 5. Batch-load snapshots with candle window filtering to trade holding duration
   const tradeIds = trades.map((t) => t._id);
-  const chunks = chunkArray(tradeIds, 250);
+  const chunks = chunkArray(tradeIds, 100);
   const snapshotsByTradeId = new Map<string, IWhatIfSnapshotInput>();
 
   for (const chunk of chunks) {
-    const snapshotDocs = await TradeCandleSnapshot.find({
-      userId: userObjectId,
-      tradeId: { $in: chunk },
-    })
-      .select('tradeId resolution candles isUnderlyingFallback coverageFrom coverageTo')
-      .lean();
+    const snapshotDocs = await TradeCandleSnapshot.aggregate([
+      {
+        $match: {
+          userId: userObjectId,
+          tradeId: { $in: chunk },
+        },
+      },
+      {
+        $lookup: {
+          from: 'trades',
+          localField: 'tradeId',
+          foreignField: '_id',
+          as: 'tradeDoc',
+        },
+      },
+      {
+        $unwind: {
+          path: '$tradeDoc',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          tradeId: 1,
+          resolution: 1,
+          isUnderlyingFallback: 1,
+          coverageFrom: 1,
+          coverageTo: 1,
+          candles: {
+            $cond: [
+              { $ifNull: ['$tradeDoc.entryTime', false] },
+              {
+                $filter: {
+                  input: '$candles',
+                  as: 'c',
+                  cond: {
+                    $and: [
+                      {
+                        $gte: [
+                          {
+                            $cond: [
+                              { $lt: ['$$c.t', 100000000000] },
+                              { $multiply: ['$$c.t', 1000] },
+                              '$$c.t',
+                            ],
+                          },
+                          { $subtract: [{ $toLong: '$tradeDoc.entryTime' }, 300000] },
+                        ],
+                      },
+                      {
+                        $lte: [
+                          {
+                            $cond: [
+                              { $lt: ['$$c.t', 100000000000] },
+                              { $multiply: ['$$c.t', 1000] },
+                              '$$c.t',
+                            ],
+                          },
+                          { $add: [{ $toLong: '$tradeDoc.exitTime' }, 300000] },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+              '$candles',
+            ],
+          },
+        },
+      },
+    ]);
 
     for (const snap of snapshotDocs) {
+      if (!snap.candles || snap.candles.length === 0) continue;
       const tid = snap.tradeId.toString();
       const existing = snapshotsByTradeId.get(tid);
 

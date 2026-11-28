@@ -3654,42 +3654,6 @@ export class TelegramAlertService {
     }
     if (!botToken) return;
 
-    // Handle Voice Message & Audio Journaling
-    if (msg.voice?.file_id || msg.audio?.file_id) {
-      const fileId = msg.voice?.file_id || msg.audio?.file_id;
-      await this.sendMessage(botToken, chatId, '🎙️ <i>Processing your voice reflection with AI...</i>');
-      try {
-        const result = await AiVoiceJournalService.processVoiceMessage({
-          userId: user._id,
-          botToken,
-          fileId,
-          caption: msg.caption,
-        });
-        const stars = '⭐'.repeat(result.disciplineScore);
-        await this.sendMessage(
-          botToken,
-          chatId,
-          `✅ <b>Voice Reflection Saved to Journal</b>\n` +
-            `📅 <b>Date:</b> <code>${result.journalDate}</code>\n` +
-            `🧠 <b>Emotional Tone:</b> <code>${result.emotionalState}</code> | <b>Discipline:</b> ${stars}\n\n` +
-            `📝 <b>Transcribed Notes:</b>\n<i>"${result.transcription}"</i>\n\n` +
-            `💡 <b>Key Lesson Extracted:</b>\n${result.lessonsLearned}`,
-          [
-            [
-              { text: '📅 Daily Summary', callback_data: 'cmd_summary' },
-              { text: '🧠 AI Coach', callback_data: 'cmd_coach' },
-            ],
-            [
-              { text: '📌 Live Cockpit', callback_data: 'cmd_refresh_cockpit' },
-            ],
-          ]
-        );
-      } catch (vErr: any) {
-        await this.sendMessage(botToken, chatId, `❌ Failed to process voice reflection: ${vErr.message}`);
-      }
-      return;
-    }
-
     try {
       // 1b. Check if voice note or audio comes with a command caption or transcription
       const voiceText = (msg.caption || msg.voice?.transcript || msg.voice?.transcription || '').trim();
@@ -3760,6 +3724,44 @@ export class TelegramAlertService {
       // Method D: Fallback to the latest trade overall
       if (!targetTrade) {
         targetTrade = await Trade.findOne({ userId: user._id }).sort({ exitTime: -1, entryTime: -1 });
+      }
+
+      // If no trade exists for this user, process as a general daily session voice reflection
+      if (!targetTrade) {
+        const fileId = msg.voice?.file_id || msg.audio?.file_id;
+        if (fileId) {
+          await this.sendMessage(botToken, chatId, '🎙️ <i>Processing your daily session voice reflection with AI...</i>');
+          try {
+            const result = await AiVoiceJournalService.processVoiceMessage({
+              userId: user._id,
+              botToken,
+              fileId,
+              caption: msg.caption,
+            });
+            const stars = '⭐'.repeat(result.disciplineScore);
+            await this.sendMessage(
+              botToken,
+              chatId,
+              `✅ <b>Voice Reflection Saved to Journal</b>\n` +
+                `📅 <b>Date:</b> <code>${result.journalDate}</code>\n` +
+                `🧠 <b>Emotional Tone:</b> <code>${result.emotionalState}</code> | <b>Discipline:</b> ${stars}\n\n` +
+                `📝 <b>Transcribed Notes:</b>\n<i>"${result.transcription}"</i>\n\n` +
+                `💡 <b>Key Lesson Extracted:</b>\n${result.lessonsLearned}`,
+              [
+                [
+                  { text: '📅 Daily Summary', callback_data: 'cmd_summary' },
+                  { text: '🧠 AI Coach', callback_data: 'cmd_coach' },
+                ],
+                [
+                  { text: '📌 Live Cockpit', callback_data: 'cmd_refresh_cockpit' },
+                ],
+              ]
+            );
+          } catch (vErr: any) {
+            await this.sendMessage(botToken, chatId, `❌ Failed to process voice reflection: ${vErr.message}`);
+          }
+        }
+        return;
       }
 
       // 3. Download the audio file from Telegram Bot API

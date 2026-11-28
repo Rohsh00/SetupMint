@@ -110,6 +110,16 @@ export interface ProfileSystemTabProps {
   setAutoAnalyzeTrades?: (val: boolean) => void;
   autoApplyTradeDetails?: boolean;
   setAutoApplyTradeDetails?: (val: boolean) => void;
+  scheduledMorningBriefingEnabled?: boolean;
+  setScheduledMorningBriefingEnabled?: (val: boolean) => void;
+  morningBriefingTime?: string;
+  setMorningBriefingTime?: (val: string) => void;
+  scheduledEodDebriefEnabled?: boolean;
+  setScheduledEodDebriefEnabled?: (val: boolean) => void;
+  eodDebriefTime?: string;
+  setEodDebriefTime?: (val: string) => void;
+  userTimezone?: string;
+  setUserTimezone?: (val: string) => void;
   hasGeminiKey: boolean;
   onClearGeminiKey?: () => void;
   onTestGemini?: (keyToTest?: string) => void;
@@ -170,6 +180,16 @@ export function ProfileSystemTab({
   setAutoAnalyzeTrades,
   autoApplyTradeDetails = false,
   setAutoApplyTradeDetails,
+  scheduledMorningBriefingEnabled = true,
+  setScheduledMorningBriefingEnabled,
+  morningBriefingTime = '08:30',
+  setMorningBriefingTime,
+  scheduledEodDebriefEnabled = true,
+  setScheduledEodDebriefEnabled,
+  eodDebriefTime = '18:00',
+  setEodDebriefTime,
+  userTimezone = 'Asia/Kolkata',
+  setUserTimezone,
   hasGeminiKey,
   onClearGeminiKey,
   onTestGemini,
@@ -669,6 +689,93 @@ export function ProfileSystemTab({
                     checked={autoApplyTradeDetails}
                     onChange={(e) => setAutoApplyTradeDetails?.(e.target.checked)}
                   />
+                </Box>
+
+                <Divider sx={{ my: 0.5 }} />
+
+                {/* Scheduled Intelligence Section */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, color: '#6366f1' }}>
+                    Automated Scheduled Routines & Timezone
+                  </Typography>
+
+                  {/* Scheduled Morning Briefing */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Scheduled Morning Market Briefing
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Automatically generates pre-market readiness score, economic news impact, and today's rule for Telegram & Dashboard
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <TextField
+                        size="small"
+                        type="time"
+                        value={morningBriefingTime}
+                        onChange={(e) => setMorningBriefingTime?.(e.target.value)}
+                        disabled={!scheduledMorningBriefingEnabled}
+                        sx={{ width: 110, '& input': { py: 0.6, px: 1, fontSize: '0.8rem' } }}
+                      />
+                      <Switch
+                        checked={scheduledMorningBriefingEnabled}
+                        onChange={(e) => setScheduledMorningBriefingEnabled?.(e.target.checked)}
+                      />
+                    </Box>
+                  </Box>
+
+                  {/* Scheduled EOD Debrief */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Scheduled End-of-Day (EOD) Coach Debrief
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Automatically audits closed trades at session close, assigns discipline stars, and sends executive review to Telegram
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <TextField
+                        size="small"
+                        type="time"
+                        value={eodDebriefTime}
+                        onChange={(e) => setEodDebriefTime?.(e.target.value)}
+                        disabled={!scheduledEodDebriefEnabled}
+                        sx={{ width: 110, '& input': { py: 0.6, px: 1, fontSize: '0.8rem' } }}
+                      />
+                      <Switch
+                        checked={scheduledEodDebriefEnabled}
+                        onChange={(e) => setScheduledEodDebriefEnabled?.(e.target.checked)}
+                      />
+                    </Box>
+                  </Box>
+
+                  {/* Timezone Selector */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Trader Routine Timezone
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Ensures morning briefings and EOD debriefs trigger at your exact local time
+                      </Typography>
+                    </Box>
+                    <FormControl size="small" sx={{ minWidth: 190 }}>
+                      <Select
+                        value={userTimezone}
+                        onChange={(e) => setUserTimezone?.(e.target.value)}
+                        sx={{ height: 32, fontSize: '0.8rem' }}
+                      >
+                        <MenuItem value="Asia/Kolkata">Asia/Kolkata (IST • UTC+5:30)</MenuItem>
+                        <MenuItem value="America/New_York">America/New_York (EST • UTC-5)</MenuItem>
+                        <MenuItem value="Europe/London">Europe/London (GMT • UTC+0)</MenuItem>
+                        <MenuItem value="Asia/Dubai">Asia/Dubai (GST • UTC+4)</MenuItem>
+                        <MenuItem value="Asia/Singapore">Asia/Singapore (SGT • UTC+8)</MenuItem>
+                        <MenuItem value="UTC">UTC (Universal Time)</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, borderTop: 1, borderColor: 'divider' }}>

@@ -61,6 +61,11 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           dailyRequestLimit: user.aiSettings.dailyRequestLimit ?? 1500,
           minuteRequestLimit: user.aiSettings.minuteRequestLimit ?? 15,
           tier: user.aiSettings.tier || 'free',
+          scheduledMorningBriefingEnabled: user.aiSettings.scheduledMorningBriefingEnabled ?? true,
+          morningBriefingTime: user.aiSettings.morningBriefingTime || '08:30',
+          scheduledEodDebriefEnabled: user.aiSettings.scheduledEodDebriefEnabled ?? true,
+          eodDebriefTime: user.aiSettings.eodDebriefTime || '18:00',
+          userTimezone: user.aiSettings.userTimezone || 'Asia/Kolkata',
         } : {
           enabled: true,
           model: 'gemini-3.5-flash-lite',
@@ -71,6 +76,11 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           dailyRequestLimit: 1500,
           minuteRequestLimit: 15,
           tier: 'free',
+          scheduledMorningBriefingEnabled: true,
+          morningBriefingTime: '08:30',
+          scheduledEodDebriefEnabled: true,
+          eodDebriefTime: '18:00',
+          userTimezone: 'Asia/Kolkata',
         },
       },
     });
@@ -303,6 +313,11 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       if (aiSettings.dailyRequestLimit !== undefined) update['aiSettings.dailyRequestLimit'] = Number(aiSettings.dailyRequestLimit);
       if (aiSettings.minuteRequestLimit !== undefined) update['aiSettings.minuteRequestLimit'] = Number(aiSettings.minuteRequestLimit);
       if (aiSettings.tier !== undefined) update['aiSettings.tier'] = String(aiSettings.tier).trim();
+      if (aiSettings.scheduledMorningBriefingEnabled !== undefined) update['aiSettings.scheduledMorningBriefingEnabled'] = Boolean(aiSettings.scheduledMorningBriefingEnabled);
+      if (aiSettings.morningBriefingTime !== undefined) update['aiSettings.morningBriefingTime'] = String(aiSettings.morningBriefingTime).trim();
+      if (aiSettings.scheduledEodDebriefEnabled !== undefined) update['aiSettings.scheduledEodDebriefEnabled'] = Boolean(aiSettings.scheduledEodDebriefEnabled);
+      if (aiSettings.eodDebriefTime !== undefined) update['aiSettings.eodDebriefTime'] = String(aiSettings.eodDebriefTime).trim();
+      if (aiSettings.userTimezone !== undefined) update['aiSettings.userTimezone'] = String(aiSettings.userTimezone).trim();
       if (aiSettings.clearGeminiApiKey === true) {
         update['aiSettings.geminiApiKey'] = '';
       } else if (aiSettings.geminiApiKey !== undefined) {

@@ -44,6 +44,7 @@ import { decryptSecret } from './crypto.service.js';
 import { formatFyersSymbol } from './fyers-symbol.js';
 import { MarketDataService } from './market-data/index.js';
 import { ChartGeneratorService } from './chart-generator.service.js';
+import { TradeAutoJournalService } from './trade-auto-journal.service.js';
 import { config } from '../config.js';
 
 export interface IFyersExecutionRaw {
@@ -1772,6 +1773,7 @@ export class FyersService {
 
               newlyClosedTradeIds.add(openTrade._id.toString());
               backfillTradeIds.add(openTrade._id.toString());
+              TradeAutoJournalService.enqueueClosedTrade(openTrade._id, uId);
               syncedTradesCount++;
               console.log(`[FYERS Sync] Reconciled trade ${openTrade._id} (${openTrade.symbol}) to CLOSED via broker netPositions`);
             }

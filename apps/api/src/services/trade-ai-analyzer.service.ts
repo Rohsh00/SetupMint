@@ -387,6 +387,11 @@ export class TradeAiAnalyzerService {
             assignedStrategyName = prResult.strategyName;
             assignedVariantKey = prResult.variantKey;
           }
+          // PatternRecognitionService may have updated and saved the trade doc; reload to keep __v synchronized
+          const freshDoc = await Trade.findById(trade._id);
+          if (freshDoc) {
+            trade = freshDoc;
+          }
         } catch {
           // Fallback to text & direction matching below
         }
@@ -453,7 +458,8 @@ export class TradeAiAnalyzerService {
         trade.setup.executionTimeframe = '5m Confirmation';
       }
       if (!trade.setup.patternType && ai.setupType) {
-        trade.setup.patternType = ai.setupType;
+        const allowedPatterns = ['EQUAL_LOWS', 'EQUAL_HIGHS', 'W', 'M', 'OTHER'];
+        trade.setup.patternType = allowedPatterns.includes(ai.setupType) ? ai.setupType : 'OTHER';
       }
     }
 
@@ -540,20 +546,14 @@ export class TradeAiAnalyzerService {
     trade.tags = Array.from(existingTags);
 
     // 5. Update aiAnalysis telemetry
-    if (trade.aiAnalysis) {
-      trade.aiAnalysis.autoApplied = true;
-      if (trade.strategyId) trade.aiAnalysis.matchedStrategyId = trade.strategyId.toString();
-      if (trade.strategyName) trade.aiAnalysis.matchedStrategyName = trade.strategyName;
-      if (trade.setup?.variantKey) trade.aiAnalysis.matchedVariantKey = trade.setup.variantKey;
-    } else {
-      trade.aiAnalysis = {
-        ...ai,
-        autoApplied: true,
-        matchedStrategyId: trade.strategyId ? trade.strategyId.toString() : undefined,
-        matchedStrategyName: trade.strategyName,
-        matchedVariantKey: trade.setup?.variantKey,
-      };
-    }
+    trade.aiAnalysis = {
+      ...(trade.aiAnalysis ? (typeof trade.aiAnalysis.toObject === 'function' ? trade.aiAnalysis.toObject() : trade.aiAnalysis) : {}),
+      ...ai,
+      autoApplied: true,
+      matchedStrategyId: trade.strategyId ? trade.strategyId.toString() : undefined,
+      matchedStrategyName: trade.strategyName,
+      matchedVariantKey: trade.setup?.variantKey,
+    };
 
     trade.auditLog.push({
       action: 'AI_DETAILS_AUTO_APPLIED',

@@ -34,6 +34,11 @@ export interface IUserDoc extends Document {
     dailyRequestLimit?: number;
     minuteRequestLimit?: number;
     tier?: string;
+    scheduledMorningBriefingEnabled?: boolean;
+    morningBriefingTime?: string;
+    scheduledEodDebriefEnabled?: boolean;
+    eodDebriefTime?: string;
+    userTimezone?: string;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -228,6 +233,11 @@ const UserSchema = new Schema<IUserDoc>(
       dailyRequestLimit: { type: Number, default: 1500 },
       minuteRequestLimit: { type: Number, default: 15 },
       tier: { type: String, default: 'free' },
+      scheduledMorningBriefingEnabled: { type: Boolean, default: true },
+      morningBriefingTime: { type: String, default: '08:30' },
+      scheduledEodDebriefEnabled: { type: Boolean, default: true },
+      eodDebriefTime: { type: String, default: '18:00' },
+      userTimezone: { type: String, default: 'Asia/Kolkata' },
     },
   },
   {

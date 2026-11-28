@@ -12,6 +12,7 @@ import { excursionBackfillSchema } from '@tradevault/shared';
 import { sanitizeTradeFills, deriveSessionFromTime } from '@tradevault/financial-engine';
 import { InstrumentService } from '../services/instrument.service.js';
 import { AccountService } from '../services/account.service.js';
+import { TradeAutoJournalService } from '../services/trade-auto-journal.service.js';
 import { config } from '../config.js';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -692,6 +693,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app: FastifyInstanc
           openTrade.markModified('calculated');
           openTrade.markModified('simpleExecution');
           await openTrade.save();
+          TradeAutoJournalService.enqueueClosedTrade(openTrade._id, account.userId);
 
           processedCount++;
           const userDoc = await User.findById(account.userId).lean();

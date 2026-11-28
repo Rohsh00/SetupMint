@@ -1246,7 +1246,12 @@ export interface IUserAiSettings {
   autoApplyTradeDetails?: boolean;
   dailyRequestLimit?: number;
   minuteRequestLimit?: number;
-  tier?: 'FREE' | 'PAID' | 'CUSTOM';
+  tier?: 'FREE' | 'PAID' | 'CUSTOM' | 'free' | 'payg' | 'custom' | string;
+  scheduledMorningBriefingEnabled?: boolean;
+  morningBriefingTime?: string;
+  scheduledEodDebriefEnabled?: boolean;
+  eodDebriefTime?: string;
+  userTimezone?: string;
 }
 
 export interface IAiQuotaStatus {

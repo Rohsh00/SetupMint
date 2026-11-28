@@ -49,6 +49,7 @@ import { FyersService } from '../services/fyers.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
 import { TradeAiAnalyzerService } from '../services/trade-ai-analyzer.service.js';
+import { TradeAutoJournalService } from '../services/trade-auto-journal.service.js';
 import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
@@ -1933,9 +1934,7 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         ChartGeneratorService.ensureTradeSnapshot(updated._id, req.user!.id).catch((err: any) => {
           req.log.warn('Auto snapshot generation threw for trade %s: %s', updated._id, err.message);
         });
-        TradeAiAnalyzerService.analyzeTrade(updated._id, req.user!.id).catch((err: any) => {
-          req.log.warn('Auto AI trade analysis threw for trade %s: %s', updated._id, err.message);
-        });
+        TradeAutoJournalService.enqueueClosedTrade(updated._id, req.user!.id);
 
         // Telegram Notification for Trade Closure
         User.findById(req.user!.id).lean().then((u) => {
@@ -2158,6 +2157,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+    if (trade.status === 'CLOSED') {
+      TradeAutoJournalService.enqueueClosedTrade(trade._id, req.user!.id);
+    }
 
     const responsePayload = {
       success: true,
@@ -2444,6 +2446,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+    if (trade.status === 'CLOSED') {
+      TradeAutoJournalService.enqueueClosedTrade(trade._id, req.user!.id);
+    }
 
     const responsePayload = {
       success: true,
@@ -2814,6 +2819,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
 
     await trade.save();
     await AccountService.recalculateAccountBalances(trade.accountId, req.user!.id);
+    if (trade.status === 'CLOSED') {
+      TradeAutoJournalService.enqueueClosedTrade(trade._id, req.user!.id);
+    }
 
     // Dispatch real-time Telegram notification for executed ladder step & realized R
     User.findById(req.user!.id).lean().then((u: any) => {

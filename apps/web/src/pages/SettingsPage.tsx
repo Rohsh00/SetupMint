@@ -1407,6 +1407,11 @@ export function SettingsPage() {
   const [aiEnabled, setAiEnabled] = useState((user as any)?.aiSettings?.enabled ?? true);
   const [autoAnalyzeTrades, setAutoAnalyzeTrades] = useState((user as any)?.aiSettings?.autoAnalyzeTrades ?? true);
   const [autoApplyTradeDetails, setAutoApplyTradeDetails] = useState((user as any)?.aiSettings?.autoApplyTradeDetails ?? false);
+  const [scheduledMorningBriefingEnabled, setScheduledMorningBriefingEnabled] = useState((user as any)?.aiSettings?.scheduledMorningBriefingEnabled ?? true);
+  const [morningBriefingTime, setMorningBriefingTime] = useState((user as any)?.aiSettings?.morningBriefingTime || '08:30');
+  const [scheduledEodDebriefEnabled, setScheduledEodDebriefEnabled] = useState((user as any)?.aiSettings?.scheduledEodDebriefEnabled ?? true);
+  const [eodDebriefTime, setEodDebriefTime] = useState((user as any)?.aiSettings?.eodDebriefTime || '18:00');
+  const [userTimezone, setUserTimezone] = useState((user as any)?.aiSettings?.userTimezone || (user?.baseCurrency === 'INR' ? 'Asia/Kolkata' : 'America/New_York'));
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -1451,6 +1456,21 @@ export function SettingsPage() {
       }
       if ((user as any).aiSettings.model) {
         setAiModel((user as any).aiSettings.model);
+      }
+      if ((user as any).aiSettings.scheduledMorningBriefingEnabled !== undefined) {
+        setScheduledMorningBriefingEnabled((user as any).aiSettings.scheduledMorningBriefingEnabled);
+      }
+      if ((user as any).aiSettings.morningBriefingTime) {
+        setMorningBriefingTime((user as any).aiSettings.morningBriefingTime);
+      }
+      if ((user as any).aiSettings.scheduledEodDebriefEnabled !== undefined) {
+        setScheduledEodDebriefEnabled((user as any).aiSettings.scheduledEodDebriefEnabled);
+      }
+      if ((user as any).aiSettings.eodDebriefTime) {
+        setEodDebriefTime((user as any).aiSettings.eodDebriefTime);
+      }
+      if ((user as any).aiSettings.userTimezone) {
+        setUserTimezone((user as any).aiSettings.userTimezone);
       }
     }
   }, [user]);
@@ -1560,6 +1580,11 @@ export function SettingsPage() {
         autoAnalyzeTrades,
         autoApplyTradeDetails,
         model: aiModel,
+        scheduledMorningBriefingEnabled,
+        morningBriefingTime,
+        scheduledEodDebriefEnabled,
+        eodDebriefTime,
+        userTimezone,
       },
     });
   };
@@ -1575,6 +1600,11 @@ export function SettingsPage() {
         autoAnalyzeTrades,
         autoApplyTradeDetails,
         model: aiModel,
+        scheduledMorningBriefingEnabled,
+        morningBriefingTime,
+        scheduledEodDebriefEnabled,
+        eodDebriefTime,
+        userTimezone,
       },
     });
     setGeminiApiKey('');
@@ -2083,6 +2113,16 @@ export function SettingsPage() {
           setAutoAnalyzeTrades={setAutoAnalyzeTrades}
           autoApplyTradeDetails={autoApplyTradeDetails}
           setAutoApplyTradeDetails={setAutoApplyTradeDetails}
+          scheduledMorningBriefingEnabled={scheduledMorningBriefingEnabled}
+          setScheduledMorningBriefingEnabled={setScheduledMorningBriefingEnabled}
+          morningBriefingTime={morningBriefingTime}
+          setMorningBriefingTime={setMorningBriefingTime}
+          scheduledEodDebriefEnabled={scheduledEodDebriefEnabled}
+          setScheduledEodDebriefEnabled={setScheduledEodDebriefEnabled}
+          eodDebriefTime={eodDebriefTime}
+          setEodDebriefTime={setEodDebriefTime}
+          userTimezone={userTimezone}
+          setUserTimezone={setUserTimezone}
           hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
           onClearGeminiKey={handleClearGeminiKey}
           onTestGemini={(keyToTest) => testGeminiMutation.mutate(keyToTest)}

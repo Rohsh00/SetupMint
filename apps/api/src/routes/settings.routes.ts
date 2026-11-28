@@ -15,6 +15,7 @@ import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { TelegramPollingService } from '../services/telegram-polling.service.js';
 import { EconomicCalendarService } from '../services/economic-calendar.service.js';
 import { encryptSecret, decryptSecret, safeDecryptSecret } from '../services/crypto.service.js';
+import { config } from '../config.js';
 
 function maskLiveWatcherSettings(settings: any) {
   if (!settings) return DEFAULT_LIVE_WATCHER_SETTINGS;
@@ -49,13 +50,24 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         riskSettings: user.riskSettings,
         patternDetectionSettings: user.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
         liveWatcherSettings: maskLiveWatcherSettings(user.liveWatcherSettings),
+        aiSettings: user.aiSettings ? {
+          enabled: user.aiSettings.enabled ?? true,
+          model: user.aiSettings.model || 'gemini-2.5-flash',
+          hasGeminiApiKey: Boolean(user.aiSettings.geminiApiKey || config.geminiApiKey),
+          geminiApiKey: user.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
+        } : {
+          enabled: true,
+          model: 'gemini-2.5-flash',
+          hasGeminiApiKey: Boolean(config.geminiApiKey),
+          geminiApiKey: config.geminiApiKey ? '•••••••• (Server Default)' : '',
+        },
       },
     });
   });
 
-  // Update profile / base currency / theme / defaultAccountScope / riskSettings / patternDetectionSettings / liveWatcherSettings
+  // Update profile / base currency / theme / defaultAccountScope / riskSettings / patternDetectionSettings / liveWatcherSettings / aiSettings
   app.put('/profile', async (req: any, reply) => {
-    const { name, baseCurrency, theme, defaultAccountScope, riskSettings, patternDetectionSettings, liveWatcherSettings } = req.body;
+    const { name, baseCurrency, theme, defaultAccountScope, riskSettings, patternDetectionSettings, liveWatcherSettings, aiSettings } = req.body;
 
     const update: any = {};
     const unset: any = {};
@@ -272,6 +284,22 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       }
     }
 
+    if (aiSettings && typeof aiSettings === 'object') {
+      if (aiSettings.enabled !== undefined) update['aiSettings.enabled'] = Boolean(aiSettings.enabled);
+      if (aiSettings.model !== undefined) update['aiSettings.model'] = String(aiSettings.model).trim();
+      if (aiSettings.geminiApiKey !== undefined) {
+        const rawKey = String(aiSettings.geminiApiKey).trim();
+        if (rawKey && !rawKey.startsWith('••') && !rawKey.startsWith('**')) {
+          const enc = encryptSecret(rawKey);
+          if (enc) {
+            update['aiSettings.geminiApiKey'] = enc;
+          }
+        } else if (rawKey === '') {
+          update['aiSettings.geminiApiKey'] = '';
+        }
+      }
+    }
+
     const mongoUpdate: any = {};
     if (Object.keys(update).length > 0) mongoUpdate.$set = update;
     if (Object.keys(unset).length > 0) mongoUpdate.$unset = unset;
@@ -305,6 +333,17 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         riskSettings: user!.riskSettings,
         patternDetectionSettings: user!.patternDetectionSettings || DEFAULT_PATTERN_DETECTION_SETTINGS,
         liveWatcherSettings: maskLiveWatcherSettings(user!.liveWatcherSettings),
+        aiSettings: user!.aiSettings ? {
+          enabled: user!.aiSettings.enabled ?? true,
+          model: user!.aiSettings.model || 'gemini-2.5-flash',
+          hasGeminiApiKey: Boolean(user!.aiSettings.geminiApiKey || config.geminiApiKey),
+          geminiApiKey: user!.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
+        } : {
+          enabled: true,
+          model: 'gemini-2.5-flash',
+          hasGeminiApiKey: Boolean(config.geminiApiKey),
+          geminiApiKey: config.geminiApiKey ? '•••••••• (Server Default)' : '',
+        },
       },
     });
   });

@@ -25,6 +25,11 @@ export interface IUserDoc extends Document {
   riskSettings?: IUserRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
   liveWatcherSettings?: ILiveWatcherSettings;
+  aiSettings?: {
+    geminiApiKey?: string;
+    enabled?: boolean;
+    model?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -209,6 +214,11 @@ const UserSchema = new Schema<IUserDoc>(
       enforceTelegramOrderGuardrails: { type: Boolean, default: true },
       enforceAdaptiveDayRiskGuardrails: { type: Boolean, default: true },
     },
+    aiSettings: {
+      geminiApiKey: { type: String },
+      enabled: { type: Boolean, default: true },
+      model: { type: String, default: 'gemini-2.5-flash' },
+    },
   },
   {
     timestamps: true,
@@ -216,6 +226,9 @@ const UserSchema = new Schema<IUserDoc>(
       transform: (_doc, ret: any) => {
         if (ret.liveWatcherSettings?.telegramBotToken) {
           ret.liveWatcherSettings.telegramBotToken = '••••••••';
+        }
+        if (ret.aiSettings?.geminiApiKey) {
+          ret.aiSettings.geminiApiKey = '••••••••';
         }
         return ret;
       },

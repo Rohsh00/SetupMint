@@ -1402,8 +1402,17 @@ export function SettingsPage() {
   // =========================================================================
   const [name, setName] = useState(user?.name || '');
   const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'USD');
+  const [geminiApiKey, setGeminiApiKey] = useState((user as any)?.aiSettings?.geminiApiKey || '');
+  const [aiEnabled, setAiEnabled] = useState((user as any)?.aiSettings?.enabled ?? true);
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if ((user as any)?.aiSettings) {
+      setGeminiApiKey((user as any).aiSettings.geminiApiKey || '');
+      setAiEnabled((user as any).aiSettings.enabled ?? true);
+    }
+  }, [user]);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1495,7 +1504,16 @@ export function SettingsPage() {
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    profileMutation.mutate({ name, baseCurrency, defaultAccountScope: selectedScopeValue });
+    profileMutation.mutate({
+      name,
+      baseCurrency,
+      defaultAccountScope: selectedScopeValue,
+      aiSettings: {
+        geminiApiKey,
+        enabled: aiEnabled,
+        model: 'gemini-2.5-flash',
+      },
+    });
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -1990,6 +2008,11 @@ export function SettingsPage() {
           onLogout={handleLogout}
           isLoggingOut={isLoggingOut}
           systemStatus={systemStatus}
+          geminiApiKey={geminiApiKey}
+          setGeminiApiKey={setGeminiApiKey}
+          aiEnabled={aiEnabled}
+          setAiEnabled={setAiEnabled}
+          hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
         />
       )}
 

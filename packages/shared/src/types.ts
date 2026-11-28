@@ -257,6 +257,7 @@ export interface IUser {
   riskSettings?: IRiskSettings;
   patternDetectionSettings?: IPatternDetectionSettings;
   liveWatcherSettings?: ILiveWatcherSettings;
+  aiSettings?: IUserAiSettings;
   createdAt: string;
   updatedAt: string;
 }
@@ -1181,6 +1182,25 @@ export interface ITrade {
   updatedAt: string;
 }
 
+export interface IAiCoachDebrief {
+  date: string;
+  verdict: string;
+  disciplineScore: number; // 1 to 5
+  summary: string;
+  strengths: string[];
+  leaks: string[];
+  ruleForTomorrow: string;
+  isAiGenerated: boolean;
+  modelUsed?: string;
+  generatedAt: string;
+}
+
+export interface IUserAiSettings {
+  geminiApiKey?: string;
+  enabled?: boolean;
+  model?: string;
+}
+
 export interface IDailyJournal {
   id: string;
   userId: string;
@@ -1195,6 +1215,7 @@ export interface IDailyJournal {
   lessonsLearned?: string;
   nextDayPlan?: string;
   notes?: string;
+  aiDebrief?: IAiCoachDebrief;
   tradesCount?: number;
   netPnL?: number;
   winCount?: number;

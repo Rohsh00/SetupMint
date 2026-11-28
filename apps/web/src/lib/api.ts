@@ -714,6 +714,27 @@ export const api = {
       request<any>(`/journal/${date}`, { method: 'POST', body: JSON.stringify(review) }),
     deleteDay: (date: string) =>
       request<any>(`/journal/${date}`, { method: 'DELETE' }),
+    generateAiDebrief: (date: string, force = false, paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (force) params.set('force', 'true');
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return request<any>(`/journal/${date}/ai-debrief${query}`, { method: 'POST' });
+    },
+    getAiDebrief: (date: string, paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+      return request<any>(`/journal/${date}/ai-debrief${query}`);
+    },
   },
 
   // Analytics

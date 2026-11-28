@@ -34,6 +34,7 @@ import StorageRounded from '@mui/icons-material/StorageRounded';
 import TuneRounded from '@mui/icons-material/TuneRounded';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded';
+import PsychologyRounded from '@mui/icons-material/PsychologyRounded';
 import { ILiveWatcherDisplaySettings } from '@tradevault/shared';
 
 function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
@@ -94,6 +95,11 @@ export interface ProfileSystemTabProps {
   onLogout: () => void;
   isLoggingOut: boolean;
   systemStatus: any;
+  geminiApiKey: string;
+  setGeminiApiKey: (val: string) => void;
+  aiEnabled: boolean;
+  setAiEnabled: (val: boolean) => void;
+  hasGeminiKey: boolean;
 }
 
 export function ProfileSystemTab({
@@ -133,6 +139,11 @@ export function ProfileSystemTab({
   onLogout,
   isLoggingOut,
   systemStatus,
+  geminiApiKey,
+  setGeminiApiKey,
+  aiEnabled,
+  setAiEnabled,
+  hasGeminiKey,
 }: ProfileSystemTabProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -339,6 +350,83 @@ export function ProfileSystemTab({
                   </Button>
                 </Box>
               </form>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* AI Trading Coach Configuration Card */}
+        <Grid size={{ xs: 12 }}>
+          <Card variant="outlined" sx={{ p: 1, borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)' }}>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <PsychologyRounded sx={{ color: 'primary.main' }} />
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      AI Trading Coach Configuration
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Powers institutional post-session debriefs and psychological coaching
+                    </Typography>
+                  </Box>
+                </Box>
+                <Chip
+                  size="small"
+                  label={hasGeminiKey ? 'Gemini Flash (Active)' : 'Quant Engine (Free Built-in)'}
+                  sx={{
+                    fontWeight: 700,
+                    bgcolor: hasGeminiKey ? 'rgba(168, 85, 247, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    color: hasGeminiKey ? '#c084fc' : '#10b981',
+                  }}
+                />
+              </Box>
+
+              <Alert severity="info" sx={{ borderRadius: 1.5, py: 0.5 }}>
+                <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.5 }}>
+                  <b>100% Free Integration:</b> Google provides a free tier for Gemini with <b>1,500 free requests per day</b> (zero credit card or subscription required). If left blank, SetupMint automatically runs the built-in <b>Deterministic Quant Coach</b> at ₹0.
+                </Typography>
+              </Alert>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  label="Google Gemini API Key (Free Tier)"
+                  size="small"
+                  fullWidth
+                  type="password"
+                  placeholder="Paste your AI Studio API key (AIzaSy...)"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  helperText={
+                    <span>
+                      Get a free key from{' '}
+                      <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: '#6366f1', textDecoration: 'underline' }}
+                      >
+                        Google AI Studio
+                      </a>{' '}
+                      (takes 30 seconds). Leave empty to use the built-in Quant Engine.
+                    </span>
+                  }
+                />
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Enable AI Post-Session Coach
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Allows generating session audits on the Daily Journal & Telegram (/coach)
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={aiEnabled}
+                    onChange={(e) => setAiEnabled(e.target.checked)}
+                  />
+                </Box>
+              </Box>
             </CardContent>
           </Card>
         </Grid>

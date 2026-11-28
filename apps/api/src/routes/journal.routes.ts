@@ -5,6 +5,7 @@ import { DailyJournal, Trade, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
 import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
+import { AiCoachService } from '../services/ai-coach.service.js';
 import Decimal from 'decimal.js';
 
 export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -273,5 +274,46 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
     await DailyJournal.deleteOne({ userId: req.user!.id, date, scopeKey });
     return reply.send({ success: true, message: 'Journal entry deleted' });
+  });
+
+  // Generate or regenerate Post-Session AI Coach Debrief
+  app.post('/:date/ai-debrief', { preHandler: [validateDateParam('date')] }, async (req: any, reply) => {
+    const { date } = req.params;
+    const { force } = req.query as any;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const scopeKey = accountCtx.accountIds.length === 1 ? accountCtx.accountIdsStr[0] : (scope.mode || 'ALL');
+
+    const debrief = await AiCoachService.getOrGenerateDebrief({
+      userId: req.user!.id,
+      date,
+      scopeKey,
+      forceRegenerate: force === 'true' || force === true,
+    });
+
+    return reply.send({
+      success: true,
+      data: debrief,
+    });
+  });
+
+  // Get existing Post-Session AI Coach Debrief
+  app.get('/:date/ai-debrief', { preHandler: [validateDateParam('date')] }, async (req: any, reply) => {
+    const { date } = req.params;
+    const scope = AccountScopeService.parseAccountScope(req.query);
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const scopeKey = accountCtx.accountIds.length === 1 ? accountCtx.accountIdsStr[0] : (scope.mode || 'ALL');
+
+    const debrief = await AiCoachService.getOrGenerateDebrief({
+      userId: req.user!.id,
+      date,
+      scopeKey,
+      forceRegenerate: false,
+    });
+
+    return reply.send({
+      success: true,
+      data: debrief,
+    });
   });
 };

@@ -54,6 +54,7 @@ import { EconomicCalendarService, IEconomicCalendarEvent } from './economic-cale
 import { ITradeCandle, DayRiskRegime, IAdaptiveDayRiskState, IAdaptiveDayRiskTier } from '@tradevault/shared';
 import sharp from 'sharp';
 import { AudioChimeService } from './audio-chime.service.js';
+import { AiCoachService } from './ai-coach.service.js';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -1611,6 +1612,15 @@ export class TelegramAlertService {
       await this.answerCallbackQuery(botToken, cq.id, 'Loading Performance Summary...');
       const targetScope = data.includes(':') ? data.split(':')[1] : undefined;
       if (botToken) await this.handleSummaryCommand(user, botToken, chatId, targetScope);
+      return;
+    }
+    if (data === 'cmd_coach' || data.startsWith('cmd_coach')) {
+      await this.answerCallbackQuery(botToken, cq.id, 'Consulting AI Trading Coach...');
+      const isForce = data.includes('_force');
+      const parts = data.split('_');
+      const dateArg = parts.find((p: string) => /^\d{4}-\d{2}-\d{2}$/.test(p));
+      const args = [dateArg || '', ...(isForce ? ['force'] : [])].filter(Boolean);
+      if (botToken) await this.handleCoachCommand(user, botToken, chatId, args);
       return;
     }
     if (data === 'cmd_sessions') {
@@ -3202,6 +3212,7 @@ export class TelegramAlertService {
           `• <b>/sl &lt;price&gt;</b> — Set or trail Stop Loss directly (e.g. <code>/sl 2735.50</code> or reply with price)\n` +
           `• <b>/chart [timeframe]</b> — Instant live candlestick chart (1m, 5m, 15m, 1h)\n` +
           `• <b>/summary</b> — Today's performance stats, win rate & harvested R\n` +
+          `• <b>/coach [date]</b> — Post-session AI Coach debrief (strengths, leaks & rule for tomorrow)\n` +
           `• <b>/news</b> — Upcoming XAUUSD / Gold catalysts & countdown\n` +
           `• <b>/newsremind &lt;mins&gt;</b> — Set custom alert reminder (e.g. <code>/newsremind 15</code> or <code>/newsremind off</code>)\n` +
           `• <b>/sessions</b> — Global market session radar & transition schedule (Tokyo, NSE, London, NY, London PM Fix)\n` +
@@ -3365,6 +3376,13 @@ export class TelegramAlertService {
 
       case '/summary':
         await this.handleSummaryCommand(user, botToken, chatId, args[0]);
+        break;
+
+      case '/coach':
+      case '/debrief':
+      case 'coach':
+      case 'debrief':
+        await this.handleCoachCommand(user, botToken, chatId, args);
         break;
 
       case '/news':
@@ -4962,11 +4980,69 @@ export class TelegramAlertService {
       buttons.push(...chunked);
     }
     buttons.push([
+      { text: '🧠 AI Coach', callback_data: 'cmd_coach' },
       { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
       { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
     ]);
 
     await this.sendMessage(botToken, chatId, text, buttons);
+  }
+
+  /**
+   * Generates and dispatches Post-Session AI Coach Debrief via Telegram.
+   */
+  private static async handleCoachCommand(user: any, botToken: string, chatId: string | number, args: string[]): Promise<void> {
+    const dateArg = args.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
+    const targetDate = dateArg || new Date().toISOString().split('T')[0];
+    const isForce = args.includes('force');
+
+    await this.sendMessage(botToken, chatId, `🧠 <i>Consulting AI Trading Coach for ${targetDate}...</i>`);
+
+    try {
+      const debrief = await AiCoachService.getOrGenerateDebrief({
+        userId: user._id,
+        date: targetDate,
+        forceRegenerate: isForce,
+      });
+
+      const scoreStars = '⭐'.repeat(debrief.disciplineScore) + '☆'.repeat(5 - debrief.disciplineScore);
+      const isAi = debrief.isAiGenerated;
+      const modelTag = isAi ? `🤖 ${debrief.modelUsed || 'Gemini Flash'}` : `⚡ Deterministic Quant Engine`;
+
+      let text =
+        `🧠 <b>SetupMint AI Coach Debrief</b>\n` +
+        `📅 <b>Date:</b> <code>${debrief.date}</code> | <b>Discipline:</b> ${scoreStars} (${debrief.disciplineScore}/5)\n` +
+        `Engine: <i>${modelTag}</i>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🎯 <b>Verdict:</b> <code>${debrief.verdict}</code>\n\n` +
+        `📋 <b>Executive Summary:</b>\n${debrief.summary}\n\n`;
+
+      if (debrief.strengths?.length) {
+        text += `💪 <b>Observed Strengths:</b>\n` +
+          debrief.strengths.map((s) => `• ${s}`).join('\n') + `\n\n`;
+      }
+
+      if (debrief.leaks?.length) {
+        text += `⚠️ <b>Identified Leaks & Tilts:</b>\n` +
+          debrief.leaks.map((l) => `• ${l}`).join('\n') + `\n\n`;
+      }
+
+      text +=
+        `🎯 <b>Non-Negotiable Rule for Tomorrow:</b>\n` +
+        `<i>"${debrief.ruleForTomorrow}"</i>`;
+
+      await this.sendMessage(botToken, chatId, text, [
+        [
+          { text: '🔄 Refresh Debrief', callback_data: `cmd_coach_force_${targetDate}` },
+          { text: '📊 Daily Summary', callback_data: 'cmd_summary' },
+        ],
+        [
+          { text: '📌 View Cockpit', callback_data: 'cmd_refresh_cockpit' },
+        ],
+      ]);
+    } catch (err: any) {
+      await this.sendMessage(botToken, chatId, `❌ Failed to generate AI Coach debrief: ${err.message}`);
+    }
   }
 
   /**

@@ -60,6 +60,9 @@ export const config = {
   telegramBotToken: process.env.TELEGRAM_DEFAULT_BOT_TOKEN || process.env.BACKUP_ALERT_TELEGRAM_BOT_TOKEN || '',
   telegramDefaultBotToken: process.env.TELEGRAM_DEFAULT_BOT_TOKEN || process.env.BACKUP_ALERT_TELEGRAM_BOT_TOKEN || '',
 
+  // AI Coach (Google Gemini Free Tier)
+  geminiApiKey: process.env.GEMINI_API_KEY?.trim() || '',
+
   // Off-Site Backup Configuration
   backupS3Endpoint: process.env.BACKUP_S3_ENDPOINT || process.env.S3_ENDPOINT || '',
   backupS3Bucket: process.env.BACKUP_S3_BUCKET || '',

@@ -758,6 +758,19 @@ export const updateTradeTemplateSchema = createTradeTemplateSchema.partial();
 export type CreateTradeTemplateInput = z.infer<typeof createTradeTemplateSchema>;
 export type UpdateTradeTemplateInput = z.infer<typeof updateTradeTemplateSchema>;
 
+export const aiCoachDebriefSchema = z.object({
+  date: z.string(),
+  verdict: z.string(),
+  disciplineScore: z.number().min(1).max(5),
+  summary: z.string(),
+  strengths: z.array(z.string()),
+  leaks: z.array(z.string()),
+  ruleForTomorrow: z.string(),
+  isAiGenerated: z.boolean(),
+  modelUsed: z.string().optional(),
+  generatedAt: z.string(),
+});
+
 export const dailyJournalSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   marketConditions: z.string().optional(),
@@ -770,6 +783,7 @@ export const dailyJournalSchema = z.object({
   lessonsLearned: z.string().optional(),
   nextDayPlan: z.string().optional(),
   notes: z.string().optional(),
+  aiDebrief: aiCoachDebriefSchema.optional(),
 });
 
 export const riskCalculatorQuerySchema = z.object({

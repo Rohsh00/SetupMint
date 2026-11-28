@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { IAiCoachDebrief } from '@tradevault/shared';
 
 export interface IDailyJournalDoc extends Document {
   userId: mongoose.Types.ObjectId;
@@ -15,6 +16,7 @@ export interface IDailyJournalDoc extends Document {
   lessonsLearned?: string;
   nextDayPlan?: string;
   notes?: string;
+  aiDebrief?: IAiCoachDebrief;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +54,18 @@ const DailyJournalSchema = new Schema<IDailyJournalDoc>(
     lessonsLearned: { type: String },
     nextDayPlan: { type: String },
     notes: { type: String },
+    aiDebrief: {
+      date: { type: String },
+      verdict: { type: String },
+      disciplineScore: { type: Number },
+      summary: { type: String },
+      strengths: [{ type: String }],
+      leaks: [{ type: String }],
+      ruleForTomorrow: { type: String },
+      isAiGenerated: { type: Boolean, default: false },
+      modelUsed: { type: String },
+      generatedAt: { type: String },
+    },
   },
   { timestamps: true }
 );

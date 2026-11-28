@@ -41,6 +41,9 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckCircleIcon from '@mui/icons-material/CheckCircleRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded';
+import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
+import TipsAndUpdatesRoundedIcon from '@mui/icons-material/TipsAndUpdatesRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -119,6 +122,37 @@ export function JournalCalendarPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [aiDebrief, setAiDebrief] = useState<any>(null);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+
+  const handleGenerateAiDebrief = async (force = false) => {
+    if (!selectedDate) return;
+    setIsGeneratingAi(true);
+    try {
+      const res = await api.journal.generateAiDebrief(selectedDate, force, queryParams);
+      const data = res?.data || res;
+      setAiDebrief(data);
+      toast.success(data.isAiGenerated ? 'AI Coach debrief generated via Gemini!' : 'AI Coach debrief generated via Quant Engine!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate AI Coach debrief');
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
+
+  const handleApplyAiDebrief = () => {
+    if (!aiDebrief) return;
+    setDisciplineRating(aiDebrief.disciplineScore);
+    const summaryBlock = `[AI Coach - ${aiDebrief.verdict}]\n${aiDebrief.summary}${
+      aiDebrief.leaks?.length ? `\n\nIdentified Leaks:\n${aiDebrief.leaks.map((l: string) => `• ${l}`).join('\n')}` : ''
+    }`;
+    setLessonsLearned((prev) => (prev ? `${prev}\n\n${summaryBlock}` : summaryBlock));
+    if (aiDebrief.ruleForTomorrow) {
+      setNextDayPlan(aiDebrief.ruleForTomorrow);
+    }
+    toast.success('AI Coach insights applied to session reflection!');
+  };
+
   const handleApplyPrefill = () => {
     if (!dayDetails?.prefill) return;
     const p = dayDetails.prefill;
@@ -136,6 +170,7 @@ export function JournalCalendarPage() {
   React.useEffect(() => {
     if (dayDetails?.journal) {
       const j = dayDetails.journal;
+      setAiDebrief(j.aiDebrief || null);
       setMarketConditions(j.marketConditions || '');
       setMarketBias(j.marketBias || 'NEUTRAL');
       setEmotionalState(j.emotionalState || 'CALM');
@@ -1269,6 +1304,185 @@ export function JournalCalendarPage() {
                   {dayDetails.prefill.dailyLossBreach.message}
                 </Alert>
               )}
+
+              {/* AI Coach Debrief Section */}
+              <Card
+                variant="outlined"
+                sx={{
+                  mb: 2.5,
+                  p: 2,
+                  borderRadius: 2,
+                  background: isDark
+                    ? 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%)'
+                    : 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.8) 100%)',
+                  borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 1.5,
+                        bgcolor: 'primary.main',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <PsychologyRoundedIcon sx={{ fontSize: 18 }} />
+                    </Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800, letterSpacing: '0.02em' }}>
+                      AI Trading Coach Debrief
+                    </Typography>
+                    {aiDebrief && (
+                      <Chip
+                        size="small"
+                        label={aiDebrief.isAiGenerated ? (aiDebrief.modelUsed || 'Gemini Flash') : 'Quant Engine (Free)'}
+                        sx={{
+                          height: 20,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          bgcolor: aiDebrief.isAiGenerated ? 'rgba(168, 85, 247, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: aiDebrief.isAiGenerated ? '#c084fc' : '#34d399',
+                        }}
+                      />
+                    )}
+                  </Box>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {aiDebrief && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={handleApplyAiDebrief}
+                        sx={{ fontSize: '0.72rem', py: 0.2, px: 1, textTransform: 'none', fontWeight: 600 }}
+                      >
+                        Apply to Form
+                      </Button>
+                    )}
+                    <Button
+                      size="small"
+                      variant={aiDebrief ? 'text' : 'contained'}
+                      color="primary"
+                      disabled={isGeneratingAi}
+                      onClick={() => handleGenerateAiDebrief(Boolean(aiDebrief))}
+                      startIcon={isGeneratingAi ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon sx={{ fontSize: 14 }} />}
+                      sx={{ fontSize: '0.72rem', py: 0.2, px: 1.2, textTransform: 'none', fontWeight: 700 }}
+                    >
+                      {isGeneratingAi ? 'Analyzing...' : aiDebrief ? 'Regenerate' : 'Consult AI Coach'}
+                    </Button>
+                  </Box>
+                </Box>
+
+                {aiDebrief ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {/* Score and Verdict */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1, borderRadius: 1.5, bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.7)' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: muiTheme.palette.text.secondary }}>
+                          DISCIPLINE SCORE:
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.3, color: '#f59e0b', fontSize: '0.9rem' }}>
+                          {'★'.repeat(aiDebrief.disciplineScore)}{'☆'.repeat(5 - aiDebrief.disciplineScore)}
+                        </Box>
+                        <Typography variant="caption" sx={{ fontWeight: 800, ml: 0.5 }}>
+                          {aiDebrief.disciplineScore}/5
+                        </Typography>
+                      </Box>
+                      <Chip
+                        size="small"
+                        label={aiDebrief.verdict}
+                        sx={{
+                          fontWeight: 800,
+                          fontSize: '0.68rem',
+                          bgcolor:
+                            aiDebrief.disciplineScore >= 4
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : aiDebrief.disciplineScore === 3
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
+                          color:
+                            aiDebrief.disciplineScore >= 4
+                              ? '#10b981'
+                              : aiDebrief.disciplineScore === 3
+                              ? '#f59e0b'
+                              : '#ef4444',
+                        }}
+                      />
+                    </Box>
+
+                    {/* Summary */}
+                    <Typography variant="body2" sx={{ fontSize: '0.82rem', lineHeight: 1.5, color: muiTheme.palette.text.primary }}>
+                      {aiDebrief.summary}
+                    </Typography>
+
+                    {/* Strengths & Leaks */}
+                    <Grid container spacing={1.5}>
+                      {aiDebrief.strengths?.length > 0 && (
+                        <Grid size={{ xs: 12, sm: aiDebrief.leaks?.length > 0 ? 6 : 12 }}>
+                          <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                              <CheckCircleIcon sx={{ fontSize: 13 }} /> Observed Strengths
+                            </Typography>
+                            {aiDebrief.strengths.map((s: string, idx: number) => (
+                              <Typography key={idx} variant="caption" sx={{ display: 'block', fontSize: '0.74rem', color: muiTheme.palette.text.secondary, mb: 0.3 }}>
+                                • {s}
+                              </Typography>
+                            ))}
+                          </Box>
+                        </Grid>
+                      )}
+
+                      {aiDebrief.leaks?.length > 0 && (
+                        <Grid size={{ xs: 12, sm: aiDebrief.strengths?.length > 0 ? 6 : 12 }}>
+                          <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: isDark ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.04)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                              <WarningAmberRoundedIcon sx={{ fontSize: 13 }} /> Identified Leaks & Tilts
+                            </Typography>
+                            {aiDebrief.leaks.map((l: string, idx: number) => (
+                              <Typography key={idx} variant="caption" sx={{ display: 'block', fontSize: '0.74rem', color: muiTheme.palette.text.secondary, mb: 0.3 }}>
+                                • {l}
+                              </Typography>
+                            ))}
+                          </Box>
+                        </Grid>
+                      )}
+                    </Grid>
+
+                    {/* Rule for Tomorrow */}
+                    {aiDebrief.ruleForTomorrow && (
+                      <Box
+                        sx={{
+                          p: 1.2,
+                          borderRadius: 1.5,
+                          bgcolor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.06)',
+                          borderLeft: '3px solid #6366f1',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 1,
+                        }}
+                      >
+                        <TipsAndUpdatesRoundedIcon sx={{ fontSize: 16, color: '#6366f1', mt: 0.2 }} />
+                        <Box>
+                          <Typography variant="caption" sx={{ fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block' }}>
+                            Non-Negotiable Rule for Tomorrow
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.78rem', fontWeight: 600, fontStyle: 'italic', color: muiTheme.palette.text.primary, mt: 0.2 }}>
+                            "{aiDebrief.ruleForTomorrow}"
+                          </Typography>
+                        </Box>
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <Typography variant="caption" sx={{ color: muiTheme.palette.text.secondary, display: 'block', fontStyle: 'italic' }}>
+                    Click "Consult AI Coach" to generate an instant institutional session debrief analyzing giveback, sizing escalation, and discipline leaks.
+                  </Typography>
+                )}
+              </Card>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Grid container spacing={2}>

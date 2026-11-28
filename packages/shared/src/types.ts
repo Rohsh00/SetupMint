@@ -1243,6 +1243,36 @@ export interface IUserAiSettings {
   autoApplyTradeDetails?: boolean;
 }
 
+export interface IAnalyticsAiDirective {
+  category: string;
+  title: string;
+  directive: string;
+  rationale: string;
+  impact: 'HIGH' | 'MEDIUM' | 'CRITICAL';
+}
+
+export interface IAnalyticsAiAudit {
+  overallVerdict: string;
+  edgeGrade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
+  executiveSummary: string;
+  topStrengths: string[];
+  criticalLeaks: string[];
+  actionDirectives: IAnalyticsAiDirective[];
+  tabInsights: {
+    summary: string;
+    overview: string;
+    psychology: string;
+    execution: string;
+    sizing: string;
+    time: string;
+  };
+  rulesForNextCycle: string[];
+  modelUsed: string;
+  generatedAt: string;
+  isAiGenerated: boolean;
+  latencyMs?: number;
+}
+
 export interface IDailyJournal {
   id: string;
   userId: string;

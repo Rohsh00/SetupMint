@@ -79,13 +79,17 @@ import { PyramidingAnalyticsTab } from '../components/analytics/PyramidingAnalyt
 import { PositionSizingDiagnosticsTab } from '../components/analytics/PositionSizingDiagnosticsTab.js';
 import { AnalyticsSummaryTab } from '../components/analytics/AnalyticsSummaryTab.js';
 import { KillZoneAnalyticsCard } from '../components/analytics/KillZoneAnalyticsCard.js';
+import { AnalyticsAiAdvisorCard } from '../components/analytics/AnalyticsAiAdvisorCard.js';
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { useTradeDrilldown } from '../context/TradeDrillContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
+import { useAuth } from '../context/AuthContext.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 
 export function AnalyticsPage() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { queryParams, isPropMode, scopeLabel, currency: scopeCurrency, activeAccount, isMultiCurrency, currencies } = useAccountScope();
   const caps = useAccountCapabilities();
   const hasMarketData = caps.marketData.fyersHistory || caps.marketData.angelOneFallback || Boolean(caps.marketData.hasExcursionCapability) || caps.broker.adapter === 'ELEFIN_MT5';
@@ -487,6 +491,66 @@ export function AnalyticsPage() {
     enabled: activeTab === 'SUMMARY',
   });
 
+  // Comprehensive AI Analytics Advisor Query & Mutation
+  const { data: aiAuditData, isLoading: isAiAuditLoading, refetch: refetchAiAudit } = useQuery({
+    queryKey: [
+      'analytics-ai-audit',
+      queryParams,
+      startDate,
+      endDate,
+      selectedSymbol,
+      selectedDirection,
+      selectedSession,
+      selectedStrategyId,
+    ],
+    queryFn: () =>
+      api.analytics.aiAudit({
+        ...queryParams,
+        startDate,
+        endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
+      }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const aiAuditMutation = useMutation({
+    mutationFn: (force?: boolean) =>
+      api.analytics.aiAudit({
+        ...queryParams,
+        startDate,
+        endDate,
+        symbol: selectedSymbol !== 'ALL' ? selectedSymbol : undefined,
+        direction: selectedDirection !== 'ALL' ? selectedDirection : undefined,
+        session: selectedSession !== 'ALL' ? selectedSession : undefined,
+        strategyId: selectedStrategyId !== 'ALL' ? selectedStrategyId : undefined,
+        forceRegenerate: force,
+      }),
+    onSuccess: (res: any) => {
+      queryClient.setQueryData(
+        [
+          'analytics-ai-audit',
+          queryParams,
+          startDate,
+          endDate,
+          selectedSymbol,
+          selectedDirection,
+          selectedSession,
+          selectedStrategyId,
+        ],
+        res
+      );
+      toast.success(res?.data?.isAiGenerated ? 'AI Audit synthesized via Gemini!' : 'AI Audit generated via Quant Engine!');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Failed to generate AI Audit');
+    },
+  });
+
+  const activeAudit = (aiAuditMutation.data as any)?.data || (aiAuditData as any)?.data || aiAuditData;
+
   // Aggregate available symbols across all analytic engines for universal selector
   const allAvailableSymbols = React.useMemo(() => {
     const symSet = new Set<string>();
@@ -586,7 +650,6 @@ export function AnalyticsPage() {
     });
   };
 
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const excursionBackfillMutation = useMutation({
@@ -1123,6 +1186,16 @@ export function AnalyticsPage() {
         </Card>
       )}
       {isPropMode && <PropChallengePanel />}
+
+      {/* Universal Analytics AI Advisor & Performance Copilot */}
+      <AnalyticsAiAdvisorCard
+        audit={activeAudit}
+        isLoading={isAiAuditLoading || aiAuditMutation.isPending}
+        onConsult={(force) => aiAuditMutation.mutate(force)}
+        activeTab={activeTab}
+        hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
+        selectedSymbol={selectedSymbol}
+      />
 
       {/* TAB 0: ACTIONABLE PLAYBOOK & SUMMARY */}
       {activeTab === 'SUMMARY' && (

@@ -803,6 +803,8 @@ export const api = {
       }
       return request<any>(`/analytics/summary?${query.toString()}`);
     },
+    aiAudit: (body: Record<string, any> = {}) =>
+      request<any>('/analytics/ai-audit', { method: 'POST', body: JSON.stringify(body) }),
   },
 
   // Risk Calculator

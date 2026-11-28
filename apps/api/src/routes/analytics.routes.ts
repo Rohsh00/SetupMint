@@ -23,6 +23,7 @@ import {
   IActionableSummaryTradeInput,
 } from '@tradevault/financial-engine';
 import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
+import { AnalyticsAiAdvisorService } from '../services/analytics-ai-advisor.service.js';
 
 function applyCommonAnalyticsFilters(filter: any, query: any) {
   const { symbol, direction, session, strategyId } = query || {};
@@ -1035,6 +1036,53 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
         currency: primaryCurrency,
         isMultiCurrency: accountCtx.isMultiCurrency,
       },
+    });
+  });
+
+  // Comprehensive AI Analytics Advisor & Quantitative Desk Audit
+  app.post('/ai-audit', async (req: any, reply) => {
+    const scope = (req.headers['x-account-scope'] as string) || (req.query?.scope as string) || req.body?.scope;
+    const { startDate, endDate, symbol, direction, session, strategyId, forceRegenerate } = req.body || {};
+
+    const accountCtx = await resolveAccountContext(req.user!.id, scope);
+    const accountIds = accountCtx.accountIds;
+
+    const filter: any = {
+      userId: req.user!.id,
+      accountId: { $in: accountIds },
+      status: 'CLOSED',
+    };
+
+    if (startDate || endDate) {
+      const dateClause = buildDateRangeClause(startDate, endDate);
+      if (dateClause) Object.assign(filter, dateClause);
+    }
+
+    applyCommonAnalyticsFilters(filter, { symbol, direction, session, strategyId });
+
+    const trades = await Trade.find(filter).sort({ tradeDate: -1, exitTime: -1 }).lean();
+
+    const primaryCurrency = (accountCtx.primaryCurrency && accountCtx.primaryCurrency !== 'MULTI' ? accountCtx.primaryCurrency : null) || trades[0]?.currency || 'USD';
+
+    const filterParts: string[] = [];
+    if (symbol && symbol !== 'ALL') filterParts.push(`Symbol: ${symbol}`);
+    if (direction && direction !== 'ALL') filterParts.push(`Direction: ${direction}`);
+    if (session && session !== 'ALL') filterParts.push(`Session: ${session}`);
+    if (strategyId && strategyId !== 'ALL') filterParts.push(`Strategy: ${strategyId}`);
+    if (startDate && endDate) filterParts.push(`Period: ${startDate} to ${endDate}`);
+
+    const audit = await AnalyticsAiAdvisorService.generateAudit({
+      userId: req.user!.id,
+      trades,
+      scopeCurrency: primaryCurrency,
+      scopeLabel: typeof scope === 'string' ? scope : undefined,
+      filterSummary: filterParts.length > 0 ? filterParts.join(', ') : undefined,
+      forceRegenerate: Boolean(forceRegenerate),
+    });
+
+    return reply.send({
+      success: true,
+      data: audit,
     });
   });
 };

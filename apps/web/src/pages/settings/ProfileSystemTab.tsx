@@ -7,6 +7,8 @@ import {
   Card,
   CardContent,
   TextField,
+  Select,
+  FormControl,
   MenuItem,
   ToggleButtonGroup,
   ToggleButton,
@@ -99,6 +101,8 @@ export interface ProfileSystemTabProps {
   systemStatus: any;
   geminiApiKey: string;
   setGeminiApiKey: (val: string) => void;
+  aiModel?: string;
+  setAiModel?: (val: string) => void;
   aiEnabled: boolean;
   setAiEnabled: (val: boolean) => void;
   autoAnalyzeTrades?: boolean;
@@ -157,6 +161,8 @@ export function ProfileSystemTab({
   systemStatus,
   geminiApiKey,
   setGeminiApiKey,
+  aiModel = 'gemini-2.5-flash',
+  setAiModel,
   aiEnabled,
   setAiEnabled,
   autoAnalyzeTrades = true,
@@ -573,7 +579,7 @@ export function ProfileSystemTab({
                       </Box>
                       <Chip
                         size="small"
-                        label="gemini-3.5-flash-lite"
+                        label={aiModel}
                         sx={{
                           fontSize: '0.68rem',
                           fontWeight: 700,
@@ -584,6 +590,39 @@ export function ProfileSystemTab({
                       />
                     </Box>
                   ) : null}
+
+                  {/* AI Model Selection */}
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, mt: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      AI Model Selection
+                    </Typography>
+                    <FormControl size="small" fullWidth>
+                      <Select
+                        value={aiModel}
+                        onChange={(e) => setAiModel?.(e.target.value)}
+                        sx={{ borderRadius: 1.5 }}
+                      >
+                        <MenuItem value="gemini-2.5-flash">
+                          Gemini 2.5 Flash — Ultra-Low Latency & High Intelligence (Recommended)
+                        </MenuItem>
+                        <MenuItem value="gemini-3.8-flash">
+                          Gemini 3.8 Flash — High-Performance Multimodal Reasoning
+                        </MenuItem>
+                        <MenuItem value="gemini-3.5-flash-lite">
+                          Gemini 3.5 Flash Lite — Cost-Effective & Lightweight
+                        </MenuItem>
+                        <MenuItem value="gemini-2.0-flash">
+                          Gemini 2.0 Flash — Standard Multimodal Engine
+                        </MenuItem>
+                        <MenuItem value="gemini-1.5-flash">
+                          Gemini 1.5 Flash — Established Standard Flash
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      All models operate on Google's free tier with zero subscription costs.
+                    </Typography>
+                  </Box>
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

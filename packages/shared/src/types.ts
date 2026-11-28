@@ -1273,6 +1273,120 @@ export interface IAnalyticsAiAudit {
   latencyMs?: number;
 }
 
+export interface IAiPreTradeCheckInput {
+  symbol: string;
+  direction: 'LONG' | 'SHORT';
+  entryPrice: number;
+  stopLossPrice: number;
+  targetPrice?: number;
+  riskAmount?: number;
+  riskPercent?: number;
+  strategyId?: string;
+  accountId?: string;
+}
+
+export interface IAiPreTradeCheckResult {
+  verdict: 'APPROVED_HIGH_EDGE' | 'PROCEED_WITH_DISCIPLINE' | 'WARNING_HIGH_RISK';
+  verdictTitle: string;
+  summary: string;
+  riskRewardRatio: number;
+  edgeScore: number; // 0 - 100
+  tiltRisk: 'LOW' | 'MODERATE' | 'CRITICAL';
+  todayContext: {
+    tradesCountToday: number;
+    netPnLToday: number;
+    consecutiveLosses: number;
+    dailyLossRemaining?: number;
+    dailyLossLimitBreached: boolean;
+  };
+  historicalEdge: {
+    sampleSize: number;
+    winRate: number;
+    profitFactor: number;
+    avgR: number;
+    frequentMistakes: string[];
+  };
+  keyChecks: Array<{
+    text: string;
+    passed: boolean;
+    severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  }>;
+  ruleReminder: string;
+  isAiGenerated: boolean;
+  modelUsed?: string;
+  latencyMs?: number;
+}
+
+export interface IAiDailyBriefing {
+  date: string;
+  readinessScore: number; // 0 - 100
+  marketSessionBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'CHOP';
+  psychologicalState: string;
+  yesterdayRecap: {
+    tradesCount: number;
+    netPnL: number;
+    keyLeak?: string;
+    disciplineScore?: number;
+  };
+  topEdgeInsight: string;
+  dailyDirectives: string[];
+  focusRuleForToday: string;
+  isAiGenerated: boolean;
+  modelUsed?: string;
+  generatedAt: string;
+  latencyMs?: number;
+}
+
+export interface IBatchAiAnalyzeResult {
+  totalRequested: number;
+  succeeded: number;
+  failed: number;
+  analyzedTrades: Array<{
+    id: string;
+    symbol: string;
+    direction?: string;
+    setupType?: string;
+    executionScore?: number;
+    disciplineScore?: number;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+export interface IAiStrategyAudit {
+  strategyId: string;
+  strategyName: string;
+  totalTrades: number;
+  winRate: number;
+  profitFactor: number;
+  avgRealizedR: number;
+  edgeStatus: 'STRONG_EDGE' | 'DECAYING_EDGE' | 'NEGATIVE_EDGE' | 'INSUFFICIENT_SAMPLE';
+  executiveSummary: string;
+  winningTraits: string[];
+  losingPitfalls: string[];
+  maeMfeOptimization: string;
+  recommendedRuleChanges: string[];
+  isAiGenerated: boolean;
+  modelUsed?: string;
+  generatedAt: string;
+  latencyMs?: number;
+}
+
+export interface IAiWeeklySummary {
+  week: string; // YYYY-Www
+  weeklyGrade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F';
+  executiveSummary: string;
+  capitalDisciplineReview: string;
+  biggestLeakOfTheWeek: string;
+  bestExecutionTrait: string;
+  recommendedFocusRule: string;
+  coachingAdvice: string;
+  isAiGenerated: boolean;
+  modelUsed?: string;
+  generatedAt: string;
+  latencyMs?: number;
+}
+
 export interface IDailyJournal {
   id: string;
   userId: string;

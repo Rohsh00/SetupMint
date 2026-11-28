@@ -238,6 +238,45 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
       });
     }
 
+    actionList.push(
+      {
+        id: 'action-ai-briefing',
+        category: 'ACTIONS',
+        title: 'Morning AI Trading Readiness Briefing',
+        subtitle: 'Generate AI session readiness, mindset, and daily focus rule',
+        icon: AutoAwesomeRoundedIcon,
+        keywords: ['ai', 'briefing', 'morning', 'readiness', 'coach', 'gemini'],
+        action: () => {
+          onClose();
+          navigate('/?aiBriefing=1');
+        },
+      },
+      {
+        id: 'action-ai-pretrade',
+        category: 'ACTIONS',
+        title: 'Run AI Pre-Trade Sanity Check',
+        subtitle: 'Audit proposed trade risk-to-reward and tilt state before entry',
+        icon: AutoAwesomeRoundedIcon,
+        keywords: ['ai', 'pretrade', 'sanity', 'check', 'risk', 'tilt'],
+        action: () => {
+          onClose();
+          navigate('/risk-calculator?aiCheck=1');
+        },
+      },
+      {
+        id: 'action-ai-weekly',
+        category: 'ACTIONS',
+        title: 'AI Executive Weekly Performance Review',
+        subtitle: 'Review weekly discipline grade, critical leaks, and focus rule',
+        icon: RateReviewRoundedIcon,
+        keywords: ['ai', 'weekly', 'review', 'executive', 'debrief', 'grade'],
+        action: () => {
+          onClose();
+          navigate('/review/weekly');
+        },
+      }
+    );
+
     const navList: PaletteItem[] = [
       {
         id: 'nav-overview',

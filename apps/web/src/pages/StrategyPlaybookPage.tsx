@@ -48,6 +48,7 @@ import FullscreenExitIcon from '@mui/icons-material/FullscreenExitRounded';
 import ViewSidebarIcon from '@mui/icons-material/ViewSidebarRounded';
 import TabIcon from '@mui/icons-material/TabRounded';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMoreRounded';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesomeRounded';
 
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
@@ -57,6 +58,7 @@ import { useAccountScope, useAccountCapabilities } from '../context/AccountScope
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { HelpHint } from '../components/help/index.js';
+import { AiStrategyAuditDialog } from '../components/strategy/AiStrategyAuditDialog.js';
 import {
   ITradeTemplate,
   TemplateGroup,
@@ -97,6 +99,9 @@ export function StrategyPlaybookPage() {
   const [modalLayoutMode, setModalLayoutMode] = useState<'SPLIT' | 'TABS'>('SPLIT');
   const [modalActiveTab, setModalActiveTab] = useState<'THESIS' | 'RULES' | 'VARIANTS' | 'CHECKLIST'>('THESIS');
   const [expandedStrategyId, setExpandedStrategyId] = useState<string | null>(null);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [auditStrategyId, setAuditStrategyId] = useState<string | null>(null);
+  const [auditStrategyName, setAuditStrategyName] = useState<string>('');
 
   // Child variants state for strategy modal
   const [variants, setVariants] = useState<any[]>([]);
@@ -730,6 +735,19 @@ export function StrategyPlaybookPage() {
                             {strat.name}
                           </Typography>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Tooltip title="AI Playbook Audit & Edge Optimization" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  setAuditStrategyId(strat.id || strat._id);
+                                  setAuditStrategyName(strat.name);
+                                  setIsAuditOpen(true);
+                                }}
+                                sx={{ color: '#6366f1', bgcolor: 'rgba(99, 102, 241, 0.1)', '&:hover': { bgcolor: 'rgba(99, 102, 241, 0.2)' } }}
+                              >
+                                <AutoAwesomeIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="Edit Strategy" arrow>
                               <IconButton size="small" onClick={() => openEditModal(strat)}>
                                 <EditIcon fontSize="small" />
@@ -2506,6 +2524,14 @@ export function StrategyPlaybookPage() {
           </DialogActions>
         </form>
       </Dialog>
+
+      {/* AI Strategy Playbook & Edge Audit Dialog */}
+      <AiStrategyAuditDialog
+        open={isAuditOpen}
+        onClose={() => setIsAuditOpen(false)}
+        strategyId={auditStrategyId}
+        strategyName={auditStrategyName}
+      />
     </Box>
   );
 }

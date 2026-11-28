@@ -10,6 +10,12 @@ import type {
   IWeeklyReviewSnapshot,
   IFocusRule,
   IFocusRuleEvaluation,
+  IAiPreTradeCheckInput,
+  IAiPreTradeCheckResult,
+  IAiDailyBriefing,
+  IBatchAiAnalyzeResult,
+  IAiStrategyAudit,
+  IAiWeeklySummary,
 } from '@tradevault/shared';
 
 export function getApiBaseUrl(): string {
@@ -350,6 +356,8 @@ export const api = {
       }
       return request<any>(`/strategies/${id}/analytics?${query.toString()}`);
     },
+    aiAudit: (strategyId: string) =>
+      request<IAiStrategyAudit>(`/strategies/${strategyId}/ai-audit`, { method: 'POST' }),
   },
 
   // Trade Setup Templates
@@ -422,6 +430,11 @@ export const api = {
       request('/trades/bulk-delete', {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
+      }),
+    bulkAiAnalyze: (data: { tradeIds: string[]; autoApply?: boolean; force?: boolean }) =>
+      request<IBatchAiAnalyzeResult>('/trades/bulk-ai-analyze', {
+        method: 'POST',
+        body: JSON.stringify(data),
       }),
     getLiveWatcher: (accountIdOrParams?: string | Record<string, any>) => {
       const params = new URLSearchParams();
@@ -692,6 +705,18 @@ export const api = {
       }
       return request<IEquityCurvesResponse>(`/dashboard/equity-curves?${query.toString()}`);
     },
+    aiBriefing: (paramsObj?: Record<string, any>) => {
+      const params = new URLSearchParams();
+      if (paramsObj) {
+        for (const [k, v] of Object.entries(paramsObj)) {
+          if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+        }
+      }
+      const qs = params.toString();
+      return request<IAiDailyBriefing>(`/dashboard/ai-briefing${qs ? `?${qs}` : ''}`);
+    },
+    regenerateAiBriefing: (body?: { date?: string }) =>
+      request<IAiDailyBriefing>('/dashboard/ai-briefing', { method: 'POST', body: JSON.stringify(body || {}) }),
   },
 
   // Journal
@@ -811,6 +836,8 @@ export const api = {
   risk: {
     calculate: (params: any) =>
       request<any>('/risk/calculate', { method: 'POST', body: JSON.stringify(params) }),
+    aiPreTradeCheck: (params: IAiPreTradeCheckInput) =>
+      request<IAiPreTradeCheckResult>('/risk/ai-pretrade-check', { method: 'POST', body: JSON.stringify(params) }),
   },
 
   // Attachments
@@ -984,7 +1011,7 @@ export const api = {
       request<any>('/settings/test-gold-news-result-alert', { method: 'POST' }),
     testSessionAlert: () =>
       request<any>('/settings/test-session-alert', { method: 'POST' }),
-    testGemini: (data?: { apiKey?: string }) =>
+    testGemini: (data?: { apiKey?: string; model?: string }) =>
       request<any>('/settings/test-gemini', { method: 'POST', body: JSON.stringify(data || {}) }),
   },
 
@@ -1065,6 +1092,12 @@ export const api = {
       const qs = params.toString();
       return request<IWeeklyReview[]>(`/review/weekly${qs ? `?${qs}` : ''}`);
     },
+    getWeeklyAiSummary: (week: string, accountId?: string) => {
+      const qs = accountId && accountId !== 'ALL' ? `?accountId=${accountId}` : '';
+      return request<IAiWeeklySummary>(`/review/weekly/${week}/ai-summary${qs}`);
+    },
+    regenerateWeeklyAiSummary: (week: string, data?: { accountId?: string }) =>
+      request<IAiWeeklySummary>(`/review/weekly/${week}/ai-summary`, { method: 'POST', body: JSON.stringify(data || {}) }),
   },
 
   // Integrations

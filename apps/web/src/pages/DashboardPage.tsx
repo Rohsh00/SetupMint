@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useOutletContext, Link as RouterLink, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOutletContext, Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { dateToIsoWeek, getAdjacentIsoWeek } from '@tradevault/shared';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
@@ -61,6 +61,8 @@ import { LiveOpenTradeWatcher } from '../components/trades/live/LiveOpenTradeWat
 import { PropChallengePanel } from '../components/dashboard/PropChallengePanel.js';
 import { LiveMarketChart } from '../components/dashboard/PropLiveMarketChart.js';
 import { HelpHint } from '../components/help/index.js';
+import { DashboardAiBriefingCard } from '../components/dashboard/DashboardAiBriefingCard.js';
+import { toast } from '../context/ToastContext.js';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -78,6 +80,34 @@ export function DashboardPage() {
       setShowNormalMarketChart(Boolean(user.liveWatcherSettings.displaySettings.autoExpandCharts));
     }
   }, [user?.liveWatcherSettings?.displaySettings?.autoExpandCharts]);
+
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+
+  const { data: aiBriefingRes, isLoading: isBriefingLoading } = useQuery({
+    queryKey: ['dashboard-ai-briefing'],
+    queryFn: () => api.dashboard.aiBriefing(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const briefingMutation = useMutation({
+    mutationFn: () => api.dashboard.regenerateAiBriefing(),
+    onSuccess: (data: any) => {
+      queryClient.setQueryData(['dashboard-ai-briefing'], data);
+      toast.success('Morning AI Trading Briefing updated!');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to generate briefing');
+    },
+  });
+
+  const aiBriefing = (aiBriefingRes as any)?.data ?? aiBriefingRes;
+
+  useEffect(() => {
+    if (searchParams.get('aiBriefing') === '1' && !briefingMutation.isPending) {
+      briefingMutation.mutate();
+    }
+  }, [searchParams]);
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
 
@@ -237,6 +267,14 @@ export function DashboardPage() {
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      {/* Morning AI Trading Readiness & Session Briefing */}
+      <DashboardAiBriefingCard
+        briefing={aiBriefing}
+        isLoading={isBriefingLoading || briefingMutation.isPending}
+        onRefresh={() => briefingMutation.mutate()}
+        currency={activeCurrency}
+      />
+
       {/* Prop Challenge Health Overview Panel in Prop Mode */}
       {caps.prop.showChallengePanel && <PropChallengePanel />}
 

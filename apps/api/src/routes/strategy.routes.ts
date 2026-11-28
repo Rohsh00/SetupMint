@@ -11,6 +11,7 @@ import { Strategy, Trade, TradingAccount } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
+import { AiStrategyAuditorService } from '../services/ai-strategy-auditor.service.js';
 
 export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
@@ -424,6 +425,20 @@ export const strategyRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
   app.delete('/:id', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     await Strategy.deleteOne({ _id: req.params.id, userId: req.user!.id });
     return reply.send({ success: true, message: 'Strategy deleted successfully' });
+  });
+
+  // POST /api/v1/strategies/:id/ai-audit - AI Strategy Playbook & Edge Audit
+  app.post('/:id/ai-audit', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    try {
+      const audit = await AiStrategyAuditorService.auditStrategy(req.user!.id, req.params.id);
+      return reply.send({ success: true, data: audit });
+    } catch (err: any) {
+      const statusCode = err.message.includes('not found') ? 404 : 500;
+      return reply.status(statusCode).send({
+        success: false,
+        error: { code: 'AI_STRATEGY_AUDIT_FAILED', message: err.message || 'Failed to generate AI strategy audit' },
+      });
+    }
   });
 };
 

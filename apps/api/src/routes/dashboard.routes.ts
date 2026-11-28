@@ -19,6 +19,7 @@ import {
 import { Trade, TradingAccount, AccountTransaction, User } from '../db/models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
+import { AiDailyBriefingService } from '../services/ai-daily-briefing.service.js';
 
 const CalcDecimal = Decimal.clone({ precision: 30, rounding: Decimal.ROUND_HALF_UP });
 
@@ -151,6 +152,39 @@ async function computeStartingEquity(
 
 export const dashboardRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.addHook('preHandler', requireAuth);
+
+  // GET /api/v1/dashboard/ai-briefing - Morning Trading Readiness & Executive Briefing
+  app.get('/ai-briefing', async (req: any, reply) => {
+    try {
+      const briefing = await AiDailyBriefingService.getOrGenerateBriefing({
+        userId: req.user!.id,
+        date: req.query?.date,
+      });
+      return reply.send({ success: true, data: briefing });
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'AI_BRIEFING_FAILED', message: err.message || 'Failed to generate AI daily briefing' },
+      });
+    }
+  });
+
+  // POST /api/v1/dashboard/ai-briefing - Regenerate Morning Briefing
+  app.post('/ai-briefing', async (req: any, reply) => {
+    try {
+      const briefing = await AiDailyBriefingService.getOrGenerateBriefing({
+        userId: req.user!.id,
+        date: req.body?.date,
+        forceRegenerate: true,
+      });
+      return reply.send({ success: true, data: briefing });
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'AI_BRIEFING_FAILED', message: err.message || 'Failed to regenerate AI daily briefing' },
+      });
+    }
+  });
 
   app.get('/stats', async (req: any, reply) => {
     const { startDate, endDate, assetClass, strategyId, direction, session, symbol } = req.query;

@@ -1403,6 +1403,7 @@ export function SettingsPage() {
   const [name, setName] = useState(user?.name || '');
   const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'USD');
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState((user as any)?.aiSettings?.model || 'gemini-2.5-flash');
   const [aiEnabled, setAiEnabled] = useState((user as any)?.aiSettings?.enabled ?? true);
   const [autoAnalyzeTrades, setAutoAnalyzeTrades] = useState((user as any)?.aiSettings?.autoAnalyzeTrades ?? true);
   const [autoApplyTradeDetails, setAutoApplyTradeDetails] = useState((user as any)?.aiSettings?.autoApplyTradeDetails ?? false);
@@ -1418,16 +1419,16 @@ export function SettingsPage() {
   } | null>(null);
 
   const testGeminiMutation = useMutation({
-    mutationFn: (apiKeyToTest?: string) => api.settings.testGemini({ apiKey: apiKeyToTest }),
+    mutationFn: (apiKeyToTest?: string) => api.settings.testGemini({ apiKey: apiKeyToTest, model: aiModel }),
     onSuccess: (res: any) => {
       const data = res?.data || res;
       setGeminiTestResult({
         success: true,
-        model: data?.model || 'gemini-3.5-flash-lite',
+        model: data?.model || aiModel,
         latencyMs: data?.latencyMs,
         message: data?.message || 'Google Gemini API is connected and operational.',
       });
-      toast.success(`Google Gemini API verified (${data?.model || 'gemini-3.5-flash-lite'}, ${data?.latencyMs || 0}ms)!`);
+      toast.success(`Google Gemini API verified (${data?.model || aiModel}, ${data?.latencyMs || 0}ms)!`);
       refreshUser();
     },
     onError: (err: any) => {
@@ -1447,6 +1448,9 @@ export function SettingsPage() {
       setAutoApplyTradeDetails((user as any).aiSettings.autoApplyTradeDetails ?? false);
       if ((user as any).aiSettings.geminiApiKey) {
         setGeminiApiKey((user as any).aiSettings.geminiApiKey);
+      }
+      if ((user as any).aiSettings.model) {
+        setAiModel((user as any).aiSettings.model);
       }
     }
   }, [user]);
@@ -1555,7 +1559,7 @@ export function SettingsPage() {
         enabled: aiEnabled,
         autoAnalyzeTrades,
         autoApplyTradeDetails,
-        model: 'gemini-3.5-flash-lite',
+        model: aiModel,
       },
     });
   };
@@ -1570,7 +1574,7 @@ export function SettingsPage() {
         enabled: aiEnabled,
         autoAnalyzeTrades,
         autoApplyTradeDetails,
-        model: 'gemini-3.5-flash-lite',
+        model: aiModel,
       },
     });
     setGeminiApiKey('');
@@ -2071,6 +2075,8 @@ export function SettingsPage() {
           systemStatus={systemStatus}
           geminiApiKey={geminiApiKey}
           setGeminiApiKey={setGeminiApiKey}
+          aiModel={aiModel}
+          setAiModel={setAiModel}
           aiEnabled={aiEnabled}
           setAiEnabled={setAiEnabled}
           autoAnalyzeTrades={autoAnalyzeTrades}

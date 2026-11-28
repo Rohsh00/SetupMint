@@ -3053,6 +3053,79 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     return reply.send({ success: true, message: `Deleted ${tradesToDelete.length} trades and reconciled balances` });
   });
 
+  // Bulk AI Copilot Analysis: processes multiple trades with rate-limit pacing and optional auto-apply
+  app.post('/bulk-ai-analyze', async (req: any, reply) => {
+    const { tradeIds, autoApply = true, force = true } = req.body || {};
+    if (!Array.isArray(tradeIds) || tradeIds.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_BODY', message: 'tradeIds must be a non-empty array' },
+      });
+    }
+
+    // Limit batch size to 30 trades per batch
+    const limitedIds = tradeIds.slice(0, 30);
+    const trades = await Trade.find({ _id: { $in: limitedIds }, userId: req.user!.id });
+
+    const results: Array<{
+      id: string;
+      symbol: string;
+      direction?: string;
+      setupType?: string;
+      executionScore?: number;
+      disciplineScore?: number;
+      success: boolean;
+      error?: string;
+    }> = [];
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < trades.length; i++) {
+      const trade = trades[i];
+      try {
+        const analysis = await TradeAiAnalyzerService.analyzeTrade(trade._id, req.user!.id, {
+          force,
+          autoApply,
+        });
+        succeeded++;
+        results.push({
+          id: trade._id.toString(),
+          symbol: trade.symbol,
+          direction: trade.direction,
+          setupType: analysis.setupType,
+          executionScore: analysis.executionScore,
+          disciplineScore: analysis.disciplineScore,
+          success: true,
+        });
+      } catch (err: any) {
+        failed++;
+        results.push({
+          id: trade._id.toString(),
+          symbol: trade.symbol,
+          direction: trade.direction,
+          success: false,
+          error: err.message,
+        });
+      }
+
+      // Small pacing to prevent hammering API
+      if (i < trades.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      }
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        totalRequested: limitedIds.length,
+        succeeded,
+        failed,
+        analyzedTrades: results,
+      },
+    });
+  });
+
   // Compute excursion metrics for a closed trade
   app.post(
     '/:id/excursion/compute',

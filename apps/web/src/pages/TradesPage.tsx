@@ -56,6 +56,7 @@ import { formatCurrency, formatPercent, formatPrice, formatR } from '../lib/util
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { SyncMt5Modal } from '../components/trades/SyncMt5Modal.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
+import { BatchAiAnalyzeDialog } from '../components/trades/BatchAiAnalyzeDialog.js';
 import { TradeInstrumentBadge } from '../components/trades/TradeInstrumentBadge.js';
 import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
@@ -131,6 +132,7 @@ export function TradesPage() {
   const [bulkStrategyId, setBulkStrategyId] = useState('');
   const [bulkVariantKey, setBulkVariantKey] = useState('');
   const [bulkVariantStatus, setBulkVariantStatus] = useState<'CLASSIFIED' | 'UNCLASSIFIED' | 'NOT_APPLICABLE'>('CLASSIFIED');
+  const [isBatchAiOpen, setIsBatchAiOpen] = useState(false);
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -659,6 +661,22 @@ export function TradesPage() {
               sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 600, textTransform: 'none' }}
             >
               {autoClassifyMutation.isPending ? 'Detecting 4H + 5M...' : 'Auto-Detect Setup (4H + 5M)'}
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => setIsBatchAiOpen(true)}
+              startIcon={<AutoAwesomeRoundedIcon fontSize="small" />}
+              sx={{
+                borderRadius: 1.5,
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                textTransform: 'none',
+                bgcolor: '#6366f1',
+                '&:hover': { bgcolor: '#4f46e5' },
+              }}
+            >
+              AI Copilot Batch Analyze
             </Button>
             <Button
               size="small"
@@ -1570,6 +1588,14 @@ export function TradesPage() {
         onClose={() => setQuickCloseTrade(null)}
         trade={quickCloseTrade}
         accountBroker={quickCloseTrade?.accountId?.broker || quickCloseTrade?.accountBroker || 'ZERODHA'}
+      />
+
+      {/* Batch AI Copilot Analysis Dialog */}
+      <BatchAiAnalyzeDialog
+        open={isBatchAiOpen}
+        onClose={() => setIsBatchAiOpen(false)}
+        selectedIds={selectedIds}
+        onComplete={() => setSelectedIds([])}
       />
     </Box>
   );

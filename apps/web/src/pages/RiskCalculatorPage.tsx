@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Typography from '@mui/material/Typography';
@@ -30,13 +30,14 @@ import TuneIcon from '@mui/icons-material/TuneRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 import { calculateRiskAndPositionSize, calculateFractionalKelly } from '@tradevault/financial-engine';
-import { getPresetSpec } from '@tradevault/shared';
+import { getPresetSpec, IAiPreTradeCheckResult } from '@tradevault/shared';
 import { api } from '../lib/api.js';
 import { toast } from '../context/ToastContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { formatCurrency, formatPercent, currentLocalIsoDateTime, getCurrencySymbol } from '../lib/utils.js';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { HelpHint } from '../components/help/index.js';
+import { AiPreTradeCheckCard } from '../components/risk/AiPreTradeCheckCard.js';
 
 /**
  * Sanitizes input text into a clean numeric string, preventing leading zeros
@@ -353,6 +354,43 @@ export function RiskCalculatorPage() {
   const plannedBudget = riskMode === 'FIXED' ? fixedRiskAmount : (accountEquity * riskPercent) / 100;
   const lossPerUnit = stopDistance * contractMultiplier;
 
+  // Pre-Trade AI Sanity Check & Guardrail Evaluation
+  const [aiPreTradeResult, setAiPreTradeResult] = useState<IAiPreTradeCheckResult | null>(null);
+
+  const preTradeAiMutation = useMutation({
+    mutationFn: () =>
+      api.risk.aiPreTradeCheck({
+        symbol: selectedSymbol,
+        direction,
+        entryPrice: entryPrice > 0 ? entryPrice : 0,
+        stopLossPrice: stopLossPrice > 0 ? stopLossPrice : 0,
+        targetPrice: targetPrice > 0 ? targetPrice : undefined,
+        riskAmount: plannedBudget > 0 ? plannedBudget : undefined,
+        riskPercent: riskMode === 'PERCENT' ? riskPercent : undefined,
+        strategyId: selectedStrategyId || undefined,
+        accountId: selectedAccountId || undefined,
+      }),
+    onSuccess: (res: any) => {
+      setAiPreTradeResult(res.data);
+      if (res.data?.verdict === 'APPROVED_HIGH_EDGE') {
+        toast.success(`Pre-Trade Check: Approved! Edge score ${res.data.edgeScore}/100.`);
+      } else if (res.data?.verdict === 'WARNING_HIGH_RISK') {
+        toast.error(`Pre-Trade Check Warning: ${res.data.verdictTitle}`);
+      } else {
+        toast.info(`Pre-Trade Check: Caution advised.`);
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to run pre-trade AI check');
+    },
+  });
+
+  useEffect(() => {
+    if (searchParams.get('aiCheck') === '1' && isGeometryValid && !aiPreTradeResult && !preTradeAiMutation.isPending) {
+      preTradeAiMutation.mutate();
+    }
+  }, [searchParams, isGeometryValid]);
+
   // Prop firm rule capping calculation
   const propCapInfo = useMemo(() => {
     const health = (propHealthRes as any)?.data ?? propHealthRes;
@@ -545,6 +583,14 @@ export function RiskCalculatorPage() {
           </Box>
         </Box>
       </Box>
+
+      {/* Pre-Trade AI Sanity & Edge Copilot */}
+      <AiPreTradeCheckCard
+        checkResult={aiPreTradeResult}
+        isLoading={preTradeAiMutation.isPending}
+        canRun={isGeometryValid}
+        onRunCheck={() => preTradeAiMutation.mutate()}
+      />
 
       <Grid container spacing={3}>
         {/* Input Parameters Column (7 Cols) */}

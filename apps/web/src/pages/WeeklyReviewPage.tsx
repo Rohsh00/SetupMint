@@ -67,6 +67,7 @@ import { useAccountScope } from '../context/AccountScopeContext.js';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.js';
 import { HelpHint } from '../components/help/index.js';
 import { RichMarkdownEditor } from '../components/journal/RichMarkdownEditor.js';
+import { AiWeeklyReviewCard } from '../components/review/AiWeeklyReviewCard.js';
 
 const COMMON_FOCUS_RULES = [
   {
@@ -163,6 +164,35 @@ export function WeeklyReviewPage() {
   const reviewCurrency = (review as any)?.currency || activeAccount?.baseCurrency || (scopeCurrency && scopeCurrency !== 'MULTI' ? scopeCurrency : 'USD');
   const reviewTz = timezone || activeAccount?.profile?.timezone || 'UTC';
   const currSym = getCurrencySymbol(reviewCurrency);
+
+  const selectedAccId = queryParams?.accountId || (activeAccount as any)?.id;
+
+  const { data: aiSummaryRes, isLoading: isAiSummaryLoading } = useQuery({
+    queryKey: ['weekly-ai-summary', currentWeek, selectedAccId],
+    queryFn: () => api.review.getWeeklyAiSummary(currentWeek, selectedAccId),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const aiWeeklyMutation = useMutation({
+    mutationFn: () => api.review.regenerateWeeklyAiSummary(currentWeek, { accountId: selectedAccId }),
+    onSuccess: (res: any) => {
+      queryClient.setQueryData(['weekly-ai-summary', currentWeek, selectedAccId], res);
+      toast.success('AI Weekly Executive Review updated!');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to generate weekly AI review');
+    },
+  });
+
+  const aiSummary = (aiSummaryRes as any)?.data ?? aiSummaryRes ?? null;
+
+  const handleAdoptAiRule = (ruleText: string) => {
+    setFocusRuleSource('CUSTOM');
+    setFocusRuleText(ruleText);
+    setFocusRuleCode('RULE_CUSTOM_AI');
+    setFocusRuleMetric({ type: 'ALL_TRADES', target: 0 });
+    toast.success('AI Focus Rule adopted for next week!');
+  };
 
   // Initialize/Sync Form State from API
   useEffect(() => {
@@ -402,6 +432,14 @@ export function WeeklyReviewPage() {
           </Button>
         </Box>
       </Card>
+
+      {/* AI Executive Performance Review & Coaching Directive */}
+      <AiWeeklyReviewCard
+        summary={aiSummary}
+        isLoading={isAiSummaryLoading || aiWeeklyMutation.isPending}
+        onRefresh={() => aiWeeklyMutation.mutate()}
+        onAdoptRule={handleAdoptAiRule}
+      />
 
       {/* EMPTY WEEK ALERT */}
       {snapshot.isEmpty && (

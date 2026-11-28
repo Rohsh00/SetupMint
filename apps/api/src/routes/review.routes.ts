@@ -33,6 +33,7 @@ import {
 import { requireAuth } from '../middleware/auth.js';
 import { validateDateParam } from '../middleware/validate.js';
 import { AccountScopeService, resolveAccountContext } from '../services/account-scope.service.js';
+import { AiWeeklyReviewService } from '../services/ai-weekly-review.service.js';
 
 
 function toTradeSummary(t: ITradeDoc): ITradeSummaryForDetection {
@@ -863,6 +864,56 @@ export const reviewRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       success: true,
       data: doc,
     });
+  });
+
+  // GET & POST /api/v1/review/weekly/:week/ai-summary - AI Weekly Executive Review & Focus Directive
+  app.get('/weekly/:week/ai-summary', async (req: any, reply) => {
+    const { week } = req.params;
+    if (!weeklyReviewWeekRegex.test(week)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_WEEK_FORMAT', message: 'Week must be formatted as YYYY-Www (e.g. 2026-W42)' },
+      });
+    }
+
+    try {
+      const summary = await AiWeeklyReviewService.getOrGenerateWeeklySummary({
+        userId: req.user!.id,
+        week,
+        accountId: req.query?.accountId,
+      });
+      return reply.send({ success: true, data: summary });
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'AI_WEEKLY_REVIEW_FAILED', message: err.message || 'Failed to generate AI weekly summary' },
+      });
+    }
+  });
+
+  app.post('/weekly/:week/ai-summary', async (req: any, reply) => {
+    const { week } = req.params;
+    if (!weeklyReviewWeekRegex.test(week)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_WEEK_FORMAT', message: 'Week must be formatted as YYYY-Www (e.g. 2026-W42)' },
+      });
+    }
+
+    try {
+      const summary = await AiWeeklyReviewService.getOrGenerateWeeklySummary({
+        userId: req.user!.id,
+        week,
+        accountId: req.body?.accountId || req.query?.accountId,
+        forceRegenerate: true,
+      });
+      return reply.send({ success: true, data: summary });
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'AI_WEEKLY_REVIEW_FAILED', message: err.message || 'Failed to regenerate AI weekly summary' },
+      });
+    }
   });
 };
 

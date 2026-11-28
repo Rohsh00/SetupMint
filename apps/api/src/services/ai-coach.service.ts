@@ -354,12 +354,14 @@ Return ONLY a valid JSON object matching this schema:
       trades: tradeTelemetry,
     });
 
-    // Candidate models in preference order (gemini-3.5-flash-lite, 3.8-flash, flash-latest, 2.5-flash)
+    // Candidate models in preference order
     const candidateModels = [
-      'gemini-3.5-flash-lite',
-      'gemini-3.8-flash',
-      'gemini-flash-latest',
       'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-3.8-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-latest',
     ];
 
     for (const model of candidateModels) {

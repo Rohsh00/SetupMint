@@ -151,14 +151,23 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
     const scopeKey = accountCtx.accountIds.length === 1 ? accountCtx.accountIdsStr[0] : (scope.mode || 'ALL');
 
-    const journal = await DailyJournal.findOne({
+    let journal = await DailyJournal.findOne({
       userId: req.user!.id,
       date,
-      $or: [{ scopeKey }, { scopeKey: 'ALL' }],
+      scopeKey,
     })
-      .sort({ scopeKey: scopeKey === 'ALL' ? 1 : -1 })
       .populate('bestTradeId', 'symbol calculated.netPnL accountId currency')
       .populate('worstTradeId', 'symbol calculated.netPnL accountId currency');
+
+    if (!journal && scopeKey !== 'ALL') {
+      journal = await DailyJournal.findOne({
+        userId: req.user!.id,
+        date,
+        scopeKey: 'ALL',
+      })
+        .populate('bestTradeId', 'symbol calculated.netPnL accountId currency')
+        .populate('worstTradeId', 'symbol calculated.netPnL accountId currency');
+    }
 
     const startOfDay = new Date(`${date}T00:00:00.000Z`);
     const endOfDay = new Date(`${date}T23:59:59.999Z`);
@@ -256,9 +265,21 @@ export const journalRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const scopeKey = accountCtx.accountIds.length === 1 ? accountCtx.accountIdsStr[0] : (scope.mode || 'ALL');
     const accountId = accountCtx.accountIds.length === 1 ? accountCtx.accountIds[0] : undefined;
 
+    const updateDoc: any = {
+      ...rest,
+      scopeKey,
+      accountId,
+    };
+    if (rest.bestTradeId === null || rest.bestTradeId === '') {
+      updateDoc.bestTradeId = null;
+    }
+    if (rest.worstTradeId === null || rest.worstTradeId === '') {
+      updateDoc.worstTradeId = null;
+    }
+
     const journal = await DailyJournal.findOneAndUpdate(
       { userId: req.user!.id, date, scopeKey },
-      { $set: { ...rest, scopeKey, accountId } },
+      { $set: updateDoc },
       { upsert: true, new: true }
     );
 

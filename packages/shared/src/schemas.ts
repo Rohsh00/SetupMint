@@ -769,14 +769,14 @@ export const aiCoachDebriefSchema = z.object({
   isAiGenerated: z.boolean(),
   modelUsed: z.string().optional(),
   generatedAt: z.string(),
-});
+}).passthrough();
 
 export const dailyJournalSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   marketConditions: z.string().optional(),
   marketBias: z.enum(['BULLISH', 'BEARISH', 'NEUTRAL']).optional(),
-  bestTradeId: z.string().optional(),
-  worstTradeId: z.string().optional(),
+  bestTradeId: z.string().nullable().optional(),
+  worstTradeId: z.string().nullable().optional(),
   mistakes: z.array(z.string()).default([]),
   emotionalState: emotionEnum.optional(),
   disciplineRating: z.number().int().min(1).max(5).optional(),

@@ -36,6 +36,7 @@ import { priceAlertRoutes } from './routes/price-alert.routes.js';
 import { aiRoutes } from './routes/ai.routes.js';
 import { HolidayService } from './services/holiday.service.js';
 import { InstrumentClassifier } from './services/instrument-classifier.service.js';
+import { reconcileDailyJournalIndexes } from './db/models/DailyJournal.js';
 import { LiveExecutionWorker } from './services/live-execution-worker.service.js';
 import { BrokerAutoSyncWorker } from './services/broker-auto-sync.service.js';
 import { TelegramPollingService } from './services/telegram-polling.service.js';
@@ -278,6 +279,7 @@ if (
   async function start() {
     try {
       await connectDatabase();
+      await reconcileDailyJournalIndexes();
       await HolidayService.initializeDefaults();
       await InstrumentClassifier.loadCommodityRegistry();
 

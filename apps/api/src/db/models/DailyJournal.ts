@@ -74,3 +74,23 @@ DailyJournalSchema.index({ userId: 1, date: 1, scopeKey: 1 }, { unique: true });
 DailyJournalSchema.index({ userId: 1, accountId: 1, date: 1 });
 
 export const DailyJournal = mongoose.model<IDailyJournalDoc>('DailyJournal', DailyJournalSchema);
+
+/**
+ * Safely removes legacy single-scope unique indexes (e.g. userId_1_date_1)
+ * so that multi-account scoped daily journal reflections coexist without duplicate key errors.
+ */
+export async function reconcileDailyJournalIndexes(): Promise<void> {
+  try {
+    const coll = DailyJournal.collection;
+    const indexes = await coll.indexes();
+    const legacy = indexes.find((idx) => idx.name === 'userId_1_date_1');
+    if (legacy) {
+      await coll.dropIndex('userId_1_date_1');
+      console.log('[DailyJournal] Reconciled indexes: dropped obsolete unique index userId_1_date_1');
+    }
+  } catch (err: any) {
+    if (err.codeName !== 'NamespaceNotFound' && err.code !== 26) {
+      console.warn('[DailyJournal] Note during index reconciliation:', err.message);
+    }
+  }
+}

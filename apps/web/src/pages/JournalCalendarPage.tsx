@@ -214,7 +214,7 @@ export function JournalCalendarPage() {
   }, [dayDetails]);
 
   const saveJournalMutation = useMutation({
-    mutationFn: (review: any) => api.journal.saveDay(selectedDate!, review),
+    mutationFn: (review: any) => api.journal.saveDay(selectedDate!, review, effectiveScopeParams),
     onSuccess: () => {
       setSaveError(null);
       setSaveSuccess(true);
@@ -232,7 +232,7 @@ export function JournalCalendarPage() {
   });
 
   const deleteJournalMutation = useMutation({
-    mutationFn: () => api.journal.deleteDay(selectedDate!),
+    mutationFn: () => api.journal.deleteDay(selectedDate!, effectiveScopeParams),
     onSuccess: () => {
       setSaveError(null);
       setSaveSuccess(false);
@@ -1717,9 +1717,10 @@ export function JournalCalendarPage() {
                   disciplineRating,
                   lessonsLearned,
                   nextDayPlan,
-                  bestTradeId: bestTradeId || undefined,
-                  worstTradeId: worstTradeId || undefined,
+                  bestTradeId: bestTradeId ? bestTradeId : null,
+                  worstTradeId: worstTradeId ? worstTradeId : null,
                   mistakes,
+                  aiDebrief: aiDebrief || undefined,
                 });
               }}
             >

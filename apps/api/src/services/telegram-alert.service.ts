@@ -57,6 +57,9 @@ import { AudioChimeService } from './audio-chime.service.js';
 import { AiCoachService } from './ai-coach.service.js';
 import { AiCopilotService } from './ai-copilot.service.js';
 import { AiVoiceJournalService } from './ai-voice-journal.service.js';
+import { AiPreTradeCheckService } from './ai-pretrade-check.service.js';
+import { AiEdgeMinerService } from './ai-edge-miner.service.js';
+import { ExecutionPipelineService } from './execution-pipeline.service.js';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -3207,6 +3210,10 @@ export class TelegramAlertService {
           chatId,
           `👋 <b>SetupMint Terminal Commands</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `• <b>/check &lt;sym&gt; [buy|sell] &lt;entry&gt; &lt;sl&gt; [tp]</b> — AI pre-flight trade validator (edge, R:R, tilt risk)\n` +
+          `• <b>/edge</b> or <b>/leaks</b> — Unsupervised AI edge & leak mining across trade history\n` +
+          `• <b>/lockbe</b> — 1-tap lock all open positions to breakeven\n` +
+          `• <b>/ask &lt;query&gt;</b> — AI conversational copilot (or ask directly in plain English)\n` +
           `• <b>/gold [buy|sell] [vol]</b> — 1-tap Gold trade with preset SL & TP (e.g. <code>/gold buy 0.10</code>)\n` +
           `• <b>/eth [buy|sell] [vol]</b> — 1-tap ETH trade with preset SL & TP (e.g. <code>/eth buy 1.0</code>)\n` +
           `• <b>/alert &lt;price&gt;</b> — Set price level alert with Radar Crystal Ping (e.g. <code>/alert 2685.50</code> or <code>/alert eth 3420</code>)\n` +
@@ -3403,6 +3410,30 @@ export class TelegramAlertService {
         await this.handleAskCommand(user, botToken, chatId, args.join(' '));
         break;
 
+      case '/check':
+      case '/pretrade':
+      case 'check':
+      case 'pretrade':
+        await this.handlePreTradeCheckCommand(user, botToken, chatId, args);
+        break;
+
+      case '/edge':
+      case '/leaks':
+      case '/edgemining':
+      case 'edge':
+      case 'leaks':
+        await this.handleEdgeMiningCommand(user, botToken, chatId);
+        break;
+
+      case '/lockbe':
+      case '/be':
+      case 'lockbe':
+      case 'be':
+      case 'breakeven':
+      case '/breakeven':
+        await this.handleLockAllBreakeven(user, botToken, chatId);
+        break;
+
       case '/news':
       case '/goldnews':
         await this.handleGoldNewsCommand(user, botToken, chatId);
@@ -3585,6 +3616,20 @@ export class TelegramAlertService {
             await this.handleCustomStopLossCommand(user, botToken, chatId, [numericCandidate], msg);
             return;
           }
+        }
+
+        // Conversational AI Copilot Fallback:
+        // Route natural language queries, questions, or trading questions to SetupMint AI Copilot
+        const isConversational =
+          text.includes('?') ||
+          text.split(/\s+/).length >= 2 ||
+          /^(how|what|why|when|who|where|is|can|could|would|should|tell|explain|analyze|review|check|show|do|will|give|status|help|pnl|profit|loss|win|edge|leak|streak|drawdown|risk|mistake)/i.test(
+            text
+          );
+
+        if (isConversational) {
+          await this.handleAskCommand(user, botToken, chatId, text);
+          return;
         }
 
         await this.sendMessage(
@@ -5136,7 +5181,7 @@ export class TelegramAlertService {
   /**
    * Handles natural language /ask and /copilot commands via AiCopilotService.
    */
-  private static async handleAskCommand(user: any, botToken: string, chatId: string, query: string): Promise<void> {
+  private static async handleAskCommand(user: any, botToken: string, chatId: string | number, query: string): Promise<void> {
     if (!query || !query.trim()) {
       await this.sendMessage(
         botToken,
@@ -5186,6 +5231,221 @@ export class TelegramAlertService {
     } catch (err: any) {
       await this.sendMessage(botToken, chatId, `❌ Copilot error: ${err.message}`);
     }
+  }
+
+  /**
+   * Pre-flight AI Sanity & Discipline Check command:
+   * /check <symbol> [buy|sell] <entry> <sl> [tp]
+   * e.g. /check XAUUSD BUY 2650 2640 2680
+   * e.g. /check BANKNIFTY BUY 51200 51000 51600
+   */
+  private static async handlePreTradeCheckCommand(
+    user: any,
+    botToken: string,
+    chatId: string | number,
+    args: string[]
+  ): Promise<void> {
+    if (!args || args.length < 3) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `🚦 <b>SetupMint AI Pre-Flight Validator</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Evaluate your planned setup before executing to verify edge, R:R ratio, and tilt risk.\n\n` +
+        `<b>Usage:</b>\n` +
+        `<code>/check &lt;symbol&gt; &lt;buy|sell&gt; &lt;entry&gt; &lt;sl&gt; [tp]</code>\n\n` +
+        `<b>Examples:</b>\n` +
+        `• <code>/check XAUUSD BUY 2650 2640 2680</code>\n` +
+        `• <code>/check BANKNIFTY BUY 51200 51050 51500</code>\n` +
+        `• <code>/check ETHUSD SELL 3450 3480 3380</code>`
+      );
+      return;
+    }
+
+    const symbol = args[0].toUpperCase().trim();
+    let direction: 'LONG' | 'SHORT' = 'LONG';
+    let entryIdx = 1;
+
+    if (args[1]?.toUpperCase() === 'BUY' || args[1]?.toUpperCase() === 'LONG') {
+      direction = 'LONG';
+      entryIdx = 2;
+    } else if (args[1]?.toUpperCase() === 'SELL' || args[1]?.toUpperCase() === 'SHORT') {
+      direction = 'SHORT';
+      entryIdx = 2;
+    }
+
+    const entryPrice = parseFloat(args[entryIdx] || '0');
+    const stopLossPrice = parseFloat(args[entryIdx + 1] || '0');
+    const targetPrice = args[entryIdx + 2] ? parseFloat(args[entryIdx + 2]) : undefined;
+
+    if (!entryPrice || !stopLossPrice) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `❌ Invalid parameters. Please specify entry and stop loss price.\nExample: <code>/check XAUUSD BUY 2650 2640 2680</code>`
+      );
+      return;
+    }
+
+    await this.sendMessage(botToken, chatId, `⏳ <i>Evaluating ${symbol} setup with AI Quantitative Engine...</i>`);
+
+    try {
+      const result = await AiPreTradeCheckService.checkPreTrade(user._id, {
+        symbol,
+        direction,
+        entryPrice,
+        stopLossPrice,
+        targetPrice,
+      });
+
+      const sym = user?.baseCurrency === 'USD' ? '$' : '₹';
+      const verdictEmoji = result.verdict === 'APPROVED_HIGH_EDGE' ? '🟢' : result.verdict === 'PROCEED_WITH_DISCIPLINE' ? '🟡' : '🔴';
+      const verdictLabel = result.verdictTitle || (result.verdict === 'APPROVED_HIGH_EDGE' ? 'APPROVED (HIGH EDGE)' : result.verdict === 'PROCEED_WITH_DISCIPLINE' ? 'CAUTION (REDUCED SIZE)' : 'REJECTED (HIGH RISK)');
+
+      let checkListHtml = '';
+      if (result.keyChecks && result.keyChecks.length > 0) {
+        checkListHtml = `\n📋 <b>Pre-Flight Verification:</b>\n` + result.keyChecks.map(c => `${c.passed ? '✅' : c.severity === 'CRITICAL' ? '❌' : '⚠️'} <i>${c.text}</i>`).join('\n') + '\n';
+      }
+
+      const cardHtml =
+        `${verdictEmoji} <b>SetupMint AI Pre-Flight Verdict: ${verdictLabel}</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📌 <b>Asset:</b> ${symbol} (${direction})\n` +
+        `🎯 <b>Entry:</b> ${entryPrice} • <b>SL:</b> ${stopLossPrice}${targetPrice ? ` • <b>TP:</b> ${targetPrice}` : ''}\n` +
+        `⚖️ <b>R:R Ratio:</b> <code>1:${result.riskRewardRatio || 'N/A'}</code> • <b>Edge Score:</b> <code>${result.edgeScore}/100</code>\n` +
+        `🛡️ <b>Day Loss Buffer:</b> <code>${result.todayContext?.dailyLossRemaining !== undefined ? `${sym}${result.todayContext.dailyLossRemaining.toFixed(2)}` : 'OK'}</code> | <b>Tilt Risk:</b> <code>${result.tiltRisk}</code>\n` +
+        checkListHtml +
+        `\n💡 <b>AI Verdict Summary:</b>\n` +
+        `<i>"${result.summary}"</i>\n\n` +
+        `📊 <b>Historical Context (${symbol}):</b> <code>${result.historicalEdge?.winRate?.toFixed(1) || '0'}% WR</code> | <code>${result.historicalEdge?.profitFactor?.toFixed(2) || '0.00'} PF</code> (${result.historicalEdge?.sampleSize || 0} trades)`;
+
+      const buttons: ITelegramInlineButton[][] = [];
+      const isGold = symbol.includes('XAU') || symbol === 'GOLD';
+      const isEth = symbol.includes('ETH');
+      if (result.verdict !== 'WARNING_HIGH_RISK') {
+        if (isGold) {
+          buttons.push([{ text: `⚡ Execute Gold (${direction})`, callback_data: `quick_xau_${direction.toLowerCase()}` }]);
+        } else if (isEth) {
+          buttons.push([{ text: `⚡ Execute ETH (${direction})`, callback_data: `quick_eth_${direction.toLowerCase()}` }]);
+        }
+      }
+      buttons.push([
+        { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+        { text: '🧠 Ask AI Copilot', callback_data: 'cmd_coach' },
+      ]);
+
+      await this.sendMessage(botToken, chatId, cardHtml, buttons);
+    } catch (err: any) {
+      await this.sendMessage(botToken, chatId, `❌ Pre-trade check failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Unsupervised Edge & Leak Mining command:
+   * /edge or /leaks
+   */
+  private static async handleEdgeMiningCommand(
+    user: any,
+    botToken: string,
+    chatId: string | number
+  ): Promise<void> {
+    await this.sendMessage(botToken, chatId, '⛏️ <i>Mining historical trade distributions for edges & leaks...</i>');
+
+    try {
+      const report = await AiEdgeMinerService.mineInsights({ userId: user._id, limit: 250 });
+
+      if (!report.insights || report.insights.length === 0) {
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `📊 <b>Statistical Edge Mining</b>\n\nSample size too small (<5 closed trades). Log more trades to unlock automated cluster analysis!`
+        );
+        return;
+      }
+
+      const edges = report.insights.filter(i => i.verdict === 'POSITIVE_EDGE');
+      const leaks = report.insights.filter(i => i.verdict === 'CRITICAL_LEAK');
+
+      let edgesText = '';
+      if (edges.length > 0) {
+        edgesText = `\n🟢 <b>Top Statistical Edges:</b>\n` + edges.slice(0, 3).map(e => `• <b>${e.title}:</b> ${e.comparisonBaseline}`).join('\n') + '\n';
+      }
+
+      let leaksText = '';
+      if (leaks.length > 0) {
+        leaksText = `\n🔴 <b>Critical Execution Leaks:</b>\n` + leaks.slice(0, 3).map(l => `• <b>${l.title}:</b> ${l.comparisonBaseline}\n  <i>Fix: ${l.actionableDirective}</i>`).join('\n') + '\n';
+      }
+
+      const reportHtml =
+        `⛏️ <b>SetupMint AI Unsupervised Edge Report</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📈 <b>Sample Size:</b> <code>${report.totalTradesSampled} Trades</code>\n` +
+        `🎯 <b>Baseline Win Rate:</b> <code>${report.overallWinRate.toFixed(1)}%</code> | <b>Profit Factor:</b> <code>${report.overallProfitFactor.toFixed(2)}</code>\n` +
+        edgesText +
+        leaksText +
+        `\n💡 <i>Insights generated via multidimensional cluster telemetry (Time-of-Day, Day-of-Week, Holding Time).</i>`;
+
+      const buttons: ITelegramInlineButton[][] = [
+        [
+          { text: '🧠 Ask Copilot About Leaks', callback_data: 'cmd_coach' },
+          { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+        ],
+      ];
+
+      await this.sendMessage(botToken, chatId, reportHtml, buttons);
+    } catch (err: any) {
+      await this.sendMessage(botToken, chatId, `❌ Edge mining failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * 1-Tap Lock All Open Positions to Breakeven
+   */
+  private static async handleLockAllBreakeven(
+    user: any,
+    botToken: string,
+    chatId: string | number
+  ): Promise<void> {
+    const allAccountIds = await AccountScopeService.resolveAccountScope(user._id, { mode: 'ALL' });
+    const openTrades = await Trade.find({
+      userId: user._id,
+      accountId: { $in: allAccountIds },
+      status: 'OPEN',
+    });
+
+    if (!openTrades || openTrades.length === 0) {
+      await this.sendMessage(botToken, chatId, 'ℹ️ No active open positions found to protect.');
+      return;
+    }
+
+    let lockedCount = 0;
+    for (const trade of openTrades) {
+      const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
+      if (entryPrice > 0) {
+        const tick = (trade as any).tickSize || 0.1;
+        const bePrice = trade.direction === 'LONG' ? entryPrice + tick * 2 : entryPrice - tick * 2;
+        try {
+          await ExecutionPipelineService.execute({
+            userId: user._id.toString(),
+            accountId: trade.accountId,
+            tradeId: trade._id.toString(),
+            action: 'MODIFY_STOP_LOSS',
+            executeBroker: true,
+            isAutomated: false,
+            payload: {
+              stopPrice: bePrice,
+            },
+          });
+          lockedCount++;
+        } catch {}
+      }
+    }
+
+    await this.sendMessage(
+      botToken,
+      chatId,
+      `🛡️ <b>True Breakeven Protected!</b>\n\nSuccessfully locked Stop Loss to entry + fees on <b>${lockedCount} of ${openTrades.length} open position(s)</b>.`
+    );
   }
 
   /**
@@ -10389,7 +10649,7 @@ export class TelegramAlertService {
   }
 
   /**
-   * Moves Stop Loss to exact entry price for all open positions.
+   * Moves Stop Loss to exact entry price for all open positions across MT5 & brokers.
    */
   static async handleLockBeAll(
     user: any,
@@ -10397,43 +10657,7 @@ export class TelegramAlertService {
     chatId: string | number
   ): Promise<void> {
     if (!botToken) return;
-    const openTrades = await Trade.find({
-      userId: user._id,
-      status: 'OPEN',
-    });
-
-    if (openTrades.length === 0) {
-      await this.sendMessage(botToken, chatId, `ℹ️ No active open positions to lock breakeven.`);
-      return;
-    }
-
-    let lockedCount = 0;
-    for (const trade of openTrades) {
-      const ticket = Mt5CommandService.extractTicket(trade);
-      const entryPrice = Number(trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice ?? (trade as any).entryPrice ?? 0);
-      if (ticket && entryPrice > 0) {
-        await Mt5CommandService.queueModifySl({
-          userId: user._id,
-          accountId: trade.accountId,
-          tradeId: trade._id,
-          ticket,
-          stopLoss: entryPrice,
-        });
-        trade.risk = {
-          ...(trade.risk || {}),
-          initialStopLoss: trade.risk?.initialStopLoss || entryPrice,
-          currentStopLoss: entryPrice,
-        };
-        await trade.save();
-        lockedCount++;
-      }
-    }
-
-    await this.sendMessage(
-      botToken,
-      chatId,
-      `🛡️ <b>Breakeven Locked</b>\n\nDispatched Stop Loss to entry price for <b>${lockedCount}</b> active MT5 position(s).`
-    );
+    await this.handleLockAllBreakeven(user, botToken, chatId);
   }
 
   /**

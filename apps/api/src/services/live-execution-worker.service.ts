@@ -7,6 +7,7 @@ import { BrokerAutoSyncWorker } from './broker-auto-sync.service.js';
 import { AccountScopeService } from './account-scope.service.js';
 import { Mt5CommandService } from './mt5-command.service.js';
 import { ExecutionPipelineService } from './execution-pipeline.service.js';
+import { EconomicCalendarService } from './economic-calendar.service.js';
 import {
   calculateTargetLadder,
   evaluateGivebackAutoExit,
@@ -266,6 +267,80 @@ export class LiveExecutionWorker {
               isLockoutOptIn ? remainingMins : 0,
               isLockoutOptIn
             ).catch(() => {});
+          }
+        }
+      }
+
+      // Prop Firm Challenge Rule Guard: 80% daily loss threshold monitoring across active prop firm accounts
+      const propAccounts = await TradingAccount.find({
+        userId: user._id,
+        status: 'ACTIVE',
+        $or: [
+          { accountType: 'PROP_FIRM' },
+          { 'propFirmConfig.enabled': true },
+          { 'propFirm.firmKey': { $exists: true, $ne: '' } },
+        ],
+      }).lean();
+
+      for (const pAcc of propAccounts) {
+        let propDailyLossLimit = 0;
+        if (pAcc.propFirmConfig?.dailyLossLimitPercent && pAcc.propFirmConfig?.initialBalance) {
+          propDailyLossLimit = (pAcc.propFirmConfig.initialBalance * pAcc.propFirmConfig.dailyLossLimitPercent) / 100;
+        } else if (pAcc.riskRules?.maxDailyLoss) {
+          propDailyLossLimit = pAcc.riskRules.maxDailyLoss;
+        } else if (pAcc.propFirm?.ruleSetOverrides?.dailyLoss?.limitAmount) {
+          propDailyLossLimit = pAcc.propFirm.ruleSetOverrides.dailyLoss.limitAmount;
+        }
+
+        if (propDailyLossLimit > 0) {
+          const istOffsetMs = 5.5 * 60 * 60 * 1000;
+          const startOfIstDay = new Date(Date.UTC(istYear, istMonth, istDate, 0, 0, 0) - istOffsetMs);
+
+          const propTodayClosed = await Trade.find({
+            userId: user._id,
+            accountId: pAcc._id,
+            status: 'CLOSED',
+            exitTime: { $gte: startOfIstDay },
+          }).lean();
+
+          const realizedPropLoss = propTodayClosed.reduce((sum, t) => sum + (t.calculated?.netPnL || (t as any).netPnL || 0), 0);
+
+          let floatingPropLoss = 0;
+          try {
+            const liveSummary = await LiveWatcherService.getLiveWatcherSummary(user._id.toString(), [pAcc._id.toString()]);
+            floatingPropLoss = liveSummary.totalFloatingNetPnL;
+          } catch {}
+
+          const netPropLoss = -(realizedPropLoss + floatingPropLoss);
+          if (netPropLoss > 0) {
+            const propLossPercent = (netPropLoss / propDailyLossLimit) * 100;
+            const sym = pAcc.baseCurrency === 'INR' ? '₹' : '$';
+
+            if (propLossPercent >= 80) {
+              const propWarnKey = `prop_shield_warn80:${pAcc._id}:${istDateKey}`;
+              if (!this.executedMilestones.has(propWarnKey)) {
+                this.executedMilestones.add(propWarnKey);
+
+                if (watcherSettings?.telegramAlertsEnabled && watcherSettings?.telegramBotToken && watcherSettings?.telegramChatId) {
+                  TelegramAlertService.sendAlert({
+                    botToken: watcherSettings.telegramBotToken,
+                    chatId: watcherSettings.telegramChatId,
+                    title: `🚨 PROP FIRM CHALLENGE SHIELD: 80% DAILY LOSS REACHED`,
+                    body: `Account <b>${pAcc.name || 'Prop Account'}</b> has reached <b>${propLossPercent.toFixed(1)}%</b> of its max daily loss limit!\n\n` +
+                          `• Cumulative Day Loss: <code>${sym}${netPropLoss.toFixed(2)}</code> / <code>${sym}${propDailyLossLimit.toFixed(2)}</code>\n` +
+                          `• Remaining Safety Buffer: <code>${sym}${Math.max(0, propDailyLossLimit - netPropLoss).toFixed(2)}</code>\n\n` +
+                          `⚠️ Continuing to trade risks failing your evaluation / funded account rule! Flatten open positions immediately or step away for the session.`,
+                    severity: 'CRITICAL',
+                    buttons: [
+                      [
+                        { text: '🛑 Panic Flatten All Positions', callback_data: 'confirm_panic' },
+                        { text: '📊 Cockpit', callback_data: 'cmd_cockpit' },
+                      ],
+                    ],
+                  }).catch(() => {});
+                }
+              }
+            }
           }
         }
       }
@@ -796,7 +871,118 @@ export class LiveExecutionWorker {
       }
     }
 
-    // 5. Gold Trade Stagnation / Time-Stop Reminder
+    // 5. Macro News Event Shield: 3-minute pre-news protection
+    const cleanSym = (metric.symbol || trade.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const isGoldOrForex =
+      cleanSym.includes('XAU') ||
+      cleanSym.includes('GOLD') ||
+      cleanSym.includes('USD') ||
+      cleanSym.includes('EUR') ||
+      cleanSym.includes('GBP') ||
+      cleanSym.includes('JPY') ||
+      cleanSym.includes('US30') ||
+      cleanSym.includes('NAS');
+
+    if (isGoldOrForex) {
+      try {
+        const upcomingNews = await EconomicCalendarService.getUpcomingGoldNews(new Date(), 1);
+        const imminentEvent = upcomingNews.find(
+          (e) => e.minutesUntil <= 3 && e.minutesUntil >= 0 && (e.impact === 'HIGH' || e.isGoldMover)
+        );
+
+        if (imminentEvent) {
+          const currentR = metric.unrealizedR ?? 0;
+          const entryPrice = Number(
+            trade.simpleExecution?.entryPrice ??
+            trade.calculated?.averageEntryPrice ??
+            trade.entryPrice ??
+            0
+          );
+
+          if (currentR >= 0.8 && entryPrice > 0) {
+            const tick = trade.tickSize || 0.1;
+            const bePrice = metric.direction === 'LONG' ? entryPrice + tick * 2 : entryPrice - tick * 2;
+            const currentSl = trade.risk?.currentStopLoss;
+            const isAlreadyBe =
+              currentSl &&
+              (metric.direction === 'LONG' ? currentSl >= bePrice : currentSl <= bePrice);
+
+            const shieldKey = `news_shield_be:${tradeId}:${imminentEvent.id}`;
+            if (!this.executedMilestones.has(shieldKey)) {
+              this.executedMilestones.add(shieldKey);
+
+              if (!isAlreadyBe) {
+                await ExecutionPipelineService.execute({
+                  userId: user._id.toString(),
+                  accountId: trade.accountId,
+                  tradeId: tradeId,
+                  action: 'MODIFY_STOP_LOSS',
+                  executeBroker: true,
+                  isAutomated: true,
+                  payload: {
+                    stopPrice: bePrice,
+                  },
+                }).catch((err: any) =>
+                  console.warn(`[LiveExecutionWorker] News shield SL trail failed for ${metric.symbol}:`, err.message)
+                );
+              }
+
+              if (
+                watcherSettings?.telegramAlertsEnabled &&
+                watcherSettings?.telegramBotToken &&
+                watcherSettings?.telegramChatId
+              ) {
+                TelegramAlertService.sendAlert({
+                  botToken: watcherSettings.telegramBotToken,
+                  chatId: watcherSettings.telegramChatId,
+                  title: `🛡️ Macro News Shield: ${imminentEvent.title}`,
+                  body: `High-impact catalyst releasing in ${imminentEvent.minutesUntil}m! Position is at +${currentR.toFixed(2)}R. Auto-locked Stop Loss to breakeven (${bePrice}) to defend open profit against news volatility.`,
+                  severity: 'INFO',
+                  buttons: [
+                    [
+                      { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+                      { text: '🚨 Flatten Now', callback_data: 'confirm_panic' },
+                    ],
+                  ],
+                }).catch(() => {});
+              }
+            }
+          } else {
+            const warnKey = `news_shield_warn:${tradeId}:${imminentEvent.id}`;
+            if (!this.executedMilestones.has(warnKey)) {
+              this.executedMilestones.add(warnKey);
+
+              if (
+                watcherSettings?.telegramAlertsEnabled &&
+                watcherSettings?.telegramBotToken &&
+                watcherSettings?.telegramChatId
+              ) {
+                TelegramAlertService.sendAlert({
+                  botToken: watcherSettings.telegramBotToken,
+                  chatId: watcherSettings.telegramChatId,
+                  title: `🚨 Macro News Blackout: ${imminentEvent.title}`,
+                  body: `High-impact catalyst releasing in ${imminentEvent.minutesUntil}m! Active position is at ${currentR >= 0 ? `+${currentR.toFixed(2)}R` : `${currentR.toFixed(2)}R`} (< 0.8R buffer). High volatility and spread expansion expected. Consider closing or locking breakeven.`,
+                  severity: 'WARNING',
+                  buttons: [
+                    [
+                      { text: '🛡️ Lock Breakeven Now', callback_data: 'cmd_lock_be_all' },
+                      { text: '🚨 Panic Flatten All', callback_data: 'confirm_panic' },
+                    ],
+                    [
+                      { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+                    ],
+                  ],
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+      } catch (newsErr: any) {
+        console.warn(`[LiveExecutionWorker] News shield check error for ${metric.symbol}:`, newsErr.message);
+      }
+    }
+
+    // 6. Gold Trade Stagnation / Time-Stop Reminder
     const isGold = (metric.symbol || '').includes('XAU') || metric.symbol === 'GOLD';
     const entryTimeMs = trade.entryTime ? new Date(trade.entryTime).getTime() : 0;
     if (entryTimeMs > 0 && isGold && trade.status === 'OPEN') {

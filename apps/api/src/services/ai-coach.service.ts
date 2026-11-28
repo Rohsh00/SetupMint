@@ -354,115 +354,70 @@ Return ONLY a valid JSON object matching this schema:
       trades: tradeTelemetry,
     });
 
-    // We use gemini-2.5-flash or gemini-1.5-flash endpoint
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // Candidate models in preference order (gemini-3.5-flash-lite, 3.8-flash, flash-latest, 2.5-flash)
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash',
+    ];
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    for (const model of candidateModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: [
-            {
-              parts: [{ text: `Analyze this trading session:\n${userContent}` }],
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: systemPrompt }],
             },
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: 'application/json',
-          },
-        }),
-      });
+            contents: [
+              {
+                parts: [{ text: `Analyze this trading session:\n${userContent}` }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
 
-      clearTimeout(timeout);
+        clearTimeout(timeout);
 
-      if (!response.ok) {
-        // If 2.5-flash is not available, try 1.5-flash fallback
-        if (response.status === 404) {
-          return await this.callGeminiFallback15(apiKey, systemPrompt, userContent, quant);
+        if (!response.ok) {
+          continue;
         }
-        return null;
+
+        const resJson: any = await response.json();
+        const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) continue;
+
+        const parsed = JSON.parse(rawText);
+
+        return {
+          date: quant.date,
+          verdict: String(parsed.verdict || quant.verdict).toUpperCase(),
+          disciplineScore: Math.min(5, Math.max(1, Number(parsed.disciplineScore || quant.disciplineScore))),
+          summary: String(parsed.summary || quant.summary),
+          strengths: Array.isArray(parsed.strengths) && parsed.strengths.length > 0 ? parsed.strengths.slice(0, 3) : quant.strengths,
+          leaks: Array.isArray(parsed.leaks) ? parsed.leaks.slice(0, 3) : quant.leaks,
+          ruleForTomorrow: String(parsed.ruleForTomorrow || quant.ruleForTomorrow),
+          isAiGenerated: true,
+          modelUsed: model,
+          generatedAt: new Date().toISOString(),
+        };
+      } catch {
+        clearTimeout(timeout);
       }
-
-      const resJson: any = await response.json();
-      const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) return null;
-
-      const parsed = JSON.parse(rawText);
-
-      return {
-        date: quant.date,
-        verdict: String(parsed.verdict || quant.verdict).toUpperCase(),
-        disciplineScore: Math.min(5, Math.max(1, Number(parsed.disciplineScore || quant.disciplineScore))),
-        summary: String(parsed.summary || quant.summary),
-        strengths: Array.isArray(parsed.strengths) && parsed.strengths.length > 0 ? parsed.strengths.slice(0, 3) : quant.strengths,
-        leaks: Array.isArray(parsed.leaks) ? parsed.leaks.slice(0, 3) : quant.leaks,
-        ruleForTomorrow: String(parsed.ruleForTomorrow || quant.ruleForTomorrow),
-        isAiGenerated: true,
-        modelUsed: 'gemini-2.5-flash',
-        generatedAt: new Date().toISOString(),
-      };
-    } catch {
-      clearTimeout(timeout);
-      return null;
     }
-  }
 
-  /**
-   * Fallback to gemini-1.5-flash if 2.5-flash is unavailable.
-   */
-  private static async callGeminiFallback15(
-    apiKey: string,
-    systemPrompt: string,
-    userContent: string,
-    quant: IAiCoachDebrief
-  ): Promise<IAiCoachDebrief | null> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: `${systemPrompt}\n\nSession Data:\n${userContent}` }],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: 'application/json',
-          },
-        }),
-      });
-
-      if (!response.ok) return null;
-      const resJson: any = await response.json();
-      const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) return null;
-
-      const parsed = JSON.parse(rawText);
-      return {
-        date: quant.date,
-        verdict: String(parsed.verdict || quant.verdict).toUpperCase(),
-        disciplineScore: Math.min(5, Math.max(1, Number(parsed.disciplineScore || quant.disciplineScore))),
-        summary: String(parsed.summary || quant.summary),
-        strengths: Array.isArray(parsed.strengths) && parsed.strengths.length > 0 ? parsed.strengths.slice(0, 3) : quant.strengths,
-        leaks: Array.isArray(parsed.leaks) ? parsed.leaks.slice(0, 3) : quant.leaks,
-        ruleForTomorrow: String(parsed.ruleForTomorrow || quant.ruleForTomorrow),
-        isAiGenerated: true,
-        modelUsed: 'gemini-1.5-flash',
-        generatedAt: new Date().toISOString(),
-      };
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 

@@ -531,85 +531,95 @@ Candle Context: ${candleContextStr || 'No raw snapshot'}`;
       });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash',
+    ];
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: 'application/json',
+    for (const model of candidateModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts }],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
+
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const resJson: any = await response.json();
+        const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) continue;
+
+        const p = JSON.parse(rawText);
+
+        return {
+          generatedAt: new Date().toISOString(),
+          modelUsed: chartImageBase64 ? `${model} (Vision)` : model,
+          setupType: String(p.setupType || quant.setupType),
+          marketStructure: ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'].includes(p.marketStructure)
+            ? p.marketStructure
+            : quant.marketStructure,
+          executionScore: Math.min(10, Math.max(1, Number(p.executionScore || quant.executionScore))),
+          disciplineScore: Math.min(5, Math.max(1, Number(p.disciplineScore || quant.disciplineScore))),
+          confidence: Math.min(100, Math.max(0, Number(p.confidence || 90))),
+          chartAnalysis: {
+            hasVisionImage: Boolean(chartImageBase64),
+            candleContext: candleContextStr,
+            keyLevelsObserved: Array.isArray(p.chartAnalysis?.keyLevelsObserved)
+              ? p.chartAnalysis.keyLevelsObserved
+              : quant.chartAnalysis.keyLevelsObserved,
+            confluences: Array.isArray(p.chartAnalysis?.confluences)
+              ? p.chartAnalysis.confluences
+              : quant.chartAnalysis.confluences,
+            trendBias: ['BULLISH', 'BEARISH', 'NEUTRAL'].includes(p.chartAnalysis?.trendBias)
+              ? p.chartAnalysis.trendBias
+              : quant.chartAnalysis.trendBias,
+            summary: String(p.chartAnalysis?.summary || quant.chartAnalysis.summary),
           },
-        }),
-      });
-
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        return null;
+          entryReview: {
+            rating: p.entryReview?.rating || quant.entryReview.rating,
+            summary: String(p.entryReview?.summary || quant.entryReview.summary),
+            slippagePoints: quant.entryReview.slippagePoints,
+          },
+          riskManagement: {
+            stopPlacementRating: p.riskManagement?.stopPlacementRating || quant.riskManagement.stopPlacementRating,
+            summary: String(p.riskManagement?.summary || quant.riskManagement.summary),
+            riskRewardRatio: quant.riskManagement.riskRewardRatio,
+          },
+          exitReview: {
+            rating: p.exitReview?.rating || quant.exitReview?.rating || 'OPTIMAL',
+            summary: String(p.exitReview?.summary || quant.exitReview?.summary || 'Session closed.'),
+            efficiencyPercent: quant.exitReview?.efficiencyPercent,
+            rLeftOnTable: quant.exitReview?.rLeftOnTable,
+          },
+          identifiedMistakes: Array.isArray(p.identifiedMistakes) ? p.identifiedMistakes : quant.identifiedMistakes,
+          suggestedTags: Array.isArray(p.suggestedTags) ? p.suggestedTags : quant.suggestedTags,
+          lessonsLearned: String(p.lessonsLearned || quant.lessonsLearned),
+          autoApplied: false,
+        };
+      } catch {
+        clearTimeout(timeout);
       }
-
-      const resJson: any = await response.json();
-      const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) return null;
-
-      const p = JSON.parse(rawText);
-
-      return {
-        generatedAt: new Date().toISOString(),
-        modelUsed: chartImageBase64 ? 'gemini-2.5-flash (Vision)' : 'gemini-2.5-flash',
-        setupType: String(p.setupType || quant.setupType),
-        marketStructure: ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'].includes(p.marketStructure)
-          ? p.marketStructure
-          : quant.marketStructure,
-        executionScore: Math.min(10, Math.max(1, Number(p.executionScore || quant.executionScore))),
-        disciplineScore: Math.min(5, Math.max(1, Number(p.disciplineScore || quant.disciplineScore))),
-        confidence: Math.min(100, Math.max(0, Number(p.confidence || 90))),
-        chartAnalysis: {
-          hasVisionImage: Boolean(chartImageBase64),
-          candleContext: candleContextStr,
-          keyLevelsObserved: Array.isArray(p.chartAnalysis?.keyLevelsObserved)
-            ? p.chartAnalysis.keyLevelsObserved
-            : quant.chartAnalysis.keyLevelsObserved,
-          confluences: Array.isArray(p.chartAnalysis?.confluences)
-            ? p.chartAnalysis.confluences
-            : quant.chartAnalysis.confluences,
-          trendBias: ['BULLISH', 'BEARISH', 'NEUTRAL'].includes(p.chartAnalysis?.trendBias)
-            ? p.chartAnalysis.trendBias
-            : quant.chartAnalysis.trendBias,
-          summary: String(p.chartAnalysis?.summary || quant.chartAnalysis.summary),
-        },
-        entryReview: {
-          rating: p.entryReview?.rating || quant.entryReview.rating,
-          summary: String(p.entryReview?.summary || quant.entryReview.summary),
-          slippagePoints: quant.entryReview.slippagePoints,
-        },
-        riskManagement: {
-          stopPlacementRating: p.riskManagement?.stopPlacementRating || quant.riskManagement.stopPlacementRating,
-          summary: String(p.riskManagement?.summary || quant.riskManagement.summary),
-          riskRewardRatio: quant.riskManagement.riskRewardRatio,
-        },
-        exitReview: {
-          rating: p.exitReview?.rating || quant.exitReview?.rating || 'OPTIMAL',
-          summary: String(p.exitReview?.summary || quant.exitReview?.summary || 'Session closed.'),
-          efficiencyPercent: quant.exitReview?.efficiencyPercent,
-          rLeftOnTable: quant.exitReview?.rLeftOnTable,
-        },
-        identifiedMistakes: Array.isArray(p.identifiedMistakes) ? p.identifiedMistakes : quant.identifiedMistakes,
-        suggestedTags: Array.isArray(p.suggestedTags) ? p.suggestedTags : quant.suggestedTags,
-        lessonsLearned: String(p.lessonsLearned || quant.lessonsLearned),
-        autoApplied: false,
-      };
-    } catch {
-      clearTimeout(timeout);
-      return null;
     }
+
+    return null;
   }
 }

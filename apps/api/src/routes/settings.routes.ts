@@ -293,15 +293,15 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       if (aiSettings.model !== undefined) update['aiSettings.model'] = String(aiSettings.model).trim();
       if (aiSettings.autoAnalyzeTrades !== undefined) update['aiSettings.autoAnalyzeTrades'] = Boolean(aiSettings.autoAnalyzeTrades);
       if (aiSettings.autoApplyTradeDetails !== undefined) update['aiSettings.autoApplyTradeDetails'] = Boolean(aiSettings.autoApplyTradeDetails);
-      if (aiSettings.geminiApiKey !== undefined) {
+      if (aiSettings.clearGeminiApiKey === true) {
+        update['aiSettings.geminiApiKey'] = '';
+      } else if (aiSettings.geminiApiKey !== undefined) {
         const rawKey = String(aiSettings.geminiApiKey).trim();
         if (rawKey && !rawKey.startsWith('••') && !rawKey.startsWith('**')) {
           const enc = encryptSecret(rawKey);
           if (enc) {
             update['aiSettings.geminiApiKey'] = enc;
           }
-        } else if (rawKey === '') {
-          update['aiSettings.geminiApiKey'] = '';
         }
       }
     }

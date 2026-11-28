@@ -104,6 +104,7 @@ export interface ProfileSystemTabProps {
   autoApplyTradeDetails?: boolean;
   setAutoApplyTradeDetails?: (val: boolean) => void;
   hasGeminiKey: boolean;
+  onClearGeminiKey?: () => void;
 }
 
 export function ProfileSystemTab({
@@ -152,6 +153,7 @@ export function ProfileSystemTab({
   autoApplyTradeDetails = false,
   setAutoApplyTradeDetails,
   hasGeminiKey,
+  onClearGeminiKey,
 }: ProfileSystemTabProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -396,29 +398,51 @@ export function ProfileSystemTab({
               </Alert>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <TextField
-                  label="Google Gemini API Key (Free Tier)"
-                  size="small"
-                  fullWidth
-                  type="password"
-                  placeholder="Paste your AI Studio API key (AIzaSy...)"
-                  value={geminiApiKey}
-                  onChange={(e) => setGeminiApiKey(e.target.value)}
-                  helperText={
-                    <span>
-                      Get a free key from{' '}
-                      <a
-                        href="https://aistudio.google.com/app/apikey"
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: '#6366f1', textDecoration: 'underline' }}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Google Gemini API Key (Free Tier)
+                    </Typography>
+                    {hasGeminiKey && onClearGeminiKey && (
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={onClearGeminiKey}
+                        sx={{ fontSize: '0.7rem', py: 0, textTransform: 'none', minWidth: 'auto' }}
                       >
-                        Google AI Studio
-                      </a>{' '}
-                      (takes 30 seconds). Leave empty to use the built-in Quant Engine.
-                    </span>
-                  }
-                />
+                        Disconnect Key
+                      </Button>
+                    )}
+                  </Box>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="password"
+                    placeholder={hasGeminiKey ? '•••••••••••••••••••• (API Key Active & Stored)' : 'Paste your AI Studio API key (AQ...)'}
+                    value={geminiApiKey}
+                    onChange={(e) => setGeminiApiKey(e.target.value)}
+                    helperText={
+                      hasGeminiKey ? (
+                        <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                          <CheckCircleRounded sx={{ fontSize: 15 }} /> API Key is securely stored and active. Enter a new key only if you want to replace it.
+                        </span>
+                      ) : (
+                        <span>
+                          Get a free key from{' '}
+                          <a
+                            href="https://aistudio.google.com/app/apikey"
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: '#6366f1', textDecoration: 'underline' }}
+                          >
+                            Google AI Studio
+                          </a>{' '}
+                          (takes 30 seconds). Leave empty to use the built-in Quant Engine.
+                        </span>
+                      )
+                    }
+                  />
+                </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box>

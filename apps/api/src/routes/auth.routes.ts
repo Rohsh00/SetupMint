@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { loginSchema, registerSchema, forgotPasswordSchema, DEFAULT_LIVE_WATCHER_SETTINGS } from '@tradevault/shared';
 import { Session, Trade, User } from '../db/models/index.js';
+import { config } from '../config.js';
 import {
   clearSession,
   clearSessionCookie,
@@ -336,6 +337,21 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
           riskSettings: user.riskSettings,
           patternDetectionSettings: user.patternDetectionSettings,
           liveWatcherSettings: watcherObj,
+          aiSettings: user.aiSettings ? {
+            enabled: user.aiSettings.enabled ?? true,
+            model: user.aiSettings.model || 'gemini-3.5-flash-lite',
+            autoAnalyzeTrades: user.aiSettings.autoAnalyzeTrades ?? true,
+            autoApplyTradeDetails: user.aiSettings.autoApplyTradeDetails ?? false,
+            hasGeminiApiKey: Boolean(user.aiSettings.geminiApiKey || config.geminiApiKey),
+            geminiApiKey: user.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
+          } : {
+            enabled: true,
+            model: 'gemini-3.5-flash-lite',
+            autoAnalyzeTrades: true,
+            autoApplyTradeDetails: false,
+            hasGeminiApiKey: Boolean(config.geminiApiKey),
+            geminiApiKey: config.geminiApiKey ? '•••••••• (Server Default)' : '',
+          },
           createdAt: user.createdAt,
         },
         token: sessionToken,

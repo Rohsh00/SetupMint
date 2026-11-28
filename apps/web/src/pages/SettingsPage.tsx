@@ -1402,7 +1402,7 @@ export function SettingsPage() {
   // =========================================================================
   const [name, setName] = useState(user?.name || '');
   const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'USD');
-  const [geminiApiKey, setGeminiApiKey] = useState((user as any)?.aiSettings?.geminiApiKey || '');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
   const [aiEnabled, setAiEnabled] = useState((user as any)?.aiSettings?.enabled ?? true);
   const [autoAnalyzeTrades, setAutoAnalyzeTrades] = useState((user as any)?.aiSettings?.autoAnalyzeTrades ?? true);
   const [autoApplyTradeDetails, setAutoApplyTradeDetails] = useState((user as any)?.aiSettings?.autoApplyTradeDetails ?? false);
@@ -1411,7 +1411,6 @@ export function SettingsPage() {
 
   useEffect(() => {
     if ((user as any)?.aiSettings) {
-      setGeminiApiKey((user as any).aiSettings.geminiApiKey || '');
       setAiEnabled((user as any).aiSettings.enabled ?? true);
       setAutoAnalyzeTrades((user as any).aiSettings.autoAnalyzeTrades ?? true);
       setAutoApplyTradeDetails((user as any).aiSettings.autoApplyTradeDetails ?? false);
@@ -1513,13 +1512,29 @@ export function SettingsPage() {
       baseCurrency,
       defaultAccountScope: selectedScopeValue,
       aiSettings: {
-        geminiApiKey,
+        geminiApiKey: geminiApiKey && !geminiApiKey.startsWith('••') ? geminiApiKey : undefined,
         enabled: aiEnabled,
         autoAnalyzeTrades,
         autoApplyTradeDetails,
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash-lite',
       },
     });
+  };
+
+  const handleClearGeminiKey = () => {
+    profileMutation.mutate({
+      name,
+      baseCurrency,
+      defaultAccountScope: selectedScopeValue,
+      aiSettings: {
+        clearGeminiApiKey: true,
+        enabled: aiEnabled,
+        autoAnalyzeTrades,
+        autoApplyTradeDetails,
+        model: 'gemini-3.5-flash-lite',
+      },
+    });
+    setGeminiApiKey('');
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -2023,6 +2038,7 @@ export function SettingsPage() {
           autoApplyTradeDetails={autoApplyTradeDetails}
           setAutoApplyTradeDetails={setAutoApplyTradeDetails}
           hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
+          onClearGeminiKey={handleClearGeminiKey}
         />
       )}
 

@@ -18,17 +18,30 @@ export class FyersCandleProvider implements ICandleProvider {
 
       // FYERS only supports Indian domestic markets (NSE, BSE, MCX) in INR.
       // Remove and reject broken FYERS calculation for Forex, Crypto, and Global CFD trades.
-      if (
-        assetClass === 'FOREX' ||
-        assetClass === 'CRYPTO' ||
-        exchange === 'FOREX' ||
-        exchange === 'CRYPTO' ||
-        marketSegment === 'FOREX' ||
-        marketSegment === 'CRYPTO' ||
-        (currency && currency !== 'INR') ||
-        GlobalCfdCandleProvider.isSupportedGlobalSymbol(symbol, exchange, assetClass)
-      ) {
-        return false;
+      const isIndianDomestic =
+        exchange === 'NSE' ||
+        exchange === 'BSE' ||
+        exchange === 'MCX' ||
+        marketSegment === 'NSE_EQ' ||
+        marketSegment === 'NSE_FNO' ||
+        marketSegment === 'BSE_EQ' ||
+        marketSegment === 'BSE_FNO' ||
+        marketSegment === 'MCX' ||
+        currency === 'INR';
+
+      if (!isIndianDomestic) {
+        if (
+          assetClass === 'FOREX' ||
+          assetClass === 'CRYPTO' ||
+          exchange === 'FOREX' ||
+          exchange === 'CRYPTO' ||
+          marketSegment === 'FOREX' ||
+          marketSegment === 'CRYPTO' ||
+          (currency && currency !== 'INR') ||
+          GlobalCfdCandleProvider.isSupportedGlobalSymbol(symbol, exchange, assetClass)
+        ) {
+          return false;
+        }
       }
     }
 

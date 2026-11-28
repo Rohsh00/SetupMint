@@ -447,8 +447,20 @@ export class MarketDataService {
       Boolean(trade.strikePrice) ||
       /(\d+(?:CE|PE))$/i.test(trade.symbol || '');
 
+    const isIndianDomestic =
+      trade.exchange === 'NSE' ||
+      trade.exchange === 'BSE' ||
+      trade.exchange === 'MCX' ||
+      trade.marketSegment === 'NSE_EQ' ||
+      trade.marketSegment === 'NSE_FNO' ||
+      trade.marketSegment === 'BSE_EQ' ||
+      trade.marketSegment === 'BSE_FNO' ||
+      trade.marketSegment === 'MCX' ||
+      trade.currency === 'INR';
+
     const isGlobalTrade =
       !isOptionTrade &&
+      !isIndianDomestic &&
       (trade.assetClass === 'FOREX' ||
         trade.assetClass === 'CRYPTO' ||
         trade.exchange === 'FOREX' ||

@@ -148,3 +148,4 @@ describe('AiCoachService - Deterministic Quant Engine (100% Free / Zero-Cost)', 
     expect(debrief.leaks.some((l) => l.includes('Re-entered market within') || l.includes('minutes'))).toBe(true);
   });
 });
+

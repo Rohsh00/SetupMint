@@ -26,6 +26,7 @@ import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import TipsAndUpdatesRoundedIcon from '@mui/icons-material/TipsAndUpdatesRounded';
 import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded';
+import ShuffleRoundedIcon from '@mui/icons-material/ShuffleRounded';
 
 import { api } from '../../lib/api.js';
 import { useAccountScope } from '../../context/AccountScopeContext.js';
@@ -46,21 +47,55 @@ export function AiCopilotDrawer({ open, onClose, initialQuestion }: AiCopilotDra
 
   const [inputQuestion, setInputQuestion] = useState('');
   const [messages, setMessages] = useState<IAiCopilotMessage[]>([]);
+  const [pageOffset, setPageOffset] = useState(0);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Fetch contextual suggestions based on current active scope
-  const { data: suggestionsData } = useQuery({
+  const {
+    data: suggestionsData,
+    refetch: refetchSuggestions,
+    isFetching: isFetchingSuggestions,
+  } = useQuery({
     queryKey: ['ai-copilot-suggestions', selectedScopeValue],
     queryFn: async () => {
       const res: any = await api.ai.getSuggestions(selectedScopeValue);
       return Array.isArray(res) ? res : res?.data || [];
     },
     enabled: open,
-    staleTime: 60000,
+    staleTime: 0,
   });
 
-  const suggestions: IAiCopilotSuggestion[] = suggestionsData || [];
+  const allSuggestions: IAiCopilotSuggestion[] = suggestionsData || [];
+  const pageSize = 4;
+  const maxPages = Math.max(1, Math.ceil(allSuggestions.length / pageSize));
+  const currentPage = pageOffset % maxPages;
+  const visibleSuggestions = allSuggestions.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+
+  // Auto-rotate suggestions every 15 seconds while user is on the starter screen
+  useEffect(() => {
+    if (!open || messages.length > 0 || allSuggestions.length <= pageSize) return;
+    const timer = setInterval(() => {
+      setPageOffset((prev) => (prev + 1) % maxPages);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [open, messages.length, allSuggestions.length, maxPages]);
+
+  // Rotate and fetch fresh dynamic inquiries whenever drawer is opened
+  useEffect(() => {
+    if (open) {
+      setPageOffset((prev) => prev + 1);
+      refetchSuggestions();
+    }
+  }, [open, refetchSuggestions]);
+
+  const handleShuffle = () => {
+    if (allSuggestions.length > pageSize) {
+      setPageOffset((prev) => (prev + 1) % maxPages);
+    } else {
+      refetchSuggestions();
+    }
+  };
 
   // Ask Copilot mutation
   const copilotMutation = useMutation({
@@ -269,51 +304,119 @@ export function AiCopilotDrawer({ open, onClose, initialQuestion }: AiCopilotDra
             </Typography>
 
             {/* Contextual Suggestions */}
-            {suggestions.length > 0 && (
+            {allSuggestions.length > 0 && (
               <Box sx={{ textAlign: 'left', mb: 2 }}>
-                <Typography
-                  variant="caption"
+                <Box
                   sx={{
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    color: 'text.secondary',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 0.5,
+                    justifyContent: 'space-between',
                     mb: 1.5,
                   }}
                 >
-                  <TipsAndUpdatesRoundedIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
-                  Suggested Inquiries:
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {suggestions.map((s, idx) => (
-                    <Paper
-                      key={idx}
-                      elevation={0}
-                      onClick={() => handleSend(s.prompt)}
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      color: 'text.secondary',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                    }}
+                  >
+                    <TipsAndUpdatesRoundedIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
+                    Suggested Inquiries:
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Chip
+                      label="Auto-Rotating"
+                      size="small"
                       sx={{
-                        p: 1.5,
-                        borderRadius: 2,
-                        cursor: 'pointer',
-                        bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-                        transition: 'all 0.15s ease-in-out',
-                        '&:hover': {
-                          bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                          borderColor: muiTheme.palette.primary.main,
-                          transform: 'translateX(3px)',
-                        },
+                        height: 18,
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        bgcolor: isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.08)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
                       }}
-                    >
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.3 }}>
-                        {s.title}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        "{s.prompt}"
-                      </Typography>
-                    </Paper>
-                  ))}
+                    />
+                    <Tooltip title="Shuffle new inquiries">
+                      <IconButton
+                        size="small"
+                        onClick={handleShuffle}
+                        disabled={isFetchingSuggestions}
+                        sx={{
+                          p: 0.4,
+                          color: 'text.secondary',
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            color: 'primary.main',
+                            transform: 'rotate(180deg)',
+                          },
+                        }}
+                      >
+                        <ShuffleRoundedIcon sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {visibleSuggestions.map((s, idx) => {
+                    const categoryColors: Record<string, { bg: string; text: string }> = {
+                      PERFORMANCE: { bg: 'rgba(16, 185, 129, 0.12)', text: '#10b981' },
+                      PSYCHOLOGY: { bg: 'rgba(244, 63, 94, 0.12)', text: '#f43f5e' },
+                      STRATEGY: { bg: 'rgba(59, 130, 246, 0.12)', text: '#3b82f6' },
+                      RISK: { bg: 'rgba(245, 158, 11, 0.12)', text: '#f59e0b' },
+                    };
+                    const badge = categoryColors[s.category] || categoryColors.PERFORMANCE;
+
+                    return (
+                      <Paper
+                        key={`${s.title}-${idx}`}
+                        elevation={0}
+                        onClick={() => handleSend(s.prompt)}
+                        sx={{
+                          p: 1.5,
+                          borderRadius: 2,
+                          cursor: 'pointer',
+                          bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                          transition: 'all 0.15s ease-in-out',
+                          '&:hover': {
+                            bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                            borderColor: muiTheme.palette.primary.main,
+                            transform: 'translateX(3px)',
+                          },
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.3 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                            {s.title}
+                          </Typography>
+                          {s.category && (
+                            <Chip
+                              label={s.category}
+                              size="small"
+                              sx={{
+                                height: 16,
+                                fontSize: '0.58rem',
+                                fontWeight: 700,
+                                bgcolor: badge.bg,
+                                color: badge.text,
+                                border: `1px solid ${badge.text}33`,
+                              }}
+                            />
+                          )}
+                        </Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                          "{s.prompt}"
+                        </Typography>
+                      </Paper>
+                    );
+                  })}
                 </Box>
               </Box>
             )}

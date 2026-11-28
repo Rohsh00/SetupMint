@@ -394,4 +394,33 @@ describe('AI Voice-to-Journal & Behavioral Anti-Tilt Integration', () => {
     // Clean up prop account
     await TradingAccount.deleteOne({ _id: propAccountId });
   });
+
+  it('AiCopilotService.getSuggestions generates diverse, categorized, auto-changing suggestions', async () => {
+    // 1. Fetch suggestions first time
+    const suggestions1 = await AiCopilotService.getSuggestions(testUserId);
+    expect(suggestions1).toBeDefined();
+    expect(suggestions1.length).toBeGreaterThanOrEqual(4);
+
+    // Verify all have title, prompt, and category
+    for (const s of suggestions1) {
+      expect(s.title).toBeTruthy();
+      expect(s.prompt).toBeTruthy();
+      expect(['PERFORMANCE', 'PSYCHOLOGY', 'STRATEGY', 'RISK']).toContain(s.category);
+    }
+
+    // Verify multiple categories are present in the response
+    const categories1 = new Set(suggestions1.map((s) => s.category));
+    expect(categories1.size).toBeGreaterThanOrEqual(3);
+
+    // 2. Fetch suggestions multiple times to verify dynamic non-static sampling
+    const promptsSet = new Set<string>();
+    for (let i = 0; i < 5; i++) {
+      const batch = await AiCopilotService.getSuggestions(testUserId);
+      for (const item of batch) {
+        promptsSet.add(item.prompt);
+      }
+    }
+    // With 5 iterations of dynamic randomized sampling from the rich pools, we should see diverse prompts (> 4 unique prompts)
+    expect(promptsSet.size).toBeGreaterThan(4);
+  });
 });

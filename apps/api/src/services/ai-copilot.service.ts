@@ -138,48 +138,279 @@ export class AiCopilotService {
   ): Promise<IAiCopilotSuggestion[]> {
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
-    // Check for recent revenge trades or losses
-    const recentLosses = await Trade.find({
-      userId: uId,
-      status: 'CLOSED',
-      'calculated.netPnL': { $lt: 0 },
-    })
-      .sort({ exitTime: -1 })
-      .limit(5)
-      .lean();
+    const [closedTrades, openTrades, strategies, propAccounts] = await Promise.all([
+      Trade.find({ userId: uId, status: 'CLOSED' })
+        .sort({ exitTime: -1 })
+        .limit(40)
+        .select('symbol direction calculated exitTime mistakes psychology')
+        .lean(),
+      Trade.find({ userId: uId, status: 'OPEN' })
+        .sort({ entryTime: -1 })
+        .limit(5)
+        .select('symbol direction calculated entryTime')
+        .lean(),
+      Strategy.find({ userId: uId }).select('name').limit(5).lean(),
+      TradingAccount.find({
+        userId: uId,
+        status: 'ACTIVE',
+        $or: [
+          { accountType: 'PROP_FIRM' },
+          { 'propFirmConfig.enabled': true },
+          { 'propFirm.firmKey': { $exists: true, $ne: '' } },
+        ],
+      }).select('name broker').lean(),
+    ]);
 
-    const suggestions: IAiCopilotSuggestion[] = [
+    // 1. Extract dynamic user context:
+    const symbolCounts: Record<string, number> = {};
+    const mistakeCounts: Record<string, number> = {};
+    let streakLosses = 0;
+    let streakCheckActive = true;
+
+    for (const t of closedTrades) {
+      if (t.symbol) {
+        const sym = t.symbol.toUpperCase().trim();
+        symbolCounts[sym] = (symbolCounts[sym] || 0) + 1;
+      }
+      const pnl = Number(t.calculated?.netPnL ?? 0);
+      if (streakCheckActive) {
+        if (pnl < 0) streakLosses++;
+        else if (pnl > 0) streakCheckActive = false;
+      }
+      const mistakes: string[] = [
+        ...(Array.isArray(t.psychology?.mistakes) ? t.psychology.mistakes : []),
+        ...(Array.isArray((t as any).mistakes) ? (t as any).mistakes : []),
+      ];
+      for (const m of mistakes) {
+        if (m) mistakeCounts[m] = (mistakeCounts[m] || 0) + 1;
+      }
+    }
+
+    const topSymbols = Object.entries(symbolCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([s]) => s);
+    const topSymbol = topSymbols[0];
+    const secondSymbol = topSymbols[1];
+
+    const topMistakes = Object.entries(mistakeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([m]) => m);
+    const topMistake = topMistakes[0];
+
+    const strategyNames = strategies.map((s) => s.name).filter(Boolean);
+    const propName = propAccounts[0]?.name || 'Prop Challenge';
+
+    // 2. Build Category Candidate Pools
+    const performancePool: IAiCopilotSuggestion[] = [
       {
         title: 'Performance Overview',
         prompt: 'What is my current win rate, profit factor, and average R-multiple?',
         category: 'PERFORMANCE',
       },
       {
+        title: 'Session Expectancy',
+        prompt: 'Which trading session generates my highest returns: London, New York, or Asia?',
+        category: 'PERFORMANCE',
+      },
+      {
+        title: 'Day-of-Week Edge',
+        prompt: 'Which day of the week generates my highest win rate and lowest loss rate?',
+        category: 'PERFORMANCE',
+      },
+      {
+        title: 'Long vs Short Asymmetry',
+        prompt: 'Is my profitability asymmetric between Long setups versus Short setups?',
+        category: 'PERFORMANCE',
+      },
+      {
+        title: 'Best Trade Breakdown',
+        prompt: 'Analyze my biggest winning trade and identify what factors drove its success',
+        category: 'PERFORMANCE',
+      },
+      {
+        title: 'Expectancy Trajectory',
+        prompt: 'How has my win rate and average R trended across my last 20 trades?',
+        category: 'PERFORMANCE',
+      },
+    ];
+
+    if (topSymbol) {
+      performancePool.unshift({
+        title: `${topSymbol} Edge`,
+        prompt: `What is my win rate, profit factor, and average R on ${topSymbol}?`,
+        category: 'PERFORMANCE',
+      });
+    }
+
+    if (topSymbol && secondSymbol) {
+      performancePool.push({
+        title: 'Asset Comparison',
+        prompt: `Compare my performance between ${topSymbol} and ${secondSymbol} (which gives higher expectancy?)`,
+        category: 'PERFORMANCE',
+      });
+    }
+
+    const psychologyPool: IAiCopilotSuggestion[] = [
+      {
         title: 'Revenge Trading & Leaks',
         prompt: 'How much money did revenge trading and discipline mistakes cost me?',
         category: 'PSYCHOLOGY',
       },
       {
-        title: 'Instrument Comparison',
-        prompt: 'Compare my performance across different symbols (which market is most profitable?)',
-        category: 'PERFORMANCE',
+        title: 'Loss Analysis',
+        prompt: 'Analyze my biggest losing trades and tell me what mistakes triggered them',
+        category: 'PSYCHOLOGY',
       },
+      {
+        title: 'Discipline Audit',
+        prompt: 'What are my top 3 recurring discipline leaks and their financial impact?',
+        category: 'PSYCHOLOGY',
+      },
+      {
+        title: 'Tilt Telemetry',
+        prompt: 'Am I showing any behavioral signs of tilt, overtrading, or revenge sizing today?',
+        category: 'PSYCHOLOGY',
+      },
+      {
+        title: 'Rule Adherence Impact',
+        prompt: 'Compare my net P&L on trades where I strictly followed rules versus when I broke them',
+        category: 'PSYCHOLOGY',
+      },
+      {
+        title: 'Post-Loss Reaction',
+        prompt: 'How does my average holding time and lot size change immediately following a red trade?',
+        category: 'PSYCHOLOGY',
+      },
+    ];
+
+    if (topMistake) {
+      psychologyPool.unshift({
+        title: `Leak: ${topMistake}`,
+        prompt: `How much money and R did '${topMistake}' cost me across my recent trades?`,
+        category: 'PSYCHOLOGY',
+      });
+    }
+
+    if (streakLosses >= 2) {
+      psychologyPool.unshift({
+        title: 'Streak Diagnostics',
+        prompt: `Audit my recent ${streakLosses} consecutive losses: was it market conditions or execution tilt?`,
+        category: 'PSYCHOLOGY',
+      });
+    }
+
+    const strategyPool: IAiCopilotSuggestion[] = [
       {
         title: 'Strategy Edge Audit',
         prompt: 'Which playbook strategy is giving me the highest statistical expectancy?',
         category: 'STRATEGY',
       },
+      {
+        title: 'Runner Expansion',
+        prompt: 'Which setups produce my cleanest runners beyond 1:2 and 1:3 R:R?',
+        category: 'STRATEGY',
+      },
+      {
+        title: 'Holding Time Impact',
+        prompt: 'How does my holding duration affect trade expectancy (scalp vs swing)?',
+        category: 'STRATEGY',
+      },
+      {
+        title: 'MFE vs Exit R',
+        prompt: 'Am I leaving money on the table? Compare my Max Favorable Excursion (MFE) to realized R',
+        category: 'STRATEGY',
+      },
+      {
+        title: 'Timeframe Telemetry',
+        prompt: 'Which execution timeframe gives me the most reliable entries (1m, 5m, 15m)?',
+        category: 'STRATEGY',
+      },
+      {
+        title: 'Target Optimization',
+        prompt: 'Am I taking profit too early? How does my planned target compare to actual exit price?',
+        category: 'STRATEGY',
+      },
     ];
 
-    if (recentLosses.length > 0) {
-      suggestions.unshift({
-        title: 'Loss Analysis',
-        prompt: 'Analyze my biggest losing trades and tell me what mistakes triggered them',
-        category: 'PSYCHOLOGY',
+    if (strategyNames.length > 0) {
+      strategyPool.unshift({
+        title: 'Playbook Comparison',
+        prompt: `Which playbook strategy gives me the highest statistical expectancy: ${strategyNames.slice(0, 3).join(', ')}?`,
+        category: 'STRATEGY',
+      });
+      strategyPool.push({
+        title: `${strategyNames[0]} Audit`,
+        prompt: `What is my win rate and average R-multiple on the '${strategyNames[0]}' setup?`,
+        category: 'STRATEGY',
       });
     }
 
-    return suggestions.slice(0, 4);
+    const riskPool: IAiCopilotSuggestion[] = [
+      {
+        title: 'Stop-Loss Discipline',
+        prompt: 'Am I respecting my planned initial stop losses or widening them during adverse moves?',
+        category: 'RISK',
+      },
+      {
+        title: 'Giveback Leakage',
+        prompt: 'Analyze my giveback leak rate: am I letting winning trades turn into scratch or red trades?',
+        category: 'RISK',
+      },
+      {
+        title: 'R:R Realization Ratio',
+        prompt: 'What is my average realized R:R compared to my planned entry-to-stop ratio?',
+        category: 'RISK',
+      },
+      {
+        title: 'Drawdown Runway',
+        prompt: 'What is my current drawdown from peak equity and what is my historical recovery rate?',
+        category: 'RISK',
+      },
+      {
+        title: 'Sizing Consistency',
+        prompt: 'Check my lot sizing discipline across recent trades: did I oversize on any trades?',
+        category: 'RISK',
+      },
+      {
+        title: 'Risk-per-Trade Audit',
+        prompt: 'Am I strictly keeping risk per trade within 1-2% of account equity?',
+        category: 'RISK',
+      },
+    ];
+
+    if (openTrades.length > 0) {
+      riskPool.unshift({
+        title: 'Live Position Radar',
+        prompt: `Evaluate my open position on ${openTrades[0].symbol}: what is my current R and stop runway?`,
+        category: 'RISK',
+      });
+    }
+
+    if (propAccounts.length > 0) {
+      riskPool.unshift({
+        title: 'Prop Challenge Safety',
+        prompt: `How much daily loss buffer and max drawdown headroom do I have left on ${propName}?`,
+        category: 'RISK',
+      });
+    }
+
+    // 3. Shuffle each pool and select 2 from each category (total 8 diverse suggestions)
+    const shuffle = <T>(arr: T[]): T[] => {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+
+    const pickedPerformance = shuffle(performancePool).slice(0, 2);
+    const pickedPsychology = shuffle(psychologyPool).slice(0, 2);
+    const pickedStrategy = shuffle(strategyPool).slice(0, 2);
+    const pickedRisk = shuffle(riskPool).slice(0, 2);
+
+    // Combine and shuffle the 8 selected suggestions so each response is fresh and non-repetitive
+    return shuffle([...pickedPerformance, ...pickedPsychology, ...pickedStrategy, ...pickedRisk]);
   }
 
   /**

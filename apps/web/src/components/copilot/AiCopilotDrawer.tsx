@@ -53,8 +53,8 @@ export function AiCopilotDrawer({ open, onClose, initialQuestion }: AiCopilotDra
   const { data: suggestionsData } = useQuery({
     queryKey: ['ai-copilot-suggestions', selectedScopeValue],
     queryFn: async () => {
-      const res = await api.ai.getSuggestions(selectedScopeValue);
-      return res?.data || [];
+      const res: any = await api.ai.getSuggestions(selectedScopeValue);
+      return Array.isArray(res) ? res : res?.data || [];
     },
     enabled: open,
     staleTime: 60000,
@@ -70,14 +70,18 @@ export function AiCopilotDrawer({ open, onClose, initialQuestion }: AiCopilotDra
         content: m.content,
       }));
 
-      const res = await api.ai.askCopilot({
+      const res: any = await api.ai.askCopilot({
         question: questionText,
         scopeKey: selectedScopeValue,
         accountId: selectedAccountId !== 'ALL' ? selectedAccountId : undefined,
         history,
       });
 
-      return res?.data?.message;
+      const msg = res?.message || res?.data?.message;
+      if (!msg) {
+        throw new Error('Copilot did not return a valid message.');
+      }
+      return msg;
     },
     onSuccess: (assistantMsg) => {
       if (assistantMsg) {

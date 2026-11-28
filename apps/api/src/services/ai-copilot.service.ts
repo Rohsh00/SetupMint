@@ -44,6 +44,18 @@ interface IQuantitativeContext {
   revengeTradesCount: number;
   revengeTradesCost: number;
   topMistakes: Array<{ mistake: string; count: number }>;
+  openPositions?: Array<{
+    tradeId: string;
+    symbol: string;
+    direction: 'LONG' | 'SHORT';
+    quantity: number;
+    entryPrice: number;
+    currentPrice?: number;
+    unrealizedPnL?: number;
+    stopLossPrice?: number;
+    takeProfitPrice?: number;
+    entryTime?: string;
+  }>;
   propStatus?: {
     accountName: string;
     dailyLossLimit: number;
@@ -183,16 +195,45 @@ export class AiCopilotService {
       status: 'CLOSED',
     };
 
+    const openTradeFilter: any = {
+      userId,
+      status: 'OPEN',
+    };
+
     if (accountId && accountId !== 'ALL') {
       tradeFilter.accountId = new mongoose.Types.ObjectId(accountId);
+      openTradeFilter.accountId = new mongoose.Types.ObjectId(accountId);
     }
 
-    const [trades, strategies, account, journals] = await Promise.all([
+    const [trades, openTrades, strategies, account, journals] = await Promise.all([
       Trade.find(tradeFilter).sort({ exitTime: 1 }).lean(),
+      Trade.find(openTradeFilter).sort({ entryTime: -1 }).lean(),
       Strategy.find({ userId }).lean(),
       accountId && accountId !== 'ALL' ? TradingAccount.findOne({ _id: accountId, userId }).lean() : null,
       DailyJournal.find({ userId }).sort({ date: -1 }).limit(10).lean(),
     ]);
+
+    const openPositions = openTrades.map((t: any) => {
+      const pnl = Number(t.calculated?.unrealizedPnL ?? t.calculated?.netPnL ?? 0);
+      const entryPrice = Number(t.calculated?.averageEntryPrice ?? t.simpleExecution?.entryPrice ?? t.fills?.[0]?.price ?? 0);
+      const currentPrice = Number(t.calculated?.currentPrice ?? t.simpleExecution?.exitPrice ?? entryPrice);
+      const qty = Number(t.calculated?.openQuantity ?? t.simpleExecution?.quantity ?? t.fills?.[0]?.quantity ?? 0);
+      const sl = Number(t.risk?.currentStopLoss ?? t.risk?.initialStopLoss ?? 0);
+      const tp = Number(t.risk?.plannedTarget ?? 0);
+
+      return {
+        tradeId: t._id.toString(),
+        symbol: t.symbol || 'MARKET',
+        direction: (t.direction || 'LONG') as 'LONG' | 'SHORT',
+        quantity: qty,
+        entryPrice,
+        currentPrice: currentPrice > 0 ? currentPrice : entryPrice,
+        unrealizedPnL: pnl,
+        stopLossPrice: sl > 0 ? sl : undefined,
+        takeProfitPrice: tp > 0 ? tp : undefined,
+        entryTime: t.entryTime ? new Date(t.entryTime).toISOString() : undefined,
+      };
+    });
 
     const stratMap = new Map<string, string>();
     strategies.forEach((s) => stratMap.set(s._id.toString(), s.name));
@@ -393,6 +434,7 @@ export class AiCopilotService {
       revengeTradesCount,
       revengeTradesCost: revengeTradesCost.toNumber(),
       topMistakes,
+      openPositions,
       propStatus,
       recentJournalsCount: journals.length,
       activeCurrency,
@@ -412,6 +454,95 @@ export class AiCopilotService {
       const prefix = curr === 'INR' ? '₹' : curr === 'USD' ? '$' : `${curr} `;
       return `${prefix}${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
+
+    // INTENT 0: Active Position & Current Trade Management
+    if (
+      q.includes('current trade') ||
+      q.includes('my trade') ||
+      q.includes('open trade') ||
+      q.includes('open position') ||
+      q.includes('what to do') ||
+      q.includes('should i hold') ||
+      q.includes('should i close') ||
+      q.includes('should i exit') ||
+      q.includes('active position') ||
+      q.includes('holding') ||
+      q.includes('position')
+    ) {
+      if (ctx.openPositions && ctx.openPositions.length > 0) {
+        const lines = ctx.openPositions.map((pos) => {
+          const isGreen = (pos.unrealizedPnL || 0) >= 0;
+          const pnlStr = formatMoney(pos.unrealizedPnL || 0);
+          const dirIcon = pos.direction === 'LONG' ? '🟢 BUY' : '🔴 SELL';
+          return `• **${pos.symbol}** (${dirIcon}) | Qty: ${pos.quantity}
+  - **Entry Price:** ${pos.entryPrice} | **Current Price:** ${pos.currentPrice ?? pos.entryPrice}
+  - **Unrealized P&L:** **${isGreen ? '+' : ''}${pnlStr}**
+  - **Stop Loss:** ${pos.stopLossPrice ? pos.stopLossPrice : '⚠️ No Stop Loss Set'} | **Take Profit:** ${pos.takeProfitPrice ? pos.takeProfitPrice : 'Discretionary'}`;
+        }).join('\n\n');
+
+        const primaryPos = ctx.openPositions[0];
+        const isProfit = (primaryPos.unrealizedPnL || 0) > 0;
+
+        let directive = '';
+        if (isProfit) {
+          directive = `> **Quant Trade Directive:** Your trade is in profit (**+${formatMoney(primaryPos.unrealizedPnL || 0)}**). Rule #1 is capital preservation:
+> 1. **Trail Stop to Breakeven:** If you have gained at least 1R, move your stop loss to your entry price (${primaryPos.entryPrice}) to make this a risk-free trade.
+> 2. **Avoid Greed:** Consider taking 50% partial profits at key resistance/support levels and let the runner ride with a trailing stop.`;
+        } else {
+          directive = `> **Quant Trade Directive:** Your trade is floating at **${formatMoney(primaryPos.unrealizedPnL || 0)}**.
+> 1. **Respect Your Invalidation Level:** DO NOT widen or remove your stop loss. A planned loss is just a business expense.
+> 2. **Never Hope-Trade:** If the market structure thesis has failed, exit cleanly rather than averaging down.`;
+        }
+
+        const content = `### ⚡ Active Position & Trade Management (${ctx.openPositions.length} Open)
+
+${lines}
+
+${directive}`;
+
+        return {
+          id: new mongoose.Types.ObjectId().toString(),
+          role: 'assistant',
+          content,
+          suggestedActions: [
+            { label: 'View Trades Table', actionType: 'NAVIGATE', path: '/trades' },
+            { label: 'Risk Calculator', actionType: 'NAVIGATE', path: '/risk-calculator' },
+          ],
+          dataCards: [
+            {
+              type: 'STAT_SUMMARY',
+              title: 'Active Open Trade',
+              metrics: {
+                'Symbol': primaryPos.symbol,
+                'Direction': primaryPos.direction,
+                'Unrealized P&L': formatMoney(primaryPos.unrealizedPnL || 0),
+                'Entry Price': primaryPos.entryPrice,
+              },
+            },
+          ],
+          modelUsed: 'Deterministic Quant Engine (Free Tier)',
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        const content = `### ℹ️ No Active Open Trades Detected
+
+You currently have **0 open positions** recorded in this account context.
+
+> **Desk Recommendation:** Wait patiently for your verified playbook setup to form. Do not force trades or enter out of boredom. When a setup presents itself, verify your risk parameters in the Pre-Trade Risk Calculator before executing.`;
+
+        return {
+          id: new mongoose.Types.ObjectId().toString(),
+          role: 'assistant',
+          content,
+          suggestedActions: [
+            { label: 'Log New Trade', actionType: 'NAVIGATE', path: '/trades' },
+            { label: 'Pre-Trade Calculator', actionType: 'NAVIGATE', path: '/risk-calculator' },
+          ],
+          modelUsed: 'Deterministic Quant Engine (Free Tier)',
+          timestamp: new Date().toISOString(),
+        };
+      }
+    }
 
     // INTENT 1: Revenge Trading & Mistakes / Psychology
     if (q.includes('revenge') || q.includes('mistake') || q.includes('leak') || q.includes('psycholog') || q.includes('discipline')) {
@@ -651,7 +782,8 @@ You have direct access to the trader's verified historical performance telemetry
 
 RULES:
 1. NEVER guess or invent P&L numbers, win rates, or trade counts. Use STRICTLY the provided quantitative context.
-2. Maintain an institutional, concise, direct, and constructive coaching tone (similar to a hedge fund risk desk manager).
+2. If the trader asks about their current trade, open trade, or active positions, inspect "openPositions" in the provided telemetry and give precise trade-management advice (e.g. trailing stop loss to breakeven after 1R, taking partial profits, avoiding emotional revenge sizing).
+3. Maintain an institutional, concise, direct, and constructive coaching tone (similar to a hedge fund risk desk manager).
 3. Identify psychological leaks (revenge trading, overtrading, moving stop losses) and provide actionable, rule-based remedies.
 4. Respond in valid JSON adhering strictly to this schema:
 {

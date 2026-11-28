@@ -40,8 +40,8 @@ export function AiEdgeMiningCard({ scopeKey, accountId, onAskCopilot }: AiEdgeMi
   const { data: report, isLoading } = useQuery({
     queryKey: ['ai-edge-mining', scopeKey, accountId],
     queryFn: async () => {
-      const res = await api.ai.getEdgeMining({ scopeKey, accountId });
-      return res?.data;
+      const res: any = await api.ai.getEdgeMining({ scopeKey, accountId });
+      return res?.summary ? res : res?.data;
     },
     staleTime: 120000,
   });
@@ -235,7 +235,7 @@ export function AiEdgeMiningCard({ scopeKey, accountId, onAskCopilot }: AiEdgeMi
             All Discovered Statistical Insights ({insights.length})
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {insights.map((item) => {
+            {insights.map((item: any) => {
               const isPos = item.verdict === 'POSITIVE_EDGE';
               return (
                 <Box

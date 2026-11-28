@@ -65,18 +65,18 @@ export function AiStatementImportModal({
   // Mutation to parse statement via AI
   const parseMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.ai.parseStatement({
+      const res: any = await api.ai.parseStatement({
         textContent: pastedText.trim() || undefined,
         imageBase64: imageBase64 || undefined,
         brokerHint: brokerHint !== 'AUTO' ? brokerHint : undefined,
       });
-      return res?.data;
+      return res?.trades !== undefined ? res : res?.data;
     },
     onSuccess: (data) => {
       if (data) {
         setParseResult(data);
         // Select all extracted trades by default
-        setSelectedIndices(new Set((data.trades || []).map((_, i) => i)));
+        setSelectedIndices(new Set((data.trades || []).map((_: any, i: number) => i)));
         toast.success(`Extracted ${data.totalTradesFound} trades (${data.brokerDetected || 'Broker'})`);
       }
     },

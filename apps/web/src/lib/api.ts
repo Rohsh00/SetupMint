@@ -1189,31 +1189,24 @@ export const api = {
       history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     }) =>
       request<{
-        success: boolean;
-        data: {
-          message: import('@tradevault/shared').IAiCopilotMessage;
-          latencyMs?: number;
-          quotaRemaining?: number;
-        };
+        message: import('@tradevault/shared').IAiCopilotMessage;
+        latencyMs?: number;
+        quotaRemaining?: number;
       }>('/ai/copilot', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
     getSuggestions: (scopeKey?: string) =>
-      request<{
-        success: boolean;
-        data: import('@tradevault/shared').IAiCopilotSuggestion[];
-      }>(`/ai/copilot/suggestions${scopeKey ? `?scopeKey=${encodeURIComponent(scopeKey)}` : ''}`),
+      request<import('@tradevault/shared').IAiCopilotSuggestion[]>(
+        `/ai/copilot/suggestions${scopeKey ? `?scopeKey=${encodeURIComponent(scopeKey)}` : ''}`
+      ),
     parseStatement: (input: {
       textContent?: string;
       imageBase64?: string;
       mimeType?: string;
       brokerHint?: string;
     }) =>
-      request<{
-        success: boolean;
-        data: import('@tradevault/shared').IOcrStatementParseResult;
-      }>('/ai/parse-statement', {
+      request<import('@tradevault/shared').IOcrStatementParseResult>('/ai/parse-statement', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
@@ -1222,16 +1215,10 @@ export const api = {
       if (params.scopeKey) q.set('scopeKey', params.scopeKey);
       if (params.accountId) q.set('accountId', params.accountId);
       if (params.limit) q.set('limit', String(params.limit));
-      return request<{
-        success: boolean;
-        data: import('@tradevault/shared').IAiEdgeMiningReport;
-      }>(`/ai/edge-mining?${q.toString()}`);
+      return request<import('@tradevault/shared').IAiEdgeMiningReport>(`/ai/edge-mining?${q.toString()}`);
     },
     runWhatIf: (input: import('@tradevault/shared').IAiWhatIfSimulationInput) =>
-      request<{
-        success: boolean;
-        data: import('@tradevault/shared').IAiWhatIfSimulationResult;
-      }>('/ai/what-if', {
+      request<import('@tradevault/shared').IAiWhatIfSimulationResult>('/ai/what-if', {
         method: 'POST',
         body: JSON.stringify(input),
       }),

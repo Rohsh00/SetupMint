@@ -891,6 +891,8 @@ export interface ITradeExcursion {
   postExitVelocityRPerMin?: number;
   postStopMfePoints?: number;
   postStopMfeR?: number;
+  isPostExitPending?: boolean;
+  postExitFinalizedAt?: string | Date;
 }
 
 export type CandleProviderName = 'FYERS' | 'ANGEL_ONE' | 'UNDERLYING' | 'SYNTHETIC' | 'GLOBAL_CFD';

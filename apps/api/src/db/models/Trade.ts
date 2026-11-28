@@ -207,6 +207,8 @@ export interface ITradeDoc extends Document {
       postExitVelocityRPerMin?: number;
       postStopMfePoints?: number;
       postStopMfeR?: number;
+      isPostExitPending?: boolean;
+      postExitFinalizedAt?: Date | string;
     };
     stopMoveSummary?: {
       totalMoves: number;
@@ -526,6 +528,8 @@ const TradeSchema = new Schema<ITradeDoc>(
         postExitVelocityRPerMin: { type: Number },
         postStopMfePoints: { type: Number },
         postStopMfeR: { type: Number },
+        isPostExitPending: { type: Boolean },
+        postExitFinalizedAt: { type: Date },
       },
       stopMoveSummary: {
         totalMoves: { type: Number, default: 0 },

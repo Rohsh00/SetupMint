@@ -581,7 +581,11 @@ export function calculateExcursion(params: ICalculateExcursionParams): IExcursio
     }
     if (tradeRealizedR !== undefined && tradeRealizedR !== null) {
       const peakOverallMfeR = Math.max(mfeR, postExitMfeR ?? 0);
-      rLeftOnTable = Math.max(0, Number((peakOverallMfeR - tradeRealizedR).toFixed(4)));
+      // For losing trades (tradeRealizedR < 0), subtracting a negative number inflated rLeftOnTable:
+      // e.g. peak MFE 0.9083 - (-1.43) = 2.3383R.
+      // A trader cannot leave on the table more than the peak favorable excursion!
+      const effectiveRealizedR = Math.max(0, tradeRealizedR);
+      rLeftOnTable = Math.max(0, Number((peakOverallMfeR - effectiveRealizedR).toFixed(4)));
     }
   }
 

@@ -2283,6 +2283,14 @@ export class FyersService {
       postExitVelocityRPerMin: result.postExitVelocityRPerMin,
       postStopMfePoints: result.postStopMfePoints,
       postStopMfeR: result.postStopMfeR,
+      isPostExitPending:
+        Boolean(trade.exitTime) &&
+        Date.now() - new Date(trade.exitTime!).getTime() < (result.postExitLookaheadMinutes || postExitLookaheadMinutes || 60) * 60_000,
+      postExitFinalizedAt:
+        Boolean(trade.exitTime) &&
+        Date.now() - new Date(trade.exitTime!).getTime() >= (result.postExitLookaheadMinutes || postExitLookaheadMinutes || 60) * 60_000
+          ? new Date()
+          : undefined,
     };
 
     await trade.save();

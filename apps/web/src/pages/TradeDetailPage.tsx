@@ -1654,11 +1654,15 @@ export function TradeDetailPage() {
                           Reached in {exc.timeToMfeMinutes}m (in trade)
                         </Typography>
                       )}
-                      {exc.postExitMfePoints !== undefined && (
+                      {exc.postExitMfePoints !== undefined ? (
                         <Typography variant="caption" sx={{ color: 'primary.main', fontSize: '0.6875rem', fontWeight: 600, display: 'block', mt: 0.5 }}>
                           Post-Exit Peak: +{exc.postExitMfePoints} pts {exc.postExitMfeR !== undefined ? `(+${exc.postExitMfeR}R)` : ''}
                         </Typography>
-                      )}
+                      ) : exc.isPostExitPending ? (
+                        <Typography variant="caption" sx={{ color: 'warning.main', fontSize: '0.6875rem', fontWeight: 600, display: 'block', mt: 0.5 }}>
+                          Post-Exit Window Active (Finalizes ~60m)
+                        </Typography>
+                      ) : null}
                     </Box>
                   </Grid>
 

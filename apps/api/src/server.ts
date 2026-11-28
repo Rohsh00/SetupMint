@@ -41,6 +41,7 @@ import { TelegramPollingService } from './services/telegram-polling.service.js';
 import { TelegramCockpitTickerWorker } from './services/telegram-cockpit-ticker.service.js';
 import { GoldNewsAlertWorker } from './services/gold-news-alert.service.js';
 import { AiSchedulerWorker } from './services/ai-scheduler.service.js';
+import { ExcursionReconciliationWorker } from './services/excursion-reconciliation.service.js';
 
 export async function buildApp() {
   // Fail-fast on critical configuration (e.g. weak/missing SESSION_SECRET in production)
@@ -298,6 +299,7 @@ if (
       TelegramCockpitTickerWorker.start();
       GoldNewsAlertWorker.start();
       AiSchedulerWorker.start();
+      ExcursionReconciliationWorker.start();
 
       await app.listen({ port: config.port, host: config.host });
       console.log(`\n======================================================`);
@@ -313,6 +315,7 @@ if (
         TelegramCockpitTickerWorker.stop();
         GoldNewsAlertWorker.stop();
         AiSchedulerWorker.stop();
+        ExcursionReconciliationWorker.stop();
         await app.close();
         await disconnectDatabase();
         process.exit(0);

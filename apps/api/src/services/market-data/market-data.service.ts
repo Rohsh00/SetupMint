@@ -396,7 +396,14 @@ export class MarketDataService {
       }
 
       // Reuse cached snapshot only if not forceRefetch and it covers the required range [from, to]
-      if (!forceRefetch && covFrom.getTime() <= from.getTime() && covTo.getTime() >= to.getTime()) {
+      // Crucial guard: If the trade exited recently and the snapshot only captured candles up to the exit,
+      // but 'to' extends into the post-exit lookahead and the market has now advanced, do not treat snapshot as complete.
+      const nowMs = Date.now();
+      const lastCandleT = snapshot.candles[snapshot.candles.length - 1].t;
+      const lastCandleEpoch = lastCandleT < 1e11 ? lastCandleT * 1000 : lastCandleT;
+      const isSnapshotMissingPostExit = to.getTime() > lastCandleEpoch + 60_000 && nowMs > lastCandleEpoch + 60_000;
+
+      if (!forceRefetch && !isSnapshotMissingPostExit && covFrom.getTime() <= from.getTime() && covTo.getTime() >= to.getTime()) {
         return {
           ok: true,
           candles: snapshot.candles,
@@ -624,13 +631,18 @@ export class MarketDataService {
       resolution: result.resolution,
     });
 
+    const nowMs = Date.now();
     let covFrom = requestedFrom || candleStart;
-    let covTo = requestedTo || candleEnd;
+    // Do not record future coverage if candles were fetched before the forward window elapsed
+    const effectiveTo = requestedTo
+      ? Math.min(requestedTo.getTime(), Math.max(candleEnd.getTime(), nowMs))
+      : candleEnd.getTime();
+    let covTo = new Date(effectiveTo);
 
     if (existing?.coverageFrom && existing.coverageFrom.getTime() < covFrom.getTime()) {
       covFrom = existing.coverageFrom;
     }
-    if (existing?.coverageTo && existing.coverageTo.getTime() > covTo.getTime()) {
+    if (existing?.coverageTo && existing.coverageTo.getTime() > covTo.getTime() && existing.coverageTo.getTime() <= nowMs) {
       covTo = existing.coverageTo;
     }
 

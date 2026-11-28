@@ -1097,5 +1097,40 @@ describe('calculateExcursion', () => {
     // Clamped to 15 minutes (session close)
     expect(res.postExitLookaheadMinutes).toBe(15);
   });
+
+  it('38. does not inflate rLeftOnTable on losing trades with negative realized R', () => {
+    // Trade had peak MFE of +1.5R, but reversed and stopped out for -1.0R loss.
+    // Under the old bug, peak - (-1.0R) = 2.5R left on the table.
+    // Realistically, the trader surrendered the +1.5R peak, so rLeftOnTable should be 1.5R, not 2.5R.
+    const candles = makeCandles(baseTime, 5, [
+      [100, 115, 99, 110], // in-trade high 115 (+1.5R)
+      [110, 112, 98, 102],
+      [102, 103, 90, 90], // stopped out at 90 (-1.0R loss)
+      [90, 92, 88, 89],   // post-exit
+      [89, 90, 85, 86],
+    ]);
+
+    const res = calculateExcursion({
+      direction: 'LONG',
+      entryPrice: 100,
+      exitPrice: 90,
+      stopLoss: 90,
+      quantity: 10,
+      contractMultiplier: 1,
+      candles,
+      entryTime: baseTime.toISOString(),
+      exitTime: baseTime.clone().add(2, 'minutes').toISOString(),
+      plannedRiskAmount: 100, // 10 pts * 10 qty = 100
+      resolution: '1',
+      postExitLookaheadMinutes: 30,
+      realizedR: -1.0,
+    });
+
+    expect(res.status).toBe('COMPUTED');
+    expect(res.mfePoints).toBe(15);
+    expect(res.mfeR).toBe(1.5);
+    // rLeftOnTable must equal peakOverallMfeR (1.5R), not 1.5 - (-1.0) = 2.5R
+    expect(res.rLeftOnTable).toBe(1.5);
+  });
 });
 

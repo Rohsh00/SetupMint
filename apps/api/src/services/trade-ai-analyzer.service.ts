@@ -11,6 +11,7 @@
 import mongoose from 'mongoose';
 import type { Readable } from 'node:stream';
 import { Buffer } from 'node:buffer';
+import sharp from 'sharp';
 import { ITradeAiAnalysis } from '@tradevault/shared';
 import { Trade, Attachment, TradeCandleSnapshot, User } from '../db/models/index.js';
 import { config } from '../config.js';
@@ -80,18 +81,65 @@ export class TradeAiAnalyzerService {
     let candleContextStr = '';
     let candlesToAnalyze: any[] = [];
     if (candleSnapshots.length > 0) {
-      const preferredSnap = candleSnapshots.find((s) => s.resolution === '5') || candleSnapshots[0];
+      // Prefer 5m snapshot, then 1m snapshot, then whatever resolution exists
+      const preferredSnap =
+        candleSnapshots.find((s) => s.resolution === '5') ||
+        candleSnapshots.find((s) => s.resolution === '1') ||
+        candleSnapshots[0];
+
       if (preferredSnap && preferredSnap.candles && preferredSnap.candles.length > 0) {
-        candlesToAnalyze = preferredSnap.candles.slice(-30);
-        candleContextStr = `Timeframe ${preferredSnap.resolution}m: ${candlesToAnalyze.length} candles around trade. High=${Math.max(
-          ...candlesToAnalyze.map((c) => c.h)
-        )}, Low=${Math.min(...candlesToAnalyze.map((c) => c.l))}. First=${candlesToAnalyze[0].o}, Last=${
-          candlesToAnalyze[candlesToAnalyze.length - 1].c
-        }.`;
+        const allCandles = preferredSnap.candles;
+        const entrySec = trade.entryTime ? Math.floor(new Date(trade.entryTime).getTime() / 1000) : 0;
+        const exitSec = trade.exitTime
+          ? Math.floor(new Date(trade.exitTime).getTime() / 1000)
+          : entrySec > 0
+          ? entrySec + 3600
+          : 0;
+
+        let entryIdx = -1;
+        let exitIdx = -1;
+
+        for (let i = 0; i < allCandles.length; i++) {
+          const cSec = allCandles[i].t < 1e11 ? allCandles[i].t : Math.floor(allCandles[i].t / 1000);
+          if (entrySec > 0 && cSec <= entrySec) {
+            entryIdx = i;
+          }
+          if (exitSec > 0 && cSec <= exitSec) {
+            exitIdx = i;
+          }
+        }
+
+        // If not found by timestamp, fall back to recent slice
+        if (entryIdx < 0) entryIdx = Math.max(0, allCandles.length - 20);
+        if (exitIdx < 0) exitIdx = Math.min(allCandles.length - 1, entryIdx + 10);
+
+        const sliceStart = Math.max(0, entryIdx - 15);
+        const sliceEnd = Math.min(allCandles.length, (exitIdx >= 0 ? exitIdx : entryIdx) + 10);
+        candlesToAnalyze = allCandles.slice(sliceStart, sliceEnd);
+
+        const resLabel = preferredSnap.resolution || '5';
+        const formattedCandles = candlesToAnalyze.map((c, idx) => {
+          const globalIdx = sliceStart + idx;
+          const cSec = c.t < 1e11 ? c.t : Math.floor(c.t / 1000);
+          const timeIso = new Date(cSec * 1000).toISOString().replace('T', ' ').substring(11, 16);
+          const range = (c.h - c.l).toFixed(2);
+          const change = (c.c - c.o).toFixed(2);
+          let marker = '';
+          if (globalIdx === entryIdx) {
+            marker = ` [==> ENTRY: ${trade.direction} @ ${trade.simpleExecution?.entryPrice ?? trade.calculated?.averageEntryPrice}]`;
+          } else if (globalIdx === exitIdx) {
+            marker = ` [==> EXIT: Closed @ ${trade.simpleExecution?.exitPrice ?? trade.calculated?.averageExitPrice}]`;
+          }
+          return `${timeIso} UTC | O:${c.o} H:${c.h} L:${c.l} C:${c.c} (rng:${range}, chg:${change})${marker}`;
+        });
+
+        candleContextStr =
+          `Timeframe ${resLabel}m Candlestick Sequence (${candlesToAnalyze.length} bars centered around trade execution):\n` +
+          formattedCandles.join('\n');
       }
     }
 
-    // 3. Search for Chart Attachments (Images)
+    // 3. Search for Chart Attachments (Images, including rasterized SVG auto-charts)
     let chartImageBase64: string | null = null;
     let chartImageMime: string | null = null;
 
@@ -101,9 +149,10 @@ export class TradeAiAnalyzerService {
         tradeId: tId,
       }).sort({ createdAt: -1 }).lean();
 
-      // Look for PNG, JPEG, WEBP images
+      // Look for PNG, JPEG, WEBP images, or SVG auto-charts
       const imageAtt = attachments.find((a) =>
-        ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(a.mimeType?.toLowerCase())
+        ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'].includes(a.mimeType?.toLowerCase()) ||
+        a.category === 'AUTO_CHART'
       );
 
       if (imageAtt && imageAtt.storedFilename) {
@@ -111,10 +160,29 @@ export class TradeAiAnalyzerService {
         const stream = await storage.read(imageAtt.storedFilename);
         const buffer = await streamToBuffer(stream);
 
-        // Cap image size to 4MB for fast API processing
-        if (buffer && buffer.length > 0 && buffer.length <= 4 * 1024 * 1024) {
-          chartImageBase64 = buffer.toString('base64');
-          chartImageMime = imageAtt.mimeType;
+        if (buffer && buffer.length > 0) {
+          const isSvg =
+            imageAtt.mimeType?.toLowerCase() === 'image/svg+xml' ||
+            imageAtt.storedFilename.toLowerCase().endsWith('.svg');
+
+          if (isSvg) {
+            try {
+              // Convert SVG chart to crisp PNG for Gemini Vision
+              const pngBuffer = await sharp(buffer)
+                .png({ compressionLevel: 8 })
+                .toBuffer();
+
+              if (pngBuffer && pngBuffer.length <= 4 * 1024 * 1024) {
+                chartImageBase64 = pngBuffer.toString('base64');
+                chartImageMime = 'image/png';
+              }
+            } catch (svgErr: any) {
+              console.warn(`[TradeAiAnalyzer] Failed to rasterize SVG chart to PNG:`, svgErr.message);
+            }
+          } else if (buffer.length <= 4 * 1024 * 1024) {
+            chartImageBase64 = buffer.toString('base64');
+            chartImageMime = imageAtt.mimeType;
+          }
         }
       }
     } catch (attErr: any) {
@@ -180,7 +248,7 @@ export class TradeAiAnalyzerService {
       (options.autoApply !== false && user?.aiSettings?.autoApplyTradeDetails === true);
 
     if (shouldAutoApply) {
-      await this.applyAnalysisToTrade(trade, finalAnalysis);
+      await this.applyAnalysisToTrade(trade, finalAnalysis, { overwrite: options.force === true });
     } else {
       await trade.save();
     }
@@ -193,7 +261,8 @@ export class TradeAiAnalyzerService {
    */
   static async applyAnalysisToTrade(
     tradeOrId: any,
-    analysis?: ITradeAiAnalysis
+    analysis?: ITradeAiAnalysis,
+    options?: { overwrite?: boolean }
   ): Promise<any> {
     let trade: any;
     if (tradeOrId && tradeOrId._id) {
@@ -211,20 +280,22 @@ export class TradeAiAnalyzerService {
       throw new Error('No AI analysis available for this trade to apply');
     }
 
+    const overwrite = options?.overwrite === true;
+
     // 1. Update Thesis
     if (!trade.thesis) {
       trade.thesis = { confluences: [], customTechnicalLabels: [] };
     }
 
-    if (!trade.thesis.entryRationale || trade.thesis.entryRationale.trim() === '') {
+    if (!trade.thesis.entryRationale || trade.thesis.entryRationale.trim() === '' || overwrite) {
       trade.thesis.entryRationale = ai.entryReview?.summary || `Entered ${trade.direction} on ${ai.setupType}`;
     }
 
-    if ((!trade.thesis.stopLossRationale || trade.thesis.stopLossRationale.trim() === '') && ai.riskManagement?.summary) {
+    if ((!trade.thesis.stopLossRationale || trade.thesis.stopLossRationale.trim() === '' || overwrite) && ai.riskManagement?.summary) {
       trade.thesis.stopLossRationale = ai.riskManagement.summary;
     }
 
-    if ((!trade.thesis.exitRationale || trade.thesis.exitRationale.trim() === '') && ai.exitReview?.summary) {
+    if ((!trade.thesis.exitRationale || trade.thesis.exitRationale.trim() === '' || overwrite) && ai.exitReview?.summary) {
       trade.thesis.exitRationale = ai.exitReview.summary;
     }
 
@@ -246,7 +317,7 @@ export class TradeAiAnalyzerService {
 
     trade.psychology.disciplineScore = ai.disciplineScore;
 
-    if (!trade.psychology.lessonsLearned || trade.psychology.lessonsLearned.trim() === '') {
+    if (!trade.psychology.lessonsLearned || trade.psychology.lessonsLearned.trim() === '' || overwrite) {
       trade.psychology.lessonsLearned = ai.lessonsLearned;
     }
 

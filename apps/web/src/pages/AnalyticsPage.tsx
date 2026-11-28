@@ -549,6 +549,19 @@ export function AnalyticsPage() {
     },
   });
 
+  // Reset mutation state whenever account scope or filters change to avoid stale cache from another account
+  React.useEffect(() => {
+    aiAuditMutation.reset();
+  }, [
+    queryParams,
+    startDate,
+    endDate,
+    selectedSymbol,
+    selectedDirection,
+    selectedSession,
+    selectedStrategyId,
+  ]);
+
   const activeAudit = (aiAuditMutation.data as any)?.data || (aiAuditData as any)?.data || aiAuditData;
 
   // Aggregate available symbols across all analytic engines for universal selector
@@ -1195,6 +1208,7 @@ export function AnalyticsPage() {
         activeTab={activeTab}
         hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
         selectedSymbol={selectedSymbol}
+        scopeLabel={scopeLabel || activeAccount?.name || 'All Accounts'}
       />
 
       {/* TAB 0: ACTIONABLE PLAYBOOK & SUMMARY */}

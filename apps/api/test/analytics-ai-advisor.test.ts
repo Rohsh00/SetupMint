@@ -123,4 +123,33 @@ describe('AnalyticsAiAdvisorService - Multi-Tab Performance Copilot', () => {
     expect(audit.criticalLeaks.some((l: string) => l.includes('Revenge Sizing Escalation'))).toBe(true);
     expect(audit.actionDirectives.some((d: any) => d.impact === 'CRITICAL')).toBe(true);
   });
+
+  it('handles 0 closed trades gracefully with informative deterministic audit', () => {
+    const audit = (AnalyticsAiAdvisorService as any).generateDeterministicAudit({
+      totalCount: 0,
+      winCount: 0,
+      lossCount: 0,
+      winRate: 0,
+      profitFactor: 1.0,
+      netPnL: 0,
+      avgR: 0,
+      avgMaeR: 0,
+      avgMfeR: 0,
+      avgExitEfficiency: 0,
+      widenedStopsCount: 0,
+      martingaleRiskEvents: 0,
+      sizingDispersionRatio: 1.0,
+      mistakeCounts: {},
+      sessionPnL: {},
+      dayOfWeekPnL: {},
+      symbolPnL: {},
+      scopeCurrency: 'USD',
+      scopeLabel: 'Elefin USD',
+    });
+
+    expect(audit.edgeGrade).toBe('B');
+    expect(audit.overallVerdict).toBe('NO_TRADES_IN_SCOPE');
+    expect(audit.executiveSummary).toContain('Elefin USD');
+    expect(audit.isAiGenerated).toBe(false);
+  });
 });

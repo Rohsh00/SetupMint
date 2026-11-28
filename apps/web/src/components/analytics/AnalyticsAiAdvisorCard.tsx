@@ -39,6 +39,7 @@ export interface AnalyticsAiAdvisorCardProps {
   activeTab: string;
   hasGeminiKey: boolean;
   selectedSymbol?: string;
+  scopeLabel?: string;
 }
 
 export function AnalyticsAiAdvisorCard({
@@ -48,6 +49,7 @@ export function AnalyticsAiAdvisorCard({
   activeTab,
   hasGeminiKey,
   selectedSymbol = 'ALL',
+  scopeLabel,
 }: AnalyticsAiAdvisorCardProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -173,6 +175,21 @@ export function AnalyticsAiAdvisorCard({
               <Typography variant="h6" sx={{ fontWeight: 800, fontSize: { xs: '0.95rem', sm: '1.05rem' }, letterSpacing: '-0.01em' }}>
                 SetupMint AI Quantitative Desk Advisor
               </Typography>
+              {scopeLabel && (
+                <Chip
+                  size="small"
+                  label={scopeLabel}
+                  sx={{
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    height: 20,
+                    bgcolor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+                    color: isDark ? '#a5b4fc' : '#4f46e5',
+                    border: '1px solid',
+                    borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.2)',
+                  }}
+                />
+              )}
               {audit && (
                 <Chip
                   size="small"

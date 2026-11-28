@@ -20,6 +20,7 @@ export interface IAnalyticsAiInput {
   trades: any[];
   scopeCurrency?: string;
   scopeLabel?: string;
+  isMultiCurrency?: boolean;
   dateRangeLabel?: string;
   filterSummary?: string;
   forceRegenerate?: boolean;
@@ -30,7 +31,7 @@ export class AnalyticsAiAdvisorService {
    * Generates a comprehensive AI analytics audit across all performance dimensions.
    */
   static async generateAudit(input: IAnalyticsAiInput): Promise<IAnalyticsAiAudit> {
-    const { userId, trades, scopeCurrency = 'USD', filterSummary } = input;
+    const { userId, trades, scopeCurrency = 'USD', scopeLabel, isMultiCurrency, filterSummary } = input;
 
     // Load user for AI credentials
     const user = await User.findById(userId);
@@ -61,6 +62,7 @@ export class AnalyticsAiAdvisorService {
     const sessionPnL: Record<string, { pnl: number; count: number; wins: number }> = {};
     const dayOfWeekPnL: Record<string, { pnl: number; count: number; wins: number }> = {};
     const symbolPnL: Record<string, { pnl: number; count: number; wins: number }> = {};
+    const pnlByCurrency: Record<string, number> = {};
 
     let lotSizes: number[] = [];
     let martingaleRiskEvents = 0;
@@ -72,10 +74,16 @@ export class AnalyticsAiAdvisorService {
       const costs = Number(t.calculated?.totalCosts ?? (gross - pnl));
       const r = Number(t.calculated?.realizedRMultiple ?? t.risk?.realizedRMultiple ?? 0);
       const qty = Number(t.quantity ?? t.simpleExecution?.quantity ?? 0);
+      const tradeCurr = String(t.currency || scopeCurrency).toUpperCase();
 
-      netPnL += pnl;
-      grossPnL += gross;
-      totalCosts += costs;
+      pnlByCurrency[tradeCurr] = (pnlByCurrency[tradeCurr] || 0) + pnl;
+
+      // In multi-currency mode, avoid summing cross-currency values
+      if (!isMultiCurrency || tradeCurr === scopeCurrency.toUpperCase()) {
+        netPnL += pnl;
+        grossPnL += gross;
+        totalCosts += costs;
+      }
       totalRealizedR += r;
 
       if (qty > 0) lotSizes.push(qty);
@@ -181,6 +189,9 @@ export class AnalyticsAiAdvisorService {
       dayOfWeekPnL,
       symbolPnL,
       scopeCurrency,
+      scopeLabel,
+      isMultiCurrency,
+      pnlByCurrency,
     });
 
     // 3. Check for Active Google Gemini API Key
@@ -193,8 +204,8 @@ export class AnalyticsAiAdvisorService {
       geminiApiKey = config.geminiApiKey;
     }
 
-    // If no key or AI disabled, return deterministic quantitative audit
-    if (!geminiApiKey || user?.aiSettings?.enabled === false) {
+    // If no closed trades, no key, or AI disabled, return deterministic quantitative audit immediately
+    if (totalCount === 0 || !geminiApiKey || user?.aiSettings?.enabled === false) {
       return quantAudit;
     }
 
@@ -234,6 +245,7 @@ export class AnalyticsAiAdvisorService {
             winRate: val.count > 0 ? Math.round((val.wins / val.count) * 100) : 0,
           })),
         },
+        scopeLabel,
         filterSummary,
       });
 
@@ -270,6 +282,9 @@ export class AnalyticsAiAdvisorService {
     dayOfWeekPnL: Record<string, { pnl: number; count: number; wins: number }>;
     symbolPnL: Record<string, { pnl: number; count: number; wins: number }>;
     scopeCurrency: string;
+    scopeLabel?: string;
+    isMultiCurrency?: boolean;
+    pnlByCurrency?: Record<string, number>;
   }): IAnalyticsAiAudit {
     const {
       totalCount,
@@ -287,7 +302,45 @@ export class AnalyticsAiAdvisorService {
       sessionPnL,
       dayOfWeekPnL,
       scopeCurrency,
+      scopeLabel,
+      isMultiCurrency,
     } = params;
+
+    // Handle 0 closed trades cleanly
+    if (totalCount === 0) {
+      return {
+        overallVerdict: 'NO_TRADES_IN_SCOPE',
+        edgeGrade: 'B',
+        executiveSummary: `No closed trades recorded within ${scopeLabel || 'this account scope'}. Log or sync trades to generate deep institutional edge analytics.`,
+        topStrengths: ['Account scope connected', 'Awaiting closed trades for edge synthesis'],
+        criticalLeaks: ['Insufficient sample size to assess execution leaks'],
+        actionDirectives: [
+          {
+            category: 'PLAYBOOK',
+            title: 'Log Validated Setups',
+            directive: 'Execute and journal your core strategy setups to begin statistical calibration.',
+            rationale: 'Deep quantitative edge detection requires closed trades.',
+            impact: 'MEDIUM',
+          },
+        ],
+        tabInsights: {
+          summary: `No closed trades found for ${scopeLabel || 'this scope'}.`,
+          overview: 'Equity curve and distribution will populate after trades are logged.',
+          psychology: 'Psychology metrics require completed trade logs.',
+          execution: 'Excursion and fill analytics require closed executions.',
+          sizing: 'Position sizing analytics require trade quantity data.',
+          time: 'Session performance will appear once trades are recorded.',
+        },
+        rulesForNextCycle: [
+          'Execute only validated setups according to your trading playbook.',
+          'Always set and honor an initial stop loss upon entry.',
+          'Record psychological tags and execution screenshots for every trade.',
+        ],
+        modelUsed: 'Quant Engine (Deterministic)',
+        generatedAt: new Date().toISOString(),
+        isAiGenerated: false,
+      };
+    }
 
     // Compute edge grade
     let edgeGrade: 'A+' | 'A' | 'B' | 'C' | 'D' | 'F' = 'B';
@@ -405,12 +458,15 @@ export class AnalyticsAiAdvisorService {
     apiKey: string;
     quant: IAnalyticsAiAudit;
     metrics: any;
+    scopeLabel?: string;
     filterSummary?: string;
   }): Promise<IAnalyticsAiAudit | null> {
-    const { apiKey, quant, metrics, filterSummary } = params;
+    const { apiKey, quant, metrics, scopeLabel, filterSummary } = params;
 
     const systemPrompt = `You are SetupMint's Chief Quantitative Trading Officer & Elite Trading Performance Coach.
 Analyze the trader's quantitative performance metrics across all dimensions (Summary, Overview, Psychology, Execution Quality, Position Sizing, Time & Sessions).
+All metrics, feedback, and analysis MUST be strictly scoped to the specified account context: "${scopeLabel || 'Selected Account'}" with currency "${metrics.currency}".
+NEVER mention, assume, or mix other currencies (e.g. do not mention INR if currency is USD, or USD if INR).
 
 Return ONLY valid JSON matching this exact structure:
 {
@@ -451,6 +507,8 @@ Return ONLY valid JSON matching this exact structure:
     ];
 
     const contentPrompt = `Analyze this trader's comprehensive telemetry:
+Account Scope: ${scopeLabel || 'Selected Account'}
+Target Currency: ${metrics.currency}
 ${filterSummary ? `Filters Active: ${filterSummary}\n` : ''}
 Metrics Summary:
 ${JSON.stringify(metrics, null, 2)}

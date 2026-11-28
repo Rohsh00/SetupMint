@@ -1041,7 +1041,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
 
   // Comprehensive AI Analytics Advisor & Quantitative Desk Audit
   app.post('/ai-audit', async (req: any, reply) => {
-    const scope = (req.headers['x-account-scope'] as string) || (req.query?.scope as string) || req.body?.scope;
+    const scopeInput = {
+      ...(req.query || {}),
+      ...(req.body || {}),
+    };
+    const scope = AccountScopeService.parseAccountScope(scopeInput);
     const { startDate, endDate, symbol, direction, session, strategyId, forceRegenerate } = req.body || {};
 
     const accountCtx = await resolveAccountContext(req.user!.id, scope);
@@ -1054,15 +1058,29 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
     };
 
     if (startDate || endDate) {
-      const dateClause = buildDateRangeClause(startDate, endDate);
-      if (dateClause) Object.assign(filter, dateClause);
+      const dateClause = buildDateRangeClause({ startDate, endDate });
+      if (dateClause?.tradeDate) filter.tradeDate = dateClause.tradeDate;
     }
 
     applyCommonAnalyticsFilters(filter, { symbol, direction, session, strategyId });
 
     const trades = await Trade.find(filter).sort({ tradeDate: -1, exitTime: -1 }).lean();
 
-    const primaryCurrency = (accountCtx.primaryCurrency && accountCtx.primaryCurrency !== 'MULTI' ? accountCtx.primaryCurrency : null) || trades[0]?.currency || 'USD';
+    const primaryCurrency =
+      (accountCtx.primaryCurrency && accountCtx.primaryCurrency !== 'MULTI' ? accountCtx.primaryCurrency : null) ||
+      (accountCtx.accounts.length > 0 ? (accountCtx.accounts[0].baseCurrency || (accountCtx.accounts[0] as any).currency) : null) ||
+      trades[0]?.currency ||
+      'USD';
+
+    let scopeLabel = 'All Accounts';
+    if (accountCtx.accounts.length === 1) {
+      const singleAcc = accountCtx.accounts[0];
+      scopeLabel = `${singleAcc.name || singleAcc.broker || 'Account'} (${primaryCurrency})`;
+    } else if (scope.mode === 'PROP_FIRM') {
+      scopeLabel = scope.firmKey ? `Prop Firm (${scope.firmKey})` : 'All Prop Firms';
+    } else if (scope.mode === 'TYPE') {
+      scopeLabel = `${scope.accountType || 'Personal'} Accounts`;
+    }
 
     const filterParts: string[] = [];
     if (symbol && symbol !== 'ALL') filterParts.push(`Symbol: ${symbol}`);
@@ -1075,7 +1093,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app: FastifyInstance) 
       userId: req.user!.id,
       trades,
       scopeCurrency: primaryCurrency,
-      scopeLabel: typeof scope === 'string' ? scope : undefined,
+      scopeLabel,
+      isMultiCurrency: accountCtx.isMultiCurrency,
       filterSummary: filterParts.length > 0 ? filterParts.join(', ') : undefined,
       forceRegenerate: Boolean(forceRegenerate),
     });

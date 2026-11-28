@@ -164,6 +164,7 @@ export function TradeInteractiveChart({
   const [candlesData, setCandlesData] = useState<any[]>([]);
   const [providerName, setProviderName] = useState<string>('FYERS');
   const [isUnderlyingProxy, setIsUnderlyingProxy] = useState<boolean>(false);
+  const [snapshotImageError, setSnapshotImageError] = useState(false);
 
   // Crosshair HUD detail
   const [hoveredCandle, setHoveredCandle] = useState<{
@@ -212,6 +213,10 @@ export function TradeInteractiveChart({
     if (list.length === 0) return null;
     return list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
   }, [attachments]);
+
+  useEffect(() => {
+    setSnapshotImageError(false);
+  }, [latestSavedSnapshot?.id, (latestSavedSnapshot as any)?._id]);
 
   // Snaps an epoch timestamp (seconds) to the nearest candle time
   const findClosestCandleTime = useCallback((targetSec: number, candles: any[]): number | null => {
@@ -1357,7 +1362,7 @@ export function TradeInteractiveChart({
               </Typography>
             </Alert>
 
-            {latestSavedSnapshot ? (
+            {latestSavedSnapshot && !snapshotImageError ? (
               <Box
                 sx={{
                   maxWidth: 960,
@@ -1372,14 +1377,38 @@ export function TradeInteractiveChart({
                   alt={`Saved Snapshot (${latestSavedSnapshot.timeframe || 'Auto'})`}
                   crossOrigin="use-credentials"
                   style={{ width: '100%', display: 'block' }}
+                  onError={() => setSnapshotImageError(true)}
                 />
               </Box>
             ) : (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <ImageRounded sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  No saved SVG snapshot exists for this trade yet.
+              <Box
+                sx={{
+                  textAlign: 'center',
+                  py: 4,
+                  px: 2,
+                  border: `1px dashed ${muiTheme.palette.divider}`,
+                  borderRadius: 2,
+                  maxWidth: 640,
+                  width: '100%',
+                }}
+              >
+                <ImageRounded sx={{ fontSize: 44, color: 'text.disabled', mb: 1 }} />
+                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary', mb: 0.5 }}>
+                  {snapshotImageError ? 'Saved Snapshot Chart Unavailable' : 'No saved chart snapshot exists for this trade yet'}
                 </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 2 }}>
+                  {snapshotImageError
+                    ? 'The stored image file could not be retrieved from storage. You can switch to the live TradingView view above or regenerate the chart.'
+                    : 'A chart snapshot will be automatically captured when market data is synced.'}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setChartViewMode('TRADINGVIEW')}
+                  sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+                >
+                  Switch to TradingView Chart
+                </Button>
               </Box>
             )}
           </Box>

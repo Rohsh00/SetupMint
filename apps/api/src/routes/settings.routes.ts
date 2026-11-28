@@ -457,14 +457,17 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     // If key not provided or masked, check user's stored encrypted key
     if ((!apiKey || apiKey.startsWith('••') || apiKey.startsWith('**')) && user?.aiSettings?.geminiApiKey) {
-      try {
-        apiKey = safeDecryptSecret(user.aiSettings.geminiApiKey) || user.aiSettings.geminiApiKey;
-      } catch (err: any) {
+      const decrypted = safeDecryptSecret(user.aiSettings.geminiApiKey);
+      if (decrypted) {
+        apiKey = decrypted;
+      } else if (!user.aiSettings.geminiApiKey.startsWith('enc:')) {
+        apiKey = user.aiSettings.geminiApiKey;
+      } else {
         return reply.status(400).send({
           success: false,
           error: {
             code: 'GEMINI_DECRYPT_FAILED',
-            message: 'Unable to decrypt stored Gemini API Key. Please re-enter your API key and save settings.',
+            message: 'Unable to decrypt stored Gemini API Key (encryption key rotated). Please paste your API key and click Save Settings.',
           },
         });
       }

@@ -185,10 +185,12 @@ export class AccountScopeService {
    */
   static async resolveAccountScope(
     userId: string | mongoose.Types.ObjectId,
-    scope?: Partial<AccountScope> | null
+    rawScope?: Partial<AccountScope> | string | null
   ): Promise<mongoose.Types.ObjectId[]> {
     const userOid =
       typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+
+    const scope = this.normalizeScope(rawScope);
 
     const baseQuery: mongoose.FilterQuery<any> = {
       userId: userOid,
@@ -265,27 +267,41 @@ export class AccountScopeService {
   }
 
   /**
-   * Helper to parse and normalize AccountScope from request query parameters or request body.
+   * Helper to parse and normalize AccountScope from request query parameters, body, or string.
    */
   static parseAccountScope(input: any = {}): AccountScope {
+    if (!input || typeof input !== 'object') {
+      if (typeof input === 'string') {
+        const trimmed = input.trim();
+        if (mongoose.Types.ObjectId.isValid(trimmed)) {
+          return { mode: 'ACCOUNT', accountId: trimmed };
+        }
+        const upper = trimmed.toUpperCase();
+        if (upper === 'PROP_FIRM' || upper === 'TYPE' || upper === 'ACCOUNT' || upper === 'ALL') {
+          return { mode: upper as AccountScopeMode };
+        }
+      }
+      return { mode: 'ALL' };
+    }
+
     const rawMode = input.scope || input.mode;
+    const firmKey = input.firmKey || input.firm;
+    const accountId = input.accountId || input.account;
+    const accountType = input.accountType || input.type;
+    const includeArchived =
+      input.includeArchived === true || input.includeArchived === 'true';
+
     let mode: AccountScopeMode = 'ALL';
 
     if (rawMode === 'PROP_FIRM' || rawMode === 'prop_firm') {
       mode = 'PROP_FIRM';
     } else if (rawMode === 'TYPE' || rawMode === 'type') {
       mode = 'TYPE';
-    } else if (rawMode === 'ACCOUNT' || rawMode === 'account' || (input.accountId && !rawMode)) {
+    } else if (rawMode === 'ACCOUNT' || rawMode === 'account' || (accountId && !rawMode)) {
       mode = 'ACCOUNT';
     } else {
       mode = 'ALL';
     }
-
-    const firmKey = input.firmKey || input.firm;
-    const accountId = input.accountId || input.account;
-    const accountType = input.accountType || input.type;
-    const includeArchived =
-      input.includeArchived === true || input.includeArchived === 'true';
 
     return {
       mode,
@@ -297,14 +313,30 @@ export class AccountScopeService {
   }
 
   /**
+   * Normalizes any raw scope input (string, query object, or AccountScope) into a safe AccountScope.
+   */
+  static normalizeScope(scope?: any): AccountScope {
+    if (!scope) return { mode: 'ALL' };
+    if (typeof scope === 'string') {
+      const trimmed = scope.trim();
+      if (mongoose.Types.ObjectId.isValid(trimmed)) {
+        return { mode: 'ACCOUNT', accountId: trimmed };
+      }
+      return this.parseAccountScope({ scope: trimmed });
+    }
+    return this.parseAccountScope(scope);
+  }
+
+  /**
    * One unified backend resolver returning complete account context,
    * profiles, capabilities, currencies, and scope validation.
    */
   static async resolveAccountContext(
     userId: string | mongoose.Types.ObjectId,
-    scope?: Partial<AccountScope> | null
+    rawScope?: Partial<AccountScope> | string | null
   ): Promise<ResolvedAccountContext> {
     const userOid = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
+    const scope = this.normalizeScope(rawScope);
     const accountIds = await this.resolveAccountScope(userOid, scope);
 
     if (accountIds.length === 0) {

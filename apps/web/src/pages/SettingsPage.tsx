@@ -1445,6 +1445,9 @@ export function SettingsPage() {
       setAiEnabled((user as any).aiSettings.enabled ?? true);
       setAutoAnalyzeTrades((user as any).aiSettings.autoAnalyzeTrades ?? true);
       setAutoApplyTradeDetails((user as any).aiSettings.autoApplyTradeDetails ?? false);
+      if ((user as any).aiSettings.geminiApiKey) {
+        setGeminiApiKey((user as any).aiSettings.geminiApiKey);
+      }
     }
   }, [user]);
 

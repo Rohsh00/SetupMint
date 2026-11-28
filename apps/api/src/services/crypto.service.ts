@@ -45,6 +45,7 @@ export function decryptSecret(value: string | null | undefined): string | null {
     config.tokenEncryptionKey,
     'tradevault-dev-token-encryption-key-change-me',
     'supersecret-setupmint-token-encryption-key-change-me-32chars',
+    'supersecret-setupmint-session-encryption-key-change-me-32chars',
     config.sessionSecret,
     'tradevault-cloud-session-secret-change-in-prod-32chars',
     'setupmint-secret-key',

@@ -1287,4 +1287,33 @@ Historical candle market-data-only fallback source for MAE/MFE excursion analyti
   ```
 - **Responses:** `200 OK` with updated `IWeeklyReview` document.
 
+---
+
+## 16. Conversational AI & Autonomous Trading Copilot (`/api/v1/ai`)
+
+### `POST /api/v1/ai/voice-journal`
+- **Purpose:** Transcribes spoken audio reflections, analyzes trader emotional sentiment (Confidence, Fear, Tilt, Discipline), extracts operational lessons, detects trading mistakes, links reflection to specific trade records, and updates today's Daily Journal with zero typing.
+- **Request Body:**
+  ```json
+  {
+    "audioBase64": "GkXfo59ChoEBQveBAULygQ8...",
+    "mimeType": "audio/webm",
+    "caption": "Optional caption or voice summary",
+    "tradeId": "653b8f1a2b3c4d5e6f7a8b9c"
+  }
+  ```
+- **Responses:**
+  - `200 OK`: Returns `{ success: true, data: { transcription, emotionalState, disciplineScore, lessonsLearned, identifiedMistakes, journalDate, tradeId } }`.
+  - `400 INVALID_AUDIO`: If audio buffer or base64 is missing.
+
+### `POST /api/v1/ai/copilot`
+- **Purpose:** Natural language conversational assistant querying the trader's historical journal ledger, performance curves, setups, and discipline logs.
+
+### `POST /api/v1/ai/parse-statement`
+- **Purpose:** Multimodal OCR & document parser ingesting PDF contract notes and mobile trade confirmation screenshots.
+
+### `GET /api/v1/ai/edge-mining`
+- **Purpose:** Unsupervised clustering and statistical discovery of hidden strategy edges and execution leaks.
+
+
 

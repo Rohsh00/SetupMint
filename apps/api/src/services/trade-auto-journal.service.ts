@@ -8,8 +8,10 @@
 import mongoose from 'mongoose';
 import { Trade, User } from '../db/models/index.js';
 import { TradeAiAnalyzerService } from './trade-ai-analyzer.service.js';
+import { ChartGeneratorService } from './chart-generator.service.js';
 import { TelegramAlertService } from './telegram-alert.service.js';
 import { safeDecryptSecret } from './crypto.service.js';
+import { config } from '../config.js';
 
 interface IAutoJournalTask {
   tradeId: string;
@@ -137,7 +139,16 @@ export class TradeAutoJournalService {
 
     const shouldAutoApply = user.aiSettings?.autoApplyTradeDetails !== false;
 
-    // 1. Execute AI Multimodal / Quant Analysis
+    // 1A. Autonomous Multi-Timeframe Execution Chart Capture (1m execution, 5m structure, 15m trend)
+    try {
+      await ChartGeneratorService.generateAutoChartsForTrade(tradeId, userId, {
+        resolutions: ['1', '5', '15'],
+      });
+    } catch (chartErr: any) {
+      console.warn(`[TradeAutoJournal] Failed to auto-generate execution charts for trade ${tradeId}:`, chartErr.message);
+    }
+
+    // 1B. Execute AI Multimodal / Quant Analysis
     const analysis = await TradeAiAnalyzerService.analyzeTrade(tradeId, userId, {
       autoApply: shouldAutoApply,
       force: false,
@@ -184,12 +195,17 @@ export class TradeAutoJournalService {
           text += `💡 <b>Lesson Learned:</b> <i>"${analysis.lessonsLearned}"</i>\n`;
         }
 
-        text += `\n<i>Auto-applied setup, strategy, thesis & psychology to journal.</i>`;
+        text += `📸 <b>Execution Charts:</b> <code>1m · 5m · 15m Captured & Attached</code>\n`;
+        text += `\n<i>Auto-applied setup, strategy, thesis & psychology with zero typing.</i>`;
 
         await TelegramAlertService.sendMessage(botToken, chatId, text, [
           [
+            { text: '🔗 View Trade & Charts', url: `${config.webAppUrl}/trades/${trade._id}` },
             { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
-            { text: '🧠 AI Coach', callback_data: 'cmd_coach' },
+          ],
+          [
+            { text: '🧠 Ask AI Coach', callback_data: 'cmd_coach' },
+            { text: '📅 Daily Summary', callback_data: 'cmd_summary' },
           ],
         ]);
       }

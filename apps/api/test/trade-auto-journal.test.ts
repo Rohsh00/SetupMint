@@ -1,17 +1,29 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { User, Trade, TradingAccount } from '../src/db/models/index.js';
 import { TradeAutoJournalService } from '../src/services/trade-auto-journal.service.js';
 import { TradeAiAnalyzerService } from '../src/services/trade-ai-analyzer.service.js';
+import { ChartGeneratorService } from '../src/services/chart-generator.service.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/connection.js';
 
 describe('TradeAutoJournalService - Zero-Click Post-Exit Journaling', () => {
   let testUserId: mongoose.Types.ObjectId;
   let testAccountId: mongoose.Types.ObjectId;
   let testTradeId: mongoose.Types.ObjectId;
 
+  beforeAll(async () => {
+    await connectDatabase();
+  });
+
+  afterAll(async () => {
+    await disconnectDatabase();
+  });
+
   beforeEach(async () => {
     TradeAutoJournalService.resetForTests();
     TradeAutoJournalService.pacingDelayMs = 0;
+
+    vi.spyOn(ChartGeneratorService, 'generateAutoChartsForTrade').mockResolvedValue([]);
 
     vi.spyOn(TradeAiAnalyzerService as any, 'synthesizeWithGemini').mockResolvedValue({
       modelUsed: 'gemini-2.5-flash',

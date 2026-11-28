@@ -8,59 +8,79 @@
  */
 
 import mongoose from 'mongoose';
-import { DailyJournal, User } from '../db/models/index.js';
+import { DailyJournal, User, Trade } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
 import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 export class AiVoiceJournalService {
   /**
-   * Processes a Telegram voice file: downloads, transcribes, evaluates psychology, and logs to DailyJournal.
+   * Processes an audio voice message: downloads/accepts buffer, transcribes, evaluates psychology,
+   * updates the linked Trade (if specified), and logs to today's DailyJournal with zero manual typing.
    */
   static async processVoiceMessage(params: {
     userId: string | mongoose.Types.ObjectId;
-    botToken: string;
-    fileId: string;
+    botToken?: string;
+    fileId?: string;
+    audioBuffer?: Buffer;
+    mimeType?: string;
     caption?: string;
+    tradeId?: string | mongoose.Types.ObjectId;
   }): Promise<{
     transcription: string;
     emotionalState: string;
     disciplineScore: number;
     lessonsLearned: string;
+    identifiedMistakes: string[];
     journalDate: string;
+    tradeId?: string;
   }> {
-    const { userId, botToken, fileId, caption } = params;
+    const { userId, botToken, fileId, caption, tradeId } = params;
     const uId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
 
     const user = await User.findById(uId).lean();
     const todayStr = new Date().toISOString().slice(0, 10);
 
-    // 1. Fetch file path from Telegram Bot API
-    const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
-    if (!realToken) {
-      throw new Error('Invalid bot token for voice message processing.');
+    let audioBuffer: Buffer;
+    let mimeType = params.mimeType || 'audio/ogg';
+
+    if (params.audioBuffer) {
+      audioBuffer = params.audioBuffer;
+    } else if (botToken && fileId) {
+      // 1. Fetch file path from Telegram Bot API
+      const realToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+      if (!realToken) {
+        throw new Error('Invalid bot token for voice message processing.');
+      }
+
+      const getFileUrl = `https://api.telegram.org/bot${realToken}/getFile?file_id=${fileId}`;
+      const fileRes = await fetch(getFileUrl);
+      if (!fileRes.ok) {
+        throw new Error('Failed to retrieve voice file details from Telegram API.');
+      }
+
+      const fileJson: any = await fileRes.json();
+      const filePath = fileJson?.result?.file_path;
+      if (!filePath) {
+        throw new Error('Telegram file path not found.');
+      }
+
+      // 2. Download audio binary
+      const downloadUrl = `https://api.telegram.org/file/bot${realToken}/${filePath}`;
+      const audioRes = await fetch(downloadUrl);
+      if (!audioRes.ok) {
+        throw new Error('Failed to download voice binary from Telegram servers.');
+      }
+
+      audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+      if (filePath.endsWith('.mp3')) mimeType = 'audio/mpeg';
+      else if (filePath.endsWith('.m4a')) mimeType = 'audio/mp4';
+      else if (filePath.endsWith('.wav')) mimeType = 'audio/wav';
+      else mimeType = 'audio/ogg';
+    } else {
+      throw new Error('Either audioBuffer or botToken and fileId must be provided for voice processing.');
     }
 
-    const getFileUrl = `https://api.telegram.org/bot${realToken}/getFile?file_id=${fileId}`;
-    const fileRes = await fetch(getFileUrl);
-    if (!fileRes.ok) {
-      throw new Error('Failed to retrieve voice file details from Telegram API.');
-    }
-
-    const fileJson: any = await fileRes.json();
-    const filePath = fileJson?.result?.file_path;
-    if (!filePath) {
-      throw new Error('Telegram file path not found.');
-    }
-
-    // 2. Download audio binary
-    const downloadUrl = `https://api.telegram.org/file/bot${realToken}/${filePath}`;
-    const audioRes = await fetch(downloadUrl);
-    if (!audioRes.ok) {
-      throw new Error('Failed to download voice binary from Telegram servers.');
-    }
-
-    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
     const base64Audio = audioBuffer.toString('base64');
 
     // 3. Check for Gemini API key
@@ -77,6 +97,7 @@ export class AiVoiceJournalService {
     let emotionalState = 'DISCIPLINED';
     let disciplineScore = 4;
     let lessonsLearned = 'Maintained trade reflection consistency.';
+    let identifiedMistakes: string[] = [];
 
     if (geminiApiKey) {
       try {
@@ -84,10 +105,11 @@ export class AiVoiceJournalService {
 
         const systemPrompt = `You are a trader psychology coach and voice transcription engine.
 Transcribe the trader's audio voice note exactly.
-Analyze their emotional state and vocal sentiment:
+Analyze their emotional state, sentiment, and execution discipline:
 - emotionalState: "CONFIDENT" | "FRUSTRATED" | "TILTED" | "FEARFUL" | "GREEDY" | "DISCIPLINED"
 - disciplineScore: number (1 to 5)
-- lessonsLearned: 1-2 sentence key takeaway extracted from what they said
+- lessonsLearned: 1-2 sentence key takeaway or operational rule extracted from what they said
+- identifiedMistakes: array of strings of any trading errors mentioned (e.g. "EXITED_EARLY", "MOVED_STOP_LOSS", "REVENGE_TRADE", "OVERSIZED", "FOMO_ENTRY", "CHASED_ENTRY", "WIDER_STOP", "NO_STOP_LOSS")
 - cleanTranscription: accurate text of what was spoken
 
 Respond strictly in valid JSON:
@@ -95,7 +117,8 @@ Respond strictly in valid JSON:
   "cleanTranscription": string,
   "emotionalState": string,
   "disciplineScore": number,
-  "lessonsLearned": string
+  "lessonsLearned": string,
+  "identifiedMistakes": string[]
 }`;
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
@@ -113,11 +136,11 @@ Respond strictly in valid JSON:
                 parts: [
                   {
                     inline_data: {
-                      mime_type: 'audio/ogg',
+                      mime_type: mimeType,
                       data: base64Audio,
                     },
                   },
-                  { text: 'Transcribe this voice journal entry and analyze trader psychology.' },
+                  { text: 'Transcribe this voice journal entry, analyze trader psychology, identify trading mistakes, and extract lessons.' },
                 ],
               },
             ],
@@ -139,6 +162,9 @@ Respond strictly in valid JSON:
             emotionalState = parsed.emotionalState || emotionalState;
             disciplineScore = parsed.disciplineScore || disciplineScore;
             lessonsLearned = parsed.lessonsLearned || lessonsLearned;
+            if (Array.isArray(parsed.identifiedMistakes)) {
+              identifiedMistakes = parsed.identifiedMistakes.filter((m: any) => typeof m === 'string');
+            }
           }
         }
       } catch (err: any) {
@@ -146,10 +172,58 @@ Respond strictly in valid JSON:
       }
     }
 
-    // 4. Append to DailyJournal for today
+    // 4. If tradeId is provided, attach and update the Trade model directly
+    let linkedTradeIdStr: string | undefined = undefined;
+    if (tradeId) {
+      const tOid = typeof tradeId === 'string' ? new mongoose.Types.ObjectId(tradeId) : tradeId;
+      const targetTrade = await Trade.findOne({ _id: tOid, userId: uId });
+      if (targetTrade) {
+        linkedTradeIdStr = targetTrade._id.toString();
+        if (!targetTrade.psychology) {
+          targetTrade.psychology = {} as any;
+        }
+
+        const timeIST = new Date().toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const tradeNote = `[${timeIST} IST] 🎙️ **Voice Reflection:** "${transcription}"\n• Sentiment: ${emotionalState} | Lesson: ${lessonsLearned}`;
+        const existingNotes = targetTrade.psychology.notes || '';
+        targetTrade.psychology.notes = existingNotes ? `${existingNotes}\n\n${tradeNote}` : tradeNote;
+        targetTrade.psychology.emotionAfter = emotionalState;
+        targetTrade.psychology.disciplineScore = disciplineScore;
+        targetTrade.psychology.lessonsLearned = lessonsLearned;
+
+        if (identifiedMistakes.length > 0) {
+          const currentMistakes = new Set(targetTrade.psychology.mistakes || []);
+          for (const m of identifiedMistakes) {
+            currentMistakes.add(m);
+          }
+          targetTrade.psychology.mistakes = Array.from(currentMistakes);
+        }
+
+        targetTrade.auditLog.push({
+          action: 'AI_VOICE_REFLECTION_PROCESSED',
+          timestamp: new Date(),
+          details: {
+            emotionalState,
+            disciplineScore,
+            lessonsLearned,
+            identifiedMistakes,
+          },
+          changedBy: 'ai',
+        });
+
+        await targetTrade.save();
+      }
+    }
+
+    // 5. Append to DailyJournal for today
     const journalEntry = await DailyJournal.findOne({ userId: uId, date: todayStr });
     const existingNotes = journalEntry?.notes ? `${journalEntry.notes}\n\n` : '';
-    const updatedNotes = `${existingNotes}🎙️ **Voice Reflection (${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}):**\n${transcription}\n*Emotional State:* ${emotionalState} | *Key Lesson:* ${lessonsLearned}`;
+    const mistakesSuffix = identifiedMistakes.length > 0 ? ` | *Detected Errors:* ${identifiedMistakes.join(', ')}` : '';
+    const updatedNotes = `${existingNotes}🎙️ **Voice Reflection (${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}):**\n${transcription}\n*Emotional State:* ${emotionalState} | *Discipline:* ${disciplineScore}/5${mistakesSuffix}\n*Key Lesson:* ${lessonsLearned}`;
 
     await DailyJournal.findOneAndUpdate(
       { userId: uId, date: todayStr },
@@ -168,7 +242,9 @@ Respond strictly in valid JSON:
       emotionalState,
       disciplineScore,
       lessonsLearned,
+      identifiedMistakes,
       journalDate: todayStr,
+      tradeId: linkedTradeIdStr,
     };
   }
 }

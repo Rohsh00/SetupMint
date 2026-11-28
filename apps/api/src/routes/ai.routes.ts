@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { AiCopilotService } from '../services/ai-copilot.service.js';
 import { AiStatementParserService } from '../services/ai-statement-parser.service.js';
 import { AiEdgeMinerService } from '../services/ai-edge-miner.service.js';
+import { AiVoiceJournalService } from '../services/ai-voice-journal.service.js';
 import { requireAuth } from '../middleware/auth.js';
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -129,6 +130,46 @@ export async function aiRoutes(app: FastifyInstance) {
         error: {
           code: 'EDGE_MINING_ERROR',
           message: err.message || 'Failed to compute edge mining report.',
+        },
+      });
+    }
+  });
+
+  // POST /api/v1/ai/voice-journal - AI Voice-to-Journal & Sentiment Analysis
+  app.post('/voice-journal', async (req: any, reply) => {
+    const { audioBase64, mimeType, caption, tradeId } = req.body || {};
+
+    if (!audioBase64 || typeof audioBase64 !== 'string') {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'INVALID_AUDIO',
+          message: 'audioBase64 must be a non-empty string.',
+        },
+      });
+    }
+
+    try {
+      const audioBuffer = Buffer.from(audioBase64, 'base64');
+      const result = await AiVoiceJournalService.processVoiceMessage({
+        userId: req.user.id,
+        audioBuffer,
+        mimeType: mimeType || 'audio/webm',
+        caption,
+        tradeId,
+      });
+
+      return reply.send({
+        success: true,
+        data: result,
+      });
+    } catch (err: any) {
+      req.log.error(err, '[AiRoutes] Error processing voice journal:');
+      return reply.status(500).send({
+        success: false,
+        error: {
+          code: 'VOICE_JOURNAL_ERROR',
+          message: err.message || 'Failed to process voice reflection.',
         },
       });
     }

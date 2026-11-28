@@ -231,6 +231,43 @@ export class LiveExecutionWorker {
             }
           }
         }
+
+        // Behavioral Anti-Tilt & Consecutive Loss Sentinel
+        const sortedTodayClosed = [...todayClosed].sort(
+          (a, b) => new Date(b.exitTime || b.createdAt).getTime() - new Date(a.exitTime || a.createdAt).getTime()
+        );
+        let consecutiveLosses = 0;
+        let streakLossSum = 0;
+        for (const t of sortedTodayClosed) {
+          const p = Number(t.calculated?.netPnL ?? (t as any).netPnL ?? 0);
+          if (p < 0) {
+            consecutiveLosses++;
+            streakLossSum += Math.abs(p);
+          } else {
+            break;
+          }
+        }
+
+        if (consecutiveLosses >= 3) {
+          const tiltKey = `tilt_streak:${user._id}:${istDateKey}:${consecutiveLosses}`;
+          if (!this.executedMilestones.has(tiltKey)) {
+            this.executedMilestones.add(tiltKey);
+
+            const isLockoutOptIn = Boolean(watcherSettings?.hardDisciplineLockoutEnabled);
+            const durationMins = watcherSettings?.hardDisciplineLockoutDurationMins || 60;
+            const lastLossTime = sortedTodayClosed[0]?.exitTime || new Date();
+            const elapsedMins = (Date.now() - new Date(lastLossTime).getTime()) / (1000 * 60);
+            const remainingMins = Math.max(1, Math.ceil(durationMins - elapsedMins));
+
+            TelegramAlertService.notifyAntiTiltLockout(
+              user,
+              consecutiveLosses,
+              streakLossSum,
+              isLockoutOptIn ? remainingMins : 0,
+              isLockoutOptIn
+            ).catch(() => {});
+          }
+        }
       }
 
       // Pre-market 08:45 AM FYERS Session Check (Mon-Fri)

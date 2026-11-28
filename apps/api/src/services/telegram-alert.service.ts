@@ -3815,7 +3815,8 @@ export class TelegramAlertService {
         description: `🎙️ Voice Reflection (${durationText}) recorded via Telegram`,
       });
 
-      // 7. Link to Trade
+      // 7. Link to Trade & Process with AI Voice Sentiment Engine
+      const sizeKb = Math.round(audioBuffer.length / 1024);
       if (targetTrade) {
         targetTrade.screenshotIds.push(attachment._id);
         const timeIST = new Date().toLocaleTimeString('en-IN', {
@@ -3841,28 +3842,59 @@ export class TelegramAlertService {
           changedBy: 'telegram',
         });
         await targetTrade.save();
-      }
 
-      // 8. Reply with Rich Telegram Confirmation
-      const sizeKb = Math.round(audioBuffer.length / 1024);
-      if (targetTrade) {
+        let aiResult: any = null;
+        try {
+          aiResult = await AiVoiceJournalService.processVoiceMessage({
+            userId: user._id,
+            audioBuffer,
+            mimeType,
+            caption: msg.caption,
+            tradeId: targetTrade._id,
+          });
+        } catch (vErr: any) {
+          console.warn('[TelegramAlertService] AI voice transcription failed, falling back to manual entry:', vErr.message);
+        }
+
+        // Re-fetch updated trade to reflect AI modifications
+        const refreshedTrade = await Trade.findById(targetTrade._id).lean();
         const sym = TelegramAlertService.getTradeCurrencySymbol(targetTrade);
-        const pnlStr =
-          targetTrade.calculated?.netPnL !== undefined
-            ? ` • Net PnL: ${targetTrade.calculated.netPnL >= 0 ? '+' : ''}${sym}${targetTrade.calculated.netPnL.toFixed(2)}`
-            : '';
+        const pnl = refreshedTrade?.calculated?.netPnL ?? targetTrade.calculated?.netPnL;
+        const pnlStr = pnl !== undefined ? ` • Net PnL: ${pnl >= 0 ? '+' : ''}${sym}${pnl.toFixed(2)}` : '';
+
+        const score = aiResult?.disciplineScore || 4;
+        const stars = '⭐'.repeat(score) + '☆'.repeat(5 - score);
+        const emotionalState = aiResult?.emotionalState || 'DISCIPLINED';
+        const transcription = aiResult?.transcription || 'Voice reflection recorded.';
+        const lesson = aiResult?.lessonsLearned || 'Consistent post-trade reflection logged.';
+        const mistakes = aiResult?.identifiedMistakes || [];
+
+        let mistakesHtml = '';
+        if (mistakes.length > 0) {
+          mistakesHtml = `⚠️ <b>Detected Mistakes:</b> <i>${mistakes.join(', ')}</i>\n`;
+        }
 
         const replyHtml =
-          `🎙️ <b>Voice Reflection Attached!</b>\n` +
+          `🎙️ <b>AI Voice Reflection Attached to Trade!</b>\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `📌 <b>Trade:</b> ${targetTrade.symbol} (${targetTrade.direction}${pnlStr})\n` +
-          `⏱️ <b>Duration:</b> ${durationText} • <b>Size:</b> ${sizeKb} KB\n\n` +
-          `💾 <i>Saved to Cloudflare R2 & linked to your trade review gallery in SetupMint.</i>`;
+          `⏱️ <b>Duration:</b> ${durationText} • <b>Discipline:</b> ${stars}\n` +
+          `🧠 <b>Emotional State:</b> <code>${emotionalState}</code>\n\n` +
+          `📝 <b>Transcribed Reflection:</b>\n` +
+          `<i>"${transcription}"</i>\n\n` +
+          mistakesHtml +
+          `💡 <b>Key Lesson Extracted:</b>\n` +
+          `<i>${lesson}</i>\n\n` +
+          `💾 <i>Saved to Cloudflare R2, Trade Review Gallery & Today's Daily Journal.</i>`;
 
         const buttons: ITelegramInlineButton[][] = [
           [
             { text: '🔗 View in SetupMint', url: `${config.webAppUrl}/trades/${targetTrade._id}` },
             { text: '📊 Live /pnl', callback_data: 'cmd_pnl' },
+          ],
+          [
+            { text: '🧠 Ask AI Coach', callback_data: 'cmd_coach' },
+            { text: '📅 Daily Summary', callback_data: 'cmd_summary' },
           ],
         ];
 
@@ -5752,6 +5784,57 @@ export class TelegramAlertService {
   }
 
   /**
+   * Dispatches an executive Behavioral Anti-Tilt & Revenge-Trading Lockout Card via Telegram.
+   */
+  static async notifyAntiTiltLockout(
+    user: any,
+    consecutiveLosses: number,
+    streakLossSum: number,
+    durationMins: number,
+    isLockoutActive: boolean
+  ): Promise<void> {
+    const settings = user.liveWatcherSettings;
+    if (!settings?.telegramAlertsEnabled || !settings.telegramBotToken || !settings.telegramChatId) return;
+
+    let botToken = settings.telegramBotToken;
+    botToken = safeDecryptSecret(botToken) || (botToken.startsWith('enc:') ? null : botToken);
+    if (!botToken) return;
+    const chatId = settings.telegramChatId;
+
+    const sym = user?.baseCurrency === 'USD' || user?.profile?.currency === 'USD' ? '$' : '₹';
+
+    const cardTitle = isLockoutActive
+      ? '🛑 <b>BEHAVIORAL ANTI-TILT LOCKOUT ENGAGED</b>'
+      : '⚠️ <b>PSYCHOLOGICAL TILT WARNING: 3 CONSECUTIVE LOSSES</b>';
+
+    const lockoutDirective = isLockoutActive
+      ? `🔒 <b>Discipline Lockout:</b> Active for <b>${durationMins} minutes</b>. All new order entries on SetupMint & Telegram are strictly blocked to protect capital.`
+      : `⚠️ <b>Revenge Risk:</b> You have taken ${consecutiveLosses} losses in a row. High risk of dopamine-seeking revenge entries.`;
+
+    const bodyHtml =
+      `${cardTitle}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📉 <b>Streak Status:</b> <code>${consecutiveLosses} Consecutive Losses Today</code>\n` +
+      `💸 <b>Loss Accumulated:</b> <code>-${sym}${streakLossSum.toFixed(2)}</code>\n\n` +
+      `${lockoutDirective}\n\n` +
+      `🧠 <b>AI Coach Directive:</b>\n` +
+      `<i>"Step away from the screen immediately. Walk for 15 minutes. Record a voice reflection to reset your mindset before looking at the market again."</i>`;
+
+    const buttons: ITelegramInlineButton[][] = [
+      [
+        { text: '🎙️ Record Voice Reflection', callback_data: 'cmd_coach' },
+        { text: '🧠 Ask AI Coach', callback_data: 'cmd_coach' },
+      ],
+      [
+        { text: '📅 Daily Summary', callback_data: 'cmd_summary' },
+        { text: '🚨 Flatten All Positions', callback_data: 'panic_prompt' },
+      ],
+    ];
+
+    await this.sendMessage(botToken, chatId, bodyHtml, buttons);
+  }
+
+  /**
    * Automatically dispatches an End of Day (EOD) Performance Digest to the trader's Telegram at 15:35 IST.
    */
   static async sendEodDigest(user: any): Promise<void> {
@@ -7612,7 +7695,60 @@ export class TelegramAlertService {
       return { allowed: true };
     }
 
-    // 1. Mandatory Stop Loss Check
+    // 1. Hard Discipline & Behavioral Anti-Tilt Lockout (Settings: hardDisciplineLockoutEnabled)
+    if (user?.liveWatcherSettings?.hardDisciplineLockoutEnabled) {
+      const lastLossDate = user?.liveWatcherSettings?.lastDailyLossAlertDate;
+      if (lastLossDate) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (lastLossDate === todayStr) {
+          return {
+            allowed: false,
+            reason:
+              `🔒 <b>ORDER BLOCKED: HARD DISCIPLINE LOCKOUT ACTIVE</b>\n\n` +
+              `Daily loss threshold was reached today. Trading lockout is in effect until tomorrow's session.`,
+          };
+        }
+      }
+
+      // Check consecutive losses today
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      const todayClosed = await Trade.find({
+        userId: user._id,
+        accountId: account._id,
+        status: 'CLOSED',
+        exitTime: { $gte: startOfToday },
+      }).sort({ exitTime: -1 }).lean();
+
+      let consecutiveLosses = 0;
+      for (const t of todayClosed) {
+        const netP = Number(t.calculated?.netPnL ?? (t as any).netPnL ?? 0);
+        if (netP < 0) {
+          consecutiveLosses++;
+        } else {
+          break;
+        }
+      }
+
+      if (consecutiveLosses >= 3) {
+        const lastLossTime = todayClosed[0]?.exitTime || new Date();
+        const durationMins = user.liveWatcherSettings?.hardDisciplineLockoutDurationMins || 60;
+        const elapsedMins = (Date.now() - new Date(lastLossTime).getTime()) / (1000 * 60);
+
+        if (elapsedMins < durationMins) {
+          const remainingMins = Math.ceil(durationMins - elapsedMins);
+          return {
+            allowed: false,
+            reason:
+              `🔒 <b>ORDER BLOCKED: BEHAVIORAL ANTI-TILT LOCKOUT ACTIVE</b>\n\n` +
+              `You have recorded ${consecutiveLosses} consecutive losses today.\n` +
+              `Discipline lockout is in effect for <b>${remainingMins} more minutes</b>. Step away from the screen to protect your capital.`,
+          };
+        }
+      }
+    }
+
+    // 2. Mandatory Stop Loss Check
     if (!slPoints || slPoints <= 0) {
       return {
         allowed: false,
@@ -7769,22 +7905,6 @@ export class TelegramAlertService {
             `You closed a losing trade (-$${Math.abs(lossPnl).toFixed(2)}) <b>${closedMinsAgo}m ago</b> (Cooldown: <b>${revengeMins}m</b>).\n` +
             `Take a breather and allow emotional variance to settle before re-entering.`,
         };
-      }
-    }
-
-    // 9. Hard Discipline Lockout (Settings: hardDisciplineLockoutEnabled)
-    if (user?.liveWatcherSettings?.hardDisciplineLockoutEnabled) {
-      const lastLossDate = user?.liveWatcherSettings?.lastDailyLossAlertDate;
-      if (lastLossDate) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        if (lastLossDate === todayStr) {
-          return {
-            allowed: false,
-            reason:
-              `🔒 <b>ORDER BLOCKED: HARD DISCIPLINE LOCKOUT ACTIVE</b>\n\n` +
-              `Daily loss threshold was reached today. Trading lockout is in effect until tomorrow's session.`,
-          };
-        }
       }
     }
 

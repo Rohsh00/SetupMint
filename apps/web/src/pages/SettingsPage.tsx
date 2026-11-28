@@ -1409,6 +1409,37 @@ export function SettingsPage() {
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  const [geminiTestResult, setGeminiTestResult] = useState<{
+    success: boolean;
+    model?: string;
+    latencyMs?: number;
+    message?: string;
+    error?: string;
+  } | null>(null);
+
+  const testGeminiMutation = useMutation({
+    mutationFn: (apiKeyToTest?: string) => api.settings.testGemini({ apiKey: apiKeyToTest }),
+    onSuccess: (res: any) => {
+      const data = res?.data || res;
+      setGeminiTestResult({
+        success: true,
+        model: data?.model || 'gemini-3.5-flash-lite',
+        latencyMs: data?.latencyMs,
+        message: data?.message || 'Google Gemini API is connected and operational.',
+      });
+      toast.success(`Google Gemini API verified (${data?.model || 'gemini-3.5-flash-lite'}, ${data?.latencyMs || 0}ms)!`);
+      refreshUser();
+    },
+    onError: (err: any) => {
+      const msg = err.message || 'Gemini connection test failed';
+      setGeminiTestResult({
+        success: false,
+        error: msg,
+      });
+      toast.error(`Gemini Error: ${msg}`);
+    },
+  });
+
   useEffect(() => {
     if ((user as any)?.aiSettings) {
       setAiEnabled((user as any).aiSettings.enabled ?? true);
@@ -1433,12 +1464,17 @@ export function SettingsPage() {
 
   const profileMutation = useMutation({
     mutationFn: (payload: any) => api.settings.updateProfile(payload),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       refreshUser();
       setProfileError(null);
       setProfileSuccess(true);
       toast.success('Profile preferences saved successfully.');
       setTimeout(() => setProfileSuccess(false), 3000);
+
+      // If user saved a Gemini API key or has an active key and didn't clear it, test connection automatically
+      if (variables?.aiSettings?.geminiApiKey || (!variables?.aiSettings?.clearGeminiApiKey && ((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey))) {
+        testGeminiMutation.mutate(variables?.aiSettings?.geminiApiKey);
+      }
     },
     onError: (err: any) => {
       const msg = err.message || 'Failed to update profile';
@@ -1535,6 +1571,7 @@ export function SettingsPage() {
       },
     });
     setGeminiApiKey('');
+    setGeminiTestResult(null);
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -2039,6 +2076,9 @@ export function SettingsPage() {
           setAutoApplyTradeDetails={setAutoApplyTradeDetails}
           hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
           onClearGeminiKey={handleClearGeminiKey}
+          onTestGemini={(keyToTest) => testGeminiMutation.mutate(keyToTest)}
+          isTestingGemini={testGeminiMutation.isPending}
+          geminiTestResult={geminiTestResult}
         />
       )}
 

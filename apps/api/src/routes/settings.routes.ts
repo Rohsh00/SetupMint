@@ -52,14 +52,14 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         liveWatcherSettings: maskLiveWatcherSettings(user.liveWatcherSettings),
         aiSettings: user.aiSettings ? {
           enabled: user.aiSettings.enabled ?? true,
-          model: user.aiSettings.model || 'gemini-2.5-flash',
+          model: user.aiSettings.model || 'gemini-3.5-flash-lite',
           autoAnalyzeTrades: user.aiSettings.autoAnalyzeTrades ?? true,
           autoApplyTradeDetails: user.aiSettings.autoApplyTradeDetails ?? false,
           hasGeminiApiKey: Boolean(user.aiSettings.geminiApiKey || config.geminiApiKey),
           geminiApiKey: user.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
         } : {
           enabled: true,
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.5-flash-lite',
           autoAnalyzeTrades: true,
           autoApplyTradeDetails: false,
           hasGeminiApiKey: Boolean(config.geminiApiKey),
@@ -341,14 +341,14 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         liveWatcherSettings: maskLiveWatcherSettings(user!.liveWatcherSettings),
         aiSettings: user!.aiSettings ? {
           enabled: user!.aiSettings.enabled ?? true,
-          model: user!.aiSettings.model || 'gemini-2.5-flash',
+          model: user!.aiSettings.model || 'gemini-3.5-flash-lite',
           autoAnalyzeTrades: user!.aiSettings.autoAnalyzeTrades ?? true,
           autoApplyTradeDetails: user!.aiSettings.autoApplyTradeDetails ?? false,
           hasGeminiApiKey: Boolean(user!.aiSettings.geminiApiKey || config.geminiApiKey),
           geminiApiKey: user!.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
         } : {
           enabled: true,
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.5-flash-lite',
           autoAnalyzeTrades: true,
           autoApplyTradeDetails: false,
           hasGeminiApiKey: Boolean(config.geminiApiKey),
@@ -448,6 +448,139 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     TelegramPollingService.startPollingForBot(botToken);
 
     return reply.send({ success: true, message: res.message, saved: true });
+  });
+
+  // Test Google Gemini API Key Connection
+  app.post('/test-gemini', async (req: any, reply) => {
+    let { apiKey } = req.body || {};
+    const user = await User.findById(req.user!.id);
+
+    // If key not provided or masked, check user's stored encrypted key
+    if ((!apiKey || apiKey.startsWith('••') || apiKey.startsWith('**')) && user?.aiSettings?.geminiApiKey) {
+      try {
+        apiKey = safeDecryptSecret(user.aiSettings.geminiApiKey) || user.aiSettings.geminiApiKey;
+      } catch (err: any) {
+        return reply.status(400).send({
+          success: false,
+          error: {
+            code: 'GEMINI_DECRYPT_FAILED',
+            message: 'Unable to decrypt stored Gemini API Key. Please re-enter your API key and save settings.',
+          },
+        });
+      }
+    }
+
+    if (!apiKey && config.geminiApiKey) {
+      apiKey = config.geminiApiKey;
+    }
+
+    if (!apiKey) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'NO_API_KEY',
+          message: 'No Google Gemini API key provided. Please enter your API key from Google AI Studio.',
+        },
+      });
+    }
+
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash',
+    ];
+
+    let lastError = 'Unable to establish connection with Google Gemini API';
+    let verifiedModel: string | null = null;
+    let latencyMs = 0;
+
+    for (const model of candidateModels) {
+      const startTime = Date.now();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: 'Respond with exactly: OK' }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 10,
+            },
+          }),
+        });
+
+        clearTimeout(timeout);
+        latencyMs = Date.now() - startTime;
+
+        if (response.ok) {
+          const resJson: any = await response.json();
+          const text = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            verifiedModel = model;
+            break;
+          }
+        } else {
+          const errJson: any = await response.json().catch(() => null);
+          const errMsg = errJson?.error?.message || response.statusText || `HTTP ${response.status}`;
+          lastError = `Google API (${model}): ${errMsg}`;
+          // If key is invalid (400 or 401 API key not valid), stop trying further models
+          if (
+            (response.status === 400 || response.status === 401 || response.status === 403) &&
+            errMsg.toLowerCase().includes('api key not valid')
+          ) {
+            break;
+          }
+        }
+      } catch (err: any) {
+        clearTimeout(timeout);
+        lastError = err?.message || 'Connection timeout or network failure';
+      }
+    }
+
+    if (!verifiedModel) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'GEMINI_TEST_FAILED',
+          message: lastError,
+        },
+      });
+    }
+
+    // Auto-save verified key if provided directly
+    if (user && req.body?.apiKey && !req.body.apiKey.startsWith('••') && !req.body.apiKey.startsWith('**')) {
+      const encrypted = encryptSecret(apiKey.trim());
+      if (encrypted) {
+        await User.findByIdAndUpdate(user._id, {
+          $set: {
+            'aiSettings.geminiApiKey': encrypted,
+            'aiSettings.enabled': true,
+            'aiSettings.model': verifiedModel,
+          },
+        });
+      }
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        status: 'CONNECTED',
+        model: verifiedModel,
+        latencyMs,
+        message: `Connected successfully to Google Gemini (${verifiedModel}) in ${latencyMs}ms.`,
+      },
+    });
   });
 
   // Test Telegram Gold (XAUUSD) News Reminder Alert

@@ -246,4 +246,43 @@ describe('TradeAiAnalyzerService - Per-Trade AI & Chart Copilot', () => {
     expect(mockTrade.auditLog.length).toBe(1);
     expect(mockSave).toHaveBeenCalled();
   });
+
+  it('validates Gemini candidate models fallback and response parsing', async () => {
+    // Mock global fetch to simulate successful gemini-3.5-flash-lite response
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('gemini-3.5-flash-lite')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'OK' }],
+                },
+              },
+            ],
+          }),
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { message: 'Model not found' } }),
+      };
+    }) as any;
+
+    try {
+      const startTime = Date.now();
+      const res = await global.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=test-key', {
+        method: 'POST',
+      });
+      const data: any = await res.json();
+      expect(res.ok).toBe(true);
+      expect(data.candidates[0].content.parts[0].text).toBe('OK');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

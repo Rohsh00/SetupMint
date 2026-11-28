@@ -35,6 +35,8 @@ import TuneRounded from '@mui/icons-material/TuneRounded';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded';
 import PsychologyRounded from '@mui/icons-material/PsychologyRounded';
+import BoltRounded from '@mui/icons-material/BoltRounded';
+import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import { ILiveWatcherDisplaySettings } from '@tradevault/shared';
 
 function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
@@ -105,6 +107,15 @@ export interface ProfileSystemTabProps {
   setAutoApplyTradeDetails?: (val: boolean) => void;
   hasGeminiKey: boolean;
   onClearGeminiKey?: () => void;
+  onTestGemini?: (keyToTest?: string) => void;
+  isTestingGemini?: boolean;
+  geminiTestResult?: {
+    success: boolean;
+    model?: string;
+    latencyMs?: number;
+    message?: string;
+    error?: string;
+  } | null;
 }
 
 export function ProfileSystemTab({
@@ -154,6 +165,9 @@ export function ProfileSystemTab({
   setAutoApplyTradeDetails,
   hasGeminiKey,
   onClearGeminiKey,
+  onTestGemini,
+  isTestingGemini = false,
+  geminiTestResult,
 }: ProfileSystemTabProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
@@ -398,7 +412,7 @@ export function ProfileSystemTab({
               </Alert>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       Google Gemini API Key (Free Tier)
@@ -414,34 +428,162 @@ export function ProfileSystemTab({
                       </Button>
                     )}
                   </Box>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    type="password"
-                    placeholder={hasGeminiKey ? '•••••••••••••••••••• (API Key Active & Stored)' : 'Paste your AI Studio API key (AQ...)'}
-                    value={geminiApiKey}
-                    onChange={(e) => setGeminiApiKey(e.target.value)}
-                    helperText={
-                      hasGeminiKey ? (
-                        <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                          <CheckCircleRounded sx={{ fontSize: 15 }} /> API Key is securely stored and active. Enter a new key only if you want to replace it.
-                        </span>
-                      ) : (
-                        <span>
-                          Get a free key from{' '}
-                          <a
-                            href="https://aistudio.google.com/app/apikey"
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: '#6366f1', textDecoration: 'underline' }}
+
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      type="password"
+                      placeholder={hasGeminiKey ? '•••••••••••••••••••• (API Key Active & Stored)' : 'Paste your AI Studio API key (AQ...)'}
+                      value={geminiApiKey}
+                      onChange={(e) => setGeminiApiKey(e.target.value)}
+                      helperText={
+                        hasGeminiKey ? (
+                          <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                            <CheckCircleRounded sx={{ fontSize: 15 }} /> API Key is securely stored and active. Enter a new key only if you want to replace it.
+                          </span>
+                        ) : (
+                          <span>
+                            Get a free key from{' '}
+                            <a
+                              href="https://aistudio.google.com/app/apikey"
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: '#6366f1', textDecoration: 'underline' }}
+                            >
+                              Google AI Studio
+                            </a>{' '}
+                            (takes 30 seconds). Leave empty to use the built-in Quant Engine.
+                          </span>
+                        )
+                      }
+                    />
+                    <Button
+                      variant="outlined"
+                      color="primary"
+                      disabled={isTestingGemini || (!geminiApiKey && !hasGeminiKey)}
+                      onClick={() => onTestGemini?.(geminiApiKey && !geminiApiKey.startsWith('••') ? geminiApiKey : undefined)}
+                      sx={{
+                        whiteSpace: 'nowrap',
+                        height: 40,
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        px: 2,
+                        minWidth: 145,
+                      }}
+                      startIcon={isTestingGemini ? <CircularProgress size={16} color="inherit" /> : <BoltRounded />}
+                    >
+                      {isTestingGemini ? 'Testing...' : 'Test Connection'}
+                    </Button>
+                  </Box>
+
+                  {/* Live Connection Status & Verification Feedback */}
+                  {isTestingGemini ? (
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.5,
+                        bgcolor: 'action.hover',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                      }}
+                    >
+                      <CircularProgress size={18} />
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          Testing Google Gemini API...
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Pinging Google servers with gemini-3.5-flash-lite model
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ) : geminiTestResult ? (
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1.5,
+                        bgcolor: geminiTestResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid',
+                        borderColor: geminiTestResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                        {geminiTestResult.success ? (
+                          <CheckCircleRounded sx={{ color: '#10b981', fontSize: 22 }} />
+                        ) : (
+                          <ErrorOutlineRounded sx={{ color: '#ef4444', fontSize: 22 }} />
+                        )}
+                        <Box>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 700,
+                              color: geminiTestResult.success ? '#10b981' : '#ef4444',
+                              lineHeight: 1.2,
+                            }}
                           >
-                            Google AI Studio
-                          </a>{' '}
-                          (takes 30 seconds). Leave empty to use the built-in Quant Engine.
-                        </span>
-                      )
-                    }
-                  />
+                            {geminiTestResult.success ? 'Gemini API Operational & Verified' : 'Gemini Connection Test Failed'}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
+                            {geminiTestResult.message || geminiTestResult.error}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      {geminiTestResult.success && geminiTestResult.latencyMs !== undefined && (
+                        <Chip
+                          size="small"
+                          label={`${geminiTestResult.model || 'gemini-3.5-flash-lite'} • ${geminiTestResult.latencyMs}ms`}
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            bgcolor: 'rgba(16, 185, 129, 0.2)',
+                            color: '#10b981',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                    </Box>
+                  ) : hasGeminiKey ? (
+                    <Box
+                      sx={{
+                        p: 1.25,
+                        borderRadius: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1,
+                        bgcolor: 'rgba(168, 85, 247, 0.08)',
+                        border: '1px solid',
+                        borderColor: 'rgba(168, 85, 247, 0.2)',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <CheckCircleRounded sx={{ color: '#a855f7', fontSize: 18 }} />
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                          API Key is active and ready. Click <b>"Test Connection"</b> above to verify live Google server response.
+                        </Typography>
+                      </Box>
+                      <Chip
+                        size="small"
+                        label="gemini-3.5-flash-lite"
+                        sx={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          bgcolor: 'rgba(168, 85, 247, 0.15)',
+                          color: '#c084fc',
+                          height: 20,
+                        }}
+                      />
+                    </Box>
+                  ) : null}
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

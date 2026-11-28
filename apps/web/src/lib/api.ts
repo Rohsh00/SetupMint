@@ -982,6 +982,8 @@ export const api = {
       request<any>('/settings/test-gold-news-result-alert', { method: 'POST' }),
     testSessionAlert: () =>
       request<any>('/settings/test-session-alert', { method: 'POST' }),
+    testGemini: (data?: { apiKey?: string }) =>
+      request<any>('/settings/test-gemini', { method: 'POST', body: JSON.stringify(data || {}) }),
   },
 
   // Review Queue & Mistake Detection

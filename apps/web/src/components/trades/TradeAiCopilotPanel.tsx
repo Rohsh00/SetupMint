@@ -180,7 +180,7 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
               icon={isModelVision ? <VisibilityRoundedIcon sx={{ fontSize: '14px !important' }} /> : undefined}
               label={
                 isModelVision
-                  ? 'Gemini 2.5 Flash (Vision)'
+                  ? ai.modelUsed || 'Gemini Flash (Vision)'
                   : isQuantEngine
                   ? 'Quant Engine (Zero-Cost)'
                   : ai.modelUsed || 'AI Model'

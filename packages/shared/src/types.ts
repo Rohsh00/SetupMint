@@ -1236,6 +1236,7 @@ export interface IAiCoachDebrief {
 
 export interface IUserAiSettings {
   geminiApiKey?: string;
+  hasGeminiApiKey?: boolean;
   enabled?: boolean;
   model?: string;
   autoAnalyzeTrades?: boolean;
